@@ -29,6 +29,19 @@ impl From<u32> for TypeIdent {
     }
 }
 
+//FIX: Should maybe be somewhere else but fine for now
+#[derive(Debug, Clone)]
+pub struct Span {
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+}
+
+impl Span {
+    pub fn new(start: usize, end: usize) -> Span {
+        Span { start, end }
+    }
+}
+
 // #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // pub struct TemplateId {
 //     pub id: u32,

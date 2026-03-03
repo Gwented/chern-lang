@@ -13,6 +13,9 @@ use common::intern::Intern;
 use common::primitives::PrimitiveKeywords;
 use common::symbols::{SymbolId, TypeIdent};
 
+// May be lower
+const MAX_ERRORS: u8 = 5;
+
 pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern) -> SymbolTable {
     let mut sym_table = SymbolTable::new();
 
@@ -25,11 +28,6 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
 
         let tok = ctx.peek_tok();
 
-        if let Token::Id(id) = tok {
-            let section = interner.search(id as usize);
-            dbg!(section, &tok);
-        }
-
         match tok {
             Token::Id(id) => match id {
                 id if id == PrimitiveKeywords::Bind as u32 => {
@@ -39,7 +37,7 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
                         TokenKind::SlimArrow,
                         "Expected a '->' after section `bind`, found ",
                         "",
-                        Some("Change to \"bind->\""),
+                        None,
                         Branch::Searching,
                         interner,
                     );
@@ -53,7 +51,7 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
                         TokenKind::SlimArrow,
                         "Expected a '->' after section `var`, found ",
                         "",
-                        Some("Change to \"var->\""),
+                        None,
                         Branch::Searching,
                         interner,
                     );
@@ -85,16 +83,19 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
                         TokenKind::SlimArrow,
                         "Expected a '->' after section `nest`, found ",
                         "",
-                        Some("Change to \"nest->\""),
+                        //TODO: Better help
+                        None,
                         Branch::Searching,
                         interner,
                     )
                     .ok();
 
                     while ctx.peek_kind() != TokenKind::EOF {
+                        // May hallucinate an error where a colon is present making it seem as
+                        // though you cannot name errors section names
                         if let Token::Id(name_id) = ctx.peek_tok()
                             && interner.is_section(name_id)
-                            && ctx.peek_ahead(1).token.kind() != TokenKind::OCurlyBracket
+                            && ctx.peek_ahead(1).token.kind() == TokenKind::SlimArrow
                         {
                             break;
                         }
@@ -119,11 +120,8 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
                     //FIX: CHECK FOR SIMILARITY
                     ctx.advance_tok();
 
-                    let name_id = interner.search(id as usize);
-                    let fmsg = format!("identifier \"{name_id}\"");
-                    // let fmsg = format!(
-                    //     "\nOk — looks like you got a syntax error.\nBut honestly — it happens to the best of us. I saw your code before this, and you know what? It shows you're not blindly making mistakes — you're just so focused innovating that the syntax can't catch up to your great ideas.\nHere's what went wrong:\n\tWhile you were casting spells to manipulate your computer (which was awesome) you missed the most important part — section names. You typed \"{name_id}\" instead.\nThe Fix:\n\tNext time while you're innovating — don't forget the '->'."
-                    // );
+                    let name = interner.search(id as usize);
+                    let fmsg = format!("identifier \"{name}\"");
 
                     ctx.report_template("a section with a '->' after", &fmsg, Branch::Searching);
                 }
@@ -158,18 +156,18 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
 
     if !ctx.err_vec.is_empty() {
         dbg!(sym_table);
-        //TODO: Ok I don't actually have the file path
 
         //FIX: ANSI
         // Should I even be using this macro?
+        // Also this is odd fix it.
         eprintln!("From path: {}", file!());
         eprint!("\x1b[31mError\x1b[0m: ");
 
         for err in ctx.err_vec.iter() {
             eprintln!("{}\n", err.msg);
         }
+        eprintln!("Reported {} errors\n", ctx.err_vec.len());
 
-        // panic!("I'm new to thinking. Does anyone have beginner thoughts?");
         std::process::exit(1);
     }
 
@@ -213,10 +211,10 @@ fn parse_var_section(
 
     // This seems weird...
     // Ignore this naming
-    let _err_name_ = interner.search(name_id as usize);
+    let err_name = interner.search(name_id as usize);
     ctx.expect_verbose(
         TokenKind::Colon,
-        &format!("Expected a ':' after identifier \"{_err_name_}\" to declare a type, found "),
+        &format!("Expected a ':' after identifier \"{err_name}\" to declare a type, found "),
         "",
         None,
         Branch::VarType,
@@ -226,18 +224,28 @@ fn parse_var_section(
     let type_res = parse_type(ctx, sym_table, interner);
 
     let mut conds: Vec<Cond> = Vec::new();
+    // This count cannot end the definition since it would prevent arguments from being viewed
+    let mut err_count = 0;
 
     if ctx.peek_kind() == TokenKind::OBracket {
         ctx.advance_tok();
 
-        let new_cond = parse_cond(ctx, sym_table, interner)?;
-        conds.push(new_cond);
+        loop {
+            let new_cond = parse_cond(ctx, sym_table, interner);
 
-        while ctx.peek_kind() == TokenKind::Comma {
-            ctx.advance_tok();
+            if let Ok(cond) = new_cond {
+                conds.push(cond);
+            } else {
+                if err_count > MAX_ERRORS {
+                    break;
+                }
 
-            let new_cond = parse_cond(ctx, sym_table, interner)?;
-            conds.push(new_cond);
+                err_count += 1;
+            }
+
+            if ctx.peek_kind() != TokenKind::Comma {
+                break;
+            }
         }
 
         ctx.expect_verbose(
@@ -254,19 +262,38 @@ fn parse_var_section(
 
     let mut args: Vec<InnerArgs> = Vec::new();
 
+    let mut err_count = 0;
+
     while ctx.peek_kind() == TokenKind::HashSymbol {
         ctx.advance_tok();
-        let arg = parse_arg(ctx, interner)?;
-        args.push(arg);
+        // WARN: Single if check destroys performance.
+        let arg = parse_arg(ctx, interner);
+        //TODO: Could leave on first poison, could have poison be a counter instead.
+        //Could leave it as is.
+
+        if let Ok(arg) = arg {
+            args.push(arg);
+        } else {
+            if err_count > MAX_ERRORS {
+                break;
+            }
+
+            err_count += 1;
+        }
     }
 
     if ctx.peek_kind() == TokenKind::Comma {
         ctx.advance_tok();
     }
 
-    let raw_type = type_res?;
+    //WARN: Should be handled a little more understandably maybe? Maybe this is ok?
+    //Also we technically can't error if this is going to be done everywhere so...
+    //FIX: Just in case
+    let raw_type = type_res.unwrap_or(TypeIdent::new(0));
 
+    //TEST: Everything is poison checked by the err_vec check at the end so this SHOULD be fine
     let type_def = TypeDef::new(SymbolId::new(name_id), raw_type, args, conds);
+    dbg!(&type_def);
 
     Ok(type_def)
 }
@@ -432,8 +459,8 @@ fn parse_type(
 fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<InnerArgs, Token> {
     let id = ctx.expect_id_verbose(
         TokenKind::Id,
-        "Type arguments require a '#' first but ",
-        " was found. |e.g. #warn|",
+        "",
+        " is not a valid argument identifier. |e.g. #warn|",
         Branch::VarTypeArgs,
         interner,
     )?;
@@ -635,6 +662,7 @@ fn parse_cond(
     }
 }
 
+//TODO: Should not explicitly be processed here. More general function parser.
 fn handle_len_func(ctx: &mut Context, interner: &Intern) -> Result<Vec<FuncArgs>, Token> {
     ctx.expect_verbose(
         TokenKind::OParen,
@@ -682,6 +710,7 @@ fn handle_len_func(ctx: &mut Context, interner: &Intern) -> Result<Vec<FuncArgs>
                 interner,
             )?;
 
+            //WARN: Hard coded help
             let user_help = format!(". |e.g. {start}..=other|");
 
             ctx.expect_id_verbose(
@@ -757,7 +786,8 @@ fn parse_nest_section(
 ) -> Result<(), Token> {
     ctx.expect_verbose(
         TokenKind::Dot,
-        "Expected a '.' to reference past variable, found ",
+        // Template terminology is normal here?
+        "Expected a '.' to reference a template, found ",
         "",
         None,
         Branch::Nest,
@@ -767,7 +797,7 @@ fn parse_nest_section(
 
     let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
-        "Expeced a referece to a template, found ",
+        "Expected a valid referece to a template, found ",
         "",
         Branch::Nest,
         interner,
@@ -815,33 +845,36 @@ fn parse_nest_section(
         interner,
     )?;
 
-    let mut fields: Vec<TypeIdent> = Vec::new();
+    let mut new_fields: Vec<TypeIdent> = Vec::new();
+    let mut err_count = 0;
 
     if ctx.peek_kind() == TokenKind::Id {
-        while ctx.peek_kind() != TokenKind::CCurlyBracket {
-            // Need to do something about the branch...
-            let type_def = parse_var_section(ctx, sym_table, interner)?;
-            dbg!(&type_def);
+        // EOF check needed here since this is technically an instance of a var branch
+        while ctx.peek_kind() != TokenKind::CCurlyBracket && ctx.peek_kind() != TokenKind::EOF {
+            let type_def_res = parse_var_section(ctx, sym_table, interner);
 
-            let sym_id = type_def.sym_id;
-            let type_id = sym_table.store_typedef(type_def);
+            if let Ok(type_def) = type_def_res {
+                let sym_id = type_def.sym_id;
+                let type_id = sym_table.store_typedef(type_def);
 
-            sym_table.store_symbol(sym_id, Symbol::Def(type_id));
+                sym_table.store_symbol(sym_id, Symbol::Def(type_id));
 
-            fields.push(type_id);
+                new_fields.push(type_id);
+            } else {
+                if err_count > MAX_ERRORS {
+                    break;
+                }
+                err_count += 1;
+            }
         }
 
-        //TODO: Custom errors or handle inside of query..
         dbg!(interner.search(sym_id.id as usize));
         dbg!(sym_id);
 
-        //TODO: Internally, it is possible to just return an id that is known to be a template
-        //first but not done yet.
-
         let template = sym_table.extract_template_mut(template_id);
 
-        for id in fields {
-            template.fields.push(id);
+        for type_id in new_fields {
+            template.fields.push(type_id);
         }
 
         // Not sure what to send here..

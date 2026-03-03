@@ -1,13 +1,20 @@
 @def
     bind -> "@./real_path"
 var->
-    expr: S|Expr [!IsEmpty()] ; ; ; ; ; ; ; ;
+    expr: S|Expr [!IsEmpty()] #wall #wextra #walla #wab #last #last #Last
+// StartsW, EndsW, Contains
     nest->
     .expr {
-        let: S|Let
+        let: S|Let This
+        ihiaht
+        hat: i32
     }
     .let {
         var: str
+        hi: S|Hi
+    }
+    .hi {
+        let: i3
     }
 @end
 
@@ -17,20 +24,12 @@ age: u8
 } #warn, #wextra*/
 
 nest->
-// This should not be ignored entirely. Ok this.
-.person {
-age: i32 #warn #scientific|
-         list: List<i32> #warn
 }
     var->
         // Can have no brackets if only one function, otherwise requires it.
     どうも
         person: S|Person [Len(0..=5)]
         declared: S|S
-        // STOP UNWRAPPING PRESENTS AND FIX THIS
-        /*.florp {
-            hi: i32
-        }*/
 
 
 //ね//var->hi:i32
@@ -50,7 +49,7 @@ age: i32 #warn #scientific|
 person {
     name: "Floor"
     age: 20
-    car:= {
+    car: {
         name: "Car"
         age: 6
         orb {

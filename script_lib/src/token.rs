@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use common::symbols::{SymbolId, TypeIdent};
+use common::symbols::{Span, SymbolId, TypeIdent};
 
 use crate::parser::symbols::{Cond, InnerArgs, TypeDef};
 
@@ -288,18 +288,6 @@ impl TokenKind {
 }
 
 //FIX: Move this
-#[derive(Debug, Clone)]
-pub(crate) struct Span {
-    pub(crate) start: usize,
-    pub(crate) end: usize,
-}
-
-impl Span {
-    pub(crate) fn new(start: usize, end: usize) -> Span {
-        Span { start, end }
-    }
-}
-
 #[derive(Debug)]
 pub(crate) enum ActualPrimitives {
     I8,
