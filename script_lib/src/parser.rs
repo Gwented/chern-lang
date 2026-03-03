@@ -14,7 +14,7 @@ use common::primitives::PrimitiveKeywords;
 use common::symbols::{SymbolId, TypeIdent};
 
 // May be lower
-const MAX_ERRORS: u8 = 5;
+const MAX_ERRORS: u8 = 3;
 
 pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern) -> SymbolTable {
     let mut sym_table = SymbolTable::new();
@@ -167,7 +167,7 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
             eprintln!("{}\n", err.msg);
         }
 
-        eprintln!("Reported {} errors\n", ctx.err_vec.len());
+        eprintln!("Reported {} error(s)\n", ctx.err_vec.len());
         std::process::exit(1);
     }
 
@@ -229,6 +229,7 @@ fn parse_var_section(
     // This count cannot end the definition since it would prevent arguments from being viewed
     let mut err_count = 0;
 
+    //FIX: Make this stop on first error
     if ctx.peek_kind() == TokenKind::OBracket {
         ctx.advance_tok();
 
@@ -252,18 +253,19 @@ fn parse_var_section(
 
             ctx.advance_tok();
         }
-        dbg!(ctx.peek_kind());
 
-        ctx.expect_verbose(
-            TokenKind::CBracket,
-            "Expected ']' at end of condition, found ",
-            "",
-            None,
-            // Does this set align properly?
-            Branch::VarTypeArgs,
-            interner,
-        )
-        .ok();
+        if err_count == 0 {
+            ctx.expect_verbose(
+                TokenKind::CBracket,
+                "Expected ']' at end of condition, found ",
+                "",
+                None,
+                // Does this set align properly?
+                Branch::VarCond,
+                interner,
+            )
+            .ok();
+        }
     }
 
     let mut args: Vec<InnerArgs> = Vec::new();
@@ -272,7 +274,7 @@ fn parse_var_section(
 
     while ctx.peek_kind() == TokenKind::HashSymbol {
         ctx.advance_tok();
-        // WARN: Single if check destroys performance.
+
         let arg = parse_arg(ctx, interner);
 
         if let Ok(arg) = arg {
@@ -295,7 +297,6 @@ fn parse_var_section(
 
     //TEST: Everything is poison checked by the err_vec check at the end so this SHOULD be fine
     let type_def = TypeDef::new(sym_id, raw_type, args, conds);
-    dbg!(&type_def);
 
     Ok(type_def)
 }
@@ -430,12 +431,6 @@ fn parse_type(
             panic!("Touched <poison>");
         }
         //TODO:
-        // Token::SlimArrow => todo!(),
-        // Token::HashSymbol => todo!(),
-        // Token::Percent => todo!(),
-        // Token::Colon => todo!(),
-        // Token::ExclamationPoint => todo!(),
-        // Token::Asterisk => todo!(),
         Token::VerticalBar => {
             ctx.advance_tok();
             // Probably better off with a help option
@@ -562,12 +557,16 @@ fn parse_cond(
             let name = interner.search(id as usize);
 
             match PrimitiveKeywords::from_id(id) {
+                //FIX:
                 Some(prim) => match prim {
                     PrimitiveKeywords::Range => {
                         ctx.advance_tok();
 
                         let sym_id = SymbolId::new(id);
-                        let args = handle_func_args(ctx, interner)?;
+
+                        let func_name = interner.search(id as usize);
+
+                        let args = handle_func_args(ctx, func_name, interner)?;
 
                         let type_id = sym_table.store_func(FuncDef::new(sym_id, args));
 
@@ -575,12 +574,10 @@ fn parse_cond(
                     }
                     PrimitiveKeywords::IsEmpty => {
                         ctx.advance_tok();
-                        // TODO: Ok this needs to be fixed now.
 
                         Ok(Cond::IsEmpty)
                     }
                     _ => {
-                        // Function similar check?
                         ctx.advance_tok();
 
                         let msg = format!("Expected a valid condition, found \"{name}\"");
@@ -589,23 +586,21 @@ fn parse_cond(
                         Err(Token::Poison)
                     }
                 },
+                //FIX:
                 None => {
-                    unimplemented!("No custom functions");
-                    // Cond::Function(FunctionDef::new(id)),
+                    ctx.advance_tok();
+
+                    let sym_id = SymbolId::new(id);
+
+                    let func_name = interner.search(id as usize);
+
+                    let args = handle_func_args(ctx, func_name, interner)?;
+
+                    let type_id = sym_table.store_func(FuncDef::new(sym_id, args));
+
+                    Ok(Cond::Func(type_id))
                 }
             }
-            // // Notations
-            // n => {
-            //     let fmt_tok = format!("\"{n}\"");
-            //     ctx.report_template(
-            //         "a condition after declared type",
-            //         &fmt_tok,
-            //         Branch::VarCond,
-            //     );
-            //
-            //     //WARN:
-            //     Err(Token::Poison)
-            // }
         }
         Token::Literal(id) | Token::Number(id) => {
             let name = interner.search(id as usize);
@@ -645,122 +640,86 @@ fn parse_cond(
     }
 }
 
-//TODO: Should not explicitly be processed here. More general function parser.
-fn handle_func_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<FuncArgs>, Token> {
-    todo!();
-    // ctx.expect_verbose(
-    //     TokenKind::OParen,
-    //     "Missing '(' within function `Range()`, found ",
-    //     "",
-    //     None,
-    //     Branch::VarCond,
-    //     interner,
-    // )
-    // .ok();
-    //
-    // let mut start: usize = 0;
-    //
-    // let end_id = match ctx.peek_tok() {
-    //     Token::Tilde => {
-    //         ctx.advance_tok();
-    //
-    //         ctx.expect_id_verbose(
-    //             TokenKind::Number,
-    //             "Expected a number after '~', found ",
-    //             " within `Len()`. Use '(~x1)' or '(x1..=x2)' to define a range.",
-    //             Branch::VarCond,
-    //             interner,
-    //         )?
-    //     }
-    //     Token::Number(id) => {
-    //         ctx.advance_tok();
-    //         let raw_num = interner.search(id as usize);
-    //
-    //         start = match raw_num.parse::<usize>() {
-    //             Ok(n) => n,
-    //             Err(_) => {
-    //                 panic!("[temp] Internal error. Failed to parse number in condition.");
-    //                 // ctx.report_template(emsg, fmsg, branch);
-    //                 // return Err(ctx.advance().token);
-    //             }
-    //         };
-    //
-    //         ctx.expect_verbose(
-    //             TokenKind::DotRange,
-    //             &format!("Missing rest of (range) after the number {raw_num}, found "),
-    //             "",
-    //             Some("Use 'Len(~x1)' or 'Len(x1..=x2)' to define a range."),
-    //             Branch::VarCond,
-    //             interner,
-    //         )?;
-    //
-    //         //WARN: Hard coded help
-    //         let user_help = format!(". |e.g. {start}..=other|");
-    //
-    //         ctx.expect_id_verbose(
-    //             TokenKind::Number,
-    //             "Expected a number at the end of (range), found ",
-    //             &user_help,
-    //             Branch::VarCond,
-    //             interner,
-    //         )?
-    //     }
-    //     Token::Id(id) | Token::Literal(id) => {
-    //         let err_tok = ctx.advance_tok();
-    //         let name = interner.search(id as usize);
-    //
-    //         let fmt_tok = format!("{} \"{}\" while parsing condition.", err_tok.kind(), name);
-    //
-    //         ctx.report_template("a (range) or number", &fmt_tok, Branch::VarCond);
-    //         return Err(err_tok);
-    //     }
-    //     t => {
-    //         ctx.advance_tok();
-    //         let fmt_tok = format!("'{}'", t.kind());
-    //
-    //         // TODO: How would a range be hinted here?
-    //         ctx.report_template(
-    //             "a valid (range) or number in parameters",
-    //             &fmt_tok,
-    //             Branch::VarCond,
-    //         );
-    //         return Err(t);
-    //     }
-    // };
-    //
-    // let end = interner.search(end_id as usize);
-    //
-    // let end = end
-    //     .parse()
-    //     //TODO: report this
-    //     .or_else(|_| {
-    //         let msg = format!(
-    //             "[Internal] Failed to parse value '{end}'. Although shouldn't be possible."
-    //         );
-    //
-    //         ctx.report_verbose(&msg, None, Branch::VarCond);
-    //         //WARN:
-    //         return Err(Token::Poison);
-    //     })?;
-    //
-    // if start > end {
-    //     let msg = format!("The range '{start}..={end}' is invalid. Cannot have end > start.");
-    //     ctx.report_verbose(&msg, None, Branch::VarCond);
-    // }
-    //
-    // ctx.expect_verbose(
-    //     TokenKind::CParen,
-    //     "Expected ')' after `Len()`, found ",
-    //     "",
-    //     Some("Individual type conditions must be closed with ')' or delimited by commas |e.g. `(Len(~4)` |"),
-    //     Branch::VarCond,
-    //     interner,
-    // )
-    // .ok();
-    //
-    // ctx.exit_if(Branch::VarType)?;
-    //
-    // Ok(vec![FuncArgs::Num(start), FuncArgs::Num(end)])
+//TODO: Cleaner way to report with function name noted. If not that's ok.
+fn handle_func_args(
+    ctx: &mut Context,
+    func_name: &str,
+    interner: &Intern,
+) -> Result<Vec<FuncArgs>, Token> {
+    // Should this be terminal?
+    _ = ctx.expect_verbose(
+        TokenKind::OParen,
+        // Bit convoluted
+        &format!("Expected '(' to declare parameters for the function \"{func_name}\", found "),
+        "",
+        None,
+        Branch::VarFuncArgs,
+        interner,
+    );
+
+    let mut args: Vec<FuncArgs> = Vec::new();
+
+    // Should likely change to loop so commas can be expected cleanly
+    // EOF risk?
+    // We have 2 decisions.
+    // 1. Use if for commas which will likely break the condition's ability to use commas
+    //    intuitively.
+    // 2. Make this strictly check for CParen
+    //FIX:
+    loop {
+        match ctx.peek_tok() {
+            Token::Id(id) => {
+                ctx.advance_tok();
+                args.push(FuncArgs::Id(SymbolId::new(id)));
+            }
+            Token::Literal(id) => {
+                ctx.advance_tok();
+                args.push(FuncArgs::Literal(SymbolId::new(id)));
+            }
+            Token::Number(id) => {
+                ctx.advance_tok();
+
+                let num = interner
+                    .search(id as usize)
+                    .parse()
+                    .expect("The lexer broke numbers");
+                args.push(FuncArgs::Num(num));
+            }
+            Token::EOF => return Err(Token::Poison),
+            err_tok => {
+                ctx.advance_tok();
+
+                let msg = format!(
+                    "Cannot have '{}' within function parameters",
+                    err_tok.kind()
+                );
+
+                ctx.report_verbose(&msg, None, Branch::VarCond);
+                return Err(Token::Poison);
+            }
+        }
+
+        if ctx.peek_kind() == TokenKind::CParen {
+            break;
+        }
+
+        if ctx.peek_kind() == TokenKind::CBracket {
+            return Err(Token::Poison);
+        }
+
+        _ = ctx.expect_verbose(
+            TokenKind::Comma,
+            "Expected a comma to separate arguments or ')' to close, found ",
+            "",
+            None,
+            Branch::VarFuncArgs,
+            interner,
+        )?;
+    }
+
+    ctx.advance_tok();
+
+    Ok(args)
 }
 
 fn parse_nest_section(
@@ -805,8 +764,6 @@ fn parse_nest_section(
         Token::Poison
     })?;
 
-    //FIX: Can't option this either because report would call recover, but recover would skip past
-    //the curly bracket, meaning everything would be hallucinated onwards
     let template_id = sym_table.get_template_id(type_def_id).ok_or_else(|| {
         //TODO: Return result and take the result's type to report it
         let err_name = interner.search(sym_id.id as usize);

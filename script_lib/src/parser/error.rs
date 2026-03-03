@@ -24,6 +24,7 @@ pub(crate) enum Branch {
     // Test variants
     VarType,
     VarCond,
+    VarFuncArgs,
     VarTypeArgs,
     // Test variants
     Nest,
@@ -34,13 +35,13 @@ pub(crate) enum Branch {
 impl Display for Branch {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            //FIX: Fixing..
             Branch::Broken => write!(f, "abort"),
             Branch::Searching => write!(f, "searching..."),
             Branch::Bind => write!(f, "bind"),
             Branch::Var => write!(f, "var"),
             Branch::VarType => write!(f, "[type]"),
             Branch::VarCond => write!(f, "[conditions]"),
+            Branch::VarFuncArgs => write!(f, "[args]"),
             Branch::VarTypeArgs => write!(f, "[args]"),
             Branch::Nest => write!(f, "nest"),
             Branch::NestType => write!(f, "[type]"),

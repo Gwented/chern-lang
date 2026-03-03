@@ -15,6 +15,7 @@ pub(crate) enum Symbol {
 }
 
 // Dog dog = new Dog();
+// TODO: Reserve index 0 for all to represent invalid types from the parser
 #[derive(Debug)]
 pub struct SymbolTable {
     //Can just be a vec?
@@ -171,6 +172,7 @@ impl SymbolTable {
 #[derive(Debug)]
 pub(crate) enum FuncArgs {
     Id(SymbolId),
+    Literal(SymbolId),
     Num(usize),
 }
 

@@ -1,10 +1,10 @@
 @def
     var->
     // Need to be able to know if this has several references...
-        valid: S|CCODE [IsEmpty()]
+        valid: S|CCODE [IsEmpty, family("hi", )]
     nest->
         .valid {
-             valid: S|OCODE
+            valid: i32
         }
 @end
 @def

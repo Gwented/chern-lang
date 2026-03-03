@@ -34,7 +34,7 @@ const HASH_SYMBOL: u64 = 1 << 15;
 // const PERCENT: u64 = 1 << 17;
 const COLON: u64 = 1 << 18;
 // const O_PAREN: u64 = 1 << 19;
-// const C_PAREN: u64 = 1 << 20;
+const C_PAREN: u64 = 1 << 20;
 // const HYPHEN: u64 = 1 << 21;
 // const EXCLAMATION_POINT: u64 = 1 << 22;
 // const ASTERISK: u64 = 1 << 23;
@@ -59,6 +59,7 @@ const A_BRANCH_VAR_SET: u64 = A_BASE_EXIT_SET;
 const C_BRANCH_VAR_TYPE_SET: u64 = C_BASE_EXIT_SET | O_BRACKET | HASH_SYMBOL | C_CURLY_BRACKET;
 const A_BRANCH_VAR_TYPE_SET: u64 = A_BASE_EXIT_SET | COLON;
 
+// Probably shouldn't accoutn for hash symbol since it is not apart of the loop
 const C_BRANCH_VAR_COND_SET: u64 = C_BASE_EXIT_SET | COMMA | HASH_SYMBOL | C_BRACKET;
 const A_BRANCH_VAR_COND_SET: u64 = A_BASE_EXIT_SET | COLON;
 
@@ -67,10 +68,11 @@ const A_BRANCH_VAR_ARGS_SET: u64 = A_BASE_EXIT_SET | COLON;
 
 // Nest branch error coordination needs to be fixed first
 const C_BRANCH_NEST_SET: u64 = C_BASE_EXIT_SET | DOT;
-const A_BRANCH_NEST_SET: u64 = A_BASE_EXIT_SET;
 
 const C_BRANCH_NEST_TYPE: u64 = C_BASE_EXIT_SET | DOT;
-const A_BRANCH_NEST_TYPE: u64 = A_BASE_EXIT_SET;
+
+const C_BRANCH_VAR_FUNC_SET: u64 = C_BASE_EXIT_SET | C_PAREN;
+const A_BRANCH_VAR_FUNC_SET: u64 = A_BASE_EXIT_SET | C_BRACKET;
 
 //FIX: Help is broken (As in very bad)
 //Or add memory instead of having errors the second one is seen. Or just las error. Or Or :=
@@ -84,6 +86,7 @@ pub struct Context<'a> {
     //TEST:
     should_leave: bool,
     pub(crate) current_branch: Branch,
+    pub(crate) past_toks: [TokenKind; 3],
     //TEST:
 }
 
@@ -99,6 +102,7 @@ impl<'a> Context<'a> {
             should_leave: false,
             can_color: std::io::stdout().is_terminal(),
             current_branch: Branch::Searching,
+            past_toks: [TokenKind::Illegal; 3],
         }
     }
 
@@ -178,6 +182,7 @@ impl<'a> Context<'a> {
     /// Fully curated version of `expect_basic`
     //TODO: Primitive type recognition for printing all errors
 
+    // Return token based off of it's most probable path?
     pub(crate) fn expect_verbose(
         &mut self,
         expected: TokenKind,
@@ -282,10 +287,10 @@ impl<'a> Context<'a> {
             Branch::Var => (C_BRANCH_VAR_SET, A_BRANCH_VAR_SET),
             Branch::VarType => (C_BRANCH_VAR_TYPE_SET, A_BRANCH_VAR_TYPE_SET),
             Branch::VarCond => (C_BRANCH_VAR_COND_SET, A_BRANCH_VAR_COND_SET),
+            Branch::VarFuncArgs => (C_BRANCH_VAR_FUNC_SET, A_BRANCH_VAR_FUNC_SET),
             Branch::VarTypeArgs => (C_BRANCH_VAR_ARGS_SET, A_BRANCH_VAR_ARGS_SET),
-            // This one is extremely terminal due to fragility in finding a valid reference
-            Branch::Nest => (C_BRANCH_NEST_SET, A_BRANCH_NEST_SET),
-            Branch::NestType => (C_BRANCH_NEST_TYPE, A_BRANCH_NEST_TYPE),
+            Branch::Nest => (C_BRANCH_NEST_SET, A_BASE_EXIT_SET),
+            Branch::NestType => (C_BRANCH_NEST_TYPE, A_BASE_EXIT_SET),
             Branch::ComplexRules => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
         }
     }
@@ -305,6 +310,10 @@ impl<'a> Context<'a> {
     // TEST:
     pub(crate) fn set_branch(&mut self, branch: Branch) {
         self.current_branch = branch;
+    }
+
+    pub(crate) fn rewind(&mut self, dest: usize) {
+        self.pos -= dest;
     }
 
     pub(crate) fn skip(&mut self, dest: usize) -> () {
