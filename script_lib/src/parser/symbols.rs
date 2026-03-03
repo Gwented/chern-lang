@@ -214,9 +214,9 @@ impl TypeDef {
 //FIX: Move
 #[derive(Debug)]
 pub(crate) enum Cond {
-    // Approximation operator is a range internally.
-    // Unsure whether to remove range or len
     Func(TypeIdent),
+    // Maybe this shouldn't be a function
+    IsEmpty,
     // Probably should just attach bool
     // should likely be removed
     Not(Box<Cond>),

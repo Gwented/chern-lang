@@ -1,26 +1,24 @@
 use std::io::IsTerminal;
 
-use common::{intern::Intern, painter};
+use common::{intern::Intern, reporter};
 
 use crate::{
     parser::error::{Branch, Diagnostic},
     token::{SpannedToken, Token, TokenKind},
 };
-const ORANGE: &str = "\x1b[33m";
-const NC: &str = "\x1b[0m";
-
 //TODO: A struct that contains something like the branch, and error type instead of params
 
 /// Amount of '-' to print for multiple error separation
 const TOTAL_SEPARATORS: usize = 60;
 
-//TEST:
+//WARN: Seems fine
+
 // A C programmer got lost.
 // const ID: u64 = 1 << 0;
 // const LITERAL: u64 = 1 << 1;
 // const NUMBER: u64 = 1 << 2;
 const O_BRACKET: u64 = 1 << 3;
-// const C_BRACKET: u64 = 1 << 4;
+const C_BRACKET: u64 = 1 << 4;
 // const O_CURLY_BRACKET: u64 = 1 << 5;
 const C_CURLY_BRACKET: u64 = 1 << 6;
 // const QUESTION_MARK: u64 = 1 << 7;
@@ -50,32 +48,32 @@ const EOF: u64 = 1 << 30;
 
 // C_ == current. A_ == ahead
 
+// ALL SET LOGIC AND PARSE LOGIC NEED TO WORK WITH EACH OTHER
 const C_BASE_EXIT_SET: u64 = EOF | ILLEGAL;
-const A_BASE_EXIT_SET: u64 = SLIM_ARROW | COLON;
+const A_BASE_EXIT_SET: u64 = SLIM_ARROW;
 
 const C_BRANCH_VAR_SET: u64 = C_BASE_EXIT_SET | O_BRACKET;
 const A_BRANCH_VAR_SET: u64 = A_BASE_EXIT_SET;
 
-// WARN: NestType should probably be responsible for this but we'll see
+// WARN: NestType should probably be responsible for C_CURLY but maybe not
 const C_BRANCH_VAR_TYPE_SET: u64 = C_BASE_EXIT_SET | O_BRACKET | HASH_SYMBOL | C_CURLY_BRACKET;
-const A_BRANCH_VAR_TYPE_SET: u64 = A_BASE_EXIT_SET;
+const A_BRANCH_VAR_TYPE_SET: u64 = A_BASE_EXIT_SET | COLON;
 
-const C_BRANCH_VAR_COND_SET: u64 = C_BASE_EXIT_SET | COMMA | HASH_SYMBOL;
-const A_BRANCH_VAR_COND_SET: u64 = A_BASE_EXIT_SET;
+const C_BRANCH_VAR_COND_SET: u64 = C_BASE_EXIT_SET | COMMA | HASH_SYMBOL | C_BRACKET;
+const A_BRANCH_VAR_COND_SET: u64 = A_BASE_EXIT_SET | COLON;
 
 const C_BRANCH_VAR_ARGS_SET: u64 = C_BASE_EXIT_SET | HASH_SYMBOL;
-const A_BRANCH_VAR_ARGS_SET: u64 = A_BASE_EXIT_SET;
+const A_BRANCH_VAR_ARGS_SET: u64 = A_BASE_EXIT_SET | COLON;
 
 // Nest branch error coordination needs to be fixed first
 const C_BRANCH_NEST_SET: u64 = C_BASE_EXIT_SET | DOT;
-const A_BRANCH_NEST_SET: u64 = SLIM_ARROW;
+const A_BRANCH_NEST_SET: u64 = A_BASE_EXIT_SET;
 
-const C_BRANCH_NEST_TYPE: u64 = C_BASE_EXIT_SET | C_CURLY_BRACKET;
-const A_BRANCH_NEST_TYPE: u64 = SLIM_ARROW;
+const C_BRANCH_NEST_TYPE: u64 = C_BASE_EXIT_SET | DOT;
+const A_BRANCH_NEST_TYPE: u64 = A_BASE_EXIT_SET;
 
 //FIX: Help is broken (As in very bad)
 //Or add memory instead of having errors the second one is seen. Or just las error. Or Or :=
-// Give it context on branches  gg give it
 #[derive(Debug)]
 pub struct Context<'a> {
     original_text: &'a [u8],
@@ -89,9 +87,7 @@ pub struct Context<'a> {
     //TEST:
 }
 
-// Make more composable or something
 // Fuzzy find?
-// Last token most probable chance of ofo fofofo
 // I'm NOT having context switch branches manually. Please.
 impl<'a> Context<'a> {
     pub fn new(original_text: &'a [u8], tokens: &'a [SpannedToken]) -> Context<'a> {
@@ -114,21 +110,11 @@ impl<'a> Context<'a> {
         branch: Branch,
         interner: &Intern,
     ) -> Result<u32, Token> {
-        // let found = if self.pos < self.tokens.len() {
-        //     self.pos += 1;
-        //     &self.tokens[self.pos]
-        // } else {
-        //     dbg!(&self.tokens[self.pos - 1]);
-        //     panic!();
-        //     &self.tokens[self.pos - 1]
-        // };
         let found = &self.tokens[self.pos];
         self.pos += 1;
 
-        // Leads to EOF being skipped and index out of bounds unless this is done.
         // WARN: IF ANYTHING GOES WRONG ADD THE IF STATEMENTS BACK FOR EOF
 
-        // Maybe just check each individually first so we know it is invalid after.
         let id_opt = match found.token {
             Token::Id(id) | Token::Literal(id) | Token::Number(id) => {
                 if found.token.kind() == expected {
@@ -141,7 +127,7 @@ impl<'a> Context<'a> {
         };
 
         let (ln, col, segment) =
-            painter::get_location(self.original_text, &found.span, self.can_color);
+            reporter::form_diagnostic(self.original_text, &found.span, self.can_color);
 
         let msg = if let Some(id) = id_opt {
             let name_id = interner.search(id as usize);
@@ -167,19 +153,14 @@ impl<'a> Context<'a> {
     pub(crate) fn report_verbose(&mut self, msg: &str, help: Option<&str>, branch: Branch) {
         let found = &self.tokens[self.pos - 1];
 
-        //WARN: Move to painter too
         let help = if let Some(msg) = help {
-            if self.can_color {
-                format!("{ORANGE}Help{NC}: {msg}\n")
-            } else {
-                format!("Help: {msg}\n")
-            }
+            reporter::form_help(msg, self.can_color)
         } else {
             "".to_string()
         };
 
         let (ln, col, segment) =
-            painter::get_location(self.original_text, &found.span, self.can_color);
+            reporter::form_diagnostic(self.original_text, &found.span, self.can_color);
 
         let separator = "-".repeat(TOTAL_SEPARATORS);
 
@@ -210,24 +191,19 @@ impl<'a> Context<'a> {
 
         self.pos += 1;
 
-        let id_opt = match found.token {
-            Token::Id(id) | Token::Literal(id) | Token::Number(id) => Some(id),
-            _ => None,
-        };
-
-        // Should this be reversed?
         if found.token.kind() != expected {
+            let id_opt = match found.token {
+                Token::Id(id) | Token::Literal(id) | Token::Number(id) => Some(id),
+                _ => None,
+            };
+
             let (ln, col, segment) =
-                painter::get_location(self.original_text, &found.span, self.can_color);
+                reporter::form_diagnostic(self.original_text, &found.span, self.can_color);
 
             let separator = "-".repeat(TOTAL_SEPARATORS);
 
             let help = if let Some(msg) = help {
-                if self.can_color {
-                    format!("{ORANGE}Help{NC}: {msg}\n")
-                } else {
-                    format!("Help: {msg}\n")
-                }
+                reporter::form_help(msg, self.can_color)
             } else {
                 "".to_string()
             };
@@ -260,12 +236,12 @@ impl<'a> Context<'a> {
 
     /// More composable "Expected but found" error.
     /// ALWAYS advance before using this
-    /// [...] Expected [emsg], found [fmsg]
+    /// Expected [emsg], found [fmsg]
     pub(crate) fn report_template(&mut self, emsg: &str, fmsg: &str, branch: Branch) {
         let found = &self.tokens[self.pos - 1];
 
         let (ln, col, segment) =
-            painter::get_location(self.original_text, &found.span, self.can_color);
+            reporter::form_diagnostic(self.original_text, &found.span, self.can_color);
 
         let separator = "-".repeat(TOTAL_SEPARATORS);
 
@@ -283,7 +259,7 @@ impl<'a> Context<'a> {
     }
 
     //TODO: Branch specific behavior
-    //WARN: WATCH THIS CLOSELY
+    //WARN: SEEMS FINE MAY REMOVE WARN
     fn recover(&mut self, branch: Branch) {
         let (current_target, next_target) = self.match_anchor(branch);
 

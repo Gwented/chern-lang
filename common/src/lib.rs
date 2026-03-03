@@ -1,5 +1,5 @@
 pub mod intern;
-pub mod painter;
 pub mod primitives;
+pub mod reporter;
 pub mod storage;
 pub mod symbols;

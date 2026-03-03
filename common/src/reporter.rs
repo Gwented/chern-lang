@@ -2,11 +2,11 @@ use crate::symbols::Span;
 
 //FIX: ANSI
 const RED: &str = "\x1b[31m";
-// const ORANGE: &str = "\x1b[33m";
+const ORANGE: &str = "\x1b[33m";
 const NC: &str = "\x1b[0m";
 
 //TODO: Handle multi-line errors
-pub fn get_location(text: &[u8], span: &Span, can_color: bool) -> (usize, usize, String) {
+pub fn form_diagnostic(text: &[u8], span: &Span, can_color: bool) -> (usize, usize, String) {
     let mut ln = 1;
     let mut col = 1;
 
@@ -92,4 +92,17 @@ fn get_line_end(original_text: &[u8], start: usize) -> usize {
 
     //WARN: I don't remember why I returned this
     original_text.len()
+}
+
+//TODO: Should this exist?
+// pub fn format_segment(segment: &str) -> String {
+//
+// }
+
+pub fn form_help(msg: &str, can_color: bool) -> String {
+    if can_color {
+        format!("{ORANGE}Help{NC}: {msg}\n")
+    } else {
+        format!("Help: {msg}\n")
+    }
 }

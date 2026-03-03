@@ -1,4 +1,13 @@
 @def
+    var->
+    // Need to be able to know if this has several references...
+        valid: S|CCODE [IsEmpty()]
+    nest->
+        .valid {
+             valid: S|OCODE
+        }
+@end
+@def
     bind -> "@./real_path"
 var->
     expr: S|Expr [!IsEmpty()] #wall #wextra #walla #wab #last #last #Last
@@ -17,43 +26,6 @@ var->
         let: i3
     }
 @end
-
-/*Person {
-name: u8
-age: u8
-} #warn, #wextra*/
-
-nest->
-}
-    var->
-        // Can have no brackets if only one function, otherwise requires it.
-    どうも
-        person: S|Person [Len(0..=5)]
-        declared: S|S
-
-
-//ね//var->hi:i32
-//"\ねaね"
-    var->
-            let: i32
             //let: List<Map<List<List<List<List<List<List<i32>>>>>>, i32>
-                //list: List<List<List<List<List<List<List<List<Map<Map<Set<Set<i32>>>>>>>>>>
                 //list: List<List<List<<List<List<st<List<io<List<List<Map<Map<Set<Set<i32>>>>>>>>>>>>>>>>
                 wist: i32
-    /*nest->
-        .person:= {
-            names: List<str>
-            floor: Set<u32>
-        }*/
- IM LOST
-person {
-    name: "Floor"
-    age: 20
-    car: {
-        name: "Car"
-        age: 6
-        orb {
-
-        }
-    }
-}
