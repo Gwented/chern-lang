@@ -53,7 +53,7 @@ const C_BASE_EXIT_SET: u64 = EOF | ILLEGAL;
 const A_BASE_EXIT_SET: u64 = SLIM_ARROW;
 
 const C_BRANCH_VAR_SET: u64 = C_BASE_EXIT_SET | O_BRACKET;
-const A_BRANCH_VAR_SET: u64 = A_BASE_EXIT_SET;
+const A_BRANCH_VAR_SET: u64 = A_BASE_EXIT_SET | COLON;
 
 // WARN: NestType should probably be responsible for C_CURLY but maybe not
 const C_BRANCH_VAR_TYPE_SET: u64 = C_BASE_EXIT_SET | O_BRACKET | HASH_SYMBOL | C_CURLY_BRACKET;
@@ -69,7 +69,8 @@ const A_BRANCH_VAR_ARGS_SET: u64 = A_BASE_EXIT_SET | COLON;
 // Nest branch error coordination needs to be fixed first
 const C_BRANCH_NEST_SET: u64 = C_BASE_EXIT_SET | DOT;
 
-const C_BRANCH_NEST_TYPE: u64 = C_BASE_EXIT_SET | DOT;
+// Needs to be adjusted for both to cooperate
+const C_BRANCH_NEST_TYPE: u64 = C_BASE_EXIT_SET | C_CURLY_BRACKET;
 
 const C_BRANCH_VAR_FUNC_SET: u64 = C_BASE_EXIT_SET | C_PAREN;
 const A_BRANCH_VAR_FUNC_SET: u64 = A_BASE_EXIT_SET | C_BRACKET;
@@ -85,8 +86,7 @@ pub struct Context<'a> {
     can_color: bool,
     //TEST:
     should_leave: bool,
-    pub(crate) current_branch: Branch,
-    pub(crate) past_toks: [TokenKind; 3],
+    past_toks: [TokenKind; 3],
     //TEST:
 }
 
@@ -101,7 +101,6 @@ impl<'a> Context<'a> {
             err_vec: Vec::new(),
             should_leave: false,
             can_color: std::io::stdout().is_terminal(),
-            current_branch: Branch::Searching,
             past_toks: [TokenKind::Illegal; 3],
         }
     }
@@ -116,7 +115,6 @@ impl<'a> Context<'a> {
     ) -> Result<u32, Token> {
         let found = &self.tokens[self.pos];
         self.pos += 1;
-
         // WARN: IF ANYTHING GOES WRONG ADD THE IF STATEMENTS BACK FOR EOF
 
         let id_opt = match found.token {
@@ -296,25 +294,18 @@ impl<'a> Context<'a> {
     }
 
     //TEST:
-    pub(crate) fn exit_if(&mut self, branch: Branch) -> Result<(), Token> {
-        if self.should_leave {
-            self.recover(branch);
-        }
-
-        self.should_leave = false;
-
-        Ok(())
-    }
+    // pub(crate) fn exit_if(&mut self, branch: Branch) -> Result<(), Token> {
+    //     if self.should_leave {
+    //         self.recover(branch);
+    //     }
+    //
+    //     self.should_leave = false;
+    //
+    //     Ok(())
+    // }
 
     // Oh my Java
     // TEST:
-    pub(crate) fn set_branch(&mut self, branch: Branch) {
-        self.current_branch = branch;
-    }
-
-    pub(crate) fn rewind(&mut self, dest: usize) {
-        self.pos -= dest;
-    }
 
     pub(crate) fn skip(&mut self, dest: usize) -> () {
         self.pos += dest;

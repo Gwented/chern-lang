@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SymbolId {
     pub id: u32,
@@ -39,6 +37,41 @@ pub struct Span {
 impl Span {
     pub fn new(start: usize, end: usize) -> Span {
         Span { start, end }
+    }
+}
+
+#[derive(Debug)]
+pub enum Cond {
+    Func(TypeIdent),
+    // Maybe this shouldn't be a function
+    IsEmpty,
+    IsWhitespace,
+    // Probably should just attach bool
+    // should likely be removed
+    Not(Box<Cond>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InnerArgs {
+    Warn,
+    Scientific,
+    Hex,
+    Binary,
+    Octo,
+}
+
+impl<'a> TryFrom<&'a str> for InnerArgs {
+    type Error = &'a str;
+
+    fn try_from(v: &'a str) -> Result<Self, Self::Error> {
+        match v {
+            "warn" => Ok(InnerArgs::Warn),
+            "scient" => Ok(InnerArgs::Scientific),
+            "hex" => Ok(InnerArgs::Hex),
+            "bin" => Ok(InnerArgs::Binary),
+            "octo" => Ok(InnerArgs::Octo),
+            v => Err(v),
+        }
     }
 }
 

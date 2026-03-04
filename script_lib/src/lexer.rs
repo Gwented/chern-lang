@@ -315,7 +315,6 @@ impl Lexer<'_> {
         }
 
         dbg!(&tokens);
-        dbg!(&tokens.len());
         tokens
     }
 

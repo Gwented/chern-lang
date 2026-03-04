@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use common::symbols::{SymbolId, TypeIdent};
+use common::symbols::{Cond, InnerArgs, SymbolId, TypeIdent};
 
-use crate::token::{ActualPrimitives, Template};
+use crate::token::{ActualPrimitives, Repre, Template};
 
 //FIXME:
 //MOVE ALL TO COMMON
@@ -38,17 +38,30 @@ pub struct SymbolTable {
 //TODO: Maybe traits for generics instead if possible
 //No
 impl SymbolTable {
-    // In case table has something else added
     pub(crate) fn new() -> SymbolTable {
-        // I don't know. Anything but the enums.
-        // FIX: This could not possibly end well
-        SymbolTable {
+        //TODO: Is the same needed or symbols?
+        let mut sym_table = SymbolTable {
             symbols: HashMap::new(),
             typedefs: Vec::new(),
             templates: Vec::new(),
             funcs: Vec::new(),
             primitives: Vec::new(),
-        }
+        };
+
+        let nil_sym = SymbolId::new(0);
+        let nil_type = TypeIdent::new(0);
+
+        // Supposed to represent some form of null for the semantic analyzer
+        sym_table
+            .typedefs
+            .push(TypeDef::new(nil_sym, nil_type, Vec::new(), Vec::new()));
+        sym_table
+            .templates
+            .push(Template::new(nil_type, Repre::Struct));
+        sym_table.funcs.push(FuncDef::new(nil_sym, Vec::new()));
+        sym_table.primitives.push(ActualPrimitives::Nil);
+
+        sym_table
     }
 
     /// Direct reference to `SymbolTable` symbols
@@ -174,6 +187,7 @@ pub(crate) enum FuncArgs {
     Id(SymbolId),
     Literal(SymbolId),
     Num(usize),
+    Range(usize, usize),
 }
 
 #[derive(Debug)]
@@ -199,51 +213,16 @@ pub struct TypeDef {
 
 impl TypeDef {
     pub(crate) fn new(
-        name_id: SymbolId,
+        sym_id: SymbolId,
         type_id: TypeIdent,
         args: Vec<InnerArgs>,
         cond: Vec<Cond>,
     ) -> TypeDef {
         TypeDef {
-            sym_id: name_id,
+            sym_id,
             type_id,
             args,
             cond,
-        }
-    }
-}
-
-//FIX: Move
-#[derive(Debug)]
-pub(crate) enum Cond {
-    Func(TypeIdent),
-    // Maybe this shouldn't be a function
-    IsEmpty,
-    // Probably should just attach bool
-    // should likely be removed
-    Not(Box<Cond>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum InnerArgs {
-    Warn,
-    Scientific,
-    Hex,
-    Binary,
-    Octo,
-}
-
-impl<'a> TryFrom<&'a str> for InnerArgs {
-    type Error = &'a str;
-
-    fn try_from(v: &'a str) -> Result<Self, Self::Error> {
-        match v {
-            "warn" => Ok(InnerArgs::Warn),
-            "scient" => Ok(InnerArgs::Scientific),
-            "hex" => Ok(InnerArgs::Hex),
-            "bin" => Ok(InnerArgs::Binary),
-            "octo" => Ok(InnerArgs::Octo),
-            v => Err(v),
         }
     }
 }

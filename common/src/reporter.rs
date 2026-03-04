@@ -17,12 +17,12 @@ pub fn form_diagnostic(text: &[u8], span: &Span, can_color: bool) -> (usize, usi
     // TODO:
     // Read as char
     for i in 0..span.end {
-        b = if text[i].is_ascii() {
-            text[i]
-        } else {
-            todo!("UTF-8 only supported inside of literal");
-        };
-        // b = self.original_text[i];
+        // b = if text[i].is_ascii() {
+        //     text[i]
+        // } else {
+        //     todo!("UTF-8 only supported inside of literal");
+        // };
+        b = text[i];
 
         //TODO: See if this works on windows
         //I still haven't checked.

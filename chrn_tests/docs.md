@@ -23,7 +23,7 @@ Doesn't exist
 
 `?`: Infers type and expects type consistency throughout entire `.chrn` file.  Name affects nothing.
 Can be used as "I don't know" for the naming so it doesn't matter. Exmpl: name?: ? (likely illegal)
-Maybe inference only works if there is one of one type?
+Maybe inference only works if there is one of one type? (WHAT DOES THAT MEAN?)
 
 (may remove)-> Can be used in struct definition to perform the same check, but also allows for the name after for clarity.
 
@@ -36,7 +36,7 @@ NO ALIASES PLEASE NO
 --
 
 
----- Eliminate one of these
+---- REMOVE ONE
 `~`: Approximation operator acts as a range. Equivalent to: 0 <= x <= 6, 0..=6.
 
 `(range)`: Explicit range syntax. The '=' is required. `0..=5`
@@ -46,11 +46,16 @@ NO ALIASES PLEASE NO
 
 
 ## [Predicates]
-`IsEmpty()`: Checks if given array or string within a `.chrn` file is empty, or if a string only has whitespace. Ends program with error if true.
-`IsWhitespace`: (MAY EXIST)
+`IsEmpty`: Checks if the given array or string within is empty.
+`IsWhitespace`:
 
 ## Functions (Predicate)
 `Range((range) OR ~x)`: Checks if length of string is in condition. name: str (Range(0..=5), !IsEmpty())
+
+`Contains`([Literal]):
+`StartsW`([Literal]):
+`EndsW`([Literal]):
+
 
 ## [Sections]
 `bind`: Sets the `.chrn` file to affirm the syntax of. (or `attach`, `find`)
@@ -76,6 +81,7 @@ Numerics: Binary, hex, octo. Allows for notation to serialize to be a specific n
 
 Maybe more complex operations such as '/' and '*'
 
+# No
 Matrix declarations.
 
 Unified serialization rules for any md file.

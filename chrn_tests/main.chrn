@@ -1,31 +1,18 @@
 @def
     var->
-    // Need to be able to know if this has several references...
-        valid: S|CCODE [IsEmpty, family("hi", )]
+                    // Why was it called family 💀
+
+                    // Maybe this should just stay simple...
+         valid: S|CCODE [Range(0..=5), Range(0,)]
+
+        enum: E|Enum
+
     nest->
-        .valid {
-            valid: i32
-        }
+        .enum {}
 @end
 @def
     bind -> "@./real_path"
 var->
-    expr: S|Expr [!IsEmpty()] #wall #wextra #walla #wab #last #last #Last
-// StartsW, EndsW, Contains
-    nest->
-    .expr {
-        let: S|Let This
-        ihiaht
-        hat: i32
-    }
-    .let {
-        var: str
-        hi: S|Hi
-    }
-    .hi {
-        let: i3
-    }
-@end
-            //let: List<Map<List<List<List<List<List<List<i32>>>>>>, i32>
-                //list: List<List<List<<List<List<st<List<io<List<List<Map<Map<Set<Set<i32>>>>>>>>>>>>>>>>
-                wist: i32
+    expr: S|Expr [!IsEmpty] #wall #wextra #walla #wab #last #last #Last
+    // Argument parser should be more like this
+    let: Map<i3, "hi">

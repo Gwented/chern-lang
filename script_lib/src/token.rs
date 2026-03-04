@@ -1,8 +1,6 @@
 use std::fmt::Display;
 
-use common::symbols::{Span, SymbolId, TypeIdent};
-
-use crate::parser::symbols::{Cond, InnerArgs, TypeDef};
+use common::symbols::{Cond, InnerArgs, Span, TypeIdent};
 
 #[derive(Debug, Clone)]
 pub struct SpannedToken {
@@ -385,7 +383,6 @@ pub(crate) enum ActualTypeKind {
     Set,
     Map,
     Any,
-    // Orb
     TypeDef,
     Template,
 }
@@ -437,34 +434,43 @@ pub struct Template {
     // May remove conditions
     pub(crate) conds: Vec<Cond>,
     // Fields can be variants or separate strugg <-- Sgwom
-    //WARN: Maybe (u32, u32) can return
+    //WARN:
     pub(crate) fields: Vec<TypeIdent>,
-    // Should it just be ids, or ids and type ids?
+    pub(crate) repre: Repre, //TODO: Typed ids please
+                             //No
+}
+
+#[derive(Debug)]
+pub(crate) enum Repre {
+    Struct,
+    Enum,
 }
 
 impl Template {
-    pub(crate) fn new(type_id: TypeIdent) -> Template {
+    pub(crate) fn new(type_id: TypeIdent, repre: Repre) -> Template {
         Template {
             type_id,
             args: Vec::new(),
             conds: Vec::new(),
             fields: Vec::new(),
+            repre,
         }
     }
 }
 
-// I DONT WANT TO MAKE THIS
-#[derive(Debug)]
-pub struct EnumTemplate {
-    pub(crate) id: SymbolId,
-    pub(crate) args: Vec<InnerArgs>,
-    pub(crate) conds: Vec<Cond>,
-    pub(crate) variants: Vec<SymbolId>,
-}
+//WARN: May not need to create
+// #[derive(Debug)]
+// pub struct EnumTemplate {
+//     pub(crate) id: SymbolId,
+//     pub(crate) args: Vec<InnerArgs>,
+//     pub(crate) conds: Vec<Cond>,
+//     pub(crate) variants: Vec<SymbolId>,
+// }
 
 //FIXME:
 // No
 // PLEASE change this from a try_from
+// Maybe
 impl TryFrom<u32> for ActualPrimitives {
     type Error = ();
 
