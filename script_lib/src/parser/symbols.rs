@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use common::symbols::{Cond, InnerArgs, SymbolId, TypeIdent};
+use common::symbols::{Cond, FuncId, InnerArgs, NameId, SymbolId, TypeIdent};
 
-use crate::token::{ActualPrimitives, Repre, Template};
+use crate::token::ActualPrimitives;
 
 //FIXME:
 //MOVE ALL TO COMMON
@@ -44,22 +44,10 @@ impl SymbolTable {
             symbols: HashMap::new(),
             typedefs: Vec::new(),
             templates: Vec::new(),
+            // Push known funs? I. Don't. Know.
             funcs: Vec::new(),
             primitives: Vec::new(),
         };
-
-        let nil_sym = SymbolId::new(0);
-        let nil_type = TypeIdent::new(0);
-
-        // Supposed to represent some form of null for the semantic analyzer
-        sym_table
-            .typedefs
-            .push(TypeDef::new(nil_sym, nil_type, Vec::new(), Vec::new()));
-        sym_table
-            .templates
-            .push(Template::new(nil_type, Repre::Struct));
-        sym_table.funcs.push(FuncDef::new(nil_sym, Vec::new()));
-        sym_table.primitives.push(ActualPrimitives::Nil);
 
         sym_table
     }
@@ -187,54 +175,95 @@ pub(crate) enum FuncArgs {
     Id(SymbolId),
     Literal(SymbolId),
     Num(usize),
-    Range(usize, usize),
 }
 
 #[derive(Debug)]
 //FIX: Give interner a list of pathbufs
 pub struct Bind {
-    pub(crate) name_id: SymbolId,
+    pub(crate) name_id: NameId,
 }
 
 impl Bind {
-    pub(crate) fn new(id: SymbolId) -> Bind {
-        Bind { name_id: id }
+    pub(crate) fn new(name_id: NameId) -> Bind {
+        Bind { name_id }
     }
 }
+// To my understanding this is GETTING a symbol id not as the literal string name attachment,
+// but as uh
 
+//TODO:
+//
 #[derive(Debug)]
 pub struct TypeDef {
-    // May be integer idk
-    pub(crate) sym_id: SymbolId,
+    pub(crate) name_id: NameId,
     pub(crate) type_id: TypeIdent,
     pub(crate) args: Vec<InnerArgs>,
-    pub(crate) cond: Vec<Cond>,
+    pub(crate) conds: Vec<Cond>,
 }
 
 impl TypeDef {
     pub(crate) fn new(
-        sym_id: SymbolId,
+        name_id: NameId,
         type_id: TypeIdent,
         args: Vec<InnerArgs>,
-        cond: Vec<Cond>,
+        conds: Vec<Cond>,
     ) -> TypeDef {
         TypeDef {
-            sym_id,
+            name_id,
             type_id,
             args,
-            cond,
+            conds,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Template {
+    // Should this be a symbol or type id?
+    pub(crate) name_id: NameId,
+    pub(crate) type_id: TypeIdent,
+    pub(crate) args: Vec<InnerArgs>,
+    // May remove conditions
+    pub(crate) conds: Vec<Cond>,
+    // Fields can be variants or separate strugg <-- Sgwom
+    //WARN:
+    pub(crate) fields: Vec<TypeIdent>,
+    pub(crate) repre: Repre, //TODO: Typed ids please
+                             //No
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Repre {
+    Struct,
+    Enum,
+}
+
+impl Template {
+    pub(crate) fn new(name_id: NameId, type_id: TypeIdent, repre: Repre) -> Template {
+        Template {
+            name_id,
+            type_id,
+            args: Vec::new(),
+            conds: Vec::new(),
+            fields: Vec::new(),
+            repre,
         }
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct FuncDef {
-    pub(crate) name_id: SymbolId,
+    pub(crate) name_id: NameId,
+    pub(crate) func_id: FuncId,
     pub(crate) args: Vec<FuncArgs>,
 }
 
 impl FuncDef {
-    pub(crate) fn new(name_id: SymbolId, args: Vec<FuncArgs>) -> FuncDef {
-        FuncDef { name_id, args }
+    pub(crate) fn new(name_id: NameId, func_id: FuncId, args: Vec<FuncArgs>) -> FuncDef {
+        FuncDef {
+            name_id,
+            func_id,
+            args,
+        }
     }
 }

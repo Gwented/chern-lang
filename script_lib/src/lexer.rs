@@ -48,12 +48,6 @@ impl Lexer<'_> {
             dbg!(byte as char);
             match byte {
                 b if b.is_ascii_alphabetic() || b == b'_' => {
-                    eprintln!(
-                        "Peeking byte {} char {} start",
-                        self.peek(),
-                        self.peek() as char
-                    );
-
                     tokens.push(self.read_id(interner));
                 }
                 b if b.is_ascii_digit() => {
@@ -364,7 +358,11 @@ impl Lexer<'_> {
 
         // TODO: Match specific handling for underscores for cleanliness.
         // Clean code, clean architecture, SOLID principles
-        while self.pos < self.bytes.len() && self.peek().is_ascii_digit() || self.peek() == b'_' {
+        while self.pos < self.bytes.len() && self.peek().is_ascii_digit()
+            || self.peek() == b'_'
+            //TEST:
+            || self.peek() == b'.'
+        {
             let byte = self.advance();
 
             if byte == b'_' {

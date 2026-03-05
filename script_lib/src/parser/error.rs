@@ -1,10 +1,5 @@
 use std::fmt::Display;
 
-use crate::{
-    parser::symbols::{Bind, FuncDef, TypeDef},
-    token::Template,
-};
-
 #[derive(Debug)]
 // I'm new to thinking. Anyone have some beginner thoughts?
 pub struct Diagnostic {
@@ -21,12 +16,10 @@ pub(crate) enum Branch {
     Searching,
     Bind,
     Var,
-    // Test variants
     VarType,
     VarCond,
     VarFuncArgs,
     VarTypeArgs,
-    // Test variants
     Nest,
     NestType,
     ComplexRules,

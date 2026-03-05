@@ -27,6 +27,38 @@ impl From<u32> for TypeIdent {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScopeId {
+    id: u32,
+}
+impl ScopeId {
+    pub fn new(id: u32) -> ScopeId {
+        ScopeId { id }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NameId {
+    id: u32,
+}
+
+impl NameId {
+    pub fn new(id: u32) -> NameId {
+        NameId { id }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FuncId {
+    id: u32,
+}
+
+impl FuncId {
+    pub fn new(id: u32) -> FuncId {
+        FuncId { id }
+    }
+}
+
 //FIX: Should maybe be somewhere else but fine for now
 #[derive(Debug, Clone)]
 pub struct Span {
@@ -42,7 +74,8 @@ impl Span {
 
 #[derive(Debug)]
 pub enum Cond {
-    Func(TypeIdent),
+    //FIX:
+    Func(FuncId),
     // Maybe this shouldn't be a function
     IsEmpty,
     IsWhitespace,

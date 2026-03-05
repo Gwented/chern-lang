@@ -26,10 +26,10 @@ fn main() {
 
     let toks = Lexer::new(&data, lex_start).tokenize(&mut interner);
 
-    let sym_table = parser::parse(&data, &toks, &mut interner);
+    let ast = parser::parse(&data, &toks, &mut interner);
 
     //TODO: Make linter lint not print
-    linter::print_all(&sym_table, &interner);
+    // linter::print_all(&sym_table, &interner);
 
     println!("{} ms", start.elapsed().as_millis());
 }

@@ -25,6 +25,9 @@ pub enum PrimitiveKeywords {
     List = 22,
     Map = 23,
     Set = 24,
+    //TODO:
+    // struct = 25
+    // enum = 26
     Bind = 25,
     Var = 26,
     Nest = 27,
@@ -39,7 +42,7 @@ pub enum PrimitiveKeywords {
 //FIX: Maybe should reserve function names for checks
 
 impl PrimitiveKeywords {
-    pub fn from_sym_id(id: u32) -> Option<PrimitiveKeywords> {
+    pub fn from_id(id: u32) -> Option<PrimitiveKeywords> {
         match id {
             0 => Some(PrimitiveKeywords::I8),
             1 => Some(PrimitiveKeywords::U8),
@@ -66,6 +69,9 @@ impl PrimitiveKeywords {
             22 => Some(PrimitiveKeywords::List),
             23 => Some(PrimitiveKeywords::Map),
             24 => Some(PrimitiveKeywords::Set),
+            //TODO:
+            // struct = 25
+            // enum = 26
             25 => Some(PrimitiveKeywords::Bind),
             26 => Some(PrimitiveKeywords::Var),
             27 => Some(PrimitiveKeywords::Nest),

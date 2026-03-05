@@ -426,38 +426,6 @@ impl Display for ActualTypeKind {
 // The weight of every enum grows heavy, I don't know what isn't an enum anymore.
 // Just one more enum.
 
-#[derive(Debug)]
-pub struct Template {
-    // Should this be a symbol or type id?
-    pub(crate) type_id: TypeIdent,
-    pub(crate) args: Vec<InnerArgs>,
-    // May remove conditions
-    pub(crate) conds: Vec<Cond>,
-    // Fields can be variants or separate strugg <-- Sgwom
-    //WARN:
-    pub(crate) fields: Vec<TypeIdent>,
-    pub(crate) repre: Repre, //TODO: Typed ids please
-                             //No
-}
-
-#[derive(Debug)]
-pub(crate) enum Repre {
-    Struct,
-    Enum,
-}
-
-impl Template {
-    pub(crate) fn new(type_id: TypeIdent, repre: Repre) -> Template {
-        Template {
-            type_id,
-            args: Vec::new(),
-            conds: Vec::new(),
-            fields: Vec::new(),
-            repre,
-        }
-    }
-}
-
 //WARN: May not need to create
 // #[derive(Debug)]
 // pub struct EnumTemplate {

@@ -1,18 +1,57 @@
 @def
+    bind-> "./main.chrn"
     var->
-                    // Why was it called family 💀
+        // Technically should be i64 I believe
+        name: str [Range(0, 5)]
+@end
 
-                    // Maybe this should just stay simple...
-         valid: S|CCODE [Range(0..=5), Range(0,)]
-
-        enum: E|Enum
+@def
+    // What the language is SUPPOSED to look like:
+    var->
+        name: str
+        age: u8
+        account: Account
+        state: State
 
     nest->
-        .enum {}
+        struct Account {
+            balance: BigFloat [!Range(0.0, 10.0)] #hex
+            creation_date: str
+        }
+
+        enum State { Ready InProgress Failed Void }
+
+    complex->
+        State.variants = 4
+
+    override->
+        // Would be a constant for SOME languages
+        with JAVA
+            // This would be default
+            sized, unsized, i64, u64, u32, i16, u16 = i32
+        with UNKNOWN
+            i32 = unsized
 @end
-@def
-    bind -> "@./real_path"
-var->
-    expr: S|Expr [!IsEmpty] #wall #wextra #walla #wab #last #last #Last
-    // Argument parser should be more like this
-    let: Map<i3, "hi">
+
+// May remove nest
+    nest->
+        .expr {
+            Let {
+                thing: i32
+                thing2: u8
+            }
+            While {
+                hi: i32
+                hi2: i32
+            }
+        }
+
+        /*age: u8
+        things: List<S|Thing>*/
+
+                    // Why was it called family 💀
+
+         //valid: S|CCODE [Range(0, 500), IsEmpty, IsWhitespace, floor()] #wall #wextra
+
+        //enum: E|Enum
+@end
