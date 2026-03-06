@@ -29,7 +29,7 @@ impl From<u32> for TypeIdent {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScopeId {
-    id: u32,
+    pub id: u32,
 }
 impl ScopeId {
     pub fn new(id: u32) -> ScopeId {
@@ -39,7 +39,7 @@ impl ScopeId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NameId {
-    id: u32,
+    pub id: u32,
 }
 
 impl NameId {
@@ -50,7 +50,7 @@ impl NameId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FuncId {
-    id: u32,
+    pub id: u32,
 }
 
 impl FuncId {

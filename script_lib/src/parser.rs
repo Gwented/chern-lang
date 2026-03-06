@@ -3,11 +3,9 @@ pub mod context;
 pub mod error;
 pub mod symbols;
 
-use std::env::var;
-
 use crate::parser::ast::{
     AbstractBind, AbstractEnum, AbstractFunc, AbstractGeneric, AbstractStruct, AbstractType, Call,
-    Expr, Field, Generic, Item, TypeExpr, Unary, UnaryOp, Variant,
+    Expr, Generic, Item, TypeExpr, Unary, UnaryOp, Variant,
 };
 use crate::parser::error::Branch;
 use crate::{
@@ -100,7 +98,9 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
                         }
                         dbg!(ctx.peek_tok());
 
-                        _ = parse_nest_sect(&mut ctx, interner);
+                        if let Ok(item) = parse_nest_sect(&mut ctx, interner) {
+                            ast.push(item);
+                        }
                     }
                 }
                 id if id == PrimitiveKeywords::Complex as u32 => {
@@ -124,7 +124,7 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
                             break;
                         }
 
-                        _ = parse_nest_sect(&mut ctx, interner);
+                        // _ = parse_complex_sect(&mut ctx, interner);
                     }
                 }
                 id => {
@@ -166,8 +166,6 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
     }
 
     if !ctx.err_vec.is_empty() {
-        dbg!(ast);
-
         //FIX: ANSI
         // Should I even be using this macro?
         // Also this is odd fix it.
@@ -571,7 +569,7 @@ fn handle_func_args(
             "Expected a ',' to separate arguments or ')' to close, found ",
             "",
             None,
-            Branch::VarFuncArgs,
+            Branch::VarCond,
             interner,
         )?;
     }
@@ -626,8 +624,6 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
             let name_id = NameId::new(name);
 
             let variants = handle_enum_variants(ctx, enum_name, interner)?;
-
-            ctx.advance_tok();
 
             let enumeration = AbstractEnum::new(name_id, Vec::new(), Vec::new(), variants);
 
@@ -793,7 +789,6 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<Variant, Token>
                 "Expected ']' at end of condition, found ",
                 "",
                 None,
-                // Does this set align properly?
                 Branch::VarCond,
                 interner,
             );
@@ -832,7 +827,6 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<Variant, Token>
 // fn parse_complex_section(
 //     ctx: &mut Context,
 //     interner: &Intern,
-//     sym_table: &mut SymbolTable,
 // ) -> Result<(), Token> {
 //     todo!()
 // }

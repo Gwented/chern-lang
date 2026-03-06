@@ -27,14 +27,14 @@ pub enum Expr {
 
 #[derive(Debug)]
 pub struct Call {
-    callee: Box<Expr>,
+    pub(crate) callee: Box<Expr>,
     // Vec?
-    expr: Vec<Expr>,
+    pub(crate) exprs: Vec<Expr>,
 }
 
 impl Call {
-    pub fn new(callee: Box<Expr>, expr: Vec<Expr>) -> Call {
-        Call { callee, expr }
+    pub fn new(callee: Box<Expr>, exprs: Vec<Expr>) -> Call {
+        Call { callee, exprs }
     }
 }
 
@@ -51,8 +51,8 @@ pub enum TypeExpr {
 
 #[derive(Debug)]
 pub struct AbstractGeneric {
-    name_id: NameId,
-    args: Box<TypeExpr>,
+    pub(crate) name_id: NameId,
+    pub(crate) args: Box<TypeExpr>,
 }
 
 impl AbstractGeneric {
@@ -64,7 +64,7 @@ impl AbstractGeneric {
 // public abstract class AbstractBind {}
 #[derive(Debug)]
 pub struct AbstractBind {
-    name_id: NameId,
+    pub(crate) name_id: NameId,
 }
 
 impl AbstractBind {
@@ -75,10 +75,10 @@ impl AbstractBind {
 
 #[derive(Debug)]
 pub struct AbstractType {
-    name_id: NameId,
-    ty: TypeExpr,
-    args: Vec<InnerArgs>,
-    conds: Vec<Expr>,
+    pub(crate) name_id: NameId,
+    pub(crate) ty: TypeExpr,
+    pub(crate) args: Vec<InnerArgs>,
+    pub(crate) conds: Vec<Expr>,
 }
 
 impl AbstractType {
@@ -99,10 +99,10 @@ impl AbstractType {
 
 #[derive(Debug)]
 pub struct AbstractStruct {
-    name_id: NameId,
-    args: Vec<InnerArgs>,
-    conds: Vec<Expr>,
-    fields: Vec<AbstractType>,
+    pub(crate) name_id: NameId,
+    pub(crate) args: Vec<InnerArgs>,
+    pub(crate) conds: Vec<Expr>,
+    pub(crate) fields: Vec<AbstractType>,
 }
 
 impl AbstractStruct {
@@ -125,10 +125,10 @@ impl AbstractStruct {
 #[derive(Debug)]
 pub struct AbstractEnum {
     // Would be SymbolId in symbol table anyways
-    name_id: NameId,
-    args: Vec<InnerArgs>,
-    conds: Vec<Expr>,
-    variants: Vec<Variant>,
+    pub(crate) name_id: NameId,
+    pub(crate) args: Vec<InnerArgs>,
+    pub(crate) conds: Vec<Expr>,
+    pub(crate) variants: Vec<Variant>,
 }
 
 impl AbstractEnum {
@@ -151,11 +151,11 @@ impl AbstractEnum {
 // Hold that thought
 #[derive(Debug)]
 pub struct Variant {
-    name_id: NameId,
+    pub(crate) name_id: NameId,
     // I think this is right?
-    ty: Option<TypeExpr>,
-    args: Vec<InnerArgs>,
-    conds: Vec<Expr>,
+    pub(crate) ty: Option<TypeExpr>,
+    pub(crate) args: Vec<InnerArgs>,
+    pub(crate) conds: Vec<Expr>,
 }
 
 impl Variant {
@@ -183,8 +183,8 @@ impl From<AbstractType> for Variant {
 
 #[derive(Debug)]
 pub struct AbstractFunc {
-    name_id: NameId,
-    params: Vec<Expr>,
+    pub(crate) name_id: NameId,
+    pub(crate) params: Vec<Expr>,
 }
 
 impl AbstractFunc {
@@ -195,8 +195,8 @@ impl AbstractFunc {
 
 #[derive(Debug)]
 pub struct Unary {
-    op: UnaryOp,
-    expr: Box<Expr>,
+    pub(crate) op: UnaryOp,
+    pub(crate) expr: Box<Expr>,
 }
 
 impl Unary {
@@ -212,26 +212,13 @@ pub enum UnaryOp {
 
 #[derive(Debug)]
 pub struct Generic {
-    base: NameId,
+    pub(crate) base: NameId,
     // Change to tuple or something alike?
-    args: Vec<TypeExpr>,
+    pub(crate) args: Vec<TypeExpr>,
 }
 
 impl Generic {
     pub fn new(base: NameId, args: Vec<TypeExpr>) -> Generic {
         Generic { base, args }
-    }
-}
-
-// Same thing but go with it for type safety or something i don't know anymore
-#[derive(Debug)]
-pub struct Field {
-    name_id: NameId,
-    ty: AbstractType,
-}
-
-impl Field {
-    pub fn new(name_id: NameId, ty: AbstractType) -> Field {
-        Field { name_id, ty }
     }
 }

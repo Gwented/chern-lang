@@ -1,16 +1,20 @@
 @def
     bind-> "./main.chrn"
     var->
-        // Technically should be i64 I believe
-        name: str [!IsEmpty]
-        account: Account
+        name: str [!IsEmpty, Range(0,5), Contains("Hi")]
 
     nest->
         struct Account {
-            balance: BigFloat [Range(0,8)],
+            balance: BigFloat [Range(0,8))] #wall #wextra
         }
 
         enum State {Ready(Account), InProgress, Failed}
+
+    @end
+    var->
+        // Technically should be i64 I believe
+        account: Account
+
 @end
 
 @def

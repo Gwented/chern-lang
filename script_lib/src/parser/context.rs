@@ -49,6 +49,8 @@ const EOF: u64 = 1 << 30;
 // C_ == current. A_ == ahead
 
 // ALL SET LOGIC AND PARSE LOGIC NEED TO WORK WITH EACH OTHER
+// TODO:  Readjust Sets for new behavior
+
 const C_BASE_EXIT_SET: u64 = EOF | ILLEGAL;
 const A_BASE_EXIT_SET: u64 = SLIM_ARROW;
 
@@ -60,14 +62,14 @@ const C_BRANCH_VAR_TYPE_SET: u64 = C_BASE_EXIT_SET | O_BRACKET | HASH_SYMBOL | C
 const A_BRANCH_VAR_TYPE_SET: u64 = A_BASE_EXIT_SET | COLON;
 
 // Probably shouldn't accoutn for hash symbol since it is not apart of the loop
-const C_BRANCH_VAR_COND_SET: u64 = C_BASE_EXIT_SET | COMMA | HASH_SYMBOL | C_BRACKET;
+const C_BRANCH_VAR_COND_SET: u64 = C_BASE_EXIT_SET | HASH_SYMBOL;
 const A_BRANCH_VAR_COND_SET: u64 = A_BASE_EXIT_SET | COLON;
 
 const C_BRANCH_VAR_ARGS_SET: u64 = C_BASE_EXIT_SET | HASH_SYMBOL;
 const A_BRANCH_VAR_ARGS_SET: u64 = A_BASE_EXIT_SET | COLON;
 
-// Nest branch error coordination needs to be fixed first
-const C_BRANCH_NEST_SET: u64 = C_BASE_EXIT_SET | DOT;
+// TEST:
+const C_BRANCH_NEST_SET: u64 = C_BRANCH_VAR_TYPE_SET;
 
 // Needs to be adjusted for both to cooperate
 const C_BRANCH_NEST_TYPE: u64 = C_BASE_EXIT_SET | C_CURLY_BRACKET;
@@ -76,7 +78,6 @@ const C_BRANCH_VAR_FUNC_SET: u64 = C_BASE_EXIT_SET | C_PAREN;
 const A_BRANCH_VAR_FUNC_SET: u64 = A_BASE_EXIT_SET | C_BRACKET;
 
 //FIX: Help is broken (As in very bad)
-//Or add memory instead of having errors the second one is seen. Or just las error. Or Or :=
 #[derive(Debug)]
 pub struct Context<'a> {
     original_text: &'a [u8],
@@ -274,6 +275,7 @@ impl<'a> Context<'a> {
                 self.advance();
             }
         }
+        dbg!(self.peek_tok());
     }
 
     // AM I TO ASSUME YOU CAN'T READ TEMPO?
