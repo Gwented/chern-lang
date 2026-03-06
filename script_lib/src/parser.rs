@@ -3,19 +3,20 @@ pub mod context;
 pub mod error;
 pub mod symbols;
 
+use std::env::var;
+
 use crate::parser::ast::{
-    AbstractBind, AbstractFunc, AbstractGeneric, AbstractType, Call, Expr, Generic, Item, TypeExpr,
-    Unary, UnaryOp,
+    AbstractBind, AbstractEnum, AbstractFunc, AbstractGeneric, AbstractStruct, AbstractType, Call,
+    Expr, Field, Generic, Item, TypeExpr, Unary, UnaryOp, Variant,
 };
 use crate::parser::error::Branch;
-use crate::parser::symbols::FuncArgs;
 use crate::{
     parser::context::Context,
     token::{SpannedToken, Token, TokenKind},
 };
 use common::intern::Intern;
 use common::primitives::PrimitiveKeywords;
-use common::symbols::{Cond, InnerArgs, NameId, SymbolId};
+use common::symbols::{InnerArgs, NameId};
 
 // May be lower
 const MAX_ERRORS: u8 = 3;
@@ -46,7 +47,7 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
                         interner,
                     );
 
-                    parse_bind_section(&mut ctx, &mut ast, interner).ok();
+                    parse_bind_sect(&mut ctx, &mut ast, interner).ok();
                 }
                 id if id == PrimitiveKeywords::Var as u32 => {
                     ctx.advance_tok();
@@ -70,21 +71,15 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
                             break;
                         }
 
-                        if let Ok(ty) = parse_var_section(&mut ctx, &mut ast, interner) {
-                            // panic!();
-                            // let sym_id = NameId::new(type_def.sym_id.id);
-                            //
-                            // let type_id = ast.store_typedef(type_def);
-                            //
-                            // ast.store_symbol(sym_id, Symbol::Def(type_id));
+                        if let Ok(ty) = parse_var_sect(&mut ctx, interner) {
+                            ast.push(Item::Var(ty));
                         }
                     }
                 }
                 id if id == PrimitiveKeywords::Nest as u32 => {
-                    todo!();
                     ctx.advance_tok();
 
-                    ctx.expect_verbose(
+                    _ = ctx.expect_verbose(
                         TokenKind::SlimArrow,
                         "Expected a '->' after section `nest`, found ",
                         "",
@@ -92,8 +87,7 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
                         None,
                         Branch::Searching,
                         interner,
-                    )
-                    .ok();
+                    );
 
                     while ctx.peek_kind() != TokenKind::EOF {
                         // May hallucinate an error where a colon is present making it seem as
@@ -104,23 +98,23 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
                         {
                             break;
                         }
+                        dbg!(ctx.peek_tok());
 
-                        // parse_nest_section(&mut ctx, interner, &mut ast).ok();
+                        _ = parse_nest_sect(&mut ctx, interner);
                     }
                 }
-                id if id == PrimitiveKeywords::ComplexRules as u32 => {
+                id if id == PrimitiveKeywords::Complex as u32 => {
                     todo!();
                     ctx.advance_tok();
 
-                    ctx.expect_verbose(
+                    _ = ctx.expect_verbose(
                         TokenKind::SlimArrow,
                         "Expected a '->' after section `complex_rules`, found ",
                         "",
                         None,
                         Branch::Searching,
                         interner,
-                    )
-                    .ok();
+                    );
 
                     while ctx.peek_kind() != TokenKind::EOF {
                         if let Token::Id(name_id) = ctx.peek_tok()
@@ -130,7 +124,7 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
                             break;
                         }
 
-                        // parse_nest_section(&mut ctx, interner, &mut ast).ok();
+                        _ = parse_nest_sect(&mut ctx, interner);
                     }
                 }
                 id => {
@@ -192,11 +186,7 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
     ast
 }
 
-fn parse_bind_section(
-    ctx: &mut Context,
-    ast: &mut Vec<Item>,
-    interner: &Intern,
-) -> Result<(), Token> {
+fn parse_bind_sect(ctx: &mut Context, ast: &mut Vec<Item>, interner: &Intern) -> Result<(), Token> {
     let name_id = ctx.expect_id_verbose(
         TokenKind::Literal,
         "Expected a string literal within section `bind`, found ",
@@ -214,13 +204,7 @@ fn parse_bind_section(
     Ok(())
 }
 
-// Cutoff
-
-fn parse_var_section(
-    ctx: &mut Context,
-    ast: &mut Vec<Item>,
-    interner: &Intern,
-) -> Result<Item, Token> {
+fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractType, Token> {
     let plain_id = ctx.expect_id_verbose(
         TokenKind::Id,
         "Expected an identifier to declare a type, found ",
@@ -242,21 +226,18 @@ fn parse_var_section(
         interner,
     )?;
 
-    //TODO: starts ***-----------------------------------------------------------------------***
-
-    //BUG: Not returning Err and persists in being Ok(())
-    let type_res = parse_type(ctx, ast, interner);
+    let type_res = parse_type(ctx, interner);
 
     let mut conds: Vec<Expr> = Vec::new();
     // This count cannot end the definition since it would prevent arguments from being viewed
     let mut err_count = 0;
 
-    //FIX: Make this stop on first error
+    //FIX: Make this stop on first error. Maybe.
     if ctx.peek_kind() == TokenKind::OBracket {
         ctx.advance_tok();
 
         loop {
-            let new_cond = parse_cond(ctx, ast, interner);
+            let new_cond = parse_cond(ctx, interner);
 
             if let Ok(cond) = new_cond {
                 conds.push(cond);
@@ -277,7 +258,7 @@ fn parse_var_section(
         }
 
         if err_count == 0 {
-            ctx.expect_verbose(
+            _ = ctx.expect_verbose(
                 TokenKind::CBracket,
                 "Expected ']' at end of condition, found ",
                 "",
@@ -285,8 +266,7 @@ fn parse_var_section(
                 // Does this set align properly?
                 Branch::VarCond,
                 interner,
-            )
-            .ok();
+            );
         }
     }
     dbg!(&conds);
@@ -315,22 +295,15 @@ fn parse_var_section(
         ctx.advance_tok();
     }
 
-    // //TEST: Everything is poison checked by the err_vec check at the end so this SHOULD be fine
-    // let type_def = AbstractType::new(name_id, raw_type, args, conds);
-
     let ty = type_res?;
 
-    let item = Item::Var(AbstractType::new(name_id, ty, args, conds));
+    let ty = AbstractType::new(name_id, ty, args, conds);
 
-    Ok(item)
+    Ok(ty)
 }
 
 // ENFORCE TYPE NAMING FOR GENERICS AT LEAST
-fn parse_type(
-    ctx: &mut Context,
-    ast: &mut Vec<Item>,
-    interner: &Intern,
-) -> Result<TypeExpr, Token> {
+fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
     match ctx.peek_tok() {
         // TODO: Maybe make this iterative
         Token::Id(id) if ctx.peek_ahead(1).token.kind() == TokenKind::OAngleBracket => {
@@ -338,7 +311,7 @@ fn parse_type(
 
             let name_id = NameId::new(id);
 
-            let args = parse_generic(ctx, ast, interner)?;
+            let args = parse_generic(ctx, interner)?;
             let generic = Generic::new(name_id, args);
 
             Ok(TypeExpr::Generic(generic))
@@ -390,22 +363,16 @@ fn parse_type(
     }
 }
 
-fn parse_generic(
-    ctx: &mut Context,
-    ast: &mut Vec<Item>,
-    interner: &Intern,
-) -> Result<Vec<TypeExpr>, Token> {
+fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<Vec<TypeExpr>, Token> {
     let mut args: Vec<TypeExpr> = Vec::new();
 
-    //TODO: Enforce only two types allowed at most Meaning Map<str,str,str> would just quit
-
     // farg <-
-    let ty = parse_type(ctx, ast, interner)?;
+    let ty = parse_type(ctx, interner)?;
     args.push(ty);
 
     if ctx.peek_kind() == TokenKind::Comma {
         ctx.advance_tok();
-        let ty = parse_type(ctx, ast, interner)?;
+        let ty = parse_type(ctx, interner)?;
         // sarg <-
         args.push(ty);
     }
@@ -435,19 +402,19 @@ fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<InnerArgs, Token> {
         let msg = format!("The argument \"#{invalid_id}\" does not exist");
         ctx.report_verbose(&msg, None, Branch::VarTypeArgs);
 
-        return Err(Token::Illegal(id));
+        return Err(Token::Poison);
     })
 }
 
 // TODO: Maybe not need ast passed everywhere
-fn parse_cond(ctx: &mut Context, ast: &mut Vec<Item>, interner: &Intern) -> Result<Expr, Token> {
+fn parse_cond(ctx: &mut Context, interner: &Intern) -> Result<Expr, Token> {
     match ctx.peek_tok() {
         Token::Id(id) => {
             match PrimitiveKeywords::from_id(id) {
-                //FIX: Will maybe separate keyword types so that this is easier to handle without
-                //code repetition.
                 Some(prim) => match prim {
                     //TODO: Use or for this..
+                    //Can likely funnel this all into a singular function that just returns Expr
+                    //which could be var or call making this less odd
                     PrimitiveKeywords::IsEmpty => {
                         ctx.advance_tok();
 
@@ -517,7 +484,7 @@ fn parse_cond(ctx: &mut Context, ast: &mut Vec<Item>, interner: &Intern) -> Resu
                 return Err(Token::Poison);
             }
 
-            let wrapped = parse_cond(ctx, ast, interner)?;
+            let wrapped = parse_cond(ctx, interner)?;
             dbg!(&wrapped);
 
             let unary = Unary::new(UnaryOp::Not, Box::new(wrapped));
@@ -535,7 +502,8 @@ fn parse_cond(ctx: &mut Context, ast: &mut Vec<Item>, interner: &Intern) -> Resu
     }
 }
 
-//TODO: Cleaner way to report with function name noted. If not that's ok.
+//TODO: Make this a general function that just returns expr for keywords and funcs to be AMONG
+//Or not I don't know.
 fn handle_func_args(
     ctx: &mut Context,
     func_name: &str,
@@ -612,154 +580,255 @@ fn handle_func_args(
 
     Ok(args)
 }
-//
-// fn parse_nest_section(
-//     ctx: &mut Context,
-//     interner: &Intern,
-//     sym_table: &mut SymbolTable,
-// ) -> Result<(), Token> {
-//     ctx.expect_verbose(
-//         TokenKind::Dot,
-//         // Template terminology is normal here?
-//         "Expected a '.' to reference a template, found ",
-//         "",
-//         None,
-//         Branch::Nest,
-//         interner,
-//     )?;
-//
-//     let name_id = ctx.expect_id_verbose(
-//         TokenKind::Id,
-//         "Expected a valid referece to a template, found ",
-//         "",
-//         Branch::Nest,
-//         interner,
-//     )?;
-//
-//     let sym_id = SymbolId::new(name_id);
-//
-//     dbg!(interner.search(sym_id.id as usize));
-//
-//     //FIX: Can't report unless I do a quick check first. Fixable.
-//     //Maybe type enforce types for ids because silent bugs are very possible
-//     let type_def_id = sym_table.get_typedef_id(sym_id).ok_or_else(|| {
-//         let err_name = interner.search(sym_id.id as usize);
-//
-//         ctx.report_verbose(
-//             &format!("Could not find any symbol in scope for the reference \"{err_name}\""),
-//             None,
-//             Branch::NestType,
-//         );
-//
-//         Token::Poison
-//     })?;
-//
-//     let template_id = sym_table.get_template_id(type_def_id).ok_or_else(|| {
-//         //TODO: Return result and take the result's type to report it
-//         let err_name = interner.search(sym_id.id as usize);
-//
-//         ctx.report_verbose(
-//             &format!("The symbol \"{err_name}\" is not defined as a template"),
-//             None,
-//             Branch::NestType,
-//         );
-//
-//         Token::Poison
-//     })?;
-//
-//     ctx.expect_verbose(
-//         TokenKind::OCurlyBracket,
-//         "Expected a '{' to define template, found ",
-//         "",
-//         None,
-//         Branch::NestType,
-//         interner,
-//     )?;
-//
-//     let mut new_fields: Vec<TypeIdent> = Vec::new();
-//
-//     let mut err_count = 0;
-//     //FIX: Why does this refuse to continue without inner values?
-//
-//     let repre = sym_table.extract_template(template_id).repre;
-//
-//     if ctx.peek_kind() == TokenKind::Id {
-//         // EOF check needed here since this is technically an instance of a var branch
-//         while ctx.peek_kind() != TokenKind::CCurlyBracket && ctx.peek_kind() != TokenKind::EOF {
-//             match repre {
-//                 Repre::Struct => {
-//                     let type_def_res = parse_var_section(ctx, sym_table, interner);
-//
-//                     if let Ok(type_def) = type_def_res {
-//                         let sym_id = type_def.sym_id;
-//                         let type_id = sym_table.store_typedef(type_def);
-//
-//                         sym_table.store_symbol(sym_id, Symbol::Def(type_id));
-//
-//                         new_fields.push(type_id);
-//                     } else {
-//                         if err_count > MAX_ERRORS {
-//                             break;
-//                         }
-//
-//                         err_count += 1;
-//                     }
-//                 }
-//                 Repre::Enum => {
-//                     let variant_res = handle_variant(ctx, interner, sym_table);
-//
-//                     if let Ok(variant) = variant_res {
-//                     } else {
-//                         if err_count > MAX_ERRORS {
-//                             break;
-//                         }
-//
-//                         err_count += 1;
-//                     }
-//                 }
-//             }
-//         }
-//         // Why is this skipped in the scenario of .struct {} but fine with .struct {thing: u32}
-//         // It's skipping the loop but somehow skipping this very section.
-//
-//         let template = sym_table.extract_template_mut(template_id);
-//
-//         for field in new_fields {
-//             template.fields.push(field);
-//         }
-//
-//         ctx.expect_verbose(
-//             TokenKind::CCurlyBracket,
-//             "Expected a '}' to close defined template, found ",
-//             "",
-//             None,
-//             Branch::NestType,
-//             interner,
-//         )?;
-//     }
-//
-//     Ok(())
-// }
-//
-// fn handle_variant(
-//     ctx: &mut Context,
-//     interner: &Intern,
-//     sym_table: &mut SymbolTable,
-// ) -> Result<TypeIdent, Token> {
-//     let name_id = ctx.expect_id_verbose(
-//         TokenKind::Id,
-//         "Expected a valid enum identifier, found ",
-//         "",
-//         Branch::Searching,
-//         interner,
-//     )?;
-//     //TODO: C| for complex enums? For complex_rules? Maybe?
-//
-//     dbg!(interner.search(name_id as usize));
-//
-//     todo!();
-// }
-//
+
+fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> {
+    let id = ctx.expect_id_verbose(
+        TokenKind::Id,
+        "Expected a keyword, found ",
+        "",
+        Branch::Nest,
+        interner,
+    )?;
+
+    //TODO: Can likely be done simpler but keep for simplicity
+    let item = match id {
+        id if id == PrimitiveKeywords::Struct as u32 => {
+            let name = ctx.expect_id_verbose(
+                TokenKind::Id,
+                "Expected an identifier for the given structure. found ",
+                "",
+                Branch::Nest,
+                interner,
+            )?;
+
+            let struct_name = interner.search(name as usize);
+
+            let name_id = NameId::new(name);
+
+            let fields = handle_struct_fields(ctx, struct_name, interner)?;
+
+            // Unsure if structures or enums will have fields so just stays for now
+            let structure = AbstractStruct::new(name_id, Vec::new(), Vec::new(), fields);
+
+            Item::Struct(structure)
+        }
+        id if id == PrimitiveKeywords::Enum as u32 => {
+            let name = ctx.expect_id_verbose(
+                TokenKind::Id,
+                "Expected an identifier for the given enum. found ",
+                "",
+                Branch::Nest,
+                interner,
+            )?;
+
+            let enum_name = interner.search(name as usize);
+
+            let name_id = NameId::new(name);
+
+            let variants = handle_enum_variants(ctx, enum_name, interner)?;
+
+            ctx.advance_tok();
+
+            let enumeration = AbstractEnum::new(name_id, Vec::new(), Vec::new(), variants);
+
+            Item::Enum(enumeration)
+        }
+        _ => {
+            ctx.report_verbose("Expected ", None, Branch::NestType);
+            return Err(Token::Poison);
+        }
+    };
+
+    Ok(item)
+}
+
+fn handle_struct_fields(
+    ctx: &mut Context,
+    struct_name: &str,
+    interner: &Intern,
+) -> Result<Vec<AbstractType>, Token> {
+    _ = ctx.expect_verbose(
+        TokenKind::OCurlyBracket,
+        &format!("Expected a '{{' before defining struct \"{struct_name}\", found "),
+        "",
+        None,
+        Branch::NestType,
+        interner,
+    );
+
+    let mut fields: Vec<AbstractType> = Vec::new();
+
+    // Suspicious loop
+    while ctx.peek_kind() == TokenKind::Id {
+        let ty = parse_var_sect(ctx, interner)?;
+        fields.push(ty);
+
+        // A little too suspicious
+        if ctx.peek_kind() == TokenKind::Comma {
+            ctx.advance_tok();
+        }
+    }
+
+    _ = ctx.expect_verbose(
+        TokenKind::CCurlyBracket,
+        &format!("Expected a '}}' to close struct \"{struct_name}\", found "),
+        "",
+        None,
+        Branch::NestType,
+        interner,
+    );
+
+    Ok(fields)
+}
+
+fn handle_enum_variants(
+    ctx: &mut Context,
+    enum_name: &str,
+    interner: &Intern,
+) -> Result<Vec<Variant>, Token> {
+    _ = ctx.expect_verbose(
+        TokenKind::OCurlyBracket,
+        &format!("Expected a '{{' before defining the enum \"{enum_name}\", found "),
+        "",
+        None,
+        Branch::NestType,
+        interner,
+    );
+
+    let mut variants: Vec<Variant> = Vec::new();
+
+    while ctx.peek_kind() == TokenKind::Id {
+        let variant = parse_variant(ctx, interner)?;
+        variants.push(variant);
+
+        if ctx.peek_kind() == TokenKind::Comma {
+            ctx.advance_tok();
+        }
+    }
+
+    _ = ctx.expect_verbose(
+        TokenKind::CCurlyBracket,
+        &format!("Expected a '}}' to close enum \"{enum_name}\", found "),
+        "",
+        None,
+        Branch::NestType,
+        interner,
+    );
+
+    Ok(variants)
+}
+
+//FIXME: Has to be some way to handle this better without copy and pasting from parse_var
+fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<Variant, Token> {
+    let name = ctx.expect_id_verbose(
+        TokenKind::Id,
+        "Expected an identifier for a variant, found ",
+        "",
+        Branch::NestType,
+        interner,
+    )?;
+
+    let name_id = NameId::new(name);
+
+    let err_name = interner.search(name as usize);
+
+    //WARN: Names are very messy here
+    let ty_opt = if ctx.peek_kind() == TokenKind::OParen {
+        ctx.advance_tok();
+
+        let type_id = ctx.expect_id_verbose(
+            TokenKind::Id,
+            &format!("Expected a type within variant \"{err_name}\", found "),
+            "",
+            Branch::NestType,
+            interner,
+        )?;
+
+        let type_name = NameId::new(type_id);
+
+        ctx.expect_verbose(
+            TokenKind::CParen,
+            &format!("Expected a ')' to close variant \"{err_name}\", found "),
+            "",
+            None,
+            Branch::NestType,
+            interner,
+        )?;
+
+        Some(TypeExpr::Var(type_name))
+    } else {
+        None
+    };
+
+    if ctx.peek_kind() == TokenKind::OBracket {
+        ctx.advance_tok();
+
+        let mut conds: Vec<Expr> = Vec::new();
+
+        let mut err_count = 0;
+
+        loop {
+            let new_cond = parse_cond(ctx, interner);
+
+            if let Ok(cond) = new_cond {
+                conds.push(cond);
+            } else {
+                if err_count > MAX_ERRORS {
+                    break;
+                }
+
+                err_count += 1;
+            }
+
+            if ctx.peek_kind() != TokenKind::Comma {
+                break;
+            }
+
+            ctx.advance_tok();
+        }
+
+        if err_count == 0 {
+            _ = ctx.expect_verbose(
+                TokenKind::CBracket,
+                "Expected ']' at end of condition, found ",
+                "",
+                None,
+                // Does this set align properly?
+                Branch::VarCond,
+                interner,
+            );
+        }
+    }
+
+    let mut args: Vec<InnerArgs> = Vec::new();
+
+    let mut err_count = 0;
+
+    while ctx.peek_kind() == TokenKind::HashSymbol {
+        ctx.advance_tok();
+
+        let arg = parse_arg(ctx, interner);
+
+        if let Ok(arg) = arg {
+            args.push(arg);
+        } else {
+            if err_count > MAX_ERRORS {
+                break;
+            }
+
+            err_count += 1;
+        }
+    }
+
+    if ctx.peek_kind() == TokenKind::Comma {
+        ctx.advance_tok();
+    }
+
+    let variant = Variant::new(name_id, ty_opt, args, Vec::new());
+
+    Ok(variant)
+}
+
 // fn parse_complex_section(
 //     ctx: &mut Context,
 //     interner: &Intern,

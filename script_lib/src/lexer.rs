@@ -33,7 +33,7 @@ impl Lexer<'_> {
         loop {
             self.skip_whitespace();
 
-            if self.peek() == b'\0' {
+            if self.peek() == b'\0' || illegal_toks > MAX_ILLEGAL_TOKS {
                 tokens.push(SpannedToken {
                     token: Token::EOF,
                     span: Span::new(self.pos, self.pos),
@@ -171,6 +171,7 @@ impl Lexer<'_> {
                         // start_offset = self.pos + DEFINITION_SIZE;
                         break;
                     } else {
+                        illegal_toks += 1;
                         tokens.push(self.recover_illegal(interner));
                     }
                 }
@@ -285,8 +286,8 @@ impl Lexer<'_> {
                     illegal_toks += 1;
 
                     tokens.push(self.recover_illegal(interner));
-                    // TODO: Figure out if this should exist to avoid Java level errors
                     if illegal_toks > MAX_ILLEGAL_TOKS {
+                        // TODO: Maybe this should be at the end because technically @ is illegal too
                         eprintln!("Maximum illegal tokens found.\nReporting then aborting...");
                         in_def = false;
                         // Should this just be done at the end of the loop by default?
@@ -302,10 +303,11 @@ impl Lexer<'_> {
         }
 
         //WARN: This also isn't possible after the loader so may remove
-        if in_def {
+        //Also odd handling
+        if in_def && illegal_toks < MAX_ILLEGAL_TOKS {
             // Should abort
             eprintln!("Missing `@end`");
-            // panic!();
+            panic!();
         }
 
         dbg!(&tokens);

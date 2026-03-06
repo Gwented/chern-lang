@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::Path};
 
-// One
-const INTRINSICS_ARRAY: [&str; 35] = [
+// MAKE THE MACRO PLEASE
+const INTRINSICS_ARRAY: [&str; 37] = [
     // primitives
     "i8", // 0
     "u8",
@@ -28,18 +28,21 @@ const INTRINSICS_ARRAY: [&str; 35] = [
     "List",
     "Map",
     "Set", // 24
+    // structures
+    "struct",
+    "enum", // 26
     // Section names
     "bind",
-    "var", // 26
+    "var", // 28
     "nest",
-    "complex_rules", // 28
+    "complex", // 30
     // Directives
     "IsEmpty",
-    "IsWhitespace", // 30
+    "IsWhitespace", // 32
     "Range",
-    "StartsW",
-    "EndsW", // 32
-    "Contains",
+    "StartsW", // 34
+    "EndsW",
+    "Contains", // 36
 ];
 
 pub struct Intern {
@@ -89,13 +92,14 @@ impl Intern {
     }
 
     // Primitive being used loosely here...
+    // SO IF I PUT ZERO, IT SCREAMS. BUT IF I USE ZERO UNDER A WRAPPER, ITS OK. RIGHT.
     pub fn is_primitive(&self, id: usize) -> bool {
-        id >= 0 && id <= 24
+        id >= usize::MIN && id <= 24
     }
 
-    // HOW DO I USE RANGE FOR THIS. I AM NEW TO THINKING.
+    // TODO: Make unit test for this
     pub fn is_section(&self, id: u32) -> bool {
-        if id >= 25 && id <= 28 {
+        if id >= 27 && id <= 30 {
             return true;
         }
 

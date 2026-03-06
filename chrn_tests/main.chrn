@@ -2,7 +2,15 @@
     bind-> "./main.chrn"
     var->
         // Technically should be i64 I believe
-        name: str [Range(0, 5)]
+        name: str [!IsEmpty]
+        account: Account
+
+    nest->
+        struct Account {
+            balance: BigFloat [Range(0,8)],
+        }
+
+        enum State {Ready(Account), InProgress, Failed}
 @end
 
 @def
@@ -31,27 +39,4 @@
             sized, unsized, i64, u64, u32, i16, u16 = i32
         with UNKNOWN
             i32 = unsized
-@end
-
-// May remove nest
-    nest->
-        .expr {
-            Let {
-                thing: i32
-                thing2: u8
-            }
-            While {
-                hi: i32
-                hi2: i32
-            }
-        }
-
-        /*age: u8
-        things: List<S|Thing>*/
-
-                    // Why was it called family 💀
-
-         //valid: S|CCODE [Range(0, 500), IsEmpty, IsWhitespace, floor()] #wall #wextra
-
-        //enum: E|Enum
 @end

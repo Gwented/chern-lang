@@ -1,4 +1,4 @@
-use common::symbols::{Cond, InnerArgs, NameId};
+use common::symbols::{InnerArgs, NameId};
 
 // Going for convention...
 // Aliases too.
@@ -6,10 +6,14 @@ use common::symbols::{Cond, InnerArgs, NameId};
 #[derive(Debug)]
 pub enum Item {
     Bind(AbstractBind),
+    // DO I SECTION THIS?
     Var(AbstractType),
     Struct(AbstractStruct),
     Enum(AbstractEnum),
-    Func(AbstractFunc),
+    // HOW DO I MAKE CONSTANTS
+    // You don't
+    // TODO: Do we need this?
+    // Func(AbstractFunc),
 }
 
 #[derive(Debug)]
@@ -33,9 +37,6 @@ impl Call {
         Call { callee, expr }
     }
 }
-
-// Will likely remove many of these other intermediary variables.
-// Just following guidance to ensure I don't trail off into the same insane workarounds as before.
 
 // WHAT IS A TUPLE I HAVE NOT HEARD OF THAT BEFORE I AM NEW TO THINKING HAS ANYONE THOUGHT BEFORE?
 #[derive(Debug)]
@@ -72,12 +73,6 @@ impl AbstractBind {
     }
 }
 
-//TODO:
-//Abstract repre:
-//name_id: NameId
-//type_id: NameId
-//args: Vec<InnerArgs>
-//Vec<Cond>
 #[derive(Debug)]
 pub struct AbstractType {
     name_id: NameId,
@@ -104,11 +99,10 @@ impl AbstractType {
 
 #[derive(Debug)]
 pub struct AbstractStruct {
-    // Would be SymbolId in symbol table anyways
     name_id: NameId,
     args: Vec<InnerArgs>,
     conds: Vec<Expr>,
-    fields: Vec<Field>,
+    fields: Vec<AbstractType>,
 }
 
 impl AbstractStruct {
@@ -117,7 +111,7 @@ impl AbstractStruct {
         args: Vec<InnerArgs>,
         conds: Vec<Expr>,
         //TODO: Change both enum and struct of field
-        fields: Vec<Field>,
+        fields: Vec<AbstractType>,
     ) -> AbstractStruct {
         AbstractStruct {
             name_id,
@@ -134,7 +128,7 @@ pub struct AbstractEnum {
     name_id: NameId,
     args: Vec<InnerArgs>,
     conds: Vec<Expr>,
-    variants: Vec<Field>,
+    variants: Vec<Variant>,
 }
 
 impl AbstractEnum {
@@ -143,7 +137,7 @@ impl AbstractEnum {
         args: Vec<InnerArgs>,
         // I'm scared
         conds: Vec<Expr>,
-        variants: Vec<Field>,
+        variants: Vec<Variant>,
     ) -> AbstractEnum {
         AbstractEnum {
             name_id,
@@ -154,9 +148,39 @@ impl AbstractEnum {
     }
 }
 
-// Shorter naming?
-//name_id: NameId
-//args: Vec<FuncArgs>
+// Hold that thought
+#[derive(Debug)]
+pub struct Variant {
+    name_id: NameId,
+    // I think this is right?
+    ty: Option<TypeExpr>,
+    args: Vec<InnerArgs>,
+    conds: Vec<Expr>,
+}
+
+impl Variant {
+    pub fn new(
+        name_id: NameId,
+        // I think this is right?
+        ty: Option<TypeExpr>,
+        args: Vec<InnerArgs>,
+        conds: Vec<Expr>,
+    ) -> Variant {
+        Variant {
+            name_id,
+            ty,
+            args,
+            conds,
+        }
+    }
+}
+
+impl From<AbstractType> for Variant {
+    fn from(ty: AbstractType) -> Self {
+        todo!();
+    }
+}
+
 #[derive(Debug)]
 pub struct AbstractFunc {
     name_id: NameId,
@@ -169,7 +193,6 @@ impl AbstractFunc {
     }
 }
 
-// HELP
 #[derive(Debug)]
 pub struct Unary {
     op: UnaryOp,
@@ -190,6 +213,7 @@ pub enum UnaryOp {
 #[derive(Debug)]
 pub struct Generic {
     base: NameId,
+    // Change to tuple or something alike?
     args: Vec<TypeExpr>,
 }
 
@@ -203,11 +227,11 @@ impl Generic {
 #[derive(Debug)]
 pub struct Field {
     name_id: NameId,
-    ty: TypeExpr,
+    ty: AbstractType,
 }
 
 impl Field {
-    pub fn new(name_id: NameId, ty: TypeExpr) -> Field {
+    pub fn new(name_id: NameId, ty: AbstractType) -> Field {
         Field { name_id, ty }
     }
 }

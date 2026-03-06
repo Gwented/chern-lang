@@ -3,7 +3,6 @@ use std::time::Instant;
 use common::{intern::Intern, storage::FileLoader};
 use script_lib::{
     lexer::Lexer,
-    linter,
     parser::{self},
 };
 

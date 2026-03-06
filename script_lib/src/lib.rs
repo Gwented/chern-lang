@@ -40,10 +40,13 @@ mod tests {
     //utf8 broke
 
     // #[ignore = "Hi"]
+    // FIX: Please make a better test I am scared
+    // No
     #[test]
     fn primitives_test() {
         let interner = Intern::init();
 
+        // Types
         assert_eq!("i8", interner.search(PrimitiveKeywords::I8 as usize));
         assert_eq!("u8", interner.search(PrimitiveKeywords::U8 as usize));
         assert_eq!("i16", interner.search(PrimitiveKeywords::I16 as usize));
@@ -79,13 +82,21 @@ mod tests {
         assert_eq!("List", interner.search(PrimitiveKeywords::List as usize));
         assert_eq!("Map", interner.search(PrimitiveKeywords::Map as usize));
         assert_eq!("Set", interner.search(PrimitiveKeywords::Set as usize));
+        // Structures
+        assert_eq!(
+            "struct",
+            interner.search(PrimitiveKeywords::Struct as usize)
+        );
+        assert_eq!("enum", interner.search(PrimitiveKeywords::Enum as usize));
+        // Sections
         assert_eq!("bind", interner.search(PrimitiveKeywords::Bind as usize));
         assert_eq!("var", interner.search(PrimitiveKeywords::Var as usize));
         assert_eq!("nest", interner.search(PrimitiveKeywords::Nest as usize));
         assert_eq!(
-            "complex_rules",
-            interner.search(PrimitiveKeywords::ComplexRules as usize)
+            "complex",
+            interner.search(PrimitiveKeywords::Complex as usize)
         );
+        // Keywords & Funcs
         assert_eq!(
             "IsEmpty",
             interner.search(PrimitiveKeywords::IsEmpty as usize)
@@ -106,7 +117,7 @@ mod tests {
         );
 
         // Uh
-        assert_eq!(34, PrimitiveKeywords::Contains as usize);
+        assert_eq!(36, PrimitiveKeywords::Contains as usize);
     }
 
     #[test]

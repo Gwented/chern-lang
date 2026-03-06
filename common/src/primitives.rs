@@ -25,19 +25,18 @@ pub enum PrimitiveKeywords {
     List = 22,
     Map = 23,
     Set = 24,
-    //TODO:
-    // struct = 25
-    // enum = 26
-    Bind = 25,
-    Var = 26,
-    Nest = 27,
-    ComplexRules = 28,
-    IsEmpty = 29,
-    IsWhitespace = 30,
-    Range = 31,
-    StartsW = 32,
-    EndsW = 33,
-    Contains = 34,
+    Struct = 25,
+    Enum = 26,
+    Bind = 27,
+    Var = 28,
+    Nest = 29,
+    Complex = 30,
+    IsEmpty = 31,
+    IsWhitespace = 32,
+    Range = 33,
+    StartsW = 34,
+    EndsW = 35,
+    Contains = 36,
 }
 //FIX: Maybe should reserve function names for checks
 
@@ -70,18 +69,18 @@ impl PrimitiveKeywords {
             23 => Some(PrimitiveKeywords::Map),
             24 => Some(PrimitiveKeywords::Set),
             //TODO:
-            // struct = 25
-            // enum = 26
-            25 => Some(PrimitiveKeywords::Bind),
-            26 => Some(PrimitiveKeywords::Var),
-            27 => Some(PrimitiveKeywords::Nest),
-            28 => Some(PrimitiveKeywords::ComplexRules),
-            29 => Some(PrimitiveKeywords::IsEmpty),
-            30 => Some(PrimitiveKeywords::IsWhitespace),
-            31 => Some(PrimitiveKeywords::Range),
-            32 => Some(PrimitiveKeywords::StartsW),
-            33 => Some(PrimitiveKeywords::EndsW),
-            34 => Some(PrimitiveKeywords::Contains),
+            25 => Some(PrimitiveKeywords::Struct),
+            26 => Some(PrimitiveKeywords::Enum),
+            27 => Some(PrimitiveKeywords::Bind),
+            28 => Some(PrimitiveKeywords::Var),
+            29 => Some(PrimitiveKeywords::Nest),
+            30 => Some(PrimitiveKeywords::Complex),
+            31 => Some(PrimitiveKeywords::IsEmpty),
+            32 => Some(PrimitiveKeywords::IsWhitespace),
+            33 => Some(PrimitiveKeywords::Range),
+            34 => Some(PrimitiveKeywords::StartsW),
+            35 => Some(PrimitiveKeywords::EndsW),
+            36 => Some(PrimitiveKeywords::Contains),
             _ => None,
         }
     }
