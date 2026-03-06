@@ -40,7 +40,6 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
                         TokenKind::SlimArrow,
                         "Expected a '->' after section `bind`, found ",
                         "",
-                        None,
                         Branch::Searching,
                         interner,
                     );
@@ -54,7 +53,6 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
                         TokenKind::SlimArrow,
                         "Expected a '->' after section `var`, found ",
                         "",
-                        None,
                         Branch::Searching,
                         interner,
                     );
@@ -82,7 +80,6 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
                         "Expected a '->' after section `nest`, found ",
                         "",
                         //TODO: Better help
-                        None,
                         Branch::Searching,
                         interner,
                     );
@@ -111,7 +108,6 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
                         TokenKind::SlimArrow,
                         "Expected a '->' after section `complex_rules`, found ",
                         "",
-                        None,
                         Branch::Searching,
                         interner,
                     );
@@ -144,7 +140,7 @@ pub fn parse(original_text: &[u8], tokens: &Vec<SpannedToken>, interner: &Intern
 
                 let msg = format!("Found illegal token {err_str}");
 
-                ctx.report_verbose(&msg, None, Branch::Broken);
+                ctx.report_verbose(&msg, Branch::Broken);
             }
             Token::EOF => break,
             t => match t {
@@ -219,7 +215,6 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractType, 
         TokenKind::Colon,
         &format!("Expected a ':' after identifier \"{err_name}\" to declare a type, found "),
         "",
-        None,
         Branch::VarType,
         interner,
     )?;
@@ -260,7 +255,6 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractType, 
                 TokenKind::CBracket,
                 "Expected ']' at end of condition, found ",
                 "",
-                None,
                 // Does this set align properly?
                 Branch::VarCond,
                 interner,
@@ -284,6 +278,7 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractType, 
             if err_count > MAX_ERRORS {
                 break;
             }
+            dbg!(err_count);
 
             err_count += 1;
         }
@@ -341,7 +336,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
             //FIX: Points to EOF since it is technically the error.
             ctx.advance_tok();
 
-            ctx.report_verbose("Expected type, found '<eof>'", None, Branch::VarType);
+            ctx.report_verbose("Expected type, found '<eof>'", Branch::VarType);
             Err(Token::EOF)
         }
         Token::Poison => {
@@ -379,7 +374,6 @@ fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<Vec<TypeExpr>, 
         TokenKind::CAngleBracket,
         "Expected a '>' to close generic parameters, found ",
         "",
-        None,
         Branch::VarType,
         interner,
     )?;
@@ -398,7 +392,7 @@ fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<InnerArgs, Token> {
 
     InnerArgs::try_from(interner.search(id as usize)).or_else(|invalid_id| {
         let msg = format!("The argument \"#{invalid_id}\" does not exist");
-        ctx.report_verbose(&msg, None, Branch::VarTypeArgs);
+        ctx.report_verbose(&msg, Branch::VarTypeArgs);
 
         return Err(Token::Poison);
     })
@@ -513,7 +507,6 @@ fn handle_func_args(
         // Bit convoluted
         &format!("Expected '(' to declare parameters for the function \"{func_name}\", found "),
         "",
-        None,
         Branch::VarFuncArgs,
         interner,
     );
@@ -555,7 +548,7 @@ fn handle_func_args(
                     err_tok.kind()
                 );
 
-                ctx.report_verbose(&msg, None, Branch::VarCond);
+                ctx.report_verbose(&msg, Branch::VarCond);
                 return Err(Token::Poison);
             }
         }
@@ -568,7 +561,6 @@ fn handle_func_args(
             TokenKind::Comma,
             "Expected a ',' to separate arguments or ')' to close, found ",
             "",
-            None,
             Branch::VarCond,
             interner,
         )?;
@@ -580,9 +572,10 @@ fn handle_func_args(
 }
 
 fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> {
+    // Wait what is this error?
     let id = ctx.expect_id_verbose(
         TokenKind::Id,
-        "Expected a keyword, found ",
+        "Expected the keyword \"enum\" or \"struct\", found ",
         "",
         Branch::Nest,
         interner,
@@ -630,7 +623,11 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
             Item::Enum(enumeration)
         }
         _ => {
-            ctx.report_verbose("Expected ", None, Branch::NestType);
+            let name = interner.search(id as usize);
+            ctx.report_verbose(
+                &format!("Expected the keyword \"enum\" or \"struct\", found identifier {name}"),
+                Branch::NestType,
+            );
             return Err(Token::Poison);
         }
     };
@@ -647,7 +644,6 @@ fn handle_struct_fields(
         TokenKind::OCurlyBracket,
         &format!("Expected a '{{' before defining struct \"{struct_name}\", found "),
         "",
-        None,
         Branch::NestType,
         interner,
     );
@@ -669,7 +665,6 @@ fn handle_struct_fields(
         TokenKind::CCurlyBracket,
         &format!("Expected a '}}' to close struct \"{struct_name}\", found "),
         "",
-        None,
         Branch::NestType,
         interner,
     );
@@ -686,7 +681,6 @@ fn handle_enum_variants(
         TokenKind::OCurlyBracket,
         &format!("Expected a '{{' before defining the enum \"{enum_name}\", found "),
         "",
-        None,
         Branch::NestType,
         interner,
     );
@@ -706,8 +700,7 @@ fn handle_enum_variants(
         TokenKind::CCurlyBracket,
         &format!("Expected a '}}' to close enum \"{enum_name}\", found "),
         "",
-        None,
-        Branch::NestType,
+        Branch::NestEnum,
         interner,
     );
 
@@ -736,7 +729,7 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<Variant, Token>
             TokenKind::Id,
             &format!("Expected a type within variant \"{err_name}\", found "),
             "",
-            Branch::NestType,
+            Branch::NestEnum,
             interner,
         )?;
 
@@ -746,8 +739,7 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<Variant, Token>
             TokenKind::CParen,
             &format!("Expected a ')' to close variant \"{err_name}\", found "),
             "",
-            None,
-            Branch::NestType,
+            Branch::NestEnum,
             interner,
         )?;
 
@@ -788,7 +780,6 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<Variant, Token>
                 TokenKind::CBracket,
                 "Expected ']' at end of condition, found ",
                 "",
-                None,
                 Branch::VarCond,
                 interner,
             );
@@ -824,9 +815,6 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<Variant, Token>
     Ok(variant)
 }
 
-// fn parse_complex_section(
-//     ctx: &mut Context,
-//     interner: &Intern,
-// ) -> Result<(), Token> {
-//     todo!()
-// }
+fn parse_complex_section(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
+    todo!()
+}

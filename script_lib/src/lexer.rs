@@ -304,7 +304,7 @@ impl Lexer<'_> {
 
         //WARN: This also isn't possible after the loader so may remove
         //Also odd handling
-        if in_def && illegal_toks < MAX_ILLEGAL_TOKS {
+        if in_def && illegal_toks == MAX_ILLEGAL_TOKS {
             // Should abort
             eprintln!("Missing `@end`");
             panic!();

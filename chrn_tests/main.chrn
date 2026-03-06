@@ -1,14 +1,23 @@
 @def
     bind-> "./main.chrn"
     var->
-        name: str [!IsEmpty, Range(0,5), Contains("Hi")]
-
+        var: i32 #warb #wextra #win #windows #h
     nest->
         struct Account {
-            balance: BigFloat [Range(0,8))] #wall #wextra
+            balance: BigFloat Range(0,8))] #wall #wextra
         }
 
-        enum State {Ready(Account), InProgress, Failed}
+        /*
+        nest->
+        strs Account {
+            balance: BigFloat [Range(0,8))] #wall #wextra
+        }
+     */
+//     ^^^
+// Err hallucinates here
+@end
+
+        enum State {Ready(Account) InProgress Failed}
 
     @end
     var->

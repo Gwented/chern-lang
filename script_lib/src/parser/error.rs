@@ -22,6 +22,7 @@ pub(crate) enum Branch {
     VarTypeArgs,
     Nest,
     NestType,
+    NestEnum,
     ComplexRules,
 }
 
@@ -38,6 +39,7 @@ impl Display for Branch {
             Branch::VarTypeArgs => write!(f, "[args]"),
             Branch::Nest => write!(f, "nest"),
             Branch::NestType => write!(f, "[type]"),
+            Branch::NestEnum => write!(f, "[enum]"),
             Branch::ComplexRules => write!(f, "complex_rules"),
         }
     }

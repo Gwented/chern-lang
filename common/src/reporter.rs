@@ -14,22 +14,22 @@ pub fn form_diagnostic(text: &[u8], span: &Span, can_color: bool) -> (usize, usi
 
     let mut seg_start = 0;
 
-    // TODO:
-    // Read as char
+    // todo:
+    // read as char
     for i in 0..span.end {
         // b = if text[i].is_ascii() {
         //     text[i]
         // } else {
-        //     todo!("UTF-8 only supported inside of literal");
+        //     todo!("utf-8 only supported inside of literal");
         // };
         b = text[i];
 
-        //TODO: See if this works on windows
-        //I still haven't checked.
+        //todo: see if this works on windows
+        //i still haven't checked.
         if b == b'\r' && text.get(i + 1).copied() == Some(b'\n') {
             ln += 1;
-            // Offset to skip new line since cannot alter for loop counter directly
-            // Should likely just manually loop to avoid odditiy
+            // offset to skip new line since cannot alter for loop counter directly
+            // should likely just manually loop to avoid odditiy
             seg_start = i + 2;
             col = 1;
         } else if b == b'\n' {
@@ -41,28 +41,27 @@ pub fn form_diagnostic(text: &[u8], span: &Span, can_color: bool) -> (usize, usi
         }
     }
 
-    // Needs offset or will print span.end when span.start is more informational
+    // needs offset or will print span.end when span.start is more informational
+    dbg!(&span, col);
+    // FIXME: Given 'a: A "[Range()]' span.end reaches past the line causing a subtract overflow.
+    // Handling multi-line will likely fix it
     col -= span.end - span.start;
 
     let seg_end = get_line_end(text, seg_start);
 
     let segment = &text[seg_start..seg_end];
 
-    dbg!(seg_start, seg_end);
-
-    dbg!(str::from_utf8(segment).unwrap());
-
-    //FIX: Should calculate by characters for UTF-1000
+    //fix: should calculate by characters for utf-1000
     let segment = str::from_utf8(segment)
-        .expect("[temp] Invalid UTF-8 although would be impossible after lexer");
+        .expect("[temp] invalid utf-8 although would be impossible after lexer");
 
-    // Span range is inclusive exclusive so final character is missed otherwise
-    // Has no other mathematical outside of this
+    // span range is inclusive exclusive so final character is missed otherwise
+    // has no other mathematical outside of this
     let span_diff_offset = span.end - span.start + 1;
 
     let arrows = "^".repeat(span_diff_offset);
 
-    // Spaces need to be proportional to the current line's size therefore it must
+    // spaces need to be proportional to the current line's size therefore it must
     // stay inside the range.
     let space_offset = text[seg_start..span.start].len();
 
@@ -99,6 +98,7 @@ fn get_line_end(original_text: &[u8], start: usize) -> usize {
 //
 // }
 
+//TEST: HELP TEST
 pub fn form_help(msg: &str, can_color: bool) -> String {
     if can_color {
         format!("{ORANGE}Help{NC}: {msg}\n")

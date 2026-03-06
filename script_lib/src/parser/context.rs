@@ -11,8 +11,6 @@ use crate::{
 /// Amount of '-' to print for multiple error separation
 const TOTAL_SEPARATORS: usize = 60;
 
-//WARN: Seems fine
-
 // A C programmer got lost.
 // const ID: u64 = 1 << 0;
 // const LITERAL: u64 = 1 << 1;
@@ -68,12 +66,12 @@ const A_BRANCH_VAR_COND_SET: u64 = A_BASE_EXIT_SET | COLON;
 const C_BRANCH_VAR_ARGS_SET: u64 = C_BASE_EXIT_SET | HASH_SYMBOL;
 const A_BRANCH_VAR_ARGS_SET: u64 = A_BASE_EXIT_SET | COLON;
 
-// TEST:
-const C_BRANCH_NEST_SET: u64 = C_BRANCH_VAR_TYPE_SET;
+// TODO: Unsure if there's a possibility to stop this from hallucinating '}'
+const C_BRANCH_NEST_SET: u64 = C_BASE_EXIT_SET;
 
-// Needs to be adjusted for both to cooperate
 const C_BRANCH_NEST_TYPE: u64 = C_BASE_EXIT_SET | C_CURLY_BRACKET;
 
+// May remove since these are destructive
 const C_BRANCH_VAR_FUNC_SET: u64 = C_BASE_EXIT_SET | C_PAREN;
 const A_BRANCH_VAR_FUNC_SET: u64 = A_BASE_EXIT_SET | C_BRACKET;
 
@@ -86,8 +84,6 @@ pub struct Context<'a> {
     pub(crate) err_vec: Vec<Diagnostic>,
     can_color: bool,
     //TEST:
-    should_leave: bool,
-    past_toks: [TokenKind; 3],
     //TEST:
 }
 
@@ -100,9 +96,7 @@ impl<'a> Context<'a> {
             tokens,
             pos: 0,
             err_vec: Vec::new(),
-            should_leave: false,
             can_color: std::io::stdout().is_terminal(),
-            past_toks: [TokenKind::Illegal; 3],
         }
     }
 
@@ -129,22 +123,24 @@ impl<'a> Context<'a> {
             _ => None,
         };
 
+        let help = self
+            .try_help(expected, found.token.kind(), branch)
+            .unwrap_or_default();
+
         let (ln, col, segment) =
             reporter::form_diagnostic(self.original_text, &found.span, self.can_color);
 
         let msg = if let Some(id) = id_opt {
             let name_id = interner.search(id as usize);
-            format!("(in {branch})\n{bmsg}\"{name_id}\"{amsg}\n|\n|[{ln}:{col}]\n{segment}",)
+            format!("(in {branch})\n{bmsg}\"{name_id}\"{amsg}\n|\n|[{ln}:{col}]\n{segment}{help}",)
         } else {
             format!(
-                "(in {branch})\n{bmsg}'{}'{amsg}\n|\n|[{ln}:{col}]\n|\n{segment}",
+                "(in {branch})\n{bmsg}'{}'{amsg}\n|\n|[{ln}:{col}]\n|\n{segment}{help}",
                 found.token.kind()
             )
         };
 
         self.err_vec.push(Diagnostic::new(msg, branch));
-
-        self.should_leave = true;
 
         self.recover(branch);
 
@@ -153,14 +149,12 @@ impl<'a> Context<'a> {
 
     /// Intended for basic errors that need little context after
     /// ALWAYS advance before using this or ensure an advance happened before
-    pub(crate) fn report_verbose(&mut self, msg: &str, help: Option<&str>, branch: Branch) {
+    pub(crate) fn report_verbose(&mut self, msg: &str, branch: Branch) {
         let found = &self.tokens[self.pos - 1];
 
-        let help = if let Some(msg) = help {
-            reporter::form_help(msg, self.can_color)
-        } else {
-            "".to_string()
-        };
+        let help = self
+            .try_help(TokenKind::Poison, found.token.kind(), branch)
+            .unwrap_or_default();
 
         let (ln, col, segment) =
             reporter::form_diagnostic(self.original_text, &found.span, self.can_color);
@@ -168,8 +162,6 @@ impl<'a> Context<'a> {
         let separator = "-".repeat(TOTAL_SEPARATORS);
 
         let msg = format!("(in {branch})\n{msg}\n|\n|\n[{ln}:{col}]\n{segment}\n{help}{separator}");
-
-        self.should_leave = true;
 
         self.recover(branch);
 
@@ -179,20 +171,16 @@ impl<'a> Context<'a> {
     }
 
     /// Fully curated version of `expect_basic`
-    //TODO: Primitive type recognition for printing all errors
-
     // Return token based off of it's most probable path?
     pub(crate) fn expect_verbose(
         &mut self,
         expected: TokenKind,
         bmsg: &str,
         amsg: &str,
-        help: Option<&str>,
         branch: Branch,
         interner: &Intern,
     ) -> Result<Token, Token> {
         let found = &self.tokens[self.pos];
-
         self.pos += 1;
 
         if found.token.kind() != expected {
@@ -206,11 +194,9 @@ impl<'a> Context<'a> {
 
             let separator = "-".repeat(TOTAL_SEPARATORS);
 
-            let help = if let Some(msg) = help {
-                reporter::form_help(msg, self.can_color)
-            } else {
-                "".to_string()
-            };
+            let help = self
+                .try_help(expected, found.token.kind(), branch)
+                .unwrap_or_default();
 
             let msg = if let Some(id) = id_opt {
                 let name = interner.search(id as usize);
@@ -228,8 +214,6 @@ impl<'a> Context<'a> {
 
             self.err_vec.push(Diagnostic::new(msg, branch));
 
-            self.should_leave = true;
-
             self.recover(branch);
 
             return Err(found.token);
@@ -244,16 +228,18 @@ impl<'a> Context<'a> {
     pub(crate) fn report_template(&mut self, emsg: &str, fmsg: &str, branch: Branch) {
         let found = &self.tokens[self.pos - 1];
 
+        let help = self
+            .try_help(TokenKind::Poison, found.token.kind(), branch)
+            .unwrap_or_default();
+
         let (ln, col, segment) =
             reporter::form_diagnostic(self.original_text, &found.span, self.can_color);
 
         let separator = "-".repeat(TOTAL_SEPARATORS);
 
         let msg = format!(
-            "(in {branch})\nExpected {emsg}, found {fmsg}\n|\n|[{ln}:{col}]\n{segment}\n{separator}",
+            "(in {branch})\nExpected {emsg}, found {fmsg}\n|\n|[{ln}:{col}]\n{segment}\n{help}{separator}",
         );
-
-        self.should_leave = true;
 
         self.recover(branch);
 
@@ -275,7 +261,7 @@ impl<'a> Context<'a> {
                 self.advance();
             }
         }
-        dbg!(self.peek_tok());
+        // dbg!(self.peek_tok());
     }
 
     // AM I TO ASSUME YOU CAN'T READ TEMPO?
@@ -291,23 +277,61 @@ impl<'a> Context<'a> {
             Branch::VarTypeArgs => (C_BRANCH_VAR_ARGS_SET, A_BRANCH_VAR_ARGS_SET),
             Branch::Nest => (C_BRANCH_NEST_SET, A_BASE_EXIT_SET),
             Branch::NestType => (C_BRANCH_NEST_TYPE, A_BASE_EXIT_SET),
+            // TODO:
+            Branch::NestEnum => (C_BRANCH_NEST_TYPE, A_BASE_EXIT_SET),
+            // TODO:
             Branch::ComplexRules => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
         }
     }
 
     //TEST:
-    // pub(crate) fn exit_if(&mut self, branch: Branch) -> Result<(), Token> {
-    //     if self.should_leave {
-    //         self.recover(branch);
-    //     }
-    //
-    //     self.should_leave = false;
-    //
-    //     Ok(())
-    // }
+    pub(crate) fn try_help(
+        &self,
+        expected: TokenKind,
+        found: TokenKind,
+        branch: Branch,
+    ) -> Option<String> {
+        let prev_tok = self.tokens.get(self.pos - 2)?.clone();
+        let prev_kind = prev_tok.token.kind();
 
-    // Oh my Java
-    // TEST:
+        match branch {
+            Branch::VarType => match found {
+                TokenKind::OParen if expected == TokenKind::Colon => {
+                    let msg = "Is this missing '[' to define conditions?";
+                    let help = reporter::form_help(msg, self.can_color);
+
+                    Some(help)
+                }
+                TokenKind::CAngleBracket if prev_kind == TokenKind::Comma => {
+                    // Egregious message
+                    let msg = "Remove trailing ',' or add a second type";
+                    let help = reporter::form_help(msg, self.can_color);
+
+                    Some(help)
+                }
+                _ => None,
+            },
+            Branch::VarCond => match found {
+                TokenKind::CBracket if prev_kind == TokenKind::Comma => {
+                    let msg = "Remove trailing ',' or add condition";
+                    let help = reporter::form_help(msg, self.can_color);
+
+                    Some(help)
+                }
+                _ => None,
+            },
+            Branch::NestEnum => match found {
+                TokenKind::Colon => {
+                    let msg = "Enums use parenthesis to hold types";
+                    let help = reporter::form_help(msg, self.can_color);
+
+                    Some(help)
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
 
     pub(crate) fn skip(&mut self, dest: usize) -> () {
         self.pos += dest;
