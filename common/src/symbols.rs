@@ -2,10 +2,10 @@ use crate::token::{ActualPrimitives, Token};
 use std::collections::HashMap;
 
 //FIXME:
-//MOVE ALL TO COMMON
+//MOVE ALL BACK TO SCRIPT
 
 #[derive(Debug)]
-pub(crate) enum Symbol {
+pub enum Symbol {
     Bind(Bind),
     Func(TypeIdent),
     Def(TypeIdent),
@@ -35,7 +35,7 @@ pub struct SymbolTable {
 //TODO: Maybe traits for generics instead if possible
 //No
 impl SymbolTable {
-    pub(crate) fn new() -> SymbolTable {
+    pub fn new() -> SymbolTable {
         //TODO: Is the same needed or symbols?
         let mut sym_table = SymbolTable {
             symbols: HashMap::new(),
@@ -50,18 +50,18 @@ impl SymbolTable {
     }
 
     /// Direct reference to `SymbolTable` symbols
-    pub(crate) fn symbols(&self) -> &HashMap<u32, Symbol> {
+    pub fn symbols(&self) -> &HashMap<u32, Symbol> {
         &self.symbols
     }
 
     /// Direct reference to `SymbolTable` primitives
-    pub(crate) fn type_ids(&self) -> &Vec<ActualPrimitives> {
+    pub fn type_ids(&self) -> &Vec<ActualPrimitives> {
         &self.primitives
     }
     //TODO: Maybe for all of the inner
 
     /// Stores `ActualPrimitives` and returns it's assigned type id
-    pub(crate) fn store_primitive(&mut self, actual_type: ActualPrimitives) -> TypeIdent {
+    pub fn store_primitive(&mut self, actual_type: ActualPrimitives) -> TypeIdent {
         let type_id = self.primitives.len();
         self.primitives.push(actual_type);
 
@@ -137,7 +137,7 @@ impl SymbolTable {
         &self.primitives[type_id.id as usize]
     }
 
-    pub fn extract_type_mut(&mut self, type_id: TypeIdent) -> &mut ActualPrimitives {
+    pub fn extract_primitive_mut(&mut self, type_id: TypeIdent) -> &mut ActualPrimitives {
         &mut self.primitives[type_id.id as usize]
     }
 

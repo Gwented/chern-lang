@@ -51,17 +51,17 @@ const EOF: u64 = 1 << 30;
 // ALL SET LOGIC AND PARSE LOGIC NEED TO WORK WITH EACH OTHER
 // TODO:  Readjust Sets for new behavior
 
-const C_BASE_EXIT_SET: u64 = EOF | ILLEGAL;
+const C_BASE_EXIT_SET: u64 = EOF | ILLEGAL | C_CURLY_BRACKET;
 const A_BASE_EXIT_SET: u64 = SLIM_ARROW;
 
 const C_BRANCH_VAR_SET: u64 = C_BASE_EXIT_SET | O_BRACKET;
 const A_BRANCH_VAR_SET: u64 = A_BASE_EXIT_SET | COLON;
 
 // WARN: NestType should probably be responsible for C_CURLY but maybe not
-const C_BRANCH_VAR_TYPE_SET: u64 = C_BASE_EXIT_SET | O_BRACKET | HASH_SYMBOL | C_CURLY_BRACKET;
+const C_BRANCH_VAR_TYPE_SET: u64 = C_BASE_EXIT_SET | O_BRACKET | HASH_SYMBOL;
 const A_BRANCH_VAR_TYPE_SET: u64 = A_BASE_EXIT_SET | COLON;
 
-// Probably shouldn't accoutn for hash symbol since it is not apart of the loop
+// Probably shouldn't account for hash symbol since it is not apart of the loop
 const C_BRANCH_VAR_COND_SET: u64 = C_BASE_EXIT_SET | HASH_SYMBOL;
 const A_BRANCH_VAR_COND_SET: u64 = A_BASE_EXIT_SET | COLON;
 
@@ -79,7 +79,7 @@ const A_BRANCH_VAR_FUNC_SET: u64 = A_BASE_EXIT_SET | C_BRACKET;
 
 #[derive(Debug)]
 pub struct Context<'a> {
-    original_text: &'a [u8],
+    src_text: &'a [u8],
     pub(crate) tokens: &'a [SpannedToken],
     pub(crate) pos: usize,
     pub(crate) err_vec: Vec<Diagnostic>,
@@ -91,7 +91,7 @@ pub struct Context<'a> {
 impl<'a> Context<'a> {
     pub fn new(original_text: &'a [u8], tokens: &'a [SpannedToken]) -> Context<'a> {
         Context {
-            original_text,
+            src_text: original_text,
             tokens,
             pos: 0,
             err_vec: Vec::new(),
@@ -127,14 +127,14 @@ impl<'a> Context<'a> {
             .unwrap_or_default();
 
         let (ln, col, segment) =
-            reporter::form_diagnostic(self.original_text, &found.span, self.can_color);
+            reporter::form_err_diag(self.src_text, &found.span, self.can_color);
 
         let msg = if let Some(id) = id_opt {
             let name_id = interner.search(id as usize);
-            format!("(in {branch})\n{bmsg}\"{name_id}\"{amsg}\n|\n|[{ln}:{col}]\n{segment}{help}",)
+            format!("(in {branch})\n{bmsg}\"{name_id}\"{amsg}\n\n|[{ln}:{col}]|\n{segment}{help}",)
         } else {
             format!(
-                "(in {branch})\n{bmsg}'{}'{amsg}\n|\n|[{ln}:{col}]\n|\n{segment}{help}",
+                "(in {branch})\n{bmsg}'{}'{amsg}\n\n|[{ln}:{col}]|\n{segment}{help}",
                 found.token.kind()
             )
         };
@@ -156,7 +156,7 @@ impl<'a> Context<'a> {
             .unwrap_or_default();
 
         let (ln, col, segment) =
-            reporter::form_diagnostic(self.original_text, &found.span, self.can_color);
+            reporter::form_err_diag(self.src_text, &found.span, self.can_color);
 
         let separator = "-".repeat(TOTAL_SEPARATORS);
 
@@ -189,7 +189,7 @@ impl<'a> Context<'a> {
             };
 
             let (ln, col, segment) =
-                reporter::form_diagnostic(self.original_text, &found.span, self.can_color);
+                reporter::form_err_diag(self.src_text, &found.span, self.can_color);
 
             let separator = "-".repeat(TOTAL_SEPARATORS);
 
@@ -232,12 +232,12 @@ impl<'a> Context<'a> {
             .unwrap_or_default();
 
         let (ln, col, segment) =
-            reporter::form_diagnostic(self.original_text, &found.span, self.can_color);
+            reporter::form_err_diag(self.src_text, &found.span, self.can_color);
 
         let separator = "-".repeat(TOTAL_SEPARATORS);
 
         let msg = format!(
-            "(in {branch})\nExpected {emsg}, found {fmsg}\n|\n|[{ln}:{col}]\n{segment}\n{help}{separator}",
+            "(in {branch})\nExpected {emsg}, found {fmsg}\n\n|[{ln}:{col}]|\n{segment}\n{help}{separator}",
         );
 
         self.recover(branch);
@@ -250,17 +250,16 @@ impl<'a> Context<'a> {
     //TODO: Branch specific behavior
     //WARN: SEEMS FINE MAY REMOVE WARN
     fn recover(&mut self, branch: Branch) {
-        let (current_target, next_target) = self.match_anchor(branch);
+        let (current_targets, next_targets) = self.match_anchor(branch);
 
         if self.peek_kind() != TokenKind::EOF {
             while self.pos < self.tokens.len() + 2
-                && (self.peek_kind().to_u64() & current_target) == 0
-                && (self.peek_ahead(1).token.kind().to_u64() & next_target) == 0
+                && (self.peek_kind().to_u64() & current_targets) == 0
+                && (self.peek_ahead(1).token.kind().to_u64() & next_targets) == 0
             {
                 self.advance();
             }
         }
-        // dbg!(self.peek_tok());
     }
 
     // AM I TO ASSUME YOU CANNOT READ TEMPO?
@@ -297,12 +296,19 @@ impl<'a> Context<'a> {
             Branch::VarType => match found {
                 TokenKind::OParen if expected == TokenKind::Colon => {
                     let msg = "Is this missing '[' to define conditions?";
-                    // TODO: Correctly align arrows when given non-ascii
-                    // dbg!(prev_kind);
-                    // let start = prev_tok.span.start - 1;
-                    // let span = Span::new(start, start);
-                    // dbg!(span);
-                    let help = reporter::form_help(msg, self.can_color);
+                    // TEST:
+                    let start = prev_tok.span.start - 1;
+
+                    let span = Span::new(start, prev_tok.span.end);
+
+                    let help = reporter::form_help_diag(
+                        self.src_text,
+                        &span,
+                        msg,
+                        true,
+                        "[",
+                        self.can_color,
+                    );
 
                     Some(help)
                 }
@@ -327,6 +333,9 @@ impl<'a> Context<'a> {
             Branch::NestEnum => match found {
                 TokenKind::Colon => {
                     let msg = "Enums use parenthesis to hold types";
+                    // let suggestion = prev_tok.span.clone();
+                    // dbg!(&prev_tok);
+                    // panic!();
                     let help = reporter::form_help(msg, self.can_color);
 
                     Some(help)

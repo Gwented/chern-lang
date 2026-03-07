@@ -2,7 +2,6 @@ use std::fmt::Display;
 
 use crate::symbols::TypeIdent;
 
-// WARN: TEMP
 #[derive(Debug, Clone, Copy)]
 pub enum Token {
     Id(u32),
@@ -281,7 +280,7 @@ impl TokenKind {
 
 //FIX: Move this
 #[derive(Debug)]
-pub(crate) enum ActualPrimitives {
+pub enum ActualPrimitives {
     I8,
     U8,
     I16,
@@ -316,7 +315,7 @@ pub(crate) enum ActualPrimitives {
 }
 
 impl ActualPrimitives {
-    pub(crate) fn kind(&self) -> ActualTypeKind {
+    pub fn kind(&self) -> ActualTypeKind {
         match self {
             ActualPrimitives::I8 => ActualTypeKind::I8,
             ActualPrimitives::U8 => ActualTypeKind::U8,
@@ -350,7 +349,7 @@ impl ActualPrimitives {
     }
 }
 
-pub(crate) enum ActualTypeKind {
+pub enum ActualTypeKind {
     I8,
     U8,
     I16,

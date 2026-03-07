@@ -13,6 +13,7 @@ pub struct Lexer<'a> {
     pos: usize,
 }
 
+//FIXME: Add floats
 impl Lexer<'_> {
     // WARN: The file is fully dependent on being able to lex from a certain point so the @ confirmation
     // here should MAYBE be removed
@@ -571,7 +572,6 @@ impl Lexer<'_> {
     fn advance_char(&mut self) -> char {
         let ch = self.peek_char();
 
-        // Should this failing be a panic?
         self.pos += ch.len_utf8();
 
         ch

@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use common::{intern::Intern, storage::FileLoader};
 use script_lib::{
+    analyzer::Analyzer,
     lexer::Lexer,
     linter,
     parser::{self},
@@ -28,8 +29,10 @@ fn main() {
 
     let ast = parser::parse(&data, &toks, &mut interner);
 
-    //TODO: Make linter lint not print
     linter::print_all(&ast, &interner);
+    let stuff = Analyzer::new(&ast, &interner);
+
+    //TODO: Make linter lint not print
 
     println!("{} ms", start.elapsed().as_millis());
 }

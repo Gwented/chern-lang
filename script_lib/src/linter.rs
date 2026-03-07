@@ -3,7 +3,7 @@ use common::{
     symbols::{Cond, InnerArgs},
 };
 
-use crate::parser::ast::{AbstractType, Expr, Generic, Item, TypeExpr, Variant};
+use crate::parser::ast::{AbstractType, Expr, Item, TypeExpr, Variant};
 
 //WARN: FOR SANITY PURPOSES
 pub fn print_all(ast: &Vec<Item>, interner: &Intern) {

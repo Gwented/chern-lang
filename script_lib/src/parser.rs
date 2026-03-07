@@ -333,7 +333,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
             //FIX: Points to EOF since it is technically the error.
             ctx.advance_tok();
 
-            ctx.report_verbose("Expected type, found '<eof>'", Branch::VarType);
+            ctx.report_verbose("Expected type, found <eof>", Branch::VarType);
             Err(Token::EOF)
         }
         Token::Poison => {

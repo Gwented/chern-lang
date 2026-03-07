@@ -1,15 +1,19 @@
-@def var->
-            ども はい
+@def
+var->
+    name: str
+    person: 32
 
-    nest->
-        enum Account {
-            balance: BigFloat Range(0,8))]
-        }
+nest->
+    struct Person {
+        name: str
+        age: u8
+    }
 
         /*
         nest->
         strs Account {
             balance: BigFloat [Range(0,8))] #wall #wextra
+
         }
      */
 //  ^^^

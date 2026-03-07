@@ -4,37 +4,21 @@ use crate::symbols::Span;
 
 //FIX: ANSI
 const RED: &str = "\x1b[31m";
+const GREEN: &str = "\x1b[32m";
 const ORANGE: &str = "\x1b[33m";
 const NC: &str = "\x1b[0m";
 
+const SEPARATORS: usize = 60;
+
 //TODO: Handle multi-line errors
 // Store \n array for binary search NOT now. DO NOT. do it now.
-// Ok
 
 // FIXME: Given 'a: A "[Range()]' span.end reaches past the line causing a subtract overflow.
 // Handling multi-line will likely fix it
-pub fn form_diagnostic(src: &[u8], span: &Span, can_color: bool) -> (usize, usize, String) {
-    let mut ln = 1;
-
-    let mut b: u8;
-
-    let mut seg_start = 0;
-
+pub fn form_err_diag(src: &[u8], span: &Span, can_color: bool) -> (usize, usize, String) {
     let src_str = str::from_utf8(src).expect("Lexer broke");
 
-    for i in 0..span.end {
-        b = src[i];
-
-        //todo: see if this works on windows
-        //WARN: Still haven't checked.
-        if b == b'\r' && src.get(i + 1).copied() == Some(b'\n') {
-            ln += 1;
-            seg_start = i + 2;
-        } else if b == b'\n' {
-            ln += 1;
-            seg_start = i + 1;
-        }
-    }
+    let (seg_start, ln) = get_line_start(src, span);
 
     let seg_end = get_line_end(src, seg_start);
 
@@ -48,7 +32,7 @@ pub fn form_diagnostic(src: &[u8], span: &Span, can_color: bool) -> (usize, usiz
     // Could both of these look less odd?
     let space_offset = src_str[seg_start..span.start]
         .chars()
-        .map(|c| UnicodeWidthChar::width(c).unwrap_or(0))
+        .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
         .sum();
 
     let spaces = " ".repeat(space_offset);
@@ -73,6 +57,87 @@ pub fn form_diagnostic(src: &[u8], span: &Span, can_color: bool) -> (usize, usiz
     (ln, col, fmt_segment)
 }
 
+//TEST:
+pub fn form_help_diag(
+    src: &[u8],
+    span: &Span,
+    msg: &str,
+    add: bool,
+    suggestion: &str,
+    can_color: bool,
+) -> String {
+    let src_str = str::from_utf8(src).expect("Lexer broke");
+
+    let (seg_start, _) = get_line_start(src, span);
+
+    let op_count = suggestion.len();
+
+    let ops = if add {
+        "+".repeat(op_count)
+    } else {
+        "-".repeat(op_count)
+    };
+
+    let ops = if can_color {
+        format!("{GREEN}{ops}{NC}")
+    } else {
+        format!("{RED}{ops}{NC}")
+    };
+
+    // Could both of these look less odd?
+    let space_offset = src_str[seg_start..span.start]
+        .chars()
+        .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
+        .sum();
+
+    let spaces = " ".repeat(space_offset);
+
+    let help = form_help(msg, can_color);
+
+    let fmt_segment = format!("\t{spaces}{suggestion}\n\t{spaces}{ops}\n\t{help}");
+
+    println!("{}", &fmt_segment);
+
+    fmt_segment
+}
+
+pub fn form_help(msg: &str, can_color: bool) -> String {
+    if can_color {
+        format!("{ORANGE}Help{NC}: {msg}\n")
+    } else {
+        format!("Help: {msg}\n")
+    }
+}
+
+/// Returns start of `span` in bytes from `src` and the line number it was on
+fn get_line_start(src: &[u8], span: &Span) -> (usize, usize) {
+    let mut ln = 1;
+
+    let mut b: u8;
+
+    let mut seg_start = 0;
+
+    let mut i = 0;
+
+    while i < span.end {
+        b = src[i];
+
+        if b == b'\n' {
+            ln += 1;
+            i += 1;
+            seg_start = i;
+        } else if b == b'\r' && src.get(i + 1).copied() == Some(b'\n') {
+            ln += 1;
+            i += 2;
+            seg_start = i;
+        } else {
+            i += 1;
+        }
+    }
+
+    (seg_start, ln)
+}
+
 fn get_line_end(original_text: &[u8], start: usize) -> usize {
     for i in start..original_text.len() {
         let b = original_text[i];
@@ -86,19 +151,4 @@ fn get_line_end(original_text: &[u8], start: usize) -> usize {
 
     //WARN: I don't remember why I returned this
     original_text.len()
-}
-
-//TODO: Should this exist?
-// pub fn format_segment(segment: &str) -> String {
-//
-// }
-
-pub fn form_help_diagnostic(text: &[u8], span: &Span, can_color: bool) {}
-
-pub fn form_help(msg: &str, can_color: bool) -> String {
-    if can_color {
-        format!("{ORANGE}Help{NC}: {msg}\n")
-    } else {
-        format!("Help: {msg}\n")
-    }
 }
