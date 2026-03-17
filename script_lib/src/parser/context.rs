@@ -1,5 +1,3 @@
-//TODO: Centralize how errors are formatted for errors and help to bring sources of truth
-
 use common::{intern::Intern, keywords, metadata::FileMetadata, reporter, symbols::Span};
 
 use crate::{
@@ -19,6 +17,8 @@ use crate::{
 //NOTE: The basic exit sets should ONLY have tokens that will ALWAYS be stopped on.
 const C_BASE_EXIT_SET: u64 = token::EOF | token::ILLEGAL;
 const A_BASE_EXIT_SET: u64 = token::SLIM_ARROW;
+
+const C_STMT_NEUTRAL_SET: u64 = C_BASE_EXIT_SET | token::ID;
 
 const C_BRANCH_VAR_SET: u64 = C_BASE_EXIT_SET;
 const A_BRANCH_VAR_SET: u64 = A_BASE_EXIT_SET | token::COLON;
@@ -244,7 +244,7 @@ impl<'a> Context<'a> {
     }
 
     fn recover(&mut self, branch: Branch) {
-        let (current_targets, next_targets) = self.match_anchor(branch);
+        let (current_targets, next_targets) = self.match_branch(branch);
 
         if self.peek_kind() != TokenKind::EOF {
             while self.pos < self.tokens.len() + 2
@@ -257,10 +257,10 @@ impl<'a> Context<'a> {
     }
 
     // AM I TO ASSUME YOU CANNOT READ TEMPO?
-    fn match_anchor(&self, branch: Branch) -> (u64, u64) {
+    fn match_branch(&self, branch: Branch) -> (u64, u64) {
         match branch {
             Branch::Broken => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
-            Branch::Neutral => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
+            Branch::Neutral => (C_STMT_NEUTRAL_SET, A_BASE_EXIT_SET),
             Branch::Searching => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Bind => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Var => (C_BRANCH_VAR_SET, A_BRANCH_VAR_SET),
@@ -293,6 +293,7 @@ impl<'a> Context<'a> {
         let prev_kind = prev_tok.token.kind();
 
         match branch {
+            //FIXME: Currently suggests on any error in neutral so...more branches
             Branch::Neutral => match found.token {
                 Token::Id(id) | Token::Illegal(id) => {
                     let found_bytes = interner.search(id as usize).as_bytes();

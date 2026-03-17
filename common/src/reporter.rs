@@ -255,14 +255,14 @@ fn get_err_start(src: &[u8], span_end: usize) -> usize {
 }
 
 fn char_width_offset(src_str: &str, start: usize, end: usize) -> usize {
-    let ws_amt = src_str[start..end]
-        .chars()
-        .rev()
-        .take_while(|c| c.is_whitespace())
-        .count();
+    // let ws_amt = src_str[start..end]
+    //     .chars()
+    //     .rev()
+    //     .take_while(|c| c.is_whitespace())
+    //     .count();
 
-    dbg!(ws_amt);
-    src_str[start..(end - ws_amt)]
+    // dbg!(ws_amt);
+    src_str[start..end]
         .chars()
         .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
         .sum()

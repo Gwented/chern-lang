@@ -6,7 +6,7 @@ pub enum TypedId {
     Enum(EnumId),
     TypeDef(TypeDefId),
     Func(FuncId),
-    Builtin(BuiltinTypeId),
+    BuiltinType(BuiltinTypeId),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -110,7 +110,7 @@ impl Span {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Cond {
     //FIX:
     Func(FuncId),

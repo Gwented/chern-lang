@@ -158,7 +158,7 @@ fn print_exprs(conds: &Vec<Expr>, indent: usize, interner: &Intern) {
                 println!("{spaces}]");
             }
             Expr::Float(num, span) => {
-                println!("{spaces}float: {num:.2}");
+                println!("{spaces}float: {num}");
             }
         }
     }

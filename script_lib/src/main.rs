@@ -2,7 +2,7 @@ use std::{path::PathBuf, time::Instant};
 
 use common::{intern::Intern, metadata::FileMetadata, storage::FileLoader};
 use script_lib::{
-    analyzer::Analyzer,
+    analyzer::TypeResolver,
     lexer::Lexer,
     linter,
     parser::{self},
@@ -37,7 +37,7 @@ fn main() {
 
     linter::print_all(&program, &interner);
 
-    let stuff = Analyzer::new(&program, &metadata, &interner).analyze();
+    let stuff = TypeResolver::new(&program, &metadata, &interner).resolve();
 
     println!("{} ms", start.elapsed().as_millis());
 }

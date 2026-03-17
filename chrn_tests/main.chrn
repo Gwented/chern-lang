@@ -1,10 +1,26 @@
 @def
+
+// I fear this.
+// include "some.go"
+
+bind "Hello.chrn"
+
 var->
-    hi: str IsEmp("e")]
-    let: x [greet()]
+    // string: str  [StartsW(0.0, 5.5e-2)] #warn
+    p: Person #hex
+nest->
+    struct Person {
+        int: i32
+        string: str
+    } #warn
 @end
 // alias default(x, y) = IsEmpty Contains(x?: 5, y?: 5)
 /*
+    t: Thing // This should point out that a similar type called "Thing" exists
+
+    struct Thin {
+
+    }
 
 // This should be possible
     str: ~str

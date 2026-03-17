@@ -14,6 +14,7 @@ use common::{
 
 use crate::{
     analyzer::{
+        error::SemanticError,
         representation::{
             EnumRepre, FieldRepre, FuncArgsRepre, FuncRepre, StructRepre, Table, TypeDefRepre,
         },
@@ -25,7 +26,7 @@ use crate::{
     types::token::BuiltinType,
 };
 //WARN: 232 bytes 232 bytes 232 bytes 232 bytes 232 bytes 232 bytes
-pub struct Analyzer<'a> {
+pub struct TypeResolver<'a> {
     program: &'a Program,
     interner: &'a Intern,
     //WARN: Horrors
@@ -34,13 +35,13 @@ pub struct Analyzer<'a> {
     reporter: SemanticReporter<'a>,
 }
 
-impl Analyzer<'_> {
+impl TypeResolver<'_> {
     pub fn new<'a>(
         program: &'a Program,
         metadata: &'a FileMetadata,
         interner: &'a Intern,
-    ) -> Analyzer<'a> {
-        Analyzer {
+    ) -> TypeResolver<'a> {
+        TypeResolver {
             program,
             interner,
             table: Table::new(),
@@ -49,8 +50,8 @@ impl Analyzer<'_> {
     }
 
     //FIXME: USE A SINGULAR VECTOR INDEXED BY NAMEID LATER OVER A HASHMAP NOT NOW PLEASE NOT NOW
-    // Ok. But when
-    pub fn analyze(&mut self) -> Result<(), ()> {
+    // Ok. But when. I don't know.
+    pub fn resolve(&mut self) -> Result<(), ()> {
         // Registering namespaces
         for (id, item) in self.program.items.iter().enumerate() {
             let ast_id = AstId::new(id as u32);
@@ -81,7 +82,7 @@ impl Analyzer<'_> {
                 TypedId::Struct(struct_id) => {
                     _ = self.resolve_struct(struct_id);
                 }
-                TypedId::Builtin(builtintype_id) => todo!(),
+                TypedId::BuiltinType(builtintype_id) => todo!(),
                 TypedId::Func(func_id) => todo!(),
                 TypedId::Enum(enum_id) => todo!(),
                 // Maybe call intrinsic type since prim is a lie?
@@ -105,11 +106,12 @@ impl Analyzer<'_> {
         // DIRTY
         if let Item::Var(abstract_typedef) = ast_def {
             let ty = self.resolve_type_expr(&abstract_typedef.ty)?;
+
             let mut args = Vec::new();
 
             //TODO: Make less terminal
             for arg in abstract_typedef.args.clone() {
-                let resolved_arg = self.resolve_arg(arg)?;
+                let resolved_arg = self.resolve_arg(ty, arg).unwrap();
 
                 args.push(resolved_arg);
             }
@@ -121,11 +123,10 @@ impl Analyzer<'_> {
             }
 
             // DIRTY
+            dbg!(args.clone(), conds.clone());
             let type_def = &mut self.table.typedefs[type_def_id.id as usize];
             type_def.type_id = Some(ty);
             type_def.args = args;
-            dbg!(&conds);
-            panic!("Cond");
             type_def.conds = conds;
         }
 
@@ -143,7 +144,7 @@ impl Analyzer<'_> {
 
                     self.table.builtin_types.push(builtin_type);
 
-                    return Ok(TypedId::Builtin(builtin_id));
+                    return Ok(TypedId::BuiltinType(builtin_id));
                 }
 
                 if let Some(typed_id) = self.table.sym_table.get(name_id) {
@@ -198,7 +199,7 @@ impl Analyzer<'_> {
 
                             self.table.builtin_types.push(map);
 
-                            Ok(TypedId::Builtin(builtin_id))
+                            Ok(TypedId::BuiltinType(builtin_id))
                         }
                         Keyword::Set => {
                             if generic.args.len() != 1 {
@@ -248,7 +249,7 @@ impl Analyzer<'_> {
 
                 self.table.builtin_types.push(BuiltinType::Any(None));
 
-                Ok(TypedId::Builtin(BuiltinTypeId::new(index as u32)))
+                Ok(TypedId::BuiltinType(BuiltinTypeId::new(index as u32)))
             }
         }
     }
@@ -331,26 +332,66 @@ impl Analyzer<'_> {
 
         // DIRTY
         // Can we resolve glob args here?
+        // Make this cleaner for the pipeline
         if let Item::Struct(abstract_struct) = ast_struct {
+            let mut fields: Vec<FieldRepre> = Vec::new();
+
             for type_def in &abstract_struct.fields {
                 let typed_id = self.resolve_type_expr(&type_def.ty)?;
 
                 let field_repre = FieldRepre::new(type_def.name_id, typed_id);
 
-                // Performance?
-                let structure = &mut self.table.structs[struct_id.id as usize];
-
-                structure.fields.push(field_repre);
+                fields.push(field_repre);
             }
+            //
+            // let mut conds: Vec<Cond> = Vec::new();
+            //
+            // for expr in &abstract_struct.glob_conds {
+            //     conds.push(self.resolve_cond(expr)?);
+            // }
+            //
+            // let mut args: Vec<InnerArgs> = Vec::new();
+            //
+            // This needs to be global so
+            // for field in &fields {
+            //     for arg in abstract_struct.glob_args.clone() {
+            //         args.push(self.resolve_arg(field.ty, arg).unwrap());
+            //     }
+            // }
+
+            let structure = &mut self.table.structs[struct_id.id as usize];
+            structure.fields.append(&mut fields);
+            // dbg!(fields);
+            // panic!();
         }
 
-        todo!("Need to resolve struct level arguments");
         Ok(())
     }
 
-    // Args may need to be resolved later due to glob args
-    fn resolve_arg(&mut self, arg: InnerArgs) -> Result<InnerArgs, ()> {
-        todo!();
+    // How will this be executed in the most maintainable way?
+    fn resolve_arg(
+        &mut self,
+        typed_id: TypedId,
+        arg: InnerArgs,
+    ) -> Result<InnerArgs, SemanticError> {
+        match typed_id {
+            TypedId::Struct(_) | TypedId::Enum(_) => Ok(arg),
+            TypedId::BuiltinType(builtin_type_id) => {
+                let ty = &self.table.builtin_types[builtin_type_id.id as usize];
+                todo!()
+            }
+            TypedId::TypeDef(_) => todo!(),
+            // A little odd since arguments can't have functions can't have arguments in the parser
+            TypedId::Func(func_id) => {
+                let func = &self.table.funcs[func_id.id as usize];
+                let func_name = self.interner.search(func.name_id.id as usize);
+                let msg = format!("Cannot have arguments within function");
+
+                // self.reporter
+                //     .report_spanned("Cannot have arguments within function", None, span);
+                todo!("Function");
+            }
+        }
     }
 
     // How do we solve this?

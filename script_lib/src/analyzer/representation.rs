@@ -49,6 +49,27 @@ impl StructRepre {
             conds: Vec::new(),
         }
     }
+
+    pub fn supports_arg(&self, arg: InnerArgs) -> bool {
+        match arg {
+            InnerArgs::Warn
+            | InnerArgs::Scientific
+            | InnerArgs::Hex
+            | InnerArgs::Binary
+            | InnerArgs::Octal => true,
+        }
+    }
+
+    // Likely too complex to be handled inside like this and should maybe be given a baked version
+    // so that it can focus on checking arg types or the keyword of the cond.
+    // pub fn supports_cond(&self, cond: Cond) -> bool {
+    //     match cond {
+    //         Cond::IsEmpty => todo!(),
+    //         Cond::IsWhitespace => todo!(),
+    //         Cond::Func(func_id) => todo!(),
+    //         Cond::Not(cond) => todo!(),
+    //     }
+    // }
 }
 
 #[derive(Debug)]
@@ -68,6 +89,17 @@ impl EnumRepre {
             variants: Vec::new(),
             args: Vec::new(),
             conds: Vec::new(),
+        }
+    }
+
+    //NOTE: I will not use bit masks I will not use bitmasks I will n
+    pub fn supports_arg(&self, arg: InnerArgs) -> bool {
+        match arg {
+            InnerArgs::Warn
+            | InnerArgs::Scientific
+            | InnerArgs::Hex
+            | InnerArgs::Binary
+            | InnerArgs::Octal => true,
         }
     }
 }
@@ -90,6 +122,16 @@ impl VariantRepre {
             conds: Vec::new(),
         }
     }
+
+    pub fn supports_arg(&self, arg: InnerArgs) -> bool {
+        match arg {
+            InnerArgs::Warn
+            | InnerArgs::Scientific
+            | InnerArgs::Hex
+            | InnerArgs::Binary
+            | InnerArgs::Octal => true,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -109,6 +151,26 @@ impl TypeDefRepre {
             type_id: None,
             conds: Vec::new(),
             args: Vec::new(),
+        }
+    }
+
+    pub fn supports_arg(&self, arg: InnerArgs) -> bool {
+        match arg {
+            InnerArgs::Warn => true,
+            // structs, enums, and alias functions cannot have arguments beyond warn or future generic ones that
+            // define how the program should react to it's data, rather than literal changes like
+            // hex
+            _ => {
+                if let Some(type_id) = self.type_id {
+                    match type_id {
+                        TypedId::Struct(_) | TypedId::Enum(_) | TypedId::Func(_) => return false,
+                        // I don't actually think it CAN point to a typedef or function, at all
+                        TypedId::TypeDef(_) | TypedId::BuiltinType(_) => return true,
+                    }
+                }
+
+                return true;
+            }
         }
     }
 }

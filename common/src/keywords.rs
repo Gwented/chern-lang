@@ -1,4 +1,10 @@
 use std::ops::RangeInclusive;
+//WARN: WAY TOO MANY MICRO-DEPENDENCIES
+
+// Before adding a keyword:
+// Ensure array string is aligned with enum
+// Ensure ranges are adjusted
+// Ensure tests are aligned
 
 pub static KEYWORDS_ARRAY: [&str; 39] = [
     // primitives
@@ -202,7 +208,7 @@ impl Keyword {
     // }
 }
 
-// Not sure about the amount of casting everywhere
+//WARN: Not sure about the amount of casting everywhere
 const TYPE_START: u32 = 0;
 const TYPE_END: u32 = 24;
 

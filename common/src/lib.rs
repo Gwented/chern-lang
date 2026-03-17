@@ -17,6 +17,7 @@ pub mod tests {
     pub fn primitives_test() {
         let interner = Intern::init();
 
+        // Should this stay?
         // Types
         assert_eq!("i8", interner.search(Keyword::I8 as usize));
         assert_eq!("u8", interner.search(Keyword::U8 as usize));
@@ -47,9 +48,10 @@ pub mod tests {
         // Structures
         assert_eq!("struct", interner.search(Keyword::Struct as usize));
         assert_eq!("enum", interner.search(Keyword::Enum as usize));
-        // Sections
+        // Statements
         assert_eq!("bind", interner.search(Keyword::Bind as usize));
         assert_eq!("alias", interner.search(Keyword::Alias as usize));
+        // Sections
         assert_eq!("var", interner.search(Keyword::Var as usize));
         assert_eq!("nest", interner.search(Keyword::Nest as usize));
         assert_eq!("complex", interner.search(Keyword::Complex as usize));
@@ -65,14 +67,15 @@ pub mod tests {
         assert_eq!("EndsW", interner.search(Keyword::EndsW as usize));
         assert_eq!("Contains", interner.search(Keyword::Contains as usize));
 
+        // Index alignment test
         for (i, kw_str) in keywords::KEYWORDS_ARRAY.iter().enumerate() {
             let kw = Keyword::try_as_kw(i as u32).expect("Issue with Keyword enum numbering");
-            let actual_str = interner.search(kw as usize);
+            let interned_str = interner.search(kw as usize);
 
             assert_eq!(
-                *kw_str, actual_str,
+                *kw_str, interned_str,
                 "Keyword at index {}: expected '{}', found '{}'",
-                i, kw_str, actual_str
+                i, kw_str, interned_str
             );
         }
 

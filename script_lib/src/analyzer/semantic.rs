@@ -21,6 +21,10 @@ impl SemanticReporter<'_> {
         }
     }
 
+    pub(super) fn report_basic(&mut self, msg: &str) {
+        // let msg = reporter::standardize_err(base_msg, line_data, help);
+    }
+
     /// Draws red arrows under the span given. Option `err_name` represents whether or not a keyword that
     /// could be similar in name should be looked for.
     pub(super) fn report_spanned(&mut self, msg: &str, err_name: Option<&str>, span: &Span) {

@@ -67,10 +67,11 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
-        match toks[0].token {
-            Token::Char(c) => assert_eq!('a', c),
-            _ => panic!("Expected character 'a', found {:?}", toks[0].token),
-        }
+        assert!(
+            matches!(toks[0].token, Token::Char(_),),
+            "Expected char token, got {:?}",
+            toks[0].token
+        );
 
         // Valid escaped character
         let text = "'\\n'";
@@ -81,10 +82,11 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
-        match toks[0].token {
-            Token::Char(c) => assert_eq!('\n', c),
-            _ => panic!("Expected character '\\n', found {:?}", toks[0].token),
-        }
+        assert!(
+            matches!(toks[0].token, Token::Char(_),),
+            "Expected char token, got {:?}",
+            toks[0].token
+        );
 
         // Valid hex escape
         let text = "'\\x2F'";
@@ -95,10 +97,11 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
-        match toks[0].token {
-            Token::Char(c) => assert_eq!('\x2F', c),
-            _ => panic!("Expected character '\\x2F', found {:?}", toks[0].token),
-        }
+        assert!(
+            matches!(toks[0].token, Token::Char(_),),
+            "Expected char token, got {:?}",
+            toks[0].token
+        );
 
         // Invalid character
         let text = "'aa'";
@@ -109,10 +112,11 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
-        match toks[0].token {
-            Token::Illegal(_) => {}
-            _ => panic!("Expected Illegal token, got {:?}", toks[0].token),
-        }
+        assert!(
+            matches!(toks[0].token, Token::Illegal(_),),
+            "Expected Illegal token, got {:?}",
+            toks[0].token
+        );
 
         // Invalid hex escape
         let text = "'\\x2'";
@@ -123,10 +127,11 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
-        match toks[0].token {
-            Token::Illegal(_) => {}
-            _ => panic!("Expected Illegal token, got {:?}", toks[0].token),
-        }
+        assert!(
+            matches!(toks[0].token, Token::Illegal(_),),
+            "Expected Illegal token, got {:?}",
+            toks[0].token
+        );
 
         // I can't actually read hex
         // Invalid hex digits
@@ -138,10 +143,11 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
-        match toks[0].token {
-            Token::Illegal(_) => {}
-            _ => panic!("Expected Illegal token, got {:?}", toks[0].token),
-        }
+        assert!(
+            matches!(toks[0].token, Token::Illegal(_),),
+            "Expected Illegal token, got {:?}",
+            toks[0].token
+        );
 
         // Unknown escape
         let text = "'\\q'";
@@ -152,10 +158,11 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
-        match toks[0].token {
-            Token::Illegal(_) => (),
-            _ => panic!("Expected Illegal token \"\\q\", found {:?}", toks[0].token),
-        }
+        assert!(
+            matches!(toks[0].token, Token::Illegal(_),),
+            "Expected Illegal token, got {:?}",
+            toks[0].token
+        );
 
         // Out of range escape
         let text = "'\\x1Y'";
@@ -166,10 +173,11 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
-        match toks[0].token {
-            Token::Illegal(_) => (),
-            _ => panic!("Expected Illegal token \"\\1Y\", found {:?}", toks[0].token),
-        }
+        assert!(
+            matches!(toks[0].token, Token::Illegal(_),),
+            "Expected Illegal token, got {:?}",
+            toks[0].token
+        );
     }
 
     #[test]

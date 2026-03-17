@@ -1,4 +1,10 @@
 #[derive(Debug)]
+pub(super) enum SemanticError {
+    TypeMismatch,
+    UnsupportedArg,
+}
+
+#[derive(Debug)]
 pub(super) struct Diagnostic {
     //FIX:
     pub(super) msg: String,
