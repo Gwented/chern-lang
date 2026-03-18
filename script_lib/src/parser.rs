@@ -399,10 +399,6 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
     let conds = conds_res?;
     let args = args_res?;
 
-    dbg!(err_name);
-    dbg!(&name_span);
-    // panic!();
-
     let abstract_typedef = AbstractTypeDef::new(name_id, name_span, ty, args, conds);
 
     Ok(abstract_typedef)

@@ -123,6 +123,17 @@ impl SpannedNameId {
     }
 }
 
+pub struct SpannedBuiltinType {
+    pub ty: BuiltinType,
+    pub span: Span,
+}
+
+impl SpannedBuiltinType {
+    pub fn new(ty: BuiltinType, span: Span) -> SpannedBuiltinType {
+        SpannedBuiltinType { ty, span }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Cond {
     //FIX:

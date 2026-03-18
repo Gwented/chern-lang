@@ -72,7 +72,7 @@ fn fuzzy_match_inner<'a, 'b>(given: &'a [u8], arr: &'b [&str]) -> Option<&'b str
 
         //NOTE: Second constraint needs to be iterated upon based off of what it produces on
         // average
-        if matched >= 2 && matched + 1 >= var_bytes.len() {
+        if matched > 3 || (matched >= 2 && matched + 1 >= var_bytes.len()) {
             // Similar
             return Some(arr[i]);
         }

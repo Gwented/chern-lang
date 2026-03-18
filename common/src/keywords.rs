@@ -2,11 +2,11 @@ use std::ops::RangeInclusive;
 //WARN: WAY TOO MANY MICRO-DEPENDENCIES
 
 // Before adding a keyword:
-// Ensure array string is aligned with enum
+// Ensure array string is aligned with the Keyword enum
 // Ensure ranges are adjusted
 // Ensure tests are aligned
 
-pub static KEYWORDS_ARRAY: [&str; 39] = [
+pub static KEYWORDS_ARRAY: [&str; 41] = [
     // primitives
     "i8", // 0
     "u8",
@@ -36,22 +36,25 @@ pub static KEYWORDS_ARRAY: [&str; 39] = [
     // structures
     "struct",
     "enum", // 26
+    // Directives?
+    "import",
+    "export",
     // Statements
-    "bind", // 27
-    "alias",
+    "bind",
+    "alias", // 30
     // Section names
-    "var", // 29
-    "nest",
-    "complex", // 31
-    "override",
+    "var",
+    "nest", // 32
+    "complex",
+    "override", // 34
     // Predicate keywords
     "IsEmpty",
-    "IsWhitespace", // 34
+    "IsWhitespace", // 36
     // Predicates (Function)
     "Range",
-    "StartsW", // 36
+    "StartsW", // 38
     "EndsW",
-    "Contains", // 38
+    "Contains", // 40
 ];
 
 // Keep a compact enum for code that prefers typed keyword identifiers.
@@ -86,18 +89,20 @@ pub enum Keyword {
     Set = 24,
     Struct = 25,
     Enum = 26,
-    Bind = 27,
-    Alias = 28,
-    Var = 29,
-    Nest = 30,
-    Complex = 31,
-    Override = 32,
-    IsEmpty = 33,
-    IsWhitespace = 34,
-    Range = 35,
-    StartsW = 36,
-    EndsW = 37,
-    Contains = 38,
+    Import = 27,
+    Export = 28,
+    Bind = 29,
+    Alias = 30,
+    Var = 31,
+    Nest = 32,
+    Complex = 33,
+    Override = 34,
+    IsEmpty = 35,
+    IsWhitespace = 36,
+    Range = 37,
+    StartsW = 38,
+    EndsW = 39,
+    Contains = 40,
 }
 
 impl Keyword {
@@ -131,18 +136,20 @@ impl Keyword {
             24 => Some(Keyword::Set),
             25 => Some(Keyword::Struct),
             26 => Some(Keyword::Enum),
-            27 => Some(Keyword::Bind),
-            28 => Some(Keyword::Alias),
-            29 => Some(Keyword::Var),
-            30 => Some(Keyword::Nest),
-            31 => Some(Keyword::Complex),
-            32 => Some(Keyword::Override),
-            33 => Some(Keyword::IsEmpty),
-            34 => Some(Keyword::IsWhitespace),
-            35 => Some(Keyword::Range),
-            36 => Some(Keyword::StartsW),
-            37 => Some(Keyword::EndsW),
-            38 => Some(Keyword::Contains),
+            27 => Some(Keyword::Import),
+            28 => Some(Keyword::Export),
+            29 => Some(Keyword::Bind),
+            30 => Some(Keyword::Alias),
+            31 => Some(Keyword::Var),
+            32 => Some(Keyword::Nest),
+            33 => Some(Keyword::Complex),
+            34 => Some(Keyword::Override),
+            35 => Some(Keyword::IsEmpty),
+            36 => Some(Keyword::IsWhitespace),
+            37 => Some(Keyword::Range),
+            38 => Some(Keyword::StartsW),
+            39 => Some(Keyword::EndsW),
+            40 => Some(Keyword::Contains),
             _ => None,
         }
     }
@@ -212,14 +219,14 @@ impl Keyword {
 const TYPE_START: u32 = 0;
 const TYPE_END: u32 = 24;
 
-const SECT_START: u32 = 29;
-const SECT_END: u32 = 32;
+const SECT_START: u32 = 31;
+const SECT_END: u32 = 34;
 
-const STMT_START: u32 = 27;
-const STMT_END: u32 = 28;
+const STMT_START: u32 = 29;
+const STMT_END: u32 = 30;
 
-const PREDICATE_FN_START: u32 = 35;
-const PREDICATE_FN_END: u32 = 38;
+const PREDICATE_START: u32 = 35;
+const PREDICATE_END: u32 = 40;
 
 //WARN: The amount of casting here is painful. SEVERELY painful.
 pub fn is_type(id: u32) -> bool {
@@ -230,6 +237,10 @@ pub fn is_sect(id: u32) -> bool {
     (SECT_START..=SECT_END).contains(&id)
 }
 
+pub fn type_range() -> RangeInclusive<usize> {
+    (TYPE_START as usize)..=(TYPE_END as usize)
+}
+
 pub fn stmt_range() -> RangeInclusive<usize> {
     (STMT_START as usize)..=(STMT_END as usize)
 }
@@ -238,10 +249,6 @@ pub fn sect_range() -> RangeInclusive<usize> {
     (SECT_START as usize)..=(SECT_END as usize)
 }
 
-pub fn predicate_fn_range() -> RangeInclusive<usize> {
-    (PREDICATE_FN_START as usize)..=(PREDICATE_FN_END as usize)
-}
-
-pub fn type_range() -> RangeInclusive<usize> {
-    (TYPE_START as usize)..=(TYPE_END as usize)
+pub fn predicate_range() -> RangeInclusive<usize> {
+    (PREDICATE_START as usize)..=(PREDICATE_END as usize)
 }

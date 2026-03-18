@@ -109,16 +109,16 @@ impl EnumRepre {
 pub struct VariantRepre {
     pub(super) name_id: NameId,
     //WARN: Not because of being a representation but because enum types are nullable
-    pub(super) type_id: Option<TypedId>,
+    pub(super) typed_id: Option<TypedId>,
     pub(super) args: Vec<InnerArgs>,
     pub(super) conds: Vec<Cond>,
 }
 
 impl VariantRepre {
-    pub fn new(name_id: NameId) -> VariantRepre {
+    pub fn new(name_id: NameId, typed_id: Option<TypedId>) -> VariantRepre {
         VariantRepre {
             name_id,
-            type_id: None,
+            typed_id,
             args: Vec::new(),
             conds: Vec::new(),
         }

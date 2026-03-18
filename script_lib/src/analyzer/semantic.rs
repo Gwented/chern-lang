@@ -29,17 +29,45 @@ impl SemanticReporter<'_> {
         }
     }
 
+    //WARN: Could be better looking
     pub(super) fn report_semantic(&mut self, sem_err: SemanticError) {
-        match sem_err {
-            SemanticError::UnsupportedArg(builtin_type_kind) => todo!(),
-            SemanticError::VagueArg(typed_id, span) => match typed_id {
-                TypedId::Struct(struct_id) => todo!(),
-                TypedId::Enum(enum_id) => todo!(),
-                TypedId::TypeDef(type_def_id) => todo!(),
-                TypedId::Func(func_id) => todo!(),
-                TypedId::BuiltinType(builtin_type_id) => todo!(),
-            },
-        }
+        let (msg, line_data) = match sem_err {
+            SemanticError::UnsupportedArg(spanned_arg, builtin_type_kind) => {
+                let msg = format!(
+                    "The argument \"#{}\" is not supported for the type \"{}\"",
+                    spanned_arg.inner_arg, builtin_type_kind
+                );
+
+                let line_data = reporter::form_err_diag(
+                    &self.metadata.src_bytes,
+                    &spanned_arg.span,
+                    self.metadata.can_color,
+                );
+
+                (msg, line_data)
+            }
+            SemanticError::VagueArg(inner_arg, span) => {
+                let msg = format!(
+                    //FIXME: This error will be vague and misleading without explicitly saying what
+                    //the formatting error was. This needs the typedef itself.
+                    "Cannot use argument \"#{}\" for `struct` or `enum` types when used as a field variable\n\t|e.g. \"p: Person #bin\" would be invalid |",
+                    inner_arg
+                );
+
+                let line_data = reporter::form_err_diag(
+                    &self.metadata.src_bytes,
+                    &span,
+                    self.metadata.can_color,
+                );
+                (msg, line_data)
+            }
+        };
+
+        let fmt_msg = reporter::standardize_err(&msg, &line_data, "");
+
+        let diag = Diagnostic::new(fmt_msg);
+        self.err_vec.push(diag);
+
         // let msg = reporter::standardize_err(base_msg, line_data, help);
     }
 

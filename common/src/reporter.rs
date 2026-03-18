@@ -23,6 +23,8 @@ pub struct LineData {
     col: usize,
 }
 
+// Can maybe change to span vec which sees if any spans given are on the same line and formats all
+// accordingly
 /// Returns line, column and red arrows under given span, with the rest of the line also shown.
 pub fn form_err_diag(src_bytes: &[u8], span: &Span, can_color: bool) -> LineData {
     let src_str = str::from_utf8(src_bytes).unwrap_or("<invalid source file>");
@@ -61,7 +63,7 @@ pub fn form_err_diag(src_bytes: &[u8], span: &Span, can_color: bool) -> LineData
     ));
 
     if line_amt > 2 {
-        // Rice your error emitters.
+        // Needs to be sized based off of size of line number too. Maybe format can just return it
         fmt_segments.push("---".to_string());
     }
 
@@ -167,7 +169,6 @@ pub fn standardize_help(msg: &str, can_color: bool) -> String {
     }
 }
 
-// get_full_src_span_info, get_full_src_info, get_src_info <-- THIS ONE. Actually nevermind
 /// Returns the amount of lines between the start and end of the span.
 fn get_src_line_info(src: &[u8], span: &Span) -> (usize, usize) {
     let mut ln_end = 1;
@@ -197,10 +198,7 @@ fn get_src_line_info(src: &[u8], span: &Span) -> (usize, usize) {
             ln_start -= 1;
         }
     }
-    dbg!(ln_start, ln_end);
-    // panic!();
 
-    // This should be the line it starts on and the line it ends on.
     (ln_start, ln_end)
 }
 
@@ -297,8 +295,7 @@ fn format_line_segment(
     let mut i = ln_num;
     let mut ln_num_size = 0;
 
-    // Calculating size of given line number for '|' alignment
-    // I think this is ok?
+    // Calculates the size of the given line number for '|' alignment
     while i / 10 != 0 {
         ln_num_size += 1;
         i /= 10;

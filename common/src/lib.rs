@@ -50,6 +50,10 @@ pub mod tests {
         // Structures
         assert_eq!("struct", interner.search(Keyword::Struct as usize));
         assert_eq!("enum", interner.search(Keyword::Enum as usize));
+        // Directives
+        assert_eq!("import", interner.search(Keyword::Import as usize));
+        assert_eq!("export", interner.search(Keyword::Export as usize));
+        // I have never used JS or TS in any serious manner
         // Statements
         assert_eq!("bind", interner.search(Keyword::Bind as usize));
         assert_eq!("alias", interner.search(Keyword::Alias as usize));
@@ -81,7 +85,7 @@ pub mod tests {
             );
         }
 
-        // Uh
-        assert_eq!(keywords::KEYWORDS_ARRAY.len(), 39);
+        // This is to force me to check even if it was done correctly
+        assert_eq!(keywords::KEYWORDS_ARRAY.len(), 41);
     }
 }
