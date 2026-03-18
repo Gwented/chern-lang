@@ -1,7 +1,14 @@
+use common::{
+    builtins::BuiltinTypeKind,
+    symbols::{Span, TypedId},
+};
+
 #[derive(Debug)]
 pub(super) enum SemanticError {
-    TypeMismatch,
-    UnsupportedArg,
+    // TypeMismatch,
+    // Interesting names
+    VagueArg(TypedId, Span),
+    UnsupportedArg(BuiltinTypeKind),
 }
 
 #[derive(Debug)]

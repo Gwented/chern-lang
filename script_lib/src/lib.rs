@@ -30,11 +30,20 @@ mod tests {
 
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
+        for tok in &toks {
+            match tok.token {
+                Token::Id(id) | Token::Str(id) => {
+                    dbg!(interner.search(id as usize));
+                }
+                _ => (),
+            }
+        }
+
         assert_eq!(
             0, metadata.serial_start,
             "start_offset without `@def` failed"
         );
-        assert_eq!(3, toks.len(), "Token length exceeded 4 in lex_tok_test");
+        assert_eq!(3, toks.len(), "Token length exceeded 3 in lex_tok_test");
     }
 
     #[test]

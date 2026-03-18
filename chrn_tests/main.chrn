@@ -7,7 +7,7 @@ bind "Hello.chrn"
 
 var->
     // string: str  [StartsW(0.0, 5.5e-2)] #warn
-    p: Person #hex
+   p: Person #hex
 nest->
     struct Person {
         int: i32

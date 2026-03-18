@@ -1,5 +1,5 @@
 //NOTE: MAY MAKE EXPRESSION THAT HELPS RESOLVE SEMANTIC TYPES MORE CLEANLY
-use common::symbols::{InnerArgs, NameId, Span};
+use common::symbols::{InnerArgs, NameId, Span, SpannedInnerArgs};
 
 // Going for convention...
 // Aliases too.
@@ -95,7 +95,7 @@ pub struct AbstractTypeDef {
     pub(crate) name_id: NameId,
     pub(crate) name_span: Span,
     pub(crate) ty: TypeExpr,
-    pub(crate) args: Vec<InnerArgs>,
+    pub(crate) args: Vec<SpannedInnerArgs>,
     pub(crate) conds: Vec<Expr>,
 }
 
@@ -104,7 +104,7 @@ impl AbstractTypeDef {
         name_id: NameId,
         name_span: Span,
         ty: TypeExpr,
-        args: Vec<InnerArgs>,
+        args: Vec<SpannedInnerArgs>,
         conds: Vec<Expr>,
     ) -> AbstractTypeDef {
         AbstractTypeDef {
@@ -122,7 +122,7 @@ pub struct AbstractStruct {
     pub(crate) name_id: NameId,
     pub(crate) name_span: Span,
     pub(crate) glob_conds: Vec<Expr>,
-    pub(crate) glob_args: Vec<InnerArgs>,
+    pub(crate) glob_args: Vec<SpannedInnerArgs>,
     pub(crate) fields: Vec<AbstractTypeDef>,
 }
 
@@ -131,7 +131,7 @@ impl AbstractStruct {
         name_id: NameId,
         name_span: Span,
         glob_conds: Vec<Expr>,
-        glob_args: Vec<InnerArgs>,
+        glob_args: Vec<SpannedInnerArgs>,
         fields: Vec<AbstractTypeDef>,
     ) -> AbstractStruct {
         AbstractStruct {
@@ -151,7 +151,7 @@ pub struct AbstractEnum {
     pub(crate) name_span: Span,
     pub(crate) variants: Vec<AbstractVariant>,
     pub(crate) glob_conds: Vec<Expr>,
-    pub(crate) glob_args: Vec<InnerArgs>,
+    pub(crate) glob_args: Vec<SpannedInnerArgs>,
 }
 
 impl AbstractEnum {
@@ -160,7 +160,7 @@ impl AbstractEnum {
         name_span: Span,
         variants: Vec<AbstractVariant>,
         conds: Vec<Expr>,
-        glob_args: Vec<InnerArgs>,
+        glob_args: Vec<SpannedInnerArgs>,
     ) -> AbstractEnum {
         AbstractEnum {
             name_id,
@@ -179,7 +179,7 @@ pub(crate) struct AbstractVariant {
     pub(crate) name_span: Span,
     // I think this is right?
     pub(crate) ty: Option<TypeExpr>,
-    pub(crate) args: Vec<InnerArgs>,
+    pub(crate) args: Vec<SpannedInnerArgs>,
     pub(crate) conds: Vec<Expr>,
 }
 
@@ -190,7 +190,7 @@ impl AbstractVariant {
         // I think this is right?
         ty: Option<TypeExpr>,
         conds: Vec<Expr>,
-        args: Vec<InnerArgs>,
+        args: Vec<SpannedInnerArgs>,
     ) -> AbstractVariant {
         AbstractVariant {
             name_id,

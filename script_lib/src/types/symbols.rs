@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 
-use common::symbols::{
-    BuiltinTypeId, Cond, EnumId, FuncId, InnerArgs, NameId, Span, StructId, SymbolId, TypeDefId,
-    TypedId,
+use common::{
+    builtins::BuiltinType,
+    symbols::{
+        BuiltinTypeId, Cond, EnumId, FuncId, InnerArgs, NameId, Span, StructId, SymbolId,
+        TypeDefId, TypedId,
+    },
 };
 
-use crate::types::token::{BuiltinType, Token};
+use crate::types::token::Token;
 
 //WARN: THERE ARE MANY WAYS OF DOING THIS SO I AM JUST CHOOSING THIS FOR NOW I AM VERY CONFUSED
 //MAY REMOVE

@@ -1,4 +1,7 @@
-use common::{intern::Intern, symbols::InnerArgs};
+use common::{
+    intern::Intern,
+    symbols::{InnerArgs, SpannedInnerArgs},
+};
 
 use crate::parser::ast::{AbstractTypeDef, AbstractVariant, Expr, Item, Program, TypeExpr};
 
@@ -164,7 +167,7 @@ fn print_exprs(conds: &Vec<Expr>, indent: usize, interner: &Intern) {
     }
 }
 
-fn print_args(args: &Vec<InnerArgs>, indent: usize, interner: &Intern) {
+fn print_args(args: &Vec<SpannedInnerArgs>, indent: usize, interner: &Intern) {
     let spaces = " ".repeat(indent);
 
     let other_spaces = " ".repeat(indent + 2);

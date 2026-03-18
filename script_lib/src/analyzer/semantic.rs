@@ -1,8 +1,16 @@
 use std::io::IsTerminal;
 
-use common::{keywords, metadata::FileMetadata, reporter, symbols::Span};
+use common::{
+    keywords,
+    metadata::FileMetadata,
+    reporter,
+    symbols::{Span, TypedId},
+};
 
-use crate::{algo, analyzer::error::Diagnostic};
+use crate::{
+    algo,
+    analyzer::{SemanticError, error::Diagnostic},
+};
 
 /// Amount of '-' to print for multiple error separation
 const TOTAL_SEPARATORS: usize = 60;
@@ -21,7 +29,17 @@ impl SemanticReporter<'_> {
         }
     }
 
-    pub(super) fn report_basic(&mut self, msg: &str) {
+    pub(super) fn report_semantic(&mut self, sem_err: SemanticError) {
+        match sem_err {
+            SemanticError::UnsupportedArg(builtin_type_kind) => todo!(),
+            SemanticError::VagueArg(typed_id, span) => match typed_id {
+                TypedId::Struct(struct_id) => todo!(),
+                TypedId::Enum(enum_id) => todo!(),
+                TypedId::TypeDef(type_def_id) => todo!(),
+                TypedId::Func(func_id) => todo!(),
+                TypedId::BuiltinType(builtin_type_id) => todo!(),
+            },
+        }
         // let msg = reporter::standardize_err(base_msg, line_data, help);
     }
 

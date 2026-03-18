@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
-use common::symbols::{AstId, Cond, FuncId, InnerArgs, NameId, TypedId};
-
-use crate::types::token::BuiltinType;
+use common::{
+    builtins::BuiltinType,
+    symbols::{AstId, Cond, FuncId, InnerArgs, NameId, SpannedInnerArgs, TypedId},
+};
 
 // What is a drop? I am new to thinking i have never thought before what is RAII
 // is that a gui framework
@@ -35,7 +36,7 @@ pub(super) struct StructRepre {
     pub(super) name_id: NameId,
     pub(super) ast_id: AstId,
     pub(super) fields: Vec<FieldRepre>,
-    pub(super) args: Vec<InnerArgs>,
+    pub(super) args: Vec<SpannedInnerArgs>,
     pub(super) conds: Vec<Cond>,
 }
 
@@ -138,7 +139,11 @@ impl VariantRepre {
 pub(super) struct TypeDefRepre {
     pub(super) name_id: NameId,
     pub(super) ast_id: AstId,
+    // This is not nullable but it is invalid, should a more descriptive "TypeState" enum be used
+    // or is that not needed?
     pub(super) type_id: Option<TypedId>,
+    //TODO: Could make a wrapper for getting the type after resolution so that the code smell is not
+    // gone but hidden.
     pub(super) conds: Vec<Cond>,
     pub(super) args: Vec<InnerArgs>,
 }
@@ -161,6 +166,7 @@ impl TypeDefRepre {
             // define how the program should react to it's data, rather than literal changes like
             // hex
             _ => {
+                //NOTE: A TypeDef cannot point to a TypeDef
                 if let Some(type_id) = self.type_id {
                     match type_id {
                         TypedId::Struct(_) | TypedId::Enum(_) | TypedId::Func(_) => return false,

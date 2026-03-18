@@ -10,13 +10,12 @@ const DEFINITION_SIZE: usize = 4;
 
 const MAX_ILLEGAL_TOKS: u8 = 7;
 
-// Not a notation but
+// Bit-wise operations for convenience within read_num
 const NOTATION_FLOAT: u8 = 1 << 0;
 const NOTATION_HEX: u8 = 1 << 1;
 const NOTATION_BIN: u8 = 1 << 2;
 const NOTATION_OCT: u8 = 1 << 3;
 
-// Should it just take in FileMetadata alone?
 pub struct Lexer<'a> {
     src_bytes: &'a [u8],
     pos: usize,
@@ -321,7 +320,7 @@ impl Lexer<'_> {
                         // TODO: Maybe this should be at the end because technically @ is illegal too
                         eprintln!("Maximum illegal tokens found.\nReporting then aborting...");
                         in_def = false;
-                        // Should this just be done at the end of the loop by default?
+
                         tokens.push(SpannedToken {
                             token: Token::EOF,
                             span: Span::new(self.pos, self.pos),
@@ -335,6 +334,7 @@ impl Lexer<'_> {
 
         //TODO: This also isn't possible after the loader so may remove
         //Also odd handling
+        //WARN: Do not forget to remove this
         if in_def && illegal_toks == MAX_ILLEGAL_TOKS {
             // Should abort
             eprintln!("Missing `@end`");
@@ -354,8 +354,8 @@ impl Lexer<'_> {
         {
             self.advance_char();
         }
-
         // Is one off since advance moves forward as a final step
+
         let end = self.pos;
 
         let id_str = str::from_utf8(&self.src_bytes[start..end])

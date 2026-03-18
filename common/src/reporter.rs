@@ -294,9 +294,21 @@ fn format_line_segment(
     let spaces = " ".repeat(space_offset);
     let arrows = "^".repeat(arrow_offset);
 
+    let mut i = ln_num;
+    let mut ln_num_size = 0;
+
+    // Calculating size of given line number for '|' alignment
+    // I think this is ok?
+    while i / 10 != 0 {
+        ln_num_size += 1;
+        i /= 10;
+    }
+
+    let bar_spacing = " ".repeat(ln_num_size);
+
     if can_color {
-        format!(" |\n{ln_num}|\t{ln_str}\n |\t{spaces}{RED}{arrows}{NC}")
+        format!(" {bar_spacing}|\n{ln_num}|\t{ln_str}\n {bar_spacing}|\t{spaces}{RED}{arrows}{NC}")
     } else {
-        format!(" |\n{ln_num}|\t{ln_str}\n |\t{spaces}{arrows}")
+        format!(" {bar_spacing}|\n{ln_num}|\t{ln_str}\n {bar_spacing}|\t{spaces}{arrows}")
     }
 }

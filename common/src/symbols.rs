@@ -1,4 +1,6 @@
-use crate::keywords::Keyword;
+use std::fmt::Display;
+
+use crate::{builtins::BuiltinType, keywords::Keyword};
 
 #[derive(Debug, Clone, Copy)]
 pub enum TypedId {
@@ -110,6 +112,17 @@ impl Span {
     }
 }
 
+pub struct SpannedNameId {
+    pub name_id: NameId,
+    pub span: Span,
+}
+
+impl SpannedNameId {
+    pub fn new(name_id: NameId, span: Span) -> SpannedNameId {
+        SpannedNameId { name_id, span }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Cond {
     //FIX:
@@ -151,7 +164,20 @@ impl Cond {
 // public static void main(String[] args) { for (int i = 0; i < args.length; ++i) {
 // System.out.printf("%d: %s", i, args[i]) } }
 
+//NOTE: If a new argument is added ensure this is updated
 pub static ARGS_ARRAY: [&str; 5] = ["warn", "scient", "hex", "bin", "octal"];
+
+#[derive(Debug, Clone)]
+pub struct SpannedInnerArgs {
+    pub inner_arg: InnerArgs,
+    pub span: Span,
+}
+
+impl SpannedInnerArgs {
+    pub fn new(inner_arg: InnerArgs, span: Span) -> SpannedInnerArgs {
+        SpannedInnerArgs { inner_arg, span }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InnerArgs {
@@ -162,6 +188,59 @@ pub enum InnerArgs {
     Octal,
 }
 
+impl InnerArgs {
+    //TEST:
+    /// This MUST be used after ensuring the type is a primitive, not a data structure.
+    // Maybe this is a good time to use kind
+    pub fn supports_builtin_type(&self, builtin_type: &BuiltinType) -> bool {
+        match self {
+            InnerArgs::Warn => true,
+            InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => {
+                match builtin_type {
+                    BuiltinType::I8
+                    | BuiltinType::U8
+                    | BuiltinType::I16
+                    | BuiltinType::U16
+                    | BuiltinType::F16
+                    | BuiltinType::I32
+                    | BuiltinType::U32
+                    | BuiltinType::F32
+                    | BuiltinType::I64
+                    | BuiltinType::U64
+                    | BuiltinType::F64
+                    | BuiltinType::I128
+                    | BuiltinType::U128
+                    | BuiltinType::F128
+                    | BuiltinType::Sized
+                    | BuiltinType::BigInt
+                    | BuiltinType::BigFloat
+                    | BuiltinType::Unsized
+                    //NOTE: Checks this at runtime
+                    |BuiltinType::Any(_) => true,
+                    // Maybe make this unreachable and depending on the caller handling the inner
+                    BuiltinType::List(_)
+                    |BuiltinType::Set(_)
+                    |BuiltinType::Map(_, _) => unreachable!("TypeResolver broke"),
+                    _ => false,
+                }
+            }
+        }
+    }
+}
+
+impl Display for InnerArgs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InnerArgs::Warn => write!(f, "warn"),
+            InnerArgs::Scientific => write!(f, "scient"),
+            InnerArgs::Hex => write!(f, "hex"),
+            InnerArgs::Binary => write!(f, "bin"),
+            InnerArgs::Octal => write!(f, "octal"),
+        }
+    }
+}
+
+//TODO: Should be some or none
 impl<'a> TryFrom<&'a str> for InnerArgs {
     type Error = &'a str;
 

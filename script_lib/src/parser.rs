@@ -18,7 +18,7 @@ use crate::types::token::{Token, TokenKind};
 use common::intern::Intern;
 use common::keywords::{self, Keyword};
 use common::metadata::FileMetadata;
-use common::symbols::{InnerArgs, NameId, Span};
+use common::symbols::{InnerArgs, NameId, Span, SpannedInnerArgs};
 
 // May be lower
 const MAX_ERRORS: u8 = 3;
@@ -399,6 +399,10 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
     let conds = conds_res?;
     let args = args_res?;
 
+    dbg!(err_name);
+    dbg!(&name_span);
+    // panic!();
+
     let abstract_typedef = AbstractTypeDef::new(name_id, name_span, ty, args, conds);
 
     Ok(abstract_typedef)
@@ -742,8 +746,8 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
 }
 
 // Egregious naming scheme
-fn handle_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<InnerArgs>, Token> {
-    let mut args: Vec<InnerArgs> = Vec::new();
+fn handle_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedInnerArgs>, Token> {
+    let mut args: Vec<SpannedInnerArgs> = Vec::new();
 
     let mut err_count = 0;
 
@@ -766,7 +770,9 @@ fn handle_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<InnerArgs>, T
     Ok(args)
 }
 
-fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<InnerArgs, Token> {
+fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<SpannedInnerArgs, Token> {
+    let name_span = ctx.peek_span();
+
     let id = ctx.expect_id_verbose(
         TokenKind::Id,
         "",
@@ -776,12 +782,14 @@ fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<InnerArgs, Token> {
     )?;
 
     // FIX: Change from try_from to Some
-    InnerArgs::try_from(interner.search(id as usize)).or_else(|invalid_id| {
+    let arg = InnerArgs::try_from(interner.search(id as usize)).or_else(|invalid_id| {
         let msg = format!("The argument \"#{invalid_id}\" does not exist");
         ctx.report_verbose(&msg, Branch::VarTypeArgs, interner);
 
         return Err(Token::Poison);
-    })
+    })?;
+
+    Ok(SpannedInnerArgs::new(arg, name_span))
 }
 
 fn parse_cond(ctx: &mut Context, interner: &Intern) -> Result<Expr, Token> {

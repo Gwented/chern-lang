@@ -21,6 +21,7 @@ pub fn fuzzy_match(given: &[u8], target: FuzzyMatch) -> Option<&str> {
         FuzzyMatch::Arg => fuzzy_match_inner(
             given,
             // TODO: Please rename this
+            // Please
             &common::symbols::ARGS_ARRAY,
         ),
     }
@@ -70,7 +71,7 @@ fn fuzzy_match_inner<'a, 'b>(given: &'a [u8], arr: &'b [&str]) -> Option<&'b str
         }
 
         //NOTE: Second constraint needs to be iterated upon based off of what it produces on
-        //average
+        // average
         if matched >= 2 && matched + 1 >= var_bytes.len() {
             // Similar
             return Some(arr[i]);

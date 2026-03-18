@@ -1,9 +1,12 @@
 //FIXME: CHECK IF CONDITIONS AND ARGUMENTS ARE VALID
+//
+//FIXME: Either separate arg and cond resolving elsewhere or .
 mod error;
 pub mod representation;
 mod semantic;
 
 use common::{
+    builtins::BuiltinType,
     intern::Intern,
     keywords::Keyword,
     metadata::FileMetadata,
@@ -23,7 +26,6 @@ use crate::{
     parser::ast::{
         AbstractEnum, AbstractStruct, AbstractTypeDef, Expr, Item, Program, TypeExpr, UnaryOp,
     },
-    types::token::BuiltinType,
 };
 //WARN: 232 bytes 232 bytes 232 bytes 232 bytes 232 bytes 232 bytes
 pub struct TypeResolver<'a> {
@@ -85,7 +87,6 @@ impl TypeResolver<'_> {
                 TypedId::BuiltinType(builtintype_id) => todo!(),
                 TypedId::Func(func_id) => todo!(),
                 TypedId::Enum(enum_id) => todo!(),
-                // Maybe call intrinsic type since prim is a lie?
             }
         }
 
@@ -110,8 +111,40 @@ impl TypeResolver<'_> {
             let mut args = Vec::new();
 
             //TODO: Make less terminal
-            for arg in abstract_typedef.args.clone() {
-                let resolved_arg = self.resolve_arg(ty, arg).unwrap();
+            dbg!(&abstract_typedef.args);
+
+            for spanned_arg in abstract_typedef.args.clone() {
+                let resolved_arg = match self.resolve_arg(ty, spanned_arg.inner_arg) {
+                    Ok(a) => a,
+                    Err(sem_err) => {
+                        match sem_err {
+                            //NOTE: May make this generic
+                            SemanticError::UnsupportedArg(builtin_type_kind) => {
+                                let msg = format!(
+                                    "The argument {} is not supported for type {}",
+                                    spanned_arg.inner_arg, builtin_type_kind
+                                );
+
+                                self.reporter.report_spanned(&msg, None, &spanned_arg.span);
+                            }
+                            SemanticError::VagueArg(_, span) => {
+                                dbg!(&span);
+                                let msg = format!(
+                                    "Cannot use argument \"{}\" for `struct` or `enum` outside of nest section",
+                                    spanned_arg.inner_arg
+                                );
+
+                                self.reporter.report_spanned(
+                                    &msg,
+                                    None,
+                                    &abstract_typedef.name_span,
+                                );
+                            }
+                        }
+
+                        return Err(());
+                    }
+                };
 
                 args.push(resolved_arg);
             }
@@ -128,6 +161,79 @@ impl TypeResolver<'_> {
             type_def.type_id = Some(ty);
             type_def.args = args;
             type_def.conds = conds;
+        }
+
+        Ok(())
+    }
+
+    fn resolve_struct(&mut self, struct_id: StructId) -> Result<(), ()> {
+        let ast_struct = {
+            let structure = &mut self.table.structs[struct_id.id as usize];
+            &self.program.items[structure.ast_id.id as usize]
+        };
+
+        // DIRTY
+        if let Item::Struct(abstract_struct) = ast_struct {
+            let mut fields: Vec<FieldRepre> = Vec::new();
+
+            for type_def in &abstract_struct.fields {
+                let typed_id = self.resolve_type_expr(&type_def.ty)?;
+
+                let field_repre = FieldRepre::new(type_def.name_id, typed_id);
+
+                fields.push(field_repre);
+            }
+
+            let mut conds: Vec<Cond> = Vec::new();
+
+            for expr in &abstract_struct.glob_conds {
+                conds.push(self.resolve_cond(expr)?);
+            }
+
+            let mut args: Vec<InnerArgs> = Vec::new();
+
+            dbg!(&abstract_struct.glob_args);
+
+            for field in &fields {
+                for spanned_arg in abstract_struct.glob_args.clone() {
+                    let arg = match self.resolve_arg(field.ty, spanned_arg.inner_arg) {
+                        Ok(a) => a,
+                        Err(sem_err) => {
+                            match sem_err {
+                                //NOTE: May make this generic
+                                SemanticError::UnsupportedArg(builtin_type_kind) => {
+                                    let msg = format!(
+                                        "The argument {} is not supported for type {}",
+                                        spanned_arg.inner_arg, builtin_type_kind
+                                    );
+
+                                    self.reporter.report_spanned(&msg, None, &spanned_arg.span);
+                                }
+                                SemanticError::VagueArg(_, span) => {
+                                    dbg!(&span);
+                                    let msg = format!(
+                                        "Cannot use argument \"{}\" for `struct` or `enum` outside of nest section",
+                                        spanned_arg.inner_arg
+                                    );
+
+                                    self.reporter.report_spanned(
+                                        &msg,
+                                        None,
+                                        &abstract_struct.name_span,
+                                    );
+                                }
+                            }
+
+                            return Err(());
+                        }
+                    };
+
+                    args.push(arg);
+                }
+            }
+
+            let structure = &mut self.table.structs[struct_id.id as usize];
+            structure.fields.append(&mut fields);
         }
 
         Ok(())
@@ -254,8 +360,6 @@ impl TypeResolver<'_> {
         }
     }
 
-    //WARN: Same duplication issue with Cond. Can either just add a try_from or Expr Cond
-    //identification.
     fn resolve_cond(&mut self, expr: &Expr) -> Result<Cond, ()> {
         match expr {
             //TODO: Allow for custom conditions with aliases.
@@ -304,15 +408,17 @@ impl TypeResolver<'_> {
 
                 Err(())
             }
-            Expr::Integer(num, span) => {
-                todo!("Integer");
-            }
-            Expr::Float(num, span) => {
-                todo!("Float");
+            // I don't think either of these can actually be reached
+            Expr::Integer(_, span) | Expr::Float(_, span) => {
+                let err_msg = format!("Numerics cannot be used as conditions alone");
+
+                self.reporter.report_spanned(&err_msg, None, span);
+
+                Err(())
             }
             Expr::FieldAccess(field_access, span) => {
                 //TODO: Is this worth evaluating as an expression just to get the name?
-                // Probably not
+                // Sure
 
                 let err_msg = format!("Conditions cannot be accessed as fields");
 
@@ -322,75 +428,67 @@ impl TypeResolver<'_> {
             }
         }
     }
-
-    //FIX: GO FROM TOP DOWN
-    fn resolve_struct(&mut self, struct_id: StructId) -> Result<(), ()> {
-        let ast_struct = {
-            let structure = &mut self.table.structs[struct_id.id as usize];
-            &self.program.items[structure.ast_id.id as usize]
-        };
-
-        // DIRTY
-        // Can we resolve glob args here?
-        // Make this cleaner for the pipeline
-        if let Item::Struct(abstract_struct) = ast_struct {
-            let mut fields: Vec<FieldRepre> = Vec::new();
-
-            for type_def in &abstract_struct.fields {
-                let typed_id = self.resolve_type_expr(&type_def.ty)?;
-
-                let field_repre = FieldRepre::new(type_def.name_id, typed_id);
-
-                fields.push(field_repre);
-            }
-            //
-            // let mut conds: Vec<Cond> = Vec::new();
-            //
-            // for expr in &abstract_struct.glob_conds {
-            //     conds.push(self.resolve_cond(expr)?);
-            // }
-            //
-            // let mut args: Vec<InnerArgs> = Vec::new();
-            //
-            // This needs to be global so
-            // for field in &fields {
-            //     for arg in abstract_struct.glob_args.clone() {
-            //         args.push(self.resolve_arg(field.ty, arg).unwrap());
-            //     }
-            // }
-
-            let structure = &mut self.table.structs[struct_id.id as usize];
-            structure.fields.append(&mut fields);
-            // dbg!(fields);
-            // panic!();
-        }
-
-        Ok(())
-    }
-
     // How will this be executed in the most maintainable way?
-    fn resolve_arg(
-        &mut self,
-        typed_id: TypedId,
-        arg: InnerArgs,
-    ) -> Result<InnerArgs, SemanticError> {
+    fn resolve_arg(&self, typed_id: TypedId, arg: InnerArgs) -> Result<InnerArgs, SemanticError> {
         match typed_id {
-            TypedId::Struct(_) | TypedId::Enum(_) => Ok(arg),
+            TypedId::Struct(struct_id) => {
+                if arg != InnerArgs::Warn {
+                    let ast_id = self.table.structs[struct_id.id as usize].ast_id;
+
+                    let span = match &self.program.items[ast_id.id as usize] {
+                        Item::Struct(abstract_struct) => abstract_struct.name_span.clone(),
+                        _ => unreachable!(),
+                    };
+
+                    return Err(SemanticError::VagueArg(typed_id, span));
+                }
+
+                Ok(arg)
+            }
+            TypedId::Enum(enum_id) => {
+                if arg != InnerArgs::Warn {
+                    let ast_id = self.table.enums[enum_id.id as usize].ast_id;
+
+                    let span = match &self.program.items[ast_id.id as usize] {
+                        Item::Enum(abstract_enum) => abstract_enum.name_span.clone(),
+                        _ => unreachable!(),
+                    };
+
+                    return Err(SemanticError::VagueArg(typed_id, span));
+                }
+
+                Ok(arg)
+            }
+            TypedId::TypeDef(type_def_id) => {
+                let type_def = &self.table.typedefs[type_def_id.id as usize];
+
+                //WARN: REMOVE THE EXPECT
+                self.resolve_arg(type_def.type_id.expect("Resolved already"), arg)
+            }
             TypedId::BuiltinType(builtin_type_id) => {
                 let ty = &self.table.builtin_types[builtin_type_id.id as usize];
-                todo!()
-            }
-            TypedId::TypeDef(_) => todo!(),
-            // A little odd since arguments can't have functions can't have arguments in the parser
-            TypedId::Func(func_id) => {
-                let func = &self.table.funcs[func_id.id as usize];
-                let func_name = self.interner.search(func.name_id.id as usize);
-                let msg = format!("Cannot have arguments within function");
 
-                // self.reporter
-                //     .report_spanned("Cannot have arguments within function", None, span);
-                todo!("Function");
+                match ty {
+                    BuiltinType::Set(typed_id) | BuiltinType::List(typed_id) => {
+                        self.resolve_arg(*typed_id, arg)
+                    }
+                    BuiltinType::Map(key_id, val_id) => {
+                        // This looks weird...
+                        self.resolve_arg(*key_id, arg)?;
+                        self.resolve_arg(*val_id, arg)
+                    }
+                    BuiltinType::Any(_) => Ok(arg),
+                    builtin_type => {
+                        if !arg.supports_builtin_type(builtin_type) {
+                            // Need display then
+                            return Err(SemanticError::UnsupportedArg(builtin_type.kind()));
+                        }
+
+                        Ok(arg)
+                    }
+                }
             }
+            _ => unreachable!("Functions are not capable of taking arguments in the parser"),
         }
     }
 
