@@ -3,10 +3,10 @@ use common::{
     symbols::{InnerArgs, SpannedInnerArgs},
 };
 
-use crate::parser::ast::{AbstractTypeDef, AbstractVariant, Expr, Item, Program, TypeExpr};
+use crate::parser::ast::{AbstractTypeDef, AbstractVariant, AstInfo, Expr, Item, TypeExpr};
 
 //WARN: FOR SANITY PURPOSES
-pub fn print_all(program: &Program, interner: &Intern) {
+pub fn print_all(program: &AstInfo, interner: &Intern) {
     let indent = 4;
     let spaces = " ".repeat(indent);
 

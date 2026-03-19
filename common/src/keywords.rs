@@ -217,7 +217,7 @@ impl Keyword {
 
 //WARN: Not sure about the amount of casting everywhere
 const TYPE_START: u32 = 0;
-const TYPE_END: u32 = 24;
+pub const TYPE_END: u32 = 24;
 
 const SECT_START: u32 = 31;
 const SECT_END: u32 = 34;

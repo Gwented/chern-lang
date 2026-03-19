@@ -1,19 +1,16 @@
 //NOTE: MAY MAKE EXPRESSION THAT HELPS RESOLVE SEMANTIC TYPES MORE CLEANLY
 use common::symbols::{InnerArgs, NameId, Span, SpannedInnerArgs};
 
-// Going for convention...
-// Aliases too.
-
 #[derive(Debug)]
-pub struct Program {
+pub struct AstInfo {
     // MAYBE SHOULDN'T BE A NAME ID I DONT KNOW
     pub bind: Option<NameId>,
     pub items: Vec<Item>,
 }
 
-impl Program {
-    pub(crate) fn new() -> Program {
-        Program {
+impl AstInfo {
+    pub fn new() -> AstInfo {
+        AstInfo {
             bind: None,
             items: Vec::new(),
         }
@@ -181,14 +178,14 @@ impl AbstractEnum {
         name_id: NameId,
         name_span: Span,
         variants: Vec<AbstractVariant>,
-        conds: Vec<Expr>,
+        glob_conds: Vec<Expr>,
         glob_args: Vec<SpannedInnerArgs>,
     ) -> AbstractEnum {
         AbstractEnum {
             name_id,
             name_span,
             variants,
-            glob_conds: conds,
+            glob_conds,
             glob_args,
         }
     }

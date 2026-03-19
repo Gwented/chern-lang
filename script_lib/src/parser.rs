@@ -7,8 +7,8 @@ pub mod error;
 pub mod parse_state;
 
 use crate::parser::ast::{
-    AbstractEnum, AbstractGeneric, AbstractStruct, AbstractTypeDef, AbstractVariant, Call, Expr,
-    Item, Program, TypeExpr, Unary, UnaryOp,
+    AbstractEnum, AbstractGeneric, AbstractStruct, AbstractTypeDef, AbstractVariant, AstInfo, Call,
+    Expr, Item, TypeExpr, Unary, UnaryOp,
 };
 use crate::parser::context::Context;
 use crate::parser::error::Branch;
@@ -23,8 +23,8 @@ use common::symbols::{InnerArgs, NameId, Span, SpannedInnerArgs};
 // May be lower
 const MAX_ERRORS: u8 = 3;
 
-pub fn parse(metadata: &FileMetadata, tokens: &Vec<SpannedToken>, interner: &Intern) -> Program {
-    let mut program = Program::new();
+pub fn parse(metadata: &FileMetadata, tokens: &Vec<SpannedToken>, interner: &Intern) -> AstInfo {
+    let mut program = AstInfo::new();
 
     let mut state = StateFlag::new();
 
@@ -280,7 +280,7 @@ pub fn parse(metadata: &FileMetadata, tokens: &Vec<SpannedToken>, interner: &Int
 //FIXME: These sets may be misaligned
 fn parse_alias_stmt(
     ctx: &mut Context,
-    program: &mut Program,
+    program: &mut AstInfo,
     interner: &Intern,
 ) -> Result<(), Token> {
     let plain_id = ctx.expect_id_verbose(
@@ -331,7 +331,7 @@ fn parse_alias_stmt(
 
 fn parse_bind_stmt(
     ctx: &mut Context,
-    program: &mut Program,
+    program: &mut AstInfo,
     interner: &Intern,
 ) -> Result<(), Token> {
     let name_id = ctx.expect_id_verbose(

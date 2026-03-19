@@ -2,15 +2,24 @@ use std::collections::HashMap;
 
 use common::{
     builtins::BuiltinType,
-    symbols::{AstId, Cond, FuncId, InnerArgs, NameId, SpannedInnerArgs, TypedId},
+    keywords,
+    symbols::{
+        AstId, BuiltinTypeId, Cond, EnumId, FuncId, InnerArgs, NameId, SpannedInnerArgs, StructId,
+        SymbolId, TypeDefId, TypedId,
+    },
 };
 
 // What is a drop? I am new to thinking i have never thought before what is RAII
 // is that a gui framework
+// Maybe named, global table, program table
+#[derive(Debug)]
 pub struct Table {
-    //FIXME: MUCH RATHER USE IF LET
-    //Maybe
-    pub(super) sym_table: HashMap<NameId, TypedId>,
+    //FIXME:
+    // Can likely change to arrays later but not priority
+    pub(super) name_ids: HashMap<AstId, NameId>,
+    pub(super) sym_ids: HashMap<AstId, SymbolId>,
+    // This could just be a vec
+    pub(super) typed_ids: HashMap<SymbolId, TypedId>,
     pub(super) typedefs: Vec<TypeDefRepre>,
     pub(super) structs: Vec<StructRepre>,
     pub(super) funcs: Vec<FuncRepre>,
@@ -18,34 +27,53 @@ pub struct Table {
     pub(super) builtin_types: Vec<BuiltinType>,
 }
 
+// This will be removed. Likely replaced by. Um. I don't know.
 impl Table {
     pub fn new() -> Table {
-        Table {
-            sym_table: HashMap::new(),
+        let mut table = Table {
+            name_ids: HashMap::new(),
+            sym_ids: HashMap::new(),
+            typed_ids: HashMap::new(),
             typedefs: Vec::new(),
             structs: Vec::new(),
             funcs: Vec::new(),
             enums: Vec::new(),
             builtin_types: Vec::new(),
+        };
+
+        // TEST: Taking away the data structures with - 3
+        for i in 0..keywords::TYPE_END - 3 {
+            table
+                .builtin_types
+                .push(BuiltinType::try_from_id(i as u32).expect("Builtin type not updated"));
         }
+
+        table
     }
 }
 
 #[derive(Debug)]
 pub(super) struct StructRepre {
     pub(super) name_id: NameId,
+    pub(super) sym_id: SymbolId,
     pub(super) ast_id: AstId,
     pub(super) fields: Vec<FieldRepre>,
-    pub(super) args: Vec<SpannedInnerArgs>,
+    pub(super) args: Vec<InnerArgs>,
     pub(super) conds: Vec<Cond>,
 }
 
 impl StructRepre {
-    pub fn new(name_id: NameId, ast_id: AstId) -> StructRepre {
+    pub fn new(
+        name_id: NameId,
+        sym_id: SymbolId,
+        ast_id: AstId,
+        fields: Vec<FieldRepre>,
+    ) -> StructRepre {
         StructRepre {
             name_id,
+            sym_id,
             ast_id,
-            fields: Vec::new(),
+            fields,
             args: Vec::new(),
             conds: Vec::new(),
         }
@@ -76,6 +104,8 @@ impl StructRepre {
 #[derive(Debug)]
 pub(super) struct EnumRepre {
     pub(super) name_id: NameId,
+    // Unsure about this positioning, I am hallucinating.
+    pub(super) sym_id: SymbolId,
     pub(super) ast_id: AstId,
     pub(super) variants: Vec<VariantRepre>,
     pub(super) args: Vec<InnerArgs>,
@@ -83,32 +113,27 @@ pub(super) struct EnumRepre {
 }
 
 impl EnumRepre {
-    pub fn new(name_id: NameId, ast_id: AstId) -> EnumRepre {
+    pub fn new(
+        name_id: NameId,
+        sym_id: SymbolId,
+        ast_id: AstId,
+        variants: Vec<VariantRepre>,
+    ) -> EnumRepre {
         EnumRepre {
             name_id,
+            sym_id,
             ast_id,
-            variants: Vec::new(),
+            variants,
             args: Vec::new(),
             conds: Vec::new(),
         }
     }
-
-    //NOTE: I will not use bit masks I will not use bitmasks I will n
-    // pub fn supports_arg(&self, arg: InnerArgs) -> bool {
-    //     match arg {
-    //         InnerArgs::Warn
-    //         | InnerArgs::Scientific
-    //         | InnerArgs::Hex
-    //         | InnerArgs::Binary
-    //         | InnerArgs::Octal => true,
-    //     }
-    // }
 }
 
 #[derive(Debug)]
 pub struct VariantRepre {
     pub(super) name_id: NameId,
-    //WARN: Not because of being a representation but because enum types are nullable
+    // Because enum types are nullable
     pub(super) typed_id: Option<TypedId>,
     // Points to variant within original Ast enum
     pub(super) ast_id: AstId,
@@ -141,45 +166,27 @@ impl VariantRepre {
 #[derive(Debug)]
 pub(super) struct TypeDefRepre {
     pub(super) name_id: NameId,
+    pub(super) sym_id: SymbolId,
     pub(super) ast_id: AstId,
-    // This is not nullable but it is invalid, should a more descriptive "TypeState" enum be used
-    // or is that not needed?
-    pub(super) type_id: Option<TypedId>,
-    //TODO: Could make a wrapper for getting the type after resolution so that the code smell is not
-    // gone but hidden.
+    pub(super) typed_id: TypedId,
     pub(super) conds: Vec<Cond>,
     pub(super) args: Vec<InnerArgs>,
 }
 
 impl TypeDefRepre {
-    pub fn new(name_id: NameId, ast_id: AstId) -> TypeDefRepre {
+    pub fn new(
+        name_id: NameId,
+        typed_id: TypedId,
+        sym_id: SymbolId,
+        ast_id: AstId,
+    ) -> TypeDefRepre {
         TypeDefRepre {
             name_id,
+            sym_id,
             ast_id,
-            type_id: None,
+            typed_id,
             conds: Vec::new(),
             args: Vec::new(),
-        }
-    }
-
-    pub fn supports_arg(&self, arg: InnerArgs) -> bool {
-        match arg {
-            InnerArgs::Warn => true,
-            // structs, enums, and alias functions cannot have arguments beyond warn or future generic ones that
-            // define how the program should react to it's data, rather than literal changes like
-            // hex
-            _ => {
-                //NOTE: A TypeDef cannot point to a TypeDef
-                if let Some(type_id) = self.type_id {
-                    match type_id {
-                        TypedId::Struct(_) | TypedId::Enum(_) | TypedId::Func(_) => return false,
-                        // I don't actually think it CAN point to a typedef or function, at all
-                        TypedId::TypeDef(_) | TypedId::BuiltinType(_) => return true,
-                    }
-                }
-
-                return true;
-            }
         }
     }
 }

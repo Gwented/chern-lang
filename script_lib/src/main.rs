@@ -2,10 +2,12 @@ use std::{path::PathBuf, time::Instant};
 
 use common::{intern::Intern, metadata::FileMetadata, storage::FileLoader};
 use script_lib::{
-    analyzer::TypeResolver,
     lexer::Lexer,
     linter,
     parser::{self},
+    semantic::{
+        constraint_resolver::ConstraintResolver, representation::Table, type_resolver::TypeResolver,
+    },
 };
 
 //FIXME: More general file information that is persistent throughout the program which would
@@ -33,11 +35,15 @@ fn main() {
 
     let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
-    let program = parser::parse(&metadata, &toks, &mut interner);
+    // Table table = new Table.tableFactoryFactoryGen();
+    let mut table = Table::new();
 
-    linter::print_all(&program, &interner);
+    let ast_info = parser::parse(&metadata, &toks, &mut interner);
 
-    let stuff = TypeResolver::new(&program, &metadata, &interner).resolve();
+    linter::print_all(&ast_info, &interner);
+
+    TypeResolver::new(&ast_info, &metadata, &interner, &mut table).resolve();
+    ConstraintResolver::new(&ast_info, &metadata, &interner, &mut table).resolve();
 
     println!("{} ms", start.elapsed().as_millis());
 }

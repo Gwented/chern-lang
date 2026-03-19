@@ -1,12 +1,8 @@
 @def
 
-// I fear this.
-// include "some.go"
-
 bind "Hello.chrn"
-
 var->
-p: Person #warn
+    p: Person #warn
     // string: str  [StartsW(0.0, 5.5e-2)] #warn
    // This SHOULDN'T be usable here, but it SHOULD be usable in structural declarations
 
@@ -14,14 +10,10 @@ nest->
     // Is pointing to Gorp outside instead of the gorp instead
 
     // READJUST SETS FOR THIS TO NOT HALLUCINATE SO MUCH
-    struct Gorp {
-//aj
-    }
 
     struct Person {
         int: i32
         map: Map<i32, BigInt>
-        gorp: Gorp
         data: Data
     } #bin
 
@@ -29,11 +21,6 @@ nest->
         cache: u8
         thing: str
     }
-
-    enum State {
-        Ready(Data)
-        gorp(Gorp)
-    } #bin
 
 @end
 // alias default(x, y) = IsEmpty Contains(x?: 5, y?: 5)

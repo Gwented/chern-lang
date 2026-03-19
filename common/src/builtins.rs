@@ -64,43 +64,6 @@ impl BuiltinType {
             BuiltinType::Any(_) => BuiltinTypeKind::Any,
         }
     }
-
-    // pub fn supports_arg(&self, arg: InnerArgs) -> bool {
-    //     match self {
-    //         BuiltinType::I8
-    //         | BuiltinType::U8
-    //         | BuiltinType::I16
-    //         | BuiltinType::U16
-    //         | BuiltinType::F16
-    //         | BuiltinType::I32
-    //         | BuiltinType::U32
-    //         | BuiltinType::F32
-    //         | BuiltinType::I64
-    //         | BuiltinType::U64
-    //         | BuiltinType::F64
-    //         | BuiltinType::I128
-    //         | BuiltinType::U128
-    //         | BuiltinType::F128
-    //         | BuiltinType::Sized
-    //         | BuiltinType::BigInt
-    //         | BuiltinType::BigFloat
-    //         | BuiltinType::Unsized => match arg {
-    //             InnerArgs::Warn
-    //             | InnerArgs::Scientific
-    //             | InnerArgs::Hex
-    //             | InnerArgs::Binary
-    //             | InnerArgs::Octal => true,
-    //         },
-    //         BuiltinType::Bool => todo!(),
-    //         BuiltinType::Nil => todo!(),
-    //         BuiltinType::Char => todo!(),
-    //         BuiltinType::Str => todo!(),
-    //         BuiltinType::List(typed_id) => todo!(),
-    //         BuiltinType::Set(typed_id) => todo!(),
-    //         BuiltinType::Map(typed_key, typed_val) => todo!(),
-    //         BuiltinType::Any(typed_id) => todo!(),
-    //     }
-    // }
 }
 
 #[derive(Debug)]

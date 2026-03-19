@@ -9,7 +9,7 @@ use common::{
 
 use crate::{
     algo,
-    analyzer::{SemanticError, error::Diagnostic},
+    semantic::error::{Diagnostic, SemanticError},
 };
 
 /// Amount of '-' to print for multiple error separation
@@ -35,7 +35,7 @@ impl SemanticReporter<'_> {
             SemanticError::UnsupportedArg(spanned_arg, builtin_type_kind) => {
                 let msg = format!(
                     "The argument \"#{}\" is not supported for the type \"{}\"",
-                    spanned_arg.inner_arg, builtin_type_kind
+                    spanned_arg.arg, builtin_type_kind
                 );
 
                 let line_data = reporter::form_err_diag(
@@ -49,7 +49,7 @@ impl SemanticReporter<'_> {
             SemanticError::VagueArg(inner_arg, span) => {
                 let msg = format!(
                     //FIXME: Still vague
-                    "The argument \"#{}\" cannot be used for `struct` or `enum` types when another struct is a field variable",
+                    "The argument \"#{}\" cannot be used for a 'var->' defined variable that holds a \"struct\" or \"enum\"",
                     inner_arg
                 );
 

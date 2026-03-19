@@ -21,17 +21,6 @@ use crate::types::token::Token;
 //     Prim(UnresolvedId),
 // }
 
-#[derive(Debug, Clone, Copy)]
-pub struct UnresolvedId {
-    pub id: usize,
-}
-
-impl UnresolvedId {
-    pub fn new(id: usize) -> UnresolvedId {
-        UnresolvedId { id }
-    }
-}
-
 #[derive(Debug)]
 pub struct SymbolTable {
     //Can just be a vec?

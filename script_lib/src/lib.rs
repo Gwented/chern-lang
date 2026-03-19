@@ -1,9 +1,9 @@
 // Should this be pub(crate)?
 mod algo;
-pub mod analyzer;
 pub mod lexer;
 pub mod linter;
 pub mod parser;
+pub mod semantic;
 pub mod types;
 
 #[cfg(test)]

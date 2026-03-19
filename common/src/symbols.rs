@@ -22,7 +22,7 @@ impl SymbolId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AstId {
     pub id: u32,
 }
@@ -181,13 +181,16 @@ pub static ARGS_ARRAY: [&str; 5] = ["warn", "scient", "hex", "bin", "octal"];
 
 #[derive(Debug, Clone)]
 pub struct SpannedInnerArgs {
-    pub inner_arg: InnerArgs,
+    pub arg: InnerArgs,
     pub span: Span,
 }
 
 impl SpannedInnerArgs {
     pub fn new(inner_arg: InnerArgs, span: Span) -> SpannedInnerArgs {
-        SpannedInnerArgs { inner_arg, span }
+        SpannedInnerArgs {
+            arg: inner_arg,
+            span,
+        }
     }
 }
 

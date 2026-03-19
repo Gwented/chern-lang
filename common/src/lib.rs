@@ -85,6 +85,12 @@ pub mod tests {
             );
         }
 
+        // TEST: Taking away the data structures with - 3
+        assert_eq!(
+            keywords::KEYWORDS_ARRAY[(keywords::TYPE_END - 3) as usize],
+            "BigFloat"
+        );
+
         // This is to force me to check even if it was done correctly
         assert_eq!(keywords::KEYWORDS_ARRAY.len(), 41);
     }
