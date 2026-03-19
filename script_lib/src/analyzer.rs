@@ -87,10 +87,13 @@ impl TypeResolver<'_> {
                     _ = self.resolve_struct(struct_id);
                 }
                 TypedId::Enum(enum_id) => {
-                    self.resolve_enum(enum_id);
+                    _ = self.resolve_enum(enum_id);
                 }
+                TypedId::Func(func_id) => {
+                    _ = self.resolve_func(func_id);
+                }
+                // Um...
                 TypedId::BuiltinType(builtintype_id) => todo!(),
-                TypedId::Func(func_id) => todo!(),
             }
         }
 
@@ -104,7 +107,7 @@ impl TypeResolver<'_> {
 
     fn resolve_typedef(&mut self, type_def_id: TypeDefId) -> Result<(), ()> {
         let ast_def = {
-            let type_def = &mut self.table.typedefs[type_def_id.id as usize];
+            let type_def = &self.table.typedefs[type_def_id.id as usize];
             &self.program.items[type_def.ast_id.id as usize]
         };
 
@@ -115,9 +118,21 @@ impl TypeResolver<'_> {
             let mut args = Vec::new();
 
             //TODO: Make less terminal
-            dbg!(&abstract_typedef.args);
-
             for spanned_arg in abstract_typedef.args.clone() {
+                match ty {
+                    TypedId::Struct(_) | TypedId::Enum(_) => {
+                        if spanned_arg.inner_arg != InnerArgs::Warn {
+                            let span = Span::new(spanned_arg.span.start, spanned_arg.span.end);
+
+                            let sem_err = SemanticError::VagueArg(spanned_arg.inner_arg, span);
+
+                            self.reporter.report_semantic(sem_err);
+                            continue;
+                        }
+                    }
+                    _ => (),
+                }
+
                 let resolved_arg = match self.resolve_arg(ty, &spanned_arg) {
                     Ok(a) => a,
                     Err(sem_err) => {
@@ -148,7 +163,7 @@ impl TypeResolver<'_> {
 
     fn resolve_struct(&mut self, struct_id: StructId) -> Result<(), ()> {
         let ast_struct = {
-            let structure = &mut self.table.structs[struct_id.id as usize];
+            let structure = &self.table.structs[struct_id.id as usize];
             &self.program.items[structure.ast_id.id as usize]
         };
 
@@ -156,10 +171,10 @@ impl TypeResolver<'_> {
         if let Item::Struct(abstract_struct) = ast_struct {
             let mut fields: Vec<FieldRepre> = Vec::new();
 
-            for type_def in &abstract_struct.fields {
+            for (i, type_def) in abstract_struct.fields.iter().enumerate() {
                 let typed_id = self.resolve_type_expr(&type_def.ty)?;
 
-                let field_repre = FieldRepre::new(type_def.name_id, typed_id);
+                let field_repre = FieldRepre::new(type_def.name_id, typed_id, AstId::new(i as u32));
 
                 fields.push(field_repre);
             }
@@ -179,8 +194,28 @@ impl TypeResolver<'_> {
                     let arg = match self.resolve_arg(field.ty, spanned_arg) {
                         Ok(a) => a,
                         Err(sem_err) => {
-                            // Since this is here now can this be handled inside?
                             self.reporter.report_semantic(sem_err);
+                            // match sem_err {
+                            //     // WARN: This is a weird way to handle this
+                            //     SemanticError::VagueArg(_, _) => {
+                            //         let type_span =
+                            //             abstract_struct.fields[field.ast_id.id as usize].ty.span();
+                            //
+                            //         let complete_span =
+                            //             Span::new(type_span.start, spanned_arg.span.end);
+                            //
+                            //         let actual_sem_err = SemanticError::VagueArg(
+                            //             spanned_arg.inner_arg,
+                            //             complete_span,
+                            //         );
+                            //
+                            //         self.reporter.report_semantic(actual_sem_err);
+                            //     }
+                            //     err => self.reporter.report_semantic(err),
+                            // }
+
+                            // Need to point to particular type expression
+                            // Since this is here now can this be handled inside?
                             return Err(());
                         }
                     };
@@ -198,7 +233,7 @@ impl TypeResolver<'_> {
 
     fn resolve_enum(&mut self, enum_id: EnumId) -> Result<(), ()> {
         let ast_enum = {
-            let enumeration = &mut self.table.enums[enum_id.id as usize];
+            let enumeration = &self.table.enums[enum_id.id as usize];
             &self.program.items[enumeration.ast_id.id as usize]
         };
 
@@ -206,10 +241,11 @@ impl TypeResolver<'_> {
         if let Item::Enum(abstract_enum) = ast_enum {
             let mut variants: Vec<VariantRepre> = Vec::new();
 
-            for variant in &abstract_enum.variants {
+            for (i, variant) in abstract_enum.variants.iter().enumerate() {
                 if let Some(ty) = &variant.ty {
                     let typed_id = self.resolve_type_expr(ty)?;
-                    let field_repre = VariantRepre::new(variant.name_id, Some(typed_id));
+                    let field_repre =
+                        VariantRepre::new(variant.name_id, Some(typed_id), AstId::new(i as u32));
 
                     variants.push(field_repre);
                 }
@@ -229,8 +265,31 @@ impl TypeResolver<'_> {
                         let arg = match self.resolve_arg(type_id, spanned_arg) {
                             Ok(a) => a,
                             Err(sem_err) => {
-                                // Since this is here now can this be handled inside?
                                 self.reporter.report_semantic(sem_err);
+                                //TODO: Fixing
+                                // match sem_err {
+                                //     SemanticError::VagueArg(inner_args, span) => {
+                                //         let type_span = &abstract_enum.variants
+                                //             [variant.ast_id.id as usize]
+                                //             .ty
+                                //             .as_ref()
+                                //             .expect("We checked already")
+                                //             .span();
+                                //
+                                //         let complete_span =
+                                //             Span::new(type_span.start, spanned_arg.span.end);
+                                //
+                                //         let actual_sem_err = SemanticError::VagueArg(
+                                //             spanned_arg.inner_arg,
+                                //             complete_span,
+                                //         );
+                                //
+                                //         self.reporter.report_semantic(actual_sem_err);
+                                //     }
+                                //     err => self.reporter.report_semantic(err),
+                                // }
+                                // Since this is here now can this be handled inside?
+
                                 return Err(());
                             }
                         };
@@ -247,9 +306,16 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
-    //WARN: The code duplication is a top level issue of Keyword being the only one resolving
-    //everything despite being the most generic interface. Possibly needs a 'built-in' TypeExpr
-    //variant, or something to flatten the search by just a little.
+    // Umm
+    fn resolve_func(&mut self, func_id: FuncId) -> Result<(), ()> {
+        // let ast_func = {
+        //     let function = &mut self.table.funcs[func_id.id as usize];
+        //     &self.program.items[function.ast_id.id as usize]
+        // };
+
+        todo!();
+    }
+
     fn resolve_type_expr(&mut self, ty: &TypeExpr) -> Result<TypedId, ()> {
         match ty {
             TypeExpr::Var(name_id, span) => {
@@ -370,7 +436,6 @@ impl TypeResolver<'_> {
 
     fn resolve_cond(&mut self, expr: &Expr) -> Result<Cond, ()> {
         match expr {
-            //TODO: Allow for custom conditions with aliases.
             Expr::Var(name_id, span) => {
                 if let Some(cond) = Cond::try_from_id(name_id.id) {
                     return Ok(cond);
@@ -389,23 +454,21 @@ impl TypeResolver<'_> {
                     Ok(Cond::Not(Box::new(cond)))
                 }
             },
-            //TODO: This may need to be resolved separately so custom functions can be used
             Expr::Call(call, _) => {
                 // This will return a cond with a function id to a defined function with args
 
                 // Can't really do it like this.
-                // let func_id = self.contains_func(call.name_id)?;
-                //
-                // let mut args: Vec<FuncArgsRepre> = Vec::new();
-                //
-                // for expr in &call.exprs {
-                //     let arg = self.resolve_func_arg(expr)?;
-                //     args.push(arg);
-                // }
-                //
+                let func_id = self.contains_func(call.name_id);
+
+                let mut args: Vec<FuncArgsRepre> = Vec::new();
+
+                for expr in &call.exprs {
+                    let arg = self.resolve_func_arg(expr)?;
+                    args.push(arg);
+                }
+
                 // let function = FuncRepre::new(call.name_id, func_id, args);
 
-                // Ok(Cond::Func(func_id))
                 todo!();
             }
             Expr::Str(name_id, span) => {
@@ -416,7 +479,6 @@ impl TypeResolver<'_> {
 
                 Err(())
             }
-            // I don't think either of these can actually be reached
             Expr::Integer(_, span) | Expr::Float(_, span) => {
                 let err_msg = format!("Numerics cannot be used as conditions alone");
 
@@ -434,6 +496,7 @@ impl TypeResolver<'_> {
 
                 Err(())
             }
+            Expr::BinaryExpr { lhs, op, rhs } => todo!(),
         }
     }
 
@@ -446,51 +509,26 @@ impl TypeResolver<'_> {
     ) -> Result<InnerArgs, SemanticError> {
         match typed_id {
             TypedId::Struct(struct_id) => {
-                if spanned_arg.inner_arg != InnerArgs::Warn {
-                    let ast_id = self.table.structs[struct_id.id as usize].ast_id;
+                let structure = &self.table.structs[struct_id.id as usize];
 
-                    //FIXME: THIS NEEDS TO POINT TO THE VARIABLE DECLARATION ITSELF, NOT THE
-                    //ORIGINAL STRUCT
-                    let span = match &self.program.items[ast_id.id as usize] {
-                        Item::Struct(abstract_struct) => abstract_struct.name_span.clone(),
-                        _ => unreachable!(),
-                    };
-
-                    let start = std::cmp::min(span.start, spanned_arg.span.start);
-                    let end = std::cmp::max(span.end, spanned_arg.span.end);
-
-                    let complete_span = Span::new(start, end);
-
-                    return Err(SemanticError::VagueArg(
-                        spanned_arg.inner_arg,
-                        complete_span,
-                    ));
+                for (i, field) in structure.fields.iter().enumerate() {
+                    self.resolve_arg(field.ty, spanned_arg)?;
                 }
 
                 Ok(spanned_arg.inner_arg)
             }
             TypedId::Enum(enum_id) => {
-                if spanned_arg.inner_arg != InnerArgs::Warn {
-                    let ast_id = self.table.enums[enum_id.id as usize].ast_id;
+                let enumeration = &self.table.enums[enum_id.id as usize];
 
-                    let span = match &self.program.items[ast_id.id as usize] {
-                        Item::Enum(abstract_enum) => abstract_enum.name_span.clone(),
-                        _ => unreachable!(),
-                    };
-
-                    let start = std::cmp::min(span.start, spanned_arg.span.start);
-                    let end = std::cmp::max(span.end, spanned_arg.span.end);
-
-                    let complete_span = Span::new(start, end);
-
-                    return Err(SemanticError::VagueArg(
-                        spanned_arg.inner_arg,
-                        complete_span,
-                    ));
+                for (i, variant) in enumeration.variants.iter().enumerate() {
+                    if let Some(typed_id) = variant.typed_id {
+                        self.resolve_arg(typed_id, spanned_arg)?;
+                    }
                 }
 
                 Ok(spanned_arg.inner_arg)
             }
+
             TypedId::TypeDef(type_def_id) => {
                 let type_def = &self.table.typedefs[type_def_id.id as usize];
 
@@ -537,6 +575,7 @@ impl TypeResolver<'_> {
             Expr::Call(call, span) => todo!(),
             Expr::FieldAccess(abstract_field_access, span) => todo!(),
             Expr::Unary(unary, span) => todo!(),
+            Expr::BinaryExpr { lhs, op, rhs } => todo!(),
         }
     }
 

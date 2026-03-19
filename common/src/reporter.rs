@@ -15,7 +15,6 @@ pub const NC: &str = "\x1b[0m";
 const TOTAL_SEPARATORS: usize = 60;
 
 //TODO: Store \n array for binary search NOT now. DO NOT. do it now.
-// This is only within the metadata but nothing is done with it
 
 pub struct LineData {
     fmt_segment: String,

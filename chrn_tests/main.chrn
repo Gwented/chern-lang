@@ -6,23 +6,34 @@
 bind "Hello.chrn"
 
 var->
+p: Person #warn
     // string: str  [StartsW(0.0, 5.5e-2)] #warn
-   p: Person
+   // This SHOULDN'T be usable here, but it SHOULD be usable in structural declarations
 
 nest->
     // Is pointing to Gorp outside instead of the gorp instead
-    struct Gorp {
 
+    // READJUST SETS FOR THIS TO NOT HALLUCINATE SO MUCH
+    struct Gorp {
+//aj
     }
 
     struct Person {
         int: i32
-        map: Map<i32, str>
-    } #warn #bin
+        map: Map<i32, BigInt>
+        gorp: Gorp
+        data: Data
+    } #bin
+
+    struct Data {
+        cache: u8
+        thing: str
+    }
 
     enum State {
-        Hallo(Person)
-    } #warn
+        Ready(Data)
+        gorp(Gorp)
+    } #bin
 
 @end
 // alias default(x, y) = IsEmpty Contains(x?: 5, y?: 5)

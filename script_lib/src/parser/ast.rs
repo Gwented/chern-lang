@@ -51,6 +51,20 @@ pub(crate) enum Expr {
     Call(Call, Span),
     FieldAccess(AbstractFieldAccess, Span),
     Unary(Unary, Span),
+    BinaryExpr {
+        lhs: Box<Expr>,
+        op: BinaryOp,
+        rhs: Box<Expr>,
+    },
+}
+
+#[derive(Debug)]
+pub(crate) enum BinaryOp {
+    Add,
+    Sub,
+    Mult,
+    Div,
+    Mod,
 }
 
 #[derive(Debug)]
@@ -74,6 +88,17 @@ pub(crate) enum TypeExpr {
     Any(Span),
 }
 
+//TEST: May just make a SpanendTypeExpr but this can work for now
+impl TypeExpr {
+    pub fn span(&self) -> Span {
+        match self {
+            TypeExpr::Var(_, span) | TypeExpr::Generic(_, span) | TypeExpr::Any(span) => {
+                span.clone()
+            }
+        }
+    }
+}
+
 // Maybe put in enum exclusively if not needed outside
 
 // #[derive(Debug)]
@@ -88,9 +113,6 @@ pub(crate) enum TypeExpr {
 // }
 //
 #[derive(Debug)]
-// ONE HUNDRED TWENTY BYTES WHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAT
-// WHAT
-//  This is fine, none of this is bad. None of it. NONE.
 pub struct AbstractTypeDef {
     pub(crate) name_id: NameId,
     pub(crate) name_span: Span,
@@ -203,7 +225,7 @@ impl AbstractVariant {
 }
 
 #[derive(Debug)]
-pub struct AbstractFunc {
+pub(crate) struct AbstractFunc {
     pub(crate) name_id: NameId,
     pub(super) name_span: Span,
     pub(crate) params: Vec<Expr>,
@@ -219,7 +241,53 @@ impl AbstractFunc {
     }
 }
 
-// Please no SpannedNameId
+#[derive(Debug)]
+pub(crate) struct AbstractFuncDecl {
+    pub(crate) name_id: NameId,
+    pub(super) name_span: Span,
+    pub(crate) params: Vec<Param>,
+}
+
+impl AbstractFuncDecl {
+    pub(crate) fn new(name_id: NameId, name_span: Span, params: Vec<Param>) -> AbstractFuncDecl {
+        AbstractFuncDecl {
+            name_id,
+            name_span,
+            params,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct Param {
+    pub(crate) name_id: NameId,
+    pub(crate) name_span: Span,
+    pub(crate) type_expr: TypeExpr,
+}
+
+impl Param {
+    pub(crate) fn new(name_id: NameId, name_span: Span, type_expr: TypeExpr) -> Param {
+        Param {
+            name_id,
+            name_span,
+            type_expr,
+        }
+    }
+}
+
+//TODO:
+#[derive(Debug)]
+pub(crate) struct AbstractFieldDecl {
+    pub(crate) name_id: NameId,
+    pub(crate) fields: Vec<Expr>,
+}
+
+// impl AbstractFieldDecl {
+//     pub(crate) fn new(base: Box<Expr>, fields: Vec<Expr>) -> AbstractFieldDecl {
+//         AbstractFieldDecl { base, fields }
+//     }
+// }
+
 #[derive(Debug)]
 pub(crate) struct AbstractFieldAccess {
     pub(crate) base: Box<Expr>,

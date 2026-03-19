@@ -94,15 +94,15 @@ impl EnumRepre {
     }
 
     //NOTE: I will not use bit masks I will not use bitmasks I will n
-    pub fn supports_arg(&self, arg: InnerArgs) -> bool {
-        match arg {
-            InnerArgs::Warn
-            | InnerArgs::Scientific
-            | InnerArgs::Hex
-            | InnerArgs::Binary
-            | InnerArgs::Octal => true,
-        }
-    }
+    // pub fn supports_arg(&self, arg: InnerArgs) -> bool {
+    //     match arg {
+    //         InnerArgs::Warn
+    //         | InnerArgs::Scientific
+    //         | InnerArgs::Hex
+    //         | InnerArgs::Binary
+    //         | InnerArgs::Octal => true,
+    //     }
+    // }
 }
 
 #[derive(Debug)]
@@ -110,15 +110,18 @@ pub struct VariantRepre {
     pub(super) name_id: NameId,
     //WARN: Not because of being a representation but because enum types are nullable
     pub(super) typed_id: Option<TypedId>,
+    // Points to variant within original Ast enum
+    pub(super) ast_id: AstId,
     pub(super) args: Vec<InnerArgs>,
     pub(super) conds: Vec<Cond>,
 }
 
 impl VariantRepre {
-    pub fn new(name_id: NameId, typed_id: Option<TypedId>) -> VariantRepre {
+    pub fn new(name_id: NameId, typed_id: Option<TypedId>, ast_id: AstId) -> VariantRepre {
         VariantRepre {
             name_id,
             typed_id,
+            ast_id,
             args: Vec::new(),
             conds: Vec::new(),
         }
@@ -185,13 +188,20 @@ impl TypeDefRepre {
 pub(super) struct FuncRepre {
     pub(super) name_id: NameId,
     pub(super) func_id: FuncId,
+    // pub(super) ast_id: AstId,
     pub(super) field: Vec<FuncArgsRepre>,
 }
 
 impl FuncRepre {
-    pub(super) fn new(name_id: NameId, func_id: FuncId, field: Vec<FuncArgsRepre>) -> FuncRepre {
+    pub(super) fn new(
+        name_id: NameId,
+        func_id: FuncId,
+        // ast_id: AstId,
+        field: Vec<FuncArgsRepre>,
+    ) -> FuncRepre {
         FuncRepre {
             name_id,
+            // ast_id,
             func_id,
             field,
         }
@@ -210,10 +220,16 @@ pub(super) enum FuncArgsRepre {
 pub(super) struct FieldRepre {
     pub(super) name_id: NameId,
     pub(super) ty: TypedId,
+    // Ast contained field id, maybe this should just be AstId
+    pub(super) ast_id: AstId,
 }
 
 impl FieldRepre {
-    pub fn new(name_id: NameId, ty: TypedId) -> FieldRepre {
-        FieldRepre { name_id, ty }
+    pub fn new(name_id: NameId, ty: TypedId, ast_id: AstId) -> FieldRepre {
+        FieldRepre {
+            name_id,
+            ty,
+            ast_id,
+        }
     }
 }

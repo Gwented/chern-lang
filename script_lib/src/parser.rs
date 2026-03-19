@@ -488,7 +488,9 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
             let name = interner.search(id as usize);
 
             ctx.report_verbose(
-                &format!("Expected the keyword \"enum\" or \"struct\", found identifier {name}"),
+                &format!(
+                    "Expected the keyword \"enum\" or \"struct\", found identifier \"{name}\""
+                ),
                 Branch::NestType,
                 interner,
             );

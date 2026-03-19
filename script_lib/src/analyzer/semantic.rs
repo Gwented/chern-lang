@@ -48,9 +48,8 @@ impl SemanticReporter<'_> {
             }
             SemanticError::VagueArg(inner_arg, span) => {
                 let msg = format!(
-                    //FIXME: This error will be vague and misleading without explicitly saying what
-                    //the formatting error was. This needs the typedef itself.
-                    "Cannot use argument \"#{}\" for `struct` or `enum` types when used as a field variable\n\t|e.g. \"p: Person #bin\" would be invalid |",
+                    //FIXME: Still vague
+                    "The argument \"#{}\" cannot be used for `struct` or `enum` types when another struct is a field variable",
                     inner_arg
                 );
 

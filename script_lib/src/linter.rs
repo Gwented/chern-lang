@@ -163,6 +163,7 @@ fn print_exprs(conds: &Vec<Expr>, indent: usize, interner: &Intern) {
             Expr::Float(num, span) => {
                 println!("{spaces}float: {num}");
             }
+            Expr::BinaryExpr { lhs, op, rhs } => todo!(),
         }
     }
 }
