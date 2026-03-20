@@ -11,7 +11,8 @@ use crate::{
     semantic::{
         error::SemanticError,
         representation::{
-            ArgConstraint, FieldRepre, FuncArgsRepre, FuncKind, FuncRepre, Table, VariantRepre,
+            ArgConstraint, FieldRepre, FuncArgsKind, FuncArgsRepre, FuncKind, FuncRepre, Table,
+            VariantRepre,
         },
         semantic_reporter::SemanticReporter,
     },
@@ -180,7 +181,7 @@ impl ConstraintResolver<'_> {
         for expr in &abs_enum.glob_conds {
             conds.push(self.resolve_cond(expr, ast_id)?);
         }
-        panic!("Out of cond");
+        panic!("Still need to ensure conditions align with type given");
 
         let variants = &self.table.enums[enum_id.id as usize].variants;
         let mut args: Vec<InnerArgs> = Vec::new();
@@ -239,9 +240,9 @@ impl ConstraintResolver<'_> {
                     args.push(arg);
                 }
 
-                //WARN: Ast id is a little weird here...
                 let func_id = FuncId::new(self.table.funcs.len() as u32);
 
+                //TODO: Maybe handle this elsewhere
                 let (constraints, kind) = match Keyword::try_as_kw(call.name_id.id) {
                     Some(kw) => match kw {
                         Keyword::Range => (
@@ -260,7 +261,7 @@ impl ConstraintResolver<'_> {
                             ArgConstraint::from_builtin(FuncKind::Contains),
                             FuncKind::Contains,
                         ),
-                        // Will this account for alises?
+                        // Will this account for aliases?
                         _ => {
                             todo!("User defined");
                         }
@@ -270,7 +271,6 @@ impl ConstraintResolver<'_> {
                     }
                 };
 
-                // This ast id is suspicious
                 let func = FuncRepre::new(call.name_id, span.clone(), kind, constraints, args);
 
                 match self.check_func_constraints(&func) {
@@ -280,18 +280,11 @@ impl ConstraintResolver<'_> {
                         return Err(());
                     }
                 };
-
-                // Is this too eager?
+                panic!("Uh are you done functions?");
 
                 self.table.funcs.push(func);
 
-                let cond = Cond::Func(func_id);
-
-                dbg!(self.interner.search(call.name_id.id as usize));
-                dbg!(&call);
-                panic!();
-
-                todo!();
+                Ok(Cond::Func(func_id))
             }
             Expr::Str(name_id, span) => {
                 let err_name = self.interner.search(name_id.id as usize);
@@ -457,11 +450,18 @@ impl ConstraintResolver<'_> {
                     for arg in &func.args {
                         match arg {
                             FuncArgsRepre::Integer(_) | FuncArgsRepre::Float(_) => continue,
-                            FuncArgsRepre::Var(sym_id) => {
-                                todo!()
+                            FuncArgsRepre::Var(_, kind) => {
+                                if !kind.is_numeric() {
+                                    return Err(SemanticError::ConstraintMismatch(
+                                        ArgConstraint::Numeric,
+                                        *kind,
+                                        func.kind,
+                                        func.call_span.clone(),
+                                    ));
+                                }
                             }
                             FuncArgsRepre::Char(_) => {
-                                return Err(SemanticError::TypeMismatch(
+                                return Err(SemanticError::ConstraintMismatch(
                                     ArgConstraint::Numeric,
                                     BuiltinTypeKind::Char,
                                     func.kind,
@@ -469,7 +469,7 @@ impl ConstraintResolver<'_> {
                                 ));
                             }
                             FuncArgsRepre::Str(_) => {
-                                return Err(SemanticError::TypeMismatch(
+                                return Err(SemanticError::ConstraintMismatch(
                                     ArgConstraint::Numeric,
                                     BuiltinTypeKind::Str,
                                     func.kind,
@@ -482,46 +482,29 @@ impl ConstraintResolver<'_> {
                 // SameType
                 ArgConstraint::MatchingType => {
                     // Maybe this is dangerous?
-                    let same = if let Some(arg) = func.args.get(0) {
-                        arg
+                    let req_type = if let Some(arg) = func.args.get(0) {
+                        arg.kind()
                     } else {
                         continue;
                     };
 
                     for arg in func.args.iter().skip(1) {
-                        if arg != same {
+                        if arg.kind() != req_type {
                             // There is no general "number" to give so may adjust this
-                            let kind = match arg {
-                                FuncArgsRepre::Integer(_) => BuiltinTypeKind::I64,
-                                FuncArgsRepre::Float(_) => BuiltinTypeKind::F64,
-                                FuncArgsRepre::Char(_) => BuiltinTypeKind::Char,
-                                FuncArgsRepre::Str(_) => BuiltinTypeKind::Str,
-                                FuncArgsRepre::Var(symbol_id) => {
-                                    match self.table.typed_ids[&symbol_id] {
-                                        TypedId::BuiltinType(builtin_type_id) => {
-                                            self.table.builtin_types[builtin_type_id.id as usize]
-                                                .kind()
-                                        }
-                                        _ => {
-                                            todo!()
-                                        }
-                                    }
-                                }
-                            };
 
-                            return Err(SemanticError::TypeMismatch(
+                            return Err(SemanticError::ConstraintMismatch(
                                 constraint,
-                                kind,
+                                arg.to_builtin_kind(),
                                 func.kind,
                                 func.call_span.clone(),
                             ));
                         }
                     }
                 }
-                // ParamCount
-                ArgConstraint::ParamCount(count) => {
+                // Arg count
+                ArgConstraint::ArgCount(count) => {
                     if func.args.len() != count as usize {
-                        return Err(SemanticError::ParamMiscount(
+                        return Err(SemanticError::ArgMiscount(
                             constraint,
                             func.kind,
                             func.args.len() as u8,
@@ -529,9 +512,42 @@ impl ConstraintResolver<'_> {
                         ));
                     }
                 }
-                ArgConstraint::Integer => {}
-                ArgConstraint::Float => {}
-                ArgConstraint::Str => {}
+                ArgConstraint::Integer => {
+                    for arg in &func.args {
+                        if !arg.is_integer() {
+                            SemanticError::ConstraintMismatch(
+                                ArgConstraint::Integer,
+                                arg.to_builtin_kind(),
+                                func.kind,
+                                func.call_span.clone(),
+                            );
+                        }
+                    }
+                }
+                ArgConstraint::Float => {
+                    for arg in &func.args {
+                        if !arg.is_float() {
+                            SemanticError::ConstraintMismatch(
+                                ArgConstraint::Float,
+                                arg.to_builtin_kind(),
+                                func.kind,
+                                func.call_span.clone(),
+                            );
+                        }
+                    }
+                }
+                ArgConstraint::Str => {
+                    for arg in &func.args {
+                        if !arg.is_str() {
+                            SemanticError::ConstraintMismatch(
+                                ArgConstraint::Str,
+                                arg.to_builtin_kind(),
+                                func.kind,
+                                func.call_span.clone(),
+                            );
+                        }
+                    }
+                }
                 ArgConstraint::DynType => continue,
             }
         }

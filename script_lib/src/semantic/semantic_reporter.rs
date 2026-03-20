@@ -49,14 +49,14 @@ impl SemanticReporter<'_> {
 
                 (msg, span)
             }
-            SemanticError::TypeMismatch(constraint, type_kind, func_kind, span) => {
+            SemanticError::ConstraintMismatch(constraint, type_kind, func_kind, span) => {
                 let msg = format!(
                     "The type \"{type_kind}\" does not follow constraint `{constraint}` for function \"{func_kind}\""
                 );
 
                 (msg, span)
             }
-            SemanticError::ParamMiscount(constraint, func_kind, count, span) => {
+            SemanticError::ArgMiscount(constraint, func_kind, count, span) => {
                 let msg =
                     format!("Expected {constraint} for function \"{func_kind}\", found {count}");
 

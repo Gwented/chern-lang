@@ -51,16 +51,16 @@ pub static KEYWORDS_ARRAY: [&str; 41] = [
     // Predicate keywords
     "IsEmpty",
     "IsWhitespace", // 36
-    // "Nat" // 37
-    // "Real" // 38
-    // "Complex" // 39
-    // "Prime" // 40
     // Predicates (Function)
     "Range",
-    "StartsW", // 42
+    "StartsW", // 38
     "EndsW",
-    "Contains", // 44
+    "Contains", // 40
 ];
+// "Nat" // 37
+// "Real" // 38
+// "Complex" // 39
+// "Prime" // 40
 
 // Keep a compact enum for code that prefers typed keyword identifiers.
 // I think I don't know I am new to thinking does anyone have beginner thoughts?

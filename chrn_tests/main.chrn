@@ -6,7 +6,7 @@
 bind "Hello.chrn"
 var->
 // Add namespace handling for ~str to be a valid type with "str" as the name
-    p: Person [IsEmpty, Range(2, 5.)]
+    p: Person [IsEmpty, !IsWhitespace, Range(0, 6e2)]
 
 nest->
     struct Person {

@@ -12,7 +12,7 @@ const MAX_READ: usize = 1_000_000;
 
 // More inclusive name
 //TEST: Suspicious lifetime
-pub struct FileLoader<'a, R: Read> {
+pub struct ConfigLoader<'a, R: Read> {
     path: &'a Path,
     handle: BufReader<R>,
     pos: usize,
@@ -21,9 +21,9 @@ pub struct FileLoader<'a, R: Read> {
 
 //NOTE: This forces paths to be given, but if the chern file itself doesn't have a path given
 //then the language doesn't work anyways. May leave as is.
-impl<R: Read> FileLoader<'_, R> {
-    pub fn new(path: &Path, handle: R) -> FileLoader<'_, R> {
-        FileLoader {
+impl<R: Read> ConfigLoader<'_, R> {
+    pub fn new(path: &Path, handle: R) -> ConfigLoader<'_, R> {
+        ConfigLoader {
             path,
             handle: BufReader::new(handle),
             pos: 0,

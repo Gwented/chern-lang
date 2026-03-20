@@ -217,7 +217,6 @@ impl Lexer<'_> {
                     self.advance();
                     tokens.push(self.read_quotes(interner));
                 }
-                //WARN: Seems fine
                 '\'' => {
                     self.advance();
                     tokens.push(self.read_char(interner));
@@ -398,13 +397,16 @@ impl Lexer<'_> {
                 }
                 b'0'..=b'7' if (notation & NOTATION_OCT) != 0 => {
                     self.advance();
-                }
-                b'0'..=b'9' => {
                     self.advance();
                 }
+                // Why did I remove this???
+                b'0'..b'9' => {
+                    self.advance();
+                }
+                // May remove '+' being usable
                 b'e' if (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCT)) == 0 => {
                     let next = self.peek_ahead(1);
-                    if next == b'+' || next == b'-' {
+                    if next.is_ascii_digit() || next == b'+' || next == b'-' {
                         notation |= NOTATION_FLOAT;
                         self.skip(2);
                     } else {
@@ -413,7 +415,9 @@ impl Lexer<'_> {
                 }
                 b'.' if (notation & NOTATION_FLOAT) == 0
                     && (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCT)) == 0
-                    && self.peek_ahead(1) != b'.' =>
+                    && self.peek_ahead(1) != b'.'
+                    // Maybe this will be possible, but it looks weird.
+                    && self.peek_ahead(1).is_ascii_digit() =>
                 {
                     notation |= NOTATION_FLOAT;
                     self.advance();
@@ -428,6 +432,7 @@ impl Lexer<'_> {
         }
 
         let end = self.pos;
+        dbg!(str::from_utf8(&self.src_bytes).unwrap());
 
         let raw_str = match str::from_utf8(&self.src_bytes[start..end]) {
             Ok(val) => val,
@@ -444,6 +449,7 @@ impl Lexer<'_> {
         let (id_str, num_notation) =
             if (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCT)) != 0 {
                 let digits_start = if raw_str.len() > 2 { 2 } else { 0 };
+                dbg!(digits_start);
                 let digits = &raw_str[digits_start..].replace('_', "");
 
                 let (radix, num_notation) = if (notation & NOTATION_HEX) != 0 {
@@ -455,13 +461,14 @@ impl Lexer<'_> {
                 };
 
                 let num = i64::from_str_radix(digits, radix).unwrap_or(0);
-                //WARN: AM I HALLUCINATING? SHOULDN'T THIS BE DEREF COERCABLE?
                 (num.to_string(), num_notation)
             } else {
                 (raw_str.replace('_', ""), Notation::Decimal)
             };
 
         let id = interner.intern(&id_str);
+
+        dbg!(id_str);
 
         if (notation & NOTATION_FLOAT) == 0 {
             SpannedToken {

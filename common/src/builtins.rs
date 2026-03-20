@@ -66,7 +66,7 @@ impl BuiltinType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuiltinTypeKind {
     I8,
     U8,
@@ -159,6 +159,39 @@ impl BuiltinType {
                 _ => None,
             },
             None => None,
+        }
+    }
+}
+
+impl BuiltinTypeKind {
+    pub fn is_numeric(&self) -> bool {
+        match self {
+            BuiltinTypeKind::I8
+            | BuiltinTypeKind::U8
+            | BuiltinTypeKind::I16
+            | BuiltinTypeKind::U16
+            | BuiltinTypeKind::F16
+            | BuiltinTypeKind::I32
+            | BuiltinTypeKind::U32
+            | BuiltinTypeKind::F32
+            | BuiltinTypeKind::I64
+            | BuiltinTypeKind::U64
+            | BuiltinTypeKind::F64
+            | BuiltinTypeKind::I128
+            | BuiltinTypeKind::U128
+            | BuiltinTypeKind::F128
+            | BuiltinTypeKind::Sized
+            | BuiltinTypeKind::Unsized
+            | BuiltinTypeKind::BigInt
+            | BuiltinTypeKind::BigFloat => true,
+            BuiltinTypeKind::Bool
+            | BuiltinTypeKind::Nil
+            | BuiltinTypeKind::Char
+            | BuiltinTypeKind::Str
+            | BuiltinTypeKind::List
+            | BuiltinTypeKind::Set
+            | BuiltinTypeKind::Map
+            | BuiltinTypeKind::Any => false,
         }
     }
 }

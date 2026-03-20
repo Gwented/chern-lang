@@ -2,7 +2,7 @@ use core::error;
 use std::{collections::HashMap, fmt::Display};
 
 use common::{
-    builtins::BuiltinType,
+    builtins::{BuiltinType, BuiltinTypeKind},
     keywords,
     symbols::{
         AstId, BuiltinTypeId, Cond, EnumId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs,
@@ -225,22 +225,81 @@ pub(super) enum FuncArgsRepre {
     Integer(i64),
     Float(f64),
     Char(char),
-    Var(SymbolId),
+    //TEST:
+    Var(TypedId, BuiltinTypeKind),
     Str(NameId),
 }
 
-// Is this right?
-impl PartialEq for FuncArgsRepre {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Integer(_), Self::Integer(_))
-            | (Self::Float(_), Self::Float(_))
-            | (Self::Char(_), Self::Char(_))
-            | (Self::Var(_), Self::Var(_))
-            | (Self::Str(_), Self::Str(_)) => true,
+// KIND VARIANT IS NOT, NEEDED. PLEASE.
+impl FuncArgsRepre {
+    pub(super) fn is_numeric(&self) -> bool {
+        match self {
+            FuncArgsRepre::Integer(_) | FuncArgsRepre::Float(_) => true,
+            FuncArgsRepre::Var(_, kind) => kind.is_numeric(),
+
+            FuncArgsRepre::Char(_) | FuncArgsRepre::Str(_) => false,
+        }
+    }
+
+    // TEST: Currently testing out a way of formatting that is more encapsulated so that the code
+    // outside doesn't have to be repeated as intensely.
+    pub(super) fn is_integer(&self) -> bool {
+        match self.kind() {
+            FuncArgsKind::Integer => true,
             _ => false,
         }
     }
+
+    pub(super) fn is_float(&self) -> bool {
+        match self.kind() {
+            FuncArgsKind::Float => true,
+            _ => false,
+        }
+    }
+
+    pub(super) fn is_char(&self) -> bool {
+        match self.kind() {
+            FuncArgsKind::Char => true,
+            _ => false,
+        }
+    }
+
+    pub(super) fn is_str(&self) -> bool {
+        match self.kind() {
+            FuncArgsKind::Str => true,
+            _ => false,
+        }
+    }
+
+    // to_builtin_type_kind is getting a little long for something so contextually obvious
+    pub(super) fn to_builtin_kind(&self) -> BuiltinTypeKind {
+        match self {
+            FuncArgsRepre::Integer(_) => BuiltinTypeKind::I64,
+            FuncArgsRepre::Float(_) => BuiltinTypeKind::F64,
+            FuncArgsRepre::Char(_) => BuiltinTypeKind::Char,
+            FuncArgsRepre::Var(_, kind) => *kind,
+            FuncArgsRepre::Str(_) => BuiltinTypeKind::Str,
+        }
+    }
+
+    pub(super) fn kind(&self) -> FuncArgsKind {
+        match self {
+            FuncArgsRepre::Integer(_) => FuncArgsKind::Integer,
+            FuncArgsRepre::Float(_) => FuncArgsKind::Float,
+            FuncArgsRepre::Char(_) => FuncArgsKind::Char,
+            FuncArgsRepre::Var(_, _) => FuncArgsKind::Var,
+            FuncArgsRepre::Str(_) => FuncArgsKind::Str,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FuncArgsKind {
+    Integer,
+    Float,
+    Char,
+    Var,
+    Str,
 }
 
 #[derive(Debug)]
@@ -289,7 +348,7 @@ impl Display for FuncKind {
 // TEST:
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ArgConstraint {
-    ParamCount(u8),
+    ArgCount(u8),
     DynType,
     MatchingType,
     Numeric,
@@ -306,17 +365,17 @@ impl ArgConstraint {
         match kind {
             FuncKind::StartsW => {
                 // Maybe if we got something like 0x1FF it could StartsW(0x1FF)?
-                vec![ArgConstraint::ParamCount(1), ArgConstraint::MatchingType]
+                vec![ArgConstraint::ArgCount(1), ArgConstraint::MatchingType]
             }
             FuncKind::EndsW => {
-                vec![ArgConstraint::ParamCount(1), ArgConstraint::MatchingType]
+                vec![ArgConstraint::ArgCount(1), ArgConstraint::MatchingType]
             }
             FuncKind::Contains => {
-                vec![ArgConstraint::ParamCount(1), ArgConstraint::MatchingType]
+                vec![ArgConstraint::ArgCount(1), ArgConstraint::MatchingType]
             }
             FuncKind::Range => {
                 vec![
-                    ArgConstraint::ParamCount(2),
+                    ArgConstraint::ArgCount(2),
                     ArgConstraint::Numeric,
                     ArgConstraint::MatchingType,
                 ]
@@ -329,14 +388,19 @@ impl ArgConstraint {
 impl Display for ArgConstraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ArgConstraint::DynType => write!(f, "DynType"),
+            ArgConstraint::DynType => write!(f, "DynamicType"),
             ArgConstraint::MatchingType => write!(f, "MatchingType"),
             ArgConstraint::Numeric => write!(f, "Numeric"),
             ArgConstraint::Integer => write!(f, "Integer"),
             ArgConstraint::Float => write!(f, "Float"),
             ArgConstraint::Str => write!(f, "str"),
-            // I think this is fine?
-            ArgConstraint::ParamCount(count) => write!(f, "{count} parameter(s)"),
+            ArgConstraint::ArgCount(count) => {
+                if *count > 1 {
+                    write!(f, "{count} arguments")
+                } else {
+                    write!(f, "{count} argument")
+                }
+            }
         }
     }
 }

@@ -1,6 +1,6 @@
 use std::{path::PathBuf, time::Instant};
 
-use common::{intern::Intern, metadata::FileMetadata, storage::FileLoader};
+use common::{intern::Intern, metadata::FileMetadata, storage::ConfigLoader};
 use script_lib::{
     lexer::Lexer,
     linter,
@@ -20,7 +20,7 @@ fn main() {
 
     let file = std::fs::File::open(&path).unwrap();
 
-    let metadata = match FileLoader::new(&path, file).load_config() {
+    let metadata = match ConfigLoader::new(&path, file).load_config() {
         Ok(meta) => meta,
         Err(e) => {
             // Why are all the errors for languages lowercase? Is there something I'm missing?
