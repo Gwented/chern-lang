@@ -399,9 +399,9 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
     let conds = conds_res?;
     let args = args_res?;
 
-    let abstract_typedef = AbstractTypeDef::new(name_id, name_span, ty, args, conds);
+    let abs_typedef = AbstractTypeDef::new(name_id, name_span, ty, args, conds);
 
-    Ok(abstract_typedef)
+    Ok(abs_typedef)
 }
 
 fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> {
@@ -924,6 +924,14 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<Expr>, usize)
                     .expect("Lexer broke (Float).");
 
                 args.push(Expr::Float(num, span));
+            }
+            Token::Char(ch) => {
+                let span = ctx.advance_span();
+
+                //WARN: Maybe should resolve numerics as themselves while lexing?
+                // Probably not worth a string allocation
+
+                args.push(Expr::Char(ch, span));
             }
             Token::Illegal(id) => {
                 ctx.advance_tok();

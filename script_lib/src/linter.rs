@@ -164,6 +164,9 @@ fn print_exprs(conds: &Vec<Expr>, indent: usize, interner: &Intern) {
                 println!("{spaces}float: {num}");
             }
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),
+            Expr::Char(ch, _) => {
+                println!("{spaces}Char [{ch}");
+            }
         }
     }
 }

@@ -99,16 +99,12 @@ impl TypeResolver<'_> {
         }
     }
 
-    fn resolve_typedef(
-        &mut self,
-        abstract_typedef: &AbstractTypeDef,
-        ast_id: AstId,
-    ) -> Result<(), ()> {
-        let ty = self.resolve_type_expr(&abstract_typedef.ty, ast_id)?;
+    fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
+        let ty = self.resolve_type_expr(&abs_typedef.ty, ast_id)?;
 
         let sym_id = self.table.sym_ids[&ast_id];
 
-        let type_def_repre = TypeDefRepre::new(abstract_typedef.name_id, ty, sym_id, ast_id);
+        let type_def_repre = TypeDefRepre::new(abs_typedef.name_id, ty, sym_id, ast_id);
         let type_def_id = TypeDefId::new(self.table.typedefs.len() as u32);
 
         self.table
@@ -120,14 +116,10 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
-    fn resolve_struct(
-        &mut self,
-        abstract_struct: &AbstractStruct,
-        ast_id: AstId,
-    ) -> Result<(), ()> {
+    fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
         let mut fields: Vec<FieldRepre> = Vec::new();
 
-        for (i, type_def) in abstract_struct.fields.iter().enumerate() {
+        for (i, type_def) in abs_struct.fields.iter().enumerate() {
             let typed_id = self.resolve_type_expr(&type_def.ty, ast_id)?;
 
             let field_repre = FieldRepre::new(type_def.name_id, typed_id, AstId::new(i as u32));
@@ -137,7 +129,7 @@ impl TypeResolver<'_> {
 
         let sym_id = self.table.sym_ids[&ast_id];
 
-        let struct_repre = StructRepre::new(abstract_struct.name_id, sym_id, ast_id, fields);
+        let struct_repre = StructRepre::new(abs_struct.name_id, sym_id, ast_id, fields);
         let struct_id = StructId::new(self.table.structs.len() as u32);
 
         self.table
@@ -149,10 +141,10 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
-    fn resolve_enum(&mut self, abstract_enum: &AbstractEnum, ast_id: AstId) -> Result<(), ()> {
+    fn resolve_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) -> Result<(), ()> {
         let mut variants: Vec<VariantRepre> = Vec::new();
 
-        for (i, variant) in abstract_enum.variants.iter().enumerate() {
+        for (i, variant) in abs_enum.variants.iter().enumerate() {
             if let Some(ty) = &variant.ty {
                 let typed_id = self.resolve_type_expr(ty, ast_id)?;
                 let variant_repre =
@@ -164,7 +156,7 @@ impl TypeResolver<'_> {
 
         let sym_id = self.table.sym_ids[&ast_id];
 
-        let enum_repre = EnumRepre::new(abstract_enum.name_id, sym_id, ast_id, variants);
+        let enum_repre = EnumRepre::new(abs_enum.name_id, sym_id, ast_id, variants);
         let enum_id = EnumId::new(self.table.enums.len() as u32);
 
         self.table.typed_ids.insert(sym_id, TypedId::Enum(enum_id));
@@ -317,6 +309,7 @@ impl TypeResolver<'_> {
             Expr::FieldAccess(abstract_field_access, span) => todo!(),
             Expr::Unary(unary, span) => todo!(),
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),
+            Expr::Char(_, _) => todo!(),
         }
     }
 

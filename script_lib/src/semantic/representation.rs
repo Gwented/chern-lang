@@ -1,11 +1,12 @@
-use std::collections::HashMap;
+use core::error;
+use std::{collections::HashMap, fmt::Display};
 
 use common::{
     builtins::BuiltinType,
     keywords,
     symbols::{
-        AstId, BuiltinTypeId, Cond, EnumId, FuncId, InnerArgs, NameId, SpannedInnerArgs, StructId,
-        SymbolId, TypeDefId, TypedId,
+        AstId, BuiltinTypeId, Cond, EnumId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs,
+        StructId, SymbolId, TypeDefId, TypedId,
     },
 };
 
@@ -194,23 +195,26 @@ impl TypeDefRepre {
 #[derive(Debug)]
 pub(super) struct FuncRepre {
     pub(super) name_id: NameId,
-    pub(super) func_id: FuncId,
-    // pub(super) ast_id: AstId,
-    pub(super) field: Vec<FuncArgsRepre>,
+    pub(super) call_span: Span,
+    pub(super) kind: FuncKind,
+    pub(super) constraints: Vec<ArgConstraint>,
+    pub(super) args: Vec<FuncArgsRepre>,
 }
 
 impl FuncRepre {
     pub(super) fn new(
         name_id: NameId,
-        func_id: FuncId,
-        // ast_id: AstId,
-        field: Vec<FuncArgsRepre>,
+        call_span: Span,
+        kind: FuncKind,
+        constraints: Vec<ArgConstraint>,
+        args: Vec<FuncArgsRepre>,
     ) -> FuncRepre {
         FuncRepre {
             name_id,
-            // ast_id,
-            func_id,
-            field,
+            kind,
+            call_span,
+            constraints,
+            args,
         }
     }
 }
@@ -220,6 +224,7 @@ pub(super) enum FuncArgsRepre {
     Integer(i64),
     Float(f64),
     Char(char),
+    Var(SymbolId),
     Str(NameId),
 }
 
@@ -240,3 +245,79 @@ impl FieldRepre {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FuncKind {
+    Contains,
+    Range,
+    StartsW,
+    EndsW, // UserDefined
+    UserDefined,
+}
+
+// Nat
+// Real
+// Complex
+// Prime
+// TEST:
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ArgConstraint {
+    DynType,
+    SameType,
+    Numeric,
+    Integer,
+    Float,
+    Str,
+}
+
+impl ArgConstraint {
+    // PLEASE DONT MAKE ME RETURN OPTION
+    // TEST:
+    /// Takes in a function kind that is built in and returns it's constraints
+    pub fn from_builtin(kind: FuncKind) -> Vec<ArgConstraint> {
+        match kind {
+            FuncKind::StartsW => {
+                // Maybe if we got something like 0x1FF it could StartsW(0x1FF)?
+                vec![ArgConstraint::DynType]
+            }
+            FuncKind::EndsW => {
+                vec![ArgConstraint::DynType]
+            }
+            FuncKind::Contains => {
+                vec![ArgConstraint::DynType]
+            }
+            FuncKind::Range => {
+                vec![ArgConstraint::Numeric]
+            }
+            FuncKind::UserDefined => unreachable!("No"),
+        }
+    }
+}
+
+impl Display for FuncKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FuncKind::Contains => write!(f, "Contains"),
+            FuncKind::Range => write!(f, "Range"),
+            FuncKind::StartsW => write!(f, "StartsW"),
+            FuncKind::EndsW => write!(f, "EndsW"),
+            FuncKind::UserDefined => write!(f, "<Hi>"),
+        }
+    }
+}
+
+impl Display for ArgConstraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ArgConstraint::DynType => write!(f, "dynamic type"),
+            ArgConstraint::SameType => write!(f, "same type"),
+            ArgConstraint::Numeric => write!(f, "numeric"),
+            ArgConstraint::Integer => write!(f, "integer"),
+            ArgConstraint::Float => write!(f, "float"),
+            ArgConstraint::Str => write!(f, "str"),
+        }
+    }
+}
+
+// Can't really use AstId since it's not an ExprId and it would pretty much be a guess as to what
+// typeexpr it came from

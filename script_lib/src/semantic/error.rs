@@ -3,11 +3,14 @@ use common::{
     symbols::{InnerArgs, Span, SpannedInnerArgs, TypedId},
 };
 
+use crate::semantic::representation::{ArgConstraint, FuncKind};
+
 #[derive(Debug)]
 // Lifetimes
 pub(super) enum SemanticError {
-    // TypeMismatch,
     // Interesting names
+    // expected, found, what function type
+    TypeMismatch(ArgConstraint, BuiltinTypeKind, FuncKind, Span),
     VagueArg(InnerArgs, Span),
     UnsupportedArg(SpannedInnerArgs, BuiltinTypeKind),
 }

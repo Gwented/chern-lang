@@ -37,14 +37,17 @@ pub enum Item {
     // Func(AbstractFunc),
 }
 
+// This could look better...
 #[derive(Debug)]
 pub(crate) enum Expr {
     Var(NameId, Span),
     // Staying capped at i64 and f64 for pacing purposes
     // TODO: Need to likely carry notation here
+    // Also maybe should be a "literal" type
     Integer(i64, Span),
     Float(f64, Span),
     Str(NameId, Span),
+    Char(char, Span),
     Call(Call, Span),
     FieldAccess(AbstractFieldAccess, Span),
     Unary(Unary, Span),

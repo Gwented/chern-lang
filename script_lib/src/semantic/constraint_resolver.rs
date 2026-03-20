@@ -1,15 +1,18 @@
 use common::{
-    builtins::BuiltinType,
+    builtins::{BuiltinType, BuiltinTypeKind},
     intern::Intern,
+    keywords::{self, Keyword},
     metadata::FileMetadata,
-    symbols::{AstId, Cond, InnerArgs, Span, SpannedInnerArgs, TypedId},
+    symbols::{AstId, Cond, FuncId, InnerArgs, Span, SpannedInnerArgs, TypedId},
 };
 
 use crate::{
     parser::ast::{AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Expr, Item, UnaryOp},
     semantic::{
         error::SemanticError,
-        representation::{FieldRepre, FuncArgsRepre, Table, VariantRepre},
+        representation::{
+            ArgConstraint, FieldRepre, FuncArgsRepre, FuncKind, FuncRepre, Table, VariantRepre,
+        },
         semantic_reporter::SemanticReporter,
     },
 };
@@ -65,11 +68,7 @@ impl ConstraintResolver<'_> {
         }
     }
 
-    fn resolve_typedef(
-        &mut self,
-        abstract_typedef: &AbstractTypeDef,
-        ast_id: AstId,
-    ) -> Result<(), ()> {
+    fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
         // Not too favorable of this needing to happen but the ast would need to also have this
         // done otherwise. But maybe this should take in the type def and the id to avoid this.
         let type_def_id = match self.table.typed_ids[&self.table.sym_ids[&ast_id]] {
@@ -81,7 +80,7 @@ impl ConstraintResolver<'_> {
         let typed_id = self.table.typedefs[type_def_id.id as usize].typed_id;
 
         //TODO: Make less terminal and have a better solution for this
-        for spanned_arg in abstract_typedef.args.clone() {
+        for spanned_arg in &abs_typedef.args {
             match typed_id {
                 TypedId::Struct(_) | TypedId::Enum(_) => {
                     if spanned_arg.arg != InnerArgs::Warn {
@@ -108,8 +107,8 @@ impl ConstraintResolver<'_> {
 
         let mut conds = Vec::new();
 
-        for expr in &abstract_typedef.conds {
-            conds.push(self.resolve_cond(expr)?);
+        for expr in &abs_typedef.conds {
+            conds.push(self.resolve_cond(expr, ast_id)?);
         }
 
         let type_def = &mut self.table.typedefs[type_def_id.id as usize];
@@ -123,11 +122,7 @@ impl ConstraintResolver<'_> {
     // through items despite there already being a known struct id, which could be prevented if the
     // struct id itself was passed, but then the loop would iterate over everything by default
     // which seems bad if they're just builtins etc.
-    fn resolve_struct(
-        &mut self,
-        abstract_struct: &AbstractStruct,
-        ast_id: AstId,
-    ) -> Result<(), ()> {
+    fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
         // This looks weird
         let struct_id = match self.table.typed_ids[&self.table.sym_ids[&ast_id]] {
             TypedId::Struct(struct_id) => struct_id,
@@ -136,18 +131,18 @@ impl ConstraintResolver<'_> {
 
         let mut conds: Vec<Cond> = Vec::new();
 
-        for expr in &abstract_struct.glob_conds {
-            conds.push(self.resolve_cond(expr)?);
+        for expr in &abs_struct.glob_conds {
+            conds.push(self.resolve_cond(expr, ast_id)?);
         }
 
         let mut args: Vec<InnerArgs> = Vec::new();
         // This looks odd too
         let fields = &self.table.structs[struct_id.id as usize].fields;
-        dbg!(&abstract_struct.glob_args);
+        dbg!(&abs_struct.glob_args);
 
         //TODO: Need to point to particular type expression
         for field in fields {
-            for spanned_arg in &abstract_struct.glob_args {
+            for spanned_arg in &abs_struct.glob_args {
                 let arg = match self.resolve_arg(field.ty, spanned_arg) {
                     Ok(a) => a,
                     Err(sem_err) => {
@@ -172,7 +167,7 @@ impl ConstraintResolver<'_> {
         Ok(())
     }
 
-    fn resolve_enum(&mut self, abstract_enum: &AbstractEnum, ast_id: AstId) -> Result<(), ()> {
+    fn resolve_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) -> Result<(), ()> {
         let enum_id = match self.table.typed_ids[&self.table.sym_ids[&ast_id]] {
             TypedId::Enum(enum_id) => enum_id,
             _ => unreachable!(),
@@ -180,15 +175,16 @@ impl ConstraintResolver<'_> {
 
         let mut conds: Vec<Cond> = Vec::new();
 
-        for expr in &abstract_enum.glob_conds {
-            conds.push(self.resolve_cond(expr)?);
+        for expr in &abs_enum.glob_conds {
+            conds.push(self.resolve_cond(expr, ast_id)?);
         }
+        panic!("Out of cond");
 
         let variants = &self.table.enums[enum_id.id as usize].variants;
         let mut args: Vec<InnerArgs> = Vec::new();
 
         for variant in variants {
-            for spanned_arg in &abstract_enum.glob_args {
+            for spanned_arg in &abs_enum.glob_args {
                 if let Some(type_id) = variant.typed_id {
                     let arg = match self.resolve_arg(type_id, spanned_arg) {
                         Ok(a) => a,
@@ -211,7 +207,8 @@ impl ConstraintResolver<'_> {
         Ok(())
     }
 
-    fn resolve_cond(&mut self, expr: &Expr) -> Result<Cond, ()> {
+    // Do we need ast id?
+    fn resolve_cond(&mut self, expr: &Expr, ast_id: AstId) -> Result<Cond, ()> {
         match expr {
             Expr::Var(name_id, span) => {
                 if let Some(cond) = Cond::try_from_id(name_id.id) {
@@ -221,30 +218,78 @@ impl ConstraintResolver<'_> {
                 let err_name = self.interner.search(name_id.id as usize);
                 let err_msg = format!("\"{err_name}\" is not a valid condition");
 
+                // If the error name IS a functional condition, it just says it's not a condition
                 self.reporter.report_spanned(&err_msg, Some(err_name), span);
 
                 Err(())
             }
             Expr::Unary(unary, _) => match unary.op {
                 UnaryOp::Not => {
-                    let cond = self.resolve_cond(&unary.expr)?;
+                    let cond = self.resolve_cond(&unary.expr, ast_id)?;
                     Ok(Cond::Not(Box::new(cond)))
                 }
             },
-            Expr::Call(call, _) => {
-                // This will return a cond with a function id to a defined function with args
-
-                // Can't really do it like this.
-                // let func_id = self.contains_func(call.name_id);
-
+            Expr::Call(call, span) => {
                 let mut args: Vec<FuncArgsRepre> = Vec::new();
 
-                // for expr in &call.exprs {
-                //     let arg = self.resolve_func_arg(expr)?;
-                //     args.push(arg);
-                // }
+                for expr in &call.exprs {
+                    let arg = self.resolve_func_arg(expr)?;
+                    args.push(arg);
+                }
 
-                // let function = FuncRepre::new(call.name_id, func_id, args);
+                //WARN: Ast id is a little weird here...
+                let func_id = FuncId::new(self.table.funcs.len() as u32);
+
+                let (constraints, kind) = match Keyword::try_as_kw(call.name_id.id) {
+                    Some(kw) => match kw {
+                        Keyword::Range => (
+                            ArgConstraint::from_builtin(FuncKind::Range),
+                            FuncKind::Range,
+                        ),
+                        Keyword::StartsW => (
+                            ArgConstraint::from_builtin(FuncKind::StartsW),
+                            FuncKind::StartsW,
+                        ),
+                        Keyword::EndsW => (
+                            ArgConstraint::from_builtin(FuncKind::EndsW),
+                            FuncKind::EndsW,
+                        ),
+                        Keyword::Contains => (
+                            ArgConstraint::from_builtin(FuncKind::Contains),
+                            FuncKind::Contains,
+                        ),
+                        // User defined would have Block
+                        _ => {
+                            _ = FuncKind::UserDefined;
+                            todo!("User defined");
+                        }
+                    },
+                    None => {
+                        _ = FuncKind::UserDefined;
+                        todo!("User defined");
+                    }
+                };
+
+                // This ast id is suspicious
+                let func = FuncRepre::new(call.name_id, span.clone(), kind, constraints, args);
+
+                match self.check_func_constraints(&func) {
+                    Ok(_) => (),
+                    Err(sem_err) => {
+                        self.reporter.report_semantic(sem_err);
+                        return Err(());
+                    }
+                };
+
+                // Is this too eager?
+
+                self.table.funcs.push(func);
+
+                let cond = Cond::Func(func_id);
+
+                dbg!(self.interner.search(call.name_id.id as usize));
+                dbg!(&call);
+                panic!();
 
                 todo!();
             }
@@ -274,10 +319,10 @@ impl ConstraintResolver<'_> {
                 Err(())
             }
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),
+            Expr::Char(_, _) => todo!(),
         }
     }
 
-    //FIXME: SPANNING IS LOST IN MANY PLACES
     fn resolve_arg(
         &self,
         typed_id: TypedId,
@@ -290,7 +335,7 @@ impl ConstraintResolver<'_> {
             TypedId::Struct(struct_id) => {
                 let structure = &self.table.structs[struct_id.id as usize];
 
-                for (i, field) in structure.fields.iter().enumerate() {
+                for field in &structure.fields {
                     let arg_res = self.resolve_arg(field.ty, spanned_arg);
 
                     // DIRTY
@@ -319,9 +364,9 @@ impl ConstraintResolver<'_> {
             TypedId::Enum(enum_id) => {
                 let enumeration = &self.table.enums[enum_id.id as usize];
 
-                for (i, variant) in enumeration.variants.iter().enumerate() {
+                for variant in &enumeration.variants {
                     if let Some(ty) = variant.typed_id {
-                        let arg_res = self.resolve_arg(typed_id, spanned_arg);
+                        let arg_res = self.resolve_arg(ty, spanned_arg);
 
                         if let Err(SemanticError::UnsupportedArg(found_spanned_arg, kind)) = arg_res
                         {
@@ -382,5 +427,61 @@ impl ConstraintResolver<'_> {
             }
             _ => unreachable!("Functions are not capable of taking arguments in the parser"),
         }
+    }
+
+    // Having this fully resolved HERE seems a little wrong. A structure that specifically handles
+    // this seems like a better idea so that the resolver's general purpose isn't filled with
+    // functions that relate to a single process that happens to be complicated, but will keep like
+    // this for now.
+    fn resolve_func_arg(&self, expr: &Expr) -> Result<FuncArgsRepre, ()> {
+        match expr {
+            Expr::Str(name_id, _) => Ok(FuncArgsRepre::Str(*name_id)),
+            Expr::Integer(num, _) => Ok(FuncArgsRepre::Integer(*num)),
+            Expr::Char(ch, _) => Ok(FuncArgsRepre::Char(*ch)),
+            Expr::Float(num, _) => Ok(FuncArgsRepre::Float(*num)),
+            Expr::Var(name_id, span) => todo!(),
+            Expr::Call(call, span) => todo!(),
+            Expr::FieldAccess(abstract_field_access, span) => todo!(),
+            Expr::Unary(unary, span) => todo!(),
+            Expr::BinaryExpr { lhs, op, rhs } => todo!(),
+        }
+    }
+
+    fn check_func_constraints(&self, func: &FuncRepre) -> Result<(), SemanticError> {
+        for constraint in func.constraints.iter().copied() {
+            match constraint {
+                ArgConstraint::Numeric => {
+                    for arg in &func.args {
+                        match arg {
+                            FuncArgsRepre::Integer(_) | FuncArgsRepre::Float(_) => continue,
+                            FuncArgsRepre::Var(symbol_id) => {}
+                            FuncArgsRepre::Char(_) => {
+                                return Err(SemanticError::TypeMismatch(
+                                    ArgConstraint::Numeric,
+                                    BuiltinTypeKind::Char,
+                                    func.kind,
+                                    func.call_span.clone(),
+                                ));
+                            }
+                            FuncArgsRepre::Str(_) => {
+                                return Err(SemanticError::TypeMismatch(
+                                    ArgConstraint::Numeric,
+                                    BuiltinTypeKind::Str,
+                                    func.kind,
+                                    func.call_span.clone(),
+                                ));
+                            }
+                        }
+                    }
+                }
+                ArgConstraint::DynType => todo!(),
+                ArgConstraint::SameType => todo!(),
+                ArgConstraint::Integer => todo!(),
+                ArgConstraint::Float => todo!(),
+                ArgConstraint::Str => todo!(),
+            }
+        }
+
+        Ok(())
     }
 }

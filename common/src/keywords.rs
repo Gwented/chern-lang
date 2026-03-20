@@ -40,6 +40,7 @@ pub static KEYWORDS_ARRAY: [&str; 41] = [
     "import",
     "export",
     // Statements
+    //TODO: Add const
     "bind",
     "alias", // 30
     // Section names
@@ -50,11 +51,15 @@ pub static KEYWORDS_ARRAY: [&str; 41] = [
     // Predicate keywords
     "IsEmpty",
     "IsWhitespace", // 36
+    // "Nat" // 37
+    // "Real" // 38
+    // "Complex" // 39
+    // "Prime" // 40
     // Predicates (Function)
     "Range",
-    "StartsW", // 38
+    "StartsW", // 42
     "EndsW",
-    "Contains", // 40
+    "Contains", // 44
 ];
 
 // Keep a compact enum for code that prefers typed keyword identifiers.
@@ -154,59 +159,31 @@ impl Keyword {
         }
     }
 
-    pub fn try_as_builtin(id: u32) -> Option<Keyword> {
-        if let Some(kw) = Self::try_as_kw(id) {
-            match kw {
-                Keyword::I8
-                | Keyword::U8
-                | Keyword::I16
-                | Keyword::U16
-                | Keyword::F16
-                | Keyword::I32
-                | Keyword::U32
-                | Keyword::F32
-                | Keyword::I64
-                | Keyword::U64
-                | Keyword::F64
-                | Keyword::I128
-                | Keyword::U128
-                | Keyword::F128
-                | Keyword::Sized
-                | Keyword::Unsized
-                | Keyword::Char
-                | Keyword::Str
-                | Keyword::Bool
-                | Keyword::Nil
-                | Keyword::BigInt
-                | Keyword::BigFloat => return Some(kw),
-                _ => return None,
-            }
-        }
-
-        None
-    }
-
-    pub fn try_as_data_struct(id: u32) -> Option<Keyword> {
-        if let Some(kw) = Self::try_as_kw(id) {
-            match kw {
-                Keyword::List | Keyword::Map => todo!(),
-                Keyword::Set => return Some(kw),
-                _ => return None,
-            }
-        }
-
-        None
-    }
-
-    // pub fn try_as_cond(id: u32) -> Option<Keyword> {
+    // pub fn try_as_builtin(id: u32) -> Option<Keyword> {
     //     if let Some(kw) = Self::try_as_kw(id) {
     //         match kw {
-    //             Keyword::IsEmpty
-    //             | Keyword::IsWhitespace
-    //             | Keyword::Range
-    //             | Keyword::StartsW
-    //             | Keyword::EndsW
-    //             | Keyword::Contains => return Some(kw),
+    //             Keyword::I8
+    //             | Keyword::U8
+    //             | Keyword::I16
+    //             | Keyword::U16
+    //             | Keyword::F16
+    //             | Keyword::I32
+    //             | Keyword::U32
+    //             | Keyword::F32
+    //             | Keyword::I64
+    //             | Keyword::U64
+    //             | Keyword::F64
+    //             | Keyword::I128
+    //             | Keyword::U128
+    //             | Keyword::F128
+    //             | Keyword::Sized
+    //             | Keyword::Unsized
+    //             | Keyword::Char
+    //             | Keyword::Str
+    //             | Keyword::Bool
+    //             | Keyword::Nil
+    //             | Keyword::BigInt
+    //             | Keyword::BigFloat => return Some(kw),
     //             _ => return None,
     //         }
     //     }

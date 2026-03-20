@@ -1,4 +1,6 @@
-//TODO:
+//TODO: Dash spacing formatting needs to accomodate for size of ln_num
+//TODO: May need to give vector of spans so that the span start and end information is not lost and
+
 //STARTUP IDEA:
 // Enums that guide the reporter on how to print info
 use unicode_width::UnicodeWidthChar;

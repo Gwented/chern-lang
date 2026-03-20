@@ -60,6 +60,19 @@ impl SemanticReporter<'_> {
                 );
                 (msg, line_data)
             }
+            SemanticError::TypeMismatch(constraint, builtin_type_kind, func_kind, span) => {
+                let msg = format!(
+                    "The type \"{builtin_type_kind}\" is not within constraint {constraint} for function \"{func_kind}\""
+                );
+
+                let line_data = reporter::form_err_diag(
+                    &self.metadata.src_bytes,
+                    &span,
+                    self.metadata.can_color,
+                );
+
+                (msg, line_data)
+            }
         };
 
         let fmt_msg = reporter::standardize_err(&msg, &line_data, "");

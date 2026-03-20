@@ -2,25 +2,10 @@
 
 bind "Hello.chrn"
 var->
-    p: Person #warn
-    // string: str  [StartsW(0.0, 5.5e-2)] #warn
-   // This SHOULDN'T be usable here, but it SHOULD be usable in structural declarations
+    string: str  [Range(0, 6)] #warn
 
 nest->
-    // Is pointing to Gorp outside instead of the gorp instead
-
     // READJUST SETS FOR THIS TO NOT HALLUCINATE SO MUCH
-
-    struct Person {
-        int: i32
-        map: Map<i32, BigInt>
-        data: Data
-    } #bin
-
-    struct Data {
-        cache: u8
-        thing: str
-    }
 
 @end
 // alias default(x, y) = IsEmpty Contains(x?: 5, y?: 5)
