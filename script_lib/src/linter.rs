@@ -63,6 +63,7 @@ pub fn print_all(program: &AstInfo, interner: &Intern) {
 
                 println!("]");
             }
+            Item::Alias(abstract_alias) => (),
         }
     }
     println!("]");
@@ -166,6 +167,14 @@ fn print_exprs(conds: &Vec<Expr>, indent: usize, interner: &Intern) {
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),
             Expr::Char(ch, _) => {
                 println!("{spaces}Char [{ch}");
+            }
+            Expr::Default((name_id, span), _) => {
+                println!("{spaces}Default [");
+
+                let name = interner.search(name_id.id as usize);
+                println!("{spaces}{name}");
+
+                println!("{spaces}]");
             }
         }
     }

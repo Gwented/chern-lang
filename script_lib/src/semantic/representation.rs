@@ -219,6 +219,7 @@ impl FuncRepre {
     }
 }
 
+// I'm scared of this
 #[derive(Debug)]
 pub(super) enum FuncArgsRepre {
     Integer(i64),
@@ -226,6 +227,20 @@ pub(super) enum FuncArgsRepre {
     Char(char),
     Var(SymbolId),
     Str(NameId),
+}
+
+// Is this right?
+impl PartialEq for FuncArgsRepre {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Integer(_), Self::Integer(_))
+            | (Self::Float(_), Self::Float(_))
+            | (Self::Char(_), Self::Char(_))
+            | (Self::Var(_), Self::Var(_))
+            | (Self::Str(_), Self::Str(_)) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -255,6 +270,18 @@ pub(super) enum FuncKind {
     UserDefined,
 }
 
+impl Display for FuncKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FuncKind::Contains => write!(f, "Contains"),
+            FuncKind::Range => write!(f, "Range"),
+            FuncKind::StartsW => write!(f, "StartsW"),
+            FuncKind::EndsW => write!(f, "EndsW"),
+            FuncKind::UserDefined => write!(f, "<Hi>"),
+        }
+    }
+}
+
 // Nat
 // Real
 // Complex
@@ -262,8 +289,9 @@ pub(super) enum FuncKind {
 // TEST:
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ArgConstraint {
+    ParamCount(u8),
     DynType,
-    SameType,
+    MatchingType,
     Numeric,
     Integer,
     Float,
@@ -278,30 +306,22 @@ impl ArgConstraint {
         match kind {
             FuncKind::StartsW => {
                 // Maybe if we got something like 0x1FF it could StartsW(0x1FF)?
-                vec![ArgConstraint::DynType]
+                vec![ArgConstraint::ParamCount(1), ArgConstraint::MatchingType]
             }
             FuncKind::EndsW => {
-                vec![ArgConstraint::DynType]
+                vec![ArgConstraint::ParamCount(1), ArgConstraint::MatchingType]
             }
             FuncKind::Contains => {
-                vec![ArgConstraint::DynType]
+                vec![ArgConstraint::ParamCount(1), ArgConstraint::MatchingType]
             }
             FuncKind::Range => {
-                vec![ArgConstraint::Numeric]
+                vec![
+                    ArgConstraint::ParamCount(2),
+                    ArgConstraint::Numeric,
+                    ArgConstraint::MatchingType,
+                ]
             }
-            FuncKind::UserDefined => unreachable!("No"),
-        }
-    }
-}
-
-impl Display for FuncKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FuncKind::Contains => write!(f, "Contains"),
-            FuncKind::Range => write!(f, "Range"),
-            FuncKind::StartsW => write!(f, "StartsW"),
-            FuncKind::EndsW => write!(f, "EndsW"),
-            FuncKind::UserDefined => write!(f, "<Hi>"),
+            FuncKind::UserDefined => todo!(),
         }
     }
 }
@@ -309,12 +329,14 @@ impl Display for FuncKind {
 impl Display for ArgConstraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ArgConstraint::DynType => write!(f, "dynamic type"),
-            ArgConstraint::SameType => write!(f, "same type"),
-            ArgConstraint::Numeric => write!(f, "numeric"),
-            ArgConstraint::Integer => write!(f, "integer"),
-            ArgConstraint::Float => write!(f, "float"),
+            ArgConstraint::DynType => write!(f, "DynType"),
+            ArgConstraint::MatchingType => write!(f, "MatchingType"),
+            ArgConstraint::Numeric => write!(f, "Numeric"),
+            ArgConstraint::Integer => write!(f, "Integer"),
+            ArgConstraint::Float => write!(f, "Float"),
             ArgConstraint::Str => write!(f, "str"),
+            // I think this is fine?
+            ArgConstraint::ParamCount(count) => write!(f, "{count} parameter(s)"),
         }
     }
 }

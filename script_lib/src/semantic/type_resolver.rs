@@ -60,6 +60,7 @@ impl TypeResolver<'_> {
                 Item::Var(type_def) => self.register_typedef(type_def, ast_id),
                 Item::Struct(structure) => self.register_struct(structure, ast_id),
                 Item::Enum(enumeration) => self.register_enum(enumeration, ast_id),
+                Item::Alias(abstract_alias) => todo!(),
             }
         }
 
@@ -88,6 +89,7 @@ impl TypeResolver<'_> {
                 Item::Enum(enumeration) => {
                     _ = self.resolve_enum(enumeration, ast_id);
                 }
+                Item::Alias(abstract_alias) => todo!(),
             }
         }
 
@@ -310,6 +312,7 @@ impl TypeResolver<'_> {
             Expr::Unary(unary, span) => todo!(),
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),
             Expr::Char(_, _) => todo!(),
+            Expr::Default(_, expr) => todo!(),
         }
     }
 
@@ -399,7 +402,10 @@ impl TypeResolver<'_> {
     }
 }
 
-// Likely temp
+/// Ensures each array within `Table` is able to have an assigned type id. It's mostly here because
+/// otherwise type expressions that refer to a structural piece of data won't able to reference a
+/// concrete type since it won't exist as a type id until that type is actually gotten to, which
+/// there's no guarantee of.
 #[derive(Debug)]
 pub(super) struct Tracker {
     next_typedef: u32,

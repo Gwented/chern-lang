@@ -1,14 +1,22 @@
 @def
 
+
+// alias default() = [IsEmpty]
+
 bind "Hello.chrn"
 var->
-    string: str  [Range(0, 6)] #warn
+// Add namespace handling for ~str to be a valid type with "str" as the name
+    p: Person [IsEmpty, Range(2, 5.)]
 
 nest->
+    struct Person {
+
+    } [IsEmpty]
     // READJUST SETS FOR THIS TO NOT HALLUCINATE SO MUCH
 
 @end
-// alias default(x, y) = IsEmpty Contains(x?: 5, y?: 5)
+// May remove brackets from this but fine for now
+// alias default(x, y) = [IsEmpty, Range(x = 5, y = 9)]
 /*
     t: Thing // This should point out that a similar type called "Thing" exists
 

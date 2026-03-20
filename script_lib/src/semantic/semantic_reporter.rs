@@ -31,51 +31,43 @@ impl SemanticReporter<'_> {
 
     //WARN: Could be better looking
     pub(super) fn report_semantic(&mut self, sem_err: SemanticError) {
-        let (msg, line_data) = match sem_err {
-            SemanticError::UnsupportedArg(spanned_arg, builtin_type_kind) => {
+        let (msg, span) = match sem_err {
+            SemanticError::UnsupportedArg(spanned_arg, kind) => {
                 let msg = format!(
                     "The argument \"#{}\" is not supported for the type \"{}\"",
-                    spanned_arg.arg, builtin_type_kind
+                    spanned_arg.arg, kind
                 );
 
-                let line_data = reporter::form_err_diag(
-                    &self.metadata.src_bytes,
-                    &spanned_arg.span,
-                    self.metadata.can_color,
-                );
-
-                (msg, line_data)
+                (msg, spanned_arg.span)
             }
             SemanticError::VagueArg(inner_arg, span) => {
                 let msg = format!(
                     //FIXME: Still vague
-                    "The argument \"#{}\" cannot be used for a 'var->' defined variable that holds a \"struct\" or \"enum\"",
+                    "The argument \"#{}\" cannot be used for a `var->` defined variable that holds a \"struct\" or \"enum\"",
                     inner_arg
                 );
 
-                let line_data = reporter::form_err_diag(
-                    &self.metadata.src_bytes,
-                    &span,
-                    self.metadata.can_color,
-                );
-                (msg, line_data)
+                (msg, span)
             }
-            SemanticError::TypeMismatch(constraint, builtin_type_kind, func_kind, span) => {
+            SemanticError::TypeMismatch(constraint, type_kind, func_kind, span) => {
                 let msg = format!(
-                    "The type \"{builtin_type_kind}\" is not within constraint {constraint} for function \"{func_kind}\""
+                    "The type \"{type_kind}\" does not follow constraint `{constraint}` for function \"{func_kind}\""
                 );
 
-                let line_data = reporter::form_err_diag(
-                    &self.metadata.src_bytes,
-                    &span,
-                    self.metadata.can_color,
-                );
+                (msg, span)
+            }
+            SemanticError::ParamMiscount(constraint, func_kind, count, span) => {
+                let msg =
+                    format!("Expected {constraint} for function \"{func_kind}\", found {count}");
 
-                (msg, line_data)
+                (msg, span)
             }
         };
 
-        let fmt_msg = reporter::standardize_err(&msg, &line_data, "");
+        let ln_data =
+            reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
+
+        let fmt_msg = reporter::standardize_err(&msg, &ln_data, "");
 
         let diag = Diagnostic::new(fmt_msg);
         self.err_vec.push(diag);

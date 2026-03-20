@@ -139,18 +139,15 @@ impl SpannedBuiltinType {
 pub enum Cond {
     //FIX:
     Func(FuncId),
-    // Maybe this shouldn't be a function
     IsEmpty,
     IsWhitespace,
-    // Probably should just attach bool
-    // should likely be removed
     Not(Box<Cond>),
 }
 
 // I'm actually fine with this.
 impl Cond {
-    /// Only returns a condition if it is solely a keyword, and excludes conditions such as
-    /// `Contains()`
+    /// Only returns a condition if it is solely a keyword, excluding any functional
+    /// conditions.
     // This is really really really really smelly
     pub fn try_from_id(id: u32) -> Option<Cond> {
         match Keyword::try_as_kw(id) {

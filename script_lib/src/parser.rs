@@ -7,8 +7,8 @@ pub mod error;
 pub mod parse_state;
 
 use crate::parser::ast::{
-    AbstractEnum, AbstractGeneric, AbstractStruct, AbstractTypeDef, AbstractVariant, AstInfo, Call,
-    Expr, Item, TypeExpr, Unary, UnaryOp,
+    AbstractAlias, AbstractEnum, AbstractGeneric, AbstractStruct, AbstractTypeDef, AbstractVariant,
+    AstInfo, Call, Expr, Item, TypeExpr, Unary, UnaryOp,
 };
 use crate::parser::context::Context;
 use crate::parser::error::Branch;
@@ -280,12 +280,14 @@ pub fn parse(metadata: &FileMetadata, tokens: &Vec<SpannedToken>, interner: &Int
 //FIXME: These sets may be misaligned
 fn parse_alias_stmt(
     ctx: &mut Context,
-    program: &mut AstInfo,
+    ast_info: &mut AstInfo,
     interner: &Intern,
 ) -> Result<(), Token> {
+    let name_span = ctx.peek_span();
+
     let plain_id = ctx.expect_id_verbose(
         TokenKind::Id,
-        "Expected an identifier after `alias`, found ",
+        "Expected an identifier after \"alias\", found ",
         "",
         Branch::Neutral,
         interner,
@@ -310,13 +312,7 @@ fn parse_alias_stmt(
 
     let start = ctx.peek_span().start;
 
-    let (func_args, end) = parse_func(ctx, interner)?;
-
-    let call = Call::new(name_id, func_args);
-
-    let func_expr = Expr::Call(call, Span::new(start, end));
-
-    dbg!(func_expr);
+    let (params, end) = parse_func_decl(ctx, interner)?;
 
     ctx.expect_verbose(
         TokenKind::Equals,
@@ -326,7 +322,22 @@ fn parse_alias_stmt(
         interner,
     )?;
 
-    todo!();
+    ctx.expect_verbose(
+        TokenKind::OBracket,
+        "Expected a '[' for conditions, found ",
+        "",
+        Branch::Neutral,
+        interner,
+    )?;
+
+    let conds = handle_conds(ctx, interner)?;
+
+    // How is this going to be consumed
+    //TEST:
+    // FIX: Maybe this is going too far for alias. Should a funciton just be able to execute a
+    // block of conditions?
+    let alias = AbstractAlias::new(name_id, name_span, params, conds);
+    todo!("Alias not done");
 }
 
 fn parse_bind_stmt(
@@ -379,6 +390,7 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
 
     // WARN: DO NOT PROPOGATE
     let conds_res = if ctx.peek_kind() == TokenKind::OBracket {
+        ctx.advance_tok();
         handle_conds(ctx, interner)
     } else {
         Ok(Vec::new())
@@ -434,6 +446,7 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
             let fields = handle_struct_fields(ctx, struct_name, interner)?;
 
             let conds = if ctx.peek_kind() == TokenKind::OBracket {
+                ctx.advance_tok();
                 handle_conds(ctx, interner)?
             } else {
                 Vec::new()
@@ -468,6 +481,7 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
             let variants = handle_enum_variants(ctx, enum_name, interner)?;
 
             let glob_conds = if ctx.peek_kind() == TokenKind::OBracket {
+                ctx.advance_tok();
                 handle_conds(ctx, interner)?
             } else {
                 Vec::new()
@@ -689,7 +703,7 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
 
     let err_name = interner.search(name as usize);
 
-    //WARN: Names are very messy here
+    //TODO: Allow comma separated types
     let type_opt = if ctx.peek_kind() == TokenKind::OParen {
         ctx.advance_tok();
 
@@ -822,7 +836,7 @@ fn parse_cond(ctx: &mut Context, interner: &Intern) -> Result<Expr, Token> {
             ctx.report_template(
                 "a condition after declared type",
                 &fmt_tok,
-                Branch::VarCond,
+                Branch::Cond,
                 interner,
             );
 
@@ -836,7 +850,7 @@ fn parse_cond(ctx: &mut Context, interner: &Intern) -> Result<Expr, Token> {
             ctx.report_template(
                 "a condition after declared type",
                 &fmt_tok,
-                Branch::VarCond,
+                Branch::Cond,
                 interner,
             );
 
@@ -846,17 +860,6 @@ fn parse_cond(ctx: &mut Context, interner: &Intern) -> Result<Expr, Token> {
         Token::ExclamationPoint => {
             //FIXME: SPAN IS INCOMPLETE
             let span = ctx.advance_span();
-
-            if ctx.peek_kind() == TokenKind::ExclamationPoint {
-                ctx.report_template(
-                    "a valid condition",
-                    "another '!'",
-                    Branch::VarCond,
-                    interner,
-                );
-                //WARN:
-                return Err(Token::Poison);
-            }
 
             let wrapped = parse_cond(ctx, interner)?;
 
@@ -869,7 +872,7 @@ fn parse_cond(ctx: &mut Context, interner: &Intern) -> Result<Expr, Token> {
             ctx.advance_tok();
 
             let fmt_tok = format!("'{}'", t.kind());
-            ctx.report_template("a valid condition", &fmt_tok, Branch::VarCond, interner);
+            ctx.report_template("a valid condition", &fmt_tok, Branch::Cond, interner);
 
             Err(t)
         }
@@ -881,82 +884,125 @@ fn parse_cond(ctx: &mut Context, interner: &Intern) -> Result<Expr, Token> {
 fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<Expr>, usize), Token> {
     let mut args: Vec<Expr> = Vec::new();
 
-    //FIXME: This can definitely be done better
     while ctx.peek_kind() != TokenKind::CParen {
-        //TODO: On this case, planning on allowing for function definitions to be explicitly
-        //checked only on a variable given. So, x?: 5 can just be made into an expression and
-        //pushed. Could need a different method, but this seems fine.
-        match ctx.peek_tok() {
+        let expr = match ctx.peek_tok() {
+            Token::Id(id) if ctx.peek_ahead(1).token.kind() == TokenKind::Equals => {
+                let span = ctx.peek_span();
+                let name_id = NameId::new(id);
+                // Skipping var id and equals
+                ctx.skip(2);
+
+                let default = match ctx.peek_tok() {
+                    Token::Integer(id, notation) => {
+                        let span = ctx.advance_span();
+                        let num: i64 = interner
+                            .search(id as usize)
+                            .parse()
+                            .expect("Lexer broke (Integer)");
+
+                        Expr::Integer(num, span)
+                    }
+                    Token::Float(id, notation) => {
+                        let span = ctx.advance_span();
+                        let num: f64 = interner
+                            .search(id as usize)
+                            .parse()
+                            .expect("Lexer broke (Float).");
+
+                        Expr::Float(num, span)
+                    }
+                    Token::Str(id) => {
+                        let span = ctx.advance_span();
+                        Expr::Str(NameId::new(id), span)
+                    }
+                    Token::Id(id) | Token::Illegal(id) | Token::Illegal(id) => {
+                        let msg = format!(
+                            "Cannot have \"{}\" within function parameters",
+                            interner.search(id as usize)
+                        );
+
+                        ctx.report_verbose(&msg, Branch::Cond, interner);
+
+                        return Err(Token::Poison);
+                    }
+                    Token::Char(ch) => {
+                        let msg = format!(
+                            "Cannot have \"{}\" within function parameters",
+                            interner.search(id as usize)
+                        );
+
+                        ctx.report_verbose(&msg, Branch::Cond, interner);
+
+                        return Err(Token::Poison);
+                    }
+                    Token::EOF => return Err(Token::Poison),
+                    t => {
+                        ctx.advance_tok();
+
+                        let msg = match t {
+                            Token::Illegal(id) => format!(
+                                "Cannot have \"{}\" within function parameters",
+                                interner.search(id as usize)
+                            ),
+                            _ => format!("Cannot have '{}' within function parameters", t.kind()),
+                        };
+
+                        ctx.report_verbose(&msg, Branch::Cond, interner);
+                        return Err(Token::Poison);
+                    }
+                };
+
+                Expr::Default((name_id, span), Box::new(default))
+            }
             Token::Id(id) => {
                 let span = ctx.advance_span();
-
-                let name_id = NameId::new(id);
-
-                args.push(Expr::Var(name_id, span));
+                Expr::Var(NameId::new(id), span)
             }
             Token::Str(id) => {
                 let span = ctx.advance_span();
-
-                let name_id = NameId::new(id);
-
-                args.push(Expr::Str(name_id, span));
+                Expr::Str(NameId::new(id), span)
             }
             Token::Integer(id, _) => {
                 let span = ctx.advance_span();
-
-                //WARN: Maybe change this later to remain a string but ok for now
                 let num: i64 = interner
                     .search(id as usize)
                     .parse()
-                    // TODO: Handle more cleanly
                     .expect("Lexer broke (Integer)");
 
-                args.push(Expr::Integer(num, span));
+                Expr::Integer(num, span)
             }
             Token::Float(id, _) => {
                 let span = ctx.advance_span();
-
-                //WARN: Maybe should resolve numerics as themselves while lexing?
-                // Probably not worth a string allocation
                 let num: f64 = interner
                     .search(id as usize)
                     .parse()
                     .expect("Lexer broke (Float).");
 
-                args.push(Expr::Float(num, span));
+                Expr::Float(num, span)
             }
             Token::Char(ch) => {
                 let span = ctx.advance_span();
 
-                //WARN: Maybe should resolve numerics as themselves while lexing?
-                // Probably not worth a string allocation
-
-                args.push(Expr::Char(ch, span));
+                Expr::Char(ch, span)
             }
-            Token::Illegal(id) => {
-                ctx.advance_tok();
-
-                let name = interner.search(id as usize);
-                // HELP
-                let msg = format!("Cannot have \"{name}\" within function parameters");
-
-                ctx.report_verbose(&msg, Branch::VarCond, interner);
-                return Err(Token::Poison);
-            }
-            Token::CParen => break,
             Token::EOF => return Err(Token::Poison),
-            err_tok => {
+            t => {
                 ctx.advance_tok();
 
-                let msg = format!(
-                    "Cannot have '{}' within function parameters",
-                    err_tok.kind()
-                );
+                let msg = match t {
+                    Token::Illegal(id) => format!(
+                        "Cannot have \"{}\" within function parameters",
+                        interner.search(id as usize)
+                    ),
+                    _ => format!("Cannot have '{}' within function parameters", t.kind()),
+                };
 
-                ctx.report_verbose(&msg, Branch::VarCond, interner);
+                ctx.report_verbose(&msg, Branch::Cond, interner);
                 return Err(Token::Poison);
             }
-        }
+        };
+
+        args.push(expr);
 
         if ctx.peek_kind() == TokenKind::CParen {
             break;
@@ -966,7 +1012,53 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<Expr>, usize)
             TokenKind::Comma,
             "Expected a ',' to separate arguments or ')' to close, found ",
             "",
-            Branch::VarCond,
+            Branch::Cond,
+            interner,
+        )?;
+    }
+
+    let end = ctx.advance_span().end;
+
+    Ok((args, end))
+}
+
+fn parse_func_decl(ctx: &mut Context, interner: &Intern) -> Result<(Vec<TypeExpr>, usize), Token> {
+    let mut args: Vec<TypeExpr> = Vec::new();
+
+    while ctx.peek_kind() != TokenKind::CParen {
+        let expr = match ctx.peek_tok() {
+            Token::Id(id) => {
+                let span = ctx.advance_span();
+                TypeExpr::Var(NameId::new(id), span)
+            }
+            Token::EOF => return Err(Token::Poison),
+            t => {
+                ctx.advance_tok();
+
+                let msg = match t {
+                    Token::Illegal(id) => format!(
+                        "Cannot have \"{}\" within alias definition",
+                        interner.search(id as usize)
+                    ),
+                    _ => format!("Cannot have '{}' within alias definition", t.kind()),
+                };
+
+                ctx.report_verbose(&msg, Branch::Cond, interner);
+                return Err(Token::Poison);
+            }
+        };
+
+        args.push(expr);
+
+        if ctx.peek_kind() == TokenKind::CParen {
+            break;
+        }
+
+        _ = ctx.expect_verbose(
+            TokenKind::Comma,
+            "Expected a ',' to separate arguments or ')' to close, found ",
+            "",
+            Branch::Cond,
             interner,
         )?;
     }
@@ -982,44 +1074,39 @@ fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<Expr>, Token
     let mut err_count = 0;
 
     //FIX: Make this stop on first error. Maybe.
-    // Redundant but I'm scared to remove it
-    if ctx.peek_kind() == TokenKind::OBracket {
-        ctx.advance_tok();
+    loop {
+        let new_cond = parse_cond(ctx, interner);
 
-        loop {
-            let new_cond = parse_cond(ctx, interner);
-
-            if let Ok(cond) = new_cond {
-                conds.push(cond);
-            } else {
-                if err_count > MAX_ERRORS {
-                    break;
-                }
-
-                err_count += 1;
-            }
-
-            // Should be able to send help since ctx would know a comma was used after a cond
-            if ctx.peek_kind() != TokenKind::Comma {
+        if let Ok(cond) = new_cond {
+            conds.push(cond);
+        } else {
+            if err_count > MAX_ERRORS {
                 break;
             }
 
-            ctx.advance_tok();
+            err_count += 1;
         }
 
-        if err_count == 0 {
-            //BUG: Cont: 'e' is valid, but EOF is hit when ']' is expected. Why is EOF not being
-            //higlighted? We are AT EOF. RIGHT here.
-            _ = ctx.expect_verbose(
-                TokenKind::CBracket,
-                "Expected ']' at end of condition, found ",
-                "",
-                // Does this set align properly?
-                Branch::VarCond,
-                interner,
-            );
-        };
+        // Should be able to send help since ctx would know a comma was used after a cond
+        if ctx.peek_kind() != TokenKind::Comma {
+            break;
+        }
+
+        ctx.advance_tok();
     }
+
+    if err_count == 0 {
+        //BUG: Cont: 'e' is valid, but EOF is hit when ']' is expected. Why is EOF not being
+        //higlighted? We are AT EOF. RIGHT here.
+        _ = ctx.expect_verbose(
+            TokenKind::CBracket,
+            "Expected ']' at end of condition, found ",
+            "",
+            // Does this set align properly?
+            Branch::Cond,
+            interner,
+        );
+    };
 
     Ok(conds)
 }

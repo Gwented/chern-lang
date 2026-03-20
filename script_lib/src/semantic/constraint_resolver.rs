@@ -57,6 +57,8 @@ impl ConstraintResolver<'_> {
                 Item::Enum(enumeration) => {
                     _ = self.resolve_enum(enumeration, ast_id);
                 }
+                //TEST:
+                Item::Alias(abstract_alias) => todo!(),
             }
         }
 
@@ -258,14 +260,12 @@ impl ConstraintResolver<'_> {
                             ArgConstraint::from_builtin(FuncKind::Contains),
                             FuncKind::Contains,
                         ),
-                        // User defined would have Block
+                        // Will this account for alises?
                         _ => {
-                            _ = FuncKind::UserDefined;
                             todo!("User defined");
                         }
                     },
                     None => {
-                        _ = FuncKind::UserDefined;
                         todo!("User defined");
                     }
                 };
@@ -320,6 +320,7 @@ impl ConstraintResolver<'_> {
             }
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),
             Expr::Char(_, _) => todo!(),
+            Expr::Default(_, expr) => todo!(),
         }
     }
 
@@ -429,10 +430,6 @@ impl ConstraintResolver<'_> {
         }
     }
 
-    // Having this fully resolved HERE seems a little wrong. A structure that specifically handles
-    // this seems like a better idea so that the resolver's general purpose isn't filled with
-    // functions that relate to a single process that happens to be complicated, but will keep like
-    // this for now.
     fn resolve_func_arg(&self, expr: &Expr) -> Result<FuncArgsRepre, ()> {
         match expr {
             Expr::Str(name_id, _) => Ok(FuncArgsRepre::Str(*name_id)),
@@ -444,17 +441,25 @@ impl ConstraintResolver<'_> {
             Expr::FieldAccess(abstract_field_access, span) => todo!(),
             Expr::Unary(unary, span) => todo!(),
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),
+            Expr::Default(_, expr) => todo!(),
         }
     }
 
+    // Having this fully resolved HERE seems a little wrong. A structure that specifically handles
+    // this seems like a better idea so that the resolver's general purpose isn't filled with
+    // functions that relate to a single process that happens to be complicated, but will keep like
+    // this for now.
     fn check_func_constraints(&self, func: &FuncRepre) -> Result<(), SemanticError> {
         for constraint in func.constraints.iter().copied() {
             match constraint {
+                // Numeric
                 ArgConstraint::Numeric => {
                     for arg in &func.args {
                         match arg {
                             FuncArgsRepre::Integer(_) | FuncArgsRepre::Float(_) => continue,
-                            FuncArgsRepre::Var(symbol_id) => {}
+                            FuncArgsRepre::Var(sym_id) => {
+                                todo!()
+                            }
                             FuncArgsRepre::Char(_) => {
                                 return Err(SemanticError::TypeMismatch(
                                     ArgConstraint::Numeric,
@@ -474,11 +479,60 @@ impl ConstraintResolver<'_> {
                         }
                     }
                 }
-                ArgConstraint::DynType => todo!(),
-                ArgConstraint::SameType => todo!(),
-                ArgConstraint::Integer => todo!(),
-                ArgConstraint::Float => todo!(),
-                ArgConstraint::Str => todo!(),
+                // SameType
+                ArgConstraint::MatchingType => {
+                    // Maybe this is dangerous?
+                    let same = if let Some(arg) = func.args.get(0) {
+                        arg
+                    } else {
+                        continue;
+                    };
+
+                    for arg in func.args.iter().skip(1) {
+                        if arg != same {
+                            // There is no general "number" to give so may adjust this
+                            let kind = match arg {
+                                FuncArgsRepre::Integer(_) => BuiltinTypeKind::I64,
+                                FuncArgsRepre::Float(_) => BuiltinTypeKind::F64,
+                                FuncArgsRepre::Char(_) => BuiltinTypeKind::Char,
+                                FuncArgsRepre::Str(_) => BuiltinTypeKind::Str,
+                                FuncArgsRepre::Var(symbol_id) => {
+                                    match self.table.typed_ids[&symbol_id] {
+                                        TypedId::BuiltinType(builtin_type_id) => {
+                                            self.table.builtin_types[builtin_type_id.id as usize]
+                                                .kind()
+                                        }
+                                        _ => {
+                                            todo!()
+                                        }
+                                    }
+                                }
+                            };
+
+                            return Err(SemanticError::TypeMismatch(
+                                constraint,
+                                kind,
+                                func.kind,
+                                func.call_span.clone(),
+                            ));
+                        }
+                    }
+                }
+                // ParamCount
+                ArgConstraint::ParamCount(count) => {
+                    if func.args.len() != count as usize {
+                        return Err(SemanticError::ParamMiscount(
+                            constraint,
+                            func.kind,
+                            func.args.len() as u8,
+                            func.call_span.clone(),
+                        ));
+                    }
+                }
+                ArgConstraint::Integer => {}
+                ArgConstraint::Float => {}
+                ArgConstraint::Str => {}
+                ArgConstraint::DynType => continue,
             }
         }
 

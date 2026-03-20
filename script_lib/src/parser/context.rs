@@ -265,7 +265,7 @@ impl<'a> Context<'a> {
             Branch::Bind => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Var => (C_BRANCH_VAR_SET, A_BRANCH_VAR_SET),
             Branch::VarType => (C_BRANCH_VAR_TYPE_SET, A_BRANCH_VAR_TYPE_SET),
-            Branch::VarCond => (C_BRANCH_VAR_COND_SET, A_BRANCH_VAR_COND_SET),
+            Branch::Cond => (C_BRANCH_VAR_COND_SET, A_BRANCH_VAR_COND_SET),
             Branch::VarFuncArgs => (C_BRANCH_VAR_FUNC_SET, A_BRANCH_VAR_FUNC_SET),
             Branch::VarTypeArgs => (C_BRANCH_VAR_ARGS_SET, A_BRANCH_VAR_ARGS_SET),
             //TODO: Tune these sets
@@ -348,18 +348,23 @@ impl<'a> Context<'a> {
                 _ => None,
             },
             Branch::VarType => match found.token {
-                //FIX: Still a little too general
                 Token::CAngleBracket if prev_kind == TokenKind::Comma => {
-                    // Egregious message
-                    let msg = "Remove trailing ',' or add a second type";
+                    let msg = "Was there a trailing ',' or an intended second type?";
                     let help = reporter::standardize_help(msg, self.metadata.can_color);
 
                     Some(help)
                 }
                 _ => None,
             },
-            Branch::VarCond => match found.token.kind() {
-                TokenKind::CBracket if prev_kind == TokenKind::Comma => {
+            Branch::Cond => match found.token {
+                Token::Id(id) if expected == TokenKind::CBracket => {
+                    // Egregious message
+                    let msg = "Is there a missing comma to separate conditions?";
+                    let help = reporter::standardize_help(msg, self.metadata.can_color);
+
+                    Some(help)
+                }
+                Token::CBracket if prev_kind == TokenKind::Comma => {
                     let msg = "Remove trailing ',' or add condition";
                     let help = reporter::standardize_help(msg, self.metadata.can_color);
 

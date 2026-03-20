@@ -34,6 +34,7 @@ pub enum Item {
     Var(AbstractTypeDef),
     Struct(AbstractStruct),
     Enum(AbstractEnum),
+    Alias(AbstractAlias),
     // Func(AbstractFunc),
 }
 
@@ -41,6 +42,7 @@ pub enum Item {
 #[derive(Debug)]
 pub(crate) enum Expr {
     Var(NameId, Span),
+    Default((NameId, Span), Box<Expr>),
     // Staying capped at i64 and f64 for pacing purposes
     // TODO: Need to likely carry notation here
     // Also maybe should be a "literal" type
@@ -287,6 +289,31 @@ pub(crate) struct AbstractFieldDecl {
 //         AbstractFieldDecl { base, fields }
 //     }
 // }
+
+#[derive(Debug)]
+pub(crate) struct AbstractAlias {
+    // Only using this because of the span
+    pub(crate) name_id: NameId,
+    pub(crate) name_span: Span,
+    pub(crate) params: Vec<TypeExpr>,
+    pub(crate) conds: Vec<Expr>,
+}
+
+impl AbstractAlias {
+    pub(crate) fn new(
+        name_id: NameId,
+        name_span: Span,
+        params: Vec<TypeExpr>,
+        conds: Vec<Expr>,
+    ) -> AbstractAlias {
+        AbstractAlias {
+            name_id,
+            name_span,
+            params,
+            conds,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct AbstractFieldAccess {

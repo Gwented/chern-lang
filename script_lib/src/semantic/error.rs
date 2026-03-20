@@ -8,11 +8,13 @@ use crate::semantic::representation::{ArgConstraint, FuncKind};
 #[derive(Debug)]
 // Lifetimes
 pub(super) enum SemanticError {
-    // Interesting names
-    // expected, found, what function type
+    // constraint, found type, what function type, span
     TypeMismatch(ArgConstraint, BuiltinTypeKind, FuncKind, Span),
-    VagueArg(InnerArgs, Span),
+    // constraint, function type, params found, span
+    ParamMiscount(ArgConstraint, FuncKind, u8, Span),
     UnsupportedArg(SpannedInnerArgs, BuiltinTypeKind),
+    // Interesting name
+    VagueArg(InnerArgs, Span),
 }
 
 #[derive(Debug)]
