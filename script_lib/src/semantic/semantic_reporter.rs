@@ -34,7 +34,7 @@ impl SemanticReporter<'_> {
         let (msg, span) = match sem_err {
             SemanticError::UnsupportedArg(spanned_arg, kind) => {
                 let msg = format!(
-                    "The argument \"#{}\" is not supported for the type \"{}\"",
+                    "The argument \"#{}\" is not supported for the type `{}`",
                     spanned_arg.arg, kind
                 );
 
@@ -59,6 +59,14 @@ impl SemanticReporter<'_> {
             SemanticError::ArgMiscount(constraint, func_kind, count, span) => {
                 let msg =
                     format!("Expected {constraint} for function \"{func_kind}\", found {count}");
+
+                (msg, span)
+            }
+            SemanticError::CircularRef(arg, fmted, span) => {
+                let msg = format!(
+                    // Suspicious error message
+                    "Cannot give type `{fmted}` the argument \"#{arg}\" when there is a circule reference used."
+                );
 
                 (msg, span)
             }

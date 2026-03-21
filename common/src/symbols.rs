@@ -197,11 +197,8 @@ pub struct SpannedInnerArgs {
 }
 
 impl SpannedInnerArgs {
-    pub fn new(inner_arg: InnerArgs, span: Span) -> SpannedInnerArgs {
-        SpannedInnerArgs {
-            arg: inner_arg,
-            span,
-        }
+    pub fn new(arg: InnerArgs, span: Span) -> SpannedInnerArgs {
+        SpannedInnerArgs { arg, span }
     }
 }
 
@@ -215,7 +212,15 @@ pub enum InnerArgs {
 }
 
 impl InnerArgs {
-    //TEST:
+    // Better name...
+    /// This exists as a source of truth for if an argument is applicable to any type given
+    pub fn is_basic(&self) -> bool {
+        match self {
+            InnerArgs::Warn => true,
+            InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => false,
+        }
+    }
+
     /// This MUST be used after ensuring the type is a primitive, not a data structure.
     // Maybe this is a good time to use kind
     pub fn supports_builtin_type(&self, builtin_type: &BuiltinType) -> bool {

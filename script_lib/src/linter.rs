@@ -85,6 +85,13 @@ fn print_type(ty: &TypeExpr, indent: usize, interner: &Intern) {
         TypeExpr::Any(_) => {
             println!("{spaces}Any");
         }
+        TypeExpr::Tuple(type_exprs, _) => {
+            println!("{spaces}tuple:");
+            for thing in type_exprs {
+                print_type(thing, indent + 2, interner);
+            }
+            println!("{spaces}]");
+        }
     }
 }
 

@@ -1,5 +1,6 @@
 // Misleading...
 pub mod builtins;
+pub mod fmter;
 pub mod intern;
 pub mod keywords;
 pub mod metadata;

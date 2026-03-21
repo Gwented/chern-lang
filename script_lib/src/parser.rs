@@ -565,6 +565,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
 
             Ok(TypeExpr::Escaped(name_id, span))
         }
+        Token::OParen => parse_tuple(ctx, interner),
         Token::Id(id) => {
             let span = ctx.advance_span();
 
@@ -579,7 +580,6 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
         }
         Token::Str(id) | Token::Integer(id, _) => {
             let name = interner.search(id as usize);
-
             let kind = ctx.peek_kind();
 
             ctx.advance_tok();
@@ -636,6 +636,56 @@ fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<(Vec<TypeExpr>,
     )?;
 
     Ok((args, end))
+}
+
+/// This returns a vector
+/// Handles everything and does not expect anything to be skipped
+//TEST:
+fn parse_tuple(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
+    let start = ctx.peek_span().start;
+
+    ctx.expect_verbose(
+        TokenKind::OParen,
+        "Expected a '(' to declare tuple, found ",
+        "",
+        Branch::VarType,
+        interner,
+    )?;
+
+    let mut tuple: Vec<TypeExpr> = Vec::new();
+
+    while ctx.peek_kind() == TokenKind::Id {
+        let ty = parse_type(ctx, interner)?;
+        tuple.push(ty);
+
+        if ctx.peek_kind() == TokenKind::CParen {
+            break;
+        }
+
+        ctx.expect_verbose(
+            TokenKind::Comma,
+            "Expected a ',' or ')' after type, found ",
+            "",
+            Branch::NestEnum,
+            interner,
+        )?;
+    }
+
+    let end = ctx.peek_span().end;
+    // The loop could never run so expecting is needed
+    ctx.expect_verbose(
+        TokenKind::CParen,
+        "Expected a ',' or ')' after type, found ",
+        "",
+        Branch::NestEnum,
+        interner,
+    )?;
+
+    let span = Span::new(start, end);
+
+    let tuple = TypeExpr::Tuple(tuple, span);
+
+    Ok(tuple)
 }
 
 fn handle_struct_fields(
@@ -726,31 +776,9 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
 
     let err_name = interner.search(name as usize);
 
-    //TODO: Allow comma separated types
-    let type_opt = if ctx.peek_kind() == TokenKind::OParen {
-        ctx.advance_tok();
-
-        let type_span = ctx.peek_span();
-
-        let type_id = ctx.expect_id_verbose(
-            TokenKind::Id,
-            &format!("Expected a type within variant \"{err_name}\", found "),
-            "",
-            Branch::NestEnum,
-            interner,
-        )?;
-
-        let type_name = NameId::new(type_id);
-
-        ctx.expect_verbose(
-            TokenKind::CParen,
-            &format!("Expected a ')' to close variant \"{err_name}\", found "),
-            "",
-            Branch::NestEnum,
-            interner,
-        )?;
-
-        Some(TypeExpr::Var(type_name, type_span))
+    let tuple_opt: Option<TypeExpr> = if ctx.peek_kind() == TokenKind::OParen {
+        let tuple = parse_tuple(ctx, interner)?;
+        Some(tuple)
     } else {
         None
     };
@@ -768,6 +796,7 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
         Ok(Vec::new())
     };
 
+    // Might expect..
     if ctx.peek_kind() == TokenKind::Comma {
         ctx.advance_tok();
     }
@@ -775,7 +804,7 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
     let conds = conds_res?;
     let args = args_res?;
 
-    let variant = AbstractVariant::new(name_id, name_span, type_opt, conds, args);
+    let variant = AbstractVariant::new(name_id, name_span, tuple_opt, conds, args);
 
     Ok(variant)
 }
@@ -939,7 +968,7 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<Expr>, usize)
                         let span = ctx.advance_span();
                         Expr::Str(NameId::new(id), span)
                     }
-                    Token::Id(id) | Token::Illegal(id) | Token::Illegal(id) => {
+                    Token::Id(id) | Token::Illegal(id) => {
                         let msg = format!(
                             "Cannot have \"{}\" within function parameters",
                             interner.search(id as usize)
@@ -950,10 +979,7 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<Expr>, usize)
                         return Err(Token::Poison);
                     }
                     Token::Char(ch) => {
-                        let msg = format!(
-                            "Cannot have \"{}\" within function parameters",
-                            interner.search(id as usize)
-                        );
+                        let msg = format!("Cannot have \"{}\" within function parameters", ch);
 
                         ctx.report_verbose(&msg, Branch::Cond, interner);
 
@@ -976,7 +1002,7 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<Expr>, usize)
                     }
                 };
 
-                Expr::Default((name_id, span), Box::new(default))
+                Expr::Default((name_id, span), Some(Box::new(default)))
             }
             Token::Id(id) => {
                 let span = ctx.advance_span();

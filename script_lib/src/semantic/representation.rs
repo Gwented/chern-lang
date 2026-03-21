@@ -10,6 +10,8 @@ use common::{
     },
 };
 
+use crate::semantic::constraints::ArgConstraint;
+
 // What is a drop? I am new to thinking i have never thought before what is RAII
 // is that a gui framework
 // Maybe named, global table, program table
@@ -21,6 +23,7 @@ pub(super) enum Type {
     Enum(SymbolId),
     Func(SymbolId),
     Alias(SymbolId),
+    Tuple(Vec<TypeId>),
     Unknown,
 }
 
@@ -30,6 +33,7 @@ pub(super) enum Symbol {
     Struct(StructRepre),
     Func(FuncRepre),
     Enum(EnumRepre),
+    Alias(AliasRepre),
 }
 
 #[derive(Debug)]
@@ -240,6 +244,7 @@ pub struct VariantRepre {
     pub(super) name_id: NameId,
     // Because enum types are nullable
     pub(super) type_id: Option<TypeId>,
+    // Possible tuple
     // Points to variant within original Ast enum
     pub(super) ast_id: AstId,
     pub(super) args: Vec<InnerArgs>,
@@ -422,6 +427,22 @@ impl FieldRepre {
     }
 }
 
+#[derive(Debug)]
+pub(super) struct AliasRepre {
+    pub(crate) name_id: NameId,
+    pub(super) sym_id: SymbolId,
+    pub(super) ast_id: AstId,
+    // Type id is a little wrong
+    pub(super) type_id: TypeId,
+    pub(crate) params: Vec<TypeId>,
+    pub(super) conds: Vec<Cond>,
+    pub(super) args: Vec<InnerArgs>,
+}
+
+// impl AliasRepre {
+//     pub fn new() -> AliasRepre {}
+// }
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum FuncKind {
     Contains,
@@ -442,71 +463,3 @@ impl Display for FuncKind {
         }
     }
 }
-
-// Nat
-// Real
-// Complex
-// Prime
-// TEST:
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ArgConstraint {
-    ArgCount(u8),
-    DynType,
-    MatchingType,
-    Numeric,
-    Integer,
-    Float,
-    Str,
-}
-
-impl ArgConstraint {
-    // PLEASE DONT MAKE ME RETURN OPTION
-    // TEST:
-    /// Takes in a function kind that is built in and returns it's constraints
-    pub fn from_builtin(kind: FuncKind) -> Vec<ArgConstraint> {
-        match kind {
-            //WARN: CHANGE BACK TO DYNTYPE
-            FuncKind::StartsW => {
-                // Maybe if we got something like 0x1FF it could StartsW(0x1FF)?
-                vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
-            }
-            FuncKind::EndsW => {
-                vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
-            }
-            FuncKind::Contains => {
-                vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
-            }
-            FuncKind::Range => {
-                vec![
-                    ArgConstraint::ArgCount(2),
-                    ArgConstraint::Numeric,
-                    ArgConstraint::MatchingType,
-                ]
-            }
-            FuncKind::UserDefined => todo!(),
-        }
-    }
-}
-
-impl Display for ArgConstraint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ArgConstraint::DynType => write!(f, "DynamicType"),
-            ArgConstraint::MatchingType => write!(f, "MatchingType"),
-            ArgConstraint::Numeric => write!(f, "Numeric"),
-            ArgConstraint::Integer => write!(f, "Integer"),
-            ArgConstraint::Float => write!(f, "Float"),
-            ArgConstraint::Str => write!(f, "str"),
-            ArgConstraint::ArgCount(count) => {
-                if *count > 1 {
-                    write!(f, "{count} arguments")
-                } else {
-                    write!(f, "{count} argument")
-                }
-            }
-        }
-    }
-}
-
-// Can't really use AstId since it's not an ExprId and it would pretty much be a guess as to what
-// typeexpr it came from

@@ -1,21 +1,25 @@
 use common::{
     builtins::BuiltinTypeKind,
+    fmter::{Formatable, Formatted},
     symbols::{InnerArgs, Span, SpannedInnerArgs, TypeId},
 };
 
-use crate::semantic::representation::{ArgConstraint, FuncKind};
+use crate::semantic::{constraints::ArgConstraint, representation::FuncKind};
 
-#[derive(Debug)]
 // Lifetimes
 pub(super) enum SemanticError {
     // constraint, found type, what function type, span
-    ConstraintMismatch(ArgConstraint, BuiltinTypeKind, FuncKind, Span),
-    // constraint, function type, incorrect params found, span
+    ConstraintMismatch(ArgConstraint, Formatted, FuncKind, Span),
+    /// Constraint, function type, amount of incorrect params found, span
     ArgMiscount(ArgConstraint, FuncKind, u8, Span),
     // argument failed at, found type
-    UnsupportedArg(SpannedInnerArgs, BuiltinTypeKind),
+    //TODO: Maybe shouldn't force spanned inner args here
+    UnsupportedArg(SpannedInnerArgs, Formatted),
     // Interesting name
     VagueArg(InnerArgs, Span),
+    // CircularRef
+    // The type with a circular reference that has an invalid argument for that reference
+    CircularRef(InnerArgs, Formatted, Span),
 }
 
 #[derive(Debug)]

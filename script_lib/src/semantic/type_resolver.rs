@@ -11,13 +11,14 @@ use common::{
 
 use crate::{
     parser::ast::{
-        AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Expr, Item, TypeExpr, UnaryOp,
+        AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Expr, Item,
+        TypeExpr, UnaryOp,
     },
     semantic::{
         error::SemanticError,
         representation::{
-            EnumRepre, FieldRepre, FuncArgsRepre, FuncRepre, StructRepre, Symbol, Table, Type,
-            TypeDefRepre, VariantRepre,
+            AliasRepre, EnumRepre, FieldRepre, FuncArgsRepre, FuncRepre, StructRepre, Symbol,
+            Table, Type, TypeDefRepre, VariantRepre,
         },
         semantic_reporter::SemanticReporter,
     },
@@ -65,13 +66,12 @@ impl TypeResolver<'_> {
             }
         }
 
+        //FIXME: Check symbols here once
+
         if !self.reporter.err_vec.is_empty() {
             self.reporter.emit_errors();
             std::process::exit(1);
         }
-
-        //FIXME: Need to resolve types first so may be better to just resolve args and conds in an
-        // entirely different structure, especially due to complexity explosion
 
         // The is resolving types but not resolving args or conditions.
         // Everything is in order so this cannot fail unless something internally went wrong.
@@ -156,7 +156,6 @@ impl TypeResolver<'_> {
 
     fn resolve_type_expr(&mut self, ty: &TypeExpr, ast_id: AstId) -> Result<TypeId, ()> {
         match ty {
-            // Escaped can be put here but it seems weird giving a kind just for this one task
             TypeExpr::Var(name_id, span) => {
                 // Returns the name's id since it is a valid non-data structure intrinsic type
                 if let Some(_) = BuiltinType::try_from_id(name_id.id) {
@@ -188,7 +187,7 @@ impl TypeResolver<'_> {
 
                 return Err(());
             }
-            // May put this with Var as an OR but separate for now
+            // Needs to be merged in a sensible way
             TypeExpr::Escaped(name_id, span) => {
                 for (current_ast_id, current_name_id) in &self.table.name_ids {
                     if current_name_id == name_id {
@@ -303,6 +302,21 @@ impl TypeResolver<'_> {
 
                 Ok(TypeId::new(id))
             }
+            // If a semantic error was returned I could control when things are reported by
+            // intercepting
+            TypeExpr::Tuple(unres_tuple, _) => {
+                let mut resolved_tuple: Vec<TypeId> = Vec::new();
+
+                for element in unres_tuple {
+                    let type_id = self.resolve_type_expr(element, ast_id)?;
+                    resolved_tuple.push(type_id);
+                }
+
+                let tuple_id = TypeId::new(self.table.types.len() as u32);
+                self.table.types.push(Type::Tuple(resolved_tuple));
+
+                Ok(tuple_id)
+            }
         }
     }
     // How do we solve this?
@@ -337,7 +351,7 @@ impl TypeResolver<'_> {
         todo!();
     }
 
-    // Does this have any reason to return a Result?
+    //FIX: Maybe only ONE O(n) check of same symbols found should be done.
     fn register_typedef(&mut self, type_def: &AbstractTypeDef, ast_id: AstId) {
         //NOTE: There is no scoping needed I believe so this is valid
 
@@ -445,4 +459,48 @@ impl TypeResolver<'_> {
         // DO WE NEED THIS?
         self.table.types.push(Type::Enum(sym_id));
     }
+
+    //TEST: WILL MAYBE HAVE A CONST SECTION BUT UM. UM.
+    // fn register_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) {
+    //     //NOTE: There is no scoping needed I believe so this is valid
+    //
+    //     // This would never realistically cause a bottleneck since, why would you have that many
+    //     // variables? But, still a little bit of code smell.
+    //     if self
+    //         .table
+    //         .name_ids
+    //         .values()
+    //         .any(|id| *id == abs_alias.name_id)
+    //     {
+    //         let duplicate = self.interner.search(abs_alias.name_id.id as usize);
+    //
+    //         let msg = format!("The symbol \"{duplicate}\" appears more than once");
+    //         self.reporter
+    //             .report_spanned(&msg, None, &abs_alias.name_span);
+    //
+    //         return;
+    //     }
+    //
+    //     self.table.name_ids.insert(ast_id, abs_alias.name_id);
+    //
+    //     let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
+    //     self.table.sym_ids.insert(ast_id, sym_id);
+    //
+    //     //Unkown type id for unregistered types
+    //     let type_id = if let Some(id) = self.unknown_id {
+    //         id
+    //     } else {
+    //         let id = TypeId::new(self.table.types.len() as u32);
+    //         self.unknown_id = Some(id);
+    //         self.table.types.push(Type::Unknown);
+    //
+    //         id
+    //     };
+    //
+    //     let alias_repre = AliasRepre::new(abs_alias.name_id, sym_id, ast_id, type_id);
+    //
+    //     self.table
+    //         .symbols
+    //         .insert(sym_id, Symbol::Alias(alias_repre));
+    // }
 }

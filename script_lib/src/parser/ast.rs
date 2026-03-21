@@ -41,7 +41,8 @@ pub(crate) enum Item {
 #[derive(Debug)]
 pub(crate) enum Expr {
     Var(NameId, Span),
-    Default((NameId, Span), Box<Expr>),
+    /// Variable name and span, along with optional default type
+    Default((NameId, Span), Option<Box<Expr>>),
     // Staying capped at i64 and f64 for pacing purposes
     // TODO: Need to likely carry notation here
     // Also maybe should be a "literal" type
@@ -86,7 +87,7 @@ pub(crate) enum TypeExpr {
     Escaped(NameId, Span),
     //_Generic
     Generic(AbstractGeneric, Span),
-    // Tuple(Vec<TypeExpr>) for enums maybe
+    Tuple(Vec<TypeExpr>, Span),
     Any(Span),
 }
 
@@ -97,6 +98,7 @@ impl TypeExpr {
             TypeExpr::Var(_, span)
             | TypeExpr::Generic(_, span)
             | TypeExpr::Any(span)
+            | TypeExpr::Tuple(_, span)
             | TypeExpr::Escaped(_, span) => span.clone(),
         }
     }

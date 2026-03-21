@@ -1,25 +1,24 @@
-// Add namespace handling for ~str to be a valid type with "str" as the name
+// Maybe '~' as a pretense should enforce that it can only be used for type names
 // Add negatives
 
 @def
 
-// alias default(x) = [IsEmpty] #warn
+// alias default(x) = [IsEmpty, Range(x,7)]
 
 var->
-    s: str /*[default()]*/
-    a: ~str
+    // s: ~str [default()]
+    a: A
 nest->
     // Circular ref possible because str has no behavior internally as a type
     //  What if struct ~str and str inside
 
-    struct str {
-        name: str
-    } #bin
+    struct A {
+        b: B
+    } #warn
 
-    struct str {
-        name: str
-    } #bin
-
+    enum B {
+        C(str, str)
+    }
 @end
 
 // READJUST SETS FOR THIS TO NOT HALLUCINATE SO MUCH

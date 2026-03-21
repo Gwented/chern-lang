@@ -268,7 +268,7 @@ fn char_width_offset(src_str: &str, start: usize, end: usize) -> usize {
 }
 
 //TODO: Needs better way to get color data and highlight type
-/// Formats a single line segment with arrows under the error span.
+/// Returns formatted single line segment with arrows under the error span.
 fn format_line_segment(
     ln_num: usize,
     ln_str: &str,

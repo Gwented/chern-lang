@@ -1,6 +1,10 @@
 use std::fmt::Display;
 
-use crate::{keywords::Keyword, symbols::TypeId};
+use crate::{
+    fmter::{Formatable, Formatted},
+    keywords::Keyword,
+    symbols::TypeId,
+};
 
 //TEST: Serial and script interact with this directly so
 #[derive(Debug)]
@@ -94,6 +98,39 @@ pub enum BuiltinTypeKind {
     Set,
     Map,
     Any,
+}
+
+impl Formatable for BuiltinTypeKind {
+    fn to_fmt(&self) -> Formatted {
+        match self {
+            BuiltinTypeKind::I8 => Formatted::I8,
+            BuiltinTypeKind::U8 => Formatted::U8,
+            BuiltinTypeKind::I16 => Formatted::I16,
+            BuiltinTypeKind::U16 => Formatted::U16,
+            BuiltinTypeKind::F16 => Formatted::F16,
+            BuiltinTypeKind::I32 => Formatted::I32,
+            BuiltinTypeKind::U32 => Formatted::U32,
+            BuiltinTypeKind::F32 => Formatted::F32,
+            BuiltinTypeKind::I64 => Formatted::I64,
+            BuiltinTypeKind::U64 => Formatted::U64,
+            BuiltinTypeKind::F64 => Formatted::F64,
+            BuiltinTypeKind::I128 => Formatted::I128,
+            BuiltinTypeKind::U128 => Formatted::U128,
+            BuiltinTypeKind::F128 => Formatted::F128,
+            BuiltinTypeKind::Sized => Formatted::Sized,
+            BuiltinTypeKind::Unsized => Formatted::Unsized,
+            BuiltinTypeKind::Str => Formatted::Str,
+            BuiltinTypeKind::Char => Formatted::Char,
+            BuiltinTypeKind::Nil => Formatted::Nil,
+            BuiltinTypeKind::Bool => Formatted::Bool,
+            BuiltinTypeKind::BigInt => Formatted::BigInt,
+            BuiltinTypeKind::BigFloat => Formatted::BigFloat,
+            BuiltinTypeKind::List => Formatted::List,
+            BuiltinTypeKind::Set => Formatted::Set,
+            BuiltinTypeKind::Map => Formatted::Map,
+            BuiltinTypeKind::Any => Formatted::Any,
+        }
+    }
 }
 
 // SHOULD THIS ERR?
