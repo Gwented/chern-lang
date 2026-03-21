@@ -3,14 +3,22 @@
 
 @def
 
-// alias default() = [IsEmpty]
+// alias default(x) = [IsEmpty] #warn
 
 var->
-    p: Person
+    s: str /*[default()]*/
+    a: ~str
 nest->
-    struct Person {
-        name: str [!IsEmpty] #warn
-    }
+    // Circular ref possible because str has no behavior internally as a type
+    //  What if struct ~str and str inside
+
+    struct str {
+        name: str
+    } #bin
+
+    struct str {
+        name: str
+    } #bin
 
 @end
 

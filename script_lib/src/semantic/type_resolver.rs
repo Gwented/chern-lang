@@ -73,9 +73,7 @@ impl TypeResolver<'_> {
         //FIXME: Need to resolve types first so may be better to just resolve args and conds in an
         // entirely different structure, especially due to complexity explosion
 
-        //NOTE: TypeIds are being reused here instead of the symbol wrapper which does the same thing
-        // But maybe it should be used instead to be less confusing seeming
-
+        // The is resolving types but not resolving args or conditions.
         // Everything is in order so this cannot fail unless something internally went wrong.
         for (id, item) in self.ast_info.items.iter().enumerate() {
             let ast_id = AstId::new(id as u32);
@@ -90,7 +88,7 @@ impl TypeResolver<'_> {
                 Item::Enum(enumeration) => {
                     _ = self.resolve_enum(enumeration, ast_id);
                 }
-                Item::Alias(abs_alias) => todo!(),
+                Item::Alias(alias) => todo!(),
             }
         }
 
@@ -158,6 +156,7 @@ impl TypeResolver<'_> {
 
     fn resolve_type_expr(&mut self, ty: &TypeExpr, ast_id: AstId) -> Result<TypeId, ()> {
         match ty {
+            // Escaped can be put here but it seems weird giving a kind just for this one task
             TypeExpr::Var(name_id, span) => {
                 // Returns the name's id since it is a valid non-data structure intrinsic type
                 if let Some(_) = BuiltinType::try_from_id(name_id.id) {
@@ -176,6 +175,29 @@ impl TypeResolver<'_> {
                             // This is not possible
                             // Symbol::TypeDef(type_def_repre) => type_def_repre.type_id,
                             _ => todo!(),
+                        };
+                        return Ok(type_id);
+                    }
+                }
+
+                let err_name = self.interner.search(name_id.id as usize);
+
+                let err_msg = format!("\"{err_name}\" is not defined as a type");
+
+                self.reporter.report_spanned(&err_msg, None, span);
+
+                return Err(());
+            }
+            // May put this with Var as an OR but separate for now
+            TypeExpr::Escaped(name_id, span) => {
+                for (current_ast_id, current_name_id) in &self.table.name_ids {
+                    if current_name_id == name_id {
+                        let sym_id = self.table.sym_ids[&current_ast_id];
+                        let type_id = match &self.table.symbols[&sym_id] {
+                            Symbol::Struct(struct_repre) => struct_repre.type_id,
+                            Symbol::Func(func_repre) => func_repre.type_id,
+                            Symbol::Enum(enum_repre) => enum_repre.type_id,
+                            _ => unreachable!(),
                         };
                         return Ok(type_id);
                     }
@@ -272,7 +294,6 @@ impl TypeResolver<'_> {
                     }
                 }
             }
-            // Maybe this shouldn't have a span
             TypeExpr::Any(_) => {
                 let id = self.table.types.len() as u32;
 
@@ -318,10 +339,16 @@ impl TypeResolver<'_> {
 
     // Does this have any reason to return a Result?
     fn register_typedef(&mut self, type_def: &AbstractTypeDef, ast_id: AstId) {
-        let check = self.table.name_ids.insert(ast_id, type_def.name_id);
-
         //NOTE: There is no scoping needed I believe so this is valid
-        if check.is_some() {
+
+        // This would never realistically cause a bottleneck since, why would you have that many
+        // variables? But, still a little bit of code smell.
+        if self
+            .table
+            .name_ids
+            .values()
+            .any(|id| *id == type_def.name_id)
+        {
             let duplicate = self.interner.search(type_def.name_id.id as usize);
 
             let msg = format!("The symbol \"{duplicate}\" appears more than once");
@@ -330,6 +357,8 @@ impl TypeResolver<'_> {
 
             return;
         }
+
+        self.table.name_ids.insert(ast_id, type_def.name_id);
 
         let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
         self.table.sym_ids.insert(ast_id, sym_id);
@@ -353,17 +382,23 @@ impl TypeResolver<'_> {
     }
 
     fn register_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) {
-        let check = self.table.name_ids.insert(ast_id, abs_struct.name_id);
-
-        if check.is_some() {
+        // O(floor)
+        if self
+            .table
+            .name_ids
+            .values()
+            .any(|id| *id == abs_struct.name_id)
+        {
             let duplicate = self.interner.search(abs_struct.name_id.id as usize);
 
-            let msg = format!("The symbol \"{duplicate}\" appears more than once");
+            let msg = format!("The struct \"{duplicate}\" appears more than once");
             self.reporter
                 .report_spanned(&msg, None, &abs_struct.name_span);
 
             return;
         }
+
+        self.table.name_ids.insert(ast_id, abs_struct.name_id);
 
         let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
         self.table.sym_ids.insert(ast_id, sym_id);
@@ -381,17 +416,22 @@ impl TypeResolver<'_> {
     }
 
     fn register_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) {
-        let check = self.table.name_ids.insert(ast_id, abs_enum.name_id);
-
-        if check.is_some() {
+        if self
+            .table
+            .name_ids
+            .values()
+            .any(|id| *id == abs_enum.name_id)
+        {
             let duplicate = self.interner.search(abs_enum.name_id.id as usize);
 
-            let msg = format!("The symbol \"{duplicate}\" appears more than once");
+            let msg = format!("The enum \"{duplicate}\" appears more than once");
             self.reporter
                 .report_spanned(&msg, None, &abs_enum.name_span);
 
             return;
         }
+
+        self.table.name_ids.insert(ast_id, abs_enum.name_id);
 
         let type_id = TypeId::new(self.table.types.len() as u32);
 

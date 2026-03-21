@@ -6,6 +6,7 @@ use std::ops::RangeInclusive;
 // Ensure ranges are adjusted
 // Ensure tests are aligned
 
+//
 pub static KEYWORDS_ARRAY: [&str; 42] = [
     // primitives
     "i8", // 0

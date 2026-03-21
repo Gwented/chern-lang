@@ -323,17 +323,21 @@ fn parse_alias_stmt(
         interner,
     )?;
 
-    ctx.expect_verbose(
-        TokenKind::OBracket,
-        "Expected a '[' for conditions, found ",
-        "",
-        Branch::Neutral,
-        interner,
-    )?;
+    let conds = if ctx.peek_kind() == TokenKind::OBracket {
+        ctx.advance_tok();
+        handle_conds(ctx, interner)?
+    } else {
+        Vec::new()
+    };
 
-    let conds = handle_conds(ctx, interner)?;
+    let args = if ctx.peek_kind() == TokenKind::HashSymbol {
+        handle_args(ctx, interner)?
+    } else {
+        Vec::new()
+    };
 
-    let alias = AbstractAlias::new(name_id, name_span, params, conds);
+    let alias = AbstractAlias::new(name_id, name_span, params, conds, args);
+    dbg!(&alias);
 
     ast_info.items.push(Item::Alias(alias));
 
@@ -429,6 +433,10 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
     //TODO: Can likely be done simpler but keep for simplicity
     let item = match id {
         id if id == Keyword::Struct as u32 => {
+            if ctx.peek_kind() == TokenKind::Tilde {
+                ctx.advance_tok();
+            }
+
             let name_span = ctx.peek_span();
 
             let name = ctx.expect_id_verbose(
@@ -541,6 +549,21 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
             let span = Span::new(start, end);
 
             Ok(TypeExpr::Generic(generic, span))
+        }
+        Token::Tilde => {
+            let span = ctx.advance_span();
+
+            let plain_id = ctx.expect_id_verbose(
+                TokenKind::Id,
+                "Expected an identifier for an escaped type, found ",
+                "",
+                Branch::VarType,
+                interner,
+            )?;
+
+            let name_id = NameId::new(plain_id);
+
+            Ok(TypeExpr::Escaped(name_id, span))
         }
         Token::Id(id) => {
             let span = ctx.advance_span();
@@ -886,6 +909,7 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<Expr>, usize)
 
     while ctx.peek_kind() != TokenKind::CParen {
         let expr = match ctx.peek_tok() {
+            //TEST:
             Token::Id(id) if ctx.peek_ahead(1).token.kind() == TokenKind::Assign => {
                 let span = ctx.peek_span();
                 let name_id = NameId::new(id);

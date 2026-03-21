@@ -187,8 +187,7 @@ impl Cond {
 //TEST:
 // public static void main(String[] args) { for (int i = 0; i < args.length; ++i) {
 // System.out.printf("%d: %s", i, args[i]) } }
-
-//NOTE: If a new argument is added ensure this is updated
+/// NOTE: If a new argument is added ensure this is updated
 pub static ARGS_ARRAY: [&str; 5] = ["warn", "scient", "hex", "bin", "octal"];
 
 #[derive(Debug, Clone)]
@@ -244,7 +243,8 @@ impl InnerArgs {
                     | BuiltinType::Unsized
                     //NOTE: Checks this at runtime
                     |BuiltinType::Any(_) => true,
-                    // Maybe make this unreachable and depending on the caller handling the inner
+                    // This is unreachable because when arguments are resolved, it requires the
+                    // data structures to be recursively resolved into a builtin type
                     BuiltinType::List(_)
                     |BuiltinType::Set(_)
                     |BuiltinType::Map(_, _) => unreachable!("TypeResolver broke"),

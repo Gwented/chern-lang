@@ -277,7 +277,7 @@ impl Lexer<'_> {
                     let tok = if self.peek_ahead(1) == b'=' {
                         self.advance();
                         end = self.pos;
-                        todo!();
+                        Token::EqualTo
                     } else {
                         Token::Assign
                     };

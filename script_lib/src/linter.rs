@@ -72,8 +72,8 @@ pub fn print_all(program: &AstInfo, interner: &Intern) {
 fn print_type(ty: &TypeExpr, indent: usize, interner: &Intern) {
     let spaces = " ".repeat(indent);
     match ty {
-        TypeExpr::Var(type_id, _) => {
-            let type_name = interner.search(type_id.id as usize);
+        TypeExpr::Var(name_id, _) | TypeExpr::Escaped(name_id, _) => {
+            let type_name = interner.search(name_id.id as usize);
             println!("{spaces}type: {type_name}");
         }
         TypeExpr::Generic(generic, _) => {

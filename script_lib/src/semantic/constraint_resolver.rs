@@ -41,10 +41,6 @@ impl ConstraintResolver<'_> {
     }
 
     pub fn resolve(&mut self) {
-        //NOTE: TypeIds are being reused here instead of the symbol wrapper which does the same thing
-        // But maybe it should be used instead to be less confusing seeming
-
-        // Could be done in a different way but fine for now
         for (id, item) in self.ast_info.items.iter().enumerate() {
             let ast_id = AstId::new(id as u32);
 
@@ -72,14 +68,12 @@ impl ConstraintResolver<'_> {
     }
 
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
-        // Not too favorable of this needing to happen but the ast would need to also have this
-        // done otherwise. But maybe this should take in the type def and the id to avoid this.
-
         let sym_id = self.table.sym_ids[&ast_id];
 
         let mut args = Vec::new();
+
         let type_id = self.table.get_typedef(sym_id).type_id;
-        let ty = &self.table.types[type_id.id as usize];
+        let ty = &self.table.types[self.table.get_typedef(sym_id).type_id.id as usize];
 
         //TODO: Make less terminal and have a better solution for this
         for spanned_arg in &abs_typedef.args {
@@ -90,7 +84,7 @@ impl ConstraintResolver<'_> {
                         let sem_err = SemanticError::VagueArg(spanned_arg.arg, span);
 
                         self.reporter.report_semantic(sem_err);
-                        continue;
+                        return Err(());
                     }
                 }
                 _ => (),
@@ -112,15 +106,6 @@ impl ConstraintResolver<'_> {
         for expr in &abs_typedef.conds {
             conds.push(self.resolve_cond(expr, ast_id)?);
         }
-
-        // if err != nil { return err }
-        match self.resolve_cond_constraints(type_id, &conds) {
-            Ok(_) => (),
-            Err(sem_err) => {
-                self.reporter.report_semantic(sem_err);
-                return Err(());
-            }
-        };
 
         let type_def = &mut self.table.get_typedef_mut(sym_id);
         type_def.conds = conds;
@@ -147,12 +132,12 @@ impl ConstraintResolver<'_> {
         let mut args: Vec<InnerArgs> = Vec::new();
         // This looks odd too
         let fields = &self.table.get_struct(sym_id).fields;
-        dbg!(&abs_struct.glob_args);
 
+        // Handling circular reference possibilities
         //TODO: Need to point to particular type expression
         for field in fields {
             for spanned_arg in &abs_struct.glob_args {
-                let arg = match self.resolve_arg(field.ty, spanned_arg) {
+                let arg = match self.resolve_arg(field.type_id, spanned_arg) {
                     Ok(a) => a,
                     Err(sem_err) => {
                         self.reporter.report_semantic(sem_err);
@@ -342,7 +327,12 @@ impl ConstraintResolver<'_> {
                 let structure = self.table.get_struct(*sym_id);
 
                 for field in &structure.fields {
-                    let arg_res = self.resolve_arg(field.ty, spanned_arg);
+                    // Circular reference checking
+                    if structure.type_id.id == field.type_id.id {
+                        continue;
+                    }
+
+                    let arg_res = self.resolve_arg(field.type_id, spanned_arg);
 
                     // DIRTY
                     if let Err(SemanticError::UnsupportedArg(found_spanned_arg, kind)) = arg_res {
@@ -439,7 +429,9 @@ impl ConstraintResolver<'_> {
             Expr::Integer(num, _) => Ok(FuncArgsRepre::Integer(*num)),
             Expr::Char(ch, _) => Ok(FuncArgsRepre::Char(*ch)),
             Expr::Float(num, _) => Ok(FuncArgsRepre::Float(*num)),
-            Expr::Var(name_id, span) => todo!(),
+            Expr::Var(name_id, span) => {
+                todo!()
+            }
             Expr::Call(call, span) => todo!(),
             Expr::FieldAccess(abs_field_access, span) => todo!(),
             Expr::Unary(unary, span) => todo!(),
@@ -459,7 +451,7 @@ impl ConstraintResolver<'_> {
                 let structure = &self.table.get_struct(*sym_id);
 
                 for field in &structure.fields {
-                    let res = self.resolve_cond_constraints(field.ty, conds);
+                    let res = self.resolve_cond_constraints(field.type_id, conds);
 
                     // DIRTY
                     if let Err(SemanticError::UnsupportedArg(found_spanned_arg, kind)) = res {
@@ -490,6 +482,7 @@ impl ConstraintResolver<'_> {
                 // let kind = &self.table.builtin_types[builtin_type_id.id as usize];
                 todo!();
             }
+            Type::Alias(symbol_id) => todo!(),
             Type::Unknown => unimplemented!("No `Unknown` behavior"),
         }
     }

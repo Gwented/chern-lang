@@ -20,6 +20,7 @@ pub(super) enum Type {
     Struct(SymbolId),
     Enum(SymbolId),
     Func(SymbolId),
+    Alias(SymbolId),
     Unknown,
 }
 
@@ -406,7 +407,7 @@ pub(super) enum FuncArgsKind {
 #[derive(Debug)]
 pub(super) struct FieldRepre {
     pub(super) name_id: NameId,
-    pub(super) ty: TypeId,
+    pub(super) type_id: TypeId,
     // Ast contained field id, maybe this should just be AstId
     pub(super) ast_id: AstId,
 }
@@ -415,7 +416,7 @@ impl FieldRepre {
     pub fn new(name_id: NameId, ty: TypeId, ast_id: AstId) -> FieldRepre {
         FieldRepre {
             name_id,
-            ty,
+            type_id: ty,
             ast_id,
         }
     }

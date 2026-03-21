@@ -80,22 +80,24 @@ impl Call {
     }
 }
 
-// WHAT IS A TUPLE I HAVE NOT HEARD OF THAT BEFORE I AM NEW TO THINKING HAS ANYONE THOUGHT BEFORE?
 #[derive(Debug)]
 pub(crate) enum TypeExpr {
     Var(NameId, Span),
+    Escaped(NameId, Span),
     //_Generic
     Generic(AbstractGeneric, Span),
+    // Tuple(Vec<TypeExpr>) for enums maybe
     Any(Span),
 }
 
-//TEST: May just make a SpanendTypeExpr but this can work for now
+//TEST: May just make a SpannedTypeExpr but this can work for now
 impl TypeExpr {
     pub fn span(&self) -> Span {
         match self {
-            TypeExpr::Var(_, span) | TypeExpr::Generic(_, span) | TypeExpr::Any(span) => {
-                span.clone()
-            }
+            TypeExpr::Var(_, span)
+            | TypeExpr::Generic(_, span)
+            | TypeExpr::Any(span)
+            | TypeExpr::Escaped(_, span) => span.clone(),
         }
     }
 }
@@ -296,6 +298,7 @@ pub(crate) struct AbstractAlias {
     pub(crate) name_span: Span,
     pub(crate) params: Vec<TypeExpr>,
     pub(crate) conds: Vec<Expr>,
+    pub(crate) args: Vec<SpannedInnerArgs>,
 }
 
 impl AbstractAlias {
@@ -304,12 +307,14 @@ impl AbstractAlias {
         name_span: Span,
         params: Vec<TypeExpr>,
         conds: Vec<Expr>,
+        args: Vec<SpannedInnerArgs>,
     ) -> AbstractAlias {
         AbstractAlias {
             name_id,
             name_span,
             params,
             conds,
+            args,
         }
     }
 }

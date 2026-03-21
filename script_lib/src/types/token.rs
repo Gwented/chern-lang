@@ -141,7 +141,7 @@ impl Display for TokenKind {
             TokenKind::Literal => write!(f, "string literal"),
             TokenKind::Integer => write!(f, "integer"),
             TokenKind::Float => write!(f, "float"),
-            TokenKind::Char => write!(f, "character"),
+            TokenKind::Char => write!(f, "char"),
             TokenKind::OBracket => write!(f, "["),
             TokenKind::CBracket => write!(f, "]"),
             TokenKind::OCurlyBracket => write!(f, "{{"),
