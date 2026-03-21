@@ -6,50 +6,146 @@ use common::{
     keywords,
     symbols::{
         AstId, BuiltinTypeId, Cond, EnumId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs,
-        StructId, SymbolId, TypeDefId, TypedId,
+        StructId, SymbolId, TypeDefId, TypeId,
     },
 };
 
 // What is a drop? I am new to thinking i have never thought before what is RAII
 // is that a gui framework
 // Maybe named, global table, program table
+
 #[derive(Debug)]
-pub struct Table {
-    //FIXME:
-    // Can likely change to arrays later but not priority
-    pub(super) name_ids: HashMap<AstId, NameId>,
-    pub(super) sym_ids: HashMap<AstId, SymbolId>,
-    // This could just be a vec
-    pub(super) typed_ids: HashMap<SymbolId, TypedId>,
-    pub(super) typedefs: Vec<TypeDefRepre>,
-    pub(super) structs: Vec<StructRepre>,
-    pub(super) funcs: Vec<FuncRepre>,
-    pub(super) enums: Vec<EnumRepre>,
-    pub(super) builtin_types: Vec<BuiltinType>,
+pub(super) enum Type {
+    BuiltinType(BuiltinType),
+    Struct(SymbolId),
+    Enum(SymbolId),
+    Func(SymbolId),
+    Unknown,
 }
 
-// This will be removed. Likely replaced by. Um. I don't know.
+#[derive(Debug)]
+pub(super) enum Symbol {
+    TypeDef(TypeDefRepre),
+    Struct(StructRepre),
+    Func(FuncRepre),
+    Enum(EnumRepre),
+}
+
+#[derive(Debug)]
+pub struct Table {
+    pub(super) name_ids: HashMap<AstId, NameId>,
+    // Can still change some to vec maybe
+    pub(super) sym_ids: HashMap<AstId, SymbolId>,
+    pub(super) symbols: HashMap<SymbolId, Symbol>,
+    pub(super) types: Vec<Type>,
+}
+
 impl Table {
     pub fn new() -> Table {
         let mut table = Table {
             name_ids: HashMap::new(),
             sym_ids: HashMap::new(),
-            typed_ids: HashMap::new(),
-            typedefs: Vec::new(),
-            structs: Vec::new(),
-            funcs: Vec::new(),
-            enums: Vec::new(),
-            builtin_types: Vec::new(),
+            symbols: HashMap::new(),
+            types: Vec::new(),
         };
 
         // TEST: Taking away the data structures with - 3
         for i in 0..keywords::TYPE_END - 3 {
-            table
-                .builtin_types
-                .push(BuiltinType::try_from_id(i as u32).expect("Builtin type not updated"));
+            let ty = BuiltinType::try_from_id(i as u32).expect("Builtin type not updated");
+            table.types.push(Type::BuiltinType(ty));
         }
 
         table
+    }
+
+    // Is there a reason to return err?
+    pub(super) fn get_typedef(&self, sym_id: SymbolId) -> &TypeDefRepre {
+        match &self.symbols[&sym_id] {
+            symbol => match symbol {
+                Symbol::TypeDef(type_def_repre) => type_def_repre,
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    pub(super) fn get_typedef_mut(&mut self, sym_id: SymbolId) -> &mut TypeDefRepre {
+        match self.symbols.get_mut(&sym_id) {
+            Some(symbol) => match symbol {
+                Symbol::TypeDef(type_def_repre) => type_def_repre,
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    pub(super) fn get_struct(&self, sym_id: SymbolId) -> &StructRepre {
+        match self.symbols.get(&sym_id) {
+            Some(symbol) => match symbol {
+                Symbol::Struct(struct_repre) => struct_repre,
+                _ => unreachable!(),
+            },
+            None => unreachable!(),
+        }
+    }
+
+    pub(super) fn get_struct_mut(&mut self, sym_id: SymbolId) -> &mut StructRepre {
+        match self.symbols.get_mut(&sym_id) {
+            Some(symbol) => match symbol {
+                Symbol::Struct(struct_repre) => struct_repre,
+                _ => unreachable!(),
+            },
+            None => unreachable!(),
+        }
+    }
+
+    pub(super) fn get_func(&self, sym_id: SymbolId) -> &FuncRepre {
+        match &self.symbols[&sym_id] {
+            symbol => match symbol {
+                Symbol::Func(func_repre) => func_repre,
+                // Symbol::TypeDef(type_def_repre) => todo!(),
+                // Symbol::Struct(struct_repre) => Some(struct_repre),
+                // Symbol::Enum(enum_repre) => todo!(),
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    pub(super) fn get_func_mut(&mut self, sym_id: SymbolId) -> &mut FuncRepre {
+        match self.symbols.get_mut(&sym_id) {
+            Some(symbol) => match symbol {
+                Symbol::Func(func_repre) => func_repre,
+                // Symbol::TypeDef(type_def_repre) => todo!(),
+                // Symbol::Struct(struct_repre) => Some(struct_repre),
+                // Symbol::Enum(enum_repre) => todo!(),
+                _ => unreachable!(),
+            },
+            None => unreachable!(),
+        }
+    }
+
+    pub(super) fn get_enum(&self, sym_id: SymbolId) -> &EnumRepre {
+        match &self.symbols[&sym_id] {
+            symbol => match symbol {
+                Symbol::Enum(enum_repre) => enum_repre,
+                // Symbol::Func(func_repre) => Some(func_repre),
+                // Symbol::TypeDef(type_def_repre) => todo!(),
+                // Symbol::Struct(struct_repre) => Some(struct_repre),
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    pub(super) fn get_enum_mut(&mut self, sym_id: SymbolId) -> &mut EnumRepre {
+        match self.symbols.get_mut(&sym_id) {
+            Some(symbol) => match symbol {
+                Symbol::Enum(enum_repre) => enum_repre,
+                // Symbol::Func(func_repre) => Some(func_repre),
+                // Symbol::TypeDef(type_def_repre) => todo!(),
+                // Symbol::Struct(struct_repre) => Some(struct_repre),
+                _ => unreachable!(),
+            },
+            None => unreachable!(),
+        }
     }
 }
 
@@ -58,6 +154,8 @@ pub(super) struct StructRepre {
     pub(super) name_id: NameId,
     pub(super) sym_id: SymbolId,
     pub(super) ast_id: AstId,
+    // It's position in the Type array
+    pub(super) type_id: TypeId,
     pub(super) fields: Vec<FieldRepre>,
     pub(super) args: Vec<InnerArgs>,
     pub(super) conds: Vec<Cond>,
@@ -68,12 +166,14 @@ impl StructRepre {
         name_id: NameId,
         sym_id: SymbolId,
         ast_id: AstId,
+        type_id: TypeId,
         fields: Vec<FieldRepre>,
     ) -> StructRepre {
         StructRepre {
             name_id,
             sym_id,
             ast_id,
+            type_id,
             fields,
             args: Vec::new(),
             conds: Vec::new(),
@@ -108,6 +208,7 @@ pub(super) struct EnumRepre {
     // Unsure about this positioning, I am hallucinating.
     pub(super) sym_id: SymbolId,
     pub(super) ast_id: AstId,
+    pub(super) type_id: TypeId,
     pub(super) variants: Vec<VariantRepre>,
     pub(super) args: Vec<InnerArgs>,
     pub(super) conds: Vec<Cond>,
@@ -118,12 +219,14 @@ impl EnumRepre {
         name_id: NameId,
         sym_id: SymbolId,
         ast_id: AstId,
+        type_id: TypeId,
         variants: Vec<VariantRepre>,
     ) -> EnumRepre {
         EnumRepre {
             name_id,
             sym_id,
             ast_id,
+            type_id,
             variants,
             args: Vec::new(),
             conds: Vec::new(),
@@ -135,7 +238,7 @@ impl EnumRepre {
 pub struct VariantRepre {
     pub(super) name_id: NameId,
     // Because enum types are nullable
-    pub(super) typed_id: Option<TypedId>,
+    pub(super) type_id: Option<TypeId>,
     // Points to variant within original Ast enum
     pub(super) ast_id: AstId,
     pub(super) args: Vec<InnerArgs>,
@@ -143,10 +246,10 @@ pub struct VariantRepre {
 }
 
 impl VariantRepre {
-    pub fn new(name_id: NameId, typed_id: Option<TypedId>, ast_id: AstId) -> VariantRepre {
+    pub fn new(name_id: NameId, type_id: Option<TypeId>, ast_id: AstId) -> VariantRepre {
         VariantRepre {
             name_id,
-            typed_id,
+            type_id,
             ast_id,
             args: Vec::new(),
             conds: Vec::new(),
@@ -169,23 +272,18 @@ pub(super) struct TypeDefRepre {
     pub(super) name_id: NameId,
     pub(super) sym_id: SymbolId,
     pub(super) ast_id: AstId,
-    pub(super) typed_id: TypedId,
+    pub(super) type_id: TypeId,
     pub(super) conds: Vec<Cond>,
     pub(super) args: Vec<InnerArgs>,
 }
 
 impl TypeDefRepre {
-    pub fn new(
-        name_id: NameId,
-        typed_id: TypedId,
-        sym_id: SymbolId,
-        ast_id: AstId,
-    ) -> TypeDefRepre {
+    pub fn new(name_id: NameId, type_id: TypeId, sym_id: SymbolId, ast_id: AstId) -> TypeDefRepre {
         TypeDefRepre {
             name_id,
             sym_id,
             ast_id,
-            typed_id,
+            type_id,
             conds: Vec::new(),
             args: Vec::new(),
         }
@@ -195,6 +293,7 @@ impl TypeDefRepre {
 #[derive(Debug)]
 pub(super) struct FuncRepre {
     pub(super) name_id: NameId,
+    pub(super) type_id: TypeId,
     pub(super) call_span: Span,
     pub(super) kind: FuncKind,
     pub(super) constraints: Vec<ArgConstraint>,
@@ -204,6 +303,7 @@ pub(super) struct FuncRepre {
 impl FuncRepre {
     pub(super) fn new(
         name_id: NameId,
+        type_id: TypeId,
         call_span: Span,
         kind: FuncKind,
         constraints: Vec<ArgConstraint>,
@@ -211,6 +311,7 @@ impl FuncRepre {
     ) -> FuncRepre {
         FuncRepre {
             name_id,
+            type_id,
             kind,
             call_span,
             constraints,
@@ -226,7 +327,7 @@ pub(super) enum FuncArgsRepre {
     Float(f64),
     Char(char),
     //TEST:
-    Var(TypedId, BuiltinTypeKind),
+    Var(TypeId, BuiltinTypeKind),
     Str(NameId),
 }
 
@@ -305,13 +406,13 @@ pub(super) enum FuncArgsKind {
 #[derive(Debug)]
 pub(super) struct FieldRepre {
     pub(super) name_id: NameId,
-    pub(super) ty: TypedId,
+    pub(super) ty: TypeId,
     // Ast contained field id, maybe this should just be AstId
     pub(super) ast_id: AstId,
 }
 
 impl FieldRepre {
-    pub fn new(name_id: NameId, ty: TypedId, ast_id: AstId) -> FieldRepre {
+    pub fn new(name_id: NameId, ty: TypeId, ast_id: AstId) -> FieldRepre {
         FieldRepre {
             name_id,
             ty,

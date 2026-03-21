@@ -4,7 +4,7 @@ use common::{
     builtins::BuiltinType,
     symbols::{
         BuiltinTypeId, Cond, EnumId, FuncId, InnerArgs, NameId, Span, StructId, SymbolId,
-        TypeDefId, TypedId,
+        TypeDefId, TypeId,
     },
 };
 
@@ -183,7 +183,7 @@ impl SymbolTable {
 #[derive(Debug)]
 pub struct TypeDef {
     pub name_id: NameId,
-    pub typed_id: TypedId,
+    pub type_id: TypeId,
     pub args: Vec<InnerArgs>,
     pub conds: Vec<Cond>,
 }
@@ -191,13 +191,13 @@ pub struct TypeDef {
 impl TypeDef {
     pub fn new(
         name_id: NameId,
-        typed_id: TypedId,
+        type_id: TypeId,
         args: Vec<InnerArgs>,
         conds: Vec<Cond>,
     ) -> TypeDef {
         TypeDef {
             name_id,
-            typed_id,
+            type_id,
             args,
             conds,
         }
@@ -212,7 +212,7 @@ pub struct Structure {
     pub(crate) conds: Vec<Cond>,
     // Fields can be variants or separate strugg <-- Sgwom
     //WARN:
-    // pub(crate) fields: Vec<TypedId>,
+    // pub(crate) fields: Vec<TypeId>,
 }
 
 // impl Structure {

@@ -5,13 +5,16 @@ use crate::{
     keywords::Keyword,
 };
 
-#[derive(Debug, Clone, Copy)]
-pub enum TypedId {
-    Struct(StructId),
-    Enum(EnumId),
-    TypeDef(TypeDefId),
-    Func(FuncId),
-    BuiltinType(BuiltinTypeId),
+// This isn't an accurate name anymore...
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TypeId {
+    pub id: u32,
+}
+
+impl TypeId {
+    pub fn new(id: u32) -> TypeId {
+        TypeId { id }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -141,7 +144,7 @@ impl SpannedBuiltinType {
 #[derive(Debug, Clone)]
 pub enum Cond {
     //FIX:
-    Func(FuncId),
+    Func(SymbolId),
     IsEmpty,
     IsWhitespace,
     Not(Box<Cond>),

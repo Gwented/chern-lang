@@ -1,6 +1,6 @@
 use common::{
     builtins::BuiltinTypeKind,
-    symbols::{InnerArgs, Span, SpannedInnerArgs, TypedId},
+    symbols::{InnerArgs, Span, SpannedInnerArgs, TypeId},
 };
 
 use crate::semantic::representation::{ArgConstraint, FuncKind};

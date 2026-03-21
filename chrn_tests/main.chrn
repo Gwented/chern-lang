@@ -3,12 +3,14 @@
 
 @def
 
-alias default() = [IsEmpty]
-
-bind "Hello.chrn"
+// alias default() = [IsEmpty]
 
 var->
-    s: str [default()]
+    p: Person
+nest->
+    struct Person {
+        name: str [!IsEmpty] #warn
+    }
 
 @end
 

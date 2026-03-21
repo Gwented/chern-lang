@@ -3,7 +3,7 @@ use common::{
     intern::Intern,
     keywords::{self, Keyword},
     metadata::FileMetadata,
-    symbols::{AstId, Cond, FuncId, InnerArgs, Span, SpannedInnerArgs, TypedId},
+    symbols::{AstId, Cond, FuncId, InnerArgs, Span, SpannedInnerArgs, SymbolId, TypeId},
 };
 
 use crate::{
@@ -11,8 +11,8 @@ use crate::{
     semantic::{
         error::SemanticError,
         representation::{
-            ArgConstraint, FieldRepre, FuncArgsKind, FuncArgsRepre, FuncKind, FuncRepre, Table,
-            VariantRepre,
+            ArgConstraint, FieldRepre, FuncArgsKind, FuncArgsRepre, FuncKind, FuncRepre, Symbol,
+            Table, Type, VariantRepre,
         },
         semantic_reporter::SemanticReporter,
     },
@@ -41,7 +41,7 @@ impl ConstraintResolver<'_> {
     }
 
     pub fn resolve(&mut self) {
-        //NOTE: TypedIds are being reused here instead of the symbol wrapper which does the same thing
+        //NOTE: TypeIds are being reused here instead of the symbol wrapper which does the same thing
         // But maybe it should be used instead to be less confusing seeming
 
         // Could be done in a different way but fine for now
@@ -74,18 +74,17 @@ impl ConstraintResolver<'_> {
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
         // Not too favorable of this needing to happen but the ast would need to also have this
         // done otherwise. But maybe this should take in the type def and the id to avoid this.
-        let type_def_id = match self.table.typed_ids[&self.table.sym_ids[&ast_id]] {
-            TypedId::TypeDef(struct_id) => struct_id,
-            _ => unreachable!(),
-        };
+
+        let sym_id = self.table.sym_ids[&ast_id];
 
         let mut args = Vec::new();
-        let typed_id = self.table.typedefs[type_def_id.id as usize].typed_id;
+        let type_id = self.table.get_typedef(sym_id).type_id;
+        let ty = &self.table.types[type_id.id as usize];
 
         //TODO: Make less terminal and have a better solution for this
         for spanned_arg in &abs_typedef.args {
-            match typed_id {
-                TypedId::Struct(_) | TypedId::Enum(_) => {
+            match ty {
+                Type::Struct(_) | Type::Enum(_) => {
                     if spanned_arg.arg != InnerArgs::Warn {
                         let span = Span::new(spanned_arg.span.start, spanned_arg.span.end);
                         let sem_err = SemanticError::VagueArg(spanned_arg.arg, span);
@@ -97,7 +96,7 @@ impl ConstraintResolver<'_> {
                 _ => (),
             }
 
-            let resolved_arg = match self.resolve_arg(typed_id, &spanned_arg) {
+            let resolved_arg = match self.resolve_arg(type_id, &spanned_arg) {
                 Ok(a) => a,
                 Err(sem_err) => {
                     self.reporter.report_semantic(sem_err);
@@ -115,7 +114,7 @@ impl ConstraintResolver<'_> {
         }
 
         // if err != nil { return err }
-        match self.resolve_cond_constraints(typed_id, &conds) {
+        match self.resolve_cond_constraints(type_id, &conds) {
             Ok(_) => (),
             Err(sem_err) => {
                 self.reporter.report_semantic(sem_err);
@@ -123,9 +122,7 @@ impl ConstraintResolver<'_> {
             }
         };
 
-        panic!("Still need to ensure conditions align with type given");
-
-        let type_def = &mut self.table.typedefs[type_def_id.id as usize];
+        let type_def = &mut self.table.get_typedef_mut(sym_id);
         type_def.conds = conds;
         type_def.args = args;
 
@@ -138,12 +135,10 @@ impl ConstraintResolver<'_> {
     // which seems bad if they're just builtins etc.
     fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
         // This looks weird
-        let struct_id = match self.table.typed_ids[&self.table.sym_ids[&ast_id]] {
-            TypedId::Struct(struct_id) => struct_id,
-            _ => unreachable!(),
-        };
 
         let mut conds: Vec<Cond> = Vec::new();
+
+        let sym_id = self.table.sym_ids[&ast_id];
 
         for expr in &abs_struct.glob_conds {
             conds.push(self.resolve_cond(expr, ast_id)?);
@@ -151,7 +146,7 @@ impl ConstraintResolver<'_> {
 
         let mut args: Vec<InnerArgs> = Vec::new();
         // This looks odd too
-        let fields = &self.table.structs[struct_id.id as usize].fields;
+        let fields = &self.table.get_struct(sym_id).fields;
         dbg!(&abs_struct.glob_args);
 
         //TODO: Need to point to particular type expression
@@ -172,7 +167,7 @@ impl ConstraintResolver<'_> {
         dbg!(&args);
         dbg!(&conds);
 
-        let structure = &mut self.table.structs[struct_id.id as usize];
+        let structure = &mut self.table.get_struct_mut(sym_id);
 
         // I'm scared of this
         structure.args = args;
@@ -182,24 +177,26 @@ impl ConstraintResolver<'_> {
     }
 
     fn resolve_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) -> Result<(), ()> {
-        let enum_id = match self.table.typed_ids[&self.table.sym_ids[&ast_id]] {
-            TypedId::Enum(enum_id) => enum_id,
-            _ => unreachable!(),
-        };
+        // let sym_id = self.table.sym_ids[&ast_id];
+        //
+        // let mut args = Vec::new();
+        // let type_id = self.table.get_typedef(sym_id).type_id;
+        // let ty = &self.table.types[type_id.id as usize];
+
+        let sym_id = self.table.sym_ids[&ast_id];
 
         let mut conds: Vec<Cond> = Vec::new();
 
         for expr in &abs_enum.glob_conds {
             conds.push(self.resolve_cond(expr, ast_id)?);
         }
-        panic!("Still need to ensure conditions align with type given");
 
-        let variants = &self.table.enums[enum_id.id as usize].variants;
+        let variants = &self.table.get_enum(sym_id).variants;
         let mut args: Vec<InnerArgs> = Vec::new();
 
         for variant in variants {
             for spanned_arg in &abs_enum.glob_args {
-                if let Some(type_id) = variant.typed_id {
+                if let Some(type_id) = variant.type_id {
                     let arg = match self.resolve_arg(type_id, spanned_arg) {
                         Ok(a) => a,
                         Err(sem_err) => {
@@ -213,7 +210,7 @@ impl ConstraintResolver<'_> {
             }
         }
 
-        let enumeration = &mut self.table.enums[enum_id.id as usize];
+        let enumeration = &mut self.table.get_enum_mut(sym_id);
 
         enumeration.conds = conds;
         enumeration.args = args;
@@ -254,7 +251,8 @@ impl ConstraintResolver<'_> {
                     args.push(arg);
                 }
 
-                let func_id = FuncId::new(self.table.funcs.len() as u32);
+                let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
+                let type_id = TypeId::new(self.table.types.len() as u32);
 
                 //TODO: Maybe handle this elsewhere
                 let (constraints, kind) = match Keyword::try_as_kw(call.name_id.id) {
@@ -285,7 +283,8 @@ impl ConstraintResolver<'_> {
                     }
                 };
 
-                let func = FuncRepre::new(call.name_id, span.clone(), kind, constraints, args);
+                let func =
+                    FuncRepre::new(call.name_id, type_id, span.clone(), kind, constraints, args);
 
                 match self.check_func_constraints(&func) {
                     Ok(_) => (),
@@ -295,9 +294,9 @@ impl ConstraintResolver<'_> {
                     }
                 };
 
-                self.table.funcs.push(func);
+                self.table.symbols.insert(sym_id, Symbol::Func(func));
 
-                Ok(Cond::Func(func_id))
+                Ok(Cond::Func(sym_id))
             }
             Expr::Str(name_id, span) => {
                 let err_name = self.interner.search(name_id.id as usize);
@@ -332,15 +331,15 @@ impl ConstraintResolver<'_> {
 
     fn resolve_arg(
         &self,
-        typed_id: TypedId,
+        type_id: TypeId,
         spanned_arg: &SpannedInnerArgs,
         // Returns SemanticError due to borrowing issues
     ) -> Result<InnerArgs, SemanticError> {
-        match typed_id {
+        match &self.table.types[type_id.id as usize] {
             //NOTE: Types further down the recursive depth do not know they are a field, so they
             // have have their span made accurate within structures and enums
-            TypedId::Struct(struct_id) => {
-                let structure = &self.table.structs[struct_id.id as usize];
+            Type::Struct(sym_id) => {
+                let structure = self.table.get_struct(*sym_id);
 
                 for field in &structure.fields {
                     let arg_res = self.resolve_arg(field.ty, spanned_arg);
@@ -368,17 +367,17 @@ impl ConstraintResolver<'_> {
 
                 Ok(spanned_arg.arg)
             }
-            TypedId::Enum(enum_id) => {
-                let enumeration = &self.table.enums[enum_id.id as usize];
+            Type::Enum(sym_id) => {
+                let enum_repre = self.table.get_enum(*sym_id);
 
-                for variant in &enumeration.variants {
-                    if let Some(ty) = variant.typed_id {
+                for variant in &enum_repre.variants {
+                    if let Some(ty) = variant.type_id {
                         let arg_res = self.resolve_arg(ty, spanned_arg);
 
                         if let Err(SemanticError::UnsupportedArg(found_spanned_arg, kind)) = arg_res
                         {
                             if let Item::Struct(abs_struct) =
-                                &self.ast_info.items[enumeration.ast_id.id as usize]
+                                &self.ast_info.items[enum_repre.ast_id.id as usize]
                             {
                                 // or field span
                                 let ast_span =
@@ -402,17 +401,15 @@ impl ConstraintResolver<'_> {
                 Ok(spanned_arg.arg)
             }
 
-            TypedId::TypeDef(type_def_id) => {
-                let type_def = &self.table.typedefs[type_def_id.id as usize];
-
-                self.resolve_arg(type_def.typed_id, spanned_arg)
-            }
-            TypedId::BuiltinType(builtin_type_id) => {
-                let ty = &self.table.builtin_types[builtin_type_id.id as usize];
-
+            // TypeId::TypeDef(type_def_id) => {
+            //     let type_def = &self.table.typedefs[type_def_id.id as usize];
+            //
+            //     self.resolve_arg(type_def.type_id, spanned_arg)
+            // }
+            Type::BuiltinType(ty) => {
                 match ty {
-                    BuiltinType::Set(typed_id) | BuiltinType::List(typed_id) => {
-                        self.resolve_arg(*typed_id, spanned_arg)
+                    BuiltinType::Set(type_id) | BuiltinType::List(type_id) => {
+                        self.resolve_arg(*type_id, spanned_arg)
                     }
                     BuiltinType::Map(key_id, val_id) => {
                         // This looks weird...
@@ -421,7 +418,7 @@ impl ConstraintResolver<'_> {
                     }
                     BuiltinType::Any(_) => Ok(spanned_arg.arg),
                     builtin_type => {
-                        if !spanned_arg.arg.supports_builtin_type(builtin_type) {
+                        if !spanned_arg.arg.supports_builtin_type(&builtin_type) {
                             return Err(SemanticError::UnsupportedArg(
                                 spanned_arg.clone(),
                                 builtin_type.kind(),
@@ -451,15 +448,15 @@ impl ConstraintResolver<'_> {
         }
     }
 
-    /// Returns a success if all conditions align with the type of the given `typed_id`
+    /// Returns a success if all conditions align with the type of the given `type_id`
     fn resolve_cond_constraints(
         &self,
-        typed_id: TypedId,
+        type_id: TypeId,
         conds: &Vec<Cond>,
     ) -> Result<(), SemanticError> {
-        match typed_id {
-            TypedId::Struct(struct_id) => {
-                let structure = &self.table.structs[struct_id.id as usize];
+        match &self.table.types[type_id.id as usize] {
+            Type::Struct(sym_id) => {
+                let structure = &self.table.get_struct(*sym_id);
 
                 for field in &structure.fields {
                     let res = self.resolve_cond_constraints(field.ty, conds);
@@ -487,18 +484,13 @@ impl ConstraintResolver<'_> {
 
                 Ok(())
             }
-            //FIX: Conditions have an internal function id which could or could not be something
-            // like an alias. The condition itself can't search for the function id, which
-            // means it would need to be forced to have intrinsics only or else it cannot get
-            // constraints.
-            TypedId::Enum(enum_id) => todo!(),
-            // Does this need a special case again?
-            TypedId::TypeDef(type_def_id) => todo!(),
-            TypedId::Func(func_id) => todo!(),
-            TypedId::BuiltinType(builtin_type_id) => {
-                let kind = &self.table.builtin_types[builtin_type_id.id as usize];
+            Type::Enum(enum_id) => todo!(),
+            Type::Func(func_id) => todo!(),
+            Type::BuiltinType(ty) => {
+                // let kind = &self.table.builtin_types[builtin_type_id.id as usize];
                 todo!();
             }
+            Type::Unknown => unimplemented!("No `Unknown` behavior"),
         }
     }
 

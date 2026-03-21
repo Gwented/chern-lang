@@ -5,7 +5,7 @@ use common::{
     metadata::FileMetadata,
     symbols::{
         AstId, BuiltinTypeId, Cond, EnumId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs,
-        StructId, SymbolId, TypeDefId, TypedId,
+        StructId, SymbolId, TypeDefId, TypeId,
     },
 };
 
@@ -16,21 +16,22 @@ use crate::{
     semantic::{
         error::SemanticError,
         representation::{
-            EnumRepre, FieldRepre, FuncArgsRepre, FuncRepre, StructRepre, Table, TypeDefRepre,
-            VariantRepre,
+            EnumRepre, FieldRepre, FuncArgsRepre, FuncRepre, StructRepre, Symbol, Table, Type,
+            TypeDefRepre, VariantRepre,
         },
         semantic_reporter::SemanticReporter,
     },
 };
-/// Fills a given table with type information regarding the NameId and TypedId
+/// Fills a given table with type information regarding the NameId and TypeId
 pub struct TypeResolver<'a> {
     ast_info: &'a AstInfo,
     interner: &'a Intern,
     //WARN: Horrors
     table: &'a mut Table,
-    tracker: Tracker,
     // Startup idea:
     reporter: SemanticReporter<'a>,
+    //NOTE: May handle this differently but ok for now
+    unknown_id: Option<TypeId>,
 }
 
 impl TypeResolver<'_> {
@@ -43,9 +44,9 @@ impl TypeResolver<'_> {
         TypeResolver {
             ast_info,
             interner,
-            tracker: Tracker::new(),
             table,
             reporter: SemanticReporter::new(metadata),
+            unknown_id: None,
         }
     }
 
@@ -72,7 +73,7 @@ impl TypeResolver<'_> {
         //FIXME: Need to resolve types first so may be better to just resolve args and conds in an
         // entirely different structure, especially due to complexity explosion
 
-        //NOTE: TypedIds are being reused here instead of the symbol wrapper which does the same thing
+        //NOTE: TypeIds are being reused here instead of the symbol wrapper which does the same thing
         // But maybe it should be used instead to be less confusing seeming
 
         // Everything is in order so this cannot fail unless something internally went wrong.
@@ -102,18 +103,13 @@ impl TypeResolver<'_> {
     }
 
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
-        let ty = self.resolve_type_expr(&abs_typedef.ty, ast_id)?;
+        // I don't understand
+        let type_id = self.resolve_type_expr(&abs_typedef.ty, ast_id)?;
 
         let sym_id = self.table.sym_ids[&ast_id];
 
-        let type_def_repre = TypeDefRepre::new(abs_typedef.name_id, ty, sym_id, ast_id);
-        let type_def_id = TypeDefId::new(self.table.typedefs.len() as u32);
-
-        self.table
-            .typed_ids
-            .insert(sym_id, TypedId::TypeDef(type_def_id));
-
-        self.table.typedefs.push(type_def_repre);
+        let type_def = self.table.get_typedef_mut(sym_id);
+        type_def.type_id = type_id;
 
         Ok(())
     }
@@ -122,23 +118,18 @@ impl TypeResolver<'_> {
         let mut fields: Vec<FieldRepre> = Vec::new();
 
         for (i, type_def) in abs_struct.fields.iter().enumerate() {
-            let typed_id = self.resolve_type_expr(&type_def.ty, ast_id)?;
+            let type_id = self.resolve_type_expr(&type_def.ty, ast_id)?;
 
-            let field_repre = FieldRepre::new(type_def.name_id, typed_id, AstId::new(i as u32));
+            let field_repre = FieldRepre::new(type_def.name_id, type_id, AstId::new(i as u32));
 
             fields.push(field_repre);
         }
 
         let sym_id = self.table.sym_ids[&ast_id];
 
-        let struct_repre = StructRepre::new(abs_struct.name_id, sym_id, ast_id, fields);
-        let struct_id = StructId::new(self.table.structs.len() as u32);
+        let struct_repre = self.table.get_struct_mut(sym_id);
 
-        self.table
-            .typed_ids
-            .insert(sym_id, TypedId::Struct(struct_id));
-
-        self.table.structs.push(struct_repre);
+        struct_repre.fields.append(&mut fields);
 
         Ok(())
     }
@@ -148,9 +139,9 @@ impl TypeResolver<'_> {
 
         for (i, variant) in abs_enum.variants.iter().enumerate() {
             if let Some(ty) = &variant.ty {
-                let typed_id = self.resolve_type_expr(ty, ast_id)?;
+                let type_id = self.resolve_type_expr(ty, ast_id)?;
                 let variant_repre =
-                    VariantRepre::new(variant.name_id, Some(typed_id), AstId::new(i as u32));
+                    VariantRepre::new(variant.name_id, Some(type_id), AstId::new(i as u32));
 
                 variants.push(variant_repre);
             }
@@ -158,44 +149,37 @@ impl TypeResolver<'_> {
 
         let sym_id = self.table.sym_ids[&ast_id];
 
-        let enum_repre = EnumRepre::new(abs_enum.name_id, sym_id, ast_id, variants);
-        let enum_id = EnumId::new(self.table.enums.len() as u32);
+        let enum_repre = self.table.get_enum_mut(sym_id);
 
-        self.table.typed_ids.insert(sym_id, TypedId::Enum(enum_id));
-
-        self.table.enums.push(enum_repre);
+        enum_repre.variants.append(&mut variants);
 
         Ok(())
     }
 
-    fn resolve_type_expr(&mut self, ty: &TypeExpr, ast_id: AstId) -> Result<TypedId, ()> {
+    fn resolve_type_expr(&mut self, ty: &TypeExpr, ast_id: AstId) -> Result<TypeId, ()> {
         match ty {
             TypeExpr::Var(name_id, span) => {
-                //WARN: MAKE SURE THIS WORKS
+                // Returns the name's id since it is a valid non-data structure intrinsic type
                 if let Some(_) = BuiltinType::try_from_id(name_id.id) {
-                    let builtin_id = BuiltinTypeId::new(name_id.id);
-
-                    return Ok(TypedId::BuiltinType(builtin_id));
+                    return Ok(TypeId::new(name_id.id));
                 }
 
                 // Loop that checks if the name id was registered, then uses its corresponding ast_id to
                 // extract the name id's type and returns that as the type to be referenced
                 for (current_ast_id, current_name_id) in &self.table.name_ids {
                     if current_name_id == name_id {
-                        let ty = self.table.typed_ids[&self.table.sym_ids[&current_ast_id]];
-                        return Ok(ty);
+                        let sym_id = self.table.sym_ids[&current_ast_id];
+                        let type_id = match &self.table.symbols[&sym_id] {
+                            Symbol::Struct(struct_repre) => struct_repre.type_id,
+                            Symbol::Func(func_repre) => func_repre.type_id,
+                            Symbol::Enum(enum_repre) => enum_repre.type_id,
+                            // This is not possible
+                            // Symbol::TypeDef(type_def_repre) => type_def_repre.type_id,
+                            _ => todo!(),
+                        };
+                        return Ok(type_id);
                     }
                 }
-
-                //NOTE: Just curious of this
-                // let type_res = self.table.name_ids
-                //     .iter()
-                //     .find(|(_, current)| current.id == name_id.id)
-                //     .map(|(ast, _)| self.table.typed_ids[&self.table.sym_ids[&ast]]);
-                //
-                // if let Some(typed) = type_res {
-                //     return Ok(typed);
-                // }
 
                 let err_name = self.interner.search(name_id.id as usize);
 
@@ -240,12 +224,11 @@ impl TypeResolver<'_> {
 
                             let map = BuiltinType::Map(key, val);
 
-                            let builtin_id =
-                                BuiltinTypeId::new(self.table.builtin_types.len() as u32);
+                            let id = self.table.types.len() as u32;
 
-                            self.table.builtin_types.push(map);
+                            self.table.types.push(Type::BuiltinType(map));
 
-                            Ok(TypedId::BuiltinType(builtin_id))
+                            Ok(TypeId::new(id))
                         }
                         Keyword::Set => {
                             if generic.args.len() != 1 {
@@ -291,17 +274,19 @@ impl TypeResolver<'_> {
             }
             // Maybe this shouldn't have a span
             TypeExpr::Any(_) => {
-                let index = self.table.builtin_types.len();
+                let id = self.table.types.len() as u32;
 
-                self.table.builtin_types.push(BuiltinType::Any(None));
+                self.table
+                    .types
+                    .push(Type::BuiltinType(BuiltinType::Any(None)));
 
-                Ok(TypedId::BuiltinType(BuiltinTypeId::new(index as u32)))
+                Ok(TypeId::new(id))
             }
         }
     }
     // How do we solve this?
     // I DONT KNOW
-    fn resolve_expr(&mut self, expr: &Expr) -> Result<TypedId, ()> {
+    fn resolve_expr(&mut self, expr: &Expr) -> Result<TypeId, ()> {
         match expr {
             Expr::Var(name_id, span) => todo!(),
             Expr::Integer(num, span) => todo!(),
@@ -318,8 +303,8 @@ impl TypeResolver<'_> {
 
     // TODO: Register functions user made functions first...
     // fn contains_func(&self, name_id: NameId) -> bool {
-    //     if let Some(typed_id) = self.table.typed_ids.get(&name_id) {
-    //         if let TypedId::Func(_) = typed_id {
+    //     if let Some(type_id) = self.table.type_ids.get(&name_id) {
+    //         if let TypeId::Func(_) = type_id {
     //             return true;
     //         }
     //     }
@@ -332,7 +317,6 @@ impl TypeResolver<'_> {
     }
 
     // Does this have any reason to return a Result?
-    //TEST: IF ANYTHING BREAKS REVERT
     fn register_typedef(&mut self, type_def: &AbstractTypeDef, ast_id: AstId) {
         let check = self.table.name_ids.insert(ast_id, type_def.name_id);
 
@@ -350,22 +334,33 @@ impl TypeResolver<'_> {
         let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
         self.table.sym_ids.insert(ast_id, sym_id);
 
-        let type_def_id = self.tracker.register_typedef();
+        //WARN: This type id is fake...
+        let type_id = if let Some(id) = self.unknown_id {
+            id
+        } else {
+            let id = TypeId::new(self.table.types.len() as u32);
+            self.unknown_id = Some(id);
+            self.table.types.push(Type::Unknown);
+
+            id
+        };
+
+        let type_def_repre = TypeDefRepre::new(type_def.name_id, type_id, sym_id, ast_id);
 
         self.table
-            .typed_ids
-            .insert(sym_id, TypedId::TypeDef(type_def_id));
+            .symbols
+            .insert(sym_id, Symbol::TypeDef(type_def_repre));
     }
 
-    fn register_struct(&mut self, structure: &AbstractStruct, ast_id: AstId) {
-        let check = self.table.name_ids.insert(ast_id, structure.name_id);
+    fn register_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) {
+        let check = self.table.name_ids.insert(ast_id, abs_struct.name_id);
 
         if check.is_some() {
-            let duplicate = self.interner.search(structure.name_id.id as usize);
+            let duplicate = self.interner.search(abs_struct.name_id.id as usize);
 
             let msg = format!("The symbol \"{duplicate}\" appears more than once");
             self.reporter
-                .report_spanned(&msg, None, &structure.name_span);
+                .report_spanned(&msg, None, &abs_struct.name_span);
 
             return;
         }
@@ -373,77 +368,41 @@ impl TypeResolver<'_> {
         let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
         self.table.sym_ids.insert(ast_id, sym_id);
 
-        let struct_id = self.tracker.register_struct();
+        let type_id = TypeId::new(self.table.types.len() as u32);
+
+        let struct_repre =
+            StructRepre::new(abs_struct.name_id, sym_id, ast_id, type_id, Vec::new());
 
         self.table
-            .typed_ids
-            .insert(sym_id, TypedId::Struct(struct_id));
+            .symbols
+            .insert(sym_id, Symbol::Struct(struct_repre));
+
+        self.table.types.push(Type::Struct(sym_id));
     }
 
-    fn register_enum(&mut self, enumeration: &AbstractEnum, ast_id: AstId) {
-        let check = self.table.name_ids.insert(ast_id, enumeration.name_id);
+    fn register_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) {
+        let check = self.table.name_ids.insert(ast_id, abs_enum.name_id);
 
         if check.is_some() {
-            let duplicate = self.interner.search(enumeration.name_id.id as usize);
+            let duplicate = self.interner.search(abs_enum.name_id.id as usize);
 
             let msg = format!("The symbol \"{duplicate}\" appears more than once");
             self.reporter
-                .report_spanned(&msg, None, &enumeration.name_span);
+                .report_spanned(&msg, None, &abs_enum.name_span);
 
             return;
         }
 
+        let type_id = TypeId::new(self.table.types.len() as u32);
+
         let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
+
         self.table.sym_ids.insert(ast_id, sym_id);
 
-        let enum_id = self.tracker.register_enum();
+        let enum_repre = EnumRepre::new(abs_enum.name_id, sym_id, ast_id, type_id, Vec::new());
+        self.table.symbols.insert(sym_id, Symbol::Enum(enum_repre));
 
-        self.table.typed_ids.insert(sym_id, TypedId::Enum(enum_id));
-    }
-}
-
-/// Ensures each array within `Table` is able to have an assigned type id. It's mostly here because
-/// otherwise type expressions that refer to a structural piece of data won't able to reference a
-/// concrete type since it won't exist as a type id until that type is actually gotten to, which
-/// there's no guarantee of.
-#[derive(Debug)]
-pub(super) struct Tracker {
-    next_typedef: u32,
-    next_struct: u32,
-    next_func: u32,
-    next_enum: u32,
-}
-
-impl Tracker {
-    pub(super) fn new() -> Tracker {
-        Tracker {
-            next_typedef: 0,
-            next_struct: 0,
-            next_func: 0,
-            next_enum: 0,
-        }
-    }
-    fn register_typedef(&mut self) -> TypeDefId {
-        let type_def_id = TypeDefId::new(self.next_typedef);
-        self.next_typedef += 1;
-        type_def_id
-    }
-
-    fn register_struct(&mut self) -> StructId {
-        let struct_id = StructId::new(self.next_struct);
-        self.next_struct += 1;
-        struct_id
-    }
-
-    fn register_func(&mut self) -> FuncId {
-        let func_id = FuncId::new(self.next_func);
-        self.next_func += 1;
-        func_id
-    }
-
-    fn register_enum(&mut self) -> EnumId {
-        let enum_id = EnumId::new(self.next_enum);
-        self.next_enum += 1;
-        enum_id
+        // DO WE NEED THIS?
+        self.table.types.push(Type::Enum(sym_id));
     }
 }

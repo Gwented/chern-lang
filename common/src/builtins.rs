@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::{keywords::Keyword, symbols::TypedId};
+use crate::{keywords::Keyword, symbols::TypeId};
 
 //TEST: Serial and script interact with this directly so
 #[derive(Debug)]
@@ -27,10 +27,10 @@ pub enum BuiltinType {
     Str,
     BigInt,
     BigFloat,
-    List(TypedId),
-    Set(TypedId),
-    Map(TypedId, TypedId),
-    Any(Option<TypedId>),
+    List(TypeId),
+    Set(TypeId),
+    Map(TypeId, TypeId),
+    Any(Option<TypeId>),
 }
 
 impl BuiltinType {

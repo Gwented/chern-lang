@@ -4,7 +4,7 @@ use common::{
     keywords,
     metadata::FileMetadata,
     reporter,
-    symbols::{Span, TypedId},
+    symbols::{Span, TypeId},
 };
 
 use crate::{
