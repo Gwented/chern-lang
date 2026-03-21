@@ -1,20 +1,19 @@
+// Add namespace handling for ~str to be a valid type with "str" as the name
+// Add negatives
+
 @def
 
-
-// alias default() = [IsEmpty]
+alias default() = [IsEmpty]
 
 bind "Hello.chrn"
+
 var->
-// Add namespace handling for ~str to be a valid type with "str" as the name
-    p: Person [IsEmpty, !IsWhitespace, Range(0, 6e2)]
-
-nest->
-    struct Person {
-
-    } [IsEmpty]
-    // READJUST SETS FOR THIS TO NOT HALLUCINATE SO MUCH
+    s: str [default()]
 
 @end
+
+// READJUST SETS FOR THIS TO NOT HALLUCINATE SO MUCH
+
 // May remove brackets from this but fine for now
 // alias default(x, y) = [IsEmpty, Range(x = 5, y = 9)]
 /*

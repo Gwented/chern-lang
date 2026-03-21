@@ -1,6 +1,9 @@
 use std::fmt::Display;
 
-use crate::{builtins::BuiltinType, keywords::Keyword};
+use crate::{
+    builtins::{BuiltinType, BuiltinTypeKind},
+    keywords::Keyword,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub enum TypedId {
@@ -165,6 +168,15 @@ impl Cond {
             Keyword::IsEmpty => Some(Cond::IsEmpty),
             Keyword::IsWhitespace => Some(Cond::IsWhitespace),
             _ => None,
+        }
+    }
+
+    pub fn supports_builtin_type(&self, kind: BuiltinTypeKind) -> bool {
+        match self {
+            Cond::Func(func_id) => todo!(),
+            Cond::IsEmpty => todo!(),
+            Cond::IsWhitespace => todo!(),
+            Cond::Not(cond) => todo!(),
         }
     }
 }

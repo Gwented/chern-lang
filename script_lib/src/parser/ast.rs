@@ -4,8 +4,8 @@ use common::symbols::{InnerArgs, NameId, Span, SpannedInnerArgs};
 #[derive(Debug)]
 pub struct AstInfo {
     // MAYBE SHOULDN'T BE A NAME ID I DONT KNOW
-    pub bind: Option<NameId>,
-    pub items: Vec<Item>,
+    pub(crate) bind: Option<NameId>,
+    pub(crate) items: Vec<Item>,
 }
 
 impl AstInfo {
@@ -16,7 +16,6 @@ impl AstInfo {
         }
     }
 
-    //TEST: Oh my java.
     pub(crate) fn set_bind(&mut self, bind: NameId) {
         self.bind = Some(bind);
     }
@@ -27,7 +26,7 @@ impl AstInfo {
 }
 
 #[derive(Debug)]
-pub enum Item {
+pub(crate) enum Item {
     //                                                 name: str [!IsEmpty, Range(0,5)]
     //TODO: Should these have spans? Do we REALLY want ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     //
@@ -342,7 +341,7 @@ impl Unary {
 #[derive(Debug)]
 pub(crate) enum UnaryOp {
     Not,
-    // Negate
+    Negate,
 }
 
 #[derive(Debug)]

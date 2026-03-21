@@ -6,7 +6,7 @@ use std::ops::RangeInclusive;
 // Ensure ranges are adjusted
 // Ensure tests are aligned
 
-pub static KEYWORDS_ARRAY: [&str; 41] = [
+pub static KEYWORDS_ARRAY: [&str; 42] = [
     // primitives
     "i8", // 0
     "u8",
@@ -40,22 +40,22 @@ pub static KEYWORDS_ARRAY: [&str; 41] = [
     "import",
     "export",
     // Statements
-    //TODO: Add const
     "bind",
     "alias", // 30
+    "const",
     // Section names
-    "var",
-    "nest", // 32
-    "complex",
-    "override", // 34
+    "var", // 32
+    "nest",
+    "complex", // 34
+    "override",
     // Predicate keywords
-    "IsEmpty",
-    "IsWhitespace", // 36
+    "IsEmpty", // 36
+    "IsWhitespace",
     // Predicates (Function)
-    "Range",
-    "StartsW", // 38
-    "EndsW",
-    "Contains", // 40
+    "Range", // 38
+    "StartsW",
+    "EndsW", // 40
+    "Contains",
 ];
 // "Nat" // 37
 // "Real" // 38
@@ -98,16 +98,17 @@ pub enum Keyword {
     Export = 28,
     Bind = 29,
     Alias = 30,
-    Var = 31,
-    Nest = 32,
-    Complex = 33,
-    Override = 34,
-    IsEmpty = 35,
-    IsWhitespace = 36,
-    Range = 37,
-    StartsW = 38,
-    EndsW = 39,
-    Contains = 40,
+    Const = 31,
+    Var = 32,
+    Nest = 33,
+    Complex = 34,
+    Override = 35,
+    IsEmpty = 36,
+    IsWhitespace = 37,
+    Range = 38,
+    StartsW = 39,
+    EndsW = 40,
+    Contains = 41,
 }
 
 impl Keyword {
@@ -145,16 +146,17 @@ impl Keyword {
             28 => Some(Keyword::Export),
             29 => Some(Keyword::Bind),
             30 => Some(Keyword::Alias),
-            31 => Some(Keyword::Var),
-            32 => Some(Keyword::Nest),
-            33 => Some(Keyword::Complex),
-            34 => Some(Keyword::Override),
-            35 => Some(Keyword::IsEmpty),
-            36 => Some(Keyword::IsWhitespace),
-            37 => Some(Keyword::Range),
-            38 => Some(Keyword::StartsW),
-            39 => Some(Keyword::EndsW),
-            40 => Some(Keyword::Contains),
+            31 => Some(Keyword::Const),
+            32 => Some(Keyword::Var),
+            33 => Some(Keyword::Nest),
+            34 => Some(Keyword::Complex),
+            35 => Some(Keyword::Override),
+            36 => Some(Keyword::IsEmpty),
+            37 => Some(Keyword::IsWhitespace),
+            38 => Some(Keyword::Range),
+            39 => Some(Keyword::StartsW),
+            40 => Some(Keyword::EndsW),
+            41 => Some(Keyword::Contains),
             _ => None,
         }
     }
@@ -196,14 +198,14 @@ impl Keyword {
 const TYPE_START: u32 = 0;
 pub const TYPE_END: u32 = 24;
 
-const SECT_START: u32 = 31;
-const SECT_END: u32 = 34;
+const SECT_START: u32 = 32;
+const SECT_END: u32 = 35;
 
 const STMT_START: u32 = 29;
-const STMT_END: u32 = 30;
+const STMT_END: u32 = 31;
 
-const PREDICATE_START: u32 = 35;
-const PREDICATE_END: u32 = 40;
+const PREDICATE_START: u32 = 36;
+const PREDICATE_END: u32 = 41;
 
 //WARN: The amount of casting here is painful. SEVERELY painful.
 pub fn is_type(id: u32) -> bool {

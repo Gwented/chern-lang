@@ -24,7 +24,7 @@ use common::symbols::{InnerArgs, NameId, Span, SpannedInnerArgs};
 const MAX_ERRORS: u8 = 3;
 
 pub fn parse(metadata: &FileMetadata, tokens: &Vec<SpannedToken>, interner: &Intern) -> AstInfo {
-    let mut program = AstInfo::new();
+    let mut ast_info = AstInfo::new();
 
     let mut state = StateFlag::new();
 
@@ -54,7 +54,7 @@ pub fn parse(metadata: &FileMetadata, tokens: &Vec<SpannedToken>, interner: &Int
                         state.flip_bind();
                     }
 
-                    _ = parse_bind_stmt(&mut ctx, &mut program, interner);
+                    _ = parse_bind_stmt(&mut ctx, &mut ast_info, interner);
                 }
                 id if id == Keyword::Alias as u32 => {
                     ctx.advance_tok();
@@ -71,7 +71,7 @@ pub fn parse(metadata: &FileMetadata, tokens: &Vec<SpannedToken>, interner: &Int
                         state.flip_alias();
                     }
 
-                    _ = parse_alias_stmt(&mut ctx, &mut program, interner);
+                    _ = parse_alias_stmt(&mut ctx, &mut ast_info, interner);
                 }
                 id if id == Keyword::Var as u32 => {
                     ctx.advance_tok();
@@ -108,7 +108,7 @@ pub fn parse(metadata: &FileMetadata, tokens: &Vec<SpannedToken>, interner: &Int
                         }
 
                         if let Ok(ty) = parse_var_sect(&mut ctx, interner) {
-                            program.items.push(Item::Var(ty));
+                            ast_info.items.push(Item::Var(ty));
                         }
                     }
                 }
@@ -144,7 +144,7 @@ pub fn parse(metadata: &FileMetadata, tokens: &Vec<SpannedToken>, interner: &Int
                         }
 
                         if let Ok(item) = parse_nest_sect(&mut ctx, interner) {
-                            program.items.push(item);
+                            ast_info.items.push(item);
                         }
                     }
                 }
@@ -273,8 +273,8 @@ pub fn parse(metadata: &FileMetadata, tokens: &Vec<SpannedToken>, interner: &Int
         std::process::exit(1);
     }
 
-    dbg!(&program);
-    program
+    dbg!(&ast_info);
+    ast_info
 }
 
 //FIXME: These sets may be misaligned
@@ -310,12 +310,13 @@ fn parse_alias_stmt(
         interner,
     )?;
 
+    // Keeping this in case
     let start = ctx.peek_span().start;
 
     let (params, end) = parse_func_decl(ctx, interner)?;
 
     ctx.expect_verbose(
-        TokenKind::Equals,
+        TokenKind::Assign,
         &format!("Expected '=' to define alias \"{err_name}\", found "),
         "",
         Branch::Neutral,
@@ -332,17 +333,16 @@ fn parse_alias_stmt(
 
     let conds = handle_conds(ctx, interner)?;
 
-    // How is this going to be consumed
-    //TEST:
-    // FIX: Maybe this is going too far for alias. Should a funciton just be able to execute a
-    // block of conditions?
     let alias = AbstractAlias::new(name_id, name_span, params, conds);
-    todo!("Alias not done");
+
+    ast_info.items.push(Item::Alias(alias));
+
+    Ok(())
 }
 
 fn parse_bind_stmt(
     ctx: &mut Context,
-    program: &mut AstInfo,
+    ast_info: &mut AstInfo,
     interner: &Intern,
 ) -> Result<(), Token> {
     let name_id = ctx.expect_id_verbose(
@@ -356,7 +356,7 @@ fn parse_bind_stmt(
 
     let name_id = NameId::new(name_id);
 
-    program.set_bind(name_id);
+    ast_info.set_bind(name_id);
 
     Ok(())
 }
@@ -886,7 +886,7 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<Expr>, usize)
 
     while ctx.peek_kind() != TokenKind::CParen {
         let expr = match ctx.peek_tok() {
-            Token::Id(id) if ctx.peek_ahead(1).token.kind() == TokenKind::Equals => {
+            Token::Id(id) if ctx.peek_ahead(1).token.kind() == TokenKind::Assign => {
                 let span = ctx.peek_span();
                 let name_id = NameId::new(id);
                 // Skipping var id and equals

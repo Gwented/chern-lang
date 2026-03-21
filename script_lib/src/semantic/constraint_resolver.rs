@@ -59,7 +59,7 @@ impl ConstraintResolver<'_> {
                     _ = self.resolve_enum(enumeration, ast_id);
                 }
                 //TEST:
-                Item::Alias(abstract_alias) => todo!(),
+                Item::Alias(abs_alias) => todo!(),
             }
         }
 
@@ -113,6 +113,17 @@ impl ConstraintResolver<'_> {
         for expr in &abs_typedef.conds {
             conds.push(self.resolve_cond(expr, ast_id)?);
         }
+
+        // if err != nil { return err }
+        match self.resolve_cond_constraints(typed_id, &conds) {
+            Ok(_) => (),
+            Err(sem_err) => {
+                self.reporter.report_semantic(sem_err);
+                return Err(());
+            }
+        };
+
+        panic!("Still need to ensure conditions align with type given");
 
         let type_def = &mut self.table.typedefs[type_def_id.id as usize];
         type_def.conds = conds;
@@ -231,6 +242,9 @@ impl ConstraintResolver<'_> {
                     let cond = self.resolve_cond(&unary.expr, ast_id)?;
                     Ok(Cond::Not(Box::new(cond)))
                 }
+                UnaryOp::Negate => {
+                    todo!();
+                }
             },
             Expr::Call(call, span) => {
                 let mut args: Vec<FuncArgsRepre> = Vec::new();
@@ -280,7 +294,6 @@ impl ConstraintResolver<'_> {
                         return Err(());
                     }
                 };
-                panic!("Uh are you done functions?");
 
                 self.table.funcs.push(func);
 
@@ -431,17 +444,66 @@ impl ConstraintResolver<'_> {
             Expr::Float(num, _) => Ok(FuncArgsRepre::Float(*num)),
             Expr::Var(name_id, span) => todo!(),
             Expr::Call(call, span) => todo!(),
-            Expr::FieldAccess(abstract_field_access, span) => todo!(),
+            Expr::FieldAccess(abs_field_access, span) => todo!(),
             Expr::Unary(unary, span) => todo!(),
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),
             Expr::Default(_, expr) => todo!(),
         }
     }
 
-    // Having this fully resolved HERE seems a little wrong. A structure that specifically handles
-    // this seems like a better idea so that the resolver's general purpose isn't filled with
-    // functions that relate to a single process that happens to be complicated, but will keep like
-    // this for now.
+    /// Returns a success if all conditions align with the type of the given `typed_id`
+    fn resolve_cond_constraints(
+        &self,
+        typed_id: TypedId,
+        conds: &Vec<Cond>,
+    ) -> Result<(), SemanticError> {
+        match typed_id {
+            TypedId::Struct(struct_id) => {
+                let structure = &self.table.structs[struct_id.id as usize];
+
+                for field in &structure.fields {
+                    let res = self.resolve_cond_constraints(field.ty, conds);
+
+                    // DIRTY
+                    if let Err(SemanticError::UnsupportedArg(found_spanned_arg, kind)) = res {
+                        if let Item::Struct(abs_struct) =
+                            &self.ast_info.items[structure.ast_id.id as usize]
+                        {
+                            // or field span
+                            let ast_span = &abs_struct.fields[field.ast_id.id as usize].ty.span();
+
+                            let start = std::cmp::min(ast_span.start, found_spanned_arg.span.start);
+                            let end = std::cmp::max(ast_span.end, found_spanned_arg.span.end);
+
+                            //NOTE:
+                            let actual_span = Span::new(start, end);
+                            let spanned_arg =
+                                SpannedInnerArgs::new(found_spanned_arg.arg, actual_span);
+
+                            return Err(SemanticError::UnsupportedArg(spanned_arg, kind));
+                        }
+                    }
+                }
+
+                Ok(())
+            }
+            //FIX: Conditions have an internal function id which could or could not be something
+            // like an alias. The condition itself can't search for the function id, which
+            // means it would need to be forced to have intrinsics only or else it cannot get
+            // constraints.
+            TypedId::Enum(enum_id) => todo!(),
+            // Does this need a special case again?
+            TypedId::TypeDef(type_def_id) => todo!(),
+            TypedId::Func(func_id) => todo!(),
+            TypedId::BuiltinType(builtin_type_id) => {
+                let kind = &self.table.builtin_types[builtin_type_id.id as usize];
+                todo!();
+            }
+        }
+    }
+
+    /// Returns a success if all constraints within the given function align with the function's
+    /// signature.
     fn check_func_constraints(&self, func: &FuncRepre) -> Result<(), SemanticError> {
         for constraint in func.constraints.iter().copied() {
             match constraint {
@@ -460,18 +522,10 @@ impl ConstraintResolver<'_> {
                                     ));
                                 }
                             }
-                            FuncArgsRepre::Char(_) => {
+                            invalid => {
                                 return Err(SemanticError::ConstraintMismatch(
                                     ArgConstraint::Numeric,
-                                    BuiltinTypeKind::Char,
-                                    func.kind,
-                                    func.call_span.clone(),
-                                ));
-                            }
-                            FuncArgsRepre::Str(_) => {
-                                return Err(SemanticError::ConstraintMismatch(
-                                    ArgConstraint::Numeric,
-                                    BuiltinTypeKind::Str,
+                                    invalid.to_builtin_kind(),
                                     func.kind,
                                     func.call_span.clone(),
                                 ));
@@ -479,7 +533,7 @@ impl ConstraintResolver<'_> {
                         }
                     }
                 }
-                // SameType
+                // MatchingType
                 ArgConstraint::MatchingType => {
                     // Maybe this is dangerous?
                     let req_type = if let Some(arg) = func.args.get(0) {
@@ -501,7 +555,7 @@ impl ConstraintResolver<'_> {
                         }
                     }
                 }
-                // Arg count
+                // Argcount
                 ArgConstraint::ArgCount(count) => {
                     if func.args.len() != count as usize {
                         return Err(SemanticError::ArgMiscount(

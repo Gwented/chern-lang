@@ -363,15 +363,16 @@ impl ArgConstraint {
     /// Takes in a function kind that is built in and returns it's constraints
     pub fn from_builtin(kind: FuncKind) -> Vec<ArgConstraint> {
         match kind {
+            //WARN: CHANGE BACK TO DYNTYPE
             FuncKind::StartsW => {
                 // Maybe if we got something like 0x1FF it could StartsW(0x1FF)?
-                vec![ArgConstraint::ArgCount(1), ArgConstraint::MatchingType]
+                vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
             }
             FuncKind::EndsW => {
-                vec![ArgConstraint::ArgCount(1), ArgConstraint::MatchingType]
+                vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
             }
             FuncKind::Contains => {
-                vec![ArgConstraint::ArgCount(1), ArgConstraint::MatchingType]
+                vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
             }
             FuncKind::Range => {
                 vec![

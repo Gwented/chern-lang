@@ -14,7 +14,7 @@ const MAX_ILLEGAL_TOKS: u8 = 7;
 const NOTATION_FLOAT: u8 = 1 << 0;
 const NOTATION_HEX: u8 = 1 << 1;
 const NOTATION_BIN: u8 = 1 << 2;
-const NOTATION_OCT: u8 = 1 << 3;
+const NOTATION_OCTO: u8 = 1 << 3;
 
 pub struct Lexer<'a> {
     src_bytes: &'a [u8],
@@ -272,9 +272,19 @@ impl Lexer<'_> {
                     }
                 }
                 '=' => {
+                    let (start, mut end) = (self.pos, self.pos);
+
+                    let tok = if self.peek_ahead(1) == b'=' {
+                        self.advance();
+                        end = self.pos;
+                        todo!();
+                    } else {
+                        Token::Assign
+                    };
+
                     tokens.push(SpannedToken {
-                        token: Token::Equals,
-                        span: Span::new(self.pos, self.pos),
+                        token: tok,
+                        span: Span::new(start, end),
                     });
 
                     self.advance();
@@ -340,8 +350,6 @@ impl Lexer<'_> {
             panic!();
         }
 
-        dbg!(&tokens);
-
         tokens
     }
 
@@ -383,7 +391,7 @@ impl Lexer<'_> {
             notation |= NOTATION_BIN;
             self.skip(2);
         } else if self.peek() == b'0' && self.peek_ahead(1) == b'o' {
-            notation |= NOTATION_OCT;
+            notation |= NOTATION_OCTO;
             self.skip(2);
         }
 
@@ -395,26 +403,29 @@ impl Lexer<'_> {
                 b'0' | b'1' if (notation & NOTATION_BIN) != 0 => {
                     self.advance();
                 }
-                b'0'..=b'7' if (notation & NOTATION_OCT) != 0 => {
+                b'0'..=b'7' if (notation & NOTATION_OCTO) != 0 => {
                     self.advance();
                     self.advance();
                 }
-                // Why did I remove this???
-                b'0'..b'9' => {
+                b'0'..=b'9' => {
                     self.advance();
                 }
                 // May remove '+' being usable
-                b'e' if (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCT)) == 0 => {
+                b'e' if (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCTO)) == 0 => {
                     let next = self.peek_ahead(1);
-                    if next.is_ascii_digit() || next == b'+' || next == b'-' {
+
+                    if (next == b'+' || next == b'-') && self.peek_ahead(2).is_ascii_digit() {
                         notation |= NOTATION_FLOAT;
                         self.skip(2);
+                    } else if next.is_ascii_digit() {
+                        notation |= NOTATION_FLOAT;
+                        self.advance();
                     } else {
                         break;
                     }
                 }
                 b'.' if (notation & NOTATION_FLOAT) == 0
-                    && (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCT)) == 0
+                    && (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCTO)) == 0
                     && self.peek_ahead(1) != b'.'
                     // Maybe this will be possible, but it looks weird.
                     && self.peek_ahead(1).is_ascii_digit() =>
@@ -432,7 +443,6 @@ impl Lexer<'_> {
         }
 
         let end = self.pos;
-        dbg!(str::from_utf8(&self.src_bytes).unwrap());
 
         let raw_str = match str::from_utf8(&self.src_bytes[start..end]) {
             Ok(val) => val,
@@ -447,9 +457,8 @@ impl Lexer<'_> {
         };
 
         let (id_str, num_notation) =
-            if (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCT)) != 0 {
+            if (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCTO)) != 0 {
                 let digits_start = if raw_str.len() > 2 { 2 } else { 0 };
-                dbg!(digits_start);
                 let digits = &raw_str[digits_start..].replace('_', "");
 
                 let (radix, num_notation) = if (notation & NOTATION_HEX) != 0 {
@@ -467,8 +476,6 @@ impl Lexer<'_> {
             };
 
         let id = interner.intern(&id_str);
-
-        dbg!(id_str);
 
         if (notation & NOTATION_FLOAT) == 0 {
             SpannedToken {
@@ -550,7 +557,6 @@ impl Lexer<'_> {
 
                     match self.read_escape() {
                         Some(ch) => {
-                            dbg!(ch);
                             result_char = Some(ch);
                             char_count += 1;
                         }
@@ -571,7 +577,6 @@ impl Lexer<'_> {
                     char_count += 1;
 
                     self.advance_char();
-                    dbg!(self.peek_char());
                 }
             }
         }

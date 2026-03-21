@@ -60,7 +60,7 @@ impl TypeResolver<'_> {
                 Item::Var(type_def) => self.register_typedef(type_def, ast_id),
                 Item::Struct(structure) => self.register_struct(structure, ast_id),
                 Item::Enum(enumeration) => self.register_enum(enumeration, ast_id),
-                Item::Alias(abstract_alias) => todo!(),
+                Item::Alias(alias) => todo!(),
             }
         }
 
@@ -89,7 +89,7 @@ impl TypeResolver<'_> {
                 Item::Enum(enumeration) => {
                     _ = self.resolve_enum(enumeration, ast_id);
                 }
-                Item::Alias(abstract_alias) => todo!(),
+                Item::Alias(abs_alias) => todo!(),
             }
         }
 
@@ -308,7 +308,7 @@ impl TypeResolver<'_> {
             Expr::Float(num, span) => todo!(),
             Expr::Str(name_id, span) => todo!(),
             Expr::Call(call, span) => todo!(),
-            Expr::FieldAccess(abstract_field_access, span) => todo!(),
+            Expr::FieldAccess(abs_field_access, span) => todo!(),
             Expr::Unary(unary, span) => todo!(),
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),
             Expr::Char(_, _) => todo!(),
@@ -423,25 +423,25 @@ impl Tracker {
             next_enum: 0,
         }
     }
-    pub(super) fn register_typedef(&mut self) -> TypeDefId {
+    fn register_typedef(&mut self) -> TypeDefId {
         let type_def_id = TypeDefId::new(self.next_typedef);
         self.next_typedef += 1;
         type_def_id
     }
 
-    pub(super) fn register_struct(&mut self) -> StructId {
+    fn register_struct(&mut self) -> StructId {
         let struct_id = StructId::new(self.next_struct);
         self.next_struct += 1;
         struct_id
     }
 
-    pub(super) fn register_func(&mut self) -> FuncId {
+    fn register_func(&mut self) -> FuncId {
         let func_id = FuncId::new(self.next_func);
         self.next_func += 1;
         func_id
     }
 
-    pub(super) fn register_enum(&mut self) -> EnumId {
+    fn register_enum(&mut self) -> EnumId {
         let enum_id = EnumId::new(self.next_enum);
         self.next_enum += 1;
         enum_id

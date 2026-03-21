@@ -13,7 +13,7 @@ pub fn print_all(program: &AstInfo, interner: &Intern) {
     if let Some(name_id) = program.bind {
         let name = interner.search(name_id.id as usize);
 
-        println!("bind = {name}");
+        println!("bind = \"{name}\"");
     }
 
     for item in &program.items {
@@ -63,7 +63,7 @@ pub fn print_all(program: &AstInfo, interner: &Intern) {
 
                 println!("]");
             }
-            Item::Alias(abstract_alias) => (),
+            Item::Alias(abs_alias) => (),
         }
     }
     println!("]");
