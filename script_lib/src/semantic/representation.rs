@@ -1,3 +1,4 @@
+// TypeId is the index of the type itself, OR the type it's pointing to
 use core::error;
 use std::{collections::HashMap, fmt::Display};
 
@@ -23,7 +24,7 @@ pub(super) enum Type {
     Enum(SymbolId),
     Func(SymbolId),
     Alias(SymbolId),
-    Tuple(Vec<TypeId>),
+    Tuple(Tuple),
     Unknown,
 }
 
@@ -461,5 +462,17 @@ impl Display for FuncKind {
             FuncKind::EndsW => write!(f, "EndsW"),
             FuncKind::UserDefined => write!(f, "<Hi>"),
         }
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct Tuple {
+    pub(super) elements: Vec<TypeId>,
+    pub(super) type_id: TypeId,
+}
+
+impl Tuple {
+    pub fn new(elements: Vec<TypeId>, type_id: TypeId) -> Tuple {
+        Tuple { elements, type_id }
     }
 }

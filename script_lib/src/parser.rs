@@ -323,8 +323,8 @@ fn parse_alias_stmt(
         interner,
     )?;
 
+    //WARN: Make sure this works
     let conds = if ctx.peek_kind() == TokenKind::OBracket {
-        ctx.advance_tok();
         handle_conds(ctx, interner)?
     } else {
         Vec::new()
@@ -394,7 +394,6 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
 
     // WARN: DO NOT PROPOGATE
     let conds_res = if ctx.peek_kind() == TokenKind::OBracket {
-        ctx.advance_tok();
         handle_conds(ctx, interner)
     } else {
         Ok(Vec::new())
@@ -454,7 +453,6 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
             let fields = handle_struct_fields(ctx, struct_name, interner)?;
 
             let conds = if ctx.peek_kind() == TokenKind::OBracket {
-                ctx.advance_tok();
                 handle_conds(ctx, interner)?
             } else {
                 Vec::new()
@@ -489,7 +487,6 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
             let variants = handle_enum_variants(ctx, enum_name, interner)?;
 
             let glob_conds = if ctx.peek_kind() == TokenKind::OBracket {
-                ctx.advance_tok();
                 handle_conds(ctx, interner)?
             } else {
                 Vec::new()
@@ -536,9 +533,7 @@ fn parse_override_sect(ctx: &mut Context, interner: &Intern) -> Result<(), Token
 fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
     match ctx.peek_tok() {
         Token::Id(id) if ctx.peek_ahead(1).token.kind() == TokenKind::OAngleBracket => {
-            let start = ctx.peek_span().start;
-
-            ctx.skip(2);
+            let start = ctx.advance_span().start;
 
             let name_id = NameId::new(id);
 
@@ -612,8 +607,17 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
     }
 }
 
+/// Parses assuming that within "List<i32>" the "List" part was skipped
 //WARN: USING BASIC SPAN IMPLEMENTATION AND MAY CHANGE
 fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<(Vec<TypeExpr>, usize), Token> {
+    ctx.expect_verbose(
+        TokenKind::OAngleBracket,
+        "Expected a '<' to declare generic, found ",
+        "",
+        Branch::VarType,
+        interner,
+    )?;
+
     let mut args: Vec<TypeExpr> = Vec::new();
 
     let arg_one = parse_type(ctx, interner)?;
@@ -654,7 +658,7 @@ fn parse_tuple(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> 
 
     let mut tuple: Vec<TypeExpr> = Vec::new();
 
-    while ctx.peek_kind() == TokenKind::Id {
+    while ctx.peek_kind() == TokenKind::Id || ctx.peek_kind() == TokenKind::Tilde {
         let ty = parse_type(ctx, interner)?;
         tuple.push(ty);
 
@@ -784,7 +788,6 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
     };
 
     let conds_res = if ctx.peek_kind() == TokenKind::OBracket {
-        ctx.advance_tok();
         handle_conds(ctx, interner)
     } else {
         Ok(Vec::new())
@@ -1123,7 +1126,19 @@ fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<Expr>, Token
     // This count cannot end the definition since it would prevent arguments from being viewed
     let mut err_count = 0;
 
-    //FIX: Make this stop on first error. Maybe.
+    ctx.expect_verbose(
+        TokenKind::OBracket,
+        "Expected a '[' to define conditions, found ",
+        "",
+        Branch::Cond,
+        interner,
+    )?;
+
+    if ctx.peek_kind() == TokenKind::CBracket {
+        ctx.advance_tok();
+        return Ok(conds);
+    }
+
     loop {
         let new_cond = parse_cond(ctx, interner);
 

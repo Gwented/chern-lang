@@ -62,10 +62,10 @@ impl SemanticReporter<'_> {
 
                 (msg, span)
             }
-            SemanticError::CircularRef(arg, fmted, span) => {
+            SemanticError::CircularRef(arg, fmted_type, span) => {
                 let msg = format!(
                     // Suspicious error message
-                    "Cannot give type `{fmted}` the argument \"#{arg}\" when there is a circule reference used."
+                    "Cannot give type `{fmted_type}` the argument \"#{arg}\" due to the circularly referenced type itself not supporting the argument"
                 );
 
                 (msg, span)

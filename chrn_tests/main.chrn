@@ -6,19 +6,20 @@
 // alias default(x) = [IsEmpty, Range(x,7)]
 
 var->
+    list: Set<str>
     // s: ~str [default()]
-    a: A
 nest->
+
     // Circular ref possible because str has no behavior internally as a type
     //  What if struct ~str and str inside
 
-    struct A {
+    /*struct A {
         b: B
     } #warn
 
     enum B {
-        C(str, str)
-    }
+        C(str, B)
+    }*/
 @end
 
 // READJUST SETS FOR THIS TO NOT HALLUCINATE SO MUCH

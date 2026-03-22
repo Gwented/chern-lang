@@ -61,8 +61,6 @@ impl ConstraintResolver<'_> {
             }
         }
 
-        dbg!(&self.table);
-
         if !self.reporter.err_vec.is_empty() {
             self.reporter.emit_errors();
             std::process::exit(1);
@@ -476,15 +474,17 @@ impl ConstraintResolver<'_> {
                     }
                 }
             }
+            // Another O(n) check...
+            //TODO: More detailed error
             Type::Tuple(tuple) => {
-                for element in tuple {
+                for element in &tuple.elements {
                     self.resolve_arg(*element, spanned_arg)?;
                 }
 
                 Ok(spanned_arg.arg)
             }
-            Type::Func(symbol_id) => todo!("Func"),
-            Type::Alias(symbol_id) => todo!("Alias"),
+            Type::Func(sym_id) => todo!("Func"),
+            Type::Alias(sym_id) => todo!("Alias"),
             Type::Unknown => todo!(),
             // TODO: Spanning may be off
         }
@@ -549,7 +549,7 @@ impl ConstraintResolver<'_> {
                 // let kind = &self.table.builtin_types[builtin_type_id.id as usize];
                 todo!();
             }
-            Type::Alias(symbol_id) => todo!(),
+            Type::Alias(sym_id) => todo!(),
             Type::Unknown => unimplemented!("No `Unknown` behavior"),
             Type::Tuple(type_ids) => todo!(),
         }

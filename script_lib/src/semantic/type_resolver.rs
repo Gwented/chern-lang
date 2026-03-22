@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use common::{
     builtins::BuiltinType,
     intern::Intern,
@@ -18,7 +20,7 @@ use crate::{
         error::SemanticError,
         representation::{
             AliasRepre, EnumRepre, FieldRepre, FuncArgsRepre, FuncRepre, StructRepre, Symbol,
-            Table, Type, TypeDefRepre, VariantRepre,
+            Table, Tuple, Type, TypeDefRepre, VariantRepre,
         },
         semantic_reporter::SemanticReporter,
     },
@@ -92,11 +94,42 @@ impl TypeResolver<'_> {
             }
         }
 
+        // Collected possible same symbol errors
+        self.check_duplicates();
+
         dbg!(&self.table);
 
         if !self.reporter.err_vec.is_empty() {
             self.reporter.emit_errors();
             std::process::exit(1);
+        }
+    }
+
+    // Result not needed since errors produced are checked
+    // Is the space complexity worth it?
+    fn check_duplicates(&mut self) {
+        let mut seen: HashSet<NameId> = HashSet::new();
+
+        for (ast_id, name_id) in &self.table.name_ids {
+            // Why is it not true if it exists false otherwise...seems backwards
+            let is_new = seen.insert(*name_id);
+
+            if !is_new {
+                // What if it traced back the span of the original name id and the duplicate?
+                let span = match &self.ast_info.items[ast_id.id as usize] {
+                    Item::Var(abstract_type_def) => &abstract_type_def.name_span,
+                    Item::Struct(abstract_struct) => &abstract_struct.name_span,
+                    Item::Enum(abstract_enum) => &abstract_enum.name_span,
+                    Item::Alias(abstract_alias) => &abstract_alias.name_span,
+                };
+
+                let dup_name = self.interner.search(name_id.id as usize);
+
+                let msg =
+                    format!("Found more than one symbol named \"{dup_name}\" in global scope");
+
+                self.reporter.report_spanned(&msg, None, span);
+            }
         }
     }
 
@@ -106,6 +139,7 @@ impl TypeResolver<'_> {
 
         let sym_id = self.table.sym_ids[&ast_id];
 
+        // Assinging from `Unknown` to it's actual associated type
         let type_def = self.table.get_typedef_mut(sym_id);
         type_def.type_id = type_id;
 
@@ -226,7 +260,14 @@ impl TypeResolver<'_> {
                                 return Err(());
                             }
 
-                            self.resolve_type_expr(&generic.args[0], ast_id)
+                            let inner = self.resolve_type_expr(&generic.args[0], ast_id)?;
+
+                            let list = BuiltinType::List(inner);
+                            let list_id = TypeId::new(self.table.types.len() as u32);
+
+                            self.table.types.push(Type::BuiltinType(list));
+
+                            return Ok(list_id);
                         }
                         Keyword::Map => {
                             if generic.args.len() != 2 {
@@ -251,10 +292,11 @@ impl TypeResolver<'_> {
 
                             Ok(TypeId::new(id))
                         }
+                        // Should probably just put this with list
                         Keyword::Set => {
                             if generic.args.len() != 1 {
                                 let msg = format!(
-                                    "Expected one type within `Set`, found {}",
+                                    "Expected 1 type within `Set`, found {}",
                                     generic.args.len()
                                 );
 
@@ -263,7 +305,14 @@ impl TypeResolver<'_> {
                                 return Err(());
                             }
 
-                            self.resolve_type_expr(&generic.args[0], ast_id)
+                            let inner = self.resolve_type_expr(&generic.args[0], ast_id)?;
+
+                            let set = BuiltinType::Set(inner);
+                            let set_id = TypeId::new(self.table.types.len() as u32);
+
+                            self.table.types.push(Type::BuiltinType(set));
+
+                            return Ok(set_id);
                         }
                         // I'm sure this can be done better...
                         _ => {
@@ -305,15 +354,17 @@ impl TypeResolver<'_> {
             // If a semantic error was returned I could control when things are reported by
             // intercepting
             TypeExpr::Tuple(unres_tuple, _) => {
-                let mut resolved_tuple: Vec<TypeId> = Vec::new();
+                let mut elements: Vec<TypeId> = Vec::new();
 
                 for element in unres_tuple {
                     let type_id = self.resolve_type_expr(element, ast_id)?;
-                    resolved_tuple.push(type_id);
+                    elements.push(type_id);
                 }
 
                 let tuple_id = TypeId::new(self.table.types.len() as u32);
-                self.table.types.push(Type::Tuple(resolved_tuple));
+                let tuple = Tuple::new(elements, tuple_id);
+
+                self.table.types.push(Type::Tuple(tuple));
 
                 Ok(tuple_id)
             }
@@ -357,20 +408,20 @@ impl TypeResolver<'_> {
 
         // This would never realistically cause a bottleneck since, why would you have that many
         // variables? But, still a little bit of code smell.
-        if self
-            .table
-            .name_ids
-            .values()
-            .any(|id| *id == type_def.name_id)
-        {
-            let duplicate = self.interner.search(type_def.name_id.id as usize);
-
-            let msg = format!("The symbol \"{duplicate}\" appears more than once");
-            self.reporter
-                .report_spanned(&msg, None, &type_def.name_span);
-
-            return;
-        }
+        // if self
+        //     .table
+        //     .name_ids
+        //     .values()
+        //     .any(|id| *id == type_def.name_id)
+        // {
+        //     let duplicate = self.interner.search(type_def.name_id.id as usize);
+        //
+        //     let msg = format!("The symbol \"{duplicate}\" appears more than once");
+        //     self.reporter
+        //         .report_spanned(&msg, None, &type_def.name_span);
+        //
+        //     return;
+        // }
 
         self.table.name_ids.insert(ast_id, type_def.name_id);
 
@@ -397,20 +448,20 @@ impl TypeResolver<'_> {
 
     fn register_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) {
         // O(floor)
-        if self
-            .table
-            .name_ids
-            .values()
-            .any(|id| *id == abs_struct.name_id)
-        {
-            let duplicate = self.interner.search(abs_struct.name_id.id as usize);
-
-            let msg = format!("The struct \"{duplicate}\" appears more than once");
-            self.reporter
-                .report_spanned(&msg, None, &abs_struct.name_span);
-
-            return;
-        }
+        // if self
+        //     .table
+        //     .name_ids
+        //     .values()
+        //     .any(|id| *id == abs_struct.name_id)
+        // {
+        //     let duplicate = self.interner.search(abs_struct.name_id.id as usize);
+        //
+        //     let msg = format!("The struct \"{duplicate}\" appears more than once");
+        //     self.reporter
+        //         .report_spanned(&msg, None, &abs_struct.name_span);
+        //
+        //     return;
+        // }
 
         self.table.name_ids.insert(ast_id, abs_struct.name_id);
 
@@ -430,20 +481,20 @@ impl TypeResolver<'_> {
     }
 
     fn register_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) {
-        if self
-            .table
-            .name_ids
-            .values()
-            .any(|id| *id == abs_enum.name_id)
-        {
-            let duplicate = self.interner.search(abs_enum.name_id.id as usize);
-
-            let msg = format!("The enum \"{duplicate}\" appears more than once");
-            self.reporter
-                .report_spanned(&msg, None, &abs_enum.name_span);
-
-            return;
-        }
+        // if self
+        //     .table
+        //     .name_ids
+        //     .values()
+        //     .any(|id| *id == abs_enum.name_id)
+        // {
+        //     let duplicate = self.interner.search(abs_enum.name_id.id as usize);
+        //
+        //     let msg = format!("The enum \"{duplicate}\" appears more than once");
+        //     self.reporter
+        //         .report_spanned(&msg, None, &abs_enum.name_span);
+        //
+        //     return;
+        // }
 
         self.table.name_ids.insert(ast_id, abs_enum.name_id);
 

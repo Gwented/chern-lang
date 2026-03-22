@@ -213,7 +213,8 @@ pub enum InnerArgs {
 
 impl InnerArgs {
     // Better name...
-    /// This exists as a source of truth for if an argument is applicable to any type given
+    /// Returns true if the given argument is applicable to every type, such as `#warn`, otherwise
+    /// returns false
     pub fn is_basic(&self) -> bool {
         match self {
             InnerArgs::Warn => true,
