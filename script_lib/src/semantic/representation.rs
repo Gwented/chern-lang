@@ -186,16 +186,6 @@ impl StructRepre {
         }
     }
 
-    pub fn supports_arg(&self, arg: InnerArgs) -> bool {
-        match arg {
-            InnerArgs::Warn
-            | InnerArgs::Scientific
-            | InnerArgs::Hex
-            | InnerArgs::Binary
-            | InnerArgs::Octal => true,
-        }
-    }
-
     // Likely too complex to be handled inside like this and should maybe be given a baked version
     // so that it can focus on checking arg types or the keyword of the cond.
     // pub fn supports_cond(&self, cond: Cond) -> bool {
@@ -260,16 +250,6 @@ impl VariantRepre {
             ast_id,
             args: Vec::new(),
             conds: Vec::new(),
-        }
-    }
-
-    pub fn supports_arg(&self, arg: InnerArgs) -> bool {
-        match arg {
-            InnerArgs::Warn
-            | InnerArgs::Scientific
-            | InnerArgs::Hex
-            | InnerArgs::Binary
-            | InnerArgs::Octal => true,
         }
     }
 }

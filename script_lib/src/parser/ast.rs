@@ -86,14 +86,14 @@ pub(crate) enum TypeExpr {
     Var(NameId, Span),
     Escaped(NameId, Span),
     //_Generic
-    Generic(AbstractGeneric, Span),
+    Generic(Generic, Span),
     Tuple(Vec<TypeExpr>, Span),
     Any(Span),
 }
 
 //TEST: May just make a SpannedTypeExpr but this can work for now
 impl TypeExpr {
-    pub fn span(&self) -> Span {
+    pub(crate) fn span(&self) -> Span {
         match self {
             TypeExpr::Var(_, span)
             | TypeExpr::Generic(_, span)
@@ -102,6 +102,15 @@ impl TypeExpr {
             | TypeExpr::Escaped(_, span) => span.clone(),
         }
     }
+}
+
+struct Modifier {
+    visibility: Visibility,
+}
+
+pub(super) enum Visibility {
+    Priv,
+    Pub,
 }
 
 // Maybe put in enum exclusively if not needed outside
@@ -118,12 +127,13 @@ impl TypeExpr {
 // }
 //
 #[derive(Debug)]
-pub struct AbstractTypeDef {
+pub(crate) struct AbstractTypeDef {
     pub(crate) name_id: NameId,
     pub(crate) name_span: Span,
     pub(crate) ty: TypeExpr,
     pub(crate) args: Vec<SpannedInnerArgs>,
     pub(crate) conds: Vec<Expr>,
+    // pub(crate) visibility: Visibility,
 }
 
 impl AbstractTypeDef {
@@ -145,12 +155,13 @@ impl AbstractTypeDef {
 }
 
 #[derive(Debug)]
-pub struct AbstractStruct {
+pub(crate) struct AbstractStruct {
     pub(crate) name_id: NameId,
     pub(crate) name_span: Span,
     pub(crate) glob_conds: Vec<Expr>,
     pub(crate) glob_args: Vec<SpannedInnerArgs>,
     pub(crate) fields: Vec<AbstractTypeDef>,
+    // pub(crate) visibility: Visibility,
 }
 
 impl AbstractStruct {
@@ -160,6 +171,7 @@ impl AbstractStruct {
         glob_conds: Vec<Expr>,
         glob_args: Vec<SpannedInnerArgs>,
         fields: Vec<AbstractTypeDef>,
+        // visibility: Visibility,
     ) -> AbstractStruct {
         AbstractStruct {
             name_id,
@@ -167,18 +179,20 @@ impl AbstractStruct {
             glob_args,
             glob_conds,
             fields,
+            // visibility,
         }
     }
 }
 
 #[derive(Debug)]
-pub struct AbstractEnum {
+pub(crate) struct AbstractEnum {
     // Would be SymbolId in symbol table anyways
     pub(crate) name_id: NameId,
     pub(crate) name_span: Span,
     pub(crate) variants: Vec<AbstractVariant>,
     pub(crate) glob_conds: Vec<Expr>,
     pub(crate) glob_args: Vec<SpannedInnerArgs>,
+    // pub(crate) visibility: Visibility,
 }
 
 impl AbstractEnum {
@@ -188,6 +202,7 @@ impl AbstractEnum {
         variants: Vec<AbstractVariant>,
         glob_conds: Vec<Expr>,
         glob_args: Vec<SpannedInnerArgs>,
+        // visibility: Visibility,
     ) -> AbstractEnum {
         AbstractEnum {
             name_id,
@@ -195,6 +210,7 @@ impl AbstractEnum {
             variants,
             glob_conds,
             glob_args,
+            // visibility,
         }
     }
 }
@@ -301,6 +317,7 @@ pub(crate) struct AbstractAlias {
     pub(crate) params: Vec<TypeExpr>,
     pub(crate) conds: Vec<Expr>,
     pub(crate) args: Vec<SpannedInnerArgs>,
+    // pub(crate) visibility: Visibility,
 }
 
 impl AbstractAlias {
@@ -310,6 +327,7 @@ impl AbstractAlias {
         params: Vec<TypeExpr>,
         conds: Vec<Expr>,
         args: Vec<SpannedInnerArgs>,
+        // visibility: Visibility,
     ) -> AbstractAlias {
         AbstractAlias {
             name_id,
@@ -317,6 +335,7 @@ impl AbstractAlias {
             params,
             conds,
             args,
+            // visibility,
         }
     }
 }
@@ -352,14 +371,14 @@ pub(crate) enum UnaryOp {
 }
 
 #[derive(Debug)]
-pub(crate) struct AbstractGeneric {
+pub(crate) struct Generic {
     pub(crate) base: NameId,
     // Change to tuple or something alike since max 2?
     pub(crate) args: Vec<TypeExpr>,
 }
 
-impl AbstractGeneric {
-    pub(crate) fn new(base: NameId, args: Vec<TypeExpr>) -> AbstractGeneric {
-        AbstractGeneric { base, args }
+impl Generic {
+    pub(crate) fn new(base: NameId, args: Vec<TypeExpr>) -> Generic {
+        Generic { base, args }
     }
 }

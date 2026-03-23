@@ -101,7 +101,7 @@ impl<'a> Context<'a> {
         let span = self.safely_handle_span(found);
 
         let line_data =
-            reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
+            reporter::form_err_diag(&self.metadata.src_bytes, &[span], self.metadata.can_color);
 
         let msg = if let Some(name) = id_opt {
             let msg = format!("(in {branch})\n{bmsg}\"{name}\"{amsg}");
@@ -132,7 +132,7 @@ impl<'a> Context<'a> {
         let span = self.safely_handle_span(found);
 
         let line_data =
-            reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
+            reporter::form_err_diag(&self.metadata.src_bytes, &[span], self.metadata.can_color);
 
         let base_msg = format!("(in {branch})\n{msg}");
 
@@ -182,7 +182,7 @@ impl<'a> Context<'a> {
             let span = self.safely_handle_span(found);
 
             let line_data =
-                reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
+                reporter::form_err_diag(&self.metadata.src_bytes, &[span], self.metadata.can_color);
 
             let help = self
                 .try_help(expected, &found, branch, interner)
@@ -230,7 +230,7 @@ impl<'a> Context<'a> {
         let span = self.safely_handle_span(found);
 
         let line_data =
-            reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
+            reporter::form_err_diag(&self.metadata.src_bytes, &[span], self.metadata.can_color);
 
         let base_msg = format!("(in {branch})\nExpected {emsg}, found {fmsg}");
 
@@ -358,14 +358,13 @@ impl<'a> Context<'a> {
             },
             Branch::Cond => match found.token {
                 Token::Id(id) if expected == TokenKind::CBracket => {
-                    // Egregious message
                     let msg = "Is there a missing comma to separate conditions?";
                     let help = reporter::standardize_help(msg, self.metadata.can_color);
 
                     Some(help)
                 }
                 Token::CBracket if prev_kind == TokenKind::Comma => {
-                    let msg = "Remove trailing ',' or add condition";
+                    let msg = "Remove trailing ',' or add a condition";
                     let help = reporter::standardize_help(msg, self.metadata.can_color);
 
                     Some(help)
@@ -374,8 +373,7 @@ impl<'a> Context<'a> {
             },
             Branch::NestEnum => match found.token.kind() {
                 TokenKind::Colon => {
-                    let msg = "Enums use parenthesis to hold types";
-
+                    let msg = "Enums use tuples to hold types";
                     let help = reporter::standardize_help(msg, self.metadata.can_color);
 
                     Some(help)

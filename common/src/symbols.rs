@@ -209,6 +209,7 @@ pub enum InnerArgs {
     Hex,
     Binary,
     Octal,
+    Ignore,
 }
 
 impl InnerArgs {
@@ -217,7 +218,7 @@ impl InnerArgs {
     /// returns false
     pub fn is_basic(&self) -> bool {
         match self {
-            InnerArgs::Warn => true,
+            InnerArgs::Ignore | InnerArgs::Warn => true,
             InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => false,
         }
     }
@@ -226,7 +227,7 @@ impl InnerArgs {
     // Maybe this is a good time to use kind
     pub fn supports_builtin_type(&self, builtin_type: &BuiltinType) -> bool {
         match self {
-            InnerArgs::Warn => true,
+            InnerArgs::Ignore | InnerArgs::Warn => true,
             InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => {
                 match builtin_type {
                     BuiltinType::I8
@@ -269,6 +270,7 @@ impl Display for InnerArgs {
             InnerArgs::Hex => write!(f, "hex"),
             InnerArgs::Binary => write!(f, "bin"),
             InnerArgs::Octal => write!(f, "octal"),
+            InnerArgs::Ignore => write!(f, "ignore"),
         }
     }
 }
@@ -284,6 +286,7 @@ impl<'a> TryFrom<&'a str> for InnerArgs {
             "hex" => Ok(InnerArgs::Hex),
             "bin" => Ok(InnerArgs::Binary),
             "octal" => Ok(InnerArgs::Octal),
+            "ignore" => Ok(InnerArgs::Ignore),
             v => Err(v),
         }
     }

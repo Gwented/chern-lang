@@ -1,0 +1,9 @@
+[package]
+name = "chrn"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+clap = "4.6.0"
+clap_derive = "4.6.0"
+interpreter_lib = { path = "../interpreter_lib/"}

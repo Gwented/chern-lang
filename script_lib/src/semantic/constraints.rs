@@ -16,6 +16,7 @@ pub(super) enum ArgConstraint {
     Integer,
     Float,
     Str,
+    Variadic,
 }
 
 impl ArgConstraint {
@@ -63,6 +64,7 @@ impl Display for ArgConstraint {
                     write!(f, "{count} argument")
                 }
             }
+            ArgConstraint::Variadic => write!(f, "variadic"),
         }
     }
 }

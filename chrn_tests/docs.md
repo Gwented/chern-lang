@@ -1,4 +1,10 @@
-## [BEHAVIOR]
+// Program constant that represents whatever the current value is? Like $VAL? (No)
+
+## Goal
+// This is my leash
+- To allow for instructions that state how to serialize data without something like macros or annotations. Even though there is possible complex behavior, this is nothing stopping 
+
+## BEHAVIOR
 - Ends program by default when type information is incorrect unless `#warn` is used.
 
 - Binary representation. 
@@ -7,23 +13,32 @@ WHY NOT
 
 Why?
 
-## [Types]
+## Types
 i8, u8, i16, u16, i32, u32, i64, u64
 i128, u128, f16, f32, f64, f128, sized, unsized,
-char, bool, (maybe capital) str, struct, enum, nil (maybe not), BigInt, BigFloat, List, Map, Set
+char, bool, (maybe capital) str, struct, enum, tuple, nil, BigInt, BigFloat, List, Map, Set
 
 `struct` for a structure of data.
 `enum` for an Enum type which can also hold data.
+`tuple`
 
 ## [Operators]
 `!`: Not operator.
+
+## Keywords
+// TODO:
+`me`: Refers to current serialized data being looked at
+`struct` for a structure of data.
+`enum` for an Enum type which can also hold data.
+
+## Actions (Ignore this)
 
 ### MIGHT EXIST
 `||`: Or operator.
 
 ```chrn
 
-alias LongDefault(x, y) = !IsEmpty, Range(x, y), StartsW("ch") EndsW("ern") Contains("chern")
+alias LongDefault(x, y) = [!IsEmpty, Range(x, y), StartsW("ch"), EndsW("ern"), Contains("chern")]
 
 alias ShortDefault() = IsWhitespace
 
@@ -38,7 +53,7 @@ var->
 `_`: Match all for ignoring parameters
 
 ```chrn
-alias gopher(x, y) = !IsEmpty, Range(x?: 0.0, y?: 5.2), StartsW("ch") EndsW("ern") Contains("chern")
+alias gopher(x, y) = !IsEmpty, Range(x = 0.0, y = 5.2), StartsW("ch") EndsW("ern") Contains("chern")
 
 var->
     special_stir: str [gopher(0.5, _)] // defaults to (0.5, 5.0) 
@@ -46,10 +61,23 @@ var->
     stirring: str [gopher(2.0, 5.0)] // Works as normal
 ```
 
-`?`: Infers type and expects type consistency throughout entire `.chrn` file. Can also be used for optional parameters within an alias function, which allows for a default to be specified.
+`?`: Infers type and expects type consistency throughout entire given serialized data file type.
+Maybe this should just mean it's original intent of, ignore the type.
 
-# DOES NOT EXIST YET
-`~`: Name bypass operator. ~str
+`~`: Name bypass operator for when naming types.
+
+Example:
+```chrn
+var->
+    x: ~str
+nest->
+    struct ~str { // Could also just be "str" but it is best to maintain the prefix '~'
+        ptr: u8
+        len: unsized
+        capacity: unsized
+    }
+```
+
 
 # DOES NOT EXIST YET
 `(range)`: Explicit range syntax. The '=' is required. `0..=5`
@@ -59,24 +87,33 @@ var->
 
 `IsWhitespace`: Checks if a string is only whitespace within UTF-8 standards, or is empty.
 
-## Functions (Predicate)
-(WHAT TO DO WITH THIS?)
+## Functions
+
+// WHAT IF ALL OF THESE WORKED ON NUMBERS?
+
+`Equals(Variadic)`: Checks serialized value for equality against given argument
 
 `Range(inclusive, inclusive)`: Checks if the data being viewed matches the range given. For arrays and strings, this checks the length. For numbers, this checks the numeric value.
 
-// WHAT IF ALL OF THESE WORKED ON NUMBERS?
-Why? WHAT IF WE HAVE BINARY ONLY?
+`Contains(DynType)`: Checks if the data being viewed contains the given literal.
 
-`Contains(Literal)`: Checks if the data being viewed contains the given literal.
+`StartsW(DynType)`: Checks if the data being viewed starts with the given literal.
 
-`StartsW(Literal)`: Checks if the data being viewed starts with the given literal.
-
-`EndsW(Literal)`:
+`EndsW(DynType)`:
 
 // Does not exist yet
 `Regex("0-9a-zA-Z*")`
 
 ## Statements
+
+// TODO
+`const`:
+
+`export`:
+
+`import`:
+
+// TODO
 
 `alias`: Allows for predicates to be stored within a single keyword in the case of long conditions.
 
@@ -86,9 +123,9 @@ alias LongDefault(x, y) = !IsEmpty, Range(x, y), StartsW("ch") EndsW("ern") Cont
 alias ShortDefault() = IsWhitespace
 
 var->
-    special_string: str [LongDefault(0, 5)]
+special_string: str [LongDefault(0, 5)]
 
-    some_str: str [ShortDefault()]
+some_str: str [ShortDefault()]
 ```
 
 `bind`: Defines where a serialized file is located that should be checked, or deserialized.
@@ -96,9 +133,9 @@ var->
 ## [Sections]
 
 // This sounds convoluted..
-- Sections are how data can be parsed in different ways. They exist as opposed a keywords so that data is always defined in a readable, expected manner.
+- Sections are how data can be parsed in different ways. They exist as opposed to keywords so that data is always defined in a readable, predictable manner.
 
-- The `->` operator is used after section keywords to swap to the section.
+- The `->` operator is used after section keywords to swap to the section. There cannot be more than one of each section.
 
 `var`: Front facing definitions of the data to be serialized or deserialized.
 
@@ -110,16 +147,15 @@ var->
 
 // But given nested data such as
     account: Account
-
 // it would need a nest section
-```
-```
+
 ```
 
 `nest->`: Allows for the definition of a struct or enum
 
 ```chrn
 var->
+    id: u64
     account: Account
     state: State
 nest->
@@ -128,7 +164,7 @@ nest->
     }
 
     enum State {
-        Ready(str) // Enums can only store ONE type (as of right now) Would likely need tuple expr
+        Ready(str, unsized) // Can store tuple as well as no type
         InProgress
         Failed
     }
@@ -149,13 +185,15 @@ There is also a "like" category. A "JAVA_LIKE" category would have all of the in
 ## Arguments
 `#warn`: Would warn instead of terminating.
 
+//DOES NOT EXIST
+`#ignore`: Ignores all errors and warns on the type this is applied to for serialized data related errors.
+
 `#ign_if`: (Would remove anything that didn't align under condition rather than crash or warn.)
 
-`#scientific`, `#hex`, `#bin`, `#octo`: Numeric notations to output in serialized file.
+`#scient`, `#hex`, `#bin`, `#octo`: Numeric notations to output in serialized file.
 
 #### Full example of language
 
-// YOU HAVE DONE THE SAME EXAMPLE OVER 50 TIMES CHOOSE SOMETHING ELSE
 ```chrn
 @def
     var->
@@ -172,10 +210,12 @@ There is also a "like" category. A "JAVA_LIKE" category would have all of the in
 @end
 ```
 
-## POSSIBLE FEATURES
 Utilities to alter actual main file, such as trimming all strings.
 
-Numerics: Binary, hex, octo. Allows for notation to serialize to be a specific notation. Unicode.
+# I FORGOT ABOUT UNICODE
+Allows for notation to serialize to be a specific notation. Unicode.
+
+## POSSIBLE FEATURES
 
 Maybe arithmetic
 # Ok maybe

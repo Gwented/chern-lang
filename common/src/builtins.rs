@@ -135,8 +135,6 @@ impl Formatable for BuiltinTypeKind {
 
 // SHOULD THIS ERR?
 impl BuiltinType {
-    //TODO: Find out if one of these should be removed
-
     /// Uses `Keyword` to map directly to a `BuiltinType` excluding data structures.
     pub fn try_from_kw(kw: Keyword) -> Option<BuiltinType> {
         match kw {

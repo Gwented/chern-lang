@@ -1,14 +1,12 @@
-//FIXME: All top level structures need to be able to take arguments
-// Cond should be a proper function for all
+//TODO: Modifiers with bitwise flags
 pub mod ast;
 mod context;
 // Unpub this
 pub mod error;
 pub mod parse_state;
-
 use crate::parser::ast::{
-    AbstractAlias, AbstractEnum, AbstractGeneric, AbstractStruct, AbstractTypeDef, AbstractVariant,
-    AstInfo, Call, Expr, Item, TypeExpr, Unary, UnaryOp,
+    AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVariant, AstInfo, Call,
+    Expr, Generic, Item, TypeExpr, Unary, UnaryOp,
 };
 use crate::parser::context::Context;
 use crate::parser::error::Branch;
@@ -450,6 +448,14 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
 
             let name_id = NameId::new(name);
 
+            ctx.expect_verbose(
+                TokenKind::OCurlyBracket,
+                &format!("Expected a '{{' to define struct \"{struct_name}\", found"),
+                "",
+                Branch::Nest,
+                interner,
+            )?;
+
             let fields = handle_struct_fields(ctx, struct_name, interner)?;
 
             let conds = if ctx.peek_kind() == TokenKind::OBracket {
@@ -481,6 +487,14 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
             )?;
 
             let enum_name = interner.search(name as usize);
+
+            ctx.expect_verbose(
+                TokenKind::OCurlyBracket,
+                &format!("Expected a '{{' to define enum \"{enum_name}\", found"),
+                "",
+                Branch::Nest,
+                interner,
+            )?;
 
             let name_id = NameId::new(name);
 
@@ -539,7 +553,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
 
             // Needs to return the end for US
             let (args, end) = parse_generic(ctx, interner)?;
-            let generic = AbstractGeneric::new(name_id, args);
+            let generic = Generic::new(name_id, args);
 
             let span = Span::new(start, end);
 
@@ -697,14 +711,6 @@ fn handle_struct_fields(
     struct_name: &str,
     interner: &Intern,
 ) -> Result<Vec<AbstractTypeDef>, Token> {
-    _ = ctx.expect_verbose(
-        TokenKind::OCurlyBracket,
-        &format!("Expected a '{{' before defining struct \"{struct_name}\", found "),
-        "",
-        Branch::NestType,
-        interner,
-    );
-
     let mut fields: Vec<AbstractTypeDef> = Vec::new();
 
     //FIXME: Suspicious loop
@@ -729,19 +735,12 @@ fn handle_struct_fields(
     Ok(fields)
 }
 
+/// Assumes the leading '{' was skipped
 fn handle_enum_variants(
     ctx: &mut Context,
     enum_name: &str,
     interner: &Intern,
 ) -> Result<Vec<AbstractVariant>, Token> {
-    _ = ctx.expect_verbose(
-        TokenKind::OCurlyBracket,
-        &format!("Expected a '{{' before defining the enum \"{enum_name}\", found "),
-        "",
-        Branch::NestType,
-        interner,
-    );
-
     let mut variants: Vec<AbstractVariant> = Vec::new();
 
     //FIX: ALSO SUSPICIOUS
@@ -749,9 +748,21 @@ fn handle_enum_variants(
         let variant = parse_variant(ctx, interner)?;
         variants.push(variant);
 
+        if ctx.peek_kind() == TokenKind::CCurlyBracket {
+            break;
+        }
+
         if ctx.peek_kind() == TokenKind::Comma {
             ctx.advance_tok();
         }
+
+        // ctx.expect_verbose(
+        //     TokenKind::Comma,
+        //     "Expected a ',' or '}}' after variant, found ",
+        //     "",
+        //     Branch::NestEnum,
+        //     interner,
+        // )?;
     }
 
     _ = ctx.expect_verbose(

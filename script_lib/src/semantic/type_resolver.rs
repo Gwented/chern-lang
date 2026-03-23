@@ -55,6 +55,7 @@ impl TypeResolver<'_> {
 
     //FIXME: USE A SINGULAR VECTOR INDEXED BY NAMEID LATER OVER A HASHMAP NOT NOW PLEASE NOT NOW
     // Ok. But when. I don't know.
+    //TODO: Check structures of data for same name symbols
     pub fn resolve(&mut self) {
         // Registering namespaces
         for (id, item) in self.ast_info.items.iter().enumerate() {
@@ -67,6 +68,8 @@ impl TypeResolver<'_> {
                 Item::Alias(alias) => todo!(),
             }
         }
+
+        self.check_duplicates();
 
         //FIXME: Check symbols here once
 
@@ -94,10 +97,7 @@ impl TypeResolver<'_> {
             }
         }
 
-        // Collected possible same symbol errors
-        self.check_duplicates();
-
-        dbg!(&self.table);
+        // Collecting possible same symbol errors
 
         if !self.reporter.err_vec.is_empty() {
             self.reporter.emit_errors();
@@ -105,36 +105,45 @@ impl TypeResolver<'_> {
         }
     }
 
-    // Result not needed since errors produced are checked
-    // Is the space complexity worth it?
+    /// Checks registered namespace for duplicates and collects errors if any are found
     fn check_duplicates(&mut self) {
-        let mut seen: HashSet<NameId> = HashSet::new();
+        // Solely a HashMap for spanning
+        let mut seen: HashMap<NameId, AstId> = HashMap::new();
 
         for (ast_id, name_id) in &self.table.name_ids {
             // Why is it not true if it exists false otherwise...seems backwards
-            let is_new = seen.insert(*name_id);
+            let ast_opt = seen.insert(*name_id, *ast_id);
 
-            if !is_new {
-                // What if it traced back the span of the original name id and the duplicate?
-                let span = match &self.ast_info.items[ast_id.id as usize] {
+            if let Some(orig_ast_id) = ast_opt {
+                let orig_span = match &self.ast_info.items[orig_ast_id.id as usize] {
                     Item::Var(abstract_type_def) => &abstract_type_def.name_span,
                     Item::Struct(abstract_struct) => &abstract_struct.name_span,
                     Item::Enum(abstract_enum) => &abstract_enum.name_span,
                     Item::Alias(abstract_alias) => &abstract_alias.name_span,
-                };
+                }
+                .clone();
+
+                let dup_span = match &self.ast_info.items[ast_id.id as usize] {
+                    Item::Var(abstract_type_def) => &abstract_type_def.name_span,
+                    Item::Struct(abstract_struct) => &abstract_struct.name_span,
+                    Item::Enum(abstract_enum) => &abstract_enum.name_span,
+                    Item::Alias(abstract_alias) => &abstract_alias.name_span,
+                }
+                .clone();
 
                 let dup_name = self.interner.search(name_id.id as usize);
 
-                let msg =
-                    format!("Found more than one symbol named \"{dup_name}\" in global scope");
+                let msg = format!(
+                    "Found more than one symbol with identifier \"{dup_name}\" in the same scope"
+                );
 
-                self.reporter.report_spanned(&msg, None, span);
+                self.reporter
+                    .report_spanned(&msg, None, &[orig_span, dup_span]);
             }
         }
     }
 
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
-        // I don't understand
         let type_id = self.resolve_type_expr(&abs_typedef.ty, ast_id)?;
 
         let sym_id = self.table.sym_ids[&ast_id];
@@ -217,7 +226,8 @@ impl TypeResolver<'_> {
 
                 let err_msg = format!("\"{err_name}\" is not defined as a type");
 
-                self.reporter.report_spanned(&err_msg, None, span);
+                self.reporter
+                    .report_spanned(&err_msg, None, &[span.clone()]);
 
                 return Err(());
             }
@@ -240,7 +250,8 @@ impl TypeResolver<'_> {
 
                 let err_msg = format!("\"{err_name}\" is not defined as a type");
 
-                self.reporter.report_spanned(&err_msg, None, span);
+                self.reporter
+                    .report_spanned(&err_msg, None, &[span.clone()]);
 
                 return Err(());
             }
@@ -255,7 +266,7 @@ impl TypeResolver<'_> {
                                     generic.args.len()
                                 );
 
-                                self.reporter.report_spanned(&msg, None, span);
+                                self.reporter.report_spanned(&msg, None, &[span.clone()]);
 
                                 return Err(());
                             }
@@ -276,7 +287,7 @@ impl TypeResolver<'_> {
                                     generic.args.len()
                                 );
 
-                                self.reporter.report_spanned(&msg, None, span);
+                                self.reporter.report_spanned(&msg, None, &[span.clone()]);
 
                                 return Err(());
                             }
@@ -286,11 +297,11 @@ impl TypeResolver<'_> {
 
                             let map = BuiltinType::Map(key, val);
 
-                            let id = self.table.types.len() as u32;
+                            let map_id = self.table.types.len() as u32;
 
                             self.table.types.push(Type::BuiltinType(map));
 
-                            Ok(TypeId::new(id))
+                            Ok(TypeId::new(map_id))
                         }
                         // Should probably just put this with list
                         Keyword::Set => {
@@ -300,7 +311,7 @@ impl TypeResolver<'_> {
                                     generic.args.len()
                                 );
 
-                                self.reporter.report_spanned(&msg, None, span);
+                                self.reporter.report_spanned(&msg, None, &[span.clone()]);
 
                                 return Err(());
                             }
@@ -323,7 +334,8 @@ impl TypeResolver<'_> {
                                 "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, and `Map` are valid data structures"
                             );
 
-                            self.reporter.report_spanned(&err_msg, Some(err_name), span);
+                            self.reporter
+                                .report_spanned(&err_msg, Some(err_name), &[span.clone()]);
 
                             Err(())
                         }
@@ -336,7 +348,8 @@ impl TypeResolver<'_> {
                             "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, and `Map` are valid data structures"
                         );
 
-                        self.reporter.report_spanned(&err_msg, Some(err_name), span);
+                        self.reporter
+                            .report_spanned(&err_msg, Some(err_name), &[span.clone()]);
 
                         Err(())
                     }
@@ -402,27 +415,13 @@ impl TypeResolver<'_> {
         todo!();
     }
 
-    //FIX: Maybe only ONE O(n) check of same symbols found should be done.
+    /// Attaches ast_id to the name_id of it's ast structure.
+    /// Gives it a unique symbol id and attaches the ast id to it.
+    /// Gives the typedef an id attached to `Unknown` which is to be resolved later
+    /// Registers the unfinished representation with it's symbol id so that it can still be
+    /// referenced
+
     fn register_typedef(&mut self, type_def: &AbstractTypeDef, ast_id: AstId) {
-        //NOTE: There is no scoping needed I believe so this is valid
-
-        // This would never realistically cause a bottleneck since, why would you have that many
-        // variables? But, still a little bit of code smell.
-        // if self
-        //     .table
-        //     .name_ids
-        //     .values()
-        //     .any(|id| *id == type_def.name_id)
-        // {
-        //     let duplicate = self.interner.search(type_def.name_id.id as usize);
-        //
-        //     let msg = format!("The symbol \"{duplicate}\" appears more than once");
-        //     self.reporter
-        //         .report_spanned(&msg, None, &type_def.name_span);
-        //
-        //     return;
-        // }
-
         self.table.name_ids.insert(ast_id, type_def.name_id);
 
         let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
@@ -447,22 +446,6 @@ impl TypeResolver<'_> {
     }
 
     fn register_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) {
-        // O(floor)
-        // if self
-        //     .table
-        //     .name_ids
-        //     .values()
-        //     .any(|id| *id == abs_struct.name_id)
-        // {
-        //     let duplicate = self.interner.search(abs_struct.name_id.id as usize);
-        //
-        //     let msg = format!("The struct \"{duplicate}\" appears more than once");
-        //     self.reporter
-        //         .report_spanned(&msg, None, &abs_struct.name_span);
-        //
-        //     return;
-        // }
-
         self.table.name_ids.insert(ast_id, abs_struct.name_id);
 
         let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
@@ -481,21 +464,6 @@ impl TypeResolver<'_> {
     }
 
     fn register_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) {
-        // if self
-        //     .table
-        //     .name_ids
-        //     .values()
-        //     .any(|id| *id == abs_enum.name_id)
-        // {
-        //     let duplicate = self.interner.search(abs_enum.name_id.id as usize);
-        //
-        //     let msg = format!("The enum \"{duplicate}\" appears more than once");
-        //     self.reporter
-        //         .report_spanned(&msg, None, &abs_enum.name_span);
-        //
-        //     return;
-        // }
-
         self.table.name_ids.insert(ast_id, abs_enum.name_id);
 
         let type_id = TypeId::new(self.table.types.len() as u32);
@@ -507,51 +475,31 @@ impl TypeResolver<'_> {
         let enum_repre = EnumRepre::new(abs_enum.name_id, sym_id, ast_id, type_id, Vec::new());
         self.table.symbols.insert(sym_id, Symbol::Enum(enum_repre));
 
-        // DO WE NEED THIS?
         self.table.types.push(Type::Enum(sym_id));
     }
 
-    //TEST: WILL MAYBE HAVE A CONST SECTION BUT UM. UM.
-    // fn register_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) {
-    //     //NOTE: There is no scoping needed I believe so this is valid
-    //
-    //     // This would never realistically cause a bottleneck since, why would you have that many
-    //     // variables? But, still a little bit of code smell.
-    //     if self
-    //         .table
-    //         .name_ids
-    //         .values()
-    //         .any(|id| *id == abs_alias.name_id)
-    //     {
-    //         let duplicate = self.interner.search(abs_alias.name_id.id as usize);
-    //
-    //         let msg = format!("The symbol \"{duplicate}\" appears more than once");
-    //         self.reporter
-    //             .report_spanned(&msg, None, &abs_alias.name_span);
-    //
-    //         return;
-    //     }
-    //
-    //     self.table.name_ids.insert(ast_id, abs_alias.name_id);
-    //
-    //     let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
-    //     self.table.sym_ids.insert(ast_id, sym_id);
-    //
-    //     //Unkown type id for unregistered types
-    //     let type_id = if let Some(id) = self.unknown_id {
-    //         id
-    //     } else {
-    //         let id = TypeId::new(self.table.types.len() as u32);
-    //         self.unknown_id = Some(id);
-    //         self.table.types.push(Type::Unknown);
-    //
-    //         id
-    //     };
-    //
-    //     let alias_repre = AliasRepre::new(abs_alias.name_id, sym_id, ast_id, type_id);
-    //
-    //     self.table
-    //         .symbols
-    //         .insert(sym_id, Symbol::Alias(alias_repre));
-    // }
+    fn register_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) {
+        self.table.name_ids.insert(ast_id, abs_alias.name_id);
+
+        let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
+        self.table.sym_ids.insert(ast_id, sym_id);
+
+        //Unkown type id for unregistered types
+        let type_id = if let Some(id) = self.unknown_id {
+            id
+        } else {
+            let id = TypeId::new(self.table.types.len() as u32);
+            self.unknown_id = Some(id);
+            self.table.types.push(Type::Unknown);
+
+            id
+        };
+        todo!("Alias not done")
+
+        // let alias_repre = AliasRepre::new(abs_alias.name_id, sym_id, ast_id, type_id);
+        //
+        // self.table
+        //     .symbols
+        //     .insert(sym_id, Symbol::Alias(alias_repre));
+    }
 }

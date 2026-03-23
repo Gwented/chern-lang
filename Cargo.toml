@@ -1,5 +1,5 @@
 [workspace]
-members = ["common", "script_lib", "serial_lib"]
+members = ["cli_tool","common", "interpreter_lib", "script_lib", "serial_lib"]
 resolver = "3"
 default-members = ["script_lib"]
 
@@ -8,8 +8,3 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
-unicode-width = "0.2"
-
-[alias]
-# Um
-tt = "test --workspace"

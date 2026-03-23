@@ -81,7 +81,7 @@ impl ConstraintResolver<'_> {
                 Type::Struct(_) | Type::Enum(_) => {
                     if !spanned_arg.arg.is_basic() {
                         let span = Span::new(spanned_arg.span.start, spanned_arg.span.end);
-                        let sem_err = SemanticError::VagueArg(spanned_arg.arg, span);
+                        let sem_err = SemanticError::VagueArg(spanned_arg.arg, vec![span]);
 
                         self.reporter.report_semantic(sem_err);
                         return Err(());
@@ -133,8 +133,6 @@ impl ConstraintResolver<'_> {
         // This looks odd too
         let fields = &self.table.get_struct(sym_id).fields;
 
-        // Handling circular reference possibilities
-        //TODO: Need to point to particular type expression
         for field in fields {
             for spanned_arg in &abs_struct.glob_args {
                 let arg = match self.resolve_arg(field.type_id, spanned_arg) {
@@ -206,7 +204,8 @@ impl ConstraintResolver<'_> {
                 let err_msg = format!("\"{err_name}\" is not a valid condition");
 
                 // If the error name IS a functional condition, it just says it's not a condition
-                self.reporter.report_spanned(&err_msg, Some(err_name), span);
+                self.reporter
+                    .report_spanned(&err_msg, Some(err_name), &[span.clone()]);
 
                 Err(())
             }
@@ -278,14 +277,16 @@ impl ConstraintResolver<'_> {
                 let err_name = self.interner.search(name_id.id as usize);
                 let err_msg = format!("\"{err_name}\" is not a valid condition");
 
-                self.reporter.report_spanned(&err_msg, Some(err_name), span);
+                self.reporter
+                    .report_spanned(&err_msg, Some(err_name), &[span.clone()]);
 
                 Err(())
             }
             Expr::Integer(_, span) | Expr::Float(_, span) => {
                 let err_msg = format!("Numerics cannot be used as conditions alone");
 
-                self.reporter.report_spanned(&err_msg, None, span);
+                self.reporter
+                    .report_spanned(&err_msg, None, &[span.clone()]);
 
                 Err(())
             }
@@ -295,7 +296,8 @@ impl ConstraintResolver<'_> {
 
                 let err_msg = format!("Conditions cannot be accessed as fields");
 
-                self.reporter.report_spanned(&err_msg, None, span);
+                self.reporter
+                    .report_spanned(&err_msg, None, &[span.clone()]);
 
                 Err(())
             }
@@ -316,8 +318,10 @@ impl ConstraintResolver<'_> {
                 let structure = self.table.get_struct(*sym_id);
 
                 for field in &structure.fields {
-                    // Circular reference checking
-                    if structure.type_id.id == field.type_id.id {
+                    // Checking if one of it's variants are self referencing, or if the type from
+                    // the last call stack, possibly a tuple, is self referencing the current
+                    // struct.
+                    if structure.type_id.id == field.type_id.id || structure.type_id == type_id {
                         //FIXME:
                         //COPY
                         if !spanned_arg.arg.is_basic() {
@@ -325,21 +329,17 @@ impl ConstraintResolver<'_> {
                                 &self.ast_info.items[structure.ast_id.id as usize]
                             {
                                 // or field span
-                                let ast_span =
-                                    &abs_struct.fields[field.ast_id.id as usize].ty.span();
-
-                                let start = std::cmp::min(ast_span.start, spanned_arg.span.start);
-                                let end = std::cmp::max(ast_span.end, spanned_arg.span.end);
+                                let ast_span = abs_struct.fields[field.ast_id.id as usize]
+                                    .ty
+                                    .span()
+                                    .clone();
 
                                 //NOTE:
-                                let actual_span = Span::new(start, end);
-                                let spanned_arg =
-                                    SpannedInnerArgs::new(spanned_arg.arg, actual_span);
 
                                 return Err(SemanticError::CircularRef(
                                     spanned_arg.arg,
                                     Formatted::Struct,
-                                    spanned_arg.span,
+                                    vec![ast_span, spanned_arg.span.clone()],
                                 ));
                             }
                         }
@@ -351,23 +351,24 @@ impl ConstraintResolver<'_> {
                     let arg_res = self.resolve_arg(field.type_id, spanned_arg);
 
                     // Need to get circular span in a more composed way that's not WEIRD
-                    if let Err(SemanticError::UnsupportedArg(found_spanned_arg, kind)) = arg_res {
+                    if let Err(SemanticError::UnsupportedArg(arg, kind, span)) = arg_res {
                         //COPY
                         if let Item::Struct(abs_struct) =
                             &self.ast_info.items[structure.ast_id.id as usize]
                         {
                             // or field span
-                            let ast_span = &abs_struct.fields[field.ast_id.id as usize].ty.span();
-
-                            let start = std::cmp::min(ast_span.start, found_spanned_arg.span.start);
-                            let end = std::cmp::max(ast_span.end, found_spanned_arg.span.end);
+                            let ast_span = abs_struct.fields[field.ast_id.id as usize]
+                                .ty
+                                .span()
+                                .clone();
 
                             //NOTE:
-                            let actual_span = Span::new(start, end);
-                            let spanned_arg =
-                                SpannedInnerArgs::new(found_spanned_arg.arg, actual_span);
 
-                            return Err(SemanticError::UnsupportedArg(spanned_arg, kind));
+                            return Err(SemanticError::UnsupportedArg(
+                                arg,
+                                kind,
+                                vec![ast_span, spanned_arg.span.clone()],
+                            ));
                         }
                     }
                 }
@@ -381,32 +382,29 @@ impl ConstraintResolver<'_> {
                     if let Some(ty) = variant.type_id {
                         //FIXME:
                         //COPY
-                        if enum_repre.type_id.id == ty.id {
+
+                        // Checking if one of it's variants are self referencing, or if the type we
+                        // just came from, possibly a tuple, is referring to itself from a
+                        // different context.
+                        if enum_repre.type_id.id == ty.id || enum_repre.type_id == type_id {
                             if !spanned_arg.arg.is_basic() {
                                 if let Item::Enum(abs_enum) =
                                     &self.ast_info.items[enum_repre.ast_id.id as usize]
                                 {
                                     // or field span
-                                    let ast_span = &abs_enum.variants[variant.ast_id.id as usize]
+                                    let ast_span = abs_enum.variants[variant.ast_id.id as usize]
                                         .ty
                                         .as_ref()
                                         .expect("The type was already found")
-                                        .span();
-
-                                    let start =
-                                        std::cmp::min(ast_span.start, spanned_arg.span.start);
-                                    let end = std::cmp::max(ast_span.end, spanned_arg.span.end);
+                                        .span()
+                                        .clone();
 
                                     //NOTE:
                                     // This should be restructured
-                                    let actual_span = Span::new(start, end);
-                                    let spanned_arg =
-                                        SpannedInnerArgs::new(spanned_arg.arg, actual_span);
-
                                     return Err(SemanticError::CircularRef(
                                         spanned_arg.arg,
                                         Formatted::Enum,
-                                        spanned_arg.span,
+                                        vec![ast_span, spanned_arg.span.clone()],
                                     ));
                                 }
                             }
@@ -417,31 +415,29 @@ impl ConstraintResolver<'_> {
                             continue;
                         }
 
+                        dbg!(&self.table.types[ty.id as usize]);
                         let arg_res = self.resolve_arg(ty, spanned_arg);
 
-                        if let Err(SemanticError::UnsupportedArg(found_spanned_arg, fmted)) =
-                            arg_res
-                        {
+                        if let Err(SemanticError::UnsupportedArg(arg, fmted, _)) = arg_res {
                             if let Item::Enum(abs_enum) =
                                 &self.ast_info.items[enum_repre.ast_id.id as usize]
                             {
                                 // or field span
-                                let ast_span = &abs_enum.variants[variant.ast_id.id as usize]
+                                let ast_span = abs_enum.variants[variant.ast_id.id as usize]
                                     .ty
                                     .as_ref()
                                     .expect("Type already exists")
-                                    .span();
-
-                                let start =
-                                    std::cmp::min(ast_span.start, found_spanned_arg.span.start);
-                                let end = std::cmp::max(ast_span.end, found_spanned_arg.span.end);
+                                    .span()
+                                    .clone();
 
                                 //NOTE:
-                                let actual_span = Span::new(start, end);
-                                let real_span =
-                                    SpannedInnerArgs::new(found_spanned_arg.arg, actual_span);
 
-                                return Err(SemanticError::UnsupportedArg(real_span, fmted));
+                                // fmted or fmtted...
+                                return Err(SemanticError::UnsupportedArg(
+                                    arg,
+                                    fmted,
+                                    vec![ast_span, spanned_arg.span.clone()],
+                                ));
                             }
                         }
                     }
@@ -465,8 +461,9 @@ impl ConstraintResolver<'_> {
                         if !spanned_arg.arg.supports_builtin_type(&builtin_type) {
                             // panic!();
                             return Err(SemanticError::UnsupportedArg(
-                                spanned_arg.clone(),
+                                spanned_arg.arg,
                                 builtin_type.kind().to_fmt(),
+                                vec![spanned_arg.span.clone()],
                             ));
                         }
 
@@ -514,35 +511,8 @@ impl ConstraintResolver<'_> {
         conds: &Vec<Cond>,
     ) -> Result<(), SemanticError> {
         match &self.table.types[type_id.id as usize] {
-            Type::Struct(sym_id) => {
-                let structure = &self.table.get_struct(*sym_id);
+            Type::Struct(sym_id) => todo!(),
 
-                for field in &structure.fields {
-                    let res = self.resolve_cond_constraints(field.type_id, conds);
-
-                    // DIRTY
-                    if let Err(SemanticError::UnsupportedArg(found_spanned_arg, kind)) = res {
-                        if let Item::Struct(abs_struct) =
-                            &self.ast_info.items[structure.ast_id.id as usize]
-                        {
-                            // or field span
-                            let ast_span = &abs_struct.fields[field.ast_id.id as usize].ty.span();
-
-                            let start = std::cmp::min(ast_span.start, found_spanned_arg.span.start);
-                            let end = std::cmp::max(ast_span.end, found_spanned_arg.span.end);
-
-                            //NOTE:
-                            let actual_span = Span::new(start, end);
-                            let spanned_arg =
-                                SpannedInnerArgs::new(found_spanned_arg.arg, actual_span);
-
-                            return Err(SemanticError::UnsupportedArg(spanned_arg, kind));
-                        }
-                    }
-                }
-
-                Ok(())
-            }
             Type::Enum(enum_id) => todo!(),
             Type::Func(func_id) => todo!(),
             Type::BuiltinType(ty) => {
@@ -560,33 +530,31 @@ impl ConstraintResolver<'_> {
     fn check_func_constraints(&self, func: &FuncRepre) -> Result<(), SemanticError> {
         for constraint in func.constraints.iter().copied() {
             match constraint {
-                // Numeric
                 ArgConstraint::Numeric => {
                     for arg in &func.args {
                         match arg {
                             FuncArgsRepre::Integer(_) | FuncArgsRepre::Float(_) => continue,
-                            FuncArgsRepre::Var(_, kind) => {
-                                if !kind.is_numeric() {
+                            FuncArgsRepre::Var(_, type_kind) => {
+                                if !type_kind.is_numeric() {
                                     return Err(SemanticError::ConstraintMismatch(
                                         ArgConstraint::Numeric,
-                                        kind.to_fmt(),
+                                        type_kind.to_fmt(),
                                         func.kind,
-                                        func.call_span.clone(),
+                                        vec![func.call_span.clone()],
                                     ));
                                 }
                             }
-                            invalid => {
+                            invalid_type => {
                                 return Err(SemanticError::ConstraintMismatch(
                                     ArgConstraint::Numeric,
-                                    invalid.to_builtin_kind().to_fmt(),
+                                    invalid_type.to_builtin_kind().to_fmt(),
                                     func.kind,
-                                    func.call_span.clone(),
+                                    vec![func.call_span.clone()],
                                 ));
                             }
                         }
                     }
                 }
-                // MatchingType
                 ArgConstraint::MatchingType => {
                     // Maybe this is dangerous?
                     let req_type = if let Some(arg) = func.args.get(0) {
@@ -603,19 +571,18 @@ impl ConstraintResolver<'_> {
                                 constraint,
                                 arg.to_builtin_kind().to_fmt(),
                                 func.kind,
-                                func.call_span.clone(),
+                                vec![func.call_span.clone()],
                             ));
                         }
                     }
                 }
-                // Argcount
                 ArgConstraint::ArgCount(count) => {
                     if func.args.len() != count as usize {
                         return Err(SemanticError::ArgMiscount(
                             constraint,
                             func.kind,
                             func.args.len() as u8,
-                            func.call_span.clone(),
+                            vec![func.call_span.clone()],
                         ));
                     }
                 }
@@ -626,7 +593,7 @@ impl ConstraintResolver<'_> {
                                 ArgConstraint::Integer,
                                 arg.to_builtin_kind().to_fmt(),
                                 func.kind,
-                                func.call_span.clone(),
+                                vec![func.call_span.clone()],
                             );
                         }
                     }
@@ -638,7 +605,7 @@ impl ConstraintResolver<'_> {
                                 ArgConstraint::Float,
                                 arg.to_builtin_kind().to_fmt(),
                                 func.kind,
-                                func.call_span.clone(),
+                                vec![func.call_span.clone()],
                             );
                         }
                     }
@@ -650,12 +617,14 @@ impl ConstraintResolver<'_> {
                                 ArgConstraint::Str,
                                 arg.to_builtin_kind().to_fmt(),
                                 func.kind,
-                                func.call_span.clone(),
+                                vec![func.call_span.clone()],
                             );
                         }
                     }
                 }
-                ArgConstraint::DynType => continue,
+                // Maybe these shouldn't be constraints if they don't do anything. Boolean for
+                // variadics perhaps
+                ArgConstraint::DynType | ArgConstraint::Variadic => continue,
             }
         }
 

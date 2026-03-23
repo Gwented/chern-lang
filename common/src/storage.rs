@@ -78,10 +78,6 @@ impl<R: Read> ConfigLoader<'_, R> {
 
                     saw_quotes = true;
                 }
-                //TODO: If there is a set of unclosed quotes, and anywhere in the file there is
-                //another set of quotes, it will interpret that as the end, which then makes it
-                //print the wrong line. May only be able to add a warn within the message itself
-                //that the line given could be wrong.
                 b'/' => {
                     self.advance();
 

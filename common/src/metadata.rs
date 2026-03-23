@@ -17,6 +17,13 @@ impl FileMetadata {
         lex_start: usize,
         serial_start: usize,
     ) -> FileMetadata {
+        // Does this actually make a difference?
+        let can_color = if std::io::stdout().is_terminal() && std::io::stderr().is_terminal() {
+            true
+        } else {
+            false
+        };
+
         FileMetadata {
             path,
             new_lines: Vec::new(),
@@ -24,7 +31,7 @@ impl FileMetadata {
             lex_start,
             serial_start,
             //TODO: Could be env var
-            can_color: std::io::stdout().is_terminal(),
+            can_color,
         }
     }
 }

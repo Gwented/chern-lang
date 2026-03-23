@@ -31,49 +31,49 @@ impl SemanticReporter<'_> {
 
     //WARN: Could be better looking
     pub(super) fn report_semantic(&mut self, sem_err: SemanticError) {
-        let (msg, span) = match sem_err {
-            SemanticError::UnsupportedArg(spanned_arg, kind) => {
+        let (msg, spans) = match sem_err {
+            SemanticError::UnsupportedArg(arg, type_kind, spans) => {
                 let msg = format!(
                     "The argument \"#{}\" is not supported for the type `{}`",
-                    spanned_arg.arg, kind
+                    arg, type_kind
                 );
 
-                (msg, spanned_arg.span)
+                (msg, spans)
             }
-            SemanticError::VagueArg(inner_arg, span) => {
+            SemanticError::VagueArg(inner_arg, spans) => {
                 let msg = format!(
                     //FIXME: Still vague
                     "The argument \"#{}\" cannot be used for a `var->` defined variable that holds a \"struct\" or \"enum\"",
                     inner_arg
                 );
 
-                (msg, span)
+                (msg, spans)
             }
-            SemanticError::ConstraintMismatch(constraint, type_kind, func_kind, span) => {
+            SemanticError::ConstraintMismatch(constraint, type_kind, func_kind, spans) => {
                 let msg = format!(
                     "The type \"{type_kind}\" does not follow constraint `{constraint}` for function \"{func_kind}\""
                 );
 
-                (msg, span)
+                (msg, spans)
             }
-            SemanticError::ArgMiscount(constraint, func_kind, count, span) => {
+            SemanticError::ArgMiscount(constraint, func_kind, count, spans) => {
                 let msg =
                     format!("Expected {constraint} for function \"{func_kind}\", found {count}");
 
-                (msg, span)
+                (msg, spans)
             }
-            SemanticError::CircularRef(arg, fmted_type, span) => {
+            SemanticError::CircularRef(arg, fmted_type, spans) => {
                 let msg = format!(
                     // Suspicious error message
                     "Cannot give type `{fmted_type}` the argument \"#{arg}\" due to the circularly referenced type itself not supporting the argument"
                 );
 
-                (msg, span)
+                (msg, spans)
             }
         };
 
         let ln_data =
-            reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
+            reporter::form_err_diag(&self.metadata.src_bytes, &spans, self.metadata.can_color);
 
         let fmt_msg = reporter::standardize_err(&msg, &ln_data, "");
 
@@ -85,9 +85,9 @@ impl SemanticReporter<'_> {
 
     /// Draws red arrows under the span given. Option `err_name` represents whether or not a keyword that
     /// could be similar in name should be looked for.
-    pub(super) fn report_spanned(&mut self, msg: &str, err_name: Option<&str>, span: &Span) {
+    pub(super) fn report_spanned(&mut self, msg: &str, err_name: Option<&str>, spans: &[Span]) {
         let line_data =
-            reporter::form_err_diag(&self.metadata.src_bytes, span, self.metadata.can_color);
+            reporter::form_err_diag(&self.metadata.src_bytes, spans, self.metadata.can_color);
 
         let help = if let Some(name) = err_name {
             self.try_help(name).unwrap_or_default()

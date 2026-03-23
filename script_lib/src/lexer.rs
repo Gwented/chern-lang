@@ -8,7 +8,7 @@ use crate::{
 /// Known size in bytes for `@def` and `@end`
 const DEFINITION_SIZE: usize = 4;
 
-const MAX_ILLEGAL_TOKS: u8 = 7;
+const MAX_ILLEGAL_TOKS: u8 = 5;
 
 // Bit-wise operations for convenience within read_num
 const NOTATION_FLOAT: u8 = 1 << 0;
