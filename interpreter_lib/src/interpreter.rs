@@ -1,6 +1,9 @@
-use std::path::PathBuf;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use common::{intern::Intern, storage::ConfigLoader};
+use common::{config_loader::ConfigLoader, intern::Intern};
 use script_lib::{
     lexer::Lexer,
     parser,
@@ -10,13 +13,15 @@ use script_lib::{
 };
 
 //TEST:
-pub fn interpret_chrn_cfg(path: PathBuf) -> Result<(), std::io::Error> {
-    let file = std::fs::File::open(&path)?;
+//Could make it so all the context parts are public, allowing them to be returned and emit errors
+// from a matching of a result for whoever is using the resolver, lexer, etc.
+pub fn interpret_chrn_cfg(path: &Path) -> Result<(), std::io::Error> {
+    let file = fs::File::open(&path)?;
 
     let metadata = match ConfigLoader::new(&path, file).load_config() {
         Ok(meta) => meta,
         Err(e) => {
-            eprintln!("From path => {}\n", path.display());
+            eprintln!("From path => \"{}\"\n", path.display());
             eprintln!("error: {e}\nexiting...");
             std::process::exit(1);
         }
@@ -33,5 +38,8 @@ pub fn interpret_chrn_cfg(path: PathBuf) -> Result<(), std::io::Error> {
     TypeResolver::new(&ast_info, &metadata, &interner, &mut table).resolve();
     ConstraintResolver::new(&ast_info, &metadata, &interner, &mut table).resolve();
 
+    // Table should be made into a strictly curated piece of data for serial to look at
+
+    // IR might be very different
     Ok(())
 }

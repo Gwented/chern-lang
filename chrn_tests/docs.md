@@ -1,4 +1,5 @@
 // Program constant that represents whatever the current value is? Like $VAL? (No)
+// LSP in Go
 
 ## Goal
 // This is my leash

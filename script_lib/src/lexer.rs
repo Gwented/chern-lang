@@ -24,9 +24,9 @@ pub struct Lexer<'a> {
 impl Lexer<'_> {
     // WARN: The file is fully dependent on being able to lex from a certain point so the @ confirmation
     // here should MAYBE be removed
-    pub fn new(bytes: &[u8], lex_start: usize) -> Lexer<'_> {
+    pub fn new(src: &[u8], lex_start: usize) -> Lexer<'_> {
         Lexer {
-            src_bytes: bytes,
+            src_bytes: src,
             pos: 0 + lex_start,
         }
     }
@@ -699,7 +699,6 @@ impl Lexer<'_> {
         false
     }
 
-    //WARN: WATCH THIS CLOSELY THERE COULD BE OFFSET MISTAKES
     fn recover_illegal(&mut self, start: Option<usize>, interner: &mut Intern) -> SpannedToken {
         let start = if let Some(s) = start { s } else { self.pos };
 

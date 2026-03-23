@@ -1,6 +1,6 @@
 use std::{path::PathBuf, time::Instant};
 
-use common::{intern::Intern, metadata::FileMetadata, storage::ConfigLoader};
+use common::{config_loader::ConfigLoader, intern::Intern};
 use script_lib::{
     lexer::Lexer,
     linter,

@@ -1,3 +1,5 @@
+//FIXME: CONDITIONS HAVE NO CONSTRAINTS
+// FIXME: FIGURE OUT IF CACHING SHOULD START HERE, AND IN A NODE OR DATA STRUCTURE OUTSIDE OF IT
 use common::{
     builtins::{BuiltinType, BuiltinTypeKind},
     fmter::{Formatable, Formatted},
@@ -415,7 +417,6 @@ impl ConstraintResolver<'_> {
                             continue;
                         }
 
-                        dbg!(&self.table.types[ty.id as usize]);
                         let arg_res = self.resolve_arg(ty, spanned_arg);
 
                         if let Err(SemanticError::UnsupportedArg(arg, fmted, _)) = arg_res {

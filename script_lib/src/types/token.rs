@@ -44,7 +44,6 @@ pub(crate) enum Token {
     Hyphen,
     // At,
     ExclamationPoint,
-    DoubleQuotes,
     Tilde,
     VerticalBar,
     Dot,
@@ -84,7 +83,6 @@ impl Token {
             Token::Hyphen => TokenKind::Hyphen,
             Token::ExclamationPoint => TokenKind::ExclamationPoint,
             Token::Asterisk => TokenKind::Asterisk,
-            Token::DoubleQuotes => TokenKind::DoubleQuotes,
             Token::Tilde => TokenKind::Tilde,
             Token::Dot => TokenKind::Dot,
             Token::VerticalBar => TokenKind::VerticalBar,
@@ -125,7 +123,6 @@ pub enum TokenKind {
     // At,
     ExclamationPoint,
     Asterisk,
-    DoubleQuotes,
     Tilde,
     Dot,
     VerticalBar,
@@ -165,7 +162,6 @@ impl Display for TokenKind {
             TokenKind::ExclamationPoint => write!(f, "!"),
             TokenKind::Asterisk => write!(f, "*"),
             TokenKind::Walrus => write!(f, ":="),
-            TokenKind::DoubleQuotes => write!(f, "\""),
             TokenKind::Tilde => write!(f, "~"),
             TokenKind::Dot => write!(f, "."),
             TokenKind::VerticalBar => write!(f, "|"),
@@ -176,9 +172,9 @@ impl Display for TokenKind {
     }
 }
 
-// IS THIS EVEN OPTIMAL?
-// I DID NOT KNOW ABOUT PUB CONST AT ALL
 // Please assert this
+// We don't need assertions.
+// Please.
 pub const ID: u64 = 1 << 0;
 pub const LITERAL: u64 = 1 << 1;
 pub const INTEGER: u64 = 1 << 2;
@@ -207,13 +203,12 @@ pub const PLUS: u64 = 1 << 24;
 pub const HYPHEN: u64 = 1 << 25;
 pub const ASTERISK: u64 = 1 << 26;
 pub const EXCLAMATION_POINT: u64 = 1 << 27;
-pub const DOUBLE_QUOTES: u64 = 1 << 28;
-pub const TILDE: u64 = 1 << 29;
-pub const DOT: u64 = 1 << 30;
-pub const VERTICAL_BAR: u64 = 1 << 31;
-pub const ILLEGAL: u64 = 1 << 32;
-pub const POISON: u64 = 1 << 33;
-pub const EOF: u64 = 1 << 34;
+pub const TILDE: u64 = 1 << 28;
+pub const DOT: u64 = 1 << 29;
+pub const VERTICAL_BAR: u64 = 1 << 30;
+pub const ILLEGAL: u64 = 1 << 31;
+pub const POISON: u64 = 1 << 32;
+pub const EOF: u64 = 1 << 33;
 
 //FIX: PLEASE ASSERT THIS THING
 impl TokenKind {
@@ -248,7 +243,6 @@ impl TokenKind {
             TokenKind::Hyphen => HYPHEN,
             TokenKind::ExclamationPoint => EXCLAMATION_POINT,
             TokenKind::Asterisk => ASTERISK,
-            TokenKind::DoubleQuotes => DOUBLE_QUOTES,
             TokenKind::Tilde => TILDE,
             TokenKind::Dot => DOT,
             TokenKind::VerticalBar => VERTICAL_BAR,

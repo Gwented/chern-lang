@@ -5,3 +5,4 @@ edition.workspace = true
 
 [dependencies]
 common = { path = "../common/" }
+script_lib = { path = "../script_lib/" }

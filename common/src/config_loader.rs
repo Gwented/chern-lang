@@ -1,3 +1,4 @@
+//FIXME: FIX REQUIRES END MESSAGE
 use std::{
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
@@ -5,14 +6,14 @@ use std::{
 
 use crate::metadata::FileMetadata;
 
-const DEFINITION_SIZE: usize = 4;
-
 // TEST: Ignore this
+const DEFINITION_SIZE: usize = 4;
 const MAX_READ: usize = 1_000_000;
 
 // More inclusive name
 //TEST: Suspicious lifetime
 pub struct ConfigLoader<'a, R: Read> {
+    // Configuration file path
     path: &'a Path,
     handle: BufReader<R>,
     pos: usize,
@@ -90,7 +91,16 @@ impl<R: Read> ConfigLoader<'_, R> {
                     }
                 }
                 b'@' => {
-                    if requires_end
+                    // Helper boolean
+                    let can_check = if self.pos + DEFINITION_SIZE < self.handle.buffer().len() {
+                        true
+                    } else {
+                        false
+                    };
+
+                    if requires_end && !can_check {
+                        break;
+                    } else if requires_end
                         && &self.handle.buffer()[self.pos..self.pos + DEFINITION_SIZE] == b"@end"
                     {
                         let serial_start = self.pos + DEFINITION_SIZE;
@@ -99,11 +109,13 @@ impl<R: Read> ConfigLoader<'_, R> {
                             PathBuf::from(self.path),
                             self.handle.buffer()[..self.pos + DEFINITION_SIZE].to_vec(),
                             lex_start,
-                            serial_start,
+                            Some(serial_start),
                         ));
                     }
 
-                    if !requires_end
+                    if !requires_end && !can_check {
+                        break;
+                    } else if !requires_end
                         && &self.handle.buffer()[self.pos..self.pos + DEFINITION_SIZE] == b"@def"
                     {
                         requires_end = true;
@@ -127,11 +139,12 @@ impl<R: Read> ConfigLoader<'_, R> {
                 PathBuf::from(self.path),
                 self.handle.buffer()[..self.pos].to_vec(),
                 lex_start,
-                0,
+                // Some or None
+                None,
             ))
         } else {
             let msg = format!(
-                "Could not find `@end` after `@def` from file {}",
+                "Could not find `@end` after `@def` from path \"{}\"",
                 self.path.display()
             );
 

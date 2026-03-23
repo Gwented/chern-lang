@@ -11,7 +11,7 @@ mod types;
 mod tests {
     use std::path::Path;
 
-    use common::{intern::Intern, storage::ConfigLoader};
+    use common::{config_loader::ConfigLoader, intern::Intern};
 
     use crate::{
         lexer::Lexer,
@@ -41,7 +41,7 @@ mod tests {
         }
 
         assert_eq!(
-            0, metadata.serial_start,
+            None, metadata.serial_start,
             "start_offset without `@def` failed"
         );
         assert_eq!(3, toks.len(), "Token length exceeded 3 in lex_tok_test");
@@ -219,10 +219,11 @@ mod tests {
         let metadata = ConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
+        dbg!(metadata.serial_start);
 
         assert_eq!(&text[4..], &text[metadata.lex_start..]);
-        assert_eq!("hi", &text[metadata.serial_start..]);
-        assert_eq!(28, metadata.serial_start);
+        assert_eq!("hi", &text[metadata.serial_start.unwrap()..]);
+        assert_eq!(28, metadata.serial_start.unwrap());
     }
 
     #[test]

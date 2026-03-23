@@ -1,3 +1,4 @@
+// Linters are annoying.
 use common::{
     intern::Intern,
     symbols::{InnerArgs, SpannedInnerArgs},

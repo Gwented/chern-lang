@@ -101,7 +101,7 @@ impl<'a> Context<'a> {
         let span = self.safely_handle_span(found);
 
         let line_data =
-            reporter::form_err_diag(&self.metadata.src_bytes, &[span], self.metadata.can_color);
+            reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
 
         let msg = if let Some(name) = id_opt {
             let msg = format!("(in {branch})\n{bmsg}\"{name}\"{amsg}");
@@ -132,7 +132,7 @@ impl<'a> Context<'a> {
         let span = self.safely_handle_span(found);
 
         let line_data =
-            reporter::form_err_diag(&self.metadata.src_bytes, &[span], self.metadata.can_color);
+            reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
 
         let base_msg = format!("(in {branch})\n{msg}");
 
@@ -182,7 +182,7 @@ impl<'a> Context<'a> {
             let span = self.safely_handle_span(found);
 
             let line_data =
-                reporter::form_err_diag(&self.metadata.src_bytes, &[span], self.metadata.can_color);
+                reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
 
             let help = self
                 .try_help(expected, &found, branch, interner)
@@ -230,7 +230,7 @@ impl<'a> Context<'a> {
         let span = self.safely_handle_span(found);
 
         let line_data =
-            reporter::form_err_diag(&self.metadata.src_bytes, &[span], self.metadata.can_color);
+            reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
 
         let base_msg = format!("(in {branch})\nExpected {emsg}, found {fmsg}");
 
@@ -417,13 +417,13 @@ impl<'a> Context<'a> {
     }
 
     //TEST: IF ANYTHING HAPPENS TO ERROR MESSAGES REMOVE THIS
-    fn safely_handle_span(&self, found: &SpannedToken) -> Span {
+    fn safely_handle_span(&self, found: &SpannedToken) -> Vec<Span> {
         if found.token.kind() == TokenKind::EOF {
             // Minus 2 since we advanced at the beginning
-            let start = self.tokens.get(self.pos - 2).unwrap_or(found).span.start;
-            Span::new(start, found.span.end)
+            let start_span = self.tokens.get(self.pos - 2).unwrap_or(found).span.clone();
+            vec![start_span, found.span.clone()]
         } else {
-            found.span.clone()
+            vec![found.span.clone()]
         }
     }
 
