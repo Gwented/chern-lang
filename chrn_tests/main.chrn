@@ -1,103 +1,16 @@
-// Maybe '~' as a pretense should enforce that it can only be used for type names
-// Add negatives
-// Functions probably shouldn't be similarity checked with conditions
-// name: str [Contains, Contains("Hi", "h")]
-// Registering keywords would make error messages 9 trillion times more accurate
 
-// Maybe enums should just abide by normal syntax
+bind "./hi"
 
-@def
-
-var->
-    integer: i32 [IsWhitespace]
-@end
-// Add branches to help parser more
-
-var->
-    program_id: u32
-    metadata: Metadata
-nest->
-    struct Metadata {
-        path: str
-        src_bytes: List<u8>
-        new_lines: List<unsized>
-        lex_start: unsized
-        serial_start: unsized
-        can_color: bool
-    } #warn #ignore
-
-    enum State {
-        Ready(str),
-    }
-@end
-
-@def
-// alias default(x) = [IsEmpty, Range(x,7)]
-
-var->
-    // Make conditions actually enforce themselves
-    a: A [Equals(READ)]
-
-    // s: ~str [default()]
-nest->
-    struct A {
-        // Fix this
-        thing: A
-        thing: B
-    }
+Hello "You"
 
 
-    struct B {}
+Quotes "
+    enzo enzoe zneoenozeneoz
+
+
 
 @end
 
-// Easiest possible way to use the language if no features are needed
-@def
-SIMPLE_MODE
+"
 
-var->
-    // Most sane way to make cross language choices
-    path: ?
-    src_bytes: ?
-    new_lines: ?
-    lex_start: ?
-    serial_start: ?
-    can_color: ?
-@end
-
-tuple C(i32, i32)
-
-// READJUST SETS FOR THIS TO NOT HALLUCINATE SO MUCH
-
-// May remove brackets from this but fine for now
-// alias default(x, y) = [IsEmpty, Range(x = 5, y = 9)]
-/*
-    t: Thing // This should point out that a similar type called "Thing" exists
-
-    struct Thin {
-
-    }
-
-// This should be possible
-    str: ~str
-    sigma: Map<str, str>
-    thing: Thing
-
-    struct ~str {
-        i32: ~i32
-    }
-
-    enum @i32 {
-
-    }
-
-    // str: String | This should fail to match as a kiwi instead of suggesting struct
-*/
-@end
-// lint check this or error. Or ignore it.
-// [IsEmpty, !IsEmpty]
-
-/*nest->
-    struct Person {
-        p: Person #warn
-    }
+"

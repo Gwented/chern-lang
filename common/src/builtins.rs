@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
-    fmter::{Formatable, Formatted},
+    fmter::{Formattable, Formatted},
     keywords::Keyword,
     symbols::TypeId,
 };
@@ -100,7 +100,7 @@ pub enum BuiltinTypeKind {
     Any,
 }
 
-impl Formatable for BuiltinTypeKind {
+impl Formattable for BuiltinTypeKind {
     fn to_fmt(&self) -> Formatted {
         match self {
             BuiltinTypeKind::I8 => Formatted::I8,
@@ -219,6 +219,7 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::Unsized
             | BuiltinTypeKind::BigInt
             | BuiltinTypeKind::BigFloat => true,
+            // Non-Numbers
             BuiltinTypeKind::Bool
             | BuiltinTypeKind::Nil
             | BuiltinTypeKind::Char

@@ -1,6 +1,6 @@
 use std::{fs, io::Read, path::PathBuf};
 
-use common::{config_loader::ConfigLoader, metadata::FileMetadata};
+use common::{config_loader::FileLoader, metadata::ChernMetadata};
 use serial_lib::lexer::Lexer;
 
 // This would be in succession to script
@@ -10,7 +10,7 @@ fn main() {
     let file = fs::File::open(&path).unwrap();
 
     // Just so the offset can be gotten
-    let metadata = ConfigLoader::new(&path, &file).load_config().unwrap();
+    let metadata = FileLoader::new(&path, file).load_config().unwrap();
 
     let lexer = Lexer::new(&metadata.src_bytes, metadata.serial_start.unwrap()).tokenize();
 }

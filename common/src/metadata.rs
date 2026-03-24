@@ -1,7 +1,7 @@
 use std::{io::IsTerminal, path::PathBuf};
 
 #[derive(Debug)]
-pub struct FileMetadata {
+pub struct ChernMetadata {
     /// Path to chrn config file
     pub path: PathBuf,
     /// Bytes from chrn config file
@@ -16,13 +16,13 @@ pub struct FileMetadata {
     pub can_color: bool,
 }
 
-impl FileMetadata {
+impl ChernMetadata {
     pub fn new(
         path: PathBuf,
         src_bytes: Vec<u8>,
         lex_start: usize,
         serial_start: Option<usize>,
-    ) -> FileMetadata {
+    ) -> ChernMetadata {
         // Does this actually make a difference?
         let can_color = if std::io::stdout().is_terminal() && std::io::stderr().is_terminal() {
             true
@@ -30,7 +30,7 @@ impl FileMetadata {
             false
         };
 
-        FileMetadata {
+        ChernMetadata {
             path,
             new_lines: Vec::new(),
             src_bytes,

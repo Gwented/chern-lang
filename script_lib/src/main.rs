@@ -1,6 +1,6 @@
 use std::{path::PathBuf, time::Instant};
 
-use common::{config_loader::ConfigLoader, intern::Intern};
+use common::{config_loader::FileLoader, intern::Intern};
 use script_lib::{
     lexer::Lexer,
     linter,
@@ -20,7 +20,7 @@ fn main() {
 
     let file = std::fs::File::open(&path).unwrap();
 
-    let metadata = match ConfigLoader::new(&path, file).load_config() {
+    let metadata = match FileLoader::new(&path, file).load_config() {
         Ok(meta) => meta,
         Err(_) => {
             eprintln!("From path => {}\n", path.display());

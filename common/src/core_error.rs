@@ -1,13 +1,16 @@
 // #include <stdio.h> #include <stdlib.h> typedef struct {} Floor; int main() { return 0; }
 
+use crate::symbols::Span;
+
 /// General error enum for the entirety of the codebase to use. Everything can be converted back
-/// into it so it can be treated just as any Err() would be but more valuable in detail.
+/// into it so it can be treated just as any `Err()` would be but more valuable in detail.
 pub enum CoreError {
     Config(ConfigLoadError),
 }
 
 #[derive(Debug)]
 pub enum ConfigLoadError {
+    // May merge these
     UnclosedQuotes(String),
     UnclosedDef(String),
     IO(std::io::Error),

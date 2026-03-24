@@ -1,7 +1,6 @@
 [workspace]
 members = ["cli_tool","common", "interpreter_lib", "script_lib", "serial_lib"]
 resolver = "3"
-default-members = ["script_lib"]
 
 [workspace.package]
 version = "0.1.0"

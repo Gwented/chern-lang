@@ -4,7 +4,7 @@ use common::{
     color,
     fmter::Formattable,
     keywords,
-    metadata::FileMetadata,
+    metadata::ChernMetadata,
     reporter,
     symbols::{Span, TypeId},
 };
@@ -19,12 +19,12 @@ const TOTAL_SEPARATORS: usize = 60;
 
 #[derive(Debug)]
 pub(super) struct SemanticReporter<'a> {
-    pub(super) metadata: &'a FileMetadata,
+    pub(super) metadata: &'a ChernMetadata,
     pub(super) err_vec: Vec<Diagnostic>,
 }
 
 impl SemanticReporter<'_> {
-    pub(super) fn new(metadata: &FileMetadata) -> SemanticReporter<'_> {
+    pub(super) fn new(metadata: &ChernMetadata) -> SemanticReporter<'_> {
         SemanticReporter {
             metadata,
             err_vec: Vec::new(),
@@ -53,14 +53,14 @@ impl SemanticReporter<'_> {
             }
             SemanticError::ConstraintMismatch(constraint, type_kind, func_kind, spans) => {
                 let msg = format!(
-                    "The type \"{type_kind}\" does not follow constraint `{constraint}` for function \"{func_kind}\""
+                    "The type `{type_kind}` does not follow constraint `{constraint}` for function \"{func_kind}\""
                 );
 
                 (msg, spans)
             }
             SemanticError::ArgMiscount(constraint, func_kind, count, spans) => {
                 let msg =
-                    format!("Expected {constraint} for function \"{func_kind}\", found {count}");
+                    format!("Expected `{constraint}` for function \"{func_kind}\", found {count}");
 
                 (msg, spans)
             }
@@ -97,8 +97,6 @@ impl SemanticReporter<'_> {
 
         let diag = Diagnostic::new(fmt_msg);
         self.err_vec.push(diag);
-
-        // let msg = reporter::standardize_err(base_msg, line_data, help);
     }
 
     /// Draws red arrows under the span given. Option `err_name` represents whether or not a keyword that

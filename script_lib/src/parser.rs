@@ -15,13 +15,13 @@ use crate::types::symbols::SpannedToken;
 use crate::types::token::{Token, TokenKind};
 use common::intern::Intern;
 use common::keywords::{self, Keyword};
-use common::metadata::FileMetadata;
+use common::metadata::ChernMetadata;
 use common::symbols::{InnerArgs, NameId, Span, SpannedInnerArgs};
 
 // May be lower
 const MAX_ERRORS: u8 = 3;
 
-pub fn parse(metadata: &FileMetadata, tokens: &Vec<SpannedToken>, interner: &Intern) -> AstInfo {
+pub fn parse(metadata: &ChernMetadata, tokens: &Vec<SpannedToken>, interner: &Intern) -> AstInfo {
     let mut ast_info = AstInfo::new();
 
     let mut state = StateFlag::new();

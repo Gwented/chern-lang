@@ -1,4 +1,4 @@
-use common::{color, intern::Intern, keywords, metadata::FileMetadata, reporter, symbols::Span};
+use common::{color, intern::Intern, keywords, metadata::ChernMetadata, reporter, symbols::Span};
 
 use crate::{
     algo,
@@ -41,14 +41,14 @@ const A_BRANCH_VAR_FUNC_SET: u64 = A_BASE_EXIT_SET | token::C_BRACKET;
 
 #[derive(Debug)]
 pub(super) struct Context<'a> {
-    metadata: &'a FileMetadata,
+    metadata: &'a ChernMetadata,
     pub(super) tokens: &'a [SpannedToken],
     pub(super) pos: usize,
     pub(super) err_vec: Vec<Diagnostic>,
 }
 
 impl<'a> Context<'a> {
-    pub(super) fn new(metadata: &'a FileMetadata, tokens: &'a [SpannedToken]) -> Context<'a> {
+    pub(super) fn new(metadata: &'a ChernMetadata, tokens: &'a [SpannedToken]) -> Context<'a> {
         Context {
             metadata,
             tokens,

@@ -3,7 +3,7 @@ use std::fmt::Display;
 // Would it be better to just have it as a singular enum, or a trait?
 
 /// A trait meant to unify the way in which parts of the program are printed
-pub trait Formatable {
+pub trait Formattable {
     fn to_fmt(&self) -> Formatted;
 }
 
@@ -23,6 +23,8 @@ pub enum Formatted {
     I128,
     U128,
     F128,
+    Integer,
+    Float,
     Sized,
     Unsized,
     Char,
@@ -35,6 +37,7 @@ pub enum Formatted {
     List,
     Map,
     Set,
+    Tuple,
     Struct,
     Enum,
     Import,
@@ -52,6 +55,8 @@ pub enum Formatted {
     StartsW,
     EndsW,
     Contains,
+    Cond,
+    Func,
     // Hmm...
     Nothing,
 }
@@ -59,7 +64,8 @@ pub enum Formatted {
 impl Display for Formatted {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Formatted::I8
+            Formatted::Integer
+            | Formatted::I8
             | Formatted::U8
             | Formatted::I16
             | Formatted::U16
@@ -74,6 +80,7 @@ impl Display for Formatted {
             | Formatted::Unsized => write!(f, "integer"),
             Formatted::F16
             | Formatted::F32
+            | Formatted::Float
             | Formatted::F64
             | Formatted::F128
             | Formatted::BigFloat => write!(f, "float"),
@@ -97,12 +104,15 @@ impl Display for Formatted {
             Formatted::Complex => write!(f, "complex"),
             Formatted::Override => write!(f, "Override"),
             Formatted::IsEmpty => write!(f, "IsEmpty"),
-            Formatted::IsWhitespace => write!(f, "IsEmpty"),
+            Formatted::IsWhitespace => write!(f, "IsWhitespace"),
             Formatted::Range => write!(f, "Range"),
             Formatted::StartsW => write!(f, "StartsW"),
             Formatted::EndsW => write!(f, "EndsW"),
             Formatted::Contains => write!(f, "Contains"),
+            Formatted::Cond => write!(f, "condition"),
+            Formatted::Func => write!(f, "function"),
             Formatted::Nothing => write!(f, ""),
+            Formatted::Tuple => write!(f, "tuple"),
         }
     }
 }

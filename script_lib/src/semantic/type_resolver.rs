@@ -4,7 +4,7 @@ use common::{
     builtins::BuiltinType,
     intern::Intern,
     keywords::{self, Keyword},
-    metadata::FileMetadata,
+    metadata::ChernMetadata,
     symbols::{
         AstId, BuiltinTypeId, EnumId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs, StructId,
         SymbolId, TypeDefId, TypeId,
@@ -40,7 +40,7 @@ pub struct TypeResolver<'a> {
 impl TypeResolver<'_> {
     pub fn new<'a>(
         ast_info: &'a AstInfo,
-        metadata: &'a FileMetadata,
+        metadata: &'a ChernMetadata,
         interner: &'a Intern,
         table: &'a mut Table,
     ) -> TypeResolver<'a> {
@@ -49,6 +49,7 @@ impl TypeResolver<'_> {
             interner,
             table,
             reporter: SemanticReporter::new(metadata),
+            //TODO: This could be different
             unknown_id: None,
         }
     }
@@ -158,8 +159,28 @@ impl TypeResolver<'_> {
     fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
         let mut fields: Vec<FieldRepre> = Vec::new();
 
+        let mut seen: Vec<(usize, NameId)> = Vec::new();
+
+        // Checking if there are duplicate name ids within the same struct along with resolution
         for (i, type_def) in abs_struct.fields.iter().enumerate() {
             let type_id = self.resolve_type_expr(&type_def.type_expr, ast_id)?;
+
+            if let Some(original) = seen.iter().find(|other| type_def.name_id == other.1) {
+                let struct_name = self.interner.search(abs_struct.name_id.id as usize);
+                let dup_name = self.interner.search(type_def.name_id.id as usize);
+
+                let orig_span = abs_struct.fields[original.0].name_span.clone();
+                let field_span = abs_struct.fields[i].name_span.clone();
+
+                let msg = format!(
+                    "More than one field has the identifier \"{dup_name}\" within struct \"{struct_name}\""
+                );
+
+                self.reporter
+                    .report_spanned(&msg, None, &[orig_span, field_span]);
+            }
+
+            seen.push((i, type_def.name_id));
 
             let field_repre = FieldRepre::new(type_def.name_id, type_id, AstId::new(i as u32));
 
@@ -178,7 +199,27 @@ impl TypeResolver<'_> {
     fn resolve_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) -> Result<(), ()> {
         let mut variants: Vec<VariantRepre> = Vec::new();
 
+        let mut seen: Vec<(usize, NameId)> = Vec::new();
+
+        // Checking if there are duplicate name ids within the same enum
         for (i, variant) in abs_enum.variants.iter().enumerate() {
+            if let Some(original) = seen.iter().find(|other| variant.name_id == other.1) {
+                let enum_name = self.interner.search(abs_enum.name_id.id as usize);
+                let dup_name = self.interner.search(variant.name_id.id as usize);
+
+                let orig_span = abs_enum.variants[original.0].name_span.clone();
+                let variant_span = abs_enum.variants[i].name_span.clone();
+
+                let msg = format!(
+                    "More than one variant has the identifier \"{dup_name}\" within enum \"{enum_name}\""
+                );
+
+                self.reporter
+                    .report_spanned(&msg, None, &[orig_span, variant_span]);
+            }
+
+            seen.push((i, variant.name_id));
+
             if let Some(ty) = &variant.ty {
                 let type_id = self.resolve_type_expr(ty, ast_id)?;
                 let variant_repre =
@@ -216,7 +257,7 @@ impl TypeResolver<'_> {
                             Symbol::Enum(enum_repre) => enum_repre.type_id,
                             // This is not possible
                             // Symbol::TypeDef(type_def_repre) => type_def_repre.type_id,
-                            _ => todo!(),
+                            _ => unreachable!("Typedefs are unknown by default"),
                         };
                         return Ok(type_id);
                     }
@@ -227,7 +268,7 @@ impl TypeResolver<'_> {
                 let err_msg = format!("\"{err_name}\" is not defined as a type");
 
                 self.reporter
-                    .report_spanned(&err_msg, None, &[span.clone()]);
+                    .report_spanned(&err_msg, Some(err_name), &[span.clone()]);
 
                 return Err(());
             }

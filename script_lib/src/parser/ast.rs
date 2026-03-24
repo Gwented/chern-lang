@@ -132,6 +132,11 @@ impl Call {
     }
 }
 
+pub(crate) struct SpannedTypeExpr {
+    type_expr: TypeExpr,
+    span: Span,
+}
+
 #[derive(Debug)]
 pub(crate) enum TypeExpr {
     Var(NameId, Span),
@@ -153,10 +158,6 @@ impl TypeExpr {
             | TypeExpr::Escaped(_, span) => span.clone(),
         }
     }
-}
-
-struct Modifier {
-    visibility: Visibility,
 }
 
 pub(super) enum Visibility {

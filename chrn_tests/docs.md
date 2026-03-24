@@ -3,7 +3,7 @@
 
 ## Goal
 // This is my leash
-- To allow for instructions that state how to serialize data without something like macros or annotations. Even though there is possible complex behavior, this is nothing stopping 
+- To allow for instructions that state how to serialize data without something like macros or annotations. All features outside of this are entirely negligible.
 
 ## BEHAVIOR
 - Ends program by default when type information is incorrect unless `#warn` is used.
@@ -30,6 +30,8 @@ char, bool, (maybe capital) str, struct, enum, tuple, nil, BigInt, BigFloat, Lis
 // TODO:
 // ME 💀💀💀💀💀
 `me`: Refers to current serialized data being looked at
+// I can't take this seriously
+
 `struct` for a structure of data.
 `enum` for an Enum type which can also hold data.
 

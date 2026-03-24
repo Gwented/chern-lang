@@ -5,7 +5,7 @@ use common::{
     fmter::{Formattable, Formatted},
     intern::Intern,
     keywords::{self, Keyword},
-    metadata::FileMetadata,
+    metadata::ChernMetadata,
     symbols::{AstId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs, SymbolId, TypeId},
 };
 
@@ -35,7 +35,7 @@ pub struct ConstraintResolver<'a> {
 impl ConstraintResolver<'_> {
     pub fn new<'a>(
         ast_info: &'a AstInfo,
-        metadata: &'a FileMetadata,
+        metadata: &'a ChernMetadata,
         interner: &'a Intern,
         table: &'a mut Table,
     ) -> ConstraintResolver<'a> {
@@ -601,7 +601,7 @@ impl ConstraintResolver<'_> {
     fn check_cond_constraints(
         &self,
         type_id: TypeId,
-        ast_span: &Span,
+        cond_span: &Span,
         cond: &Cond,
         visited: &mut Vec<TypeId>,
     ) -> Result<(), SemanticError> {
@@ -614,13 +614,13 @@ impl ConstraintResolver<'_> {
                         return Err(SemanticError::UnsupportedCond(
                             cond.clone(),
                             kind.to_fmt(),
-                            vec![ast_span.clone()],
+                            vec![cond_span.clone()],
                         ));
                     }
 
                     Ok(())
                 }
-                Cond::Not(inner) => self.check_cond_constraints(type_id, ast_span, inner, visited),
+                Cond::Not(inner) => self.check_cond_constraints(type_id, cond_span, inner, visited),
                 Cond::Func(sym_id, func_kind) => todo!(),
             },
             // Same types of checks as args resolver to avoid stack overflow
@@ -640,12 +640,12 @@ impl ConstraintResolver<'_> {
                         return Err(SemanticError::CircularCond(
                             cond.clone(),
                             Formatted::Struct,
-                            vec![ast_span.clone(), field_span],
+                            vec![cond_span.clone(), field_span],
                         ));
                     }
 
                     let cond_res =
-                        self.check_cond_constraints(field.type_id, ast_span, cond, visited);
+                        self.check_cond_constraints(field.type_id, cond_span, cond, visited);
 
                     if let Err(SemanticError::UnsupportedCond(cond, fmted_ty, mut spans)) = cond_res
                     {
@@ -680,13 +680,13 @@ impl ConstraintResolver<'_> {
                             return Err(SemanticError::CircularCond(
                                 cond.clone(),
                                 Formatted::Enum,
-                                vec![ast_span.clone(), variant_span],
+                                vec![cond_span.clone(), variant_span],
                             ));
                         }
 
                         visited.push(ty);
 
-                        let cond_res = self.check_cond_constraints(ty, ast_span, cond, visited);
+                        let cond_res = self.check_cond_constraints(ty, cond_span, cond, visited);
 
                         if let Err(SemanticError::UnsupportedCond(cond, fmted_ty, mut spans)) =
                             cond_res
@@ -720,11 +720,11 @@ impl ConstraintResolver<'_> {
                         return Err(SemanticError::CircularCond(
                             cond.clone(),
                             Formatted::Tuple,
-                            vec![ast_span.clone()],
+                            vec![cond_span.clone()],
                         ));
                     }
 
-                    self.check_cond_constraints(*element, ast_span, cond, visited)?;
+                    self.check_cond_constraints(*element, cond_span, cond, visited)?;
                 }
 
                 Ok(())
