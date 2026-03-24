@@ -144,7 +144,7 @@ impl TypeResolver<'_> {
     }
 
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
-        let type_id = self.resolve_type_expr(&abs_typedef.ty, ast_id)?;
+        let type_id = self.resolve_type_expr(&abs_typedef.type_expr, ast_id)?;
 
         let sym_id = self.table.sym_ids[&ast_id];
 
@@ -159,7 +159,7 @@ impl TypeResolver<'_> {
         let mut fields: Vec<FieldRepre> = Vec::new();
 
         for (i, type_def) in abs_struct.fields.iter().enumerate() {
-            let type_id = self.resolve_type_expr(&type_def.ty, ast_id)?;
+            let type_id = self.resolve_type_expr(&type_def.type_expr, ast_id)?;
 
             let field_repre = FieldRepre::new(type_def.name_id, type_id, AstId::new(i as u32));
 
@@ -387,15 +387,15 @@ impl TypeResolver<'_> {
     // I DONT KNOW
     fn resolve_expr(&mut self, expr: &Expr) -> Result<TypeId, ()> {
         match expr {
-            Expr::Var(name_id, span) => todo!(),
-            Expr::Integer(num, span) => todo!(),
-            Expr::Float(num, span) => todo!(),
-            Expr::Str(name_id, span) => todo!(),
-            Expr::Call(call, span) => todo!(),
-            Expr::FieldAccess(abs_field_access, span) => todo!(),
-            Expr::Unary(unary, span) => todo!(),
+            Expr::Var(name_id) => todo!(),
+            Expr::Integer(num) => todo!(),
+            Expr::Float(num) => todo!(),
+            Expr::Str(name_id) => todo!(),
+            Expr::Call(call) => todo!(),
+            Expr::FieldAccess(abs_field_access) => todo!(),
+            Expr::Unary(unary) => todo!(),
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),
-            Expr::Char(_, _) => todo!(),
+            Expr::Char(_) => todo!(),
             Expr::Default(_, expr) => todo!(),
         }
     }

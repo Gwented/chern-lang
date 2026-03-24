@@ -1,5 +1,5 @@
 //NOTE: MAY MAKE EXPRESSION THAT HELPS RESOLVE SEMANTIC TYPES MORE CLEANLY
-use common::symbols::{InnerArgs, NameId, Span, SpannedInnerArgs};
+use common::symbols::{AstId, InnerArgs, NameId, Span, SpannedInnerArgs};
 
 #[derive(Debug)]
 pub struct AstInfo {
@@ -23,6 +23,42 @@ impl AstInfo {
     pub(crate) fn has_bind(&self) -> bool {
         self.bind.is_some()
     }
+
+    pub(crate) fn get_typedef(&self, ast_id: AstId) -> &AbstractTypeDef {
+        match &self.items[ast_id.id as usize] {
+            item => match item {
+                Item::Var(abs_typedef) => abs_typedef,
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    pub(crate) fn get_struct(&self, ast_id: AstId) -> &AbstractStruct {
+        match &self.items[ast_id.id as usize] {
+            item => match item {
+                Item::Struct(abs_struct) => abs_struct,
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    // pub(super) fn get_func(&self, ast_id: AstId) -> &AbstractFunc {
+    //     match &self.items[ast_id.id as usize] {
+    //         item => match item {
+    //             Item::Func(abs_struct) => abs_struct,
+    //             _ => unreachable!(),
+    //         },
+    //     }
+    // }
+
+    pub(crate) fn get_enum(&self, ast_id: AstId) -> &AbstractEnum {
+        match &self.items[ast_id.id as usize] {
+            item => match item {
+                Item::Enum(abs_enum) => abs_enum,
+                _ => unreachable!(),
+            },
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -37,22 +73,34 @@ pub(crate) enum Item {
     // Func(AbstractFunc),
 }
 
+#[derive(Debug)]
+pub struct SpannedExpr {
+    pub expr: Expr,
+    pub span: Span,
+}
+
+impl SpannedExpr {
+    pub fn new(expr: Expr, span: Span) -> SpannedExpr {
+        SpannedExpr { expr, span }
+    }
+}
+
 // This could look better...
 #[derive(Debug)]
 pub(crate) enum Expr {
-    Var(NameId, Span),
-    /// Variable name and span, along with optional default type
-    Default((NameId, Span), Option<Box<Expr>>),
+    Var(NameId),
+    /// Variable name, along with optional default type
+    Default(NameId, Box<SpannedExpr>),
     // Staying capped at i64 and f64 for pacing purposes
     // TODO: Need to likely carry notation here
     // Also maybe should be a "literal" type
-    Integer(i64, Span),
-    Float(f64, Span),
-    Str(NameId, Span),
-    Char(char, Span),
-    Call(Call, Span),
-    FieldAccess(AbstractFieldAccess, Span),
-    Unary(Unary, Span),
+    Integer(i64),
+    Float(f64),
+    Str(NameId),
+    Char(char),
+    Call(Call),
+    FieldAccess(AbstractFieldAccess),
+    Unary(Unary),
     BinaryExpr {
         lhs: Box<Expr>,
         op: BinaryOp,
@@ -72,12 +120,15 @@ pub(crate) enum BinaryOp {
 #[derive(Debug)]
 pub(crate) struct Call {
     pub(crate) name_id: NameId,
-    pub(crate) exprs: Vec<Expr>,
+    pub(crate) spanned_expr: Vec<SpannedExpr>,
 }
 
 impl Call {
-    pub(crate) fn new(name_id: NameId, exprs: Vec<Expr>) -> Call {
-        Call { name_id, exprs }
+    pub(crate) fn new(name_id: NameId, spanned_expr: Vec<SpannedExpr>) -> Call {
+        Call {
+            name_id,
+            spanned_expr,
+        }
     }
 }
 
@@ -130,9 +181,9 @@ pub(super) enum Visibility {
 pub(crate) struct AbstractTypeDef {
     pub(crate) name_id: NameId,
     pub(crate) name_span: Span,
-    pub(crate) ty: TypeExpr,
+    pub(crate) type_expr: TypeExpr,
     pub(crate) args: Vec<SpannedInnerArgs>,
-    pub(crate) conds: Vec<Expr>,
+    pub(crate) conds: Vec<SpannedExpr>,
     // pub(crate) visibility: Visibility,
 }
 
@@ -142,12 +193,12 @@ impl AbstractTypeDef {
         name_span: Span,
         ty: TypeExpr,
         args: Vec<SpannedInnerArgs>,
-        conds: Vec<Expr>,
+        conds: Vec<SpannedExpr>,
     ) -> AbstractTypeDef {
         AbstractTypeDef {
             name_id,
             name_span,
-            ty,
+            type_expr: ty,
             args,
             conds,
         }
@@ -158,7 +209,7 @@ impl AbstractTypeDef {
 pub(crate) struct AbstractStruct {
     pub(crate) name_id: NameId,
     pub(crate) name_span: Span,
-    pub(crate) glob_conds: Vec<Expr>,
+    pub(crate) glob_conds: Vec<SpannedExpr>,
     pub(crate) glob_args: Vec<SpannedInnerArgs>,
     pub(crate) fields: Vec<AbstractTypeDef>,
     // pub(crate) visibility: Visibility,
@@ -168,7 +219,7 @@ impl AbstractStruct {
     pub(crate) fn new(
         name_id: NameId,
         name_span: Span,
-        glob_conds: Vec<Expr>,
+        glob_conds: Vec<SpannedExpr>,
         glob_args: Vec<SpannedInnerArgs>,
         fields: Vec<AbstractTypeDef>,
         // visibility: Visibility,
@@ -190,7 +241,7 @@ pub(crate) struct AbstractEnum {
     pub(crate) name_id: NameId,
     pub(crate) name_span: Span,
     pub(crate) variants: Vec<AbstractVariant>,
-    pub(crate) glob_conds: Vec<Expr>,
+    pub(crate) glob_conds: Vec<SpannedExpr>,
     pub(crate) glob_args: Vec<SpannedInnerArgs>,
     // pub(crate) visibility: Visibility,
 }
@@ -200,7 +251,7 @@ impl AbstractEnum {
         name_id: NameId,
         name_span: Span,
         variants: Vec<AbstractVariant>,
-        glob_conds: Vec<Expr>,
+        glob_conds: Vec<SpannedExpr>,
         glob_args: Vec<SpannedInnerArgs>,
         // visibility: Visibility,
     ) -> AbstractEnum {
@@ -223,7 +274,7 @@ pub(crate) struct AbstractVariant {
     // I think this is right?
     pub(crate) ty: Option<TypeExpr>,
     pub(crate) args: Vec<SpannedInnerArgs>,
-    pub(crate) conds: Vec<Expr>,
+    pub(crate) conds: Vec<SpannedExpr>,
 }
 
 impl AbstractVariant {
@@ -232,7 +283,7 @@ impl AbstractVariant {
         name_span: Span,
         // I think this is right?
         ty: Option<TypeExpr>,
-        conds: Vec<Expr>,
+        conds: Vec<SpannedExpr>,
         args: Vec<SpannedInnerArgs>,
     ) -> AbstractVariant {
         AbstractVariant {
@@ -249,11 +300,11 @@ impl AbstractVariant {
 pub(crate) struct AbstractFunc {
     pub(crate) name_id: NameId,
     pub(super) name_span: Span,
-    pub(crate) params: Vec<Expr>,
+    pub(crate) params: Vec<SpannedExpr>,
 }
 
 impl AbstractFunc {
-    pub(crate) fn new(name_id: NameId, name_span: Span, params: Vec<Expr>) -> AbstractFunc {
+    pub(crate) fn new(name_id: NameId, name_span: Span, params: Vec<SpannedExpr>) -> AbstractFunc {
         AbstractFunc {
             name_id,
             name_span,
@@ -300,7 +351,7 @@ impl Param {
 #[derive(Debug)]
 pub(crate) struct AbstractFieldDecl {
     pub(crate) name_id: NameId,
-    pub(crate) fields: Vec<Expr>,
+    pub(crate) fields: Vec<SpannedExpr>,
 }
 
 // impl AbstractFieldDecl {
@@ -315,7 +366,7 @@ pub(crate) struct AbstractAlias {
     pub(crate) name_id: NameId,
     pub(crate) name_span: Span,
     pub(crate) params: Vec<TypeExpr>,
-    pub(crate) conds: Vec<Expr>,
+    pub(crate) conds: Vec<SpannedExpr>,
     pub(crate) args: Vec<SpannedInnerArgs>,
     // pub(crate) visibility: Visibility,
 }
@@ -325,7 +376,7 @@ impl AbstractAlias {
         name_id: NameId,
         name_span: Span,
         params: Vec<TypeExpr>,
-        conds: Vec<Expr>,
+        conds: Vec<SpannedExpr>,
         args: Vec<SpannedInnerArgs>,
         // visibility: Visibility,
     ) -> AbstractAlias {
@@ -342,12 +393,12 @@ impl AbstractAlias {
 
 #[derive(Debug)]
 pub(crate) struct AbstractFieldAccess {
-    pub(crate) base: Box<Expr>,
+    pub(crate) base: Box<SpannedExpr>,
     pub(crate) field: NameId,
 }
 
 impl AbstractFieldAccess {
-    pub(crate) fn new(base: Box<Expr>, field: NameId) -> AbstractFieldAccess {
+    pub(crate) fn new(base: Box<SpannedExpr>, field: NameId) -> AbstractFieldAccess {
         AbstractFieldAccess { base, field }
     }
 }
@@ -355,12 +406,15 @@ impl AbstractFieldAccess {
 #[derive(Debug)]
 pub(crate) struct Unary {
     pub(crate) op: UnaryOp,
-    pub(crate) expr: Box<Expr>,
+    pub(crate) spanned_expr: Box<SpannedExpr>,
 }
 
 impl Unary {
-    pub(crate) fn new(op: UnaryOp, expr: Box<Expr>) -> Unary {
-        Unary { op, expr }
+    pub(crate) fn new(op: UnaryOp, expr: Box<SpannedExpr>) -> Unary {
+        Unary {
+            op,
+            spanned_expr: expr,
+        }
     }
 }
 

@@ -1,7 +1,9 @@
 use std::io::IsTerminal;
 
 use common::{
-    color, keywords,
+    color,
+    fmter::Formattable,
+    keywords,
     metadata::FileMetadata,
     reporter,
     symbols::{Span, TypeId},
@@ -62,10 +64,26 @@ impl SemanticReporter<'_> {
 
                 (msg, spans)
             }
-            SemanticError::CircularRef(arg, fmted_type, spans) => {
+            // Weird merge needs to happen but both just need to be Formatted Formatted
+            SemanticError::CircularArg(arg, fmted_ty, spans) => {
                 let msg = format!(
                     // Suspicious error message
-                    "Cannot give type `{fmted_type}` the argument \"#{arg}\" due to the circularly referenced type itself not supporting the argument"
+                    "Cannot give type `{fmted_ty}` the argument \"#{arg}\" due to the circularly referenced type itself not supporting the argument"
+                );
+
+                (msg, spans)
+            }
+            SemanticError::CircularCond(cond, fmted_ty, spans) => {
+                let msg = format!(
+                    "Cannot give the type `{fmted_ty}` the condition \"{}\" due to the circularly referenced type itself not supporting the condition",
+                    cond.to_fmt()
+                );
+                (msg, spans)
+            }
+            SemanticError::UnsupportedCond(cond, fmted_ty, spans) => {
+                let msg = format!(
+                    "The condition \"{}\" is not supported for type `{fmted_ty}`",
+                    cond.to_fmt()
                 );
 
                 (msg, spans)
@@ -122,7 +140,7 @@ impl SemanticReporter<'_> {
 
         for err in &self.err_vec {
             // Are two syscalls like this constantly like this worst than making it a single string?
-            println!("From path => {}", self.metadata.path.display());
+            println!("From path => \"{}\"", self.metadata.path.display());
             println!("{header_err}: {}", err.msg);
         }
 

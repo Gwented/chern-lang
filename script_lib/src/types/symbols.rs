@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use common::{
     builtins::{BuiltinType, BuiltinTypeKind},
+    fmter::{Formattable, Formatted},
     keywords::Keyword,
     symbols::{
         BuiltinTypeId, EnumId, FuncId, InnerArgs, NameId, Span, StructId, SymbolId, TypeDefId,
@@ -9,7 +10,10 @@ use common::{
     },
 };
 
-use crate::{semantic::representation::FuncKind, types::token::Token};
+use crate::{
+    semantic::representation::{FuncArgsKind, FuncArgsRepre, FuncKind},
+    types::token::Token,
+};
 
 //WARN: THERE ARE MANY WAYS OF DOING THIS SO I AM JUST CHOOSING THIS FOR NOW I AM VERY CONFUSED
 //MAY REMOVE
@@ -286,18 +290,31 @@ impl FuncDef {
 
 #[derive(Debug)]
 pub enum FuncArgs {
-    Id(SymbolId),
+    Var(SymbolId),
     Literal(SymbolId),
     Num(usize),
 }
 
+// Spanned cond can't exist because conds are expressions
 #[derive(Debug, Clone)]
 pub enum Cond {
     //FIX:
-    Func(SymbolId),
+    Func(SymbolId, FuncKind),
     IsEmpty,
     IsWhitespace,
     Not(Box<Cond>),
+}
+
+impl Formattable for Cond {
+    fn to_fmt(&self) -> common::fmter::Formatted {
+        match self {
+            Cond::IsEmpty => Formatted::IsEmpty,
+            Cond::IsWhitespace => Formatted::IsWhitespace,
+            Cond::Not(cond) => Formatted::Nothing,
+            // Maybe pair with kind?
+            Cond::Func(_, kind) => kind.to_fmt(),
+        }
+    }
 }
 
 // I'm actually fine with this.
@@ -326,19 +343,15 @@ impl Cond {
 
     pub fn supports_builtin_type(&self, kind: BuiltinTypeKind) -> bool {
         match self {
-            Cond::IsEmpty => true,
-            Cond::IsWhitespace => todo!(),
-            Cond::Not(cond) => todo!(),
-            Cond::Func(_) => unreachable!(),
-        }
-    }
+            Cond::IsEmpty | Cond::IsWhitespace => {
+                if kind.is_numeric() {
+                    return false;
+                }
 
-    pub fn supports_func(&self, kind: FuncKind) -> bool {
-        match self {
-            Cond::IsEmpty => todo!(),
-            Cond::IsWhitespace => todo!(),
-            Cond::Not(cond) => todo!(),
-            Cond::Func(_) => unreachable!(),
+                true
+            }
+            Cond::Not(cond) => Self::supports_builtin_type(cond, kind),
+            Cond::Func(_, _) => unreachable!("Not a possible variant"),
         }
     }
 }

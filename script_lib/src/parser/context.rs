@@ -404,7 +404,7 @@ impl<'a> Context<'a> {
 
         let header_err = format!("{red}error{nc}");
 
-        println!("From path => {}", self.metadata.path.display());
+        println!("From path => \"{}\"", self.metadata.path.display());
 
         for err in &self.err_vec {
             println!("{header_err}: {}", err.msg);

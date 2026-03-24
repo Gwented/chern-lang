@@ -4,6 +4,7 @@ use std::{collections::HashMap, fmt::Display};
 
 use common::{
     builtins::{BuiltinType, BuiltinTypeKind},
+    fmter::{Formattable, Formatted},
     keywords,
     symbols::{
         AstId, BuiltinTypeId, EnumId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs, StructId,
@@ -310,7 +311,7 @@ impl FuncRepre {
 
 // I'm scared of this
 #[derive(Debug)]
-pub(super) enum FuncArgsRepre {
+pub(crate) enum FuncArgsRepre {
     Integer(i64),
     Float(f64),
     Char(char),
@@ -319,9 +320,8 @@ pub(super) enum FuncArgsRepre {
     Str(NameId),
 }
 
-// KIND VARIANT IS NOT, NEEDED. PLEASE.
 impl FuncArgsRepre {
-    pub(super) fn is_numeric(&self) -> bool {
+    pub(crate) fn is_numeric(&self) -> bool {
         match self {
             FuncArgsRepre::Integer(_) | FuncArgsRepre::Float(_) => true,
             FuncArgsRepre::Var(_, kind) => kind.is_numeric(),
@@ -332,28 +332,28 @@ impl FuncArgsRepre {
 
     // TEST: Currently testing out a way of formatting that is more encapsulated so that the code
     // outside doesn't have to be repeated as intensely.
-    pub(super) fn is_integer(&self) -> bool {
+    pub(crate) fn is_integer(&self) -> bool {
         match self.kind() {
             FuncArgsKind::Integer => true,
             _ => false,
         }
     }
 
-    pub(super) fn is_float(&self) -> bool {
+    pub(crate) fn is_float(&self) -> bool {
         match self.kind() {
             FuncArgsKind::Float => true,
             _ => false,
         }
     }
 
-    pub(super) fn is_char(&self) -> bool {
+    pub(crate) fn is_char(&self) -> bool {
         match self.kind() {
             FuncArgsKind::Char => true,
             _ => false,
         }
     }
 
-    pub(super) fn is_str(&self) -> bool {
+    pub(crate) fn is_str(&self) -> bool {
         match self.kind() {
             FuncArgsKind::Str => true,
             _ => false,
@@ -361,7 +361,7 @@ impl FuncArgsRepre {
     }
 
     // to_builtin_type_kind is getting a little long for something so contextually obvious
-    pub(super) fn to_builtin_kind(&self) -> BuiltinTypeKind {
+    pub(crate) fn to_builtin_kind(&self) -> BuiltinTypeKind {
         match self {
             FuncArgsRepre::Integer(_) => BuiltinTypeKind::I64,
             FuncArgsRepre::Float(_) => BuiltinTypeKind::F64,
@@ -371,7 +371,7 @@ impl FuncArgsRepre {
         }
     }
 
-    pub(super) fn kind(&self) -> FuncArgsKind {
+    pub(crate) fn kind(&self) -> FuncArgsKind {
         match self {
             FuncArgsRepre::Integer(_) => FuncArgsKind::Integer,
             FuncArgsRepre::Float(_) => FuncArgsKind::Float,
@@ -382,8 +382,20 @@ impl FuncArgsRepre {
     }
 }
 
+impl Formattable for FuncArgsRepre {
+    fn to_fmt(&self) -> Formatted {
+        match self {
+            FuncArgsRepre::Integer(_) => Formatted::Integer,
+            FuncArgsRepre::Float(_) => Formatted::Float,
+            FuncArgsRepre::Char(_) => Formatted::Char,
+            FuncArgsRepre::Var(_, builtin_type_kind) => builtin_type_kind.to_fmt(),
+            FuncArgsRepre::Str(_) => Formatted::Str,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum FuncArgsKind {
+pub(crate) enum FuncArgsKind {
     Integer,
     Float,
     Char,
@@ -400,10 +412,10 @@ pub(super) struct FieldRepre {
 }
 
 impl FieldRepre {
-    pub fn new(name_id: NameId, ty: TypeId, ast_id: AstId) -> FieldRepre {
+    pub fn new(name_id: NameId, type_id: TypeId, ast_id: AstId) -> FieldRepre {
         FieldRepre {
             name_id,
-            type_id: ty,
+            type_id,
             ast_id,
         }
     }
@@ -432,6 +444,18 @@ pub(crate) enum FuncKind {
     StartsW,
     EndsW, // UserDefined
     UserDefined,
+}
+
+impl Formattable for FuncKind {
+    fn to_fmt(&self) -> common::fmter::Formatted {
+        match self {
+            FuncKind::Contains => Formatted::Contains,
+            FuncKind::Range => Formatted::Range,
+            FuncKind::StartsW => Formatted::StartsW,
+            FuncKind::EndsW => Formatted::EndsW,
+            FuncKind::UserDefined => Formatted::Func,
+        }
+    }
 }
 
 impl Display for FuncKind {

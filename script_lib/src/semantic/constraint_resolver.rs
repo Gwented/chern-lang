@@ -2,15 +2,17 @@
 // FIXME: FIGURE OUT IF CACHING SHOULD START HERE, AND IN A NODE OR DATA STRUCTURE OUTSIDE OF IT
 use common::{
     builtins::{BuiltinType, BuiltinTypeKind},
-    fmter::{Formatable, Formatted},
+    fmter::{Formattable, Formatted},
     intern::Intern,
     keywords::{self, Keyword},
     metadata::FileMetadata,
-    symbols::{AstId, FuncId, InnerArgs, Span, SpannedInnerArgs, SymbolId, TypeId},
+    symbols::{AstId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs, SymbolId, TypeId},
 };
 
 use crate::{
-    parser::ast::{AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Expr, Item, UnaryOp},
+    parser::ast::{
+        AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Expr, Item, SpannedExpr, UnaryOp,
+    },
     semantic::{
         constraints::ArgConstraint,
         error::SemanticError,
@@ -72,11 +74,44 @@ impl ConstraintResolver<'_> {
 
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
         let sym_id = self.table.sym_ids[&ast_id];
+        let type_id = self.table.get_typedef(sym_id).type_id;
+
+        let mut conds = Vec::new();
+
+        for expr in &abs_typedef.conds {
+            conds.push(self.resolve_cond(expr, ast_id)?);
+        }
+
+        // First borrow starts here
+        let ty = &self.table.types[self.table.get_typedef(sym_id).type_id.id as usize];
+
+        // Checking if condition is valid for the given type
+        // Using the Ast node's condition so that the span information is not lost
+        for (i, cond) in conds.iter().enumerate() {
+            let ast_span = &abs_typedef.conds[i].span;
+
+            match ty {
+                Type::Struct(_) | Type::Enum(_) => {
+                    let msg = "Cannot give a `var->` defined variable a condition when it has a `struct` or `enum` type, define\nthis within `nest->`";
+
+                    self.reporter.report_spanned(msg, None, &[ast_span.clone()]);
+
+                    return Err(());
+                }
+                _ => (),
+            }
+
+            if let Err(sem_err) = self.check_cond_constraints(type_id, &ast_span, cond, &mut vec![])
+            {
+                self.reporter.report_semantic(sem_err);
+                return Err(());
+            }
+        }
+
+        // Re-borrowing due to resolution happening above being mutable
+        let ty = &self.table.types[self.table.get_typedef(sym_id).type_id.id as usize];
 
         let mut args = Vec::new();
-
-        let type_id = self.table.get_typedef(sym_id).type_id;
-        let ty = &self.table.types[self.table.get_typedef(sym_id).type_id.id as usize];
 
         //TODO: Make less terminal and have a better solution for this
         for spanned_arg in &abs_typedef.args {
@@ -93,25 +128,12 @@ impl ConstraintResolver<'_> {
                 _ => (),
             }
 
-            let resolved_arg = match self.resolve_arg(type_id, &spanned_arg) {
-                Ok(a) => a,
-                Err(sem_err) => {
-                    self.reporter.report_semantic(sem_err);
-                    return Err(());
-                }
-            };
+            if let Err(sem_err) = self.resolve_arg(type_id, &spanned_arg, &mut vec![]) {
+                self.reporter.report_semantic(sem_err);
+                return Err(());
+            }
 
-            args.push(resolved_arg);
-        }
-
-        let mut conds = Vec::new();
-
-        for expr in &abs_typedef.conds {
-            conds.push(self.resolve_cond(expr, ast_id)?);
-        }
-
-        for cond in &conds {
-            self.check_cond_constraints(type_id, cond);
+            args.push(spanned_arg.arg);
         }
 
         let type_def = &mut self.table.get_typedef_mut(sym_id);
@@ -128,29 +150,42 @@ impl ConstraintResolver<'_> {
     fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
         // This looks weird
 
-        let mut conds: Vec<Cond> = Vec::new();
-
         let sym_id = self.table.sym_ids[&ast_id];
+
+        let mut conds: Vec<Cond> = Vec::new();
 
         for expr in &abs_struct.glob_conds {
             conds.push(self.resolve_cond(expr, ast_id)?);
         }
 
+        let fields = &self.table.get_struct(sym_id).fields;
+
+        for (i, cond) in conds.iter().enumerate() {
+            let ast_span = &abs_struct.glob_conds[i].span;
+
+            for field in fields {
+                if let Err(sem_err) =
+                    self.check_cond_constraints(field.type_id, &ast_span, cond, &mut vec![])
+                {
+                    self.reporter.report_semantic(sem_err);
+                    return Err(());
+                }
+            }
+        }
+
         let mut args: Vec<InnerArgs> = Vec::new();
         // This looks odd too
         let fields = &self.table.get_struct(sym_id).fields;
+        dbg!(self.interner.search(abs_struct.name_id.id as usize));
 
         for field in fields {
             for spanned_arg in &abs_struct.glob_args {
-                let arg = match self.resolve_arg(field.type_id, spanned_arg) {
-                    Ok(a) => a,
-                    Err(sem_err) => {
-                        self.reporter.report_semantic(sem_err);
-                        return Err(());
-                    }
-                };
+                if let Err(sem_err) = self.resolve_arg(field.type_id, spanned_arg, &mut vec![]) {
+                    self.reporter.report_semantic(sem_err);
+                    return Err(());
+                }
 
-                args.push(arg);
+                args.push(spanned_arg.arg);
             }
         }
 
@@ -172,22 +207,39 @@ impl ConstraintResolver<'_> {
             conds.push(self.resolve_cond(expr, ast_id)?);
         }
 
+        // First borrow
         let variants = &self.table.get_enum(sym_id).variants;
+
+        for (i, cond) in conds.iter().enumerate() {
+            let ast_span = &abs_enum.glob_conds[i].span;
+
+            for variant in variants {
+                if let Some(type_id) = variant.type_id {
+                    if let Err(sem_err) =
+                        self.check_cond_constraints(type_id, &ast_span, cond, &mut vec![])
+                    {
+                        self.reporter.report_semantic(sem_err);
+                    }
+                }
+            }
+        }
+
+        // Re-borrow
+        let variants = &self.table.get_enum(sym_id).variants;
+
         let mut args: Vec<InnerArgs> = Vec::new();
 
         for variant in variants {
             for spanned_arg in &abs_enum.glob_args {
                 if let Some(type_id) = variant.type_id {
-                    let arg = match self.resolve_arg(type_id, spanned_arg) {
-                        Ok(a) => a,
-                        Err(sem_err) => {
-                            self.reporter.report_semantic(sem_err);
-                            return Err(());
-                        }
-                    };
+                    if let Err(sem_err) = self.resolve_arg(type_id, spanned_arg, &mut vec![]) {
+                        self.reporter.report_semantic(sem_err);
 
-                    args.push(arg);
+                        return Err(());
+                    };
                 }
+
+                args.push(spanned_arg.arg);
             }
         }
 
@@ -200,9 +252,9 @@ impl ConstraintResolver<'_> {
     }
 
     // Do we need ast id?
-    fn resolve_cond(&mut self, expr: &Expr, ast_id: AstId) -> Result<Cond, ()> {
-        match expr {
-            Expr::Var(name_id, span) => {
+    fn resolve_cond(&mut self, spanned_expr: &SpannedExpr, ast_id: AstId) -> Result<Cond, ()> {
+        match &spanned_expr.expr {
+            Expr::Var(name_id) => {
                 if let Some(cond) = Cond::try_from_id(name_id.id) {
                     return Ok(cond);
                 }
@@ -211,24 +263,27 @@ impl ConstraintResolver<'_> {
                 let err_msg = format!("\"{err_name}\" is not a valid condition");
 
                 // If the error name IS a functional condition, it just says it's not a condition
-                self.reporter
-                    .report_spanned(&err_msg, Some(err_name), &[span.clone()]);
+                self.reporter.report_spanned(
+                    &err_msg,
+                    Some(err_name),
+                    &[spanned_expr.span.clone()],
+                );
 
                 Err(())
             }
-            Expr::Unary(unary, _) => match unary.op {
+            Expr::Unary(unary) => match unary.op {
                 UnaryOp::Not => {
-                    let cond = self.resolve_cond(&unary.expr, ast_id)?;
+                    let cond = self.resolve_cond(&unary.spanned_expr, ast_id)?;
                     Ok(Cond::Not(Box::new(cond)))
                 }
                 UnaryOp::Negate => {
                     todo!();
                 }
             },
-            Expr::Call(call, span) => {
+            Expr::Call(call) => {
                 let mut args: Vec<FuncArgsRepre> = Vec::new();
 
-                for expr in &call.exprs {
+                for expr in &call.spanned_expr {
                     let arg = self.resolve_func_arg(expr)?;
                     args.push(arg);
                 }
@@ -265,8 +320,14 @@ impl ConstraintResolver<'_> {
                     }
                 };
 
-                let func =
-                    FuncRepre::new(call.name_id, type_id, span.clone(), kind, constraints, args);
+                let func = FuncRepre::new(
+                    call.name_id,
+                    type_id,
+                    spanned_expr.span.clone(),
+                    kind,
+                    constraints,
+                    args,
+                );
 
                 match self.check_func_constraints(&func) {
                     Ok(_) => (),
@@ -276,127 +337,137 @@ impl ConstraintResolver<'_> {
                     }
                 };
 
+                let func_kind = func.kind;
+
                 self.table.symbols.insert(sym_id, Symbol::Func(func));
 
-                Ok(Cond::Func(sym_id))
+                Ok(Cond::Func(sym_id, func_kind))
             }
-            Expr::Str(name_id, span) => {
+            Expr::Str(name_id) => {
                 let err_name = self.interner.search(name_id.id as usize);
                 let err_msg = format!("\"{err_name}\" is not a valid condition");
 
-                self.reporter
-                    .report_spanned(&err_msg, Some(err_name), &[span.clone()]);
+                self.reporter.report_spanned(
+                    &err_msg,
+                    Some(err_name),
+                    &[spanned_expr.span.clone()],
+                );
 
                 Err(())
             }
-            Expr::Integer(_, span) | Expr::Float(_, span) => {
+            Expr::Integer(_) | Expr::Float(_) => {
                 let err_msg = format!("Numerics cannot be used as conditions alone");
 
                 self.reporter
-                    .report_spanned(&err_msg, None, &[span.clone()]);
+                    .report_spanned(&err_msg, None, &[spanned_expr.span.clone()]);
 
                 Err(())
             }
-            Expr::FieldAccess(field_access, span) => {
+            Expr::FieldAccess(field_access) => {
                 //TODO: Is this worth evaluating as an expression just to get the name?
                 // Sure
 
                 let err_msg = format!("Conditions cannot be accessed as fields");
 
                 self.reporter
-                    .report_spanned(&err_msg, None, &[span.clone()]);
+                    .report_spanned(&err_msg, None, &[spanned_expr.span.clone()]);
 
                 Err(())
             }
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),
-            Expr::Char(_, _) => todo!(),
+            Expr::Char(_) => todo!(),
             Expr::Default(_, expr) => todo!(),
         }
     }
 
+    //TODO: Make this less horrific looking
     fn resolve_arg(
         &self,
         type_id: TypeId,
         spanned_arg: &SpannedInnerArgs,
-        // Returns SemanticError due to borrowing issues
-    ) -> Result<InnerArgs, SemanticError> {
+        visited: &mut Vec<TypeId>,
+    ) -> Result<(), SemanticError> {
         match &self.table.types[type_id.id as usize] {
             Type::Struct(sym_id) => {
                 let structure = self.table.get_struct(*sym_id);
+                visited.push(structure.type_id);
 
                 for field in &structure.fields {
                     // Checking if one of it's variants are self referencing, or if the type from
                     // the last call stack, possibly a tuple, is self referencing the current
                     // struct.
-                    if structure.type_id.id == field.type_id.id || structure.type_id == type_id {
+                    if visited.contains(&field.type_id) {
                         //FIXME:
                         //COPY
                         if !spanned_arg.arg.is_basic() {
-                            if let Item::Struct(abs_struct) =
-                                &self.ast_info.items[structure.ast_id.id as usize]
-                            {
-                                // or field span
-                                let ast_span = abs_struct.fields[field.ast_id.id as usize]
-                                    .ty
-                                    .span()
-                                    .clone();
+                            let field_span =
+                                match &self.ast_info.items[structure.ast_id.id as usize] {
+                                    // Weird looking hack
+                                    Item::Struct(abs_struct) => {
+                                        abs_struct.fields[field.ast_id.id as usize].type_expr.span()
+                                    }
+                                    _ => unreachable!(),
+                                }
+                                .clone();
+                            //NOTE:
 
-                                //NOTE:
-
-                                return Err(SemanticError::CircularRef(
-                                    spanned_arg.arg,
-                                    Formatted::Struct,
-                                    vec![ast_span, spanned_arg.span.clone()],
-                                ));
-                            }
+                            return Err(SemanticError::CircularArg(
+                                spanned_arg.arg,
+                                Formatted::Struct,
+                                vec![field_span, spanned_arg.span.clone()],
+                            ));
                         }
 
                         continue;
                     }
+
+                    visited.push(field.type_id);
                     //FIXME:
 
-                    let arg_res = self.resolve_arg(field.type_id, spanned_arg);
+                    let arg_res = self.resolve_arg(field.type_id, spanned_arg, visited);
 
                     // Need to get circular span in a more composed way that's not WEIRD
-                    if let Err(SemanticError::UnsupportedArg(arg, kind, span)) = arg_res {
+                    if let Err(SemanticError::UnsupportedArg(arg, kind, _)) = arg_res {
                         //COPY
-                        if let Item::Struct(abs_struct) =
-                            &self.ast_info.items[structure.ast_id.id as usize]
-                        {
-                            // or field span
-                            let ast_span = abs_struct.fields[field.ast_id.id as usize]
-                                .ty
-                                .span()
-                                .clone();
+                        let abs_struct = self.ast_info.get_struct(structure.ast_id);
+                        let field_span = abs_struct.fields[field.ast_id.id as usize]
+                            .type_expr
+                            .span()
+                            .clone();
 
-                            //NOTE:
+                        //NOTE:
 
-                            return Err(SemanticError::UnsupportedArg(
-                                arg,
-                                kind,
-                                vec![ast_span, spanned_arg.span.clone()],
-                            ));
-                        }
+                        return Err(SemanticError::UnsupportedArg(
+                            arg,
+                            kind,
+                            vec![field_span, spanned_arg.span.clone()],
+                        ));
+                    }
+
+                    if arg_res.is_err() {
+                        return arg_res;
                     }
                 }
 
-                Ok(spanned_arg.arg)
+                Ok(())
             }
             Type::Enum(sym_id) => {
-                let enum_repre = self.table.get_enum(*sym_id);
+                let enumeration = self.table.get_enum(*sym_id);
+                visited.push(enumeration.type_id);
 
-                for variant in &enum_repre.variants {
+                for variant in &enumeration.variants {
                     if let Some(ty) = variant.type_id {
+                        visited.push(ty);
                         //FIXME:
                         //COPY
 
                         // Checking if one of it's variants are self referencing, or if the type we
                         // just came from, possibly a tuple, is referring to itself from a
                         // different context.
-                        if enum_repre.type_id.id == ty.id || enum_repre.type_id == type_id {
+                        if enumeration.type_id.id == ty.id || enumeration.type_id == type_id {
                             if !spanned_arg.arg.is_basic() {
                                 if let Item::Enum(abs_enum) =
-                                    &self.ast_info.items[enum_repre.ast_id.id as usize]
+                                    &self.ast_info.items[enumeration.ast_id.id as usize]
                                 {
                                     // or field span
                                     let ast_span = abs_enum.variants[variant.ast_id.id as usize]
@@ -408,7 +479,7 @@ impl ConstraintResolver<'_> {
 
                                     //NOTE:
                                     // This should be restructured
-                                    return Err(SemanticError::CircularRef(
+                                    return Err(SemanticError::CircularArg(
                                         spanned_arg.arg,
                                         Formatted::Enum,
                                         vec![ast_span, spanned_arg.span.clone()],
@@ -422,46 +493,47 @@ impl ConstraintResolver<'_> {
                             continue;
                         }
 
-                        let arg_res = self.resolve_arg(ty, spanned_arg);
+                        let arg_res = self.resolve_arg(ty, spanned_arg, visited);
 
                         if let Err(SemanticError::UnsupportedArg(arg, fmted, _)) = arg_res {
-                            if let Item::Enum(abs_enum) =
-                                &self.ast_info.items[enum_repre.ast_id.id as usize]
-                            {
-                                // or field span
-                                let ast_span = abs_enum.variants[variant.ast_id.id as usize]
-                                    .ty
-                                    .as_ref()
-                                    .expect("Type already exists")
-                                    .span()
-                                    .clone();
+                            let abs_enum = &self.ast_info.get_enum(enumeration.ast_id);
+                            let variant_span = abs_enum.variants[variant.ast_id.id as usize]
+                                .ty
+                                .as_ref()
+                                .expect("Type already exists")
+                                .span()
+                                .clone();
 
-                                //NOTE:
+                            //NOTE:
 
-                                // fmted or fmtted...
-                                return Err(SemanticError::UnsupportedArg(
-                                    arg,
-                                    fmted,
-                                    vec![ast_span, spanned_arg.span.clone()],
-                                ));
-                            }
+                            // fmted or fmtted...
+                            return Err(SemanticError::UnsupportedArg(
+                                arg,
+                                fmted,
+                                vec![variant_span, spanned_arg.span.clone()],
+                            ));
+                        }
+
+                        // If err != nil { return err }
+                        if arg_res.is_err() {
+                            return arg_res;
                         }
                     }
                 }
 
-                Ok(spanned_arg.arg)
+                Ok(())
             }
             Type::BuiltinType(builtin_type) => {
                 match builtin_type {
                     BuiltinType::Set(type_id) | BuiltinType::List(type_id) => {
-                        self.resolve_arg(*type_id, spanned_arg)
+                        self.resolve_arg(*type_id, spanned_arg, visited)
                     }
                     BuiltinType::Map(key_id, val_id) => {
                         // This looks weird...
-                        self.resolve_arg(*key_id, spanned_arg)?;
-                        self.resolve_arg(*val_id, spanned_arg)
+                        self.resolve_arg(*key_id, spanned_arg, visited)?;
+                        self.resolve_arg(*val_id, spanned_arg, visited)
                     }
-                    BuiltinType::Any(_) => Ok(spanned_arg.arg),
+                    BuiltinType::Any(_) => Ok(()),
                     builtin_type => {
                         //BUG: Does reach this error correctly but doesn't send it back?
                         if !spanned_arg.arg.supports_builtin_type(&builtin_type) {
@@ -473,63 +545,195 @@ impl ConstraintResolver<'_> {
                             ));
                         }
 
-                        Ok(spanned_arg.arg)
+                        Ok(())
                     }
                 }
             }
             // Another O(n) check...
             //TODO: More detailed error
             Type::Tuple(tuple) => {
+                visited.push(tuple.type_id);
+
                 for element in &tuple.elements {
-                    self.resolve_arg(*element, spanned_arg)?;
+                    if visited.contains(&*element) {
+                        if !spanned_arg.arg.is_basic() {
+                            return Err(SemanticError::CircularArg(
+                                spanned_arg.arg,
+                                Formatted::Tuple,
+                                vec![spanned_arg.span.clone(), spanned_arg.span.clone()],
+                            ));
+                        }
+                    }
+
+                    visited.push(*element);
+
+                    self.resolve_arg(*element, spanned_arg, visited)?;
                 }
 
-                Ok(spanned_arg.arg)
+                Ok(())
             }
             Type::Func(sym_id) => todo!("Func"),
-            Type::Alias(sym_id) => todo!("Alias"),
-            Type::Unknown => todo!(),
-            // TODO: Spanning may be off
+            Type::Alias(_) | Type::Unknown => {
+                unreachable!("Parser and semantic cannot produce these variants")
+            } // TODO: Spanning may be off
         }
     }
 
-    fn resolve_func_arg(&self, expr: &Expr) -> Result<FuncArgsRepre, ()> {
-        match expr {
-            Expr::Str(name_id, _) => Ok(FuncArgsRepre::Str(*name_id)),
-            Expr::Integer(num, _) => Ok(FuncArgsRepre::Integer(*num)),
-            Expr::Char(ch, _) => Ok(FuncArgsRepre::Char(*ch)),
-            Expr::Float(num, _) => Ok(FuncArgsRepre::Float(*num)),
-            Expr::Var(name_id, span) => {
+    fn resolve_func_arg(&self, spanned_expr: &SpannedExpr) -> Result<FuncArgsRepre, ()> {
+        match &spanned_expr.expr {
+            Expr::Str(name_id) => Ok(FuncArgsRepre::Str(*name_id)),
+            Expr::Integer(num) => Ok(FuncArgsRepre::Integer(*num)),
+            Expr::Char(ch) => Ok(FuncArgsRepre::Char(*ch)),
+            Expr::Float(num) => Ok(FuncArgsRepre::Float(*num)),
+            Expr::Var(name_id) => {
                 todo!()
             }
-            Expr::Call(call, span) => todo!(),
-            Expr::FieldAccess(abs_field_access, span) => todo!(),
-            Expr::Unary(unary, span) => todo!(),
+            Expr::Call(call) => todo!(),
+            Expr::FieldAccess(abs_field_access) => todo!(),
+            Expr::Unary(unary) => todo!(),
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),
             Expr::Default(_, expr) => todo!(),
         }
     }
 
     /// Returns a success if all conditions align with the type of the given `type_id`
-    fn check_cond_constraints(&self, type_id: TypeId, cond: &Cond) -> Result<(), SemanticError> {
+    /// Takes in the type id that is being checked for validity, the ast id
+    fn check_cond_constraints(
+        &self,
+        type_id: TypeId,
+        ast_span: &Span,
+        cond: &Cond,
+        visited: &mut Vec<TypeId>,
+    ) -> Result<(), SemanticError> {
         match &self.table.types[type_id.id as usize] {
-            // The issue is that functions are not easily resolvable because then, I need to
-            // reparse conditions,
-            Type::BuiltinType(builtin_type) => {
-                todo!();
+            Type::BuiltinType(builtin_type) => match cond {
+                Cond::IsEmpty | Cond::IsWhitespace => {
+                    let kind = builtin_type.kind();
+
+                    if !cond.supports_builtin_type(kind) {
+                        return Err(SemanticError::UnsupportedCond(
+                            cond.clone(),
+                            kind.to_fmt(),
+                            vec![ast_span.clone()],
+                        ));
+                    }
+
+                    Ok(())
+                }
+                Cond::Not(inner) => self.check_cond_constraints(type_id, ast_span, inner, visited),
+                Cond::Func(sym_id, func_kind) => todo!(),
+            },
+            // Same types of checks as args resolver to avoid stack overflow
+            Type::Struct(sym_id) => {
+                let structure = self.table.get_struct(*sym_id);
+
+                for (i, field) in structure.fields.iter().enumerate() {
+                    //BUG: The structure.type_id == type_id does check if the last type it saw is
+                    //itself, but that could also just mean the last type was a structure that just
+                    //so happened to have the same type id
+                    //
+                    // dbg!(structure.type_id, field.type_id, type_id);
+                    if structure.type_id == field.type_id || structure.type_id == type_id {
+                        let abs_struct = &self.ast_info.get_struct(structure.ast_id);
+                        let field_span = abs_struct.fields[i].type_expr.span();
+
+                        return Err(SemanticError::CircularCond(
+                            cond.clone(),
+                            Formatted::Struct,
+                            vec![ast_span.clone(), field_span],
+                        ));
+                    }
+
+                    let cond_res =
+                        self.check_cond_constraints(field.type_id, ast_span, cond, visited);
+
+                    if let Err(SemanticError::UnsupportedCond(cond, fmted_ty, mut spans)) = cond_res
+                    {
+                        let abs_struct = &self.ast_info.get_struct(structure.ast_id);
+                        let field_span = abs_struct.fields[i].type_expr.span();
+                        spans.push(field_span);
+
+                        return Err(SemanticError::UnsupportedCond(cond, fmted_ty, spans));
+                    }
+
+                    if cond_res.is_err() {
+                        return cond_res;
+                    }
+                }
+
+                Ok(())
             }
-            Type::Struct(sym_id) => todo!(),
-            Type::Enum(enum_id) => todo!(),
-            Type::Func(func_id) => {
-                let func = self.table.get_func(*func_id);
-                cond.supports_func(func.kind);
+            Type::Enum(sym_id) => {
+                let enumeration = self.table.get_enum(*sym_id);
+                visited.push(enumeration.type_id);
+
+                for (i, variant) in enumeration.variants.iter().enumerate() {
+                    if let Some(ty) = variant.type_id {
+                        // Circular ref checking
+                        if visited.contains(&ty) {
+                            let abs_variant =
+                                &self.ast_info.get_enum(enumeration.ast_id).variants[i];
+
+                            let variant_span =
+                                abs_variant.ty.as_ref().expect("Already found").span();
+
+                            return Err(SemanticError::CircularCond(
+                                cond.clone(),
+                                Formatted::Enum,
+                                vec![ast_span.clone(), variant_span],
+                            ));
+                        }
+
+                        visited.push(ty);
+
+                        let cond_res = self.check_cond_constraints(ty, ast_span, cond, visited);
+
+                        if let Err(SemanticError::UnsupportedCond(cond, fmted_ty, mut spans)) =
+                            cond_res
+                        {
+                            let abs_struct = &self.ast_info.get_enum(enumeration.ast_id);
+                            let field_span = abs_struct.variants[i]
+                                .ty
+                                .as_ref()
+                                .expect("Already found")
+                                .span();
+
+                            spans.push(field_span);
+
+                            return Err(SemanticError::UnsupportedCond(cond, fmted_ty, spans));
+                        }
+
+                        if cond_res.is_err() {
+                            return cond_res;
+                        }
+                    }
+                }
+
+                Ok(())
+            }
+            // I can't search tuples
+            Type::Tuple(tuple) => {
+                visited.push(tuple.type_id);
+
+                for element in &tuple.elements {
+                    if visited.contains(&element) {
+                        return Err(SemanticError::CircularCond(
+                            cond.clone(),
+                            Formatted::Tuple,
+                            vec![ast_span.clone()],
+                        ));
+                    }
+
+                    self.check_cond_constraints(*element, ast_span, cond, visited)?;
+                }
+
+                Ok(())
             }
             Type::Alias(sym_id) => todo!(),
-            Type::Tuple(type_ids) => todo!(),
-            Type::Unknown => unimplemented!("No `Unknown` behavior"),
+            Type::Unknown | Type::Func(_) => {
+                unreachable!("Parser and semantic cannot produce these variants")
+            }
         }
-
-        Ok(())
     }
 
     /// Returns a success if all constraints within the given function align with the function's

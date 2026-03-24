@@ -1,10 +1,13 @@
 use common::{
     builtins::BuiltinTypeKind,
-    fmter::{Formatable, Formatted},
+    fmter::{Formattable, Formatted},
     symbols::{InnerArgs, Span, SpannedInnerArgs, TypeId},
 };
 
-use crate::semantic::{constraints::ArgConstraint, representation::FuncKind};
+use crate::{
+    semantic::{constraints::ArgConstraint, representation::FuncKind},
+    types::symbols::Cond,
+};
 
 // Lifetimes
 //NOTE: Taking in Vec may change
@@ -16,11 +19,16 @@ pub(super) enum SemanticError {
     // argument failed at, found type
     //TODO: Maybe shouldn't force spanned inner args here
     UnsupportedArg(InnerArgs, Formatted, Vec<Span>),
+
+    ///@Args Condition, Wrong type formatted, Spans
+    UnsupportedCond(Cond, Formatted, Vec<Span>),
     // Interesting name
     VagueArg(InnerArgs, Vec<Span>),
     // CircularRef
     // The type with a circular reference that has an invalid argument for that reference
-    CircularRef(InnerArgs, Formatted, Vec<Span>),
+    //TODO: Combine
+    CircularArg(InnerArgs, Formatted, Vec<Span>),
+    CircularCond(Cond, Formatted, Vec<Span>),
 }
 
 #[derive(Debug)]

@@ -6,7 +6,7 @@ pub mod error;
 pub mod parse_state;
 use crate::parser::ast::{
     AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVariant, AstInfo, Call,
-    Expr, Generic, Item, TypeExpr, Unary, UnaryOp,
+    Expr, Generic, Item, SpannedExpr, TypeExpr, Unary, UnaryOp,
 };
 use crate::parser::context::Context;
 use crate::parser::error::Branch;
@@ -868,7 +868,7 @@ fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<SpannedInnerArgs, T
     Ok(SpannedInnerArgs::new(arg, name_span))
 }
 
-fn parse_cond(ctx: &mut Context, interner: &Intern) -> Result<Expr, Token> {
+fn parse_cond(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Token> {
     match ctx.peek_tok() {
         Token::Id(id) if ctx.peek_ahead(1).token.kind() == TokenKind::OParen => {
             let name_id = NameId::new(id);
@@ -881,15 +881,19 @@ fn parse_cond(ctx: &mut Context, interner: &Intern) -> Result<Expr, Token> {
             let func_span = Span::new(name_span.start, end);
 
             // let callee = Box::new(Expr::Var(name_id, name_span));
-            //
-            Ok(Expr::Call(Call::new(name_id, args), func_span))
+
+            let call = Expr::Call(Call::new(name_id, args));
+
+            let spanned_expr = SpannedExpr::new(call, func_span);
+            Ok(spanned_expr)
         }
         Token::Id(id) => {
             let span = ctx.advance_span();
 
             let name_id = NameId::new(id);
 
-            Ok(Expr::Var(name_id, span))
+            let spanned_expr = SpannedExpr::new(Expr::Var(name_id), span);
+            Ok(spanned_expr)
         }
         Token::Str(id) | Token::Integer(id, _) | Token::Float(id, _) | Token::Illegal(id) => {
             let err_tok = ctx.advance_tok();
@@ -929,8 +933,9 @@ fn parse_cond(ctx: &mut Context, interner: &Intern) -> Result<Expr, Token> {
 
             let unary = Unary::new(UnaryOp::Not, Box::new(wrapped));
 
+            let spanned_expr = SpannedExpr::new(Expr::Unary(unary), span);
             //WARN:
-            Ok(Expr::Unary(unary, span))
+            Ok(spanned_expr)
         }
         t => {
             ctx.advance_tok();
@@ -945,11 +950,11 @@ fn parse_cond(ctx: &mut Context, interner: &Intern) -> Result<Expr, Token> {
 
 //TODO: Should this be terminal?
 // Should this innately check for open parenthesis, or should that be handled at the call site?
-fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<Expr>, usize), Token> {
-    let mut args: Vec<Expr> = Vec::new();
+fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<SpannedExpr>, usize), Token> {
+    let mut args: Vec<SpannedExpr> = Vec::new();
 
     while ctx.peek_kind() != TokenKind::CParen {
-        let expr = match ctx.peek_tok() {
+        let spanned_expr = match ctx.peek_tok() {
             //TEST:
             Token::Id(id) if ctx.peek_ahead(1).token.kind() == TokenKind::Assign => {
                 let span = ctx.peek_span();
@@ -965,7 +970,7 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<Expr>, usize)
                             .parse()
                             .expect("Lexer broke (Integer)");
 
-                        Expr::Integer(num, span)
+                        SpannedExpr::new(Expr::Integer(num), span)
                     }
                     Token::Float(id, notation) => {
                         let span = ctx.advance_span();
@@ -974,15 +979,16 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<Expr>, usize)
                             .parse()
                             .expect("Lexer broke (Float).");
 
-                        Expr::Float(num, span)
+                        SpannedExpr::new(Expr::Float(num), span)
                     }
                     Token::Str(id) => {
                         let span = ctx.advance_span();
-                        Expr::Str(NameId::new(id), span)
+
+                        SpannedExpr::new(Expr::Str(NameId::new(id)), span)
                     }
                     Token::Id(id) | Token::Illegal(id) => {
                         let msg = format!(
-                            "Cannot have \"{}\" within function parameters",
+                            "Cannot have \"{}\" as a default function parameter",
                             interner.search(id as usize)
                         );
 
@@ -1014,15 +1020,20 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<Expr>, usize)
                     }
                 };
 
-                Expr::Default((name_id, span), Some(Box::new(default)))
+                let expr = Expr::Default(name_id, Box::new(default));
+                SpannedExpr::new(expr, span)
             }
             Token::Id(id) => {
                 let span = ctx.advance_span();
-                Expr::Var(NameId::new(id), span)
+                let name_id = NameId::new(id);
+
+                SpannedExpr::new(Expr::Var(name_id), span)
             }
             Token::Str(id) => {
                 let span = ctx.advance_span();
-                Expr::Str(NameId::new(id), span)
+                let name_id = NameId::new(id);
+
+                SpannedExpr::new(Expr::Str(name_id), span)
             }
             Token::Integer(id, _) => {
                 let span = ctx.advance_span();
@@ -1031,7 +1042,7 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<Expr>, usize)
                     .parse()
                     .expect("Lexer broke (Integer)");
 
-                Expr::Integer(num, span)
+                SpannedExpr::new(Expr::Integer(num), span)
             }
             Token::Float(id, _) => {
                 let span = ctx.advance_span();
@@ -1040,12 +1051,12 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<Expr>, usize)
                     .parse()
                     .expect("Lexer broke (Float).");
 
-                Expr::Float(num, span)
+                SpannedExpr::new(Expr::Float(num), span)
             }
             Token::Char(ch) => {
                 let span = ctx.advance_span();
 
-                Expr::Char(ch, span)
+                SpannedExpr::new(Expr::Char(ch), span)
             }
             Token::EOF => return Err(Token::Poison),
             t => {
@@ -1064,7 +1075,7 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<Expr>, usize)
             }
         };
 
-        args.push(expr);
+        args.push(spanned_expr);
 
         if ctx.peek_kind() == TokenKind::CParen {
             break;
@@ -1130,8 +1141,8 @@ fn parse_func_decl(ctx: &mut Context, interner: &Intern) -> Result<(Vec<TypeExpr
     Ok((args, end))
 }
 
-fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<Expr>, Token> {
-    let mut conds: Vec<Expr> = Vec::new();
+fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>, Token> {
+    let mut conds: Vec<SpannedExpr> = Vec::new();
     // This count cannot end the definition since it would prevent arguments from being viewed
     let mut err_count = 0;
 

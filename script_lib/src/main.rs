@@ -16,15 +16,13 @@ use script_lib::{
 fn main() {
     let start = Instant::now();
 
-    let path = PathBuf::from("./chrn_tests/main.chrn");
+    let path = PathBuf::from("../chrn_tests/main.chrn");
 
     let file = std::fs::File::open(&path).unwrap();
 
     let metadata = match ConfigLoader::new(&path, file).load_config() {
         Ok(meta) => meta,
-        Err(e) => {
-            // Why are all the errors for languages lowercase? Is there something I'm missing?
-            // GREP? Wait it might actually be grep.
+        Err(_) => {
             eprintln!("From path => {}\n", path.display());
             eprintln!("(Test) Exiting");
             std::process::exit(1);
@@ -35,7 +33,6 @@ fn main() {
 
     let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
-    // Table table = new Table.tableFactoryFactoryGen();
     let mut table = Table::new();
 
     let ast_info = parser::parse(&metadata, &toks, &mut interner);

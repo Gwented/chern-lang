@@ -4,7 +4,9 @@ use common::{
     symbols::{InnerArgs, SpannedInnerArgs},
 };
 
-use crate::parser::ast::{AbstractTypeDef, AbstractVariant, AstInfo, Expr, Item, TypeExpr};
+use crate::parser::ast::{
+    AbstractTypeDef, AbstractVariant, AstInfo, Expr, Item, SpannedExpr, TypeExpr,
+};
 
 //WARN: FOR SANITY PURPOSES
 pub fn print_all(program: &AstInfo, interner: &Intern) {
@@ -22,7 +24,7 @@ pub fn print_all(program: &AstInfo, interner: &Intern) {
             Item::Var(ty) => {
                 let name = interner.search(ty.name_id.id as usize);
                 println!("TypeDef {name} [");
-                print_type(&ty.ty, indent + 2, interner);
+                print_type(&ty.type_expr, indent + 2, interner);
 
                 print_exprs(&ty.conds, indent + 2, interner);
 
@@ -41,7 +43,7 @@ pub fn print_all(program: &AstInfo, interner: &Intern) {
 
                     println!("{temp_spaces}{name}");
 
-                    print_type(&ty.ty, temp_indent, interner);
+                    print_type(&ty.type_expr, temp_indent, interner);
 
                     print_exprs(&ty.conds, temp_indent, interner);
 
@@ -124,43 +126,43 @@ fn print_generic(args: &Vec<TypeExpr>, indent: usize, interner: &Intern) {
     }
 }
 
-fn print_exprs(conds: &Vec<Expr>, indent: usize, interner: &Intern) {
+fn print_exprs(conds: &Vec<SpannedExpr>, indent: usize, interner: &Intern) {
     let spaces = " ".repeat(indent);
 
     // They're unresolvedddddddddd THEY'RE UNRESOLVED
     // BUT I NEED TO KNOW
-    for expr in conds {
-        match expr {
-            Expr::Var(name_id, _) => {
+    for spanned_expr in conds {
+        match &spanned_expr.expr {
+            Expr::Var(name_id) => {
                 let name = interner.search(name_id.id as usize);
                 println!("{spaces}condition: {name}")
             }
-            Expr::Integer(num, _) => {
+            Expr::Integer(num) => {
                 println!("{spaces}number: {num}")
             }
-            Expr::Str(name_id, _) => {
+            Expr::Str(name_id) => {
                 let name = interner.search(name_id.id as usize);
                 println!("{spaces}{name}")
             }
-            Expr::Call(call, _) => {
+            Expr::Call(call) => {
                 let name = interner.search(call.name_id.id as usize);
                 println!("{spaces}{name} [");
 
-                print_exprs(&call.exprs, indent, interner);
+                print_exprs(&call.spanned_expr, indent, interner);
                 println!("{spaces}]")
             }
-            Expr::Unary(unary, _) => {
+            Expr::Unary(unary) => {
                 println!("{spaces}Unary [");
                 println!("{spaces}{:?}", unary.op);
 
-                if let Expr::Var(name_id, _) = *unary.expr {
+                if let Expr::Var(name_id) = *&unary.spanned_expr.expr {
                     let name = interner.search(name_id.id as usize);
                     println!("{spaces}{name}");
                 }
 
                 println!("{spaces}]");
             }
-            Expr::FieldAccess(field_access, _) => {
+            Expr::FieldAccess(field_access) => {
                 println!("{spaces}FieldAccess [");
                 let field_name = interner.search(field_access.field.id as usize);
 
@@ -169,14 +171,14 @@ fn print_exprs(conds: &Vec<Expr>, indent: usize, interner: &Intern) {
 
                 println!("{spaces}]");
             }
-            Expr::Float(num, span) => {
+            Expr::Float(num) => {
                 println!("{spaces}float: {num}");
             }
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),
-            Expr::Char(ch, _) => {
+            Expr::Char(ch) => {
                 println!("{spaces}Char [{ch}");
             }
-            Expr::Default((name_id, span), _) => {
+            Expr::Default(name_id, _) => {
                 println!("{spaces}Default [");
 
                 let name = interner.search(name_id.id as usize);
