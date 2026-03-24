@@ -1,6 +1,8 @@
 // Misleading...
 pub mod builtins;
+pub mod color;
 pub mod config_loader;
+pub mod core_error;
 pub mod fmter;
 pub mod intern;
 pub mod keywords;

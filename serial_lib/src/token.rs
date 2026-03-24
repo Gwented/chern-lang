@@ -13,8 +13,6 @@ pub(crate) enum Notation {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Token {
-    // If id wasn't found in interner that scripter used, then should be stop the serial later on
-    // from cache checks
     Id(u32),
     Str(u32),
     Integer(u32, Notation),

@@ -6,7 +6,7 @@ use common::{
     intern::Intern,
     keywords::{self, Keyword},
     metadata::FileMetadata,
-    symbols::{AstId, Cond, FuncId, InnerArgs, Span, SpannedInnerArgs, SymbolId, TypeId},
+    symbols::{AstId, FuncId, InnerArgs, Span, SpannedInnerArgs, SymbolId, TypeId},
 };
 
 use crate::{
@@ -20,6 +20,7 @@ use crate::{
         },
         semantic_reporter::SemanticReporter,
     },
+    types::symbols::Cond,
 };
 
 pub struct ConstraintResolver<'a> {
@@ -107,6 +108,10 @@ impl ConstraintResolver<'_> {
 
         for expr in &abs_typedef.conds {
             conds.push(self.resolve_cond(expr, ast_id)?);
+        }
+
+        for cond in &conds {
+            self.check_cond_constraints(type_id, cond);
         }
 
         let type_def = &mut self.table.get_typedef_mut(sym_id);
@@ -506,24 +511,25 @@ impl ConstraintResolver<'_> {
     }
 
     /// Returns a success if all conditions align with the type of the given `type_id`
-    fn resolve_cond_constraints(
-        &self,
-        type_id: TypeId,
-        conds: &Vec<Cond>,
-    ) -> Result<(), SemanticError> {
+    fn check_cond_constraints(&self, type_id: TypeId, cond: &Cond) -> Result<(), SemanticError> {
         match &self.table.types[type_id.id as usize] {
-            Type::Struct(sym_id) => todo!(),
-
-            Type::Enum(enum_id) => todo!(),
-            Type::Func(func_id) => todo!(),
-            Type::BuiltinType(ty) => {
-                // let kind = &self.table.builtin_types[builtin_type_id.id as usize];
+            // The issue is that functions are not easily resolvable because then, I need to
+            // reparse conditions,
+            Type::BuiltinType(builtin_type) => {
                 todo!();
             }
+            Type::Struct(sym_id) => todo!(),
+            Type::Enum(enum_id) => todo!(),
+            Type::Func(func_id) => {
+                let func = self.table.get_func(*func_id);
+                cond.supports_func(func.kind);
+            }
             Type::Alias(sym_id) => todo!(),
-            Type::Unknown => unimplemented!("No `Unknown` behavior"),
             Type::Tuple(type_ids) => todo!(),
+            Type::Unknown => unimplemented!("No `Unknown` behavior"),
         }
+
+        Ok(())
     }
 
     /// Returns a success if all constraints within the given function align with the function's

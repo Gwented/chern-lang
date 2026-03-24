@@ -1,4 +1,4 @@
-use common::{intern::Intern, keywords, metadata::FileMetadata, reporter, symbols::Span};
+use common::{color, intern::Intern, keywords, metadata::FileMetadata, reporter, symbols::Span};
 
 use crate::{
     algo,
@@ -24,8 +24,7 @@ const C_BRANCH_VAR_SET: u64 = C_BASE_EXIT_SET;
 const A_BRANCH_VAR_SET: u64 = A_BASE_EXIT_SET | token::COLON;
 
 // WARN: NestType should probably be responsible for C_CURLY but maybe not
-const C_BRANCH_VAR_TYPE_SET: u64 =
-    C_BASE_EXIT_SET | token::O_BRACKET | token::HASH_SYMBOL | token::C_CURLY_BRACKET;
+const C_BRANCH_VAR_TYPE_SET: u64 = C_BASE_EXIT_SET | token::O_BRACKET | token::HASH_SYMBOL;
 
 const A_BRANCH_VAR_TYPE_SET: u64 = A_BASE_EXIT_SET | token::COLON;
 
@@ -35,11 +34,6 @@ const A_BRANCH_VAR_COND_SET: u64 = A_BASE_EXIT_SET | token::COLON;
 
 const C_BRANCH_VAR_ARGS_SET: u64 = C_BASE_EXIT_SET | token::HASH_SYMBOL | token::C_CURLY_BRACKET;
 const A_BRANCH_VAR_ARGS_SET: u64 = A_BASE_EXIT_SET | token::COLON;
-
-// TODO: Needs heavy tuning
-const C_BRANCH_NEST_SET: u64 = C_BASE_EXIT_SET;
-
-const C_BRANCH_NEST_TYPE: u64 = C_BASE_EXIT_SET | token::C_CURLY_BRACKET;
 
 //TODO: Find out what tuning works best for these if they are going to stay.
 const C_BRANCH_VAR_FUNC_SET: u64 = C_BASE_EXIT_SET | token::C_PAREN;
@@ -268,10 +262,10 @@ impl<'a> Context<'a> {
             Branch::Cond => (C_BRANCH_VAR_COND_SET, A_BRANCH_VAR_COND_SET),
             Branch::VarFuncArgs => (C_BRANCH_VAR_FUNC_SET, A_BRANCH_VAR_FUNC_SET),
             Branch::VarTypeArgs => (C_BRANCH_VAR_ARGS_SET, A_BRANCH_VAR_ARGS_SET),
+            Branch::Nest => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             //TODO: Tune these sets
-            Branch::Nest => (C_BRANCH_NEST_SET, A_BASE_EXIT_SET),
-            Branch::NestType => (C_BRANCH_NEST_TYPE, A_BASE_EXIT_SET),
-            Branch::NestEnum => (C_BRANCH_NEST_TYPE, A_BASE_EXIT_SET),
+            Branch::NestType => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
+            Branch::NestEnum => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Complex => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Override => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
         }
@@ -313,6 +307,11 @@ impl<'a> Context<'a> {
             Branch::Searching => match found.token {
                 Token::Id(id) | Token::Illegal(id) => {
                     let found_bytes = interner.search(id as usize).as_bytes();
+
+                    // If it's already a valid section name then it won't send false help
+                    if keywords::sect_range().contains(&(id as usize)) {
+                        return None;
+                    };
 
                     let similar_sect = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect)?;
 
@@ -401,11 +400,9 @@ impl<'a> Context<'a> {
 
     //NOTE: Unsure if this needs to be centralized or if that's doing too much here
     pub(super) fn emit_errors(&self) {
-        let header_err = if self.metadata.can_color {
-            format!("{}error{}", reporter::RED, reporter::NC)
-        } else {
-            format!("error")
-        };
+        let (red, nc) = color::get_red(self.metadata.can_color);
+
+        let header_err = format!("{red}error{nc}");
 
         println!("From path => {}", self.metadata.path.display());
 

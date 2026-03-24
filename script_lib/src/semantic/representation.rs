@@ -6,12 +6,12 @@ use common::{
     builtins::{BuiltinType, BuiltinTypeKind},
     keywords,
     symbols::{
-        AstId, BuiltinTypeId, Cond, EnumId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs,
-        StructId, SymbolId, TypeDefId, TypeId,
+        AstId, BuiltinTypeId, EnumId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs, StructId,
+        SymbolId, TypeDefId, TypeId,
     },
 };
 
-use crate::semantic::constraints::ArgConstraint;
+use crate::{semantic::constraints::ArgConstraint, types::symbols::Cond};
 
 // What is a drop? I am new to thinking i have never thought before what is RAII
 // is that a gui framework
@@ -278,8 +278,9 @@ impl TypeDefRepre {
 }
 
 #[derive(Debug)]
-pub(super) struct FuncRepre {
+pub(crate) struct FuncRepre {
     pub(super) name_id: NameId,
+    // Type reference to it's own position in the `Type` array
     pub(super) type_id: TypeId,
     pub(super) call_span: Span,
     pub(super) kind: FuncKind,
@@ -425,7 +426,7 @@ pub(super) struct AliasRepre {
 // }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum FuncKind {
+pub(crate) enum FuncKind {
     Contains,
     Range,
     StartsW,

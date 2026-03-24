@@ -1,7 +1,7 @@
 use std::io::IsTerminal;
 
 use common::{
-    keywords,
+    color, keywords,
     metadata::FileMetadata,
     reporter,
     symbols::{Span, TypeId},
@@ -114,11 +114,9 @@ impl SemanticReporter<'_> {
     }
 
     pub(super) fn emit_errors(&self) {
-        let header_err = if self.metadata.can_color {
-            format!("{}error{}", reporter::RED, reporter::NC)
-        } else {
-            format!("error")
-        };
+        let (red, nc) = color::get_red(self.metadata.can_color);
+
+        let header_err = format!("{red}error{nc}");
 
         //NOTE: Maybe this should be printed everytime since there could be many prior errors.
 

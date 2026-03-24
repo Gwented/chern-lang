@@ -11,7 +11,6 @@ fn main() {
 
     // Just so the offset can be gotten
     let metadata = ConfigLoader::new(&path, &file).load_config().unwrap();
-    dbg!(metadata.serial_start);
 
     let lexer = Lexer::new(&metadata.src_bytes, metadata.serial_start.unwrap()).tokenize();
 }

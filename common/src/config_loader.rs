@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::metadata::FileMetadata;
+use crate::{core_error::ConfigLoadError, metadata::FileMetadata};
 
 // TEST: Ignore this
 const DEFINITION_SIZE: usize = 4;
@@ -34,19 +34,16 @@ impl<R: Read> ConfigLoader<'_, R> {
 
     /// Returns a Success value of the bytes to Lex, the offset of where to start lexing if an
     /// `@def` is present, and the offset of where to start reading the serialized data if an
-    /// `@def` is present. Returns a String upon failure that has the error reason inside.
-    pub fn load_config(&mut self) -> Result<FileMetadata, String> {
+    /// `@def` and `@end` is present. Returns a `ConfigLoadError` upon failure that has internal
+    /// error details.
+    pub fn load_config(&mut self) -> Result<FileMetadata, ConfigLoadError> {
         // Doesn't NEED definition but will error if declared and not closed
         let mut requires_end = false;
         let mut saw_quotes = false;
 
         let mut lex_start = 0;
 
-        self.handle.fill_buf().or_else(|e| {
-            Err(format!(
-                "internal error: Failed to fill buffer to read configuration file\n{e}"
-            ))
-        })?;
+        self.handle.fill_buf()?;
 
         while let Some(b) = self.peek() {
             if b == b'\0' {
@@ -74,7 +71,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                             start_line, note
                         );
 
-                        return Err(msg);
+                        return Err(ConfigLoadError::UnclosedQuotes(msg));
                     }
 
                     saw_quotes = true;
@@ -144,11 +141,12 @@ impl<R: Read> ConfigLoader<'_, R> {
             ))
         } else {
             let msg = format!(
-                "Could not find `@end` after `@def` from path \"{}\"",
-                self.path.display()
+                "Could not find `@end` after `@def` from path \"{}\" after reading {} line(s)",
+                self.path.display(),
+                self.lines_read
             );
 
-            Err(msg)
+            Err(ConfigLoadError::UnclosedDef(msg))
         }
     }
 
@@ -191,7 +189,7 @@ impl<R: Read> ConfigLoader<'_, R> {
         }
     }
 
-    fn handle_multi_comment(&mut self) -> Result<(), String> {
+    fn handle_multi_comment(&mut self) -> Result<(), ConfigLoadError> {
         let mut depth = 1;
         let comment_start = self.lines_read;
 
@@ -215,10 +213,12 @@ impl<R: Read> ConfigLoader<'_, R> {
         }
 
         if depth > 0 {
-            return Err(format!(
+            let msg = format!(
                 "Found unclosed multi-line comment in configuration file which started at line {}",
                 comment_start
-            ));
+            );
+
+            return Err(ConfigLoadError::UnclosedQuotes(msg));
         }
 
         Ok(())

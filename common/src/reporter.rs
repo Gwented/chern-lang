@@ -1,11 +1,6 @@
 use unicode_width::UnicodeWidthChar;
 
-use crate::symbols::Span;
-
-pub const RED: &str = "\x1b[31m";
-pub const GREEN: &str = "\x1b[32m";
-pub const ORANGE: &str = "\x1b[33m";
-pub const NC: &str = "\x1b[0m";
+use crate::{color, symbols::Span};
 
 const TOTAL_SEPARATORS: usize = 60;
 
@@ -122,10 +117,12 @@ pub fn standardize_err(base_msg: &str, line_data: &LineData, help: &str) -> Stri
 }
 
 pub fn standardize_help(msg: &str, can_color: bool) -> String {
+    let (orange, nc) = color::get_orange(can_color);
+
     if can_color {
-        format!("\n{ORANGE}help{NC}: {msg}\n")
+        format!("{orange}help{nc}: {msg}\n")
     } else {
-        format!("\nhelp: {msg}\n")
+        format!("help: {msg}\n")
     }
 }
 
@@ -208,7 +205,7 @@ fn format_line(
     can_color: bool,
 ) -> String {
     let bar_spacing = " ".repeat(ln_width);
-    let (color, nc) = if can_color { (RED, NC) } else { ("", "") };
+    let (red, nc) = color::get_red(can_color);
 
     let mut arrow_line = String::new();
     let mut last_end = 0;
@@ -217,7 +214,7 @@ fn format_line(
         let adj_end = if end + 1 > ln_str.len() { end } else { end + 1 };
 
         arrow_line.push_str(&" ".repeat(char_width_offset(ln_str, last_end, start)));
-        arrow_line.push_str(color);
+        arrow_line.push_str(red);
 
         arrow_line.push_str(&"^".repeat(char_width_offset(ln_str, start, adj_end)));
         arrow_line.push_str(nc);

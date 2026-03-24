@@ -566,7 +566,6 @@ impl Lexer<'_> {
                     }
                 }
                 b'\'' => {
-                    //TODO: Maybe make this default for all quotes since it prevents - 1
                     self.advance();
                     break;
                 }

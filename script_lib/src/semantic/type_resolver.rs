@@ -6,8 +6,8 @@ use common::{
     keywords::{self, Keyword},
     metadata::FileMetadata,
     symbols::{
-        AstId, BuiltinTypeId, Cond, EnumId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs,
-        StructId, SymbolId, TypeDefId, TypeId,
+        AstId, BuiltinTypeId, EnumId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs, StructId,
+        SymbolId, TypeDefId, TypeId,
     },
 };
 

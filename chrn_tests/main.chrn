@@ -2,17 +2,17 @@
 // Add negatives
 // Functions probably shouldn't be similarity checked with conditions
 // name: str [Contains, Contains("Hi", "h")]
-// Ability to ignore everything related to crashing upon any errors at all
+// Registering keywords would make error messages 9 trillion times more accurate
 
 // Maybe enums should just abide by normal syntax
 
 @def
 
-@
- 
-@def
+var->
+    integer: i32 [IsWhitespace]
+@end
+// Add branches to help parser more
 
-// Some form of node cache?
 var->
     program_id: u32
     metadata: Metadata
@@ -24,7 +24,7 @@ nest->
         lex_start: unsized
         serial_start: unsized
         can_color: bool
-    } #ignore
+    } #warn #ignore
 
     enum State {
         Ready(str),

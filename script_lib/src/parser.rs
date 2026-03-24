@@ -378,8 +378,6 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
 
     let err_name = interner.search(plain_id as usize);
 
-    dbg!(ctx.peek_tok());
-
     ctx.expect_verbose(
         TokenKind::Colon,
         &format!("Expected a ':' after identifier \"{err_name}\" to declare a type, found "),
@@ -450,7 +448,7 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
-                &format!("Expected a '{{' to define struct \"{struct_name}\", found"),
+                &format!("Expected a '{{' to define struct \"{struct_name}\", found "),
                 "",
                 Branch::Nest,
                 interner,
@@ -724,13 +722,13 @@ fn handle_struct_fields(
         }
     }
 
-    _ = ctx.expect_verbose(
+    ctx.expect_verbose(
         TokenKind::CCurlyBracket,
         &format!("Expected a '}}' to close struct \"{struct_name}\", found "),
         "",
         Branch::NestType,
         interner,
-    );
+    )?;
 
     Ok(fields)
 }
@@ -765,13 +763,13 @@ fn handle_enum_variants(
         // )?;
     }
 
-    _ = ctx.expect_verbose(
+    ctx.expect_verbose(
         TokenKind::CCurlyBracket,
         &format!("Expected a '}}' to close enum \"{enum_name}\", found "),
         "",
         Branch::NestEnum,
         interner,
-    );
+    )?;
 
     Ok(variants)
 }

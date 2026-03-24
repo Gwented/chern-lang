@@ -1,2 +1,2 @@
-pub mod symbols;
-pub mod token;
+pub(crate) mod symbols;
+pub(crate) mod token;

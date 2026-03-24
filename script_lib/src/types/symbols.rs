@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 
 use common::{
-    builtins::BuiltinType,
+    builtins::{BuiltinType, BuiltinTypeKind},
+    keywords::Keyword,
     symbols::{
-        BuiltinTypeId, Cond, EnumId, FuncId, InnerArgs, NameId, Span, StructId, SymbolId,
-        TypeDefId, TypeId,
+        BuiltinTypeId, EnumId, FuncId, InnerArgs, NameId, Span, StructId, SymbolId, TypeDefId,
+        TypeId,
     },
 };
 
-use crate::types::token::Token;
+use crate::{semantic::representation::FuncKind, types::token::Token};
 
 //WARN: THERE ARE MANY WAYS OF DOING THIS SO I AM JUST CHOOSING THIS FOR NOW I AM VERY CONFUSED
 //MAY REMOVE
@@ -288,4 +289,56 @@ pub enum FuncArgs {
     Id(SymbolId),
     Literal(SymbolId),
     Num(usize),
+}
+
+#[derive(Debug, Clone)]
+pub enum Cond {
+    //FIX:
+    Func(SymbolId),
+    IsEmpty,
+    IsWhitespace,
+    Not(Box<Cond>),
+}
+
+// I'm actually fine with this.
+impl Cond {
+    /// Only returns a condition if it is solely a keyword, excluding any functional
+    /// conditions.
+    // This is really really really really smelly
+    pub fn try_from_id(id: u32) -> Option<Cond> {
+        match Keyword::try_as_kw(id) {
+            Some(kw) => match kw {
+                Keyword::IsEmpty => Some(Cond::IsEmpty),
+                Keyword::IsWhitespace => Some(Cond::IsWhitespace),
+                _ => None,
+            },
+            None => None,
+        }
+    }
+
+    pub fn try_from_kw(kw: Keyword) -> Option<Cond> {
+        match kw {
+            Keyword::IsEmpty => Some(Cond::IsEmpty),
+            Keyword::IsWhitespace => Some(Cond::IsWhitespace),
+            _ => None,
+        }
+    }
+
+    pub fn supports_builtin_type(&self, kind: BuiltinTypeKind) -> bool {
+        match self {
+            Cond::IsEmpty => true,
+            Cond::IsWhitespace => todo!(),
+            Cond::Not(cond) => todo!(),
+            Cond::Func(_) => unreachable!(),
+        }
+    }
+
+    pub fn supports_func(&self, kind: FuncKind) -> bool {
+        match self {
+            Cond::IsEmpty => todo!(),
+            Cond::IsWhitespace => todo!(),
+            Cond::Not(cond) => todo!(),
+            Cond::Func(_) => unreachable!(),
+        }
+    }
 }

@@ -11,8 +11,11 @@ pub(crate) enum Notation {
     Hex = 16,
 }
 
+// WHAT
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Token {
+    // To help with error messages
+    // Keyword(Keyword),
     Id(u32),
     Str(u32),
     Integer(u32, Notation),
@@ -52,7 +55,7 @@ pub(crate) enum Token {
 }
 
 impl Token {
-    pub fn kind(&self) -> TokenKind {
+    pub(crate) fn kind(&self) -> TokenKind {
         match self {
             Token::Id(_) => TokenKind::Id,
             Token::Str(_) => TokenKind::Literal,
@@ -93,7 +96,7 @@ impl Token {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum TokenKind {
+pub(crate) enum TokenKind {
     Id,
     Literal,
     Integer,
@@ -212,7 +215,7 @@ pub const EOF: u64 = 1 << 33;
 
 //FIX: PLEASE ASSERT THIS THING
 impl TokenKind {
-    pub fn to_u64(&self) -> u64 {
+    pub(crate) fn to_u64(&self) -> u64 {
         // Ignore this...
         match self {
             TokenKind::Id => ID,

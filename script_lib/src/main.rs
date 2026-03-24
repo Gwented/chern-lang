@@ -26,7 +26,7 @@ fn main() {
             // Why are all the errors for languages lowercase? Is there something I'm missing?
             // GREP? Wait it might actually be grep.
             eprintln!("From path => {}\n", path.display());
-            eprintln!("error: {e}\nexiting...");
+            eprintln!("(Test) Exiting");
             std::process::exit(1);
         }
     };
