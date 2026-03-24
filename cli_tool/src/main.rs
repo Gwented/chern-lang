@@ -13,7 +13,7 @@ fn main() {
     match dispatcher::exec(&cli, &cli_cfg) {
         Ok(msg) => {
             let (green, nc) = color::get_green(cli_cfg.can_color);
-            println!("{green}success{nc}: {msg}");
+            println!("{green}complete{nc}: {msg}");
         }
         Err(emsg) => {
             let (red, nc) = color::get_red(cli_cfg.can_color);
