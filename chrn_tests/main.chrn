@@ -1,16 +1,16 @@
-
-bind "./hi"
-
-Hello "You"
-
-
-Quotes "
-    enzo enzoe zneoenozeneoz
-
-
-
-@end
-
 "
 
+bind Floor"
+
+alias default() = [Contains("che"), Equals(5)] #warn
+
+var->
+    ptr: u8
+    len: unsized
+    capacity: unsized
+    let x: i32 = "Suspiciously placed quotes"
+    x: i32 = Suspiciously placed quotes"
 "
+"
+
+// Have literals being printed shown have their new lines replaced with spaces

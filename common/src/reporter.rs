@@ -1,4 +1,5 @@
 use unicode_width::UnicodeWidthChar;
+//BUG: Does not correctly process multi-line spans given span.start & span.end expand past one line
 
 use crate::{color, symbols::Span};
 
