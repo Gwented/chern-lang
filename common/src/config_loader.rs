@@ -9,7 +9,6 @@ use crate::{core_error::ConfigLoadError, metadata::ChernMetadata, reporter, symb
 
 // TEST: Ignore this
 const DEFINITION_SIZE: usize = 4;
-const MAX_READ: usize = 1_000_000;
 
 const READ_LIMIT_OFFSET: usize = 500;
 
@@ -83,7 +82,7 @@ impl<R: Read> FileLoader<'_, R> {
                         let msg = format!("Found unclosed quotes which reached <eof>{}", note);
 
                         let spans = if quotes_seen > 1 {
-                            let start = first_quote.expect("Already > 1");
+                            let start = first_quote.expect("Proven to be > 1");
 
                             let end = if self.pos + READ_LIMIT_OFFSET < self.handle.buffer().len() {
                                 self.pos + READ_LIMIT_OFFSET
@@ -93,27 +92,15 @@ impl<R: Read> FileLoader<'_, R> {
 
                             let search_range = start..end;
 
-                            dbg!(self.handle.buffer()[first_quote.unwrap()] as char);
-
                             self.quote_start_probability(quote_type as char, search_range)
                         } else {
                             [Span::new(quote_start, quote_start)].to_vec()
                         };
-                        // dbg!(&spans);
-                        //
-                        // dbg!(self.handle.buffer().len());
-                        //
-                        // dbg!(str::from_utf8(
-                        //     &self.handle.buffer()[spans[0].start..spans[0].end]
-                        // ));
 
                         let ln_data = reporter::form_err_diag(self.handle.buffer(), &spans, false);
                         let err_msg = reporter::standardize_err(&msg, &ln_data, "");
 
-                        println!("{}", err_msg);
-                        panic!("Pancicck");
-
-                        return Err(ConfigLoadError::UnclosedQuotes(msg));
+                        return Err(ConfigLoadError::UnclosedQuotes(err_msg));
                     }
 
                     if quotes_seen == 1 {
@@ -209,10 +196,6 @@ impl<R: Read> FileLoader<'_, R> {
         while let Some(b) = self.peek() {
             read_bytes += 1;
 
-            if read_bytes == MAX_READ {
-                return Err(());
-            }
-
             match b {
                 b'\\' => {
                     self.skip(2);
@@ -298,17 +281,19 @@ impl<R: Read> FileLoader<'_, R> {
         self.handle.buffer().get(self.pos).copied()
     }
 
-    //TOOO: Could just be a function but can stay in self for now
-    //WARN: Put this somewhere else
+    //TEST:
+    //This was just MOSTLY for the sake of testing making some form of probability model for future
+    //reference.
+
+    // This experiment one shotted me. This will be a core port of error reporting
     fn quote_start_probability(&self, q_type: char, search_range: Range<usize>) -> Vec<Span> {
         let mut q_graph = QuoteGraph::new();
-
-        // Current score's position saved
 
         let mut state = State::SearchingForQuotes;
 
         // How many characters were seen before the next quote
-        let src_str = str::from_utf8(self.handle.buffer()).unwrap();
+        // WARN: Not handled cleanly as of right now
+        let src_str = str::from_utf8(self.handle.buffer()).expect("Invalid UTF-8 within file");
 
         //WARN: REMOVE CLONE WHEN DONE
         for (i, ch) in src_str.chars().enumerate() {
@@ -316,7 +301,6 @@ impl<R: Read> FileLoader<'_, R> {
                 State::SearchingForQuotes => {
                     if ch == q_type {
                         q_graph.next_node(i);
-
                         state = State::InQuotes;
                     }
                 }
@@ -344,28 +328,11 @@ impl<R: Read> FileLoader<'_, R> {
             }
         }
 
-        // dbg!(&q_scores[res_idx]);
-
         let highest_q = &q_graph.q_nodes[res_idx];
         let start = highest_q.start_pos + search_range.start;
 
         // Um
         let end = highest_q.end_pos.unwrap_or(highest_q.start_pos) + search_range.start;
-
-        // dbg!(
-        //     &src_str[search_range.start + highest_q.start_pos
-        //         ..=search_range.start + highest_q.end_pos.unwrap()]
-        // );
-
-        // dbg!(&src_str[end..end + 2]);
-
-        // panic!();
-        dbg!(&src_str[start..=end]);
-
-        // dbg!(highest_q.start_pos, highest_q.end_pos);
-
-        dbg!(&q_graph.q_nodes);
-        dbg!(&highest_q);
 
         //FIX:
         let first = Span::new(start, start);
@@ -396,8 +363,8 @@ struct QuoteGraph {
 
 impl QuoteGraph {
     fn new() -> QuoteGraph {
-        // alphanum, \n, everything else, @def
-        let weights = [0.20, 0.6, 0.10, 0.6];
+        // alphanum, \n, /, everything else, @def
+        let weights = [0.20, 0.10, 0.6, 0.10];
 
         QuoteGraph {
             current_idx: 0,
@@ -420,8 +387,6 @@ impl QuoteGraph {
 
         let start_pos = q_node.start_pos as f32;
 
-        // dbg!((-(2.0f32.ln()) * start_pos).exp());
-
         // Weight of tokens overall
         let w_tok = 0.7;
         // Weight of positioning
@@ -431,24 +396,20 @@ impl QuoteGraph {
 
         // Exponential decrease of positional bias as the starting position increases
         let pos_sig = (-(2.0f32.ln()) * (start_pos)).exp();
-        dbg!(pos_sig);
 
         let q_node = &mut self.q_nodes[self.current_idx];
 
-        println!("Before q_node: {}", q_node.score);
         q_node.score += ((w_tok * tok_sig) + (w_pos * pos_sig)) * q_node.rate;
-        println!("After q_node: {}", q_node.score);
-        // panic!();
 
         q_node.ctx_toks.push(current_ch);
     }
 
+    // This is compensation for there being no built context window
     /// Evaluates a singular node
     fn eval(&mut self) {
         let q_node = &mut self.q_nodes[self.current_idx];
 
         let end_pos = q_node.start_pos + q_node.ctx_toks.len() + 1;
-        dbg!(q_node.ctx_toks.len());
         q_node.end_pos = Some(end_pos);
 
         let mut i = 0;
@@ -462,24 +423,20 @@ impl QuoteGraph {
             if (ch == '@' && i + DEFINITION_SIZE < q_node.ctx_toks.len())
                 && q_node.ctx_toks[i..i + DEFINITION_SIZE] == ['@', 'd', 'e', 'f']
             {
-                println!("before def: {}", q_node.concern);
-                q_node.concern *= q_node.score;
-                println!("after def: {}", q_node.concern);
+                q_node.concern /= q_node.score * w_def;
                 i += DEFINITION_SIZE;
             } else if (ch == '@' && i + DEFINITION_SIZE < q_node.ctx_toks.len())
                 && q_node.ctx_toks[i..i + DEFINITION_SIZE] == ['@', 'e', 'n', 'd']
             {
-                println!("before end: {}", q_node.concern);
-                q_node.concern *= q_node.score;
+                q_node.concern /= q_node.score * w_end;
                 i += DEFINITION_SIZE;
-                println!("after end: {}", q_node.concern);
             }
 
             i += 1;
         }
     }
 
-    /// Evaluating all nodes
+    /// Evaluates all nodes
     // Suspicious name
     fn final_eval(&mut self) {
         let score_sum: f32 = self.q_nodes.iter().map(|n| n.score).sum();
@@ -500,28 +457,20 @@ impl QuoteGraph {
 
         let action = self.choose_action(score_probs[max_score_idx], concern_probs[max_concern_idx]);
 
-        dbg!(&self.q_nodes.len());
-
-        //WARN: This is always safe due to q_node needing to be at least 2 for quote probs to start
+        //NOTE: This is always safe due to q_node needing to be at least 2 for quote probs to start
         if action == CUT && max_concern_idx + 1 < self.q_nodes.len() {
             self.q_nodes.truncate(max_concern_idx + 1);
         }
-
-        dbg!(&self.q_nodes.len());
-
-        // dbg!(&self.q_nodes);
-        dbg!(score_probs);
-        // panic!("Probing");
     }
 
     // Proceeds with operations normally or cuts off quotes to basically say, the rest of the
     // probabilities are likely not to be the end quote
-    fn choose_action(&self, cut: f32, proceed: f32) -> u8 {
-        let cut = (cut * proceed) / proceed;
-        dbg!(proceed, cut);
-        dbg!(cut - proceed);
 
-        if cut > proceed { CUT } else { PROCEED }
+    //WARN: Currently does not use this correctly
+    fn choose_action(&self, proceed: f32, cut: f32) -> u8 {
+        let cut = (cut * proceed) / proceed;
+
+        if cut > 0.18 { CUT } else { PROCEED }
     }
 }
 
@@ -549,6 +498,7 @@ impl QuoteNode {
     }
 }
 
+/// Assumes there is at least one element present
 fn argmax(args: &Vec<f32>) -> usize {
     let mut max_idx = 0;
     // Cannot be < 1
@@ -568,6 +518,7 @@ fn translate_tok(ch: char) -> usize {
     match ch {
         c if c.is_alphanumeric() => 0,
         '\n' => 1,
-        _ => 2,
+        '/' => 2,
+        _ => 3,
     }
 }

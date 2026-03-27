@@ -28,9 +28,7 @@ char, bool, (maybe capital) str, struct, enum, tuple, nil, BigInt, BigFloat, Lis
 
 ## Keywords
 // TODO:
-// ME 💀💀💀💀💀
-`me`: Refers to current serialized data being looked at
-// I can't take this seriously
+`self`: Refers to current serialized data being looked at
 
 `struct` for a structure of data.
 `enum` for an Enum type which can also hold data.

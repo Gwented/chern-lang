@@ -16,8 +16,6 @@ struct LineSpan<'a> {
     span: &'a Span,
 }
 
-//NOTE: MOST OF THIS WAS INDUCTIVE, MAKE SURE THIS DOES NOT BREAK.
-
 // Ability to choose color when help exists in a better form
 /// Returns line, column and red arrows under given spans, with the rest of the line also shown.
 pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineData {

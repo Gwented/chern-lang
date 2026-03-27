@@ -4,6 +4,7 @@ pub mod color;
 pub mod config_loader;
 pub mod core_error;
 pub mod fmter;
+pub mod help_model;
 pub mod intern;
 pub mod keywords;
 pub mod metadata;
@@ -51,6 +52,7 @@ pub mod tests {
         assert_eq!("Map", interner.search(Keyword::Map as usize));
         assert_eq!("Set", interner.search(Keyword::Set as usize));
         // Structures
+        assert_eq!("self", interner.search(Keyword::Self_ as usize));
         assert_eq!("struct", interner.search(Keyword::Struct as usize));
         assert_eq!("enum", interner.search(Keyword::Enum as usize));
         // Directives
@@ -76,6 +78,8 @@ pub mod tests {
         assert_eq!("StartsW", interner.search(Keyword::StartsW as usize));
         assert_eq!("EndsW", interner.search(Keyword::EndsW as usize));
         assert_eq!("Contains", interner.search(Keyword::Contains as usize));
+        // This COULD use self == thing theoretically but not sure right now
+        assert_eq!("Equals", interner.search(Keyword::Equals as usize));
 
         // Index alignment test
         for (i, kw_str) in keywords::KEYWORDS_ARRAY.iter().enumerate() {
@@ -96,6 +100,6 @@ pub mod tests {
         );
 
         // This is to force me to check even if it was done correctly
-        assert_eq!(keywords::KEYWORDS_ARRAY.len(), 42);
+        assert_eq!(keywords::KEYWORDS_ARRAY.len(), 44);
     }
 }

@@ -1,6 +1,7 @@
-"
+// Show the @def span
+@def
 
-bind Floor"
+bind "Floor""
 
 alias default() = [Contains("che"), Equals(5)] #warn
 
@@ -10,7 +11,11 @@ var->
     capacity: unsized
     let x: i32 = "Suspiciously placed quotes"
     x: i32 = Suspiciously placed quotes"
-"
-"
+
+@end
 
 // Have literals being printed shown have their new lines replaced with spaces
+
+// self seems a bit redundant outside of cases that self should be explicitly referred to since
+// conditions can ONLY be looking AT self.
+a: A [Equals(4), self == 4]

@@ -7,7 +7,7 @@ use std::ops::RangeInclusive;
 // Ensure tests are aligned
 
 //
-pub static KEYWORDS_ARRAY: [&str; 42] = [
+pub static KEYWORDS_ARRAY: [&str; 44] = [
     // primitives
     "i8", // 0
     "u8",
@@ -34,29 +34,32 @@ pub static KEYWORDS_ARRAY: [&str; 42] = [
     "List",
     "Map",
     "Set", // 24
+    // Not sure if this should be a different category but can just in structure
+    "self",
     // structures
-    "struct",
-    "enum", // 26
+    "struct", // 26
+    "enum",
     // Directives?
-    "import",
+    "import", // 28
     "export",
     // Statements
-    "bind",
-    "alias", // 30
-    "const",
+    "bind", // 30
+    "alias",
+    "const", // 32
     // Section names
-    "var", // 32
-    "nest",
-    "complex", // 34
-    "override",
+    "var",
+    "nest", // 34
+    "complex",
+    "override", // 36
     // Predicate keywords
-    "IsEmpty", // 36
-    "IsWhitespace",
+    "IsEmpty",
+    "IsWhitespace", // 38
     // Predicates (Function)
-    "Range", // 38
-    "StartsW",
-    "EndsW", // 40
-    "Contains",
+    "Range",
+    "StartsW", // 40
+    "EndsW",
+    "Contains", // 42
+    "Equals",
 ];
 // "Nat" // 37
 // "Real" // 38
@@ -93,23 +96,25 @@ pub enum Keyword {
     List = 22,
     Map = 23,
     Set = 24,
-    Struct = 25,
-    Enum = 26,
-    Import = 27,
-    Export = 28,
-    Bind = 29,
-    Alias = 30,
-    Const = 31,
-    Var = 32,
-    Nest = 33,
-    Complex = 34,
-    Override = 35,
-    IsEmpty = 36,
-    IsWhitespace = 37,
-    Range = 38,
-    StartsW = 39,
-    EndsW = 40,
-    Contains = 41,
+    Self_ = 25,
+    Struct = 26,
+    Enum = 27,
+    Import = 28,
+    Export = 29,
+    Bind = 30,
+    Alias = 31,
+    Const = 32,
+    Var = 33,
+    Nest = 34,
+    Complex = 35,
+    Override = 36,
+    IsEmpty = 37,
+    IsWhitespace = 38,
+    Range = 39,
+    StartsW = 40,
+    EndsW = 41,
+    Contains = 42,
+    Equals = 43,
 }
 
 impl Keyword {
@@ -141,23 +146,25 @@ impl Keyword {
             22 => Some(Keyword::List),
             23 => Some(Keyword::Map),
             24 => Some(Keyword::Set),
-            25 => Some(Keyword::Struct),
-            26 => Some(Keyword::Enum),
-            27 => Some(Keyword::Import),
-            28 => Some(Keyword::Export),
-            29 => Some(Keyword::Bind),
-            30 => Some(Keyword::Alias),
-            31 => Some(Keyword::Const),
-            32 => Some(Keyword::Var),
-            33 => Some(Keyword::Nest),
-            34 => Some(Keyword::Complex),
-            35 => Some(Keyword::Override),
-            36 => Some(Keyword::IsEmpty),
-            37 => Some(Keyword::IsWhitespace),
-            38 => Some(Keyword::Range),
-            39 => Some(Keyword::StartsW),
-            40 => Some(Keyword::EndsW),
-            41 => Some(Keyword::Contains),
+            25 => Some(Keyword::Self_),
+            26 => Some(Keyword::Struct),
+            27 => Some(Keyword::Enum),
+            28 => Some(Keyword::Import),
+            29 => Some(Keyword::Export),
+            30 => Some(Keyword::Bind),
+            31 => Some(Keyword::Alias),
+            32 => Some(Keyword::Const),
+            33 => Some(Keyword::Var),
+            34 => Some(Keyword::Nest),
+            35 => Some(Keyword::Complex),
+            36 => Some(Keyword::Override),
+            37 => Some(Keyword::IsEmpty),
+            38 => Some(Keyword::IsWhitespace),
+            39 => Some(Keyword::Range),
+            40 => Some(Keyword::StartsW),
+            41 => Some(Keyword::EndsW),
+            42 => Some(Keyword::Contains),
+            43 => Some(Keyword::Equals),
             _ => None,
         }
     }
@@ -199,14 +206,14 @@ impl Keyword {
 const TYPE_START: u32 = 0;
 pub const TYPE_END: u32 = 24;
 
-const SECT_START: u32 = 32;
-const SECT_END: u32 = 35;
+const SECT_START: u32 = 33;
+const SECT_END: u32 = 36;
 
-const STMT_START: u32 = 29;
-const STMT_END: u32 = 31;
+const STMT_START: u32 = 30;
+const STMT_END: u32 = 32;
 
-const PREDICATE_START: u32 = 36;
-const PREDICATE_END: u32 = 41;
+const PREDICATE_START: u32 = 37;
+const PREDICATE_END: u32 = 43;
 
 //WARN: The amount of casting here is painful. SEVERELY painful.
 pub fn is_type(id: u32) -> bool {
