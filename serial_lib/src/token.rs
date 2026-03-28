@@ -1,5 +1,7 @@
 // May or may not use same tokens as script
 
+use common::symbols::Span;
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
 // This exists so that the interned value can be kept and displayed. It's also so a notation can be
@@ -11,8 +13,13 @@ pub(crate) enum Notation {
     Hex = 16,
 }
 
+pub struct SpannedToken {
+    pub(crate) tok: Token,
+    pub span: Span,
+}
+
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum Token {
+pub enum Token {
     Id(u32),
     Str(u32),
     Integer(u32, Notation),

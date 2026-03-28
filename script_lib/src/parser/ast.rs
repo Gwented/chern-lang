@@ -1,5 +1,8 @@
 //NOTE: MAY MAKE EXPRESSION THAT HELPS RESOLVE SEMANTIC TYPES MORE CLEANLY
-use common::symbols::{AstId, InnerArgs, NameId, Span, SpannedInnerArgs};
+use common::{
+    keywords::Keyword,
+    symbols::{AstId, InnerArgs, NameId, Span, SpannedInnerArgs},
+};
 
 #[derive(Debug)]
 pub struct AstInfo {
@@ -158,11 +161,6 @@ impl TypeExpr {
             | TypeExpr::Escaped(_, span) => span.clone(),
         }
     }
-}
-
-pub(super) enum Visibility {
-    Priv,
-    Pub,
 }
 
 // Maybe put in enum exclusively if not needed outside
@@ -369,7 +367,7 @@ pub(crate) struct AbstractAlias {
     pub(crate) params: Vec<TypeExpr>,
     pub(crate) conds: Vec<SpannedExpr>,
     pub(crate) args: Vec<SpannedInnerArgs>,
-    // pub(crate) visibility: Visibility,
+    pub(crate) is_priv: bool,
 }
 
 impl AbstractAlias {
@@ -379,7 +377,7 @@ impl AbstractAlias {
         params: Vec<TypeExpr>,
         conds: Vec<SpannedExpr>,
         args: Vec<SpannedInnerArgs>,
-        // visibility: Visibility,
+        is_priv: bool,
     ) -> AbstractAlias {
         AbstractAlias {
             name_id,
@@ -387,7 +385,7 @@ impl AbstractAlias {
             params,
             conds,
             args,
-            // visibility,
+            is_priv,
         }
     }
 }

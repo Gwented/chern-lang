@@ -1,4 +1,5 @@
 //TODO: ORGANIZE NEW ARCHITECTURE
+// MAKE PARAMS ONLY TAKE SPAN SINCE LINES ARE BUILT ANYWAYS
 use unicode_width::UnicodeWidthChar;
 
 use crate::{color, symbols::Span};
@@ -37,6 +38,11 @@ struct LineGroups {
     span_groups: Vec<(usize, Vec<Span>)>,
 }
 
+// Maybe this isn't needed since there is no realistically huge loss from doing any of this
+// pub struct LineCache {
+//     lines: Vec<Line>,
+// }
+
 impl LineGroups {
     fn new() -> LineGroups {
         LineGroups {
@@ -44,19 +50,23 @@ impl LineGroups {
         }
     }
 
+    /// Inserts and immediately sorts the given span within it's correct line vector.
+    /// This method also ensures no duplicates are stored
     fn insert(&mut self, ln_key: usize, span: &Span) {
         if let Some(pair) = self.span_groups.iter_mut().find(|group| group.0 == ln_key) {
+            //FIX: Do not insert duplicates
+            if pair.1.iter().any(|s| s == span) {
+                return;
+            };
+
             pair.1.push(span.clone());
+
             pair.1.sort_by_key(|s| s.start);
         } else {
             self.span_groups.push((ln_key, vec![span.clone()]));
         }
     }
 }
-
-// First, builds a vector of all line information present using the `Line` struct
-//
-//TODO: Should be able to point to EOF
 
 // Ability to choose color when help exists in a better form
 /// Returns the line number, column and red arrows under given spans
@@ -98,6 +108,7 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
     // groups. This is to avoid the persistent issue of span print duplicates.
     let mut ln_groups: LineGroups = LineGroups::new();
 
+    //FIXME: OR HERE
     for (i, ln_span) in ln_view.lines.iter().map(|ln| &ln.ln_span).enumerate() {
         let range = ln_span.start..=ln_span.end;
 
@@ -108,6 +119,8 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
             }
         }
     }
+
+    //FIXME: FILTER HERE IN-CASE OF DUPLICATES
 
     dbg!(&ln_groups);
     // panic!();
@@ -123,7 +136,7 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
     for ln in &ln_view.lines {
         for group in &ln_groups.span_groups {
             if ln.ln_num == group.0 {
-                let diag = form_diag(src_str, ln, ln_num_width, &group.1, can_color);
+                let diag = form_ln_diag(src_str, ln, ln_num_width, &group.1, can_color);
                 fmtted_diags.push(diag);
             }
         }
@@ -146,6 +159,7 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
     // Will need the dashes to be dependent on existing line metadata
     if ln_view.ln_num_span.end - ln_view.ln_num_span.start >= 2 {
         let dash_spaces = " ".repeat(ln_num_width - 1);
+
         final_diag.push_str(&format!("\n{dash_spaces}---"));
         final_diag.push_str(&fmtted_diags[fmtted_diags.len() - 1]);
     } else if fmtted_diags.len() == 2 {
@@ -162,13 +176,11 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
     }
 }
 
-//BUG: Returns line span entirely along with the actual span
 /// Checks if given span is on the same line, and if it is not the span is adjusted to fit the line.
 /// Always returns a new span which could potentially be altered.
 fn curate_span(ln: &Line, span: &Span) -> Span {
     let ln_range = ln.ln_span.start..=ln.ln_span.end;
 
-    // Issue may be that line range is accounting for all spans instead of relevant ones
     if !ln_range.contains(&span.start) && !ln_range.contains(&span.end) {
         return Span::new(ln.ln_span.start, ln.ln_span.end);
     } else if !ln_range.contains(&span.start) {
@@ -204,18 +216,15 @@ fn form_ln_view(src_bytes: &[u8], span: &Span) -> LineView {
     //NOTE: Uses the first_ln_start as the default first line, then goes through every line within the
     // given span until it reaches the end of the span, collecting all `Line` information.
     // These are structured to be (inclusive, inclusive)
-    //
     // `current_start` positions itself at the first line of the next line.
     // `current_end` assumes the current start is already set, and positions itself at wherever the
     // last line would've ended.
     while i < src_bytes.len() {
         let b = src_bytes[i];
 
-        //WARN: TEST WINDOWS
         if b == b'\r' && src_bytes.get(i + 1) == Some(&b'\n') {
             // if the previous byte was a \n then that means this line is a singular new line and
             // line start == line end, otherwise the actual end is - 2
-            //FIX: TESTING WINDOWS
             let current_end = if src_bytes.get(i - 1) == Some(&b'\n') {
                 i
             } else {
@@ -307,8 +316,7 @@ fn get_ln_start_byte(src_bytes: &[u8], pos: usize) -> usize {
     0
 }
 
-/// Get's the line number of the given start by looking for the first \n. Returns the first
-/// character if no \n is found
+/// Get's the line number of the given start byte position
 fn get_ln_num(src_bytes: &[u8], start: usize) -> usize {
     // Could be issues here regarding line numbers being counted for single line lines
     let mut ln_num = 1;
@@ -326,8 +334,8 @@ fn get_ln_num(src_bytes: &[u8], start: usize) -> usize {
 /// Forms a diagnostic with arrows under the grouped spans.
 /// Assumes the given line group has it's spans stored on the same relevant line using
 /// `LineGroups`. Assumes the given line group is also sorted. Also assumes the spans don't span
-/// past their respective line.
-fn form_diag(
+/// past their respective line. This cannot be used unless all previous steps are done.
+fn form_ln_diag(
     src_str: &str,
     ln: &Line,
     ln_num_width: usize,
@@ -347,15 +355,6 @@ fn form_diag(
     let mut last_span_start = ln.ln_span.start;
 
     for span in grouped_spans {
-        // This needs to be done due to the fact that spans need to be added by 1 since they're
-        // (inclusive, exclusive) but if the span.start is span.end then that is the
-        // only case where it isn't applied.
-        // let checked_span_start = if span.start == span.end {
-        //     span.start
-        // } else {
-        //     span.start
-        // };
-
         let space_count = get_chars_width(src_str, last_span_start, span.start);
 
         // Space count added makes last_span_start one before the actual span. The difference of
@@ -365,9 +364,6 @@ fn form_diag(
         pointers.push_str(&" ".repeat(space_count));
 
         // Since the function is inclusive, exclusive a + 1 is needed
-        dbg!("arrows");
-        dbg!(span.start, span.end);
-
         let arrow_count = get_chars_width(src_str, span.start, span.end + 1);
         let arrows = "^".repeat(arrow_count);
         let colored_arrows = format!("{red}{arrows}{nc}");
@@ -422,8 +418,8 @@ fn get_num_width(num: usize) -> usize {
 
 /// Returns character width count within the given start and end (inclusive, exclusive)
 fn get_chars_width(s: &str, start: usize, end: usize) -> usize {
-    if start > end {
-        dbg!(&s[end..start]);
+    if end > start {
+        dbg!(&s[start..end]);
     }
 
     s[start..end]

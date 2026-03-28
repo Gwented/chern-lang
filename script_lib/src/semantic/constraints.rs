@@ -12,6 +12,7 @@ pub(super) enum ArgConstraint {
     ArgCount(u8),
     DynType,
     MatchingType,
+    MirroredType,
     Numeric,
     Integer,
     Float,
@@ -25,7 +26,6 @@ impl ArgConstraint {
     /// Takes in a function kind that is built in and returns it's constraints
     pub fn from_builtin(kind: FuncKind) -> Vec<ArgConstraint> {
         match kind {
-            //WARN: CHANGE BACK TO DYNTYPE
             FuncKind::StartsW => {
                 // Maybe if we got something like 0x1FF it could StartsW(0x1FF)?
                 vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
@@ -42,6 +42,9 @@ impl ArgConstraint {
                     ArgConstraint::Numeric,
                     ArgConstraint::MatchingType,
                 ]
+            }
+            FuncKind::Equals => {
+                vec![ArgConstraint::MirroredType]
             }
             FuncKind::UserDefined => todo!(),
         }
@@ -64,6 +67,7 @@ impl Display for ArgConstraint {
                     write!(f, "{count} argument")
                 }
             }
+            ArgConstraint::MirroredType => write!(f, "same params type as declared type"),
             ArgConstraint::Variadic => write!(f, "variadic"),
         }
     }

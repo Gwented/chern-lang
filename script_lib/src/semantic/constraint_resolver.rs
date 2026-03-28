@@ -1,4 +1,3 @@
-// FIXME: FIGURE OUT IF CACHING SHOULD START HERE, AND IN A NODE OR DATA STRUCTURE OUTSIDE OF IT
 use common::{
     builtins::{BuiltinType, BuiltinTypeKind},
     fmter::{Formattable, Formatted},
@@ -106,6 +105,7 @@ impl ConstraintResolver<'_> {
                 return Err(());
             }
         }
+        //TODO: RESOLVE FUNC CONSTRAINTS HERE
 
         // Re-borrowing due to resolution happening above being mutable
         let ty = &self.table.types[self.table.get_typedef(sym_id).type_id.id as usize];
@@ -309,6 +309,10 @@ impl ConstraintResolver<'_> {
                             ArgConstraint::from_builtin(FuncKind::Contains),
                             FuncKind::Contains,
                         ),
+                        Keyword::Equals => (
+                            ArgConstraint::from_builtin(FuncKind::Equals),
+                            FuncKind::Equals,
+                        ),
                         // Will this account for aliases?
                         _ => {
                             todo!("User defined");
@@ -328,6 +332,7 @@ impl ConstraintResolver<'_> {
                     args,
                 );
 
+                // Needs the type to check all constraints. Must put this elsewhere
                 match self.check_func_constraints(&func) {
                     Ok(_) => (),
                     Err(sem_err) => {
@@ -710,7 +715,6 @@ impl ConstraintResolver<'_> {
 
                 Ok(())
             }
-            // I can't search tuples
             Type::Tuple(tuple) => {
                 visited.push(tuple.type_id);
 
@@ -832,8 +836,11 @@ impl ConstraintResolver<'_> {
                         }
                     }
                 }
-                // Maybe these shouldn't be constraints if they don't do anything. Boolean for
-                // variadics perhaps
+                ArgConstraint::MirroredType => {
+                    for arg in &func.args {
+                        todo!();
+                    }
+                }
                 ArgConstraint::DynType | ArgConstraint::Variadic => continue,
             }
         }

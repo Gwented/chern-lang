@@ -66,7 +66,7 @@ impl TypeResolver<'_> {
                 Item::Var(type_def) => self.register_typedef(type_def, ast_id),
                 Item::Struct(structure) => self.register_struct(structure, ast_id),
                 Item::Enum(enumeration) => self.register_enum(enumeration, ast_id),
-                Item::Alias(alias) => todo!(),
+                Item::Alias(alias) => self.register_alias(alias, ast_id),
             }
         }
 

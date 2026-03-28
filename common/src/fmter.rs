@@ -47,16 +47,18 @@ pub enum Formatted {
     Const,
     Var,
     Nest,
+    Self_,
     Complex,
     Override,
     IsEmpty,
     IsWhitespace,
-    Range,
-    StartsW,
-    EndsW,
-    Contains,
+    FuncRange,
+    FuncStartsW,
+    FuncEndsW,
+    FuncContains,
+    FuncEquals,
     Cond,
-    Func,
+    UserFunc,
     // Hmm...
     Nothing,
 }
@@ -77,13 +79,13 @@ impl Display for Formatted {
             | Formatted::U128
             | Formatted::Sized
             | Formatted::BigInt
-            | Formatted::Unsized => write!(f, "integer"),
+            | Formatted::Unsized => write!(f, "Integer"),
             Formatted::F16
             | Formatted::F32
             | Formatted::Float
             | Formatted::F64
             | Formatted::F128
-            | Formatted::BigFloat => write!(f, "float"),
+            | Formatted::BigFloat => write!(f, "Float"),
             Formatted::Char => write!(f, "char"),
             Formatted::Str => write!(f, "str"),
             Formatted::Bool => write!(f, "bool"),
@@ -105,14 +107,16 @@ impl Display for Formatted {
             Formatted::Override => write!(f, "Override"),
             Formatted::IsEmpty => write!(f, "IsEmpty"),
             Formatted::IsWhitespace => write!(f, "IsWhitespace"),
-            Formatted::Range => write!(f, "Range"),
-            Formatted::StartsW => write!(f, "StartsW"),
-            Formatted::EndsW => write!(f, "EndsW"),
-            Formatted::Contains => write!(f, "Contains"),
+            Formatted::FuncRange => write!(f, "Range"),
+            Formatted::FuncStartsW => write!(f, "StartsW"),
+            Formatted::FuncEndsW => write!(f, "EndsW"),
+            Formatted::FuncContains => write!(f, "Contains"),
+            Formatted::FuncEquals => write!(f, "Equals"),
             Formatted::Cond => write!(f, "condition"),
-            Formatted::Func => write!(f, "function"),
+            Formatted::UserFunc => write!(f, "function"),
             Formatted::Nothing => write!(f, ""),
             Formatted::Tuple => write!(f, "tuple"),
+            Formatted::Self_ => write!(f, "self"),
         }
     }
 }

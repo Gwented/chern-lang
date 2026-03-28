@@ -10,9 +10,6 @@ use script_lib::{
     },
 };
 
-//FIXME: More general file information that is persistent throughout the program which would
-//include the file name, path, etc.
-
 fn main() {
     let start = Instant::now();
 

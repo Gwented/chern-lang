@@ -42,7 +42,7 @@ const A_BRANCH_VAR_FUNC_SET: u64 = A_BASE_EXIT_SET | token::C_BRACKET;
 #[derive(Debug)]
 pub(super) struct Context<'a> {
     metadata: &'a ChernMetadata,
-    pub(super) tokens: &'a [SpannedToken],
+    pub(super) toks: &'a [SpannedToken],
     pub(super) pos: usize,
     pub(super) err_vec: Vec<Diagnostic>,
 }
@@ -51,7 +51,7 @@ impl<'a> Context<'a> {
     pub(super) fn new(metadata: &'a ChernMetadata, tokens: &'a [SpannedToken]) -> Context<'a> {
         Context {
             metadata,
-            tokens,
+            toks: tokens,
             pos: 0,
             err_vec: Vec::new(),
         }
@@ -67,7 +67,7 @@ impl<'a> Context<'a> {
         interner: &Intern,
     ) -> Result<u32, Token> {
         // WARN: IF ANYTHING GOES WRONG ADD THE IF STATEMENTS BACK FOR EOF
-        let found = &self.tokens[self.pos];
+        let found = &self.toks[self.pos];
         self.pos += 1;
 
         //TEST: I JUST WANTED TO USE REFERENCES
@@ -94,17 +94,17 @@ impl<'a> Context<'a> {
 
         let span = self.safely_handle_span(found);
 
-        let line_data =
+        let ln_data =
             reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
 
         let msg = if let Some(name) = id_opt {
             let msg = format!("(in {branch})\n{bmsg}\"{name}\"{amsg}");
 
-            reporter::standardize_err(&msg, &line_data, &help)
+            reporter::standardize_err(&msg, &ln_data, &help)
         } else {
             let msg = format!("(in {branch})\n{bmsg}'{}'{amsg}", found.token.kind());
 
-            reporter::standardize_err(&msg, &line_data, &help)
+            reporter::standardize_err(&msg, &ln_data, &help)
         };
 
         self.err_vec.push(Diagnostic::new(msg, branch));
@@ -114,10 +114,11 @@ impl<'a> Context<'a> {
         Err(found.token)
     }
 
+    // BOF
     /// Intended for basic errors that need little context after
-    /// ALWAYS advance before using this or ensure an advance happened before
+    /// ALWAYS advance before using this or ensure an advance happened before.
     pub(super) fn report_verbose(&mut self, msg: &str, branch: Branch, interner: &Intern) {
-        let found = &self.tokens[self.pos - 1];
+        let found = &self.toks[self.pos - 1];
 
         let help = self
             .try_help(TokenKind::Poison, &found, branch, interner)
@@ -125,22 +126,21 @@ impl<'a> Context<'a> {
 
         let span = self.safely_handle_span(found);
 
-        let line_data =
+        let ln_data =
             reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
 
         let base_msg = format!("(in {branch})\n{msg}");
 
-        let msg = reporter::standardize_err(&base_msg, &line_data, &help);
+        let msg = reporter::standardize_err(&base_msg, &ln_data, &help);
 
         self.recover(branch);
 
-        let report = Diagnostic::new(msg, branch);
+        let diag = Diagnostic::new(msg, branch);
 
-        self.err_vec.push(report);
+        self.err_vec.push(diag);
     }
 
     /// Returns the found token on success and failure.
-    // Return token based off of it's most probable path?
     // TODO:  Maybe lazily evaluate since searching the interner by default is a weird performance
     // hit. Probably.
     pub(super) fn expect_verbose(
@@ -151,7 +151,7 @@ impl<'a> Context<'a> {
         branch: Branch,
         interner: &Intern,
     ) -> Result<Token, Token> {
-        let found = &self.tokens[self.pos];
+        let found = &self.toks[self.pos];
         self.pos += 1;
 
         if found.token.kind() != expected {
@@ -175,7 +175,7 @@ impl<'a> Context<'a> {
 
             let span = self.safely_handle_span(found);
 
-            let line_data =
+            let ln_data =
                 reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
 
             let help = self
@@ -188,11 +188,11 @@ impl<'a> Context<'a> {
                     found.token.kind()
                 );
 
-                reporter::standardize_err(&base_msg, &line_data, &help)
+                reporter::standardize_err(&base_msg, &ln_data, &help)
             } else {
                 let base_msg = format!("(in {branch})\n{bmsg}'{}'{amsg}", found.token.kind());
 
-                reporter::standardize_err(&base_msg, &line_data, &help)
+                reporter::standardize_err(&base_msg, &ln_data, &help)
             };
 
             self.err_vec.push(Diagnostic::new(msg, branch));
@@ -215,7 +215,7 @@ impl<'a> Context<'a> {
         branch: Branch,
         interner: &Intern,
     ) {
-        let found = &self.tokens[self.pos - 1];
+        let found = &self.toks[self.pos - 1];
 
         let help = self
             .try_help(TokenKind::Poison, &found, branch, interner)
@@ -223,25 +223,25 @@ impl<'a> Context<'a> {
 
         let span = self.safely_handle_span(found);
 
-        let line_data =
+        let ln_data =
             reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
 
         let base_msg = format!("(in {branch})\nExpected {emsg}, found {fmsg}");
 
-        let msg = reporter::standardize_err(&base_msg, &line_data, &help);
+        let msg = reporter::standardize_err(&base_msg, &ln_data, &help);
 
         self.recover(branch);
 
-        let report = Diagnostic::new(msg, branch);
+        let diag = Diagnostic::new(msg, branch);
 
-        self.err_vec.push(report);
+        self.err_vec.push(diag);
     }
 
     fn recover(&mut self, branch: Branch) {
         let (current_targets, next_targets) = self.match_branch(branch);
 
         if self.peek_kind() != TokenKind::EOF {
-            while self.pos < self.tokens.len() + 2
+            while self.pos < self.toks.len() + 2
                 && (self.peek_kind().to_u64() & current_targets) == 0
                 && (self.peek_ahead(1).token.kind().to_u64() & next_targets) == 0
             {
@@ -271,10 +271,7 @@ impl<'a> Context<'a> {
         }
     }
 
-    // What if the error handler took the current branch as it's universe and a custom dataset
-    // based off of the expected token, previous token, and possibly the next token. The information
-    // it would have is, it's max_read, a score based off of the tokens it finds, and an EOS token that
-    // is reached from either, hitting a particular token it's dataset declares EOS, or hitting max_read.
+    //TODO: Give help_model the ability to send help
     fn try_help(
         &self,
         expected: TokenKind,
@@ -283,7 +280,7 @@ impl<'a> Context<'a> {
         interner: &Intern,
     ) -> Option<String> {
         // Maybe saturating could lead to mis info
-        let prev_tok = self.tokens.get(self.pos.saturating_sub(2))?.clone();
+        let prev_tok = self.toks.get(self.pos.saturating_sub(2))?.clone();
         let prev_kind = prev_tok.token.kind();
 
         match branch {
@@ -417,7 +414,7 @@ impl<'a> Context<'a> {
     fn safely_handle_span(&self, found: &SpannedToken) -> Vec<Span> {
         if found.token.kind() == TokenKind::EOF {
             // Minus 2 since we advanced at the beginning
-            let start_span = self.tokens.get(self.pos - 2).unwrap_or(found).span.clone();
+            let start_span = self.toks.get(self.pos - 2).unwrap_or(found).span.clone();
             vec![start_span, found.span.clone()]
         } else {
             vec![found.span.clone()]
@@ -429,42 +426,42 @@ impl<'a> Context<'a> {
     }
 
     pub(super) fn peek_tok(&mut self) -> Token {
-        self.tokens
+        self.toks
             .get(self.pos)
             .map(|t| t.token)
             .unwrap_or(Token::EOF)
     }
 
     pub(super) fn peek_kind(&self) -> TokenKind {
-        self.tokens
+        self.toks
             .get(self.pos)
             .map(|t| t.token.kind())
             .unwrap_or(TokenKind::EOF)
     }
 
     pub(super) fn peek_ahead(&self, dest: usize) -> &SpannedToken {
-        &self.tokens[self.pos + dest]
+        &self.toks[self.pos + dest]
     }
 
     pub(super) fn advance_tok(&mut self) -> Token {
-        let t = self.tokens[self.pos].token;
+        let t = self.toks[self.pos].token;
         self.pos += 1;
         t
     }
 
     pub(super) fn peek_span(&mut self) -> Span {
-        let t = self.tokens[self.pos].span.clone();
+        let t = self.toks[self.pos].span.clone();
         t
     }
 
     pub(super) fn advance_span(&mut self) -> Span {
-        let t = self.tokens[self.pos].span.clone();
+        let t = self.toks[self.pos].span.clone();
         self.pos += 1;
         t
     }
 
     fn advance(&mut self) -> &SpannedToken {
-        let t = &self.tokens[self.pos];
+        let t = &self.toks[self.pos];
         self.pos += 1;
         t
     }

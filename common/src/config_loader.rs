@@ -5,7 +5,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{core_error::ConfigLoadError, metadata::ChernMetadata, reporter, symbols::Span};
+use crate::{
+    core_error::ConfigLoadError, help_model::quote_model, metadata::ChernMetadata, reporter,
+    symbols::Span,
+};
 
 // TEST: Ignore this
 const DEFINITION_SIZE: usize = 4;
@@ -92,7 +95,11 @@ impl<R: Read> FileLoader<'_, R> {
 
                             let search_range = start..end;
 
-                            self.quote_start_probability(quote_type as char, search_range)
+                            quote_model::quote_start_probability(
+                                self.handle.buffer(),
+                                quote_type as char,
+                                search_range,
+                            )
                         } else {
                             [Span::new(quote_start, quote_start)].to_vec()
                         };
@@ -286,239 +293,4 @@ impl<R: Read> FileLoader<'_, R> {
     //reference.
 
     // This experiment one shotted me. This will be a core port of error reporting
-    fn quote_start_probability(&self, q_type: char, search_range: Range<usize>) -> Vec<Span> {
-        let mut q_graph = QuoteGraph::new();
-
-        let mut state = State::SearchingForQuotes;
-
-        // How many characters were seen before the next quote
-        // WARN: Not handled cleanly as of right now
-        let src_str = str::from_utf8(self.handle.buffer()).expect("Invalid UTF-8 within file");
-
-        //WARN: REMOVE CLONE WHEN DONE
-        for (i, ch) in src_str.chars().enumerate() {
-            match state {
-                State::SearchingForQuotes => {
-                    if ch == q_type {
-                        q_graph.next_node(i);
-                        state = State::InQuotes;
-                    }
-                }
-                State::InQuotes => match ch {
-                    c if c == q_type => {
-                        q_graph.eval();
-                        state = State::SearchingForQuotes;
-                    }
-                    c => {
-                        q_graph.adjust_node(c);
-                    }
-                },
-            }
-        }
-
-        q_graph.final_eval();
-
-        let mut res_idx: usize = 0;
-        let mut largest_score = 0.0;
-
-        for (i, score) in q_graph.q_nodes.iter().map(|q| q.score).enumerate() {
-            if score > largest_score {
-                largest_score = score;
-                res_idx = i;
-            }
-        }
-
-        let highest_q = &q_graph.q_nodes[res_idx];
-        let start = highest_q.start_pos + search_range.start;
-
-        // Um
-        let end = highest_q.end_pos.unwrap_or(highest_q.start_pos) + search_range.start;
-
-        //FIX:
-        let first = Span::new(start, start);
-        let last = Span::new(end, end);
-
-        vec![first, last]
-    }
-}
-
-enum State {
-    SearchingForQuotes,
-    InQuotes,
-    // In def
-}
-
-/// Basic state of not needing any special actions
-const PROCEED: u8 = 0;
-/// Action to cut portion of array
-const CUT: u8 = 1;
-
-// Not sure what to do with this yet
-#[derive(Debug)]
-struct QuoteGraph {
-    current_idx: usize,
-    q_nodes: Vec<QuoteNode>,
-    weights: [f32; 4],
-}
-
-impl QuoteGraph {
-    fn new() -> QuoteGraph {
-        // alphanum, \n, /, everything else, @def
-        let weights = [0.20, 0.10, 0.6, 0.10];
-
-        QuoteGraph {
-            current_idx: 0,
-            q_nodes: Vec::new(),
-            weights,
-        }
-    }
-
-    /// Creates a new node and sets it as it's current to be adjusted
-    fn next_node(&mut self, start_pos: usize) {
-        self.current_idx = self.q_nodes.len();
-
-        let q_node = QuoteNode::new(start_pos);
-        self.q_nodes.push(q_node);
-    }
-
-    fn adjust_node(&mut self, current_ch: char) {
-        let q_node = &self.q_nodes[self.current_idx];
-        let steps = (q_node.ctx_toks.len() + 1) as f32;
-
-        let start_pos = q_node.start_pos as f32;
-
-        // Weight of tokens overall
-        let w_tok = 0.7;
-        // Weight of positioning
-        let w_pos = 1.0;
-
-        let tok_sig = self.weights[translate_tok(current_ch)];
-
-        // Exponential decrease of positional bias as the starting position increases
-        let pos_sig = (-(2.0f32.ln()) * (start_pos)).exp();
-
-        let q_node = &mut self.q_nodes[self.current_idx];
-
-        q_node.score += ((w_tok * tok_sig) + (w_pos * pos_sig)) * q_node.rate;
-
-        q_node.ctx_toks.push(current_ch);
-    }
-
-    // This is compensation for there being no built context window
-    /// Evaluates a singular node
-    fn eval(&mut self) {
-        let q_node = &mut self.q_nodes[self.current_idx];
-
-        let end_pos = q_node.start_pos + q_node.ctx_toks.len() + 1;
-        q_node.end_pos = Some(end_pos);
-
-        let mut i = 0;
-
-        let w_def = 1.5;
-        let w_end = 1.5;
-
-        while i < q_node.ctx_toks.len() {
-            let ch = q_node.ctx_toks[i];
-
-            if (ch == '@' && i + DEFINITION_SIZE < q_node.ctx_toks.len())
-                && q_node.ctx_toks[i..i + DEFINITION_SIZE] == ['@', 'd', 'e', 'f']
-            {
-                q_node.concern /= q_node.score * w_def;
-                i += DEFINITION_SIZE;
-            } else if (ch == '@' && i + DEFINITION_SIZE < q_node.ctx_toks.len())
-                && q_node.ctx_toks[i..i + DEFINITION_SIZE] == ['@', 'e', 'n', 'd']
-            {
-                q_node.concern /= q_node.score * w_end;
-                i += DEFINITION_SIZE;
-            }
-
-            i += 1;
-        }
-    }
-
-    /// Evaluates all nodes
-    // Suspicious name
-    fn final_eval(&mut self) {
-        let score_sum: f32 = self.q_nodes.iter().map(|n| n.score).sum();
-
-        let score_probs: Vec<f32> = self.q_nodes.iter().map(|n| n.score / score_sum).collect();
-
-        let max_score_idx = argmax(&score_probs);
-
-        let concern_sum: f32 = self.q_nodes.iter().map(|n| n.concern).sum();
-
-        let concern_probs: Vec<f32> = self
-            .q_nodes
-            .iter()
-            .map(|n| n.concern / concern_sum)
-            .collect();
-
-        let max_concern_idx = argmax(&concern_probs);
-
-        let action = self.choose_action(score_probs[max_score_idx], concern_probs[max_concern_idx]);
-
-        //NOTE: This is always safe due to q_node needing to be at least 2 for quote probs to start
-        if action == CUT && max_concern_idx + 1 < self.q_nodes.len() {
-            self.q_nodes.truncate(max_concern_idx + 1);
-        }
-    }
-
-    // Proceeds with operations normally or cuts off quotes to basically say, the rest of the
-    // probabilities are likely not to be the end quote
-
-    //WARN: Currently does not use this correctly
-    fn choose_action(&self, proceed: f32, cut: f32) -> u8 {
-        let cut = (cut * proceed) / proceed;
-
-        if cut > 0.18 { CUT } else { PROCEED }
-    }
-}
-
-#[derive(Debug)]
-struct QuoteNode {
-    start_pos: usize,
-    end_pos: Option<usize>,
-    score: f32,
-    rate: f32,
-    concern: f32,
-    ctx_toks: Vec<char>,
-}
-
-// Need variable proportional to the actual file size
-impl QuoteNode {
-    fn new(start_pos: usize) -> QuoteNode {
-        QuoteNode {
-            start_pos,
-            end_pos: None,
-            score: 0.05,
-            rate: 0.005,
-            concern: 0.05,
-            ctx_toks: Vec::new(),
-        }
-    }
-}
-
-/// Assumes there is at least one element present
-fn argmax(args: &Vec<f32>) -> usize {
-    let mut max_idx = 0;
-    // Cannot be < 1
-    let mut max_arg = args[0];
-
-    for (i, next_arg) in args.iter().skip(1).enumerate() {
-        if *next_arg > max_arg {
-            max_idx = i;
-            max_arg = *next_arg;
-        }
-    }
-
-    max_idx
-}
-
-fn translate_tok(ch: char) -> usize {
-    match ch {
-        c if c.is_alphanumeric() => 0,
-        '\n' => 1,
-        '/' => 2,
-        _ => 3,
-    }
 }

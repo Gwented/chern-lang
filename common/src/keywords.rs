@@ -1,4 +1,7 @@
 use std::ops::RangeInclusive;
+
+use crate::fmter::{Formattable, Formatted};
+pub const DEFINITION_SIZE: usize = 4;
 //WARN: WAY TOO MANY MICRO-DEPENDENCIES
 
 // Before adding a keyword:
@@ -117,6 +120,57 @@ pub enum Keyword {
     Equals = 43,
 }
 
+impl Formattable for Keyword {
+    fn to_fmt(&self) -> crate::fmter::Formatted {
+        match self {
+            Keyword::I8 => Formatted::I8,
+            Keyword::U8 => Formatted::U8,
+            Keyword::I16 => Formatted::I16,
+            Keyword::U16 => Formatted::U16,
+            Keyword::F16 => Formatted::F16,
+            Keyword::I32 => Formatted::I32,
+            Keyword::U32 => Formatted::U32,
+            Keyword::F32 => Formatted::F32,
+            Keyword::I64 => Formatted::I64,
+            Keyword::U64 => Formatted::U64,
+            Keyword::F64 => Formatted::F64,
+            Keyword::I128 => Formatted::I128,
+            Keyword::U128 => Formatted::U128,
+            Keyword::F128 => Formatted::F128,
+            Keyword::Sized => Formatted::Sized,
+            Keyword::Unsized => Formatted::Unsized,
+            Keyword::Char => Formatted::Char,
+            Keyword::Str => Formatted::Str,
+            Keyword::Bool => Formatted::Bool,
+            Keyword::Nil => Formatted::Nil,
+            Keyword::BigInt => Formatted::BigInt,
+            Keyword::BigFloat => Formatted::BigFloat,
+            Keyword::List => Formatted::List,
+            Keyword::Map => Formatted::Map,
+            Keyword::Set => Formatted::Set,
+            Keyword::Self_ => Formatted::Self_,
+            Keyword::Struct => Formatted::Sized,
+            Keyword::Enum => Formatted::Sized,
+            Keyword::Import => Formatted::Sized,
+            Keyword::Export => Formatted::Export,
+            Keyword::Bind => Formatted::Bind,
+            Keyword::Alias => Formatted::Alias,
+            Keyword::Const => Formatted::Const,
+            Keyword::Var => Formatted::Var,
+            Keyword::Nest => Formatted::Nest,
+            Keyword::Complex => Formatted::Complex,
+            Keyword::Override => Formatted::Override,
+            Keyword::IsEmpty => Formatted::IsEmpty,
+            Keyword::IsWhitespace => Formatted::IsWhitespace,
+            Keyword::Range => Formatted::FuncRange,
+            Keyword::StartsW => Formatted::FuncStartsW,
+            Keyword::EndsW => Formatted::FuncEndsW,
+            Keyword::Contains => Formatted::FuncContains,
+            Keyword::Equals => Formatted::FuncEquals,
+        }
+    }
+}
+
 impl Keyword {
     pub fn try_as_kw(id: u32) -> Option<Keyword> {
         match id {
@@ -218,6 +272,13 @@ const PREDICATE_END: u32 = 43;
 //WARN: The amount of casting here is painful. SEVERELY painful.
 pub fn is_type(id: u32) -> bool {
     id <= TYPE_END
+}
+
+// But what about inheritance. What about clean code? DRY? What if I want my .chrn tree of
+// dependencies where they inherit from different levels of chrn files?
+// export inherit non-translucent const READ = 0b00000001
+pub fn is_export(id: u32) -> bool {
+    id == 29
 }
 
 pub fn is_sect(id: u32) -> bool {

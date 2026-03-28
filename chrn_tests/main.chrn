@@ -1,6 +1,11 @@
 @def
+
+export alias foo() = [Something()]
+
+
+
 var->
-    a: i32 a: i32 a :i32
-
-
+    // I can't take this seriously
+    name: bingo
+    age: u8
 @end

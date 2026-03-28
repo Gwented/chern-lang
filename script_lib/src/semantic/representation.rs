@@ -443,17 +443,19 @@ pub(crate) enum FuncKind {
     Range,
     StartsW,
     EndsW, // UserDefined
+    Equals,
     UserDefined,
 }
 
 impl Formattable for FuncKind {
     fn to_fmt(&self) -> common::fmter::Formatted {
         match self {
-            FuncKind::Contains => Formatted::Contains,
-            FuncKind::Range => Formatted::Range,
-            FuncKind::StartsW => Formatted::StartsW,
-            FuncKind::EndsW => Formatted::EndsW,
-            FuncKind::UserDefined => Formatted::Func,
+            FuncKind::Contains => Formatted::FuncContains,
+            FuncKind::Range => Formatted::FuncRange,
+            FuncKind::StartsW => Formatted::FuncStartsW,
+            FuncKind::EndsW => Formatted::FuncEndsW,
+            FuncKind::UserDefined => Formatted::UserFunc,
+            FuncKind::Equals => Formatted::FuncEquals,
         }
     }
 }
@@ -466,6 +468,7 @@ impl Display for FuncKind {
             FuncKind::StartsW => write!(f, "StartsW"),
             FuncKind::EndsW => write!(f, "EndsW"),
             FuncKind::UserDefined => write!(f, "<Hi>"),
+            FuncKind::Equals => write!(f, "Equals"),
         }
     }
 }

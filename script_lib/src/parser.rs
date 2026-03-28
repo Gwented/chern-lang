@@ -1,9 +1,8 @@
 //TODO: Modifiers with bitwise flags
 pub mod ast;
 mod context;
-// Unpub this
-pub mod error;
-pub mod parse_state;
+mod error;
+mod parse_state;
 use crate::parser::ast::{
     AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVariant, AstInfo, Call,
     Expr, Generic, Item, SpannedExpr, TypeExpr, Unary, UnaryOp,
@@ -13,6 +12,7 @@ use crate::parser::error::Branch;
 use crate::parser::parse_state::StateFlag;
 use crate::types::symbols::SpannedToken;
 use crate::types::token::{Token, TokenKind};
+use common::fmter::Formatted;
 use common::intern::Intern;
 use common::keywords::{self, Keyword};
 use common::metadata::ChernMetadata;
@@ -28,16 +28,26 @@ pub fn parse(metadata: &ChernMetadata, tokens: &Vec<SpannedToken>, interner: &In
 
     let mut ctx = Context::new(&metadata, tokens);
 
-    while ctx.pos < ctx.tokens.len() {
+    while ctx.pos < ctx.toks.len() {
         if ctx.err_vec.len() > 10 {
             break;
         }
+
+        let is_priv = match parse_export(&mut ctx, interner) {
+            Ok(res) => res,
+            Err(_) => continue,
+        };
 
         let tok = ctx.peek_tok();
 
         match tok {
             Token::Id(id) => match id {
                 id if id == Keyword::Bind as u32 => {
+                    // May turn into a helper but fine for now
+                    if !is_priv {
+                        report_export(&mut ctx, Formatted::Bind, Branch::Neutral, interner);
+                    }
+
                     ctx.advance_tok();
 
                     if state.has_bind() {
@@ -59,7 +69,7 @@ pub fn parse(metadata: &ChernMetadata, tokens: &Vec<SpannedToken>, interner: &In
 
                     if state.has_alias() {
                         ctx.report_verbose(
-                            "Found a bind statement more than once",
+                            "Found a `bind` statement more than once",
                             Branch::Neutral,
                             interner,
                         );
@@ -69,16 +79,20 @@ pub fn parse(metadata: &ChernMetadata, tokens: &Vec<SpannedToken>, interner: &In
                         state.flip_alias();
                     }
 
-                    _ = parse_alias_stmt(&mut ctx, &mut ast_info, interner);
+                    _ = parse_alias_stmt(&mut ctx, is_priv, &mut ast_info, interner);
                 }
                 id if id == Keyword::Var as u32 => {
+                    if !is_priv {
+                        report_export(&mut ctx, Formatted::Bind, Branch::Neutral, interner);
+                    }
+
                     ctx.advance_tok();
 
                     //WARN: This was moved which is FINE but A_BASE_EXIT_SET must NOT change or this breaks
                     //Could lead to less detailed error messages so may put back in its place.
                     if state.has_var() {
                         ctx.report_verbose(
-                            "Found \"var\" section more than once",
+                            "Found `var` section more than once",
                             Branch::Searching,
                             interner,
                         );
@@ -111,11 +125,15 @@ pub fn parse(metadata: &ChernMetadata, tokens: &Vec<SpannedToken>, interner: &In
                     }
                 }
                 id if id == Keyword::Nest as u32 => {
+                    if !is_priv {
+                        report_export(&mut ctx, Formatted::Var, Branch::Searching, interner);
+                    }
+
                     ctx.advance_tok();
 
                     if state.has_nest() {
                         ctx.report_verbose(
-                            "Found \"nest\" section more than once",
+                            "Found `nest` section more than once",
                             Branch::Searching,
                             interner,
                         );
@@ -147,6 +165,10 @@ pub fn parse(metadata: &ChernMetadata, tokens: &Vec<SpannedToken>, interner: &In
                     }
                 }
                 id if id == Keyword::Complex as u32 => {
+                    if !is_priv {
+                        report_export(&mut ctx, Formatted::Nest, Branch::Searching, interner);
+                    }
+
                     todo!("Complex not done");
                     ctx.advance_tok();
 
@@ -191,6 +213,10 @@ pub fn parse(metadata: &ChernMetadata, tokens: &Vec<SpannedToken>, interner: &In
                     }
                 }
                 id if id == Keyword::Override as u32 => {
+                    if !is_priv {
+                        report_export(&mut ctx, Formatted::Complex, Branch::Searching, interner);
+                    }
+
                     todo!("Override not done");
                     ctx.advance_tok();
 
@@ -278,6 +304,7 @@ pub fn parse(metadata: &ChernMetadata, tokens: &Vec<SpannedToken>, interner: &In
 //FIXME: These sets may be misaligned
 fn parse_alias_stmt(
     ctx: &mut Context,
+    is_priv: bool,
     ast_info: &mut AstInfo,
     interner: &Intern,
 ) -> Result<(), Token> {
@@ -334,7 +361,7 @@ fn parse_alias_stmt(
         Vec::new()
     };
 
-    let alias = AbstractAlias::new(name_id, name_span, params, conds, args);
+    let alias = AbstractAlias::new(name_id, name_span, params, conds, args, is_priv);
     dbg!(&alias);
 
     ast_info.items.push(Item::Alias(alias));
@@ -1194,4 +1221,38 @@ fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>
     };
 
     Ok(conds)
+}
+
+fn parse_export(ctx: &mut Context, interner: &Intern) -> Result<bool, ()> {
+    let mut is_priv = true;
+
+    while let Token::Id(id) = ctx.peek_tok()
+        && keywords::is_export(id)
+    {
+        if !is_priv {
+            ctx.advance_tok();
+
+            ctx.report_verbose(
+                "Cannot use `export` more than once at a time",
+                Branch::Searching,
+                interner,
+            );
+
+            return Err(());
+        } else {
+            ctx.advance_tok();
+            is_priv = false;
+        }
+    }
+
+    Ok(is_priv)
+}
+
+/// Helper for solely reporting export
+fn report_export(ctx: &mut Context, fmtted: Formatted, branch: Branch, interner: &Intern) {
+    ctx.report_verbose(
+        &format!("Cannot use `export` on `{}`", fmtted),
+        branch,
+        interner,
+    );
 }
