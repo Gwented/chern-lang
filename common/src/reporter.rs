@@ -1,108 +1,390 @@
+//TODO: ORGANIZE NEW ARCHITECTURE
 use unicode_width::UnicodeWidthChar;
-//BUG: Does not correctly process multi-line spans given span.start & span.end expand past one line
 
 use crate::{color, symbols::Span};
 
 const TOTAL_SEPARATORS: usize = 60;
 
 pub struct LineData {
-    fmt_segment: String,
+    diag: String,
     ln: usize,
     col: usize,
 }
 
-struct LineSpan<'a> {
-    ln: usize,
-    span: &'a Span,
+// LineCache held by context?
+
+// Holds the first line, all lines from the start span to the end span's metadata
+#[derive(Debug)]
+struct LineView {
+    // Span contain the lines themselves not any byte offset
+    ln_num_span: Span,
+    // Sorted by default
+    lines: Vec<Line>,
 }
 
+/// Basic line structure for metadata
+#[derive(Debug)]
+struct Line {
+    ln_num: usize,
+    ln_span: Span,
+}
+
+/// Wrapper for methods instead of in-lining or making another structure to depict the key-value
+/// mapping of spans so that they can be grouped for diagnostics.
+#[derive(Debug)]
+struct LineGroups {
+    // For vectors on the same line to be grouped in the same diagnostic
+    span_groups: Vec<(usize, Vec<Span>)>,
+}
+
+impl LineGroups {
+    fn new() -> LineGroups {
+        LineGroups {
+            span_groups: Vec::new(),
+        }
+    }
+
+    fn insert(&mut self, ln_key: usize, span: &Span) {
+        if let Some(pair) = self.span_groups.iter_mut().find(|group| group.0 == ln_key) {
+            pair.1.push(span.clone());
+            pair.1.sort_by_key(|s| s.start);
+        } else {
+            self.span_groups.push((ln_key, vec![span.clone()]));
+        }
+    }
+}
+
+// First, builds a vector of all line information present using the `Line` struct
+//
+//TODO: Should be able to point to EOF
+
 // Ability to choose color when help exists in a better form
-/// Returns line, column and red arrows under given spans, with the rest of the line also shown.
+/// Returns the line number, column and red arrows under given spans
 pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineData {
-    let src_str = str::from_utf8(src_bytes).unwrap_or("<invalid source file>");
+    let start = spans.iter().map(|s| s.start).min().expect("Cannot be < 1");
+    let actual_start = get_ln_start_byte(src_bytes, start);
 
-    let mut line_spans: Vec<LineSpan> = Vec::new();
-    for span in spans {
-        let (ln_start, ln_end) = get_src_line_info(src_bytes, span);
-        line_spans.push(LineSpan { ln: ln_start, span });
+    let end = spans.iter().map(|s| s.end).max().expect("Cannot be < 1");
 
-        if ln_start != ln_end {
-            line_spans.push(LineSpan { ln: ln_end, span });
+    let full_span = Span::new(actual_start, end);
+
+    // --FIRST--
+    // Forming data about every line in the given span so it can be mutated or used in a way that
+    // is non-linear, which was a persistent issue with past designs. It is here to offer a high
+    // level view.
+    let ln_view = form_ln_view(src_bytes, &full_span);
+
+    // --SECOND--
+    // Curating spans to ensure all spans that may exceed their line are properly cut for their
+    // line so later formatting is not made more complicated
+    let mut curated_spans: Vec<Span> = Vec::new();
+
+    //Maybe can be handled better
+    for ln in &ln_view.lines {
+        let range = ln.ln_span.start..=ln.ln_span.end;
+        for span in spans {
+            // Checking if the line actually has the span which would otherwise push entire lines
+            // by default.
+            if !range.contains(&span.start) && !range.contains(&span.end) {
+                continue;
+            }
+
+            curated_spans.push(curate_span(&ln, span));
         }
     }
 
-    // Group by line number with relative positions
-    let mut ln_groups: Vec<(usize, Vec<(usize, usize)>)> = Vec::new();
-    for ls in &line_spans {
-        let ln_start_byte = get_start_of_line(src_bytes, ls.span.start);
-        let ln_last_byte = get_line_end(src_bytes, ln_start_byte);
+    // --THIRD--
+    // Putting all spans into a key-value pair so that they can have their errors reported in
+    // groups. This is to avoid the persistent issue of span print duplicates.
+    let mut ln_groups: LineGroups = LineGroups::new();
 
-        let rel_start = ls.span.start - ln_start_byte;
-        let rel_end = if ls.span.end < ln_last_byte {
-            ls.span.end - ln_start_byte
-        } else {
-            ln_last_byte - ln_start_byte
-        };
+    for (i, ln_span) in ln_view.lines.iter().map(|ln| &ln.ln_span).enumerate() {
+        let range = ln_span.start..=ln_span.end;
 
-        if let Some(group) = ln_groups.iter_mut().find(|(n, _)| *n == ls.ln) {
-            group.1.push((rel_start, rel_end));
-        } else {
-            ln_groups.push((ls.ln, vec![(rel_start, rel_end)]));
+        for span in &curated_spans {
+            if range.contains(&span.start) || range.contains(&span.end) {
+                let ln_key = ln_view.lines[i].ln_num;
+                ln_groups.insert(ln_key, span);
+            }
         }
     }
 
-    ln_groups.sort_by_key(|(ln, _)| *ln);
+    dbg!(&ln_groups);
+    // panic!();
 
-    let first_ln_num = ln_groups.first().expect("Cannot have < 1 spans").0;
-    let last_ln_num = ln_groups.last().expect("Cannot have < 1 spans").0;
-    // Ensures width is at least 3 or more
-    let ln_width = last_ln_num.to_string().len().max(3);
+    // --FOURTH--
+    // Giving each group their own diagnostic
+    let mut fmtted_diags: Vec<String> = Vec::new();
+    let src_str = str::from_utf8(src_bytes).unwrap_or("<invalid UTF-8 in source file>");
 
-    // Format each line group
-    let mut fmt_segments: Vec<(usize, String)> = Vec::new();
-    for (ln_num, ranges) in &ln_groups {
-        let span = line_spans
-            .iter()
-            .find(|ls| ls.ln == *ln_num)
-            .expect("Line number already exists")
-            .span;
+    // Getting the largest number to see if the entire print should align with a bigger spacing
+    let ln_num_width = get_num_width(ln_view.ln_num_span.end);
 
-        let ln_start_byte = get_start_of_line(src_bytes, span.start);
-        let ln_last_byte = get_line_end(src_bytes, ln_start_byte);
-        let ln_str = str::from_utf8(&src_bytes[ln_start_byte..ln_last_byte]).expect("Lexer broke");
-
-        let merged = merge_ranges(ranges);
-        fmt_segments.push((
-            *ln_num,
-            format_line(*ln_num, ln_str, &merged, ln_width, can_color),
-        ));
-    }
-
-    // Join segments with dashes between non-consecutive lines
-    let mut fmt_segment = String::new();
-    for (i, (ln_num, segment)) in fmt_segments.iter().enumerate() {
-        if i > 0 {
-            let prev_ln = fmt_segments[i - 1].0;
-            let separator = if *ln_num > prev_ln + 1 {
-                "\n~~~~\n"
-            } else {
-                "\n"
-            };
-
-            fmt_segment.push_str(separator);
+    for ln in &ln_view.lines {
+        for group in &ln_groups.span_groups {
+            if ln.ln_num == group.0 {
+                let diag = form_diag(src_str, ln, ln_num_width, &group.1, can_color);
+                fmtted_diags.push(diag);
+            }
         }
-        fmt_segment.push_str(segment);
     }
 
-    let first_ln_span_start = spans.iter().map(|s| s.start).min().expect("Exists");
-    let first_ln_start_byte = get_start_of_line(src_bytes, first_ln_span_start);
-    let col = char_width_offset(src_str, first_ln_start_byte, first_ln_span_start) + 1;
+    // -- FINAL --
+    // Taking what this particular error message handler wants to display out of the fully made
+    // error messages.
+
+    //TODO:
+
+    let mut final_diag = String::new();
+
+    // Will maybe just create this earlier so 2 strings aren't alloced
+    let num_spaces = " ".repeat(ln_num_width);
+
+    final_diag.push_str(&format!("{num_spaces}|"));
+    final_diag.push_str(&fmtted_diags[0]);
+
+    // Will need the dashes to be dependent on existing line metadata
+    if ln_view.ln_num_span.end - ln_view.ln_num_span.start >= 2 {
+        let dash_spaces = " ".repeat(ln_num_width - 1);
+        final_diag.push_str(&format!("\n{dash_spaces}---"));
+        final_diag.push_str(&fmtted_diags[fmtted_diags.len() - 1]);
+    } else if fmtted_diags.len() == 2 {
+        final_diag.push_str(&fmtted_diags[1]);
+    }
+
+    // Is + 1 because columns count starting by 1
+    let col = get_chars_width(src_str, actual_start, start) + 1;
 
     LineData {
-        ln: first_ln_num,
+        diag: final_diag,
+        ln: ln_view.ln_num_span.start,
         col,
-        fmt_segment,
     }
+}
+
+//BUG: Returns line span entirely along with the actual span
+/// Checks if given span is on the same line, and if it is not the span is adjusted to fit the line.
+/// Always returns a new span which could potentially be altered.
+fn curate_span(ln: &Line, span: &Span) -> Span {
+    let ln_range = ln.ln_span.start..=ln.ln_span.end;
+
+    // Issue may be that line range is accounting for all spans instead of relevant ones
+    if !ln_range.contains(&span.start) && !ln_range.contains(&span.end) {
+        return Span::new(ln.ln_span.start, ln.ln_span.end);
+    } else if !ln_range.contains(&span.start) {
+        return Span::new(ln.ln_span.start, span.end);
+    } else if !ln_range.contains(&span.end) {
+        return Span::new(span.start, ln.ln_span.end);
+    };
+
+    span.clone()
+}
+
+/// Goes from the start to the end of the span collecting all line data so that any sort of later
+/// complex error handling does not need any re-computation, and has a high level view of all lines
+/// in the given span.
+fn form_ln_view(src_bytes: &[u8], span: &Span) -> LineView {
+    // Getting the first line's start position since span.start could start later in the actual
+    // line. May make this something that just needs to be done outside.
+    let first_ln_start = span.start;
+
+    let mut i = first_ln_start;
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Decoupled for readability. Current start is technically is just i.
+    // Every i is not a current start, but every current start is i + 1 or 2.
+    let mut current_start = first_ln_start;
+
+    let ln_start = get_ln_num(src_bytes, span.start);
+
+    // To assign a line number to all processed lines
+    let mut current_ln_num = ln_start;
+
+    //NOTE: Uses the first_ln_start as the default first line, then goes through every line within the
+    // given span until it reaches the end of the span, collecting all `Line` information.
+    // These are structured to be (inclusive, inclusive)
+    //
+    // `current_start` positions itself at the first line of the next line.
+    // `current_end` assumes the current start is already set, and positions itself at wherever the
+    // last line would've ended.
+    while i < src_bytes.len() {
+        let b = src_bytes[i];
+
+        //WARN: TEST WINDOWS
+        if b == b'\r' && src_bytes.get(i + 1) == Some(&b'\n') {
+            // if the previous byte was a \n then that means this line is a singular new line and
+            // line start == line end, otherwise the actual end is - 2
+            //FIX: TESTING WINDOWS
+            let current_end = if src_bytes.get(i - 1) == Some(&b'\n') {
+                i
+            } else {
+                // Still i - 1 here since the carriage return is stopped at and both are skipped at
+                // once in the end.
+                i - 1
+            };
+
+            // Could also collect the line it's on but that data is not important here
+            let ln = Line {
+                ln_num: current_ln_num,
+                ln_span: Span::new(current_start, current_end),
+            };
+
+            lines.push(ln);
+
+            // To avoid reading entire file
+            if i > span.end {
+                break;
+            }
+
+            current_start = i + 2;
+
+            current_ln_num += 1;
+            i += 2;
+        } else if b == b'\n' {
+            // Processes single new line line as a singular line with one '\n' inside.
+            // This is so all lines are accounted for empty or not. Not particular reason for this
+            // to happen but it is done just in case.
+            let current_end = if src_bytes.get(i - 1) == Some(&b'\n') {
+                i
+            } else {
+                i - 1
+            };
+
+            let ln = Line {
+                ln_num: current_ln_num,
+                ln_span: Span::new(current_start, current_end),
+            };
+
+            lines.push(ln);
+
+            if i > span.end {
+                break;
+            }
+
+            current_start = i + 1;
+
+            current_ln_num += 1;
+            i += 1;
+        } else {
+            i += 1;
+        }
+
+        // WARN: TEMP EOF '@end' EDGE CASE PRINTING
+        if i == span.end && span.end == src_bytes.len() {
+            let current_end = i - 1;
+
+            let ln = Line {
+                ln_num: current_ln_num,
+                ln_span: Span::new(current_start, current_end),
+            };
+
+            lines.push(ln);
+
+            break;
+        }
+    }
+
+    let ln_span = Span::new(ln_start, current_ln_num);
+    LineView {
+        ln_num_span: ln_span,
+        lines,
+    }
+}
+
+/// Gets the first new line byte using the given position
+fn get_ln_start_byte(src_bytes: &[u8], pos: usize) -> usize {
+    for i in (0..=pos).rev() {
+        let b = src_bytes[i];
+
+        if b == b'\n' {
+            return i + 1;
+        }
+    }
+
+    // Returns zero so that it's still returning the start of the line even at the beginning of the
+    // file
+    0
+}
+
+/// Get's the line number of the given start by looking for the first \n. Returns the first
+/// character if no \n is found
+fn get_ln_num(src_bytes: &[u8], start: usize) -> usize {
+    // Could be issues here regarding line numbers being counted for single line lines
+    let mut ln_num = 1;
+    for i in 0..=start {
+        let b = src_bytes[i];
+
+        if b == b'\n' {
+            ln_num += 1;
+        }
+    }
+
+    ln_num
+}
+
+/// Forms a diagnostic with arrows under the grouped spans.
+/// Assumes the given line group has it's spans stored on the same relevant line using
+/// `LineGroups`. Assumes the given line group is also sorted. Also assumes the spans don't span
+/// past their respective line.
+fn form_diag(
+    src_str: &str,
+    ln: &Line,
+    ln_num_width: usize,
+    grouped_spans: &Vec<Span>,
+    can_color: bool,
+) -> String {
+    // Maybe separating this basic line from the formatted arrows could be better later
+    let mut plain_ln = String::new();
+
+    // Is an inclusive range since spans are inclusive, exclusive
+    plain_ln.push_str(&src_str[ln.ln_span.start..=ln.ln_span.end]);
+
+    let (red, nc) = color::get_red(can_color);
+
+    // The tip arrows under the plain line
+    let mut pointers = String::new();
+    let mut last_span_start = ln.ln_span.start;
+
+    for span in grouped_spans {
+        // This needs to be done due to the fact that spans need to be added by 1 since they're
+        // (inclusive, exclusive) but if the span.start is span.end then that is the
+        // only case where it isn't applied.
+        // let checked_span_start = if span.start == span.end {
+        //     span.start
+        // } else {
+        //     span.start
+        // };
+
+        let space_count = get_chars_width(src_str, last_span_start, span.start);
+
+        // Space count added makes last_span_start one before the actual span. The difference of
+        // span end + 1 and span start is the actual span that needs to be skipped.
+        last_span_start += space_count + ((span.end + 1) - span.start);
+
+        pointers.push_str(&" ".repeat(space_count));
+
+        // Since the function is inclusive, exclusive a + 1 is needed
+        dbg!("arrows");
+        dbg!(span.start, span.end);
+
+        let arrow_count = get_chars_width(src_str, span.start, span.end + 1);
+        let arrows = "^".repeat(arrow_count);
+        let colored_arrows = format!("{red}{arrows}{nc}");
+
+        pointers.push_str(&colored_arrows);
+    }
+
+    let current_ln_num_size = get_num_width(ln.ln_num);
+    let bar_spaces = " ".repeat(ln_num_width);
+    // Ensuring that the size of the current number aligns with the vertical bars
+    let num_alignment = " ".repeat(ln_num_width - current_ln_num_size);
+
+    let fmtted_ln_num = format!("{}{num_alignment}", ln.ln_num);
+
+    let diag = format!("\n{fmtted_ln_num}|\t{plain_ln}\n{bar_spaces}|\t{pointers}");
+
+    diag
 }
 
 pub fn standardize_err(base_msg: &str, line_data: &LineData, help: &str) -> String {
@@ -110,7 +392,7 @@ pub fn standardize_err(base_msg: &str, line_data: &LineData, help: &str) -> Stri
         "{base_msg}\n[{}:{}]\n{}\n{help}{}",
         line_data.ln,
         line_data.col,
-        line_data.fmt_segment,
+        line_data.diag,
         "-".repeat(TOTAL_SEPARATORS)
     )
 }
@@ -125,101 +407,27 @@ pub fn standardize_help(msg: &str, can_color: bool) -> String {
     }
 }
 
-fn get_src_line_info(src: &[u8], span: &Span) -> (usize, usize) {
-    let mut ln_end = 1;
-    let mut i = 0;
+/// Is the preferred function for getting number widths to avoid allocating strings just for number sizes
+fn get_num_width(num: usize) -> usize {
+    let mut size = 1;
+    let mut i = num;
 
-    while i <= span.end {
-        match src[i] {
-            b'\n' => {
-                i += 1;
-                ln_end += 1;
-            }
-            b'\r' if src.get(i + 1) == Some(&b'\n') => {
-                i += 2;
-                ln_end += 1;
-            }
-            _ => i += 1,
-        }
+    while i > 10 {
+        i /= num;
+        size += 1;
     }
 
-    let mut ln_start = ln_end;
-    for i in (span.start..span.end).rev() {
-        if src[i] == b'\n' {
-            ln_start -= 1;
-        }
-    }
-
-    (ln_start, ln_end)
+    size
 }
 
-fn get_start_of_line(src: &[u8], span_start: usize) -> usize {
-    for i in (1..=span_start).rev() {
-        if src[i - 1] == b'\n' {
-            return i;
-        }
+/// Returns character width count within the given start and end (inclusive, exclusive)
+fn get_chars_width(s: &str, start: usize, end: usize) -> usize {
+    if start > end {
+        dbg!(&s[end..start]);
     }
-    0
-}
 
-fn get_line_end(src: &[u8], start: usize) -> usize {
-    for i in start..src.len() {
-        match src[i] {
-            b'\r' if src.get(i + 1) == Some(&b'\n') => return i,
-            b'\n' => return i,
-            _ => {}
-        }
-    }
-    src.len()
-}
-
-fn char_width_offset(s: &str, start: usize, end: usize) -> usize {
     s[start..end]
         .chars()
         .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
         .sum()
-}
-
-fn merge_ranges(ranges: &[(usize, usize)]) -> Vec<(usize, usize)> {
-    let mut sorted = ranges.to_vec();
-    sorted.sort_by_key(|r| r.0);
-    let mut merged: Vec<(usize, usize)> = Vec::new();
-    for range in sorted {
-        if let Some(last) = merged.last_mut() {
-            if range.0 <= last.1 + 1 {
-                last.1 = last.1.max(range.1);
-                continue;
-            }
-        }
-        merged.push(range);
-    }
-    merged
-}
-
-fn format_line(
-    ln_num: usize,
-    ln_str: &str,
-    ranges: &[(usize, usize)],
-    ln_width: usize,
-    can_color: bool,
-) -> String {
-    let bar_spacing = " ".repeat(ln_width);
-    let (red, nc) = color::get_red(can_color);
-
-    let mut arrow_line = String::new();
-    let mut last_end = 0;
-
-    for &(start, end) in ranges {
-        let adj_end = if end + 1 > ln_str.len() { end } else { end + 1 };
-
-        arrow_line.push_str(&" ".repeat(char_width_offset(ln_str, last_end, start)));
-        arrow_line.push_str(red);
-
-        arrow_line.push_str(&"^".repeat(char_width_offset(ln_str, start, adj_end)));
-        arrow_line.push_str(nc);
-
-        last_end = adj_end;
-    }
-
-    format!(" {bar_spacing}|\n{ln_num:>ln_width$} |\t{ln_str}\n {bar_spacing}|\t{arrow_line}")
 }

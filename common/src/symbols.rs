@@ -117,6 +117,11 @@ impl Span {
     pub fn new(start: usize, end: usize) -> Span {
         Span { start, end }
     }
+
+    // pub fn contains_inclusive(&self, span: &Span) -> bool {
+    //     let self_range = self.start..=self.end;
+    //     let other_range = span.start..=span.end;
+    // }
 }
 
 pub struct SpannedNameId {

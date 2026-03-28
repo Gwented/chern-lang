@@ -131,7 +131,6 @@ impl TypeResolver<'_> {
                     Item::Alias(abstract_alias) => &abstract_alias.name_span,
                 }
                 .clone();
-
                 let dup_name = self.interner.search(name_id.id as usize);
 
                 let msg = format!(

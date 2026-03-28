@@ -165,10 +165,7 @@ impl Lexer<'_> {
 
                         tokens.push(SpannedToken {
                             token: Token::EOF,
-                            // Needs - 1 because span is inclusive exclusive
-                            // due to how bytes are seen
-                            // Could be from bad decisions...
-                            span: Span::new(self.pos, self.pos + DEFINITION_SIZE - 1),
+                            span: Span::new(self.pos, self.pos + DEFINITION_SIZE),
                         });
 
                         // start_offset = self.pos + DEFINITION_SIZE;
