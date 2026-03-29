@@ -7,6 +7,7 @@ pub mod fmter;
 pub mod help_model;
 pub mod intern;
 pub mod keywords;
+pub mod lang_config;
 pub mod metadata;
 pub mod reporter;
 pub mod symbols;
@@ -63,6 +64,7 @@ pub mod tests {
         assert_eq!("bind", interner.search(Keyword::Bind as usize));
         assert_eq!("alias", interner.search(Keyword::Alias as usize));
         assert_eq!("const", interner.search(Keyword::Const as usize));
+        assert_eq!("change", interner.search(Keyword::Change as usize));
         // Sections
         assert_eq!("var", interner.search(Keyword::Var as usize));
         assert_eq!("nest", interner.search(Keyword::Nest as usize));
@@ -93,13 +95,12 @@ pub mod tests {
             );
         }
 
-        // TEST: Taking away the data structures with - 3
         assert_eq!(
             keywords::KEYWORDS_ARRAY[(keywords::TYPE_END - 3) as usize],
             "BigFloat"
         );
 
         // This is to force me to check even if it was done correctly
-        assert_eq!(keywords::KEYWORDS_ARRAY.len(), 44);
+        assert_eq!(keywords::KEYWORDS_ARRAY.len(), 45);
     }
 }

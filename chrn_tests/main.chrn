@@ -1,11 +1,9 @@
+I am unclosed and wrong "
 @def
 
-export alias foo() = [Something()]
-
-
+const INFO = "Fake issue"
 
 var->
-    // I can't take this seriously
-    name: bingo
-    age: u8
+    name: str
+    age: u8 [Equals(0x1F)]
 @end

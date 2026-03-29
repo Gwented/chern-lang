@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // This exists so that the interned value can be kept and displayed. It's also so a notation can be
 // read within the lexer and stored without losing accuracy by setting it to something like i64
 pub(crate) enum Notation {
@@ -12,7 +12,7 @@ pub(crate) enum Notation {
 }
 
 // WHAT
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Token {
     // To help with error messages
     // Keyword(Keyword),

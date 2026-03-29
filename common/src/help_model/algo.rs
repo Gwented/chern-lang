@@ -1,8 +1,8 @@
 /// Assumes the given given Vec has at least one element.
 // May turn to opt
-pub fn argmax(args: &Vec<f32>) -> usize {
+pub fn argmax(args: &Vec<f32>) -> Option<usize> {
     let mut max_idx = 0;
-    let mut max_arg = args[0];
+    let mut max_arg = *args.get(0)?;
 
     for (i, next_arg) in args.iter().skip(1).enumerate() {
         if *next_arg > max_arg {
@@ -11,7 +11,7 @@ pub fn argmax(args: &Vec<f32>) -> usize {
         }
     }
 
-    max_idx
+    Some(max_idx)
 }
 
 pub fn argmin(args: &Vec<f32>) -> usize {

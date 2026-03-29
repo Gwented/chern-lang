@@ -41,7 +41,7 @@ pub struct SymbolTable {
 
 #[derive(Debug, Clone)]
 pub struct SpannedToken {
-    pub token: Token,
+    pub(crate) tok: Token,
     pub span: Span,
 }
 

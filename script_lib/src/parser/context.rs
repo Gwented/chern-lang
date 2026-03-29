@@ -71,9 +71,9 @@ impl<'a> Context<'a> {
         self.pos += 1;
 
         //TEST: I JUST WANTED TO USE REFERENCES
-        let id_opt = match found.token {
+        let id_opt = match found.tok {
             Token::Id(id) | Token::Str(id) | Token::Integer(id, _) | Token::Float(id, _) => {
-                if found.token.kind() == expected {
+                if found.tok.kind() == expected {
                     return Ok(id);
                 }
 
@@ -102,7 +102,7 @@ impl<'a> Context<'a> {
 
             reporter::standardize_err(&msg, &ln_data, &help)
         } else {
-            let msg = format!("(in {branch})\n{bmsg}'{}'{amsg}", found.token.kind());
+            let msg = format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind());
 
             reporter::standardize_err(&msg, &ln_data, &help)
         };
@@ -111,7 +111,7 @@ impl<'a> Context<'a> {
 
         self.recover(branch);
 
-        Err(found.token)
+        Err(found.tok)
     }
 
     // BOF
@@ -154,8 +154,8 @@ impl<'a> Context<'a> {
         let found = &self.toks[self.pos];
         self.pos += 1;
 
-        if found.token.kind() != expected {
-            let id_str_opt = match found.token {
+        if found.tok.kind() != expected {
+            let id_str_opt = match found.tok {
                 //TODO: Do something with illegal
                 Token::Id(id) | Token::Str(id) | Token::Integer(id, _) => {
                     Some(interner.search(id as usize).to_string())
@@ -185,12 +185,12 @@ impl<'a> Context<'a> {
             let msg = if let Some(id_str) = id_str_opt {
                 let base_msg = format!(
                     "(in {branch})\n{bmsg}{} \"{id_str}\"{amsg}",
-                    found.token.kind()
+                    found.tok.kind()
                 );
 
                 reporter::standardize_err(&base_msg, &ln_data, &help)
             } else {
-                let base_msg = format!("(in {branch})\n{bmsg}'{}'{amsg}", found.token.kind());
+                let base_msg = format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind());
 
                 reporter::standardize_err(&base_msg, &ln_data, &help)
             };
@@ -199,10 +199,10 @@ impl<'a> Context<'a> {
 
             self.recover(branch);
 
-            return Err(found.token);
+            return Err(found.tok);
         }
 
-        Ok(found.token)
+        Ok(found.tok)
     }
 
     /// More composable "Expected but found" error.
@@ -243,7 +243,7 @@ impl<'a> Context<'a> {
         if self.peek_kind() != TokenKind::EOF {
             while self.pos < self.toks.len() + 2
                 && (self.peek_kind().to_u64() & current_targets) == 0
-                && (self.peek_ahead(1).token.kind().to_u64() & next_targets) == 0
+                && (self.peek_ahead(1).tok.kind().to_u64() & next_targets) == 0
             {
                 self.advance();
             }
@@ -281,11 +281,11 @@ impl<'a> Context<'a> {
     ) -> Option<String> {
         // Maybe saturating could lead to mis info
         let prev_tok = self.toks.get(self.pos.saturating_sub(2))?.clone();
-        let prev_kind = prev_tok.token.kind();
+        let prev_kind = prev_tok.tok.kind();
 
         match branch {
             //FIXME: Currently suggests on any error in neutral so...more branches
-            Branch::Neutral => match found.token {
+            Branch::Neutral => match found.tok {
                 Token::Id(id) | Token::Illegal(id) => {
                     let found_bytes = interner.search(id as usize).as_bytes();
 
@@ -301,7 +301,7 @@ impl<'a> Context<'a> {
                 }
                 _ => None,
             },
-            Branch::Searching => match found.token {
+            Branch::Searching => match found.tok {
                 Token::Id(id) | Token::Illegal(id) => {
                     let found_bytes = interner.search(id as usize).as_bytes();
 
@@ -319,7 +319,7 @@ impl<'a> Context<'a> {
                 }
                 _ => None,
             },
-            Branch::Var => match found.token {
+            Branch::Var => match found.tok {
                 Token::OParen if expected == TokenKind::Colon => {
                     None
                     // let msg = "Is this missing '[' to define conditions?";
@@ -343,7 +343,7 @@ impl<'a> Context<'a> {
                 }
                 _ => None,
             },
-            Branch::VarType => match found.token {
+            Branch::VarType => match found.tok {
                 Token::CAngleBracket if prev_kind == TokenKind::Comma => {
                     let msg = "Was there a trailing ',' or an intended second type?";
                     let help = reporter::standardize_help(msg, self.metadata.can_color);
@@ -352,7 +352,7 @@ impl<'a> Context<'a> {
                 }
                 _ => None,
             },
-            Branch::Cond => match found.token {
+            Branch::Cond => match found.tok {
                 Token::Id(id) if expected == TokenKind::CBracket => {
                     let msg = "Is there a missing comma to separate conditions?";
                     let help = reporter::standardize_help(msg, self.metadata.can_color);
@@ -367,7 +367,7 @@ impl<'a> Context<'a> {
                 }
                 _ => None,
             },
-            Branch::NestEnum => match found.token.kind() {
+            Branch::NestEnum => match found.tok.kind() {
                 TokenKind::Colon => {
                     let msg = "Enums use tuples to hold types";
                     let help = reporter::standardize_help(msg, self.metadata.can_color);
@@ -376,7 +376,7 @@ impl<'a> Context<'a> {
                 }
                 _ => None,
             },
-            Branch::VarTypeArgs => match found.token {
+            Branch::VarTypeArgs => match found.tok {
                 Token::Id(id) => {
                     let found_bytes = interner.search(id as usize).as_bytes();
 
@@ -412,7 +412,7 @@ impl<'a> Context<'a> {
 
     //TEST: IF ANYTHING HAPPENS TO ERROR MESSAGES REMOVE THIS
     fn safely_handle_span(&self, found: &SpannedToken) -> Vec<Span> {
-        if found.token.kind() == TokenKind::EOF {
+        if found.tok.kind() == TokenKind::EOF {
             // Minus 2 since we advanced at the beginning
             let start_span = self.toks.get(self.pos - 2).unwrap_or(found).span.clone();
             vec![start_span, found.span.clone()]
@@ -426,16 +426,13 @@ impl<'a> Context<'a> {
     }
 
     pub(super) fn peek_tok(&mut self) -> Token {
-        self.toks
-            .get(self.pos)
-            .map(|t| t.token)
-            .unwrap_or(Token::EOF)
+        self.toks.get(self.pos).map(|t| t.tok).unwrap_or(Token::EOF)
     }
 
     pub(super) fn peek_kind(&self) -> TokenKind {
         self.toks
             .get(self.pos)
-            .map(|t| t.token.kind())
+            .map(|t| t.tok.kind())
             .unwrap_or(TokenKind::EOF)
     }
 
@@ -444,7 +441,7 @@ impl<'a> Context<'a> {
     }
 
     pub(super) fn advance_tok(&mut self) -> Token {
-        let t = self.toks[self.pos].token;
+        let t = self.toks[self.pos].tok;
         self.pos += 1;
         t
     }

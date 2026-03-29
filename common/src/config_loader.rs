@@ -6,12 +6,9 @@ use std::{
 };
 
 use crate::{
-    core_error::ConfigLoadError, help_model::quote_model, metadata::ChernMetadata, reporter,
-    symbols::Span,
+    core_error::ConfigLoadError, help_model::quote_model, keywords::DEFINITION_SIZE,
+    metadata::ChernMetadata, reporter, symbols::Span,
 };
-
-// TEST: Ignore this
-const DEFINITION_SIZE: usize = 4;
 
 const READ_LIMIT_OFFSET: usize = 500;
 

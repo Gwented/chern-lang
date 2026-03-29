@@ -1,6 +1,8 @@
 use std::ops::RangeInclusive;
 
 use crate::fmter::{Formattable, Formatted};
+
+/// Known size in bytes for `@def` and `@end`
 pub const DEFINITION_SIZE: usize = 4;
 //WARN: WAY TOO MANY MICRO-DEPENDENCIES
 
@@ -10,7 +12,7 @@ pub const DEFINITION_SIZE: usize = 4;
 // Ensure tests are aligned
 
 //
-pub static KEYWORDS_ARRAY: [&str; 44] = [
+pub static KEYWORDS_ARRAY: [&str; 45] = [
     // primitives
     "i8", // 0
     "u8",
@@ -49,20 +51,21 @@ pub static KEYWORDS_ARRAY: [&str; 44] = [
     "bind", // 30
     "alias",
     "const", // 32
+    "change",
     // Section names
-    "var",
-    "nest", // 34
-    "complex",
-    "override", // 36
+    "var", // 34
+    "nest",
+    "complex", // 36
+    "override",
     // Predicate keywords
-    "IsEmpty",
-    "IsWhitespace", // 38
+    "IsEmpty", // 38
+    "IsWhitespace",
     // Predicates (Function)
-    "Range",
-    "StartsW", // 40
-    "EndsW",
-    "Contains", // 42
-    "Equals",
+    "Range", // 40
+    "StartsW",
+    "EndsW", // 42
+    "Contains",
+    "Equals", // 44
 ];
 // "Nat" // 37
 // "Real" // 38
@@ -107,17 +110,18 @@ pub enum Keyword {
     Bind = 30,
     Alias = 31,
     Const = 32,
-    Var = 33,
-    Nest = 34,
-    Complex = 35,
-    Override = 36,
-    IsEmpty = 37,
-    IsWhitespace = 38,
-    Range = 39,
-    StartsW = 40,
-    EndsW = 41,
-    Contains = 42,
-    Equals = 43,
+    Change = 33,
+    Var = 34,
+    Nest = 35,
+    Complex = 36,
+    Override = 37,
+    IsEmpty = 38,
+    IsWhitespace = 39,
+    Range = 40,
+    StartsW = 41,
+    EndsW = 42,
+    Contains = 43,
+    Equals = 44,
 }
 
 impl Formattable for Keyword {
@@ -156,6 +160,7 @@ impl Formattable for Keyword {
             Keyword::Bind => Formatted::Bind,
             Keyword::Alias => Formatted::Alias,
             Keyword::Const => Formatted::Const,
+            Keyword::Change => Formatted::Change,
             Keyword::Var => Formatted::Var,
             Keyword::Nest => Formatted::Nest,
             Keyword::Complex => Formatted::Complex,
@@ -208,17 +213,18 @@ impl Keyword {
             30 => Some(Keyword::Bind),
             31 => Some(Keyword::Alias),
             32 => Some(Keyword::Const),
-            33 => Some(Keyword::Var),
-            34 => Some(Keyword::Nest),
-            35 => Some(Keyword::Complex),
-            36 => Some(Keyword::Override),
-            37 => Some(Keyword::IsEmpty),
-            38 => Some(Keyword::IsWhitespace),
-            39 => Some(Keyword::Range),
-            40 => Some(Keyword::StartsW),
-            41 => Some(Keyword::EndsW),
-            42 => Some(Keyword::Contains),
-            43 => Some(Keyword::Equals),
+            33 => Some(Keyword::Change),
+            34 => Some(Keyword::Var),
+            35 => Some(Keyword::Nest),
+            36 => Some(Keyword::Complex),
+            37 => Some(Keyword::Override),
+            38 => Some(Keyword::IsEmpty),
+            39 => Some(Keyword::IsWhitespace),
+            40 => Some(Keyword::Range),
+            41 => Some(Keyword::StartsW),
+            42 => Some(Keyword::EndsW),
+            43 => Some(Keyword::Contains),
+            44 => Some(Keyword::Equals),
             _ => None,
         }
     }
@@ -260,14 +266,14 @@ impl Keyword {
 const TYPE_START: u32 = 0;
 pub const TYPE_END: u32 = 24;
 
-const SECT_START: u32 = 33;
-const SECT_END: u32 = 36;
-
 const STMT_START: u32 = 30;
 const STMT_END: u32 = 32;
 
-const PREDICATE_START: u32 = 37;
-const PREDICATE_END: u32 = 43;
+const SECT_START: u32 = 34;
+const SECT_END: u32 = 37;
+
+const PREDICATE_START: u32 = 38;
+const PREDICATE_END: u32 = 44;
 
 //WARN: The amount of casting here is painful. SEVERELY painful.
 pub fn is_type(id: u32) -> bool {

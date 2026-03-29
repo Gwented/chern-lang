@@ -81,6 +81,12 @@ pub fn parse(metadata: &ChernMetadata, tokens: &Vec<SpannedToken>, interner: &In
 
                     _ = parse_alias_stmt(&mut ctx, is_priv, &mut ast_info, interner);
                 }
+                id if id == Keyword::Const as u32 => {
+                    ctx.advance_tok();
+
+                    _ = parse_const(&mut ctx, interner);
+                    todo!();
+                }
                 id if id == Keyword::Var as u32 => {
                     if !is_priv {
                         report_export(&mut ctx, Formatted::Bind, Branch::Neutral, interner);
@@ -114,7 +120,7 @@ pub fn parse(metadata: &ChernMetadata, tokens: &Vec<SpannedToken>, interner: &In
                         if let Token::Id(plain_id) = ctx.peek_tok()
                             && keywords::is_sect(plain_id)
                                 // Oh my
-                            && ctx.peek_ahead(1).token.kind() == TokenKind::SlimArrow
+                            && ctx.peek_ahead(1).tok.kind() == TokenKind::SlimArrow
                         {
                             break;
                         }
@@ -154,7 +160,7 @@ pub fn parse(metadata: &ChernMetadata, tokens: &Vec<SpannedToken>, interner: &In
                     while ctx.peek_kind() != TokenKind::EOF {
                         if let Token::Id(name_id) = ctx.peek_tok()
                             && keywords::is_sect(name_id)
-                            && ctx.peek_ahead(1).token.kind() == TokenKind::SlimArrow
+                            && ctx.peek_ahead(1).tok.kind() == TokenKind::SlimArrow
                         {
                             break;
                         }
@@ -204,7 +210,7 @@ pub fn parse(metadata: &ChernMetadata, tokens: &Vec<SpannedToken>, interner: &In
                     while ctx.peek_kind() != TokenKind::EOF {
                         if let Token::Id(name_id) = ctx.peek_tok()
                             && keywords::is_sect(name_id)
-                            && ctx.peek_ahead(1).token.kind() == TokenKind::SlimArrow
+                            && ctx.peek_ahead(1).tok.kind() == TokenKind::SlimArrow
                         {
                             break;
                         }
@@ -217,7 +223,6 @@ pub fn parse(metadata: &ChernMetadata, tokens: &Vec<SpannedToken>, interner: &In
                         report_export(&mut ctx, Formatted::Complex, Branch::Searching, interner);
                     }
 
-                    todo!("Override not done");
                     ctx.advance_tok();
 
                     if state.has_override() {
@@ -238,11 +243,14 @@ pub fn parse(metadata: &ChernMetadata, tokens: &Vec<SpannedToken>, interner: &In
                         Branch::Searching,
                         interner,
                     );
+                    // Please lint empty sections please emit 40000 warns for slightly misplaced
+                    // spaces
 
                     while ctx.peek_kind() != TokenKind::EOF {
+                        // This would look simpler with keywords
                         if let Token::Id(name_id) = ctx.peek_tok()
                             && keywords::is_sect(name_id)
-                            && ctx.peek_ahead(1).token.kind() == TokenKind::SlimArrow
+                            && ctx.peek_ahead(1).tok.kind() == TokenKind::SlimArrow
                         {
                             break;
                         }
@@ -560,18 +568,61 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
     Ok(item)
 }
 
+//TODO:
 fn parse_complex_sect(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
     todo!()
 }
 
+//TODO:
 fn parse_override_sect(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
     todo!()
+}
+
+fn parse_const(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
+    ctx.expect_verbose(
+        TokenKind::Id,
+        "Expected an identifier after `const`, found ",
+        "",
+        Branch::Neutral,
+        interner,
+    )?;
+
+    ctx.expect_verbose(
+        TokenKind::Assign,
+        "Expected a '=' to declare const value, found ",
+        "",
+        Branch::Neutral,
+        interner,
+    )?;
+
+    let expr = parse_expr(ctx, interner)?;
+    todo!();
+}
+
+fn parse_expr(ctx: &mut Context, interner: &Intern) -> Result<Expr, Token> {
+    let next = ctx.peek_ahead(1).tok;
+
+    if next == Token::Plus
+        || next == Token::Hyphen
+        || next == Token::Asterisk
+        || next == Token::Slash
+    {
+        let expr = parse_term(ctx, interner)?;
+    }
+
+    todo!();
+}
+
+fn parse_primary(ctx: &mut Context, interner: &Intern) {}
+
+fn parse_term(ctx: &mut Context, interner: &Intern) -> Result<Expr, Token> {
+    todo!();
 }
 
 // ENFORCE TYPE NAMING FOR GENERICS AT LEAST
 fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
     match ctx.peek_tok() {
-        Token::Id(id) if ctx.peek_ahead(1).token.kind() == TokenKind::OAngleBracket => {
+        Token::Id(id) if ctx.peek_ahead(1).tok.kind() == TokenKind::OAngleBracket => {
             let start = ctx.advance_span().start;
 
             let name_id = NameId::new(id);
@@ -624,7 +675,6 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
             Err(Token::Str(id))
         }
         Token::EOF => {
-            //FIX: Points to EOF since it is technically the error.
             ctx.advance_tok();
 
             ctx.report_verbose("Expected type, found <eof>", Branch::VarType, interner);
@@ -814,8 +864,6 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
 
     let name_id = NameId::new(name);
 
-    let err_name = interner.search(name as usize);
-
     let tuple_opt: Option<TypeExpr> = if ctx.peek_kind() == TokenKind::OParen {
         let tuple = parse_tuple(ctx, interner)?;
         Some(tuple)
@@ -897,7 +945,7 @@ fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<SpannedInnerArgs, T
 
 fn parse_cond(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Token> {
     match ctx.peek_tok() {
-        Token::Id(id) if ctx.peek_ahead(1).token.kind() == TokenKind::OParen => {
+        Token::Id(id) if ctx.peek_ahead(1).tok.kind() == TokenKind::OParen => {
             let name_id = NameId::new(id);
             let name_span = ctx.peek_span();
 
@@ -983,7 +1031,7 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<SpannedExpr>,
     while ctx.peek_kind() != TokenKind::CParen {
         let spanned_expr = match ctx.peek_tok() {
             //TEST:
-            Token::Id(id) if ctx.peek_ahead(1).token.kind() == TokenKind::Assign => {
+            Token::Id(id) if ctx.peek_ahead(1).tok.kind() == TokenKind::Assign => {
                 let span = ctx.peek_span();
                 let name_id = NameId::new(id);
                 // Skipping var id and equals

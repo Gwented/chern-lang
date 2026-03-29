@@ -9,17 +9,17 @@ use crate::parser::ast::{
 };
 
 //WARN: FOR SANITY PURPOSES
-pub fn print_all(program: &AstInfo, interner: &Intern) {
+pub fn print_all(ast_info: &AstInfo, interner: &Intern) {
     let indent = 4;
     let spaces = " ".repeat(indent);
 
-    if let Some(name_id) = program.bind {
+    if let Some(name_id) = ast_info.bind {
         let name = interner.search(name_id.id as usize);
 
         println!("bind = \"{name}\"");
     }
 
-    for item in &program.items {
+    for item in &ast_info.items {
         match item {
             Item::Var(ty) => {
                 let name = interner.search(ty.name_id.id as usize);

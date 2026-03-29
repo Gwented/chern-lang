@@ -408,7 +408,7 @@ fn get_num_width(num: usize) -> usize {
     let mut size = 1;
     let mut i = num;
 
-    while i > 10 {
+    while i >= 10 {
         i /= num;
         size += 1;
     }
@@ -418,10 +418,6 @@ fn get_num_width(num: usize) -> usize {
 
 /// Returns character width count within the given start and end (inclusive, exclusive)
 fn get_chars_width(s: &str, start: usize, end: usize) -> usize {
-    if end > start {
-        dbg!(&s[start..end]);
-    }
-
     s[start..end]
         .chars()
         .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))

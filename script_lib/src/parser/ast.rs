@@ -364,6 +364,7 @@ pub(crate) struct AbstractAlias {
     // Only using this because of the span
     pub(crate) name_id: NameId,
     pub(crate) name_span: Span,
+    // Variables only
     pub(crate) params: Vec<TypeExpr>,
     pub(crate) conds: Vec<SpannedExpr>,
     pub(crate) args: Vec<SpannedInnerArgs>,

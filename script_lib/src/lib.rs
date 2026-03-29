@@ -3,6 +3,7 @@ mod algo;
 pub mod lexer;
 // Should not be pub
 pub mod linter;
+mod mod_resolver;
 pub mod parser;
 pub mod semantic;
 mod types;
@@ -32,7 +33,7 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         for tok in &toks {
-            match tok.token {
+            match tok.tok {
                 Token::Id(id) | Token::Str(id) => {
                     dbg!(interner.search(id as usize));
                 }
@@ -78,9 +79,9 @@ mod tests {
 
         assert_eq!(2, toks.len());
         assert!(
-            matches!(toks[0].token, Token::Char(_),),
+            matches!(toks[0].tok, Token::Char(_),),
             "Expected char token, got {:?}",
-            toks[0].token
+            toks[0].tok
         );
 
         // Valid escaped character
@@ -93,9 +94,9 @@ mod tests {
 
         assert_eq!(2, toks.len());
         assert!(
-            matches!(toks[0].token, Token::Char(_),),
+            matches!(toks[0].tok, Token::Char(_),),
             "Expected char token, got {:?}",
-            toks[0].token
+            toks[0].tok
         );
 
         // Valid hex escape
@@ -108,9 +109,9 @@ mod tests {
 
         assert_eq!(2, toks.len());
         assert!(
-            matches!(toks[0].token, Token::Char(_),),
+            matches!(toks[0].tok, Token::Char(_),),
             "Expected char token, got {:?}",
-            toks[0].token
+            toks[0].tok
         );
 
         // Invalid character
@@ -123,9 +124,9 @@ mod tests {
 
         assert_eq!(2, toks.len());
         assert!(
-            matches!(toks[0].token, Token::Illegal(_),),
+            matches!(toks[0].tok, Token::Illegal(_),),
             "Expected Illegal token, got {:?}",
-            toks[0].token
+            toks[0].tok
         );
 
         // Invalid hex escape
@@ -138,9 +139,9 @@ mod tests {
 
         assert_eq!(2, toks.len());
         assert!(
-            matches!(toks[0].token, Token::Illegal(_),),
+            matches!(toks[0].tok, Token::Illegal(_),),
             "Expected Illegal token, got {:?}",
-            toks[0].token
+            toks[0].tok
         );
 
         // I can't actually read hex
@@ -154,9 +155,9 @@ mod tests {
 
         assert_eq!(2, toks.len());
         assert!(
-            matches!(toks[0].token, Token::Illegal(_),),
+            matches!(toks[0].tok, Token::Illegal(_),),
             "Expected Illegal token, got {:?}",
-            toks[0].token
+            toks[0].tok
         );
 
         // Unknown escape
@@ -169,9 +170,9 @@ mod tests {
 
         assert_eq!(2, toks.len());
         assert!(
-            matches!(toks[0].token, Token::Illegal(_),),
+            matches!(toks[0].tok, Token::Illegal(_),),
             "Expected Illegal token, got {:?}",
-            toks[0].token
+            toks[0].tok
         );
 
         // Out of range escape
@@ -184,9 +185,9 @@ mod tests {
 
         assert_eq!(2, toks.len());
         assert!(
-            matches!(toks[0].token, Token::Illegal(_),),
+            matches!(toks[0].tok, Token::Illegal(_),),
             "Expected Illegal token, got {:?}",
-            toks[0].token
+            toks[0].tok
         );
     }
 
@@ -237,11 +238,11 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
-        match toks[0].token {
+        match toks[0].tok {
             Token::Integer(id, Notation::Hex) => {
                 assert_eq!("255", interner.search(id as usize));
             }
-            _ => panic!("Expected Integer with Hex, found {:?}", toks[0].token),
+            _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
         }
 
         // Binary
@@ -253,11 +254,11 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
-        match toks[0].token {
+        match toks[0].tok {
             Token::Integer(id, Notation::Bin) => {
                 assert_eq!("10", interner.search(id as usize));
             }
-            _ => panic!("Expected Integer with Binary, found {:?}", toks[0].token),
+            _ => panic!("Expected Integer with Binary, found {:?}", toks[0].tok),
         }
 
         // Octal
@@ -269,11 +270,11 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
-        match toks[0].token {
+        match toks[0].tok {
             Token::Integer(id, Notation::Octal) => {
                 assert_eq!("63", interner.search(id as usize));
             }
-            _ => panic!("Expected Integer with Octal, found {:?}", toks[0].token),
+            _ => panic!("Expected Integer with Octal, found {:?}", toks[0].tok),
         }
 
         // Decimal
@@ -286,11 +287,11 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
-        match toks[0].token {
+        match toks[0].tok {
             Token::Integer(id, Notation::Decimal) => {
                 assert_eq!("42", interner.search(id as usize));
             }
-            _ => panic!("Expected Integer of Decimal, found {:?}", toks[0].token),
+            _ => panic!("Expected Integer of Decimal, found {:?}", toks[0].tok),
         }
 
         // Float with decimal
@@ -302,11 +303,11 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
-        match toks[0].token {
+        match toks[0].tok {
             Token::Float(id, Notation::Decimal) => {
                 assert_eq!("3.14", interner.search(id as usize));
             }
-            _ => panic!("Expected Float with Decimal, found {:?}", toks[0].token),
+            _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
         }
 
         // Positive Scientific Notation
@@ -318,11 +319,11 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
-        match toks[0].token {
+        match toks[0].tok {
             Token::Float(id, Notation::Decimal) => {
                 assert_eq!("1e+23", interner.search(id as usize));
             }
-            _ => panic!("Expected Float with Decimal, found {:?}", toks[0].token),
+            _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
         }
 
         // Negative Scientific Notation
@@ -334,11 +335,11 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
-        match toks[0].token {
+        match toks[0].tok {
             Token::Float(id, Notation::Decimal) => {
                 assert_eq!("1e-23", interner.search(id as usize));
             }
-            _ => panic!("Expected Float with Decimal, found {:?}", toks[0].token),
+            _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
         }
 
         // Underscored Numbers
@@ -350,11 +351,11 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
-        match toks[0].token {
+        match toks[0].tok {
             Token::Integer(id, Notation::Decimal) => {
                 assert_eq!("1000000", interner.search(id as usize));
             }
-            _ => panic!("Expected Integer with Decimal, found {:?}", toks[0].token),
+            _ => panic!("Expected Integer with Decimal, found {:?}", toks[0].tok),
         }
 
         // Underscored Hex
@@ -366,11 +367,11 @@ mod tests {
         let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
-        match toks[0].token {
+        match toks[0].tok {
             Token::Integer(id, Notation::Hex) => {
                 assert_eq!("65535", interner.search(id as usize));
             }
-            _ => panic!("Expected Integer with Hex, found {:?}", toks[0].token),
+            _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
         }
     }
 }
