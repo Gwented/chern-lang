@@ -3,7 +3,6 @@ mod algo;
 pub mod lexer;
 // Should not be pub
 pub mod linter;
-mod mod_resolver;
 pub mod parser;
 pub mod semantic;
 mod types;
@@ -12,7 +11,7 @@ mod types;
 mod tests {
     use std::path::Path;
 
-    use common::{config_loader::FileLoader, intern::Intern};
+    use common::{config_loader::ChernConfigLoader, intern::Intern};
 
     use crate::{
         lexer::Lexer,
@@ -24,7 +23,7 @@ mod tests {
         let text = r#"bind "./some/path""#;
         dbg!(&text);
 
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
 
@@ -53,14 +52,14 @@ mod tests {
         // Properly closed @def and @end
         let correct = r#"@defbind "./some/path"@end"#;
 
-        let opt = FileLoader::new(Path::new(""), correct.as_bytes()).load_config();
+        let opt = ChernConfigLoader::new(Path::new(""), correct.as_bytes()).load_config();
 
         assert_eq!(true, opt.is_ok());
 
         // Improper @def without an @end
         let wrong = r#"@defbind "./some/path""#;
 
-        let opt = FileLoader::new(Path::new(""), wrong.as_bytes()).load_config();
+        let opt = ChernConfigLoader::new(Path::new(""), wrong.as_bytes()).load_config();
 
         assert_eq!(true, opt.is_err());
     }
@@ -71,7 +70,7 @@ mod tests {
     fn char_literal_test() {
         // Valid single character
         let text = "'a'";
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
@@ -86,7 +85,7 @@ mod tests {
 
         // Valid escaped character
         let text = "'\\n'";
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
@@ -101,7 +100,7 @@ mod tests {
 
         // Valid hex escape
         let text = "'\\x2F'";
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
@@ -116,7 +115,7 @@ mod tests {
 
         // Invalid character
         let text = "'aa'";
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
@@ -131,7 +130,7 @@ mod tests {
 
         // Invalid hex escape
         let text = "'\\x2'";
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
@@ -147,7 +146,7 @@ mod tests {
         // I can't actually read hex
         // Invalid hex digits
         let text = "'\\x255'";
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
@@ -162,7 +161,7 @@ mod tests {
 
         // Unknown escape
         let text = "'\\q'";
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
@@ -177,7 +176,7 @@ mod tests {
 
         // Out of range escape
         let text = "'\\x1Y'";
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
@@ -205,8 +204,8 @@ mod tests {
         "
         .as_bytes();
 
-        let correct = FileLoader::new(Path::new(""), correct).load_config();
-        let wrong = FileLoader::new(Path::new(""), wrong).load_config();
+        let correct = ChernConfigLoader::new(Path::new(""), correct).load_config();
+        let wrong = ChernConfigLoader::new(Path::new(""), wrong).load_config();
 
         assert_eq!(true, correct.is_ok());
         assert_eq!(true, wrong.is_err());
@@ -217,7 +216,7 @@ mod tests {
     fn start_and_serial_offset_test() {
         let text = format!("adwh@def var-> int: i32 @endhi");
 
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
         dbg!(metadata.serial_start);
@@ -231,7 +230,7 @@ mod tests {
     fn lex_notation_test() {
         // Hex Test (Hex Text (Hex Test))
         let text = "0xff";
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
@@ -247,7 +246,7 @@ mod tests {
 
         // Binary
         let text = "0b1010";
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
@@ -263,7 +262,7 @@ mod tests {
 
         // Octal
         let text = "0o77";
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
@@ -279,7 +278,7 @@ mod tests {
 
         // Decimal
         let text = "42";
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
 
@@ -296,7 +295,7 @@ mod tests {
 
         // Float with decimal
         let text = "3.14";
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
@@ -312,7 +311,7 @@ mod tests {
 
         // Positive Scientific Notation
         let text = "1e+23";
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
@@ -328,7 +327,7 @@ mod tests {
 
         // Negative Scientific Notation
         let text = "1e-23";
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
@@ -344,7 +343,7 @@ mod tests {
 
         // Underscored Numbers
         let text = "1_000_000";
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
@@ -360,7 +359,7 @@ mod tests {
 
         // Underscored Hex
         let text = "0x_ff_ff";
-        let metadata = FileLoader::new(Path::new(""), text.as_bytes())
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()
             .unwrap();
         let mut interner = Intern::init();

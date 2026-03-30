@@ -7,7 +7,7 @@ use crate::{
 
 const MAX_ILLEGAL_TOKS: u8 = 5;
 
-// Bit-wise operations for convenience within read_num
+// Bit-wise operations for read_num
 const NOTATION_FLOAT: u8 = 1 << 0;
 const NOTATION_HEX: u8 = 1 << 1;
 const NOTATION_BIN: u8 = 1 << 2;
@@ -29,7 +29,7 @@ impl Lexer<'_> {
     }
 
     pub fn tokenize(&mut self, interner: &mut Intern) -> Vec<SpannedToken> {
-        let mut tokens: Vec<SpannedToken> = Vec::new();
+        let mut toks: Vec<SpannedToken> = Vec::new();
 
         // For threshold of illegal tokens before just giving up. Likely 8 cap.
         let mut illegal_toks: u8 = 0;
@@ -41,7 +41,7 @@ impl Lexer<'_> {
             self.skip_whitespace();
 
             if self.peek() == b'\0' || illegal_toks > MAX_ILLEGAL_TOKS {
-                tokens.push(SpannedToken {
+                toks.push(SpannedToken {
                     tok: Token::EOF,
                     span: Span::new(self.pos, self.pos),
                 });
@@ -54,11 +54,13 @@ impl Lexer<'_> {
             match ch {
                 // TEST: Whitespace is skipped beforehand meaning if it's not ascii it actually has
                 // to be a character anyways, I think.
-                c if c.is_ascii_alphabetic() || c == '_' || c.is_alphabetic() => {
-                    tokens.push(self.read_id(interner));
+
+                // I don't know why this double check is here may remove this
+                c if c.is_alphabetic() || c == '_' => {
+                    toks.push(self.read_id(interner));
                 }
                 c if c.is_ascii_digit() => {
-                    tokens.push(self.read_num(interner));
+                    toks.push(self.read_num(interner));
                 }
                 ':' => {
                     let (start, mut end) = (self.pos, self.pos);
@@ -71,7 +73,7 @@ impl Lexer<'_> {
                         Token::Colon
                     };
 
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok,
                         span: Span::new(start, end),
                     });
@@ -79,7 +81,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '(' => {
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok: Token::OParen,
                         span: Span::new(self.pos, self.pos),
                     });
@@ -87,7 +89,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 ')' => {
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok: Token::CParen,
                         span: Span::new(self.pos, self.pos),
                     });
@@ -95,23 +97,42 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '<' => {
-                    tokens.push(SpannedToken {
-                        tok: Token::OAngleBracket,
-                        span: Span::new(self.pos, self.pos),
-                    });
+                    let (start, mut end) = (self.pos, self.pos);
 
-                    self.advance();
+                    let tok = if self.peek_ahead(1) == b'=' {
+                        self.skip(2);
+                        end = self.pos;
+
+                        Token::LessOrEq
+                    } else {
+                        self.advance();
+                        Token::OAngleBracket
+                    };
+
+                    toks.push(SpannedToken {
+                        tok,
+                        span: Span::new(start, end),
+                    });
                 }
                 '>' => {
-                    tokens.push(SpannedToken {
-                        tok: Token::CAngleBracket,
-                        span: Span::new(self.pos, self.pos),
-                    });
+                    let (start, mut end) = (self.pos, self.pos);
 
-                    self.advance();
+                    let tok = if self.peek_ahead(1) == b'=' {
+                        self.skip(2);
+                        end = self.pos;
+                        Token::GreaterOrEq
+                    } else {
+                        self.advance();
+                        Token::CAngleBracket
+                    };
+
+                    toks.push(SpannedToken {
+                        tok,
+                        span: Span::new(start, end),
+                    });
                 }
                 '[' => {
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok: Token::OBracket,
                         span: Span::new(self.pos, self.pos),
                     });
@@ -119,7 +140,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 ']' => {
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok: Token::CBracket,
                         span: Span::new(self.pos, self.pos),
                     });
@@ -127,7 +148,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '{' => {
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok: Token::OCurlyBracket,
                         span: Span::new(self.pos, self.pos),
                     });
@@ -135,7 +156,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '}' => {
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok: Token::CCurlyBracket,
                         span: Span::new(self.pos, self.pos),
                     });
@@ -143,7 +164,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 ',' => {
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok: Token::Comma,
                         span: Span::new(self.pos, self.pos),
                     });
@@ -156,11 +177,11 @@ impl Lexer<'_> {
                     // definition, but can stay like this for now.
                     if self.is_def_start() {
                         in_def = true;
-                        self.pos += keywords::DEFINITION_SIZE;
+                        self.skip(keywords::DEFINITION_SIZE);
                     } else if self.is_def_end() {
                         in_def = false;
 
-                        tokens.push(SpannedToken {
+                        toks.push(SpannedToken {
                             tok: Token::EOF,
                             span: Span::new(self.pos, self.pos + keywords::DEFINITION_SIZE),
                         });
@@ -168,22 +189,26 @@ impl Lexer<'_> {
                         // start_offset = self.pos + DEFINITION_SIZE;
                         break;
                     } else {
-                        illegal_toks += 1;
-                        tokens.push(self.recover_illegal(None, interner));
+                        toks.push(SpannedToken {
+                            tok: Token::At,
+                            span: Span::new(self.pos, self.pos),
+                        });
+
+                        self.advance();
                     }
                 }
                 '.' => {
-                    let (start, end) = (self.pos, self.pos);
+                    let (start, mut end) = (self.pos, self.pos);
 
                     if self.peek_ahead(1) == b'.' && self.peek_ahead(2) == b'=' {
                         self.skip(2);
 
-                        tokens.push(SpannedToken {
+                        toks.push(SpannedToken {
                             tok: Token::DotRange,
                             span: Span::new(start, end),
                         });
                     } else {
-                        tokens.push(SpannedToken {
+                        toks.push(SpannedToken {
                             tok: Token::Dot,
                             span: Span::new(start, end),
                         });
@@ -192,7 +217,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '#' => {
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok: Token::HashSymbol,
                         span: Span::new(self.pos, self.pos),
                     });
@@ -200,7 +225,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '|' => {
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok: Token::VerticalBar,
                         span: Span::new(self.pos, self.pos),
                     });
@@ -209,14 +234,14 @@ impl Lexer<'_> {
                 }
                 '"' => {
                     self.advance();
-                    tokens.push(self.read_quotes(interner));
+                    toks.push(self.read_quotes(interner));
                 }
                 '\'' => {
                     self.advance();
-                    tokens.push(self.read_char(interner));
+                    toks.push(self.read_char(interner));
                 }
                 '+' => {
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok: Token::Plus,
                         span: Span::new(self.pos, self.pos),
                     });
@@ -234,7 +259,7 @@ impl Lexer<'_> {
                         Token::Hyphen
                     };
 
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok: token,
                         span: Span::new(start, end),
                     });
@@ -242,7 +267,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '*' => {
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok: Token::Asterisk,
                         span: Span::new(self.pos, self.pos),
                     });
@@ -257,7 +282,7 @@ impl Lexer<'_> {
                         self.skip(2);
                         self.handle_multi_comment();
                     } else {
-                        tokens.push(SpannedToken {
+                        toks.push(SpannedToken {
                             tok: Token::Slash,
                             span: Span::new(self.pos, self.pos),
                         });
@@ -276,7 +301,7 @@ impl Lexer<'_> {
                         Token::Assign
                     };
 
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok,
                         span: Span::new(start, end),
                     });
@@ -284,7 +309,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '~' => {
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok: Token::Tilde,
                         span: Span::new(self.pos, self.pos),
                     });
@@ -292,7 +317,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '!' => {
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok: Token::ExclamationPoint,
                         span: Span::new(self.pos, self.pos),
                     });
@@ -300,7 +325,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '?' => {
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok: Token::QuestionMark,
                         span: Span::new(self.pos, self.pos),
                     });
@@ -308,7 +333,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '%' => {
-                    tokens.push(SpannedToken {
+                    toks.push(SpannedToken {
                         tok: Token::Percent,
                         span: Span::new(self.pos, self.pos),
                     });
@@ -318,13 +343,13 @@ impl Lexer<'_> {
                 _ => {
                     illegal_toks += 1;
 
-                    tokens.push(self.recover_illegal(None, interner));
+                    toks.push(self.recover_illegal(None, interner));
                     if illegal_toks > MAX_ILLEGAL_TOKS {
                         // TODO: Maybe this should be at the end because technically @ is illegal too
                         eprintln!("Maximum illegal tokens found.\nReporting then aborting...");
                         in_def = false;
 
-                        tokens.push(SpannedToken {
+                        toks.push(SpannedToken {
                             tok: Token::EOF,
                             span: Span::new(self.pos, self.pos),
                         });
@@ -344,7 +369,7 @@ impl Lexer<'_> {
             panic!();
         }
 
-        tokens
+        toks
     }
 
     fn read_id(&mut self, interner: &mut Intern) -> SpannedToken {

@@ -12,6 +12,7 @@ use crate::parser::error::Branch;
 use crate::parser::parse_state::StateFlag;
 use crate::types::symbols::SpannedToken;
 use crate::types::token::{Token, TokenKind};
+use common::core_error::ScriptError;
 use common::fmter::Formatted;
 use common::intern::Intern;
 use common::keywords::{self, Keyword};
@@ -21,7 +22,11 @@ use common::symbols::{InnerArgs, NameId, Span, SpannedInnerArgs};
 // May be lower
 const MAX_ERRORS: u8 = 3;
 
-pub fn parse(metadata: &ChernMetadata, tokens: &Vec<SpannedToken>, interner: &Intern) -> AstInfo {
+pub fn parse(
+    metadata: &ChernMetadata,
+    tokens: &Vec<SpannedToken>,
+    interner: &Intern,
+) -> Result<AstInfo, ScriptError> {
     let mut ast_info = AstInfo::new();
 
     let mut state = StateFlag::new();
@@ -305,8 +310,7 @@ pub fn parse(metadata: &ChernMetadata, tokens: &Vec<SpannedToken>, interner: &In
         std::process::exit(1);
     }
 
-    dbg!(&ast_info);
-    ast_info
+    Ok(ast_info)
 }
 
 //FIXME: These sets may be misaligned
@@ -370,7 +374,6 @@ fn parse_alias_stmt(
     };
 
     let alias = AbstractAlias::new(name_id, name_span, params, conds, args, is_priv);
-    dbg!(&alias);
 
     ast_info.items.push(Item::Alias(alias));
 
@@ -684,7 +687,6 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
             panic!("Touched <poison>");
         }
         t => {
-            dbg!(ctx.peek_tok());
             ctx.advance_tok();
 
             let fmt_tok = format!("'{}'", t.kind());

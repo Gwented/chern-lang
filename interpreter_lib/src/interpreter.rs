@@ -5,9 +5,10 @@ use std::{
 };
 
 use common::{
-    config_loader::FileLoader,
-    core_error::{ConfigLoadError, CoreError},
+    config_loader::ChernConfigLoader,
+    core_error::{ConfigLoadError, CoreError, ScriptError},
     intern::Intern,
+    metadata::ChernMetadata,
 };
 use script_lib::{
     lexer::Lexer,
@@ -21,16 +22,15 @@ use script_lib::{
 //Could make it so all the context parts are public, allowing them to be returned and emit errors
 // from a matching of a result for whoever is using the resolver, lexer, etc.
 // Likely returning Core error
-pub fn interpret_chrn_cfg<R: Read>(src: R, path: &Path) -> Result<(), CoreError> {
-    let metadata = FileLoader::new(path, src).load_config()?;
-
+pub fn interpret_chern_cfg(metadata: &ChernMetadata) -> Result<(), ScriptError> {
     let mut interner = Intern::init();
 
     let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
 
+    // To be replaced with Module struct so import export can be used
     let mut table = Table::new();
 
-    let ast_info = parser::parse(&metadata, &toks, &mut interner);
+    let ast_info = parser::parse(&metadata, &toks, &mut interner)?;
 
     TypeResolver::new(&ast_info, &metadata, &interner, &mut table).resolve();
     ConstraintResolver::new(&ast_info, &metadata, &interner, &mut table).resolve();

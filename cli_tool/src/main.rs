@@ -1,9 +1,11 @@
+//TODO: Eventually will have it's own cli backend but not priority
 use chrn::{args, config::CliConfig, dispatcher};
 use clap::Parser;
 use common::color;
 
 fn main() {
     // Need metadata file for cli config
+    let start = std::time::Instant::now();
 
     let cli_cfg = CliConfig::new();
     let cli = args::Cli::parse();

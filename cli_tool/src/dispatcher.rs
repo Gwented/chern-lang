@@ -5,7 +5,8 @@ use std::{
 };
 
 use common::{
-    core_error::{ConfigLoadError, CoreError},
+    config_loader::ChernConfigLoader,
+    core_error::{ConfigLoadError, CoreError, ScriptError},
     reporter,
 };
 use interpreter_lib::interpreter;
@@ -15,17 +16,15 @@ use crate::{
     config::CliConfig,
 };
 
-// Anyhow?
-// STOP ASKING
 pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
     match &cli.command {
         Commands::Check(check_cmd) => process_check(&check_cmd, &cli_cfg),
-        Commands::FMT(fmt_cmd) => todo!(),
+        Commands::Fmt(fmt_cmd) => todo!(),
         Commands::Gen(gen_cmd) => todo!(),
     }
 }
 
-// What if this had a probability model?
+// What if this had 2 probability models?
 fn process_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, String> {
     let src = match fs::File::open(&check_cmd.path) {
         Ok(f) => f,
@@ -39,8 +38,6 @@ fn process_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, St
                 return Err(msg);
             }
             io::ErrorKind::PermissionDenied => {
-                // Maybe this is bad since if the path being explicitly stated could help
-                // with context this is kinda truncating it
                 let file_name = check_cmd
                     .path
                     .file_name()
@@ -61,23 +58,31 @@ fn process_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, St
         },
     };
 
-    match interpreter::interpret_chrn_cfg(&src, &check_cmd.path) {
+    let mut metadata = match ChernConfigLoader::new(&check_cmd.path, src).load_config() {
+        Ok(data) => data,
+        Err(cfg_err) => match cfg_err {
+            ConfigLoadError::Unclosed(msg) => return Err(msg),
+            ConfigLoadError::IO(io_err) => match io_err.kind() {
+                e => {
+                    let msg = format!("Process exited unsuccessfully.\n{e}");
+                    return Err(msg);
+                }
+            },
+        },
+    };
+
+    // IS THIS BAD?
+    metadata.can_color = cli_cfg.can_color;
+
+    match interpreter::interpret_chern_cfg(&metadata) {
         Ok(_) => {
             let msg = format!("No errors found within file");
             Ok(msg)
         }
-        Err(e) => match e {
-            CoreError::Config(cfg_err) => match cfg_err {
-                ConfigLoadError::UnclosedQuotes(msg) | ConfigLoadError::UnclosedDef(msg) => {
-                    Err(msg)
-                }
-                ConfigLoadError::IO(io_err) => match io_err.kind() {
-                    e => {
-                        let msg = format!("Process exited unsuccessfully.\n{e}");
-                        Err(msg)
-                    }
-                },
-            },
+        Err(script_err) => match script_err {
+            ScriptError::Parser(items) => todo!(),
+            ScriptError::Semantic(items) => todo!(),
+            ScriptError::IO(io_err) => todo!(),
         },
     }
 }

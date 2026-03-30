@@ -18,7 +18,7 @@ pub enum Commands {
     /// Runs interpreter over given `.chrn` file to check for syntax errors
     #[command(name = "check", alias = "c")]
     Check(CheckCmd),
-    FMT(FMTCmd),
+    Fmt(FMTCmd),
     Gen(GenCmd),
 }
 

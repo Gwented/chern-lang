@@ -7,8 +7,6 @@ pub const NC: &str = "\x1b[0m";
 pub const UNDERLINE: &str = "\x1b[21m";
 pub const BOLD: &str = "\x1b[1m";
 
-// macro variadic
-
 /// Returns green ANSI code and NC
 pub fn get_green(can_color: bool) -> (&'static str, &'static str) {
     if can_color { (GREEN, NC) } else { ("", "") }
@@ -26,10 +24,10 @@ pub fn get_red(can_color: bool) -> (&'static str, &'static str) {
 
 /// Returns Cyan ANSI code and NC
 pub fn get_cyan(can_color: bool) -> (&'static str, &'static str) {
-    if can_color { (RED, NC) } else { ("", "") }
+    if can_color { (CYAN, NC) } else { ("", "") }
 }
 
 /// Returns Bold ANSI code and NC
 pub fn get_bold(can_color: bool) -> (&'static str, &'static str) {
-    if can_color { (RED, NC) } else { ("", "") }
+    if can_color { (BOLD, NC) } else { ("", "") }
 }

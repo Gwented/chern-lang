@@ -173,9 +173,7 @@ impl ConstraintResolver<'_> {
         }
 
         let mut args: Vec<InnerArgs> = Vec::new();
-        // This looks odd too
         let fields = &self.table.get_struct(sym_id).fields;
-        dbg!(self.interner.search(abs_struct.name_id.id as usize));
 
         for field in fields {
             for spanned_arg in &abs_struct.glob_args {

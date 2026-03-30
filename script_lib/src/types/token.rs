@@ -45,7 +45,9 @@ pub(crate) enum Token {
     Plus,
     Asterisk,
     Hyphen,
-    // At,
+    GreaterOrEq,
+    LessOrEq,
+    At,
     ExclamationPoint,
     Tilde,
     VerticalBar,
@@ -79,6 +81,9 @@ impl Token {
             Token::Slash => TokenKind::Slash,
             Token::HashSymbol => TokenKind::HashSymbol,
             Token::Percent => TokenKind::Percent,
+            Token::GreaterOrEq => TokenKind::GreaterOrEq,
+            Token::LessOrEq => TokenKind::LessOrEq,
+            Token::At => TokenKind::At,
             Token::Colon => TokenKind::Colon,
             Token::OParen => TokenKind::OParen,
             Token::CParen => TokenKind::CParen,
@@ -109,6 +114,8 @@ pub(crate) enum TokenKind {
     QuestionMark,
     Assign,
     EqualTo,
+    GreaterOrEq,
+    LessOrEq,
     Walrus,
     OAngleBracket,
     CAngleBracket,
@@ -123,7 +130,7 @@ pub(crate) enum TokenKind {
     CParen,
     Plus,
     Hyphen,
-    // At,
+    At,
     ExclamationPoint,
     Asterisk,
     Tilde,
@@ -161,7 +168,10 @@ impl Display for TokenKind {
             TokenKind::OParen => write!(f, "("),
             TokenKind::CParen => write!(f, ")"),
             TokenKind::Plus => write!(f, "+"),
+            TokenKind::GreaterOrEq => write!(f, ">="),
+            TokenKind::LessOrEq => write!(f, "<="),
             TokenKind::Hyphen => write!(f, "-"),
+            TokenKind::At => write!(f, "@"),
             TokenKind::ExclamationPoint => write!(f, "!"),
             TokenKind::Asterisk => write!(f, "*"),
             TokenKind::Walrus => write!(f, ":="),
@@ -205,13 +215,16 @@ pub const C_PAREN: u64 = 1 << 23;
 pub const PLUS: u64 = 1 << 24;
 pub const HYPHEN: u64 = 1 << 25;
 pub const ASTERISK: u64 = 1 << 26;
-pub const EXCLAMATION_POINT: u64 = 1 << 27;
-pub const TILDE: u64 = 1 << 28;
-pub const DOT: u64 = 1 << 29;
-pub const VERTICAL_BAR: u64 = 1 << 30;
-pub const ILLEGAL: u64 = 1 << 31;
-pub const POISON: u64 = 1 << 32;
-pub const EOF: u64 = 1 << 33;
+pub const AT: u64 = 1 << 27;
+pub const GREATER_OR_EQ: u64 = 1 << 28;
+pub const LESS_OR_EQ: u64 = 1 << 29;
+pub const EXCLAMATION_POINT: u64 = 1 << 30;
+pub const TILDE: u64 = 1 << 31;
+pub const DOT: u64 = 1 << 32;
+pub const VERTICAL_BAR: u64 = 1 << 33;
+pub const ILLEGAL: u64 = 1 << 34;
+pub const POISON: u64 = 1 << 35;
+pub const EOF: u64 = 1 << 36;
 
 //FIX: PLEASE ASSERT THIS THING
 impl TokenKind {
@@ -251,6 +264,9 @@ impl TokenKind {
             TokenKind::VerticalBar => VERTICAL_BAR,
             TokenKind::Illegal => ILLEGAL,
             TokenKind::Poison => POISON,
+            TokenKind::At => todo!(),
+            TokenKind::GreaterOrEq => todo!(),
+            TokenKind::LessOrEq => todo!(),
             TokenKind::EOF => EOF,
         }
     }

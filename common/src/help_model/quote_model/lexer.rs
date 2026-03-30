@@ -1,3 +1,4 @@
+// Yes, this lexer looks odd.
 use std::ops::Range;
 
 use crate::{help_model::quote_model::token::TokenInfo, keywords};
@@ -7,8 +8,7 @@ use super::token::Token;
 //TEST: This will all be removed after
 const NEW_LN_SIG: f32 = 0.6;
 const COMMENT_SIG: f32 = 0.10;
-const QUOTE_COMMENT_SIG: f32 = 0.3;
-const ALPHA_NUM_SIG: f32 = 0.20;
+const ALPHA_NUM_SIG: f32 = 0.15;
 const OTHER_SIG: f32 = 0.10;
 
 #[derive(Debug)]
@@ -283,10 +283,10 @@ impl<'a> Lexer<'a> {
     fn advance_quote(&mut self) -> Token {
         let tok = if self.in_quote {
             self.in_quote = false;
-            Token::EndQuote(self.pos)
+            Token::StrongEndQuote(self.pos)
         } else {
             self.in_quote = true;
-            Token::StartQuote(self.pos)
+            Token::StrongStartQuote(self.pos)
         };
 
         self.advance();

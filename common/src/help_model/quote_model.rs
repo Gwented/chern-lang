@@ -1,5 +1,7 @@
 //TODO: Should be able to truncate current pos + 1 (cut) and reposition self given something like
-//@end twice, meaning it should probably go to the node at the first
+//@end twice, meaning it should probably go to the node at the first @end
+
+// None of this is supposed to be efficient since 1, this will rarely ever happen, and 2, learning.
 mod lexer;
 mod token;
 
@@ -13,7 +15,6 @@ use crate::{
             token::{Token, TokenInfo},
         },
     },
-    keywords::{self, DEFINITION_SIZE},
     symbols::Span,
 };
 
@@ -27,26 +28,29 @@ const PROCEED: u8 = 0;
 const CUT: u8 = 1;
 
 #[derive(Debug)]
-pub struct QuoteGraph {
+pub struct QuoteGraph<'a> {
     current_idx: usize,
     q_nodes: Vec<QuoteNode>,
-    // ctx_toks: &'a Vec<TokenInfo>,
+    ctx_toks: &'a Vec<TokenInfo>,
+    end_tok_pos: Option<usize>,
 }
 
-impl QuoteGraph {
-    fn new(ctx_toks: &Vec<TokenInfo>) -> QuoteGraph {
+impl QuoteGraph<'_> {
+    fn new(ctx_toks: &Vec<TokenInfo>) -> QuoteGraph<'_> {
         QuoteGraph {
             current_idx: 0,
             q_nodes: Vec::new(),
-            // ctx_toks,
+            ctx_toks,
+            end_tok_pos: None,
         }
     }
 
+    // Helper
     fn display_scores(&self) {
         for (i, q_node) in self.q_nodes.iter().enumerate() {
             println!(
-                "Node {i}: \nstart: {} | end: {:?}\nscore: {} | concern: {}",
-                q_node.start_pos, q_node.end_pos, q_node.score, q_node.concern
+                "Node {i}: \nstart: {} | end: {:?}\nscore: {} ",
+                q_node.start_pos, q_node.end_pos, q_node.score
             );
         }
     }
@@ -59,34 +63,32 @@ impl QuoteGraph {
         self.q_nodes.push(q_node);
     }
 
-    fn adjust_node(&mut self, tok: TokenInfo) {
+    fn adjust_node(&mut self, tok_info: TokenInfo) {
+        // Amount of characters that have been seen
         let q_node = &self.q_nodes[self.current_idx];
-        let steps = (q_node.ctx_toks.len() + 1) as f32;
-        dbg!(tok.tok);
 
         let start_pos = q_node.start_pos as f32;
 
-        let tok_sig = tok.sig * context(&q_node.ctx_toks, &tok);
-        dbg!(tok_sig);
+        let distance = (q_node.ctx_toks.len() + 1) as f32;
+
+        if tok_info.tok == Token::End {
+            self.end_tok_pos = Some(self.current_idx);
+        }
+
+        let tok_sig = tok_info.sig * context_tok(&q_node.ctx_toks, &tok_info);
 
         // Exponential decrease of positional bias as the starting position increases
-        let pos_sig = (-(2.0f32.ln()) * (start_pos)).exp();
+        let pos_sig = (-(2.0f32.ln()) * (start_pos + 0.20)).exp();
 
         // Extreme bias towards being at the beginning to catch """ more accurately
-        let steps_sig = 1.0 / (1.0 + (steps - 1.5).exp());
-        dbg!(steps_sig);
-        // for steps in 0..10 {
-        //     let x = 1.0 / (1.0 + ((steps as f32) - 1.5).exp()) * q_node.rate;
-        //     dbg!(x * W_STEP);
-        // }
+        let distance_sig = context_distance(&q_node.ctx_toks, &tok_info, distance);
 
         let q_node = &mut self.q_nodes[self.current_idx];
 
         q_node.score +=
-            ((W_TOK * tok_sig) + (W_POS * pos_sig) + (W_STEP * steps_sig)) * q_node.rate;
-        dbg!(q_node.score);
+            ((W_TOK * tok_sig) + (W_POS * pos_sig) + (W_STEP * distance_sig)) * q_node.rate;
 
-        q_node.ctx_toks.push(tok);
+        q_node.ctx_toks.push(tok_info);
     }
 
     // This is compensation for there being no built context window
@@ -98,48 +100,26 @@ impl QuoteGraph {
     }
 
     /// Evaluates all nodes
-    // Suspicious name
-    fn final_eval(&mut self) {
+    // More suspicious name
+    fn eval(&mut self) {
         let score_logits: Vec<f32> = self.q_nodes.iter().map(|n| n.score).collect();
 
-        let max_score_idx = algo::argmax(&score_logits).unwrap();
+        let highest_score_idx =
+            algo::argmax(&score_logits).expect("Quotes found are >= 2 by default");
 
-        let concern_logits: Vec<f32> = self.q_nodes.iter().map(|n| n.concern).collect();
+        let highest_score = score_logits[highest_score_idx];
 
-        let max_concern_idx = algo::argmax(&concern_logits).unwrap();
-
-        let action =
-            self.choose_action(score_logits[max_score_idx], concern_logits[max_concern_idx]);
-
-        //NOTE: This is always safe due to q_node needing to be at least 2 for quote probs to start
-        if action == CUT && max_concern_idx + 1 < self.q_nodes.len() {
-            self.q_nodes.truncate(max_concern_idx + 1);
+        // dbg!(&self.q_nodes);
+        if let Some(end_idx) = self.end_tok_pos {
+            let end_node = &self.q_nodes[end_idx];
+            let new_score = self.reason_over_end(end_node, &score_logits, highest_score);
         }
     }
 
-    // Proceeds with operations normally or cuts off quotes to basically say, the rest of the
-    // probabilities are likely not to be the end quote
+    fn reason_over_end(&self, end_node: &QuoteNode, score_logits: &Vec<f32>, highest_score: f32) {}
 
     //WARN: Currently does not use this correctly
     fn choose_action(&self, proceed: f32, cut: f32) -> u8 {
-        dbg!(proceed, cut);
-        // let n_proceed = 1.0 / (1.0 + (-proceed).exp());
-        // let n_cut = 1.0 / (1.0 + (-cut).exp());
-
-        // let n_proceed = (proceed - 0.3) / (0.8 - 0.3);
-        // let n_cut = (cut - 0.3) / (0.8 - 0.3);
-        //
-        // dbg!(n_proceed, n_cut);
-        //
-        // let n_cut = (cut - 0.3) / (1.0 - 0.3);
-        // let n_proceed = (proceed - 0.3) / (1.0 - 0.3);
-        //
-        // // dbg!(decision, midpoint, min, max, max - min, norm);
-        // let x = n_cut * (1.0 - n_proceed);
-        // dbg!(x, n_cut, n_proceed);
-        // // panic!();
-
-        // if cut > 0.02 { CUT } else { PROCEED }
         PROCEED
     }
 }
@@ -150,7 +130,6 @@ struct QuoteNode {
     end_pos: Option<usize>,
     score: f32,
     rate: f32,
-    concern: f32,
     ctx_toks: Vec<TokenInfo>,
 }
 
@@ -162,44 +141,35 @@ impl QuoteNode {
             end_pos: None,
             score: 0.05,
             rate: 0.005,
-            concern: 0.03,
             ctx_toks: Vec::new(),
         }
     }
 }
 
-// ITS RECOVERABLE. IT CAN RECOVER, IT CAN DO IT. IT DOESN'T NEED REAL TOKENS
 /// Predicts where an unclosed quote may have started
 pub fn quote_start_probability(src: &[u8], q_type: char, search_range: Range<usize>) -> Vec<Span> {
-    // WARN: Not handled cleanly as of right now
-    // let src_str = str::from_utf8(&src[search_range.clone()]).expect("Invalid UTF-8 within file");
-
-    // dbg!(search_range.len(), search_range.start, search_range.end);
-    // dbg!(&src_str[search_range.start..]);
-
-    let mut toks = quote_model::lexer::Lexer::new(src, &search_range, q_type).tokenize();
+    let toks = quote_model::lexer::Lexer::new(src, &search_range, q_type).tokenize();
 
     let mut q_graph = QuoteGraph::new(&toks);
 
-    for (i, tok_info) in toks.drain(..).enumerate() {
+    for tok_info in &toks {
         match tok_info.tok {
-            Token::StartQuote(pos) => q_graph.next_node(pos),
-            Token::EndQuote(pos) => q_graph.finalize_node(pos),
+            Token::StrongStartQuote(pos) => q_graph.next_node(pos),
+            Token::StrongEndQuote(pos) => q_graph.finalize_node(pos),
             Token::Def | Token::End | Token::Char(_) => {
-                q_graph.adjust_node(tok_info);
+                q_graph.adjust_node(tok_info.clone());
             }
             Token::EOF => break,
         }
     }
 
-    // dbg!(&q_graph);
     q_graph.display_scores();
 
-    q_graph.final_eval();
+    q_graph.eval();
 
     q_graph.display_scores();
 
-    let src_str = str::from_utf8(src).unwrap();
+    // let src_str = str::from_utf8(src).unwrap();
 
     let mut res_idx: usize = 0;
     let mut largest_score = 0.0;
@@ -212,7 +182,6 @@ pub fn quote_start_probability(src: &[u8], q_type: char, search_range: Range<usi
     }
 
     let highest_q = &q_graph.q_nodes[res_idx];
-    dbg!(highest_q);
 
     let start = highest_q.start_pos;
 
@@ -223,27 +192,17 @@ pub fn quote_start_probability(src: &[u8], q_type: char, search_range: Range<usi
     // the actual start, so end is not,
     // Inclusive exclusive + 1
     if let Some(end) = highest_q.end_pos {
-        dbg!(end);
-        dbg!(&src_str[end..]);
-        // panic!();
         spans.push(Span::new(end, end));
     }
-
-    // dbg!(&first, &last);
-    // dbg!(&src_str[first.start..last.end]);
-    // panic!();
 
     spans
 }
 
-/// Returns the amount the signal of the given token should be weighed down given the context.
-fn context(ctx_toks: &Vec<TokenInfo>, current_tok: &TokenInfo) -> f32 {
+/// Returns the amount to apply to the signal of the given token given the context
+fn context_tok(ctx_toks: &Vec<TokenInfo>, current_tok: &TokenInfo) -> f32 {
     if ctx_toks.is_empty() {
         return 1.0;
     }
-
-    // Nothing done with this yet
-    let mut buildup = 1.0;
 
     match current_tok.tok {
         Token::Char(c) if c.is_alphanumeric() => {
@@ -259,31 +218,54 @@ fn context(ctx_toks: &Vec<TokenInfo>, current_tok: &TokenInfo) -> f32 {
             let w_adjusted = (-0.5 * found as f32).exp();
             return w_adjusted;
         }
-        // Token::Char(c) if c == '\n' => {
-        //     todo!()
-        // }
         Token::Char(c) if c == '\n' => {
             // + 1 since steps are based on amount of characters seen and len() is off by one
-            let steps = (ctx_toks.len() + 1) as f32;
+            let distance = (ctx_toks.len() + 1) as f32;
 
             // Slow decay function so long quotes don't win over short ones just for having new
             // lines
-            let w_adjusted = 1.0 / (1.0 + (0.05 * steps as f32));
-
-            // for step in 0..100 {
-            //     let res = 1.0 / (1.0 + (0.05 * step as f32));
-            //     dbg!(res);
-            // }
+            let w_adjusted = 1.0 / (1.0 + (0.05 * distance as f32));
 
             return w_adjusted;
         }
         Token::Char(c) => (),
         Token::Def => (),
         Token::End => (),
-        Token::StartQuote(_) => (),
-        Token::EndQuote(_) => (),
+        // Handled outside
+        Token::StrongStartQuote(_) => (),
+        Token::StrongEndQuote(_) => (),
         Token::EOF => (),
     }
 
-    buildup
+    1.0
+}
+
+fn context_distance(ctx_toks: &Vec<TokenInfo>, current_tok: &TokenInfo, distance: f32) -> f32 {
+    if ctx_toks.is_empty() {
+        return 1.0;
+    }
+
+    // Could be done better but, no
+    match current_tok.tok {
+        Token::Char(c) if c.is_alphanumeric() => (),
+        Token::Char(c) if c == '\n' => {
+            // Distance of new lines from start means more than everything else
+            let distance_sig = 1.0 / (1.0 + (distance - 4.5).exp());
+            dbg!(distance_sig);
+
+            return distance_sig;
+        }
+        Token::Char(_) => (),
+        Token::StrongStartQuote(_) => (),
+        Token::StrongEndQuote(_) => (),
+        Token::Def => (),
+        Token::End => (),
+        Token::EOF => (),
+    }
+    // let distance_sig = 1.0 / (1.0 + (distance - 1.5).exp());
+    // for tok in ctx_toks {}
+
+    dbg!(1.0 / (1.0 + (distance - 1.5).exp()));
+
+    1.0 / (1.0 + (distance - 1.0).exp())
 }

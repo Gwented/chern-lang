@@ -1,10 +1,10 @@
 use crate::symbols::Span;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Token {
     Def,
-    StartQuote(usize),
-    EndQuote(usize),
+    StrongStartQuote(usize),
+    StrongEndQuote(usize),
     Char(char),
     End,
     EOF,

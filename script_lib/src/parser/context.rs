@@ -170,9 +170,6 @@ impl<'a> Context<'a> {
                 _ => None,
             };
 
-            //TODO: Is there a point to explicitly choosing to use kind for comparisons which
-            //already have Token types?
-
             let span = self.safely_handle_span(found);
 
             let ln_data =
@@ -395,7 +392,6 @@ impl<'a> Context<'a> {
         }
     }
 
-    //NOTE: Unsure if this needs to be centralized or if that's doing too much here
     pub(super) fn emit_errors(&self) {
         let (red, nc) = color::get_red(self.metadata.can_color);
 
@@ -407,10 +403,10 @@ impl<'a> Context<'a> {
             println!("{header_err}: {}", err.msg);
         }
 
-        eprintln!("Reported {} error(s)\n", self.err_vec.len());
+        eprintln!("Reported {} error(s)", self.err_vec.len());
     }
 
-    //TEST: IF ANYTHING HAPPENS TO ERROR MESSAGES REMOVE THIS
+    //WARN: IF ANYTHING HAPPENS TO ERROR MESSAGES REMOVE THIS
     fn safely_handle_span(&self, found: &SpannedToken) -> Vec<Span> {
         if found.tok.kind() == TokenKind::EOF {
             // Minus 2 since we advanced at the beginning

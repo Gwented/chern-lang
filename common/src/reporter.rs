@@ -12,14 +12,11 @@ pub struct LineData {
     col: usize,
 }
 
-// LineCache held by context?
-
-// Holds the first line, all lines from the start span to the end span's metadata
+/// High level struct of all byte and line number data for each line inside of it
 #[derive(Debug)]
 struct LineView {
-    // Span contain the lines themselves not any byte offset
+    /// Span of the start and end line within `lines`
     ln_num_span: Span,
-    // Sorted by default
     lines: Vec<Line>,
 }
 
@@ -38,11 +35,6 @@ struct LineGroups {
     span_groups: Vec<(usize, Vec<Span>)>,
 }
 
-// Maybe this isn't needed since there is no realistically huge loss from doing any of this
-// pub struct LineCache {
-//     lines: Vec<Line>,
-// }
-
 impl LineGroups {
     fn new() -> LineGroups {
         LineGroups {
@@ -51,7 +43,7 @@ impl LineGroups {
     }
 
     /// Inserts and immediately sorts the given span within it's correct line vector.
-    /// This method also ensures no duplicates are stored
+    /// This method also ensures no duplicates are stored.
     fn insert(&mut self, ln_key: usize, span: &Span) {
         if let Some(pair) = self.span_groups.iter_mut().find(|group| group.0 == ln_key) {
             //FIX: Do not insert duplicates
@@ -122,9 +114,6 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
 
     //FIXME: FILTER HERE IN-CASE OF DUPLICATES
 
-    dbg!(&ln_groups);
-    // panic!();
-
     // --FOURTH--
     // Giving each group their own diagnostic
     let mut fmtted_diags: Vec<String> = Vec::new();
@@ -156,7 +145,6 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
     final_diag.push_str(&format!("{num_spaces}|"));
     final_diag.push_str(&fmtted_diags[0]);
 
-    // Will need the dashes to be dependent on existing line metadata
     if ln_view.ln_num_span.end - ln_view.ln_num_span.start >= 2 {
         let dash_spaces = " ".repeat(ln_num_width - 1);
 
@@ -224,7 +212,7 @@ fn form_ln_view(src_bytes: &[u8], span: &Span) -> LineView {
 
         if b == b'\r' && src_bytes.get(i + 1) == Some(&b'\n') {
             // if the previous byte was a \n then that means this line is a singular new line and
-            // line start == line end, otherwise the actual end is - 2
+            // line start == line end, otherwise the actual end is - 1
             let current_end = if src_bytes.get(i - 1) == Some(&b'\n') {
                 i
             } else {
@@ -233,7 +221,6 @@ fn form_ln_view(src_bytes: &[u8], span: &Span) -> LineView {
                 i - 1
             };
 
-            // Could also collect the line it's on but that data is not important here
             let ln = Line {
                 ln_num: current_ln_num,
                 ln_span: Span::new(current_start, current_end),
@@ -252,7 +239,7 @@ fn form_ln_view(src_bytes: &[u8], span: &Span) -> LineView {
             i += 2;
         } else if b == b'\n' {
             // Processes single new line line as a singular line with one '\n' inside.
-            // This is so all lines are accounted for empty or not. Not particular reason for this
+            // This is so all lines are accounted for empty or not. No particular reason for this
             // to happen but it is done just in case.
             let current_end = if src_bytes.get(i - 1) == Some(&b'\n') {
                 i
@@ -340,6 +327,8 @@ fn form_ln_diag(
     ln: &Line,
     ln_num_width: usize,
     grouped_spans: &Vec<Span>,
+    // color:
+    // pointer_type: char
     can_color: bool,
 ) -> String {
     // Maybe separating this basic line from the formatted arrows could be better later

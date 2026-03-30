@@ -117,6 +117,10 @@ pub(crate) enum BinaryOp {
     Sub,
     Mult,
     Div,
+    Greater,
+    Less,
+    GreaterOrEq,
+    LessOrEq,
     Mod,
 }
 

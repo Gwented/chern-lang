@@ -1,6 +1,6 @@
 use std::{path::PathBuf, time::Instant};
 
-use common::{config_loader::FileLoader, intern::Intern};
+use common::{config_loader::ChernConfigLoader, intern::Intern};
 use script_lib::{
     lexer::Lexer,
     linter,
@@ -17,7 +17,7 @@ fn main() {
 
     let file = std::fs::File::open(&path).unwrap();
 
-    let metadata = match FileLoader::new(&path, file).load_config() {
+    let metadata = match ChernConfigLoader::new(&path, file).load_config() {
         Ok(meta) => meta,
         Err(_) => {
             eprintln!("From path => {}\n", path.display());
@@ -32,7 +32,7 @@ fn main() {
 
     let mut table = Table::new();
 
-    let ast_info = parser::parse(&metadata, &toks, &mut interner);
+    let ast_info = parser::parse(&metadata, &toks, &mut interner).unwrap();
 
     linter::print_all(&ast_info, &interner);
 
