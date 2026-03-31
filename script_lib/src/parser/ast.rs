@@ -1,20 +1,18 @@
 //NOTE: MAY MAKE EXPRESSION THAT HELPS RESOLVE SEMANTIC TYPES MORE CLEANLY
-use common::{
-    keywords::Keyword,
-    symbols::{AstId, InnerArgs, NameId, Span, SpannedInnerArgs},
-};
+use common::symbols::{AstId, InnerArgs, NameId, Span, SpannedInnerArgs};
 
 #[derive(Debug)]
 pub struct AstInfo {
-    // MAYBE SHOULDN'T BE A NAME ID I DONT KNOW
     pub(crate) bind: Option<NameId>,
+    pub(crate) imports: Vec<NameId>,
     pub(crate) items: Vec<Item>,
 }
 
 impl AstInfo {
-    pub fn new() -> AstInfo {
+    pub(crate) fn new() -> AstInfo {
         AstInfo {
             bind: None,
+            imports: Vec::new(),
             items: Vec::new(),
         }
     }
@@ -40,6 +38,15 @@ impl AstInfo {
         match &self.items[ast_id.id as usize] {
             item => match item {
                 Item::Struct(abs_struct) => abs_struct,
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    pub(crate) fn get_const(&self, ast_id: AstId) -> &AbstractConst {
+        match &self.items[ast_id.id as usize] {
+            item => match item {
+                Item::Const(abs_const) => abs_const,
                 _ => unreachable!(),
             },
         }

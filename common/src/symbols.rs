@@ -146,11 +146,8 @@ impl SpannedBuiltinType {
     }
 }
 
-//TEST:
-// public static void main(String[] args) { for (int i = 0; i < args.length; ++i) {
-// System.out.printf("%d: %s", i, args[i]) } }
-/// NOTE: If a new argument is added ensure this is updated
-pub static ARGS_ARRAY: [&str; 5] = ["warn", "scient", "hex", "bin", "octal"];
+/// If a new argument is added ensure this is updated
+pub static ARGS_ARRAY: [&str; 6] = ["warn", "scient", "hex", "bin", "octal", "ignore"];
 
 #[derive(Debug, Clone)]
 pub struct SpannedInnerArgs {

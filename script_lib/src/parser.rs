@@ -38,6 +38,8 @@ pub fn parse(
             break;
         }
 
+        // Checks if there is an export which is only a boolean due to there only being private and
+        // public
         let is_priv = match parse_export(&mut ctx, interner) {
             Ok(res) => res,
             Err(_) => continue,
@@ -48,7 +50,6 @@ pub fn parse(
         match tok {
             Token::Id(id) => match id {
                 id if id == Keyword::Bind as u32 => {
-                    // May turn into a helper but fine for now
                     if !is_priv {
                         report_export(&mut ctx, Formatted::Bind, Branch::Neutral, interner);
                     }
@@ -193,16 +194,6 @@ pub fn parse(
                             interner,
                         );
                         continue;
-                        if state.has_complex() {
-                            ctx.report_verbose(
-                                "Found \"complex\" section more than once",
-                                Branch::Complex,
-                                interner,
-                            );
-                            continue;
-                        } else {
-                            state.flip_complex();
-                        }
                     } else {
                         state.flip_complex();
                     }
@@ -225,6 +216,7 @@ pub fn parse(
 
                         _ = parse_complex_sect(&mut ctx, interner);
                     }
+                    panic!("complexx end");
                 }
                 id if id == Keyword::Override as u32 => {
                     if !is_priv {
@@ -308,6 +300,7 @@ pub fn parse(
         }
     }
 
+    //TODO: Should be with ScriptError
     if !ctx.err_vec.is_empty() {
         ctx.emit_errors();
         std::process::exit(1);
@@ -328,14 +321,11 @@ fn parse_alias_stmt(
         TokenKind::Id,
         "Expected an identifier after \"alias\", found ",
         "",
-        Branch::Neutral,
+        Branch::Alias,
         interner,
     )?;
 
     let name_id = NameId::new(plain_id);
-
-    //NOTE: ignore this
-    // let err_name = || -> &str {interner.search(name_id as usize)};
 
     let err_name = interner.search(plain_id as usize);
 
@@ -345,7 +335,7 @@ fn parse_alias_stmt(
         &format!("Expected '(' to define alias \"{err_name}\", found "),
         "",
         // May not need corresponding set
-        Branch::Neutral,
+        Branch::Alias,
         interner,
     )?;
 
@@ -355,7 +345,7 @@ fn parse_alias_stmt(
         TokenKind::Assign,
         &format!("Expected '=' to define alias \"{err_name}\", found "),
         "",
-        Branch::Neutral,
+        Branch::Alias,
         interner,
     )?;
 
@@ -596,7 +586,7 @@ fn parse_const(
 
     ctx.expect_verbose(
         TokenKind::Assign,
-        "Expected a '=' to declare const value, found ",
+        "Expected '=' to declare const value, found ",
         "",
         Branch::Neutral,
         interner,
@@ -800,9 +790,6 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
 
             ctx.report_verbose("Expected type, found <eof>", Branch::VarType, interner);
             Err(Token::EOF)
-        }
-        Token::Poison => {
-            panic!("Touched <poison>");
         }
         t => {
             ctx.advance_tok();
@@ -1158,75 +1145,25 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<SpannedExpr>,
                 ctx.skip(2);
 
                 let default = match ctx.peek_tok() {
-                    Token::Integer(id, notation) => {
-                        let span = ctx.advance_span();
-                        let num: i64 = interner
-                            .search(id as usize)
-                            .parse()
-                            .expect("Lexer broke (Integer)");
-
-                        SpannedExpr::new(Expr::Integer(num), span)
-                    }
-                    Token::Float(id, notation) => {
-                        let span = ctx.advance_span();
-                        let num: f64 = interner
-                            .search(id as usize)
-                            .parse()
-                            .expect("Lexer broke (Float).");
-
-                        SpannedExpr::new(Expr::Float(num), span)
-                    }
-                    Token::Str(id) => {
-                        let span = ctx.advance_span();
-
-                        SpannedExpr::new(Expr::Str(NameId::new(id)), span)
-                    }
                     Token::Id(id) | Token::Illegal(id) => {
                         let msg = format!(
                             "Cannot have \"{}\" as a default function parameter",
                             interner.search(id as usize)
                         );
 
-                        ctx.report_verbose(&msg, Branch::Cond, interner);
-
-                        return Err(Token::Poison);
-                    }
-                    Token::Char(ch) => {
-                        let msg = format!("Cannot have \"{}\" within function parameters", ch);
-
-                        ctx.report_verbose(&msg, Branch::Cond, interner);
+                        ctx.report_verbose(&msg, Branch::VarFuncArgs, interner);
 
                         return Err(Token::Poison);
                     }
                     Token::EOF => return Err(Token::Poison),
-                    t => {
-                        ctx.advance_tok();
-
-                        let msg = match t {
-                            Token::Illegal(id) => format!(
-                                "Cannot have \"{}\" within function parameters",
-                                interner.search(id as usize)
-                            ),
-                            _ => format!("Cannot have '{}' within function parameters", t.kind()),
-                        };
-
-                        ctx.report_verbose(&msg, Branch::Cond, interner);
-                        return Err(Token::Poison);
-                    }
+                    _ => parse_expr(ctx, 0, interner)?,
                 };
 
                 let expr = Expr::Default(name_id, Box::new(default));
                 SpannedExpr::new(expr, span)
             }
             // Assuming this is ok
-            Token::Illegal(id) => {
-                panic!("No illegal yet");
-            }
-            _ => {
-                let expr = parse_expr(ctx, 0, interner)?;
-
-                SpannedExpr::new(expr.expr, expr.span)
-            }
+            _ => parse_expr(ctx, 0, interner)?,
         };
 
         args.push(spanned_expr);

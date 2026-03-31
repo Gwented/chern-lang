@@ -1,18 +1,12 @@
-// Program constant that represents whatever the current value is? Like $VAL? (No)
 // LSP in Go
 
 ## Goal
-// This is my leash
 - To allow for instructions that state how to serialize data without something like macros or annotations. All features outside of this are entirely negligible.
 
 ## BEHAVIOR
 - Ends program by default when type information is incorrect unless `#warn` is used.
 
-- Binary representation. 
-Why?
-WHY NOT
-
-Why?
+- Binary representation. <-
 
 ## Types
 i8, u8, i16, u16, i32, u32, i64, u64
@@ -24,7 +18,9 @@ char, bool, (maybe capital) str, struct, enum, tuple, nil, BigInt, BigFloat, Lis
 `tuple`
 
 ## [Operators]
-`!`: Not operator.
+`!`: NOT operator.
+`&&`: AND operator.
+`||` OR operator.
 
 ## Keywords
 // TODO:
@@ -34,9 +30,6 @@ char, bool, (maybe capital) str, struct, enum, tuple, nil, BigInt, BigFloat, Lis
 `enum` for an Enum type which can also hold data.
 
 ## Actions (Ignore this)
-
-### MIGHT EXIST
-`||`: Or operator.
 
 ```chrn
 

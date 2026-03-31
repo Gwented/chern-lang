@@ -38,15 +38,15 @@ fn process_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, St
                 return Err(msg);
             }
             io::ErrorKind::PermissionDenied => {
-                let file_name = check_cmd
-                    .path
-                    .file_name()
-                    .map(|f| f.to_os_string())
-                    .unwrap_or(OsString::from(&check_cmd.path));
+                // let file_name = check_cmd
+                //     .path
+                //     .file_name()
+                //     .map(|f| f.to_os_string())
+                //     .unwrap_or(OsString::from(&check_cmd.path));
 
                 let msg = format!(
                     "The file \"{}\" does not have read permissions enabled",
-                    file_name.display()
+                    check_cmd.path.display()
                 );
 
                 return Err(msg);

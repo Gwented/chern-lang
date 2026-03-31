@@ -252,6 +252,7 @@ impl<'a> Context<'a> {
         match branch {
             Branch::Broken => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Neutral => (C_STMT_NEUTRAL_SET, A_BASE_EXIT_SET),
+            Branch::Alias => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Searching => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Bind => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Var => (C_BRANCH_VAR_SET, A_BRANCH_VAR_SET),
@@ -280,8 +281,28 @@ impl<'a> Context<'a> {
         let prev_tok = self.toks.get(self.pos.saturating_sub(2))?.clone();
         let prev_kind = prev_tok.tok.kind();
 
+        let next_kind = self
+            .toks
+            .get(self.pos + 1)
+            .map(|t| t.tok.kind())
+            .unwrap_or(TokenKind::Poison);
+
         match branch {
             //FIXME: Currently suggests on any error in neutral so...more branches
+            Branch::Alias => match found.tok {
+                // Situation: alias X = 4
+                //            ^^^^^   ^
+                // Keyword tokens would be very nice here..
+                Token::Assign if prev_kind == TokenKind::Id && next_kind != TokenKind::OParen => {
+                    // let found_bytes = interner.search(id as usize).as_bytes();
+
+                    let msg = "Alias statements require parameters";
+                    let help = reporter::standardize_help(&msg, self.metadata.can_color);
+
+                    Some(help)
+                }
+                _ => None,
+            },
             Branch::Neutral => match found.tok {
                 Token::Id(id) | Token::Illegal(id) => {
                     let found_bytes = interner.search(id as usize).as_bytes();

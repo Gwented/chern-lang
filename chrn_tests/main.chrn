@@ -2,7 +2,7 @@
 //
 @def
 
-const X = 4 + (2 * "Hello")
+alias X = #warn
 
 var->
 
