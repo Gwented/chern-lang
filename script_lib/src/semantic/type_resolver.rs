@@ -67,6 +67,7 @@ impl TypeResolver<'_> {
                 Item::Struct(structure) => self.register_struct(structure, ast_id),
                 Item::Enum(enumeration) => self.register_enum(enumeration, ast_id),
                 Item::Alias(alias) => self.register_alias(alias, ast_id),
+                Item::Const(abstract_const) => todo!(),
             }
         }
 
@@ -95,6 +96,7 @@ impl TypeResolver<'_> {
                     _ = self.resolve_enum(enumeration, ast_id);
                 }
                 Item::Alias(alias) => todo!(),
+                Item::Const(abstract_const) => todo!(),
             }
         }
 
@@ -116,19 +118,22 @@ impl TypeResolver<'_> {
             let ast_opt = seen.insert(*name_id, *ast_id);
 
             if let Some(orig_ast_id) = ast_opt {
-                let orig_span = match &self.ast_info.items[orig_ast_id.id as usize] {
-                    Item::Var(abstract_type_def) => &abstract_type_def.name_span,
-                    Item::Struct(abstract_struct) => &abstract_struct.name_span,
-                    Item::Enum(abstract_enum) => &abstract_enum.name_span,
-                    Item::Alias(abstract_alias) => &abstract_alias.name_span,
+                let item = &self.ast_info.items[orig_ast_id.id as usize];
+                let orig_span = match item {
+                    Item::Var(abs_typedef) => &abs_typedef.name_span,
+                    Item::Struct(abs_struct) => &abs_struct.name_span,
+                    Item::Enum(abs_enum) => &abs_enum.name_span,
+                    Item::Alias(abs_alias) => &abs_alias.name_span,
+                    Item::Const(abs_const) => &abs_const.name_span,
                 }
                 .clone();
 
                 let dup_span = match &self.ast_info.items[ast_id.id as usize] {
-                    Item::Var(abstract_type_def) => &abstract_type_def.name_span,
-                    Item::Struct(abstract_struct) => &abstract_struct.name_span,
-                    Item::Enum(abstract_enum) => &abstract_enum.name_span,
-                    Item::Alias(abstract_alias) => &abstract_alias.name_span,
+                    Item::Var(abs_typedef) => &abs_typedef.name_span,
+                    Item::Struct(abs_struct) => &abs_struct.name_span,
+                    Item::Enum(abs_enum) => &abs_enum.name_span,
+                    Item::Alias(abs_alias) => &abs_alias.name_span,
+                    Item::Const(abs_const) => &abs_const.name_span,
                 }
                 .clone();
                 let dup_name = self.interner.search(name_id.id as usize);

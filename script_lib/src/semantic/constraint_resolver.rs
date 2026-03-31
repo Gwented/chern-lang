@@ -59,8 +59,8 @@ impl ConstraintResolver<'_> {
                 Item::Enum(enumeration) => {
                     _ = self.resolve_enum(enumeration, ast_id);
                 }
-                //TEST:
                 Item::Alias(abs_alias) => todo!(),
+                Item::Const(abstract_const) => todo!(),
             }
         }
 

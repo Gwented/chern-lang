@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use crate::parser::ast::BinaryOp;
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // This exists so that the interned value can be kept and displayed. It's also so a notation can be
@@ -47,6 +49,10 @@ pub(crate) enum Token {
     Hyphen,
     GreaterOrEq,
     LessOrEq,
+    NotEq,
+    Ampersand,
+    And,
+    Or,
     At,
     ExclamationPoint,
     Tilde,
@@ -83,11 +89,15 @@ impl Token {
             Token::Percent => TokenKind::Percent,
             Token::GreaterOrEq => TokenKind::GreaterOrEq,
             Token::LessOrEq => TokenKind::LessOrEq,
+            Token::NotEq => TokenKind::NotEq,
             Token::At => TokenKind::At,
+            Token::And => TokenKind::And,
+            Token::Or => TokenKind::Or,
             Token::Colon => TokenKind::Colon,
             Token::OParen => TokenKind::OParen,
             Token::CParen => TokenKind::CParen,
             Token::Plus => TokenKind::Plus,
+            Token::Ampersand => TokenKind::Ampersand,
             Token::Hyphen => TokenKind::Hyphen,
             Token::ExclamationPoint => TokenKind::ExclamationPoint,
             Token::Asterisk => TokenKind::Asterisk,
@@ -96,6 +106,25 @@ impl Token {
             Token::VerticalBar => TokenKind::VerticalBar,
             Token::Illegal(_) => TokenKind::Illegal,
             Token::EOF => TokenKind::EOF,
+        }
+    }
+
+    pub(crate) fn precedence(&self) -> Option<(BinaryOp, u8)> {
+        match self {
+            Token::Plus => Some((BinaryOp::Add, 1)),
+            Token::Hyphen => Some((BinaryOp::Sub, 1)),
+            Token::Asterisk => Some((BinaryOp::Mult, 2)),
+            Token::Slash => Some((BinaryOp::Div, 2)),
+            Token::Percent => Some((BinaryOp::Mod, 2)),
+            Token::OAngleBracket => Some((BinaryOp::Less, 3)),
+            Token::CAngleBracket => Some((BinaryOp::Greater, 3)),
+            Token::GreaterOrEq => Some((BinaryOp::GreaterOrEq, 3)),
+            Token::LessOrEq => Some((BinaryOp::LessOrEq, 3)),
+            Token::EqualTo => Some((BinaryOp::EqualTo, 4)),
+            Token::NotEq => Some((BinaryOp::NotEq, 4)),
+            Token::And => Some((BinaryOp::And, 5)),
+            Token::Or => Some((BinaryOp::Or, 6)),
+            _ => None,
         }
     }
 }
@@ -126,11 +155,15 @@ pub(crate) enum TokenKind {
     DotRange,
     Percent,
     Colon,
+    NotEq,
     OParen,
     CParen,
     Plus,
     Hyphen,
+    Ampersand,
     At,
+    And,
+    Or,
     ExclamationPoint,
     Asterisk,
     Tilde,
@@ -168,10 +201,14 @@ impl Display for TokenKind {
             TokenKind::OParen => write!(f, "("),
             TokenKind::CParen => write!(f, ")"),
             TokenKind::Plus => write!(f, "+"),
+            TokenKind::NotEq => write!(f, "!="),
             TokenKind::GreaterOrEq => write!(f, ">="),
             TokenKind::LessOrEq => write!(f, "<="),
             TokenKind::Hyphen => write!(f, "-"),
             TokenKind::At => write!(f, "@"),
+            TokenKind::Or => write!(f, "||"),
+            TokenKind::And => write!(f, "&&"),
+            TokenKind::Ampersand => write!(f, "&"),
             TokenKind::ExclamationPoint => write!(f, "!"),
             TokenKind::Asterisk => write!(f, "*"),
             TokenKind::Walrus => write!(f, ":="),
@@ -216,15 +253,19 @@ pub const PLUS: u64 = 1 << 24;
 pub const HYPHEN: u64 = 1 << 25;
 pub const ASTERISK: u64 = 1 << 26;
 pub const AT: u64 = 1 << 27;
-pub const GREATER_OR_EQ: u64 = 1 << 28;
-pub const LESS_OR_EQ: u64 = 1 << 29;
-pub const EXCLAMATION_POINT: u64 = 1 << 30;
-pub const TILDE: u64 = 1 << 31;
-pub const DOT: u64 = 1 << 32;
-pub const VERTICAL_BAR: u64 = 1 << 33;
-pub const ILLEGAL: u64 = 1 << 34;
-pub const POISON: u64 = 1 << 35;
-pub const EOF: u64 = 1 << 36;
+pub const NOT_EQ: u64 = 1 << 28;
+pub const GREATER_OR_EQ: u64 = 1 << 29;
+pub const LESS_OR_EQ: u64 = 1 << 30;
+pub const EXCLAMATION_POINT: u64 = 1 << 31;
+pub const TILDE: u64 = 1 << 32;
+pub const DOT: u64 = 1 << 33;
+pub const VERTICAL_BAR: u64 = 1 << 34;
+pub const ILLEGAL: u64 = 1 << 35;
+pub const OR: u64 = 1 << 36;
+pub const AND: u64 = 1 << 37;
+pub const AMPERSAND: u64 = 38;
+pub const POISON: u64 = 1 << 39;
+pub const EOF: u64 = 1 << 40;
 
 //FIX: PLEASE ASSERT THIS THING
 impl TokenKind {
@@ -264,16 +305,14 @@ impl TokenKind {
             TokenKind::VerticalBar => VERTICAL_BAR,
             TokenKind::Illegal => ILLEGAL,
             TokenKind::Poison => POISON,
-            TokenKind::At => todo!(),
-            TokenKind::GreaterOrEq => todo!(),
-            TokenKind::LessOrEq => todo!(),
+            TokenKind::At => AT,
+            TokenKind::GreaterOrEq => GREATER_OR_EQ,
+            TokenKind::LessOrEq => LESS_OR_EQ,
+            TokenKind::Or => OR,
+            TokenKind::And => AND,
+            TokenKind::NotEq => NOT_EQ,
+            TokenKind::Ampersand => AMPERSAND,
             TokenKind::EOF => EOF,
         }
     }
 }
-
-//FIXME:
-// No
-// PLEASE change this from a try_from
-// Maybe
-// Definitely

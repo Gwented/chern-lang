@@ -66,7 +66,22 @@ pub fn print_all(ast_info: &AstInfo, interner: &Intern) {
 
                 println!("]");
             }
-            Item::Alias(abs_alias) => (),
+            Item::Alias(abs_alias) => {
+                let name = interner.search(abs_alias.name_id.id as usize);
+                println!("Alias {name} [");
+
+                for type_expr in &abs_alias.params {
+                    print_type(type_expr, indent + 2, interner);
+                }
+                print_exprs(&abs_alias.conds, indent + 2, interner);
+                print_args(&abs_alias.args, indent + 2, interner);
+
+                println!("]");
+            }
+            Item::Const(abs_const) => {
+                let name = interner.search(abs_const.name_id.id as usize);
+                println!("Const {name} [");
+            }
         }
     }
     println!("]");

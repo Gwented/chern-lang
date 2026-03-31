@@ -4,8 +4,8 @@ mod context;
 mod error;
 mod parse_state;
 use crate::parser::ast::{
-    AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVariant, AstInfo, Call,
-    Expr, Generic, Item, SpannedExpr, TypeExpr, Unary, UnaryOp,
+    AbstractAlias, AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVariant,
+    AstInfo, BinaryOp, Call, Expr, Generic, Item, SpannedExpr, TypeExpr, Unary, UnaryOp,
 };
 use crate::parser::context::Context;
 use crate::parser::error::Branch;
@@ -84,13 +84,16 @@ pub fn parse(
                         state.flip_alias();
                     }
 
-                    _ = parse_alias_stmt(&mut ctx, is_priv, &mut ast_info, interner);
+                    if let Ok(alias) = parse_alias_stmt(&mut ctx, is_priv, interner) {
+                        ast_info.items.push(Item::Alias(alias));
+                    };
                 }
                 id if id == Keyword::Const as u32 => {
                     ctx.advance_tok();
 
-                    _ = parse_const(&mut ctx, interner);
-                    todo!();
+                    if let Ok(abs_const) = parse_const(&mut ctx, is_priv, interner) {
+                        ast_info.items.push(Item::Const(abs_const));
+                    }
                 }
                 id if id == Keyword::Var as u32 => {
                     if !is_priv {
@@ -130,8 +133,8 @@ pub fn parse(
                             break;
                         }
 
-                        if let Ok(ty) = parse_var_sect(&mut ctx, interner) {
-                            ast_info.items.push(Item::Var(ty));
+                        if let Ok(type_def) = parse_var_sect(&mut ctx, interner) {
+                            ast_info.items.push(Item::Var(type_def));
                         }
                     }
                 }
@@ -317,9 +320,8 @@ pub fn parse(
 fn parse_alias_stmt(
     ctx: &mut Context,
     is_priv: bool,
-    ast_info: &mut AstInfo,
     interner: &Intern,
-) -> Result<(), Token> {
+) -> Result<AbstractAlias, Token> {
     let name_span = ctx.peek_span();
 
     let plain_id = ctx.expect_id_verbose(
@@ -347,10 +349,7 @@ fn parse_alias_stmt(
         interner,
     )?;
 
-    // Keeping this in case
-    let start = ctx.peek_span().start;
-
-    let (params, end) = parse_func_decl(ctx, interner)?;
+    let params = parse_func_decl(ctx, interner)?;
 
     ctx.expect_verbose(
         TokenKind::Assign,
@@ -360,7 +359,6 @@ fn parse_alias_stmt(
         interner,
     )?;
 
-    //WARN: Make sure this works
     let conds = if ctx.peek_kind() == TokenKind::OBracket {
         handle_conds(ctx, interner)?
     } else {
@@ -375,9 +373,7 @@ fn parse_alias_stmt(
 
     let alias = AbstractAlias::new(name_id, name_span, params, conds, args, is_priv);
 
-    ast_info.items.push(Item::Alias(alias));
-
-    Ok(())
+    Ok(alias)
 }
 
 fn parse_bind_stmt(
@@ -581,14 +577,22 @@ fn parse_override_sect(ctx: &mut Context, interner: &Intern) -> Result<(), Token
     todo!()
 }
 
-fn parse_const(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
-    ctx.expect_verbose(
+fn parse_const(
+    ctx: &mut Context,
+    is_priv: bool,
+    interner: &Intern,
+) -> Result<AbstractConst, Token> {
+    let name_span = ctx.peek_span();
+
+    let plain_id = ctx.expect_id_verbose(
         TokenKind::Id,
         "Expected an identifier after `const`, found ",
         "",
         Branch::Neutral,
         interner,
     )?;
+
+    let name_id = NameId::new(plain_id);
 
     ctx.expect_verbose(
         TokenKind::Assign,
@@ -598,28 +602,142 @@ fn parse_const(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
         interner,
     )?;
 
-    let expr = parse_expr(ctx, interner)?;
-    todo!();
+    let spanned_expr = parse_expr(ctx, 0, interner)?;
+
+    let abs_const = AbstractConst::new(name_id, name_span, spanned_expr, is_priv);
+
+    Ok(abs_const)
 }
 
-fn parse_expr(ctx: &mut Context, interner: &Intern) -> Result<Expr, Token> {
-    let next = ctx.peek_ahead(1).tok;
+fn parse_expr(ctx: &mut Context, min_bp: u8, interner: &Intern) -> Result<SpannedExpr, Token> {
+    let mut lhs = parse_unary(ctx, interner)?;
 
-    if next == Token::Plus
-        || next == Token::Hyphen
-        || next == Token::Asterisk
-        || next == Token::Slash
-    {
-        let expr = parse_term(ctx, interner)?;
+    loop {
+        let Some((op, bp)) = ctx.peek_tok().precedence() else {
+            break;
+        };
+
+        if bp < min_bp {
+            break;
+        }
+
+        ctx.advance_tok();
+
+        let rhs = parse_expr(ctx, bp + 1, interner)?;
+
+        let span = Span::new(lhs.span.start, rhs.span.end);
+        lhs = SpannedExpr::new(
+            Expr::BinaryExpr {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            },
+            span,
+        );
     }
 
-    todo!();
+    Ok(lhs)
 }
 
-fn parse_primary(ctx: &mut Context, interner: &Intern) {}
+// For single values, likley lhs
+fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Token> {
+    match ctx.peek_tok() {
+        Token::OParen => {
+            ctx.advance_tok();
+            let expr = parse_expr(ctx, 0, interner)?;
 
-fn parse_term(ctx: &mut Context, interner: &Intern) -> Result<Expr, Token> {
-    todo!();
+            ctx.expect_verbose(
+                TokenKind::CParen,
+                "Expected ')' to close grouped expression, found ",
+                "",
+                Branch::Expr,
+                interner,
+            )?;
+
+            Ok(expr)
+        }
+        Token::Id(id) => {
+            let span = ctx.advance_span();
+
+            let name_id = NameId::new(id);
+
+            Ok(SpannedExpr::new(Expr::Var(name_id), span))
+        }
+        Token::Integer(id, notation) => {
+            let span = ctx.advance_span();
+            let num: i64 = interner
+                .search(id as usize)
+                .parse()
+                .expect("Lexer broke (Integer)");
+
+            Ok(SpannedExpr::new(Expr::Integer(num), span))
+        }
+        Token::Float(id, notation) => {
+            let span = ctx.advance_span();
+            let num: f64 = interner
+                .search(id as usize)
+                .parse()
+                .expect("Lexer broke (Float)");
+
+            Ok(SpannedExpr::new(Expr::Float(num), span))
+        }
+        Token::Str(id) => {
+            let span = ctx.advance_span();
+            let name_id = NameId::new(id);
+
+            Ok(SpannedExpr::new(Expr::Str(name_id), span))
+        }
+        Token::Char(ch) => {
+            let span = ctx.advance_span();
+
+            Ok(SpannedExpr::new(Expr::Char(ch), span))
+        }
+        Token::EOF => {
+            ctx.advance_tok();
+
+            ctx.report_verbose(
+                "Expected an expression, found <eof>",
+                Branch::VarType,
+                interner,
+            );
+
+            Err(Token::EOF)
+        }
+        t => {
+            ctx.advance_tok();
+
+            let msg = match t {
+                Token::Illegal(id) => format!(
+                    "Expected a valid expression, found illegal \"{}\"",
+                    interner.search(id as usize)
+                ),
+                _ => format!("Expected a valid expression, found \"{}\"", t.kind()),
+            };
+
+            ctx.report_verbose(&msg, Branch::Cond, interner);
+            return Err(Token::Poison);
+        }
+    }
+}
+
+fn parse_unary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Token> {
+    match ctx.peek_tok() {
+        Token::Hyphen => {
+            let span = ctx.advance_span();
+            let expr = parse_unary(ctx, interner)?;
+            let unary = Unary::new(UnaryOp::Negate, Box::new(expr));
+
+            Ok(SpannedExpr::new(Expr::Unary(unary), span))
+        }
+        Token::ExclamationPoint => {
+            let span = ctx.advance_span();
+            let expr = parse_unary(ctx, interner)?;
+            let unary = Unary::new(UnaryOp::Not, Box::new(expr));
+
+            Ok(SpannedExpr::new(Expr::Unary(unary), span))
+        }
+        _ => parse_primary(ctx, interner),
+    }
 }
 
 // ENFORCE TYPE NAMING FOR GENERICS AT LEAST
@@ -790,7 +908,7 @@ fn handle_struct_fields(
 ) -> Result<Vec<AbstractTypeDef>, Token> {
     let mut fields: Vec<AbstractTypeDef> = Vec::new();
 
-    //FIXME: Suspicious loop
+    //WARN: Suspicious loop
     while ctx.peek_kind() == TokenKind::Id {
         let ty = parse_var_sect(ctx, interner)?;
         fields.push(ty);
@@ -1100,55 +1218,14 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<SpannedExpr>,
                 let expr = Expr::Default(name_id, Box::new(default));
                 SpannedExpr::new(expr, span)
             }
-            Token::Id(id) => {
-                let span = ctx.advance_span();
-                let name_id = NameId::new(id);
-
-                SpannedExpr::new(Expr::Var(name_id), span)
+            // Assuming this is ok
+            Token::Illegal(id) => {
+                panic!("No illegal yet");
             }
-            Token::Str(id) => {
-                let span = ctx.advance_span();
-                let name_id = NameId::new(id);
+            _ => {
+                let expr = parse_expr(ctx, 0, interner)?;
 
-                SpannedExpr::new(Expr::Str(name_id), span)
-            }
-            Token::Integer(id, _) => {
-                let span = ctx.advance_span();
-                let num: i64 = interner
-                    .search(id as usize)
-                    .parse()
-                    .expect("Lexer broke (Integer)");
-
-                SpannedExpr::new(Expr::Integer(num), span)
-            }
-            Token::Float(id, _) => {
-                let span = ctx.advance_span();
-                let num: f64 = interner
-                    .search(id as usize)
-                    .parse()
-                    .expect("Lexer broke (Float).");
-
-                SpannedExpr::new(Expr::Float(num), span)
-            }
-            Token::Char(ch) => {
-                let span = ctx.advance_span();
-
-                SpannedExpr::new(Expr::Char(ch), span)
-            }
-            Token::EOF => return Err(Token::Poison),
-            t => {
-                ctx.advance_tok();
-
-                let msg = match t {
-                    Token::Illegal(id) => format!(
-                        "Cannot have \"{}\" within function parameters",
-                        interner.search(id as usize)
-                    ),
-                    _ => format!("Cannot have '{}' within function parameters", t.kind()),
-                };
-
-                ctx.report_verbose(&msg, Branch::Cond, interner);
-                return Err(Token::Poison);
+                SpannedExpr::new(expr.expr, expr.span)
             }
         };
 
@@ -1172,7 +1249,7 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<SpannedExpr>,
     Ok((args, end))
 }
 
-fn parse_func_decl(ctx: &mut Context, interner: &Intern) -> Result<(Vec<TypeExpr>, usize), Token> {
+fn parse_func_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<TypeExpr>, Token> {
     let mut args: Vec<TypeExpr> = Vec::new();
 
     while ctx.peek_kind() != TokenKind::CParen {
@@ -1215,7 +1292,7 @@ fn parse_func_decl(ctx: &mut Context, interner: &Intern) -> Result<(Vec<TypeExpr
 
     let end = ctx.advance_span().end;
 
-    Ok((args, end))
+    Ok(args)
 }
 
 fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>, Token> {

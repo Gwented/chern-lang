@@ -73,13 +73,14 @@ pub(crate) enum Item {
     Struct(AbstractStruct),
     Enum(AbstractEnum),
     Alias(AbstractAlias),
+    Const(AbstractConst),
     // Func(AbstractFunc),
 }
 
 #[derive(Debug)]
-pub struct SpannedExpr {
-    pub expr: Expr,
-    pub span: Span,
+pub(crate) struct SpannedExpr {
+    pub(crate) expr: Expr,
+    pub(crate) span: Span,
 }
 
 impl SpannedExpr {
@@ -89,6 +90,7 @@ impl SpannedExpr {
 }
 
 // This could look better...
+// Does this need a literal specific variant?
 #[derive(Debug)]
 pub(crate) enum Expr {
     Var(NameId),
@@ -105,12 +107,14 @@ pub(crate) enum Expr {
     FieldAccess(AbstractFieldAccess),
     Unary(Unary),
     BinaryExpr {
-        lhs: Box<Expr>,
+        lhs: Box<SpannedExpr>,
         op: BinaryOp,
-        rhs: Box<Expr>,
+        rhs: Box<SpannedExpr>,
     },
 }
 
+pub const PRECEDENCE_ONE: u8 = 1;
+pub const PRECEDENCE_TWO: u8 = 2;
 #[derive(Debug)]
 pub(crate) enum BinaryOp {
     Add,
@@ -122,6 +126,10 @@ pub(crate) enum BinaryOp {
     GreaterOrEq,
     LessOrEq,
     Mod,
+    And,
+    Or,
+    EqualTo,
+    NotEq,
 }
 
 #[derive(Debug)]
@@ -169,17 +177,35 @@ impl TypeExpr {
 
 // Maybe put in enum exclusively if not needed outside
 
-// #[derive(Debug)]
-// pub struct AbstractBind {
-//     pub(crate) name_id: NameId,
-// }
-//
-// impl AbstractBind {
-//     pub fn new(name_id: NameId) -> AbstractBind {
-//         AbstractBind { name_id }
-//     }
-// }
-//
+// Maybe type inference could pick up on the fact that if a definition has a condition, and that
+// condition is applied to only a particular bit size, then it should be that bit size
+#[derive(Debug)]
+pub(crate) struct AbstractConst {
+    pub(crate) name_id: NameId,
+    pub(crate) name_span: Span,
+    // pub(crate) type_expr: TypeExpr,
+    pub(crate) spanned_expr: SpannedExpr,
+    pub(crate) is_priv: bool,
+}
+
+impl AbstractConst {
+    pub(crate) fn new(
+        name_id: NameId,
+        name_span: Span,
+        // type_expr: TypeExpr,
+        spanned_expr: SpannedExpr,
+        is_priv: bool,
+    ) -> AbstractConst {
+        AbstractConst {
+            name_id,
+            name_span,
+            // type_expr,
+            spanned_expr,
+            is_priv,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct AbstractTypeDef {
     pub(crate) name_id: NameId,
@@ -187,7 +213,6 @@ pub(crate) struct AbstractTypeDef {
     pub(crate) type_expr: TypeExpr,
     pub(crate) args: Vec<SpannedInnerArgs>,
     pub(crate) conds: Vec<SpannedExpr>,
-    // pub(crate) visibility: Visibility,
 }
 
 impl AbstractTypeDef {
@@ -302,7 +327,7 @@ impl AbstractVariant {
 #[derive(Debug)]
 pub(crate) struct AbstractFunc {
     pub(crate) name_id: NameId,
-    pub(super) name_span: Span,
+    pub(crate) name_span: Span,
     pub(crate) params: Vec<SpannedExpr>,
 }
 
@@ -319,7 +344,7 @@ impl AbstractFunc {
 #[derive(Debug)]
 pub(crate) struct AbstractFuncDecl {
     pub(crate) name_id: NameId,
-    pub(super) name_span: Span,
+    pub(crate) name_span: Span,
     pub(crate) params: Vec<Param>,
 }
 

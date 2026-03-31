@@ -1,13 +1,12 @@
-const INFO = "Fake issue
 // Some surprised stuff "I see more quites I am quite wuqotqte" is 
 //
-Is quites"
 @def
 
+const X = 4 + (2 * "Hello")
+
 var->
-    name: str
-    age: u8 [Equals(0x1F)]
-    "
+
+    name: str [Equals(I, Identify)]
 @end
 "Really
 

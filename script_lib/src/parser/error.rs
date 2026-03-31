@@ -16,6 +16,7 @@ pub(super) enum Branch {
     //TODO: Actually use neutral for something
     Neutral,
     Searching,
+    Expr,
     Bind,
     Var,
     VarType,
@@ -35,8 +36,8 @@ impl Display for Branch {
             Branch::Broken => write!(f, "abort"),
             Branch::Neutral => write!(f, "neutral"),
             Branch::Searching => write!(f, "searching"),
-            // Maybe better name
             Branch::Bind => write!(f, "bind"),
+            Branch::Expr => write!(f, "[expression]"),
             Branch::Var => write!(f, "var"),
             Branch::VarType => write!(f, "[type]"),
             Branch::Cond => write!(f, "[conditions]"),

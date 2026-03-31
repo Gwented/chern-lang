@@ -260,11 +260,11 @@ impl<'a> Context<'a> {
             Branch::VarFuncArgs => (C_BRANCH_VAR_FUNC_SET, A_BRANCH_VAR_FUNC_SET),
             Branch::VarTypeArgs => (C_BRANCH_VAR_ARGS_SET, A_BRANCH_VAR_ARGS_SET),
             Branch::Nest => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
-            //TODO: Tune these sets
             Branch::NestType => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::NestEnum => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Complex => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Override => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
+            Branch::Expr => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
         }
     }
 
@@ -406,6 +406,8 @@ impl<'a> Context<'a> {
         eprintln!("Reported {} error(s)", self.err_vec.len());
     }
 
+    /// Intended to handle the case where EOF is reached due to errors likely wanting to show the
+    /// last token TO EOF, rather than just EOF
     //WARN: IF ANYTHING HAPPENS TO ERROR MESSAGES REMOVE THIS
     fn safely_handle_span(&self, found: &SpannedToken) -> Vec<Span> {
         if found.tok.kind() == TokenKind::EOF {

@@ -97,6 +97,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '<' => {
+                    //WARN: Not confident
                     let (start, mut end) = (self.pos, self.pos);
 
                     let tok = if self.peek_ahead(1) == b'=' {
@@ -200,21 +201,21 @@ impl Lexer<'_> {
                 '.' => {
                     let (start, mut end) = (self.pos, self.pos);
 
-                    if self.peek_ahead(1) == b'.' && self.peek_ahead(2) == b'=' {
-                        self.skip(2);
-
-                        toks.push(SpannedToken {
-                            tok: Token::DotRange,
-                            span: Span::new(start, end),
-                        });
+                    //WARN: is this right?
+                    let tok = if self.peek_ahead(1) == b'.' && self.peek_ahead(2) == b'=' {
+                        dbg!(self.peek_char());
+                        self.skip(3);
+                        end = self.pos;
+                        Token::DotRange
                     } else {
-                        toks.push(SpannedToken {
-                            tok: Token::Dot,
-                            span: Span::new(start, end),
-                        });
-                    }
+                        self.advance();
+                        Token::Dot
+                    };
 
-                    self.advance();
+                    toks.push(SpannedToken {
+                        tok,
+                        span: Span::new(start, end),
+                    })
                 }
                 '#' => {
                     toks.push(SpannedToken {
@@ -224,13 +225,41 @@ impl Lexer<'_> {
 
                     self.advance();
                 }
-                '|' => {
-                    toks.push(SpannedToken {
-                        tok: Token::VerticalBar,
-                        span: Span::new(self.pos, self.pos),
-                    });
+                '&' => {
+                    let (start, mut end) = (self.pos, self.pos);
 
-                    self.advance();
+                    let tok = if self.peek_ahead(1) == b'&' {
+                        self.skip(2);
+                        end = self.pos;
+
+                        Token::And
+                    } else {
+                        self.advance();
+                        Token::Ampersand
+                    };
+
+                    toks.push(SpannedToken {
+                        tok,
+                        span: Span::new(start, end),
+                    });
+                }
+                '|' => {
+                    let (start, mut end) = (self.pos, self.pos);
+
+                    let tok = if self.peek_ahead(1) == b'|' {
+                        self.skip(2);
+                        end = self.pos;
+
+                        Token::Or
+                    } else {
+                        self.advance();
+                        Token::VerticalBar
+                    };
+
+                    toks.push(SpannedToken {
+                        tok,
+                        span: Span::new(start, end),
+                    });
                 }
                 '"' => {
                     self.advance();
