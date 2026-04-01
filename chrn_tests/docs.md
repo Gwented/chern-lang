@@ -30,7 +30,7 @@ char, bool, (maybe capital) str, struct, enum, tuple, nil, BigInt, BigFloat, Lis
 `enum` for an Enum type which can also hold data.
 
 ## Actions (Ignore this)
-
+extract env vars
 ```chrn
 
 alias LongDefault(x, y) = [!IsEmpty, Range(x, y), StartsW("ch"), EndsW("ern"), Contains("chern")]

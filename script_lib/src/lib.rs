@@ -21,7 +21,6 @@ mod tests {
     #[test]
     fn lex_tok_test() {
         let text = r#"bind "./some/path""#;
-        dbg!(&text);
 
         let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
             .load_config()

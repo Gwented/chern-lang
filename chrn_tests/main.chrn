@@ -1,12 +1,12 @@
 // Some surprised stuff "I see more quites I am quite wuqotqte" is 
-//
+// Need to re-route errors so they don't immediately form basic arrows to one so help messages
+// aren't just requirements because the err msgs themselves are misleading or bad
 @def
 
-alias X = #warn
 
 var->
 
-    name: str [Equals(I, Identify)]
+    name: str [Range(Min(self, ), Max(self, 5))]
 @end
 "Really
 

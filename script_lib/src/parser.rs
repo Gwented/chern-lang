@@ -646,6 +646,19 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
 
             Ok(expr)
         }
+        Token::Id(id) if ctx.peek_ahead(1).tok.kind() == TokenKind::OParen => {
+            let name_id = NameId::new(id);
+            let name_span = ctx.advance_span();
+
+            ctx.advance_tok();
+
+            let args = parse_call_args(ctx, interner)?;
+
+            let span = Span::new(name_span.start, ctx.peek_span().end);
+            let call = Expr::Call(Call::new(name_id, args));
+
+            Ok(SpannedExpr::new(call, span))
+        }
         Token::Id(id) => {
             let span = ctx.advance_span();
 
@@ -708,6 +721,35 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
             return Err(Token::Poison);
         }
     }
+}
+
+fn parse_call_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>, Token> {
+    let mut args: Vec<SpannedExpr> = Vec::new();
+
+    if ctx.peek_kind() == TokenKind::CParen {
+        ctx.advance_tok();
+        return Ok(args);
+    }
+
+    loop {
+        let arg = parse_expr(ctx, 0, interner)?;
+        args.push(arg);
+
+        if ctx.peek_kind() == TokenKind::CParen {
+            ctx.advance_tok();
+            break;
+        }
+
+        ctx.expect_verbose(
+            TokenKind::Comma,
+            "Expected ',' to separate arguments or ')' to close, found ",
+            "",
+            Branch::Neutral,
+            interner,
+        )?;
+    }
+
+    Ok(args)
 }
 
 fn parse_unary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Token> {
@@ -803,7 +845,8 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
     }
 }
 
-/// Parses assuming that within "List<i32>" the "List" part was skipped
+/// Parses assuming that within "List<i32>" the "List" part was skipped, which would leaves <i32>
+/// to be handled
 //WARN: USING BASIC SPAN IMPLEMENTATION AND MAY CHANGE
 fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<(Vec<TypeExpr>, usize), Token> {
     ctx.expect_verbose(
@@ -1058,15 +1101,12 @@ fn parse_cond(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Token
 
             ctx.skip(2);
 
-            let (args, end) = parse_func(ctx, interner)?;
-
-            let func_span = Span::new(name_span.start, end);
-
-            // let callee = Box::new(Expr::Var(name_id, name_span));
+            let args = parse_call_args(ctx, interner)?;
 
             let call = Expr::Call(Call::new(name_id, args));
 
-            let spanned_expr = SpannedExpr::new(call, func_span);
+            let spanned_expr = SpannedExpr::new(call, name_span);
+
             Ok(spanned_expr)
         }
         Token::Id(id) => {
@@ -1130,8 +1170,7 @@ fn parse_cond(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Token
     }
 }
 
-//TODO: Should this be terminal?
-// Should this innately check for open parenthesis, or should that be handled at the call site?
+// This is a little awkward now
 fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<SpannedExpr>, usize), Token> {
     let mut args: Vec<SpannedExpr> = Vec::new();
 
@@ -1165,6 +1204,8 @@ fn parse_func(ctx: &mut Context, interner: &Intern) -> Result<(Vec<SpannedExpr>,
             // Assuming this is ok
             _ => parse_expr(ctx, 0, interner)?,
         };
+        dbg!(spanned_expr);
+        panic!();
 
         args.push(spanned_expr);
 

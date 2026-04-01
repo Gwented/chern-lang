@@ -28,12 +28,14 @@ pub struct CheckCmd {
     pub(crate) path: PathBuf,
 }
 
-// chrn gen <PATH> --<LANGUAGE> <TypeName>
+// chrn gen <PATH> --<LANGUAGE> man<TypeName>
 
 #[derive(Args)]
 pub struct GenCmd {
     /// Generates `chrn` config file
     pub(crate) path: PathBuf,
+    /// Name of what to data to generate
+    pub(crate) type_name: String,
 }
 
 #[derive(Args)]

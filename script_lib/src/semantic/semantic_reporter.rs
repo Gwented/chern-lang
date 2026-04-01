@@ -15,8 +15,6 @@ use crate::{
 };
 
 /// Amount of '-' to print for multiple error separation
-const TOTAL_SEPARATORS: usize = 60;
-
 #[derive(Debug)]
 pub(super) struct SemanticReporter<'a> {
     pub(super) metadata: &'a ChernMetadata,

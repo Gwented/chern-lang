@@ -294,12 +294,37 @@ impl<'a> Context<'a> {
                 //            ^^^^^   ^
                 // Keyword tokens would be very nice here..
                 Token::Assign if prev_kind == TokenKind::Id && next_kind != TokenKind::OParen => {
-                    // let found_bytes = interner.search(id as usize).as_bytes();
+                    // X -> X()
+                    //       ++
+                    // help: Alias statements require parameters
 
-                    let msg = "Alias statements require parameters";
+                    // What if it was instead
+                    //
+                    // alias あ = 4
+                    //       ^^
+                    //       | -> あ()
+                    //
+
+                    // Cannot fail but expect scares me
+                    let Token::Id(id) = prev_tok.tok else {
+                        return None;
+                    };
+
+                    let name = interner.search(id as usize);
+
+                    let help_diag = reporter::help_transform(
+                        name,
+                        &format!("{name}()"),
+                        self.metadata.can_color,
+                    );
+
+                    // This is getting very heuristic
+                    let msg = format!("Alias statements require parameters");
                     let help = reporter::standardize_help(&msg, self.metadata.can_color);
 
-                    Some(help)
+                    let full_help = format!("{help_diag} {help}");
+
+                    Some(full_help)
                 }
                 _ => None,
             },
@@ -418,10 +443,10 @@ impl<'a> Context<'a> {
 
         let header_err = format!("{red}error{nc}");
 
-        println!("From path => \"{}\"", self.metadata.path.display());
+        eprintln!("From path => \"{}\"", self.metadata.path.display());
 
         for err in &self.err_vec {
-            println!("{header_err}: {}", err.msg);
+            eprintln!("{header_err}: {}", err.msg);
         }
 
         eprintln!("Reported {} error(s)", self.err_vec.len());
@@ -457,6 +482,11 @@ impl<'a> Context<'a> {
 
     pub(super) fn peek_ahead(&self, dest: usize) -> &SpannedToken {
         &self.toks[self.pos + dest]
+    }
+
+    // Maybe return option
+    pub(super) fn peek_behind(&self, dest: usize) -> &SpannedToken {
+        &self.toks[self.pos - dest]
     }
 
     pub(super) fn advance_tok(&mut self) -> Token {

@@ -18,6 +18,7 @@ use crate::{
 
 pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
     match &cli.command {
+        // Lint sub-command?
         Commands::Check(check_cmd) => process_check(&check_cmd, &cli_cfg),
         Commands::Fmt(fmt_cmd) => todo!(),
         Commands::Gen(gen_cmd) => todo!(),

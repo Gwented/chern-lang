@@ -203,7 +203,6 @@ impl Lexer<'_> {
 
                     //WARN: is this right?
                     let tok = if self.peek_ahead(1) == b'.' && self.peek_ahead(2) == b'=' {
-                        dbg!(self.peek_char());
                         self.skip(3);
                         end = self.pos;
                         Token::DotRange

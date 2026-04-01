@@ -1,6 +1,6 @@
 //TODO: ORGANIZE NEW ARCHITECTURE
 // MAKE PARAMS ONLY TAKE SPAN SINCE LINES ARE BUILT ANYWAYS
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::{color, symbols::Span};
 
@@ -76,6 +76,7 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
     // level view.
     let ln_view = form_ln_view(src_bytes, &full_span);
 
+    // External use: This is only needed if a given span could exceed one line.
     // --SECOND--
     // Curating spans to ensure all spans that may exceed their line are properly cut for their
     // line so later formatting is not made more complicated
@@ -162,6 +163,34 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
         ln: ln_view.ln_num_span.start,
         col,
     }
+}
+
+// I know this doesn't show up correctly
+/// Error message type:
+/// X -> X()
+///       ++
+// The X should be red and the right X should have green + signs under the params
+// This is specific right now but will turn to more generic just pointing to transformation
+// Maybe prefix?
+pub fn help_transform(from: &str, to: &str, can_color: bool) -> String {
+    let (red, nc) = color::get_red(can_color);
+    let (green, _) = color::get_green(can_color);
+
+    let from_spaces = " ".repeat(UnicodeWidthStr::width(from));
+
+    let arrow = format!(" -> ");
+    let arrow_spaces = " ".repeat(arrow.len());
+
+    let fmtted_to = format!("{green}{to}{nc}");
+
+    let to_width = UnicodeWidthStr::width(to);
+
+    let add_amt = "+".repeat(to_width);
+    let add = format!("{green}{add_amt}{nc}");
+
+    let diag = format!("\t{red}{from}{nc}{arrow}{fmtted_to}\n\t{from_spaces}{arrow_spaces}{add}");
+
+    diag
 }
 
 /// Checks if given span is on the same line, and if it is not the span is adjusted to fit the line.
