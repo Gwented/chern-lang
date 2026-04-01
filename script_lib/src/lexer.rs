@@ -68,8 +68,11 @@ impl Lexer<'_> {
                     let tok = if self.peek_ahead(1) == b'=' {
                         self.advance();
                         end = self.pos;
+                        self.advance();
+
                         Token::Walrus
                     } else {
+                        self.advance();
                         Token::Colon
                     };
 
@@ -77,8 +80,6 @@ impl Lexer<'_> {
                         tok,
                         span: Span::new(start, end),
                     });
-
-                    self.advance();
                 }
                 '(' => {
                     toks.push(SpannedToken {
@@ -101,8 +102,9 @@ impl Lexer<'_> {
                     let (start, mut end) = (self.pos, self.pos);
 
                     let tok = if self.peek_ahead(1) == b'=' {
-                        self.skip(2);
+                        self.advance();
                         end = self.pos;
+                        self.advance();
 
                         Token::LessOrEq
                     } else {
@@ -119,8 +121,10 @@ impl Lexer<'_> {
                     let (start, mut end) = (self.pos, self.pos);
 
                     let tok = if self.peek_ahead(1) == b'=' {
-                        self.skip(2);
+                        self.advance();
                         end = self.pos;
+                        self.advance();
+
                         Token::GreaterOrEq
                     } else {
                         self.advance();
@@ -201,10 +205,11 @@ impl Lexer<'_> {
                 '.' => {
                     let (start, mut end) = (self.pos, self.pos);
 
-                    //WARN: is this right?
                     let tok = if self.peek_ahead(1) == b'.' && self.peek_ahead(2) == b'=' {
-                        self.skip(3);
+                        self.skip(2);
                         end = self.pos;
+                        self.advance();
+
                         Token::DotRange
                     } else {
                         self.advance();
@@ -228,8 +233,9 @@ impl Lexer<'_> {
                     let (start, mut end) = (self.pos, self.pos);
 
                     let tok = if self.peek_ahead(1) == b'&' {
-                        self.skip(2);
+                        self.advance();
                         end = self.pos;
+                        self.advance();
 
                         Token::And
                     } else {
@@ -246,8 +252,10 @@ impl Lexer<'_> {
                     let (start, mut end) = (self.pos, self.pos);
 
                     let tok = if self.peek_ahead(1) == b'|' {
-                        self.skip(2);
+                        self.advance();
+                        // Getting the || within the span before skipping past the operator entirely
                         end = self.pos;
+                        self.advance();
 
                         Token::Or
                     } else {
