@@ -1,13 +1,20 @@
-// Some surprised stuff "I see more quites I am quite wuqotqte" is 
+// Model likely just needs to predict it's structural state off of syntax and propagate until it structurally 
+// seems like natural quotes to where the score actually matters.
 // Need to re-route errors so they don't immediately form basic arrows to one so help messages
 // aren't just requirements because the err msgs themselves are misleading or bad
+
+// A quote transition with the start leading into a comment should lead to a high probability
+// of it being the wrong quote.
+
+"Messed up
+// Hello "Quotes"
+
 @def
 
-alias x() = [IsEmpty, Range(x = 5, y)]
+alias x(x, y) = [IsEmpty, Range(x = "5", y)]
 
-var->
+const X = 4
 
-    name: str [Range(3, 9) && Range(3,6)]
 @end
 "Really
 

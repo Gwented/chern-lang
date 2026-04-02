@@ -551,8 +551,6 @@ impl ConstraintResolver<'_> {
                     }
                 }
             }
-            // Another O(n) check...
-            //TODO: More detailed error
             Type::Tuple(tuple) => {
                 visited.push(tuple.type_id);
 
@@ -577,7 +575,8 @@ impl ConstraintResolver<'_> {
             Type::Func(sym_id) => todo!("Func"),
             Type::Alias(_) | Type::Unknown => {
                 unreachable!("Parser and semantic cannot produce these variants")
-            } // TODO: Spanning may be off
+            }
+            Type::Const(symbol_id) => todo!(),
         }
     }
 
@@ -625,7 +624,6 @@ impl ConstraintResolver<'_> {
                 Cond::Not(inner) => self.check_cond_constraints(type_id, cond_span, inner, visited),
                 Cond::Func(sym_id, func_kind) => todo!(),
             },
-            // Same types of checks as args resolver to avoid stack overflow
             Type::Struct(sym_id) => {
                 let structure = self.table.get_struct(*sym_id);
 
@@ -734,6 +732,7 @@ impl ConstraintResolver<'_> {
             Type::Unknown | Type::Func(_) => {
                 unreachable!("Parser and semantic cannot produce these variants")
             }
+            Type::Const(symbol_id) => todo!(),
         }
     }
 

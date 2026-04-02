@@ -13,14 +13,14 @@ use common::{
 
 use crate::{
     parser::ast::{
-        AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Expr, Item,
-        TypeExpr, UnaryOp,
+        AbstractAlias, AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Expr,
+        Item, TypeExpr, UnaryOp,
     },
     semantic::{
         error::SemanticError,
         representation::{
-            AliasRepre, EnumRepre, FieldRepre, FuncArgsRepre, FuncRepre, StructRepre, Symbol,
-            Table, Tuple, Type, TypeDefRepre, VariantRepre,
+            AliasRepre, ConstRepre, EnumRepre, FieldRepre, FuncArgsRepre, FuncRepre, StructRepre,
+            Symbol, Table, Tuple, Type, TypeDefRepre, VariantRepre,
         },
         semantic_reporter::SemanticReporter,
     },
@@ -67,9 +67,12 @@ impl TypeResolver<'_> {
                 Item::Struct(structure) => self.register_struct(structure, ast_id),
                 Item::Enum(enumeration) => self.register_enum(enumeration, ast_id),
                 Item::Alias(alias) => self.register_alias(alias, ast_id),
-                Item::Const(abstract_const) => todo!(),
+                Item::Const(abs_const) => self.register_const(abs_const, ast_id),
             }
         }
+
+        dbg!(&self.table.symbols);
+        panic!();
 
         self.check_duplicates();
 
@@ -80,23 +83,17 @@ impl TypeResolver<'_> {
             std::process::exit(1);
         }
 
-        // The is resolving types but not resolving args or conditions.
+        // This is resolving types but not resolving args or conditions.
         // Everything is in order so this cannot fail unless something internally went wrong.
         for (id, item) in self.ast_info.items.iter().enumerate() {
             let ast_id = AstId::new(id as u32);
 
             match item {
-                Item::Var(type_def) => {
-                    _ = self.resolve_typedef(type_def, ast_id);
-                }
-                Item::Struct(structure) => {
-                    _ = self.resolve_struct(structure, ast_id);
-                }
-                Item::Enum(enumeration) => {
-                    _ = self.resolve_enum(enumeration, ast_id);
-                }
-                Item::Alias(alias) => todo!(),
-                Item::Const(abstract_const) => todo!(),
+                Item::Var(abs_typedef) => _ = self.resolve_typedef(abs_typedef, ast_id),
+                Item::Struct(abs_struct) => _ = self.resolve_struct(abs_struct, ast_id),
+                Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum, ast_id),
+                Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias, ast_id),
+                Item::Const(abs_const) => _ = self.resolve_const(abs_const, ast_id),
             }
         }
 
@@ -203,7 +200,9 @@ impl TypeResolver<'_> {
     fn resolve_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) -> Result<(), ()> {
         let mut variants: Vec<VariantRepre> = Vec::new();
 
+        // (ast_id, name_id)
         let mut seen: Vec<(usize, NameId)> = Vec::new();
+        //Maybe just compute this once after along with struct fields
 
         // Checking if there are duplicate name ids within the same enum
         for (i, variant) in abs_enum.variants.iter().enumerate() {
@@ -242,6 +241,20 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
+    fn resolve_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) -> Result<(), ()> {
+        // Should the variable check happen here?
+        let mut params: Vec<TypeId> = Vec::new();
+        for (i, ty) in abs_alias.params.iter().enumerate() {
+            let type_id = self.resolve_type_expr(ty, ast_id)?;
+            params.push(type_id);
+        }
+        todo!();
+    }
+
+    fn resolve_const(&mut self, abs_const: &AbstractConst, ast_id: AstId) -> Result<(), ()> {
+        todo!();
+    }
+
     fn resolve_type_expr(&mut self, ty: &TypeExpr, ast_id: AstId) -> Result<TypeId, ()> {
         match ty {
             TypeExpr::Var(name_id, span) => {
@@ -263,6 +276,7 @@ impl TypeResolver<'_> {
                             // Symbol::TypeDef(type_def_repre) => type_def_repre.type_id,
                             _ => unreachable!("Typedefs are unknown by default"),
                         };
+
                         return Ok(type_id);
                     }
                 }
@@ -445,21 +459,6 @@ impl TypeResolver<'_> {
         }
     }
 
-    // TODO: Register functions user made functions first...
-    // fn contains_func(&self, name_id: NameId) -> bool {
-    //     if let Some(type_id) = self.table.type_ids.get(&name_id) {
-    //         if let TypeId::Func(_) = type_id {
-    //             return true;
-    //         }
-    //     }
-    //
-    //     false
-    // }
-
-    fn resolve_func_arg(&mut self, expr: &Expr) -> Result<FuncArgsRepre, ()> {
-        todo!();
-    }
-
     /// Attaches ast_id to the name_id of it's ast structure.
     /// Gives it a unique symbol id and attaches the ast id to it.
     /// Gives the typedef an id attached to `Unknown` which is to be resolved later
@@ -539,12 +538,48 @@ impl TypeResolver<'_> {
 
             id
         };
-        todo!("Alias not done")
 
-        // let alias_repre = AliasRepre::new(abs_alias.name_id, sym_id, ast_id, type_id);
-        //
-        // self.table
-        //     .symbols
-        //     .insert(sym_id, Symbol::Alias(alias_repre));
+        let alias_repre = AliasRepre::new(
+            abs_alias.name_id,
+            sym_id,
+            ast_id,
+            type_id,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+
+        self.table
+            .symbols
+            .insert(sym_id, Symbol::Alias(alias_repre));
+
+        self.table.types.push(Type::Alias(sym_id));
+    }
+
+    //WARN: IS THIS RIGHT?
+    fn register_const(&mut self, abs_const: &AbstractConst, ast_id: AstId) {
+        self.table.name_ids.insert(ast_id, abs_const.name_id);
+
+        let type_id = if let Some(id) = self.unknown_id {
+            id
+        } else {
+            let id = TypeId::new(self.table.types.len() as u32);
+            self.unknown_id = Some(id);
+            self.table.types.push(Type::Unknown);
+
+            id
+        };
+
+        let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
+
+        self.table.sym_ids.insert(ast_id, sym_id);
+
+        let const_repre = ConstRepre::new(abs_const.name_id, sym_id, ast_id, type_id);
+
+        self.table
+            .symbols
+            .insert(sym_id, Symbol::Const(const_repre));
+
+        self.table.types.push(Type::Const(sym_id));
     }
 }

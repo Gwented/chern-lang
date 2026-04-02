@@ -12,11 +12,13 @@ pub(super) enum ArgConstraint {
     ArgCount(u8),
     DynType,
     MatchingType,
+    /// Must be the same type as the type the condition is made for
     MirroredType,
     Numeric,
     Integer,
     Float,
     Str,
+    // Suspicious
     Variadic,
 }
 
@@ -44,7 +46,7 @@ impl ArgConstraint {
                 ]
             }
             FuncKind::Equals => {
-                vec![ArgConstraint::MirroredType]
+                vec![ArgConstraint::MirroredType, ArgConstraint::Variadic]
             }
             FuncKind::UserDefined => todo!(),
         }
@@ -67,7 +69,7 @@ impl Display for ArgConstraint {
                     write!(f, "{count} argument")
                 }
             }
-            ArgConstraint::MirroredType => write!(f, "same params type as declared type"),
+            ArgConstraint::MirroredType => write!(f, "MirroredType"),
             ArgConstraint::Variadic => write!(f, "variadic"),
         }
     }

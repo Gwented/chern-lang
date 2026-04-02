@@ -1025,6 +1025,7 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
 
     let name_id = NameId::new(name);
 
+    // TODO: Maybe this shouldn't look like a tuple by default since it's misleading
     let tuple_opt: Option<TypeExpr> = if ctx.peek_kind() == TokenKind::OParen {
         let tuple = parse_tuple(ctx, interner)?;
         Some(tuple)

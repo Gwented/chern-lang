@@ -45,7 +45,6 @@ impl QuoteGraph<'_> {
         }
     }
 
-    // Helper
     fn display_scores(&self) {
         for (i, q_node) in self.q_nodes.iter().enumerate() {
             println!(
@@ -64,7 +63,6 @@ impl QuoteGraph<'_> {
     }
 
     fn adjust_node(&mut self, tok_info: TokenInfo) {
-        // Amount of characters that have been seen
         let q_node = &self.q_nodes[self.current_idx];
 
         let start_pos = q_node.start_pos as f32;
@@ -112,11 +110,8 @@ impl QuoteGraph<'_> {
         // dbg!(&self.q_nodes);
         if let Some(end_idx) = self.end_tok_pos {
             let end_node = &self.q_nodes[end_idx];
-            let new_score = self.reason_over_end(end_node, &score_logits, highest_score);
         }
     }
-
-    fn reason_over_end(&self, end_node: &QuoteNode, score_logits: &Vec<f32>, highest_score: f32) {}
 
     //WARN: Currently does not use this correctly
     fn choose_action(&self, proceed: f32, cut: f32) -> u8 {
@@ -262,10 +257,23 @@ fn context_distance(ctx_toks: &Vec<TokenInfo>, current_tok: &TokenInfo, distance
         Token::End => (),
         Token::EOF => (),
     }
-    // let distance_sig = 1.0 / (1.0 + (distance - 1.5).exp());
-    // for tok in ctx_toks {}
-
-    dbg!(1.0 / (1.0 + (distance - 1.5).exp()));
 
     1.0 / (1.0 + (distance - 1.0).exp())
+}
+
+//TEST:
+struct QuoteModel {
+    weights: Vec<f32>,
+    bias: f32,
+}
+
+impl QuoteModel {
+    fn new() -> QuoteModel {
+        todo!();
+    }
+
+    fn predict(&self, x: f32) -> f32 {
+        for i in 0..self.weights.len() {}
+        todo!()
+    }
 }

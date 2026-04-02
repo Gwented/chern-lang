@@ -12,7 +12,7 @@ pub const DEFINITION_SIZE: usize = 4;
 // Ensure tests are aligned
 
 //
-pub static KEYWORDS_ARRAY: [&str; 45] = [
+pub static KEYWORDS_ARRAY: [&str; 46] = [
     // primitives
     "i8", // 0
     "u8",
@@ -36,36 +36,42 @@ pub static KEYWORDS_ARRAY: [&str; 45] = [
     "nil",
     "BigInt", // 20
     "BigFloat",
-    "List",
+    "List", // 22
     "Map",
     "Set", // 24
-    // Not sure if this should be a different category but can just in structure
-    "self",
+    "Tuple",
+    // Special kiwis
+    "self", // 26
+    // "Integer"
+    // "Rational" (Rat)
+    // "Nat",
+    // "Real",
+    // "Prime"
     // structures
-    "struct", // 26
-    "enum",
+    "struct",
+    "enum", // 28
     // Directives?
-    "import", // 28
-    "export",
+    "import",
+    "export", // 30
     // Statements
-    "bind", // 30
-    "alias",
-    "const", // 32
-    "change",
+    "bind",
+    "alias", // 32
+    "const",
+    "change", // 34
     // Section names
-    "var", // 34
-    "nest",
-    "complex", // 36
-    "override",
+    "var",
+    "nest", // 36
+    "complex",
+    "override", // 38
     // Predicate keywords
-    "IsEmpty", // 38
-    "IsWhitespace",
+    "IsEmpty",
+    "IsWhitespace", // 40
     // Predicates (Function)
-    "Range", // 40
-    "StartsW",
-    "EndsW", // 42
-    "Contains",
-    "Equals", // 44
+    "Range",
+    "StartsW", // 42
+    "EndsW",
+    "Contains", // 44
+    "Equals",
 ];
 // "Nat" // 37
 // "Real" // 38
@@ -102,26 +108,27 @@ pub enum Keyword {
     List = 22,
     Map = 23,
     Set = 24,
-    Self_ = 25,
-    Struct = 26,
-    Enum = 27,
-    Import = 28,
-    Export = 29,
-    Bind = 30,
-    Alias = 31,
-    Const = 32,
-    Change = 33,
-    Var = 34,
-    Nest = 35,
-    Complex = 36,
-    Override = 37,
-    IsEmpty = 38,
-    IsWhitespace = 39,
-    Range = 40,
-    StartsW = 41,
-    EndsW = 42,
-    Contains = 43,
-    Equals = 44,
+    Tuple = 25,
+    Self_ = 26,
+    Struct = 27,
+    Enum = 28,
+    Import = 29,
+    Export = 30,
+    Bind = 31,
+    Alias = 32,
+    Const = 33,
+    Change = 34,
+    Var = 35,
+    Nest = 36,
+    Complex = 37,
+    Override = 38,
+    IsEmpty = 39,
+    IsWhitespace = 40,
+    Range = 41,
+    StartsW = 42,
+    EndsW = 43,
+    Contains = 44,
+    Equals = 45,
 }
 
 impl Formattable for Keyword {
@@ -152,6 +159,7 @@ impl Formattable for Keyword {
             Keyword::List => Formatted::List,
             Keyword::Map => Formatted::Map,
             Keyword::Set => Formatted::Set,
+            Keyword::Tuple => Formatted::Tuple,
             Keyword::Self_ => Formatted::Self_,
             Keyword::Struct => Formatted::Sized,
             Keyword::Enum => Formatted::Sized,
@@ -205,26 +213,27 @@ impl Keyword {
             22 => Some(Keyword::List),
             23 => Some(Keyword::Map),
             24 => Some(Keyword::Set),
-            25 => Some(Keyword::Self_),
-            26 => Some(Keyword::Struct),
-            27 => Some(Keyword::Enum),
-            28 => Some(Keyword::Import),
-            29 => Some(Keyword::Export),
-            30 => Some(Keyword::Bind),
-            31 => Some(Keyword::Alias),
-            32 => Some(Keyword::Const),
-            33 => Some(Keyword::Change),
-            34 => Some(Keyword::Var),
-            35 => Some(Keyword::Nest),
-            36 => Some(Keyword::Complex),
-            37 => Some(Keyword::Override),
-            38 => Some(Keyword::IsEmpty),
-            39 => Some(Keyword::IsWhitespace),
-            40 => Some(Keyword::Range),
-            41 => Some(Keyword::StartsW),
-            42 => Some(Keyword::EndsW),
-            43 => Some(Keyword::Contains),
-            44 => Some(Keyword::Equals),
+            25 => Some(Keyword::Tuple),
+            26 => Some(Keyword::Self_),
+            27 => Some(Keyword::Struct),
+            28 => Some(Keyword::Enum),
+            29 => Some(Keyword::Import),
+            30 => Some(Keyword::Export),
+            31 => Some(Keyword::Bind),
+            32 => Some(Keyword::Alias),
+            33 => Some(Keyword::Const),
+            34 => Some(Keyword::Change),
+            35 => Some(Keyword::Var),
+            36 => Some(Keyword::Nest),
+            37 => Some(Keyword::Complex),
+            38 => Some(Keyword::Override),
+            39 => Some(Keyword::IsEmpty),
+            40 => Some(Keyword::IsWhitespace),
+            41 => Some(Keyword::Range),
+            42 => Some(Keyword::StartsW),
+            43 => Some(Keyword::EndsW),
+            44 => Some(Keyword::Contains),
+            45 => Some(Keyword::Equals),
             _ => None,
         }
     }
@@ -264,16 +273,16 @@ impl Keyword {
 
 //WARN: Not sure about the amount of casting everywhere
 const TYPE_START: u32 = 0;
-pub const TYPE_END: u32 = 24;
+pub const TYPE_END: u32 = 25;
 
-const STMT_START: u32 = 30;
-const STMT_END: u32 = 32;
+const STMT_START: u32 = 31;
+const STMT_END: u32 = 34;
 
-const SECT_START: u32 = 34;
-const SECT_END: u32 = 37;
+const SECT_START: u32 = 35;
+const SECT_END: u32 = 38;
 
-const PREDICATE_START: u32 = 38;
-const PREDICATE_END: u32 = 44;
+const PREDICATE_START: u32 = 39;
+const PREDICATE_END: u32 = 45;
 
 //WARN: The amount of casting here is painful. SEVERELY painful.
 pub fn is_type(id: u32) -> bool {

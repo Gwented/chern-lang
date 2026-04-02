@@ -52,6 +52,7 @@ pub mod tests {
         assert_eq!("List", interner.search(Keyword::List as usize));
         assert_eq!("Map", interner.search(Keyword::Map as usize));
         assert_eq!("Set", interner.search(Keyword::Set as usize));
+        assert_eq!("Tuple", interner.search(Keyword::Tuple as usize));
         // Structures
         assert_eq!("self", interner.search(Keyword::Self_ as usize));
         assert_eq!("struct", interner.search(Keyword::Struct as usize));
@@ -96,11 +97,11 @@ pub mod tests {
         }
 
         assert_eq!(
-            keywords::KEYWORDS_ARRAY[(keywords::TYPE_END - 3) as usize],
+            keywords::KEYWORDS_ARRAY[(keywords::TYPE_END - 4) as usize],
             "BigFloat"
         );
 
         // This is to force me to check even if it was done correctly
-        assert_eq!(keywords::KEYWORDS_ARRAY.len(), 45);
+        assert_eq!(keywords::KEYWORDS_ARRAY.len(), 46);
     }
 }

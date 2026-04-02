@@ -25,6 +25,7 @@ pub(super) enum Type {
     Enum(SymbolId),
     Func(SymbolId),
     Alias(SymbolId),
+    Const(SymbolId),
     Tuple(Tuple),
     Unknown,
 }
@@ -36,6 +37,7 @@ pub(super) enum Symbol {
     Func(FuncRepre),
     Enum(EnumRepre),
     Alias(AliasRepre),
+    Const(ConstRepre),
 }
 
 #[derive(Debug)]
@@ -152,6 +154,26 @@ impl Table {
                 _ => unreachable!(),
             },
             None => unreachable!(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct ConstRepre {
+    pub(super) name_id: NameId,
+    pub(super) sym_id: SymbolId,
+    pub(super) ast_id: AstId,
+    // It's position in the Type array
+    pub(super) type_id: TypeId,
+}
+
+impl ConstRepre {
+    pub fn new(name_id: NameId, sym_id: SymbolId, ast_id: AstId, type_id: TypeId) -> ConstRepre {
+        ConstRepre {
+            name_id,
+            sym_id,
+            ast_id,
+            type_id,
         }
     }
 }
@@ -317,6 +339,7 @@ pub(crate) enum FuncArgsRepre {
     Char(char),
     //TEST:
     Var(TypeId, BuiltinTypeKind),
+    Default(TypeId, BuiltinTypeKind, Box<FuncArgsRepre>),
     Str(NameId),
 }
 
@@ -324,9 +347,8 @@ impl FuncArgsRepre {
     pub(crate) fn is_numeric(&self) -> bool {
         match self {
             FuncArgsRepre::Integer(_) | FuncArgsRepre::Float(_) => true,
-            FuncArgsRepre::Var(_, kind) => kind.is_numeric(),
-
             FuncArgsRepre::Char(_) | FuncArgsRepre::Str(_) => false,
+            FuncArgsRepre::Var(_, kind) | FuncArgsRepre::Default(_, kind, _) => kind.is_numeric(),
         }
     }
 
@@ -366,7 +388,7 @@ impl FuncArgsRepre {
             FuncArgsRepre::Integer(_) => BuiltinTypeKind::I64,
             FuncArgsRepre::Float(_) => BuiltinTypeKind::F64,
             FuncArgsRepre::Char(_) => BuiltinTypeKind::Char,
-            FuncArgsRepre::Var(_, kind) => *kind,
+            FuncArgsRepre::Var(_, kind) | FuncArgsRepre::Default(_, kind, _) => *kind,
             FuncArgsRepre::Str(_) => BuiltinTypeKind::Str,
         }
     }
@@ -378,6 +400,7 @@ impl FuncArgsRepre {
             FuncArgsRepre::Char(_) => FuncArgsKind::Char,
             FuncArgsRepre::Var(_, _) => FuncArgsKind::Var,
             FuncArgsRepre::Str(_) => FuncArgsKind::Str,
+            FuncArgsRepre::Default(_, _, _) => FuncArgsKind::Default,
         }
     }
 }
@@ -388,7 +411,7 @@ impl Formattable for FuncArgsRepre {
             FuncArgsRepre::Integer(_) => Formatted::Integer,
             FuncArgsRepre::Float(_) => Formatted::Float,
             FuncArgsRepre::Char(_) => Formatted::Char,
-            FuncArgsRepre::Var(_, builtin_type_kind) => builtin_type_kind.to_fmt(),
+            FuncArgsRepre::Var(_, kind) | FuncArgsRepre::Default(_, kind, _) => kind.to_fmt(),
             FuncArgsRepre::Str(_) => Formatted::Str,
         }
     }
@@ -400,6 +423,7 @@ pub(crate) enum FuncArgsKind {
     Float,
     Char,
     Var,
+    Default,
     Str,
 }
 
@@ -426,16 +450,35 @@ pub(super) struct AliasRepre {
     pub(crate) name_id: NameId,
     pub(super) sym_id: SymbolId,
     pub(super) ast_id: AstId,
-    // Type id is a little wrong
+    // Refers to self's type id position
+    // Maybe call this type_addr?
     pub(super) type_id: TypeId,
     pub(crate) params: Vec<TypeId>,
     pub(super) conds: Vec<Cond>,
     pub(super) args: Vec<InnerArgs>,
 }
 
-// impl AliasRepre {
-//     pub fn new() -> AliasRepre {}
-// }
+impl AliasRepre {
+    pub fn new(
+        name_id: NameId,
+        sym_id: SymbolId,
+        ast_id: AstId,
+        type_id: TypeId,
+        params: Vec<TypeId>,
+        conds: Vec<Cond>,
+        args: Vec<InnerArgs>,
+    ) -> AliasRepre {
+        AliasRepre {
+            name_id,
+            sym_id,
+            ast_id,
+            type_id,
+            params,
+            conds,
+            args,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FuncKind {
