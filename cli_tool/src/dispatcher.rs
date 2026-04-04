@@ -55,31 +55,42 @@ fn process_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, St
         },
     };
 
-    let mut metadata = match ChernConfigLoader::new(&check_cmd.path, src).load_config() {
-        Ok(data) => data,
-        Err(cfg_err) => match cfg_err {
-            ConfigLoadError::Unclosed(msg) => return Err(msg),
-            ConfigLoadError::IO(io_err) => match io_err.kind() {
-                e => {
-                    let msg = format!("Process exited unsuccessfully.\n{e}");
-                    return Err(msg);
-                }
-            },
-        },
-    };
-
-    // IS THIS BAD?
-    metadata.can_color = cli_cfg.can_color;
-
-    match interpreter::interpret_chern_cfg(&metadata) {
+    match interpreter::interpret_chern_cfg(&check_cmd.path) {
         Ok(_) => {
             let msg = format!("No errors found within file");
             Ok(msg)
         }
-        Err(script_err) => match script_err {
-            ScriptError::Parser(items) => todo!(),
-            ScriptError::Semantic(items) => todo!(),
-            ScriptError::IO(io_err) => todo!(),
+        Err(core_err) => match core_err {
+            CoreError::Config(config_load_error) => todo!(),
+            CoreError::Script(script_error) => todo!(),
+            // CoreError::Serial(serial_error) => todo!(),
+            _ => unreachable!(),
         },
     }
 }
+
+// let src = match fs::File::open(&check_cmd.path) {
+//     Ok(f) => f,
+//     Err(e) => match e.kind() {
+//         io::ErrorKind::NotFound => {
+//             let msg = format!("No file found in path \"{}\"", check_cmd.path.display());
+//             CoreError::Config(ConfigLoadError::IO(msg))
+//         }
+//         io::ErrorKind::IsADirectory => {
+//             let msg = format!("The path \"{}\" is a directory", check_cmd.path.display());
+//             return Err(msg);
+//         }
+//         io::ErrorKind::PermissionDenied => {
+//             let msg = format!(
+//                 "The file \"{}\" does not have read permissions enabled",
+//                 check_cmd.path.display()
+//             );
+//
+//             return Err(msg);
+//         }
+//         e => {
+//             let msg = format!("Process exited unsuccessfully.\n{e}");
+//             return Err(msg);
+//         }
+//     },
+// };
