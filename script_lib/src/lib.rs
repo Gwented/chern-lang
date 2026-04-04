@@ -3,6 +3,7 @@ mod algo;
 pub mod lexer;
 // Should not be pub
 pub mod linter;
+pub mod modules;
 pub mod parser;
 pub mod semantic;
 mod types;
@@ -28,7 +29,7 @@ mod tests {
 
         let mut interner = Intern::init();
 
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         for tok in &toks {
             match tok.tok {
@@ -73,7 +74,7 @@ mod tests {
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         assert!(
@@ -88,7 +89,7 @@ mod tests {
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         assert!(
@@ -103,7 +104,7 @@ mod tests {
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         assert!(
@@ -118,7 +119,7 @@ mod tests {
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         assert!(
@@ -133,7 +134,7 @@ mod tests {
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         assert!(
@@ -149,7 +150,7 @@ mod tests {
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         assert!(
@@ -164,7 +165,7 @@ mod tests {
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         assert!(
@@ -179,7 +180,7 @@ mod tests {
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         assert!(
@@ -220,7 +221,7 @@ mod tests {
             .unwrap();
         dbg!(metadata.serial_start);
 
-        assert_eq!(&text[4..], &text[metadata.lex_start..]);
+        assert_eq!(&text[4..], &text[metadata.script_start..]);
         assert_eq!("hi", &text[metadata.serial_start.unwrap()..]);
         assert_eq!(28, metadata.serial_start.unwrap());
     }
@@ -233,7 +234,7 @@ mod tests {
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {
@@ -249,7 +250,7 @@ mod tests {
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {
@@ -265,7 +266,7 @@ mod tests {
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {
@@ -282,7 +283,7 @@ mod tests {
             .unwrap();
 
         let mut interner = Intern::init();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {
@@ -298,7 +299,7 @@ mod tests {
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {
@@ -314,7 +315,7 @@ mod tests {
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {
@@ -330,7 +331,7 @@ mod tests {
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {
@@ -346,7 +347,7 @@ mod tests {
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {
@@ -362,7 +363,7 @@ mod tests {
             .load_config()
             .unwrap();
         let mut interner = Intern::init();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {

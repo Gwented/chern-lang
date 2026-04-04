@@ -21,10 +21,11 @@ pub struct Lexer<'a> {
 impl Lexer<'_> {
     // WARN: The file is fully dependent on being able to lex from a certain point so the @ confirmation
     // here should MAYBE be removed
-    pub fn new(src: &[u8], lex_start: usize) -> Lexer<'_> {
+    pub fn new(src: &[u8], script_start: usize) -> Lexer<'_> {
         Lexer {
             src_bytes: src,
-            pos: 0 + lex_start,
+            // Not even going to acknowledge what was here before
+            pos: script_start,
         }
     }
 
@@ -183,6 +184,7 @@ impl Lexer<'_> {
                     if self.is_def_start() {
                         in_def = true;
                         self.skip(keywords::DEFINITION_SIZE);
+                        // Should probably just have a read limit
                     } else if self.is_def_end() {
                         in_def = false;
 

@@ -574,7 +574,7 @@ impl ConstraintResolver<'_> {
             }
             Type::Func(sym_id) => todo!("Func"),
             Type::Alias(_) | Type::Unknown => {
-                unreachable!("Parser and semantic cannot produce these variants")
+                unreachable!("Parser and semantic cannot produce these variants. I think.")
             }
             Type::Const(symbol_id) => todo!(),
         }

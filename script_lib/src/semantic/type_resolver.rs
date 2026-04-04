@@ -72,7 +72,6 @@ impl TypeResolver<'_> {
         }
 
         dbg!(&self.table.symbols);
-        panic!();
 
         self.check_duplicates();
 

@@ -140,12 +140,34 @@ impl QuoteNode {
         }
     }
 }
+const LR: f32 = 1e-2;
 
 /// Predicts where an unclosed quote may have started
 pub fn quote_start_probability(src: &[u8], q_type: char, search_range: Range<usize>) -> Vec<Span> {
     let toks = quote_model::lexer::Lexer::new(src, &search_range, q_type).tokenize();
 
     let mut q_graph = QuoteGraph::new(&toks);
+
+    // Skull emoji skull emoji skull emoji
+    let mut q_model = QuoteModel::new();
+
+    q_model.weights = vec![0.1, 0.02, 0.03];
+
+    let test_input = vec![0.50, 0.39, 0.80];
+
+    // Uh
+    let correct_vec = vec![0.7, 0.43, 0.20];
+
+    for i in 1..=1000 {
+        let loss = train_model(&mut q_model, &test_input, &correct_vec, LR);
+
+        if i % 5 == 0 {
+            println!("step {i} | loss={loss}\n");
+            dbg!(&q_model.weights);
+        }
+    }
+
+    panic!("End");
 
     for tok_info in &toks {
         match tok_info.tok {
@@ -191,6 +213,24 @@ pub fn quote_start_probability(src: &[u8], q_type: char, search_range: Range<usi
     }
 
     spans
+}
+
+// xs
+fn train_model(q_model: &mut QuoteModel, xs: &[f32], expected: &[f32], lr: f32) -> f32 {
+    let mut loss_total = 0.0;
+
+    for i in 0..xs.len() {
+        let pred = q_model.predict(xs[i]);
+        let error = pred - expected[i];
+
+        loss_total += error * error;
+        // Not adjusting bias right now
+        let w_gradient = lr * (2.0 * error * xs[i]);
+
+        q_model.weights[i] -= w_gradient;
+    }
+
+    loss_total
 }
 
 /// Returns the amount to apply to the signal of the given token given the context
@@ -261,19 +301,31 @@ fn context_distance(ctx_toks: &Vec<TokenInfo>, current_tok: &TokenInfo, distance
     1.0 / (1.0 + (distance - 1.0).exp())
 }
 
+fn loss(q_model: QuoteModel) -> f32 {
+    todo!();
+}
+
 //TEST:
 struct QuoteModel {
     weights: Vec<f32>,
     bias: f32,
 }
 
+// Embeddings
 impl QuoteModel {
     fn new() -> QuoteModel {
-        todo!();
+        QuoteModel {
+            weights: Vec::new(),
+            bias: 0.1,
+        }
     }
 
     fn predict(&self, x: f32) -> f32 {
-        for i in 0..self.weights.len() {}
-        todo!()
+        let mut sum = 0.0;
+        for i in 0..self.weights.len() {
+            sum += self.weights[i] * x;
+        }
+
+        sum + self.bias
     }
 }

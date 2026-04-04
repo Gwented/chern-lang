@@ -50,6 +50,17 @@ impl NameId {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PathId {
+    pub id: u32,
+}
+
+impl PathId {
+    pub fn new(id: u32) -> PathId {
+        PathId { id }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FuncId {
     pub id: u32,

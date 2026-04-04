@@ -4,7 +4,6 @@ use common::symbols::{AstId, InnerArgs, NameId, Span, SpannedInnerArgs};
 #[derive(Debug)]
 pub struct AstInfo {
     pub(crate) bind: Option<NameId>,
-    pub(crate) imports: Vec<NameId>,
     pub(crate) items: Vec<Item>,
 }
 
@@ -12,7 +11,6 @@ impl AstInfo {
     pub(crate) fn new() -> AstInfo {
         AstInfo {
             bind: None,
-            imports: Vec::new(),
             items: Vec::new(),
         }
     }

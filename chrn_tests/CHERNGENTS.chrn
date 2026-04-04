@@ -1,0 +1,4 @@
+import "../chrn_tests/main.chrn"
+
+export const W_TOK = 1.5
+export const W_POS = 0.7

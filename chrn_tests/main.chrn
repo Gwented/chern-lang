@@ -1,21 +1,32 @@
-// Model likely just needs to predict it's structural state off of syntax and propagate until it structurally 
-// seems like natural quotes to where the score actually matters.
 // Need to re-route errors so they don't immediately form basic arrows to one so help messages
 // aren't just requirements because the err msgs themselves are misleading or bad
 
-// A quote transition with the start leading into a comment should lead to a high probability
-// of it being the wrong quote.
-
-"Messed up
-// Hello "Quotes"
+// I am messed up"
+// "I am not even supposed to be included"
 
 @def
 
-alias x(x, y) = [IsEmpty, Range(x = "5", y)]
+import "../chrn_tests/defs.chrn"
+import "../chrn_tests/main.chrn"
 
-const X = 4
+// alias x = [IsEmpty, Range(x = "5", y)]
+
+// const X: i32 = 4
+
+var->
+    var: i32 Range(0, 6)]
+
+nest->
+    struct i32 {
+        len: unsized
+    }
+
+    struct str {
+
+        }
 
 @end
+
 "Really
 
 

@@ -29,15 +29,15 @@ const C_BRANCH_VAR_TYPE_SET: u64 = C_BASE_EXIT_SET | token::O_BRACKET | token::H
 const A_BRANCH_VAR_TYPE_SET: u64 = A_BASE_EXIT_SET | token::COLON;
 
 // Probably shouldn't account for hash symbol since it is not apart of the loop
-const C_BRANCH_VAR_COND_SET: u64 = C_BASE_EXIT_SET | token::HASH_SYMBOL | token::C_CURLY_BRACKET;
-const A_BRANCH_VAR_COND_SET: u64 = A_BASE_EXIT_SET | token::COLON;
+const C_BRANCH_COND_SET: u64 = C_BASE_EXIT_SET | token::HASH_SYMBOL | token::C_CURLY_BRACKET;
+const A_BRANCH_COND_SET: u64 = A_BASE_EXIT_SET | token::COLON;
 
-const C_BRANCH_VAR_ARGS_SET: u64 = C_BASE_EXIT_SET | token::HASH_SYMBOL | token::C_CURLY_BRACKET;
-const A_BRANCH_VAR_ARGS_SET: u64 = A_BASE_EXIT_SET | token::COLON;
+const C_BRANCH_TYPE_ARGS_SET: u64 = C_BASE_EXIT_SET | token::HASH_SYMBOL | token::C_CURLY_BRACKET;
+const A_BRANCH_TYPE_ARGS_SET: u64 = A_BASE_EXIT_SET | token::COLON;
 
 //TODO: Find out what tuning works best for these if they are going to stay.
-const C_BRANCH_VAR_FUNC_SET: u64 = C_BASE_EXIT_SET | token::C_PAREN;
-const A_BRANCH_VAR_FUNC_SET: u64 = A_BASE_EXIT_SET | token::C_BRACKET;
+const C_BRANCH_FUNC_SET: u64 = C_BASE_EXIT_SET | token::C_PAREN;
+const A_BRANCH_FUNC_SET: u64 = A_BASE_EXIT_SET | token::C_BRACKET;
 
 #[derive(Debug)]
 pub(super) struct Context<'a> {
@@ -257,9 +257,9 @@ impl<'a> Context<'a> {
             Branch::Bind => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Var => (C_BRANCH_VAR_SET, A_BRANCH_VAR_SET),
             Branch::VarType => (C_BRANCH_VAR_TYPE_SET, A_BRANCH_VAR_TYPE_SET),
-            Branch::Cond => (C_BRANCH_VAR_COND_SET, A_BRANCH_VAR_COND_SET),
-            Branch::VarFuncArgs => (C_BRANCH_VAR_FUNC_SET, A_BRANCH_VAR_FUNC_SET),
-            Branch::VarTypeArgs => (C_BRANCH_VAR_ARGS_SET, A_BRANCH_VAR_ARGS_SET),
+            Branch::Cond => (C_BRANCH_COND_SET, A_BRANCH_COND_SET),
+            Branch::FuncArgs => (C_BRANCH_FUNC_SET, A_BRANCH_FUNC_SET),
+            Branch::TypeArgs => (C_BRANCH_TYPE_ARGS_SET, A_BRANCH_TYPE_ARGS_SET),
             Branch::Nest => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::NestType => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::NestEnum => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
@@ -288,24 +288,8 @@ impl<'a> Context<'a> {
             .unwrap_or(TokenKind::Poison);
 
         match branch {
-            //FIXME: Currently suggests on any error in neutral so...more branches
             Branch::Alias => match found.tok {
-                // Situation: alias X = 4
-                //            ^^^^^   ^
-                // Keyword tokens would be very nice here..
                 Token::Assign if prev_kind == TokenKind::Id && next_kind != TokenKind::OParen => {
-                    // X -> X()
-                    //       ++
-                    // help: Alias statements require parameters
-
-                    // What if it was instead
-                    //
-                    // alias あ = 4
-                    //       ^^
-                    //       | -> あ()
-                    //
-
-                    // Cannot fail but expect scares me
                     let Token::Id(id) = prev_tok.tok else {
                         return None;
                     };
@@ -318,16 +302,14 @@ impl<'a> Context<'a> {
                         self.metadata.can_color,
                     );
 
-                    // This is getting very heuristic
-                    let msg = format!("Alias statements require parameters");
-                    let help = reporter::standardize_help(&msg, self.metadata.can_color);
+                    // It looks weird now
+                    let help = reporter::standardize_help(&help_diag, self.metadata.can_color);
 
-                    let full_help = format!("{help_diag} {help}");
-
-                    Some(full_help)
+                    Some(help)
                 }
                 _ => None,
             },
+            //FIXME: Currently suggests on any error in neutral so...more branches
             Branch::Neutral => match found.tok {
                 Token::Id(id) | Token::Illegal(id) => {
                     let found_bytes = interner.search(id as usize).as_bytes();
@@ -337,7 +319,7 @@ impl<'a> Context<'a> {
                         .is_none()
                         .then_some(algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect))??;
 
-                    let msg = format!("Found similar section \"{similar}\"");
+                    let msg = format!("Found similar \"{similar}\"");
                     let help = reporter::standardize_help(&msg, self.metadata.can_color);
 
                     Some(help)
@@ -353,6 +335,8 @@ impl<'a> Context<'a> {
                         return None;
                     };
 
+                    // Maybe this should return None if it directly IS a direct match since it is
+                    // just a range check
                     let similar_sect = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect)?;
 
                     let msg = format!("Found similar section \"{similar_sect}\"");
@@ -364,6 +348,10 @@ impl<'a> Context<'a> {
             },
             Branch::Var => match found.tok {
                 Token::OParen if expected == TokenKind::Colon => {
+                    // if let Token::Id(prev_id) = prev_tok.tok {
+                    //     panic!("CApi");
+                    // }
+                    //
                     None
                     // let msg = "Is this missing '[' to define conditions?";
                     //
@@ -419,7 +407,7 @@ impl<'a> Context<'a> {
                 }
                 _ => None,
             },
-            Branch::VarTypeArgs => match found.tok {
+            Branch::TypeArgs => match found.tok {
                 Token::Id(id) => {
                     let found_bytes = interner.search(id as usize).as_bytes();
 

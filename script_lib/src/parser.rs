@@ -332,7 +332,7 @@ fn parse_alias_stmt(
     ctx.expect_verbose(
         TokenKind::OParen,
         // WHAT IF THIS WAS LAZY?
-        &format!("Expected '(' to define alias \"{err_name}\", found "),
+        &format!("Expected parameters to define alias \"{err_name}\", found "),
         "",
         // May not need corresponding set
         Branch::Alias,
@@ -449,16 +449,19 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
         interner,
     )?;
 
+    let is_escaped = if ctx.peek_kind() == TokenKind::Tilde {
+        ctx.advance_tok();
+        true
+    } else {
+        false
+    };
+
     //TODO: Can likely be done simpler but keep for simplicity
     let item = match id {
         id if id == Keyword::Struct as u32 => {
-            if ctx.peek_kind() == TokenKind::Tilde {
-                ctx.advance_tok();
-            }
-
             let name_span = ctx.peek_span();
 
-            let name = ctx.expect_id_verbose(
+            let plain_id = ctx.expect_id_verbose(
                 TokenKind::Id,
                 "Expected an identifier for the given structure. found ",
                 "",
@@ -466,9 +469,21 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
                 interner,
             )?;
 
-            let struct_name = interner.search(name as usize);
+            let struct_name = interner.search(plain_id as usize);
 
-            let name_id = NameId::new(name);
+            if !is_escaped && keywords::is_type(plain_id) {
+                ctx.report_verbose(
+                    &format!(
+                        "To use known types as struct identifiers, prefix with \"~{struct_name}\" "
+                    ),
+                    Branch::NestType,
+                    interner,
+                );
+
+                return Err(Token::Poison);
+            }
+
+            let name_id = NameId::new(plain_id);
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
@@ -500,7 +515,7 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
         id if id == Keyword::Enum as u32 => {
             let name_span = ctx.peek_span();
 
-            let name = ctx.expect_id_verbose(
+            let plain_id = ctx.expect_id_verbose(
                 TokenKind::Id,
                 "Expected an identifier for the given enum. found ",
                 "",
@@ -508,7 +523,19 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
                 interner,
             )?;
 
-            let enum_name = interner.search(name as usize);
+            let enum_name = interner.search(plain_id as usize);
+
+            if !is_escaped && keywords::is_type(plain_id) {
+                ctx.report_verbose(
+                    &format!(
+                        "To use known types as enum identifiers, prefix with \"~{enum_name}\" "
+                    ),
+                    Branch::NestType,
+                    interner,
+                );
+
+                return Err(Token::Poison);
+            }
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
@@ -518,7 +545,7 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
                 interner,
             )?;
 
-            let name_id = NameId::new(name);
+            let name_id = NameId::new(plain_id);
 
             let variants = handle_enum_variants(ctx, enum_name, interner)?;
 
@@ -763,7 +790,7 @@ fn parse_call_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedEx
             TokenKind::Comma,
             "Expected ',' to separate arguments or ')' to close, found ",
             "",
-            Branch::VarFuncArgs,
+            Branch::FuncArgs,
             interner,
         )?;
     }
@@ -1090,14 +1117,14 @@ fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<SpannedInnerArgs, T
         TokenKind::Id,
         "",
         " is not a valid argument.",
-        Branch::VarTypeArgs,
+        Branch::TypeArgs,
         interner,
     )?;
 
     // FIX: Change from try_from to Some
     let arg = InnerArgs::try_from(interner.search(id as usize)).or_else(|invalid_id| {
         let msg = format!("The argument \"#{invalid_id}\" does not exist");
-        ctx.report_verbose(&msg, Branch::VarTypeArgs, interner);
+        ctx.report_verbose(&msg, Branch::TypeArgs, interner);
 
         return Err(Token::Poison);
     })?;
@@ -1150,7 +1177,7 @@ fn parse_func_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<TypeExpr>
         TokenKind::CParen,
         "Expected ')' to close declaration, found ",
         "",
-        Branch::VarFuncArgs,
+        Branch::FuncArgs,
         interner,
     )?;
 
@@ -1197,8 +1224,6 @@ fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>
     }
 
     if err_count == 0 {
-        //BUG: Cont: 'e' is valid, but EOF is hit when ']' is expected. Why is EOF not being
-        //higlighted? We are AT EOF. RIGHT here.
         _ = ctx.expect_verbose(
             TokenKind::CBracket,
             "Expected ']' at end of condition, found ",

@@ -1,41 +1,54 @@
-use std::{
-    fs,
-    io::Read,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::Path};
 
 use common::{
     config_loader::ChernConfigLoader,
     core_error::{ConfigLoadError, CoreError, ScriptError},
     intern::Intern,
-    metadata::ChernMetadata,
 };
 use script_lib::{
     lexer::Lexer,
-    parser,
+    modules::{self, Program},
+    parser::{self, ast::AstInfo},
     semantic::{
         constraint_resolver::ConstraintResolver, representation::Table, type_resolver::TypeResolver,
     },
 };
 
-//TEST:
-//Could make it so all the context parts are public, allowing them to be returned and emit errors
-// from a matching of a result for whoever is using the resolver, lexer, etc.
-// Likely returning Core error
-pub fn interpret_chern_cfg(metadata: &ChernMetadata) -> Result<(), ScriptError> {
+// Maybe this shouldn't take metadata externally
+pub fn interpret_chern_cfg(path: &Path) -> Result<(), CoreError> {
     let mut interner = Intern::init();
 
-    let toks = Lexer::new(&metadata.src_bytes, metadata.lex_start).tokenize(&mut interner);
+    // let time_stamp = std::time::UNIX_EPOCH.elapsed().unwrap().as_secs() / 10000;
 
-    // To be replaced with Module struct so import export can be used
-    let mut table = Table::new();
+    // Deciding on doing this first since if modules were identified during the parsing stage any
+    // syntax error within another module would not be reportable since the parser failed.
 
-    let ast_info = parser::parse(&metadata, &toks, &mut interner)?;
+    // Not entirely sure what to do with program yet so staying outside for now
+    let mut program = Program::new(None);
 
-    TypeResolver::new(&ast_info, &metadata, &interner, &mut table).resolve();
-    ConstraintResolver::new(&ast_info, &metadata, &interner, &mut table).resolve();
+    let modules = match modules::extract_modules(path, &mut interner) {
+        Ok(mods) => mods,
+        Err(script_err) => match script_err {
+            ConfigLoadError::Unclosed(_) => todo!("Internal error"),
+            ConfigLoadError::IO(error) => panic!("{}", error),
+        },
+    };
 
-    // Need to cache stuffies
+    //Temp
+    program.mods = modules;
+
+    for module in &mut program.mods {
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+        let ast_info = parser::parse(&module.metadata, &toks, &mut interner)?;
+
+        // This needs to be sorted
+        TypeResolver::new(&ast_info, &module.metadata, &interner, &mut module.table).resolve();
+        ConstraintResolver::new(&ast_info, &module.metadata, &interner, &mut module.table)
+            .resolve();
+    }
+
+    // Maybe bind is now gotten from module resolution
 
     // IR will be very different
     Ok(())

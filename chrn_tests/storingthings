@@ -1,0 +1,57 @@
+@def
+
+bind "Floor"
+
+alias default() = [Contains("che"), Equals(5)] #warn
+
+var->
+    ptr: u8
+    len: unsized
+    capacity: unsized
+    let x: i32 = "Suspiciously placed quotes"
+    x: i32 = Suspiciously placed quotes"
+
+""
+"
+
+// Have literals being printed shown have their new lines replaced with spaces
+
+// alias
+// const
+// type tied constraints
+// export
+
+// Illegals maybe need to be a bit stricter on what they consume
+
+bind hi "i""
+
+@def
+
+
+
+"HEllo"
+
+@end
+alias var() = [Something()]
+
+const const = 4
+
+
+
+var->
+
+override->
+
+
+lang JAVA {
+    change i8, u8, i16, u16, f16, u32 = i32
+}
+
+/*
+   RUST
+   JAVA
+   // Would be default since Java is optimized for int
+   change i8, u8, i16, u16, f16, u32 = i32
+   change u64, u128, i128 = i64
+   @PYTHON
+*/

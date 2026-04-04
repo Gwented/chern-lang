@@ -180,7 +180,6 @@ impl<'a> Lexer<'a> {
     fn handle_comment(&mut self, toks: &mut Vec<TokenInfo>) {
         while self.peek() != '\n' {
             if self.peek() == self.q_type {
-                println!("Should be quote {}", self.peek());
                 let tok = self.advance_quote();
 
                 //FIX:

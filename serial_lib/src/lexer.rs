@@ -11,7 +11,7 @@ impl Lexer<'_> {
     pub fn new(src: &[u8], serial_start: usize) -> Lexer<'_> {
         Lexer {
             src_bytes: src,
-            pos: 0 + serial_start,
+            pos: serial_start,
         }
     }
 

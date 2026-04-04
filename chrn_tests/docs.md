@@ -11,11 +11,13 @@
 ## Types
 i8, u8, i16, u16, i32, u32, i64, u64
 i128, u128, f16, f32, f64, f128, sized, unsized,
-char, bool, (maybe capital) str, struct, enum, tuple, nil, BigInt, BigFloat, List, Map, Set
+char, bool, (maybe capital) str, struct, enum, Tuple, nil, BigInt, BigFloat, List, Map, Set
 
 `struct` for a structure of data.
 `enum` for an Enum type which can also hold data.
-`tuple`
+
+// Not sure what to do with this keyword yet
+`Tuple`
 
 ## [Operators]
 `!`: NOT operator.
@@ -26,8 +28,8 @@ char, bool, (maybe capital) str, struct, enum, tuple, nil, BigInt, BigFloat, Lis
 // TODO:
 `self`: Refers to current serialized data being looked at
 
-`struct` for a structure of data.
-`enum` for an Enum type which can also hold data.
+`struct`: for a structure of data.
+`enum`: for an Enum type which can also hold data.
 
 ## Actions (Ignore this)
 extract env vars
@@ -42,7 +44,6 @@ var->
 
     some_str: str [ShortDefault()]
 ```
-
 
 # DOES NOT EXIST YET
 `_`: Match all for ignoring parameters
@@ -66,13 +67,13 @@ Example:
 var->
     x: ~str
 nest->
+    // Should enforce this
     struct ~str { // Could also just be "str" but it is best to maintain the prefix '~'
         ptr: u8
         len: unsized
         capacity: unsized
     }
 ```
-
 
 # DOES NOT EXIST YET
 `(range)`: Explicit range syntax. The '=' is required. `0..=5`
@@ -102,40 +103,39 @@ nest->
 ## Statements
 
 // TODO
-`const`:
+`const`: Allows the declaration of variables under a constant variable rather than only literals. The type is always inferred to be the lowest possible data type given the context it's used in.
 
-`export`:
+`export`: Allows for the exported value to be used externally when imported.
 
-`import`:
+`import`: Imports `.chrn` file which allows for anything exported within the imported file to be used outside of it.
 
 // TODO
 
-`alias`: Allows for predicates to be stored within a single keyword in the case of long conditions.
+`alias`: Allows for predicates and arguments to be stored within a single function call for convenience.
 
 ```chrn
-alias LongDefault(x, y) = !IsEmpty, Range(x, y), StartsW("ch") EndsW("ern") Contains("chern")
+// Maybe if there's only one condition allow no brackets?
+alias ShortDefault() = [IsWhitespace]
 
-alias ShortDefault() = IsWhitespace
+alias LongDefault(x, y) = [!IsEmpty, Range(x, y), StartsW("ch") EndsW("ern") Contains("chern")]
 
 var->
-special_string: str [LongDefault(0, 5)]
-
-some_str: str [ShortDefault()]
+    special_string: str [LongDefault(0, 5)]
+    some_str: str [ShortDefault()]
 ```
 
 `bind`: Defines where a serialized file is located that should be checked, or deserialized.
 
 ## [Sections]
 
-// This sounds convoluted..
-- Sections are how data can be parsed in different ways. They exist as opposed to keywords so that data is always defined in a readable, predictable manner.
+- Sections instruct how data is parsed. They exist as opposed to keywords so that data is always defined in a readable, predictable manner.
 
 - The `->` operator is used after section keywords to swap to the section. There cannot be more than one of each section.
 
 `var`: Front facing definitions of the data to be serialized or deserialized.
 
 ```chrn
-// If we have struct Person, it would look like
+// Given struct Person
 var->
     name: str
     age: u8
@@ -143,7 +143,6 @@ var->
 // But given nested data such as
     account: Account
 // it would need a nest section
-
 ```
 
 `nest->`: Allows for the definition of a struct or enum
@@ -159,11 +158,10 @@ nest->
     }
 
     enum State {
-        Ready(str, unsized) // Can store tuple as well as no type
+        Ready(str, unsized) // Can optionally store types
         InProgress
         Failed
     }
-
 ```
 
 # DOES NOT EXIST YET
@@ -197,7 +195,7 @@ There is also a "like" category. A "JAVA_LIKE" category would have all of the in
         pets: List<Pet> [!IsEmpty, Range(5, 15)]
     nest->
         struct Pet {
-            name: str [!IsWhitespace]
+            name: str [!IsWhitespace] // Actions would allow for "If WS then Concat("...")"
             color: Color
         }
 
@@ -216,7 +214,9 @@ Maybe arithmetic
 # Ok maybe
 
 Matrix declarations.
-HOW?
+Tensor(N-dim)<f32> more so a convenience wrapper over `List<List<f32>>` (I am aware this is usually in binary)
+
+matrix: Tensor2<f32>
 
 Unified serialization rules for any md file. 
 Yaml, XML(Forgot this existed), Json, BINARY(I don't know) BINARY

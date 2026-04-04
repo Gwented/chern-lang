@@ -31,3 +31,11 @@ pub fn softmax(logits: &Vec<f32>) -> Vec<f32> {
     let probs: Vec<f32> = logits.iter().map(|l| l.exp() / sum_exp).collect();
     probs
 }
+
+pub fn dot(a: &Vec<f32>, b: &Vec<f32>) -> f32 {
+    if a.len() != b.len() {
+        panic!("Not same len in dot (Temp)");
+    }
+
+    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
+}

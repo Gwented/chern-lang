@@ -1,0 +1,42 @@
+@def
+    var->
+        name: str [!IsEmpty]
+        age: u8
+        failed_startups: Set<str>
+        map: Map<u32, str>
+        account: Account
+    nest->
+        struct Account {
+            balance: BigFloat [Range(0.0, 500.0)]
+            membership_status: bool
+            creation_date: str
+            state: State
+        } #warn
+
+        enum State {
+            Ready((i32, i32))
+            InProgress
+            Failed
+        }
+@end
+
+struct Stuff {
+    /*Cached metadata*/
+}
+
+// Let's run this program to make sure this loop is in fact, infinite.
+
+name: "Seal"
+age: 29
+failed_startups: ["One", "Two", "Three"]
+map: [
+    32: "Hello",
+    50: "Hi",
+    98: "違う",
+]
+account: {
+    balance: "483902850924435920"
+    membership_status: true
+    creation_date: nil
+    state: "Ready"
+}
