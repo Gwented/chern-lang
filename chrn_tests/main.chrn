@@ -5,27 +5,26 @@
 // "I am not even supposed to be included"
 
 @def
-
+// Require forward slashes
 import "../chrn_tests/defs.chrn"
-import "../chrn_tests/main.chrn"
 
 // alias x = [IsEmpty, Range(x = "5", y)]
 
 // const X: i32 = 4
+@end
 
 var->
     var: i32 Range(0, 6)]
 
 nest->
     struct i32 {
-        len: unsized
-    }
+    len: unsized
+}
 
     struct str {
 
-        }
+    }
 
-@end
 
 "Really
 

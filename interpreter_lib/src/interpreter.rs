@@ -18,8 +18,6 @@ use script_lib::{
 pub fn interpret_chern_cfg(path: &Path) -> Result<(), CoreError> {
     let mut interner = Intern::init();
 
-    // let time_stamp = std::time::UNIX_EPOCH.elapsed().unwrap().as_secs() / 10000;
-
     // Deciding on doing this first since if modules were identified during the parsing stage any
     // syntax error within another module would not be reportable since the parser failed.
 
@@ -30,6 +28,7 @@ pub fn interpret_chern_cfg(path: &Path) -> Result<(), CoreError> {
         Ok(mods) => mods,
         Err(script_err) => match script_err {
             ConfigLoadError::Unclosed(_) => todo!("Internal error"),
+            ConfigLoadError::Module(_) => todo!("Module errro"),
             ConfigLoadError::IO(error) => panic!("{}", error),
         },
     };

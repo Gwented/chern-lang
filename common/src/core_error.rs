@@ -30,6 +30,7 @@ impl From<SerialError> for CoreError {
 #[derive(Debug)]
 pub enum ConfigLoadError {
     Unclosed(String),
+    Module(String),
     IO(std::io::Error),
 }
 

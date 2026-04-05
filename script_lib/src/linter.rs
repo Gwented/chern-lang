@@ -82,6 +82,7 @@ pub fn print_all(ast_info: &AstInfo, interner: &Intern) {
                 let name = interner.search(abs_const.name_id.id as usize);
                 println!("Const {name} [");
             }
+            Item::Import(abstract_import) => (),
         }
     }
     println!("]");

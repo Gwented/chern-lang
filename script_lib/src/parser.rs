@@ -4,8 +4,9 @@ mod context;
 mod error;
 mod parse_state;
 use crate::parser::ast::{
-    AbstractAlias, AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVariant,
-    AstInfo, BinaryOp, Call, Expr, Generic, Item, SpannedExpr, TypeExpr, Unary, UnaryOp,
+    AbstractAlias, AbstractConst, AbstractEnum, AbstractImport, AbstractStruct, AbstractTypeDef,
+    AbstractVariant, AstInfo, BinaryOp, Call, Expr, Generic, Item, SpannedExpr, TypeExpr, Unary,
+    UnaryOp,
 };
 use crate::parser::context::Context;
 use crate::parser::error::Branch;
@@ -17,7 +18,7 @@ use common::fmter::Formatted;
 use common::intern::Intern;
 use common::keywords::{self, Keyword};
 use common::metadata::ChernMetadata;
-use common::symbols::{InnerArgs, NameId, Span, SpannedInnerArgs};
+use common::symbols::{InnerArgs, NameId, PathId, Span, SpannedInnerArgs};
 
 // May be lower
 const MAX_ERRORS: u8 = 3;
@@ -94,6 +95,13 @@ pub fn parse(
 
                     if let Ok(abs_const) = parse_const(&mut ctx, is_priv, interner) {
                         ast_info.items.push(Item::Const(abs_const));
+                    }
+                }
+                id if id == Keyword::Import as u32 => {
+                    ctx.advance_tok();
+
+                    if let Ok(import) = parse_import(&mut ctx, interner) {
+                        ast_info.items.push(Item::Import(import));
                     }
                 }
                 id if id == Keyword::Var as u32 => {
@@ -216,7 +224,6 @@ pub fn parse(
 
                         _ = parse_complex_sect(&mut ctx, interner);
                     }
-                    panic!("complexx end");
                 }
                 id if id == Keyword::Override as u32 => {
                     if !is_priv {
@@ -331,10 +338,8 @@ fn parse_alias_stmt(
 
     ctx.expect_verbose(
         TokenKind::OParen,
-        // WHAT IF THIS WAS LAZY?
         &format!("Expected parameters to define alias \"{err_name}\", found "),
         "",
-        // May not need corresponding set
         Branch::Alias,
         interner,
     )?;
@@ -1235,6 +1240,25 @@ fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>
     };
 
     Ok(conds)
+}
+
+// Need import item
+fn parse_import(ctx: &mut Context, interner: &Intern) -> Result<AbstractImport, Token> {
+    //TODD: Still uses the term literal internally despite change in name to "Str"
+    // NOTE: I don't know what to do with this yet so it stays as enforced utf-8
+    let path_span = ctx.peek_span();
+
+    let path_id = ctx.expect_id_verbose(
+        TokenKind::Literal,
+        "Expected a string literal path, found ",
+        "",
+        Branch::Import,
+        interner,
+    )?;
+
+    // No 'import as' as of right now
+
+    Ok(AbstractImport::new(PathId::new(path_id), path_span))
 }
 
 fn parse_export(ctx: &mut Context, interner: &Intern) -> Result<bool, ()> {

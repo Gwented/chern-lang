@@ -6,9 +6,10 @@ use crate::fmter::{Formattable, Formatted};
 pub const DEFINITION_SIZE: usize = 4;
 //WARN: WAY TOO MANY MICRO-DEPENDENCIES
 
+//WARN:
 // Before adding a keyword:
 // Ensure array string is aligned with the Keyword enum
-// Ensure ranges are adjusted
+// Ensure ranges and all keyword functions are adjusted
 // Ensure tests are aligned
 
 //
@@ -278,8 +279,8 @@ pub const TYPE_END: u32 = 25;
 const STMT_START: u32 = 31;
 const STMT_END: u32 = 34;
 
-const SECT_START: u32 = 35;
-const SECT_END: u32 = 38;
+pub const SECT_START: u32 = 35;
+pub const SECT_END: u32 = 38;
 
 const PREDICATE_START: u32 = 39;
 const PREDICATE_END: u32 = 45;
@@ -289,11 +290,9 @@ pub fn is_type(id: u32) -> bool {
     id <= TYPE_END
 }
 
-// But what about inheritance. What about clean code? DRY? What if I want my .chrn tree of
-// dependencies where they inherit from different levels of chrn files?
-// export inherit non-translucent const READ = 0b00000001
+/// Ensure this aligns with the actual id of export
 pub fn is_export(id: u32) -> bool {
-    id == 29
+    id == 30
 }
 
 pub fn is_sect(id: u32) -> bool {

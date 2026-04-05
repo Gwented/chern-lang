@@ -253,6 +253,7 @@ impl<'a> Context<'a> {
             Branch::Broken => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Neutral => (C_STMT_NEUTRAL_SET, A_BASE_EXIT_SET),
             Branch::Alias => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
+            Branch::Import => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Searching => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Bind => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Var => (C_BRANCH_VAR_SET, A_BRANCH_VAR_SET),
@@ -483,7 +484,7 @@ impl<'a> Context<'a> {
         t
     }
 
-    pub(super) fn peek_span(&mut self) -> Span {
+    pub(super) fn peek_span(&self) -> Span {
         let t = self.toks[self.pos].span.clone();
         t
     }

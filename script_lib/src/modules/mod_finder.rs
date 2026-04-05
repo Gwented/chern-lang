@@ -9,10 +9,8 @@ use common::{
     symbols::{NameId, PathId},
 };
 
-use crate::modules::Module;
-
 pub struct ModuleFinder<'a> {
-    pub src_bytes: &'a [u8],
+    src_bytes: &'a [u8],
     pos: usize,
     end: usize,
 }
@@ -87,14 +85,6 @@ impl ModuleFinder<'_> {
 
         while self.pos < self.src_bytes.len() {
             match self.peek() {
-                b'\\' => {
-                    self.advance();
-
-                    // Um
-                    if let Some(_) = self.read_escape() {
-                    } else {
-                    }
-                }
                 b'"' => {
                     self.advance();
                     break;
@@ -104,6 +94,7 @@ impl ModuleFinder<'_> {
                 }
             }
         }
+
         let end = self.pos - 1;
 
         //FIX:

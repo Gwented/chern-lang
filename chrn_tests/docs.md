@@ -11,7 +11,7 @@
 ## Types
 i8, u8, i16, u16, i32, u32, i64, u64
 i128, u128, f16, f32, f64, f128, sized, unsized,
-char, bool, (maybe capital) str, struct, enum, Tuple, nil, BigInt, BigFloat, List, Map, Set
+char, bool, (maybe capital) str, struct, enum,  nil, BigInt, BigFloat, List, Map, Set, Tuple,
 
 `struct` for a structure of data.
 `enum` for an Enum type which can also hold data.
@@ -30,6 +30,9 @@ char, bool, (maybe capital) str, struct, enum, Tuple, nil, BigInt, BigFloat, Lis
 
 `struct`: for a structure of data.
 `enum`: for an Enum type which can also hold data.
+
+## Workspace
+- NOT FOR COMPLEXITY, JUST FOR AN ENFORCED CONVENTION. I WANT BINARY
 
 ## Actions (Ignore this)
 extract env vars
@@ -126,7 +129,7 @@ var->
 
 `bind`: Defines where a serialized file is located that should be checked, or deserialized.
 
-## [Sections]
+## Sections
 
 - Sections instruct how data is parsed. They exist as opposed to keywords so that data is always defined in a readable, predictable manner.
 
@@ -170,10 +173,7 @@ nest->
 (Probably not a good idea)
 There is also a "like" category. A "JAVA_LIKE" category would have all of the int, short, logic for a batch of languages.
 
-`complex`: Define complex rules such as enum bounds.
-
-    complex:
-        State.variants = 5
+`complex->`: Define complex rules
 
 ## Arguments
 `#warn`: Would warn instead of terminating.
@@ -203,20 +203,21 @@ There is also a "like" category. A "JAVA_LIKE" category would have all of the in
 @end
 ```
 
-Utilities to alter actual main file, such as trimming all strings.
 
 # I FORGOT ABOUT UNICODE
 Allows for notation to serialize to be a specific notation. Unicode.
 
 ## POSSIBLE FEATURES
 
+(CLI related) Utilities to alter actual main file, such as trimming all strings.
+
 Maybe arithmetic
 # Ok maybe
 
 Matrix declarations.
-Tensor(N-dim)<f32> more so a convenience wrapper over `List<List<f32>>` (I am aware this is usually in binary)
+Tensor(N-dim)<f32> more so a convenience wrapper over `List<List<f32>>` (Although tensors are usually in binary) WHICH IS WHY THIS NEEDS A BINARY REPRESENTATION <-----
 
 matrix: Tensor2<f32>
 
-Unified serialization rules for any md file. 
-Yaml, XML(Forgot this existed), Json, BINARY(I don't know) BINARY
+Unified serialization rules for any md file.
+Yaml, XML(Forgot this existed), Json, BINARY(I don't know) BINARY, BINARY

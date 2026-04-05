@@ -1,5 +1,5 @@
 //NOTE: MAY MAKE EXPRESSION THAT HELPS RESOLVE SEMANTIC TYPES MORE CLEANLY
-use common::symbols::{AstId, InnerArgs, NameId, Span, SpannedInnerArgs};
+use common::symbols::{AstId, InnerArgs, NameId, PathId, Span, SpannedInnerArgs};
 
 #[derive(Debug)]
 pub struct AstInfo {
@@ -79,6 +79,7 @@ pub(crate) enum Item {
     Enum(AbstractEnum),
     Alias(AbstractAlias),
     Const(AbstractConst),
+    Import(AbstractImport),
     // Func(AbstractFunc),
 }
 
@@ -177,6 +178,24 @@ impl TypeExpr {
             | TypeExpr::Tuple(_, span)
             | TypeExpr::Escaped(_, span) => span.clone(),
         }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct AbstractImport {
+    pub(crate) path_id: PathId,
+    pub(crate) path_span: Span,
+    // pub(crate) alias: Option<NameId>,
+}
+
+impl AbstractImport {
+    pub(crate) fn new(
+        path_id: PathId,
+        path_span: Span,
+        //  alias_id: Option<NameId>,
+        // Maybe "import as" eventually
+    ) -> AbstractImport {
+        AbstractImport { path_id, path_span }
     }
 }
 

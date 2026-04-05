@@ -96,6 +96,10 @@ pub mod tests {
             );
         }
 
+        assert_eq!(keywords::is_export(Keyword::Export as u32), true);
+
+        assert_eq!(keywords::SECT_START..=keywords::SECT_END, 35..=38);
+
         assert_eq!(
             keywords::KEYWORDS_ARRAY[(keywords::TYPE_END - 4) as usize],
             "BigFloat"

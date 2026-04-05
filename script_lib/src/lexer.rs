@@ -1,3 +1,4 @@
+//TODO: Path ids
 use common::{intern::Intern, keywords, symbols::Span};
 
 use crate::{
@@ -418,10 +419,11 @@ impl Lexer<'_> {
         {
             self.advance_char();
         }
-        // Is one off since advance moves forward as a final step
 
         let end = self.pos;
 
+        // Enforces utf-8 but module paths themselves don't need to be valid utf-8, am I
+        // hallucinating?
         let id_str = str::from_utf8(&self.src_bytes[start..end])
             .expect("Cannot fail due to loop only accepting valid UTF-8 characters.");
 

@@ -68,6 +68,7 @@ impl TypeResolver<'_> {
                 Item::Enum(enumeration) => self.register_enum(enumeration, ast_id),
                 Item::Alias(alias) => self.register_alias(alias, ast_id),
                 Item::Const(abs_const) => self.register_const(abs_const, ast_id),
+                Item::Import(abstract_import) => todo!(),
             }
         }
 
@@ -93,6 +94,7 @@ impl TypeResolver<'_> {
                 Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum, ast_id),
                 Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias, ast_id),
                 Item::Const(abs_const) => _ = self.resolve_const(abs_const, ast_id),
+                Item::Import(abstract_import) => todo!(),
             }
         }
 
@@ -121,6 +123,7 @@ impl TypeResolver<'_> {
                     Item::Enum(abs_enum) => &abs_enum.name_span,
                     Item::Alias(abs_alias) => &abs_alias.name_span,
                     Item::Const(abs_const) => &abs_const.name_span,
+                    Item::Import(abs_import) => &abs_import.path_span,
                 }
                 .clone();
 
@@ -130,6 +133,7 @@ impl TypeResolver<'_> {
                     Item::Enum(abs_enum) => &abs_enum.name_span,
                     Item::Alias(abs_alias) => &abs_alias.name_span,
                     Item::Const(abs_const) => &abs_const.name_span,
+                    Item::Import(abs_import) => &abs_import.path_span,
                 }
                 .clone();
                 let dup_name = self.interner.search(name_id.id as usize);
