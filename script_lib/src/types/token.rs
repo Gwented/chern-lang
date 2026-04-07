@@ -109,6 +109,7 @@ impl Token {
         }
     }
 
+    // Um
     pub(crate) fn precedence(&self) -> Option<(BinaryOp, u8)> {
         match self {
             Token::Plus => Some((BinaryOp::Add, 1)),

@@ -109,7 +109,7 @@ pub(crate) enum Expr {
     Float(f64),
     Str(NameId),
     Char(char),
-    Call(Call),
+    Call(Box<SpannedExpr>, Vec<SpannedExpr>),
     FieldAccess(AbstractFieldAccess),
     Unary(Unary),
     BinaryExpr {

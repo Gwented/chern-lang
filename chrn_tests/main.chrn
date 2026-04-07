@@ -6,9 +6,11 @@
 
 @def
 // Require forward slashes
-import "../chrn_tests/defs.chrn"
+// import "../chrn_tests/defs.chrn"
+var->
+    var: i32 [Range(0, 5)]
 
-// alias x = [IsEmpty, Range(x = "5", y)]
+// alias x() = [IsEmpty, Range(x = "4", y)]
 
 // const X: i32 = 4
 @end

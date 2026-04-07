@@ -160,13 +160,7 @@ fn print_exprs(conds: &Vec<SpannedExpr>, indent: usize, interner: &Intern) {
                 let name = interner.search(name_id.id as usize);
                 println!("{spaces}{name}")
             }
-            Expr::Call(call) => {
-                let name = interner.search(call.name_id.id as usize);
-                println!("{spaces}{name} [");
-
-                print_exprs(&call.spanned_expr, indent, interner);
-                println!("{spaces}]")
-            }
+            Expr::Call(_, _) => todo!(),
             Expr::Unary(unary) => {
                 println!("{spaces}Unary [");
                 println!("{spaces}{:?}", unary.op);

@@ -453,7 +453,7 @@ impl TypeResolver<'_> {
             Expr::Integer(num) => todo!(),
             Expr::Float(num) => todo!(),
             Expr::Str(name_id) => todo!(),
-            Expr::Call(call) => todo!(),
+            Expr::Call(_, _) => todo!(),
             Expr::FieldAccess(abs_field_access) => todo!(),
             Expr::Unary(unary) => todo!(),
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),

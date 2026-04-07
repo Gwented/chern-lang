@@ -4,9 +4,9 @@ mod context;
 mod error;
 mod parse_state;
 use crate::parser::ast::{
-    AbstractAlias, AbstractConst, AbstractEnum, AbstractImport, AbstractStruct, AbstractTypeDef,
-    AbstractVariant, AstInfo, BinaryOp, Call, Expr, Generic, Item, SpannedExpr, TypeExpr, Unary,
-    UnaryOp,
+    AbstractAlias, AbstractConst, AbstractEnum, AbstractFieldAccess, AbstractImport,
+    AbstractStruct, AbstractTypeDef, AbstractVariant, AstInfo, BinaryOp, Expr, Generic, Item,
+    SpannedExpr, TypeExpr, Unary, UnaryOp,
 };
 use crate::parser::context::Context;
 use crate::parser::error::Branch;
@@ -631,31 +631,84 @@ fn parse_const(
     Ok(abs_const)
 }
 
+// Worst part of language creation
 fn parse_expr(ctx: &mut Context, min_bp: u8, interner: &Intern) -> Result<SpannedExpr, Token> {
     let mut lhs = parse_unary(ctx, interner)?;
 
     loop {
-        let Some((op, bp)) = ctx.peek_tok().precedence() else {
-            break;
-        };
+        if let Some((op, bp)) = ctx.peek_tok().precedence() {
+            if bp < min_bp {
+                break;
+            }
 
-        if bp < min_bp {
+            ctx.advance_tok();
+
+            let rhs = parse_expr(ctx, bp + 1, interner)?;
+
+            let span = Span::new(lhs.span.start, rhs.span.end);
+            lhs = SpannedExpr::new(
+                Expr::BinaryExpr {
+                    op,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                },
+                span,
+            );
+        } else if ctx.peek_tok() == Token::OParen {
+            // Handles conditions. lhs should be a name id or field access which is caught later
+            let bp = 100;
+            if bp < min_bp {
+                break;
+            }
+
+            ctx.advance_tok();
+
+            let args = parse_call_args(ctx, interner)?;
+            let span = Span::new(lhs.span.start, ctx.peek_behind(1).span.end);
+
+            lhs = SpannedExpr::new(Expr::Call(Box::new(lhs), args), span);
+        } else if ctx.peek_kind() == TokenKind::Id && ctx.peek_ahead(1).tok == Token::OParen {
+            let bp = 100;
+            if bp < min_bp {
+                break;
+            }
+
+            let call_start = ctx.advance_span();
+            ctx.advance_tok();
+
+            let args = parse_call_args(ctx, interner)?;
+            let span = Span::new(call_start.start, ctx.peek_behind(1).span.end);
+
+            lhs = SpannedExpr::new(Expr::Call(Box::new(lhs), args), span);
+        } else if ctx.peek_tok() == Token::Dot && ctx.peek_ahead(1).tok.kind() == TokenKind::Id {
+            // Handles cases like field access
+            let bp = 100;
+            if bp < min_bp {
+                break;
+            }
+
+            ctx.advance_tok();
+
+            let field_id = ctx.expect_id_verbose(
+                TokenKind::Id,
+                "Expected a field identifier after '.', found ",
+                "",
+                Branch::Expr,
+                interner,
+            )?;
+
+            let span = Span::new(lhs.span.start, ctx.peek_behind(1).span.end);
+
+            lhs = SpannedExpr::new(
+                Expr::FieldAccess(AbstractFieldAccess::new(
+                    Box::new(lhs),
+                    NameId::new(field_id),
+                )),
+                span,
+            );
+        } else {
             break;
         }
-
-        ctx.advance_tok();
-
-        let rhs = parse_expr(ctx, bp + 1, interner)?;
-
-        let span = Span::new(lhs.span.start, rhs.span.end);
-        lhs = SpannedExpr::new(
-            Expr::BinaryExpr {
-                op,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            },
-            span,
-        );
     }
 
     Ok(lhs)
@@ -677,20 +730,6 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
             )?;
 
             Ok(expr)
-        }
-        Token::Id(id) if ctx.peek_ahead(1).tok.kind() == TokenKind::OParen => {
-            let name_id = NameId::new(id);
-            let name_span = ctx.advance_span();
-
-            ctx.advance_tok();
-
-            let args = parse_call_args(ctx, interner)?;
-
-            //WARN: Odd span
-            let span = Span::new(name_span.start, ctx.peek_behind(1).span.end);
-            let call = Expr::Call(Call::new(name_id, args));
-
-            Ok(SpannedExpr::new(call, span))
         }
         Token::Id(id) if ctx.peek_ahead(1).tok == Token::Assign => {
             let name_id = NameId::new(id);
@@ -781,10 +820,6 @@ fn parse_call_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedEx
     loop {
         let arg = parse_expr(ctx, 0, interner)?;
         args.push(arg);
-
-        if ctx.peek_ahead(1).tok == Token::Assign {
-            panic!();
-        }
 
         if ctx.peek_kind() == TokenKind::CParen {
             ctx.advance_tok();

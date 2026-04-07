@@ -67,8 +67,7 @@ impl<'a> Context<'a> {
         interner: &Intern,
     ) -> Result<u32, Token> {
         // WARN: IF ANYTHING GOES WRONG ADD THE IF STATEMENTS BACK FOR EOF
-        let found = &self.toks[self.pos];
-        self.pos += 1;
+        let found = self.advance();
 
         //TEST: I JUST WANTED TO USE REFERENCES
         let id_opt = match found.tok {
@@ -92,7 +91,7 @@ impl<'a> Context<'a> {
             .try_help(expected, &found, branch, interner)
             .unwrap_or_default();
 
-        let span = self.safely_handle_span(found);
+        let span = self.safely_handle_span(&found);
 
         let ln_data =
             reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
@@ -454,7 +453,7 @@ impl<'a> Context<'a> {
         }
     }
 
-    pub(super) fn skip(&mut self, dest: usize) -> () {
+    pub(super) fn skip(&mut self, dest: usize) {
         self.pos += dest;
     }
 
@@ -469,13 +468,27 @@ impl<'a> Context<'a> {
             .unwrap_or(TokenKind::EOF)
     }
 
-    pub(super) fn peek_ahead(&self, dest: usize) -> &SpannedToken {
-        &self.toks[self.pos + dest]
+    // Not sure about this default
+    // Probably will become option for these
+    pub(super) fn peek_ahead(&self, dest: usize) -> SpannedToken {
+        self.toks
+            .get(self.pos + dest)
+            .map(|st| st.clone())
+            .unwrap_or(SpannedToken {
+                tok: Token::EOF,
+                span: Span::new(self.pos, self.pos),
+            })
     }
 
     // Maybe return option
-    pub(super) fn peek_behind(&self, dest: usize) -> &SpannedToken {
-        &self.toks[self.pos - dest]
+    pub(super) fn peek_behind(&self, dest: usize) -> SpannedToken {
+        self.toks
+            .get(self.pos - dest)
+            .map(|st| st.clone())
+            .unwrap_or(SpannedToken {
+                tok: Token::EOF,
+                span: Span::new(self.pos, self.pos),
+            })
     }
 
     pub(super) fn advance_tok(&mut self) -> Token {
@@ -495,8 +508,8 @@ impl<'a> Context<'a> {
         t
     }
 
-    fn advance(&mut self) -> &SpannedToken {
-        let t = &self.toks[self.pos];
+    fn advance(&mut self) -> SpannedToken {
+        let t = self.toks[self.pos].clone();
         self.pos += 1;
         t
     }

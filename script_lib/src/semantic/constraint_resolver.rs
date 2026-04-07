@@ -278,19 +278,32 @@ impl ConstraintResolver<'_> {
                     todo!();
                 }
             },
-            Expr::Call(call) => {
-                let mut args: Vec<FuncArgsRepre> = Vec::new();
+            Expr::Call(caller, args) => {
+                let mut func_args: Vec<FuncArgsRepre> = Vec::new();
 
-                for expr in &call.spanned_expr {
+                for expr in args {
                     let arg = self.resolve_func_arg(expr)?;
-                    args.push(arg);
+                    func_args.push(arg);
                 }
+
+                let name_id = match caller.as_ref().expr {
+                    Expr::Var(name_id) => name_id.id,
+                    Expr::FieldAccess(ref abs_field_access) => {
+                        todo!();
+                    }
+                    _ => {
+                        let msg = "Conditions can um... um";
+                        self.reporter
+                            .report_spanned(msg, None, &[caller.span.clone()]);
+                        return Err(());
+                    }
+                };
 
                 let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
                 let type_id = TypeId::new(self.table.types.len() as u32);
 
                 //TODO: Maybe handle this elsewhere
-                let (constraints, kind) = match Keyword::try_as_kw(call.name_id.id) {
+                let (constraints, kind) = match Keyword::try_as_kw(name_id) {
                     Some(kw) => match kw {
                         Keyword::Range => (
                             ArgConstraint::from_builtin(FuncKind::Range),
@@ -323,12 +336,12 @@ impl ConstraintResolver<'_> {
                 };
 
                 let func = FuncRepre::new(
-                    call.name_id,
+                    NameId::new(name_id),
                     type_id,
                     spanned_expr.span.clone(),
                     kind,
                     constraints,
-                    args,
+                    func_args,
                 );
 
                 // Needs the type to check all constraints. Must put this elsewhere
@@ -590,7 +603,7 @@ impl ConstraintResolver<'_> {
             Expr::Var(name_id) => {
                 todo!()
             }
-            Expr::Call(call) => todo!(),
+            Expr::Call(_, _) => todo!(),
             Expr::FieldAccess(abs_field_access) => todo!(),
             Expr::Unary(unary) => todo!(),
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),
