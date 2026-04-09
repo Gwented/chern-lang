@@ -37,7 +37,6 @@ fn main() {
     linter::print_all(&ast_info, &interner);
 
     TypeResolver::new(&ast_info, &metadata, &interner, &mut table).resolve();
-    // I think this is it
     ConstraintResolver::new(&ast_info, &metadata, &interner, &mut table).resolve();
 
     println!("{} ms", start.elapsed().as_millis());

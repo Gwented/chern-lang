@@ -5,11 +5,12 @@
 mod lexer;
 mod token;
 
-use std::{cmp, ops::Range};
+use std::ops::Range;
 
 use crate::{
     help_model::{
         algo,
+        math_structs::Tensor2,
         quote_model::{
             self,
             token::{Token, TokenInfo},
@@ -20,7 +21,7 @@ use crate::{
 
 const W_TOK: f32 = 0.6;
 const W_POS: f32 = 1.0;
-const W_STEP: f32 = 3.5;
+const W_DIST: f32 = 3.5;
 
 /// Basic state of not needing any special actions
 const PROCEED: u8 = 0;
@@ -29,49 +30,92 @@ const CUT: u8 = 1;
 
 #[derive(Debug)]
 pub struct QuoteGraph<'a> {
-    current_idx: usize,
-    q_nodes: Vec<QuoteNode>,
-    ctx_toks: &'a Vec<TokenInfo>,
-    end_tok_pos: Option<usize>,
+    pub(crate) current_idx: usize,
+    pub(crate) q_nodes: Vec<QuoteNode>,
+    pub(crate) ctx_toks: &'a Vec<TokenInfo>,
 }
 
 impl QuoteGraph<'_> {
-    fn new(ctx_toks: &Vec<TokenInfo>) -> QuoteGraph<'_> {
-        QuoteGraph {
+    // Um...
+    fn init(ctx_toks: &Vec<TokenInfo>) -> QuoteGraph<'_> {
+        let mut q_graph = QuoteGraph {
             current_idx: 0,
             q_nodes: Vec::new(),
             ctx_toks,
-            end_tok_pos: None,
-        }
+        };
+
+        q_graph.construct_nodes();
+
+        q_graph
     }
 
     fn display_scores(&self) {
         for (i, q_node) in self.q_nodes.iter().enumerate() {
             println!(
                 "Node {i}: \nstart: {} | end: {:?}\nscore: {} ",
-                q_node.start_pos, q_node.end_pos, q_node.score
+                q_node.src_start_pos, q_node.src_end_pos, q_node.score
             );
         }
     }
 
-    /// Creates a new node and sets it as it's current to be adjusted
-    fn next_node(&mut self, start_pos: usize) {
-        self.current_idx = self.q_nodes.len();
+    fn construct_nodes(&mut self) {
+        let mut src_start = 0;
+        let mut ctx_tok_start = 0;
+        let mut in_quotes = false;
 
-        let q_node = QuoteNode::new(start_pos);
-        self.q_nodes.push(q_node);
+        for (ctx_tok_pos, tok_info) in self.ctx_toks.iter().enumerate() {
+            match tok_info.tok {
+                Token::StrongStartQuote(start) => {
+                    in_quotes = true;
+                    ctx_tok_start = ctx_tok_pos;
+                    src_start = start;
+                }
+                Token::StrongEndQuote(src_end) => {
+                    // Inclusive so it also gets the end quote in the current iteration
+                    let ctx_toks = self.ctx_toks[ctx_tok_start..=ctx_tok_pos].to_vec();
+                    let q_node = QuoteNode::new(src_start, Some(src_end), ctx_toks);
+                    self.q_nodes.push(q_node);
+
+                    in_quotes = false;
+                }
+                Token::EOF => {
+                    if in_quotes {
+                        let ctx_toks = self.ctx_toks[ctx_tok_start..].to_vec();
+                        let q_node = QuoteNode::new(src_start, None, ctx_toks);
+
+                        self.q_nodes.push(q_node);
+                    }
+
+                    break;
+                }
+                _ => (),
+            }
+        }
+    }
+
+    /// Runs probabilities to check if any node is structurally likely to be a cascaded quote,
+    /// rather than the source of the unclosed quote. Removes any that are thought to be cascaded.
+    fn validate_cascade(&mut self) {
+        for q_node in &mut self.q_nodes {
+            let cascade_prob = q_node.predict_location();
+        }
+    }
+
+    /// Creates a new node and sets it as it's current to be adjusted
+    fn next_node(&mut self) {
+        self.current_idx = self.q_nodes.len();
     }
 
     fn adjust_node(&mut self, tok_info: TokenInfo) {
         let q_node = &self.q_nodes[self.current_idx];
 
-        let start_pos = q_node.start_pos as f32;
+        let start_pos = q_node.src_start_pos as f32;
 
         let distance = (q_node.ctx_toks.len() + 1) as f32;
 
-        if tok_info.tok == Token::End {
-            self.end_tok_pos = Some(self.current_idx);
-        }
+        // if tok_info.tok == Token::End {
+        //     self.end_tok_pos = Some(self.current_idx);
+        // }
 
         let tok_sig = tok_info.sig * context_tok(&q_node.ctx_toks, &tok_info);
 
@@ -84,17 +128,16 @@ impl QuoteGraph<'_> {
         let q_node = &mut self.q_nodes[self.current_idx];
 
         q_node.score +=
-            ((W_TOK * tok_sig) + (W_POS * pos_sig) + (W_STEP * distance_sig)) * q_node.rate;
+            ((W_TOK * tok_sig) + (W_POS * pos_sig) + (W_DIST * distance_sig)) * q_node.rate;
 
         q_node.ctx_toks.push(tok_info);
     }
 
-    // This is compensation for there being no built context window
     /// Evaluates the current node
     fn finalize_node(&mut self, end_pos: usize) {
         let q_node = &mut self.q_nodes[self.current_idx];
 
-        q_node.end_pos = Some(end_pos);
+        q_node.src_end_pos = Some(end_pos);
     }
 
     /// Evaluates all nodes
@@ -108,9 +151,9 @@ impl QuoteGraph<'_> {
         let highest_score = score_logits[highest_score_idx];
 
         // dbg!(&self.q_nodes);
-        if let Some(end_idx) = self.end_tok_pos {
-            let end_node = &self.q_nodes[end_idx];
-        }
+        // if let Some(end_idx) = self.end_tok_pos {
+        //     let end_node = &self.q_nodes[end_idx];
+        // }
     }
 
     //WARN: Currently does not use this correctly
@@ -120,24 +163,46 @@ impl QuoteGraph<'_> {
 }
 
 #[derive(Debug)]
-struct QuoteNode {
-    start_pos: usize,
-    end_pos: Option<usize>,
+pub(crate) struct QuoteNode {
+    src_start_pos: usize,
+    src_end_pos: Option<usize>,
     score: f32,
     rate: f32,
     ctx_toks: Vec<TokenInfo>,
 }
 
-// Need variable proportional to the actual file size
 impl QuoteNode {
-    fn new(start_pos: usize) -> QuoteNode {
+    fn new(
+        src_start_pos: usize,
+        src_end_pos: Option<usize>,
+        ctx_toks: Vec<TokenInfo>,
+    ) -> QuoteNode {
         QuoteNode {
-            start_pos,
-            end_pos: None,
+            src_start_pos,
+            src_end_pos,
             score: 0.05,
             rate: 0.005,
-            ctx_toks: Vec::new(),
+            ctx_toks,
         }
+    }
+
+    // in a valid set of quotes
+    // in an invalid set of qoutes
+    // in a cascaded quote
+    fn predict_location(&self) -> f32 {
+        let cascade: f32 = 0.0;
+
+        for tok_info in &self.ctx_toks {
+            match tok_info.tok {
+                Token::Def => todo!(),
+                Token::Char(_) => todo!(),
+                Token::End => todo!(),
+                Token::StrongStartQuote(_) => (),
+                Token::StrongEndQuote(_) | Token::EOF => break,
+            }
+        }
+
+        todo!();
     }
 }
 const LR: f32 = 1e-2;
@@ -146,91 +211,28 @@ const LR: f32 = 1e-2;
 pub fn quote_start_probability(src: &[u8], q_type: char, search_range: Range<usize>) -> Vec<Span> {
     let toks = quote_model::lexer::Lexer::new(src, &search_range, q_type).tokenize();
 
-    let mut q_graph = QuoteGraph::new(&toks);
+    // let embeddings: Vec<Vec<f32>> = algo::make_randomized_tensor1(5);
 
-    // Skull emoji skull emoji skull emoji
-    let mut q_model = QuoteModel::new();
+    let mut q_graph = QuoteGraph::init(&toks);
 
-    q_model.weights = vec![0.1, 0.02, 0.03];
+    // What
+    let embeddings = Tensor2::from(&vec![vec![0.8, 0.3], vec![0.25, 0.15]]);
 
-    let test_input = vec![0.50, 0.39, 0.80];
+    let weights = Tensor2::from(&vec![vec![0.8, 0.3], vec![0.25, 0.15]]);
+    let correct = Tensor2::from(&vec![vec![0.4, 0.2], vec![0.9, 0.3]]);
 
-    // Uh
-    let correct_vec = vec![0.7, 0.43, 0.20];
+    let mut q_model = QuoteModel::with_presets(weights, embeddings);
 
     for i in 1..=1000 {
-        let loss = train_model(&mut q_model, &test_input, &correct_vec, LR);
+        let (loss, gradients) = train_model(&mut q_model, &correct, LR);
 
-        if i % 5 == 0 {
+        if i % 100 == 0 {
             println!("step {i} | loss={loss}\n");
             dbg!(&q_model.weights);
         }
     }
 
     panic!("End");
-
-    for tok_info in &toks {
-        match tok_info.tok {
-            Token::StrongStartQuote(pos) => q_graph.next_node(pos),
-            Token::StrongEndQuote(pos) => q_graph.finalize_node(pos),
-            Token::Def | Token::End | Token::Char(_) => {
-                q_graph.adjust_node(tok_info.clone());
-            }
-            Token::EOF => break,
-        }
-    }
-
-    q_graph.display_scores();
-
-    q_graph.eval();
-
-    q_graph.display_scores();
-
-    // let src_str = str::from_utf8(src).unwrap();
-
-    let mut res_idx: usize = 0;
-    let mut largest_score = 0.0;
-
-    for (i, score) in q_graph.q_nodes.iter().map(|q| q.score).enumerate() {
-        if score > largest_score {
-            largest_score = score;
-            res_idx = i;
-        }
-    }
-
-    let highest_q = &q_graph.q_nodes[res_idx];
-
-    let start = highest_q.start_pos;
-
-    let mut spans: Vec<Span> = Vec::new();
-    spans.push(Span::new(start, start));
-
-    // End offset is cmopensating for the tokenizer skipping to where the quotes start, rather than
-    // the actual start, so end is not,
-    // Inclusive exclusive + 1
-    if let Some(end) = highest_q.end_pos {
-        spans.push(Span::new(end, end));
-    }
-
-    spans
-}
-
-// xs
-fn train_model(q_model: &mut QuoteModel, xs: &[f32], expected: &[f32], lr: f32) -> f32 {
-    let mut loss_total = 0.0;
-
-    for i in 0..xs.len() {
-        let pred = q_model.predict(xs[i]);
-        let error = pred - expected[i];
-
-        loss_total += error * error;
-        // Not adjusting bias right now
-        let w_gradient = lr * (2.0 * error * xs[i]);
-
-        q_model.weights[i] -= w_gradient;
-    }
-
-    loss_total
 }
 
 /// Returns the amount to apply to the signal of the given token given the context
@@ -280,7 +282,6 @@ fn context_distance(ctx_toks: &Vec<TokenInfo>, current_tok: &TokenInfo, distance
         return 1.0;
     }
 
-    // Could be done better but, no
     match current_tok.tok {
         Token::Char(c) if c.is_alphanumeric() => (),
         Token::Char(c) if c == '\n' => {
@@ -306,26 +307,56 @@ fn loss(q_model: QuoteModel) -> f32 {
 }
 
 //TEST:
+#[derive(Debug)]
 struct QuoteModel {
-    weights: Vec<f32>,
+    weights: Tensor2<f32>,
+    embeddings: Tensor2<f32>,
     bias: f32,
 }
 
-// Embeddings
 impl QuoteModel {
-    fn new() -> QuoteModel {
+    fn with_presets(weights: Tensor2<f32>, embeddings: Tensor2<f32>) -> QuoteModel {
         QuoteModel {
-            weights: Vec::new(),
+            weights,
+            embeddings,
             bias: 0.1,
         }
     }
 
-    fn predict(&self, x: f32) -> f32 {
-        let mut sum = 0.0;
-        for i in 0..self.weights.len() {
-            sum += self.weights[i] * x;
-        }
+    // fn with_random() -> QuoteModel {
+    //     QuoteModel {
+    //         weights: Tensor2::with_random(5, 5, 0.0..0.9),
+    //         bias: 0.1,
+    //     }
+    // }
+}
 
-        sum + self.bias
+fn train_model(q_model: &mut QuoteModel, expected: &Tensor2<f32>, lr: f32) -> (f32, Tensor2<f32>) {
+    dbg!(&q_model.weights);
+
+    let predictions = &q_model.weights;
+
+    let loss = algo::cross_entropy(&q_model.weights.inner, &expected.inner);
+
+    let n = q_model.weights.inner.len() as f32;
+    let mut gradients_inner = Vec::with_capacity(q_model.weights.inner.len());
+
+    for (pred, target) in q_model.weights.inner.iter().zip(expected.inner.iter()) {
+        let grad = (pred - target) / n;
+        gradients_inner.push(grad);
     }
+
+    let gradients = Tensor2 {
+        inner: gradients_inner,
+        rows: predictions.rows,
+        cols: predictions.cols,
+    };
+
+    for i in 0..q_model.weights.inner.len() {
+        q_model.weights.inner[i] -= lr * gradients.inner[i];
+    }
+
+    dbg!(&q_model.weights);
+
+    (loss, gradients)
 }

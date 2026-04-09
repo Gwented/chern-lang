@@ -4,9 +4,7 @@ use clap::Parser;
 use common::color;
 
 fn main() {
-    // Need metadata file for cli config
-    let start = std::time::Instant::now();
-
+    // Need a root config that defines where "can_color" comes from
     let cli_cfg = CliConfig::new();
     let cli = args::Cli::parse();
 

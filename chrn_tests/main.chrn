@@ -1,41 +1,7 @@
-// Need to re-route errors so they don't immediately form basic arrows to one so help messages
-// aren't just requirements because the err msgs themselves are misleading or bad
-
-// I am messed up"
+I am messed up"
 // "I am not even supposed to be included"
 
 @def
-// Require forward slashes
-// import "../chrn_tests/defs.chrn"
 var->
-    var: i32 [Range(0, 5)]
 
-// alias x() = [IsEmpty, Range(x = "4", y)]
-
-// const X: i32 = 4
 @end
-
-var->
-    var: i32 Range(0, 6)]
-
-nest->
-    struct i32 {
-    len: unsized
-}
-
-    struct str {
-
-    }
-
-
-"Really
-
-
-
-
-Long
-
-Convincing
-
-
-Quotes"

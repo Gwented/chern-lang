@@ -292,7 +292,7 @@ impl ConstraintResolver<'_> {
                         todo!();
                     }
                     _ => {
-                        let msg = "Conditions can um... um";
+                        let msg = "Condition blocks must contain either keywords, or functions";
                         self.reporter
                             .report_spanned(msg, None, &[caller.span.clone()]);
                         return Err(());
@@ -636,7 +636,9 @@ impl ConstraintResolver<'_> {
                     Ok(())
                 }
                 Cond::Not(inner) => self.check_cond_constraints(type_id, cond_span, inner, visited),
-                Cond::Func(sym_id, func_kind) => todo!(),
+                // Need to check const, alias, and condition namespaces, and let modules stay
+                // lazily resolved. Exclamation point!
+                Cond::Func(sym_id, func_kind) => Ok(()),
             },
             Type::Struct(sym_id) => {
                 let structure = self.table.get_struct(*sym_id);

@@ -63,12 +63,13 @@ impl TypeResolver<'_> {
             let ast_id = AstId::new(id as u32);
 
             match item {
-                Item::Var(type_def) => self.register_typedef(type_def, ast_id),
-                Item::Struct(structure) => self.register_struct(structure, ast_id),
-                Item::Enum(enumeration) => self.register_enum(enumeration, ast_id),
-                Item::Alias(alias) => self.register_alias(alias, ast_id),
+                Item::Var(abs_typedef) => self.register_typedef(abs_typedef, ast_id),
+                Item::Struct(abs_struct) => self.register_struct(abs_struct, ast_id),
+                Item::Enum(abs_enum) => self.register_enum(abs_enum, ast_id),
+                Item::Alias(abs_alias) => self.register_alias(abs_alias, ast_id),
                 Item::Const(abs_const) => self.register_const(abs_const, ast_id),
-                Item::Import(abstract_import) => todo!(),
+                // Maybe imports outside of this should be stored separately
+                Item::Import(abs_import) => todo!(),
             }
         }
 
@@ -103,48 +104,6 @@ impl TypeResolver<'_> {
         if !self.reporter.err_vec.is_empty() {
             self.reporter.emit_errors();
             std::process::exit(1);
-        }
-    }
-
-    /// Checks registered namespace for duplicates and collects errors if any are found
-    fn check_duplicates(&mut self) {
-        // Solely a HashMap for spanning
-        let mut seen: HashMap<NameId, AstId> = HashMap::new();
-
-        for (ast_id, name_id) in &self.table.name_ids {
-            // Why is it not true if it exists false otherwise...seems backwards
-            let ast_opt = seen.insert(*name_id, *ast_id);
-
-            if let Some(orig_ast_id) = ast_opt {
-                let item = &self.ast_info.items[orig_ast_id.id as usize];
-                let orig_span = match item {
-                    Item::Var(abs_typedef) => &abs_typedef.name_span,
-                    Item::Struct(abs_struct) => &abs_struct.name_span,
-                    Item::Enum(abs_enum) => &abs_enum.name_span,
-                    Item::Alias(abs_alias) => &abs_alias.name_span,
-                    Item::Const(abs_const) => &abs_const.name_span,
-                    Item::Import(abs_import) => &abs_import.path_span,
-                }
-                .clone();
-
-                let dup_span = match &self.ast_info.items[ast_id.id as usize] {
-                    Item::Var(abs_typedef) => &abs_typedef.name_span,
-                    Item::Struct(abs_struct) => &abs_struct.name_span,
-                    Item::Enum(abs_enum) => &abs_enum.name_span,
-                    Item::Alias(abs_alias) => &abs_alias.name_span,
-                    Item::Const(abs_const) => &abs_const.name_span,
-                    Item::Import(abs_import) => &abs_import.path_span,
-                }
-                .clone();
-                let dup_name = self.interner.search(name_id.id as usize);
-
-                let msg = format!(
-                    "Found more than one symbol with identifier \"{dup_name}\" in the same scope"
-                );
-
-                self.reporter
-                    .report_spanned(&msg, None, &[orig_span, dup_span]);
-            }
         }
     }
 
@@ -445,6 +404,49 @@ impl TypeResolver<'_> {
             }
         }
     }
+
+    /// Checks registered namespace for duplicates and collects errors if any are found
+    fn check_duplicates(&mut self) {
+        // Solely a HashMap for spanning
+        let mut seen: HashMap<NameId, AstId> = HashMap::new();
+
+        for (ast_id, name_id) in &self.table.name_ids {
+            // Why is it not true if it exists false otherwise...seems backwards
+            let ast_opt = seen.insert(*name_id, *ast_id);
+
+            if let Some(orig_ast_id) = ast_opt {
+                let item = &self.ast_info.items[orig_ast_id.id as usize];
+                let orig_span = match item {
+                    Item::Var(abs_typedef) => &abs_typedef.name_span,
+                    Item::Struct(abs_struct) => &abs_struct.name_span,
+                    Item::Enum(abs_enum) => &abs_enum.name_span,
+                    Item::Alias(abs_alias) => &abs_alias.name_span,
+                    Item::Const(abs_const) => &abs_const.name_span,
+                    Item::Import(abs_import) => &abs_import.path_span,
+                }
+                .clone();
+
+                let dup_span = match &self.ast_info.items[ast_id.id as usize] {
+                    Item::Var(abs_typedef) => &abs_typedef.name_span,
+                    Item::Struct(abs_struct) => &abs_struct.name_span,
+                    Item::Enum(abs_enum) => &abs_enum.name_span,
+                    Item::Alias(abs_alias) => &abs_alias.name_span,
+                    Item::Const(abs_const) => &abs_const.name_span,
+                    Item::Import(abs_import) => &abs_import.path_span,
+                }
+                .clone();
+                let dup_name = self.interner.search(name_id.id as usize);
+
+                let msg = format!(
+                    "Found more than one symbol with identifier \"{dup_name}\" in the same scope"
+                );
+
+                self.reporter
+                    .report_spanned(&msg, None, &[orig_span, dup_span]);
+            }
+        }
+    }
+
     // How do we solve this?
     // I DONT KNOW
     fn resolve_expr(&mut self, expr: &Expr) -> Result<TypeId, ()> {

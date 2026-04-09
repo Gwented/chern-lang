@@ -26,13 +26,27 @@ pub fn argmin(args: &Vec<f32>) -> Option<usize> {
     Some(min_idx)
 }
 
-pub fn softmax(logits: &Vec<f32>) -> Vec<f32> {
+pub fn softmax(logits: &[f32]) -> Vec<f32> {
     let sum_exp: f32 = logits.iter().map(|val| val.exp()).sum();
     let probs: Vec<f32> = logits.iter().map(|l| l.exp() / sum_exp).collect();
     probs
 }
 
-pub fn dot(a: &Vec<f32>, b: &Vec<f32>) -> f32 {
+pub fn cross_entropy(predictions: &[f32], targets: &[f32]) -> f32 {
+    if predictions.len() != targets.len() {
+        panic!("Length mismatch in cross entropy");
+    }
+
+    let mut loss = 0.0;
+    for (pred, target) in predictions.iter().zip(targets.iter()) {
+        let pred_clamped = pred.max(1e-9).min(1.0 - 1e-9);
+        loss -= target * pred_clamped.ln();
+    }
+
+    loss
+}
+
+pub fn dot_tensor1_f32(a: &Vec<f32>, b: &Vec<f32>) -> f32 {
     if a.len() != b.len() {
         panic!("Not same len in dot (Temp)");
     }

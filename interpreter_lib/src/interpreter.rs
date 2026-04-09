@@ -1,17 +1,11 @@
-use std::{fs, path::Path};
+use std::path::Path;
 
-use common::{
-    config_loader::ChernConfigLoader,
-    core_error::{ConfigLoadError, CoreError, ScriptError},
-    intern::Intern,
-};
+use common::{core_error::CoreError, intern::Intern};
 use script_lib::{
     lexer::Lexer,
     modules::{self, Program},
     parser::{self, ast::AstInfo},
-    semantic::{
-        constraint_resolver::ConstraintResolver, representation::Table, type_resolver::TypeResolver,
-    },
+    semantic::{constraint_resolver::ConstraintResolver, type_resolver::TypeResolver},
 };
 
 // Maybe this shouldn't take metadata externally
@@ -24,26 +18,28 @@ pub fn interpret_chern_cfg(path: &Path) -> Result<(), CoreError> {
     // Not entirely sure what to do with program yet so staying outside for now
     let mut program = Program::new(None);
 
-    let modules = match modules::extract_modules(path, &mut interner) {
-        Ok(mods) => mods,
-        Err(script_err) => match script_err {
-            ConfigLoadError::Unclosed(_) => todo!("Internal error"),
-            ConfigLoadError::Module(_) => todo!("Module errro"),
-            ConfigLoadError::IO(error) => panic!("{}", error),
-        },
-    };
+    let modules = modules::extract_modules(path, &mut interner)?;
 
     //Temp
     program.mods = modules;
 
+    let mut all_asts: Vec<AstInfo> = Vec::new();
+
+    // Storing namespaces so that referencing can be made to existent outer module variables
     for module in &mut program.mods {
         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
             .tokenize(&mut interner);
-        let ast_info = parser::parse(&module.metadata, &toks, &mut interner)?;
 
-        // This needs to be sorted
+        let ast_info = parser::parse(&module.metadata, &toks, &mut interner)?;
         TypeResolver::new(&ast_info, &module.metadata, &interner, &mut module.table).resolve();
-        ConstraintResolver::new(&ast_info, &module.metadata, &interner, &mut module.table)
+
+        all_asts.push(ast_info);
+    }
+
+    // dbg!(program.mods);
+    // panic!("Namespaces");
+    for (i, module) in program.mods.iter_mut().enumerate() {
+        ConstraintResolver::new(&all_asts[i], &module.metadata, &interner, &mut module.table)
             .resolve();
     }
 

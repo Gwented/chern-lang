@@ -1,5 +1,6 @@
 use std::{io::IsTerminal, path::PathBuf};
 
+// Should not have can color
 #[derive(Debug)]
 pub struct ChernMetadata {
     /// Path to chrn config file

@@ -61,10 +61,12 @@ fn process_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, St
             Ok(msg)
         }
         Err(core_err) => match core_err {
-            CoreError::Config(config_load_error) => todo!(),
-            CoreError::Script(script_error) => todo!(),
-            // CoreError::Serial(serial_error) => todo!(),
-            _ => unreachable!(),
+            CoreError::Config(cfg_load_err) => match cfg_load_err {
+                ConfigLoadError::Unclosed(msg) | ConfigLoadError::Module(msg) => Err(msg),
+                ConfigLoadError::IO(error) => todo!(),
+            },
+            CoreError::Script(script_err) => todo!(),
+            CoreError::Serial(serial_error) => todo!(),
         },
     }
 }

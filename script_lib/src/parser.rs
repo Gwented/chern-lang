@@ -631,7 +631,7 @@ fn parse_const(
     Ok(abs_const)
 }
 
-// Worst part of language creation
+/// Pratt Parser main entry-point
 fn parse_expr(ctx: &mut Context, min_bp: u8, interner: &Intern) -> Result<SpannedExpr, Token> {
     let mut lhs = parse_unary(ctx, interner)?;
 
