@@ -99,9 +99,6 @@ impl TypeResolver<'_> {
             }
         }
 
-        dbg!(self.ast_info);
-        panic!();
-
         // Collecting possible same symbol errors
 
         if !self.reporter.err_vec.is_empty() {
@@ -297,6 +294,7 @@ impl TypeResolver<'_> {
             }
             TypeExpr::Generic(generic, span) => {
                 match Keyword::try_as_kw(generic.base.id) {
+                    // Self referential type ids used here
                     Some(kw) => match kw {
                         //TODO: Should maybe put List | Set
                         Keyword::List => {
@@ -324,6 +322,20 @@ impl TypeResolver<'_> {
                             self.module.table.types.push(Type::BuiltinType(list));
 
                             return Ok(list_id);
+                        }
+                        Keyword::Tuple => {
+                            let mut elements: Vec<TypeId> = Vec::new();
+
+                            for arg in &generic.args {
+                                elements.push(self.resolve_type_expr(arg, ast_id)?);
+                            }
+
+                            let type_id = TypeId::new(self.module.table.types.len() as u32);
+                            let tuple = Tuple::new(elements, type_id);
+
+                            self.module.table.types.push(Type::Tuple(tuple));
+
+                            Ok(type_id)
                         }
                         Keyword::Map => {
                             if generic.args.len() != 2 {

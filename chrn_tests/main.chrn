@@ -7,12 +7,20 @@
 // Require forward slashes
 
 @def
-import "../chrn_tests/defs.chrn"
 var->
-    var: i32 [StartsW("Hello")]
+    // import "../chrn_tests/defs.chrn"
+    // var: Tuple<i32, u8, str> [StartsW("Hello")]
 
     // parser needs this TypeExpr
     // user: defs.User
+nest->
+    struct Data {}
+
+    enum State {
+        Ready: Tuple<Data, str>
+        InProgress
+        Failed
+    }
 
 // alias x() = [IsEmpty, defs.DEFAULT(x = "4", y)]
 

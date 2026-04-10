@@ -34,10 +34,10 @@ fn main() {
 
     let ast_info = parser::parse(&metadata, &toks, &mut interner).unwrap();
 
-    linter::print_all(&ast_info, &interner);
+    // linter::print_all(&ast_info, &interner);
 
-    TypeResolver::new(&ast_info, &metadata, &interner, &mut table).resolve();
-    ConstraintResolver::new(&ast_info, &metadata, &interner, &mut table).resolve();
+    // TypeResolver::new(&ast_info, &metadata, &interner, &mut table).resolve();
+    // ConstraintResolver::new(&ast_info, &metadata, &interner, &mut table).resolve();
 
     println!("{} ms", start.elapsed().as_millis());
 }

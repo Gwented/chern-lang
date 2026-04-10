@@ -517,6 +517,7 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
 
             Item::Struct(structure)
         }
+        //FIX: Make this normal
         id if id == Keyword::Enum as u32 => {
             let name_span = ctx.peek_span();
 
@@ -866,7 +867,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
 
             let name_id = NameId::new(id);
 
-            // Needs to return the end for US
+            //TODO: Needs to build up own type span
             let (args, end) = parse_generic(ctx, interner)?;
             let generic = Generic::new(name_id, args);
 
@@ -889,7 +890,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
 
             Ok(TypeExpr::Escaped(name_id, span))
         }
-        Token::OParen => parse_tuple(ctx, interner),
+        // Token::OParen => parse_tuple(ctx, interner),
         Token::Id(id) => {
             let span = ctx.advance_span();
 
@@ -945,13 +946,14 @@ fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<(Vec<TypeExpr>,
 
     let mut args: Vec<TypeExpr> = Vec::new();
 
-    let arg_one = parse_type(ctx, interner)?;
-    args.push(arg_one);
+    let arg = parse_type(ctx, interner)?;
+    args.push(arg);
 
-    if ctx.peek_kind() == TokenKind::Comma {
+    while ctx.peek_kind() == TokenKind::Comma {
         ctx.advance_tok();
-        let arg_two = parse_type(ctx, interner)?;
-        args.push(arg_two);
+
+        let other_arg = parse_type(ctx, interner)?;
+        args.push(other_arg);
     }
 
     let end = ctx.peek_span().end;
@@ -967,55 +969,55 @@ fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<(Vec<TypeExpr>,
     Ok((args, end))
 }
 
-/// This returns a vector
-/// Handles everything and does not expect anything to be skipped
-//TEST:
-fn parse_tuple(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
-    let start = ctx.peek_span().start;
-
-    ctx.expect_verbose(
-        TokenKind::OParen,
-        "Expected a '(' to declare tuple, found ",
-        "",
-        Branch::VarType,
-        interner,
-    )?;
-
-    let mut tuple: Vec<TypeExpr> = Vec::new();
-
-    while ctx.peek_kind() == TokenKind::Id || ctx.peek_kind() == TokenKind::Tilde {
-        let ty = parse_type(ctx, interner)?;
-        tuple.push(ty);
-
-        if ctx.peek_kind() == TokenKind::CParen {
-            break;
-        }
-
-        ctx.expect_verbose(
-            TokenKind::Comma,
-            "Expected a ',' or ')' after type, found ",
-            "",
-            Branch::NestEnum,
-            interner,
-        )?;
-    }
-
-    let end = ctx.peek_span().end;
-    // The loop could never run so expecting is needed
-    ctx.expect_verbose(
-        TokenKind::CParen,
-        "Expected a ',' or ')' after type, found ",
-        "",
-        Branch::NestEnum,
-        interner,
-    )?;
-
-    let span = Span::new(start, end);
-
-    let tuple = TypeExpr::Tuple(tuple, span);
-
-    Ok(tuple)
-}
+// /// This returns a vector
+// /// Handles everything and does not expect anything to be skipped
+// //TEST:
+// fn parse_tuple(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
+//     let start = ctx.peek_span().start;
+//
+//     ctx.expect_verbose(
+//         TokenKind::OParen,
+//         "Expected a '(' to declare tuple, found ",
+//         "",
+//         Branch::VarType,
+//         interner,
+//     )?;
+//
+//     let mut tuple: Vec<TypeExpr> = Vec::new();
+//
+//     while ctx.peek_kind() == TokenKind::Id || ctx.peek_kind() == TokenKind::Tilde {
+//         let ty = parse_type(ctx, interner)?;
+//         tuple.push(ty);
+//
+//         if ctx.peek_kind() == TokenKind::CParen {
+//             break;
+//         }
+//
+//         ctx.expect_verbose(
+//             TokenKind::Comma,
+//             "Expected a ',' or ')' after type, found ",
+//             "",
+//             Branch::NestEnum,
+//             interner,
+//         )?;
+//     }
+//
+//     let end = ctx.peek_span().end;
+//     // The loop could never run so expecting is needed
+//     ctx.expect_verbose(
+//         TokenKind::CParen,
+//         "Expected a ',' or ')' after type, found ",
+//         "",
+//         Branch::NestEnum,
+//         interner,
+//     )?;
+//
+//     let span = Span::new(start, end);
+//
+//     let tuple = TypeExpr::Tuple(tuple, span);
+//
+//     Ok(tuple)
+// }
 
 fn handle_struct_fields(
     ctx: &mut Context,
@@ -1054,7 +1056,7 @@ fn handle_enum_variants(
 ) -> Result<Vec<AbstractVariant>, Token> {
     let mut variants: Vec<AbstractVariant> = Vec::new();
 
-    //FIX: ALSO SUSPICIOUS
+    //NOTE: ALSO SUSPICIOUS
     while ctx.peek_kind() == TokenKind::Id {
         let variant = parse_variant(ctx, interner)?;
         variants.push(variant);
@@ -1079,10 +1081,11 @@ fn handle_enum_variants(
     Ok(variants)
 }
 
+// This COULD re-use parse_var_sect but not sure yet
 fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant, Token> {
     let name_span = ctx.peek_span();
 
-    let name = ctx.expect_id_verbose(
+    let plain_id = ctx.expect_id_verbose(
         TokenKind::Id,
         "Expected an identifier for a variant, found ",
         "",
@@ -1090,12 +1093,13 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
         interner,
     )?;
 
-    let name_id = NameId::new(name);
+    let name_id = NameId::new(plain_id);
 
     // TODO: Maybe this shouldn't look like a tuple by default since it's misleading
-    let tuple_opt: Option<TypeExpr> = if ctx.peek_kind() == TokenKind::OParen {
-        let tuple = parse_tuple(ctx, interner)?;
-        Some(tuple)
+    let ty_opt: Option<TypeExpr> = if ctx.peek_kind() == TokenKind::Colon {
+        ctx.advance_tok();
+        let ty = parse_type(ctx, interner)?;
+        Some(ty)
     } else {
         None
     };
@@ -1120,7 +1124,7 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
     let conds = conds_res?;
     let args = args_res?;
 
-    let variant = AbstractVariant::new(name_id, name_span, tuple_opt, conds, args);
+    let variant = AbstractVariant::new(name_id, name_span, ty_opt, conds, args);
 
     Ok(variant)
 }

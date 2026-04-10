@@ -71,6 +71,12 @@ fn fuzzy_match_inner<'a, 'b>(given: &'a [u8], arr: &'b [&str]) -> Option<&'b str
         }
 
         if matched > 3 || (matched >= 2 && matched + 1 >= var_bytes.len()) {
+            // The purpose of this function is to fuzzily match, not find direct matches, so this
+            // might be ok.
+            if given == var_bytes {
+                return None;
+            }
+
             // Similar
             return Some(arr[i]);
         }

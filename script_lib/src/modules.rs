@@ -138,14 +138,12 @@ pub fn extract_modules(path: &Path, interner: &mut Intern) -> Result<Program, Co
     //     println!("_______\n")
     // }
 
-    // TODO: PLEASE TEST THIS
     let program = Program::new(None, mod_map, all_mods);
 
     Ok(program)
 }
 
-/// This function recursively resolves each import within a hierarchy of imports after being
-/// given a root import to go off of.
+/// This function recursively resolves each import after being given a root module with imports to go off of.
 fn resolve_modules(
     seen: &mut HashSet<PathId>,
     modules: &mut Vec<Module>,
@@ -179,7 +177,6 @@ fn resolve_modules(
         let name_id = NameId::new(interner.intern(&file_name));
         // Modules start off at 0 since the main module can't be inserted before this so + 1 for
         // correct indexing in the final vector
-        mod_map.insert(name_id, ModuleId::new((modules.len() + 1) as u32));
 
         let sub_imports = ModuleFinder::new(
             &metadata.src_bytes,
@@ -192,6 +189,7 @@ fn resolve_modules(
 
         resolve_modules(seen, modules, &sub_mod.imports, mod_map, interner)?;
 
+        mod_map.insert(name_id, ModuleId::new((modules.len() + 1) as u32));
         modules.push(sub_mod);
     }
 
