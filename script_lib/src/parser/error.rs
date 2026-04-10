@@ -1,19 +1,8 @@
 use std::fmt::Display;
 
-#[derive(Debug)]
-// I'm new to thinking. Anyone have some beginner thoughts?
-pub(super) struct Diagnostic {
-    //FIX:
-    pub(super) msg: String,
-    pub(super) branch: Branch,
-    // Maybe help
-    // pub(crate) help: Option<String>
-}
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum Branch {
     Broken,
-    //TODO: Actually use neutral for something
     Neutral,
     Alias,
     Import,
@@ -53,11 +42,5 @@ impl Display for Branch {
             Branch::Complex => write!(f, "complex_rules"),
             Branch::Override => write!(f, "override"),
         }
-    }
-}
-
-impl Diagnostic {
-    pub(super) fn new(msg: String, branch: Branch) -> Diagnostic {
-        Diagnostic { msg, branch }
     }
 }

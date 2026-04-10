@@ -5,6 +5,7 @@ use common::{
     intern::Intern,
     keywords::{self, Keyword},
     metadata::ChernMetadata,
+    reporter::diagnostic::Diagnostic,
     symbols::{
         AstId, BuiltinTypeId, EnumId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs, StructId,
         SymbolId, TypeDefId, TypeId,
@@ -59,7 +60,7 @@ impl TypeResolver<'_> {
     //FIXME: USE A SINGULAR VECTOR INDEXED BY NAMEID LATER OVER A HASHMAP NOT NOW PLEASE NOT NOW
     // Ok. But when. I don't know.
     //TODO: Check structures of data for same name symbols
-    pub fn resolve(&mut self) {
+    pub fn resolve(&mut self) -> Result<(), Vec<Diagnostic>> {
         // Registering namespaces
         for (id, item) in self.ast_info.items.iter().enumerate() {
             let ast_id = AstId::new(id as u32);
@@ -80,8 +81,10 @@ impl TypeResolver<'_> {
         //FIXME: Check symbols here once
 
         if !self.reporter.err_vec.is_empty() {
-            self.reporter.emit_errors(&self.module.metadata);
-            std::process::exit(1);
+            let mut diags = Vec::new();
+            diags.append(&mut self.reporter.err_vec);
+
+            return Err(diags);
         }
 
         // This is resolving types but not resolving args or conditions.
@@ -102,9 +105,13 @@ impl TypeResolver<'_> {
         // Collecting possible same symbol errors
 
         if !self.reporter.err_vec.is_empty() {
-            self.reporter.emit_errors(&self.module.metadata);
-            std::process::exit(1);
+            let mut diags = Vec::new();
+            diags.append(&mut self.reporter.err_vec);
+
+            return Err(diags);
         }
+
+        Ok(())
     }
 
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {

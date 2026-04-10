@@ -8,8 +8,8 @@
 
 @def
 var->
-    // import "../chrn_tests/defs.chrn"
-    // var: Tuple<i32, u8, str> [StartsW("Hello")]
+    import "../chrn_tests/defs.chrn"
+    var: Tuple<Gobble, u8, str> [StartsW("Hello")]
 
     // parser needs this TypeExpr
     // user: defs.User

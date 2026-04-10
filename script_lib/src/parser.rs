@@ -19,6 +19,7 @@ use common::fmter::Formatted;
 use common::intern::Intern;
 use common::keywords::{self, Keyword};
 use common::metadata::ChernMetadata;
+use common::reporter::diagnostic::Diagnostic;
 use common::symbols::{InnerArgs, NameId, PathId, Span, SpannedInnerArgs};
 
 // May be lower
@@ -35,7 +36,8 @@ pub fn parse(
 
     let mut ctx = Context::new(&metadata, tokens);
 
-    while ctx.pos < ctx.toks.len() {
+    // WARN: THIS WAS CHANGED
+    while ctx.peek_tok() != Token::EOF {
         if ctx.err_vec.len() > 10 {
             break;
         }
@@ -307,10 +309,8 @@ pub fn parse(
         }
     }
 
-    //TODO: Should be with ScriptError
     if !ctx.err_vec.is_empty() {
-        ctx.emit_errors();
-        std::process::exit(1);
+        return Err(ScriptError::Parser(ctx.err_vec));
     }
 
     Ok(ast_info)

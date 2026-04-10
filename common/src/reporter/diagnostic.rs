@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct Reporter {
     pub diags: Vec<Diagnostic>,
 }
@@ -8,7 +9,9 @@ impl Reporter {
     }
 }
 
-// Branch...BRANCH
+/// Although there are error types that say where the error came from, all of `CoreError` needs to
+/// still returns `Diagnostic` as a vector, which could have other areas inside of it, making this
+/// serve as persistent metadata.
 #[derive(Debug)]
 pub enum Area {
     ConfigLoad,

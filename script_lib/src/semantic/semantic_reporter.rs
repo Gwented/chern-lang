@@ -1,9 +1,6 @@
-use std::io::IsTerminal;
-
 use common::{
     color,
     fmter::Formattable,
-    keywords,
     metadata::ChernMetadata,
     reporter::{
         self,
@@ -87,7 +84,8 @@ impl SemanticReporter {
 
         let ln_data = reporter::form_err_diag(&metadata.src_bytes, &spans, metadata.can_color);
 
-        let fmt_msg = reporter::standardize_err(&msg, &ln_data, "");
+        let fmt_msg =
+            reporter::standardize_err(&msg, &ln_data, "", &metadata.path, metadata.can_color);
 
         let diag = Diagnostic::new(fmt_msg, Area::Script);
         self.err_vec.push(diag);
@@ -111,7 +109,8 @@ impl SemanticReporter {
         };
 
         // diag_msg?
-        let msg = reporter::standardize_err(msg, &line_data, &help);
+        let msg =
+            reporter::standardize_err(msg, &line_data, &help, &metadata.path, metadata.can_color);
 
         let diag = Diagnostic::new(msg, Area::Script);
 
@@ -126,22 +125,5 @@ impl SemanticReporter {
         let help = reporter::standardize_help(&msg, metadata.can_color);
 
         Some(help)
-    }
-
-    // Will be elsewhere
-    pub(super) fn emit_errors(&self, metadata: &ChernMetadata) {
-        let (red, nc) = color::get_red(metadata.can_color);
-
-        let header_err = format!("{red}error{nc}");
-
-        //NOTE: Maybe this should be printed everytime since there could be many prior errors.
-
-        for err in &self.err_vec {
-            // Are two syscalls like this constantly like this worst than making it a single string?
-            println!("From path => \"{}\"", metadata.path.display());
-            println!("{header_err}: {}", err.msg);
-        }
-
-        eprintln!("\nReported {} error(s)\n", self.err_vec.len());
     }
 }

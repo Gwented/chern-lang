@@ -1,5 +1,7 @@
 // Definitions of all codebase wide errors
 
+use crate::reporter::diagnostic::Diagnostic;
+
 /// General error enum for the entirety of the codebase to use. Everything can be converted back
 /// into it so it can be treated just as any `Err()` would be but more valuable in detail.
 pub enum CoreError {
@@ -42,8 +44,8 @@ impl From<std::io::Error> for ConfigLoadError {
 
 #[derive(Debug)]
 pub enum ScriptError {
-    Parser(Vec<String>),
-    Semantic(Vec<String>),
+    Parser(Vec<Diagnostic>),
+    Semantic(Vec<Diagnostic>),
     IO(std::io::Error),
 }
 
@@ -55,8 +57,8 @@ impl From<std::io::Error> for ScriptError {
 
 #[derive(Debug)]
 pub enum SerialError {
-    Lexer(),
-    Parser(),
+    Lexer(Vec<Diagnostic>),
+    Parser(Vec<Diagnostic>),
     IO(std::io::Error),
 }
 

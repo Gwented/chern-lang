@@ -1,8 +1,18 @@
-use common::{color, intern::Intern, keywords, metadata::ChernMetadata, reporter, symbols::Span};
+use common::{
+    color,
+    intern::Intern,
+    keywords,
+    metadata::ChernMetadata,
+    reporter::{
+        self,
+        diagnostic::{Area, Diagnostic},
+    },
+    symbols::Span,
+};
 
 use crate::{
     algo,
-    parser::error::{Branch, Diagnostic},
+    parser::error::Branch,
     types::{
         symbols::SpannedToken,
         token::{self, Token, TokenKind},
@@ -42,8 +52,8 @@ const A_BRANCH_FUNC_SET: u64 = A_BASE_EXIT_SET | token::C_BRACKET;
 #[derive(Debug)]
 pub(super) struct Context<'a> {
     metadata: &'a ChernMetadata,
-    pub(super) toks: &'a [SpannedToken],
-    pub(super) pos: usize,
+    toks: &'a [SpannedToken],
+    pos: usize,
     pub(super) err_vec: Vec<Diagnostic>,
 }
 
@@ -99,14 +109,28 @@ impl<'a> Context<'a> {
         let msg = if let Some(name) = id_opt {
             let msg = format!("(in {branch})\n{bmsg}\"{name}\"{amsg}");
 
-            reporter::standardize_err(&msg, &ln_data, &help)
+            reporter::standardize_err(
+                &msg,
+                &ln_data,
+                &help,
+                &self.metadata.path,
+                self.metadata.can_color,
+            )
         } else {
             let msg = format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind());
 
-            reporter::standardize_err(&msg, &ln_data, &help)
+            reporter::standardize_err(
+                &msg,
+                &ln_data,
+                &help,
+                &self.metadata.path,
+                self.metadata.can_color,
+            )
         };
 
-        self.err_vec.push(Diagnostic::new(msg, branch));
+        // let msg = self.standardize_diag(msg);
+
+        self.err_vec.push(Diagnostic::new(msg, Area::Script));
 
         self.recover(branch);
 
@@ -130,11 +154,17 @@ impl<'a> Context<'a> {
 
         let base_msg = format!("(in {branch})\n{msg}");
 
-        let msg = reporter::standardize_err(&base_msg, &ln_data, &help);
+        let msg = reporter::standardize_err(
+            &base_msg,
+            &ln_data,
+            &help,
+            &self.metadata.path,
+            self.metadata.can_color,
+        );
 
         self.recover(branch);
 
-        let diag = Diagnostic::new(msg, branch);
+        let diag = Diagnostic::new(msg, Area::Script);
 
         self.err_vec.push(diag);
     }
@@ -184,14 +214,26 @@ impl<'a> Context<'a> {
                     found.tok.kind()
                 );
 
-                reporter::standardize_err(&base_msg, &ln_data, &help)
+                reporter::standardize_err(
+                    &base_msg,
+                    &ln_data,
+                    &help,
+                    &self.metadata.path,
+                    self.metadata.can_color,
+                )
             } else {
                 let base_msg = format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind());
 
-                reporter::standardize_err(&base_msg, &ln_data, &help)
+                reporter::standardize_err(
+                    &base_msg,
+                    &ln_data,
+                    &help,
+                    &self.metadata.path,
+                    self.metadata.can_color,
+                )
             };
 
-            self.err_vec.push(Diagnostic::new(msg, branch));
+            self.err_vec.push(Diagnostic::new(msg, Area::Script));
 
             self.recover(branch);
 
@@ -224,11 +266,17 @@ impl<'a> Context<'a> {
 
         let base_msg = format!("(in {branch})\nExpected {emsg}, found {fmsg}");
 
-        let msg = reporter::standardize_err(&base_msg, &ln_data, &help);
+        let msg = reporter::standardize_err(
+            &base_msg,
+            &ln_data,
+            &help,
+            &self.metadata.path,
+            self.metadata.can_color,
+        );
 
         self.recover(branch);
 
-        let diag = Diagnostic::new(msg, branch);
+        let diag = Diagnostic::new(msg, Area::Script);
 
         self.err_vec.push(diag);
     }
@@ -424,20 +472,6 @@ impl<'a> Context<'a> {
             },
             _ => None,
         }
-    }
-
-    pub(super) fn emit_errors(&self) {
-        let (red, nc) = color::get_red(self.metadata.can_color);
-
-        let header_err = format!("{red}error{nc}");
-
-        eprintln!("From path => \"{}\"", self.metadata.path.display());
-
-        for err in &self.err_vec {
-            eprintln!("{header_err}: {}", err.msg);
-        }
-
-        eprintln!("Reported {} error(s)", self.err_vec.len());
     }
 
     /// Intended to handle the case where EOF is reached due to errors likely wanting to show the

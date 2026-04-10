@@ -1,3 +1,5 @@
+use std::path::Path;
+
 //TODO: ORGANIZE NEW ARCHITECTURE
 // MAKE PARAMS ONLY TAKE SPAN SINCE LINES ARE BUILT ANYWAYS
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -404,9 +406,18 @@ fn form_ln_diag(
     diag
 }
 
-pub fn standardize_err(base_msg: &str, line_data: &LineData, help: &str) -> String {
+pub fn standardize_err(
+    base_msg: &str,
+    line_data: &LineData,
+    help: &str,
+    path: &Path,
+    can_color: bool,
+) -> String {
+    let (red, nc) = color::get_red(can_color);
+    let header = format!("From path => \"{}\"\n{red}error{nc}:", path.display());
+
     format!(
-        "{base_msg}\n[{}:{}]\n{}\n{help}{}",
+        "{header} {base_msg}\n[{}:{}]\n{}\n{help}{}",
         line_data.ln,
         line_data.col,
         line_data.diag,

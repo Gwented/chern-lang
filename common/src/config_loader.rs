@@ -106,7 +106,8 @@ impl<R: Read> ChernConfigLoader<'_, R> {
                         };
 
                         let ln_data = reporter::form_err_diag(self.handle.buffer(), &spans, false);
-                        let err_msg = reporter::standardize_err(&msg, &ln_data, "");
+                        let err_msg =
+                            reporter::standardize_err(&msg, &ln_data, "", self.path, false);
 
                         return Err(ConfigLoadError::Unclosed(err_msg));
                     }
@@ -153,7 +154,8 @@ impl<R: Read> ChernConfigLoader<'_, R> {
                         };
 
                         let ln_data = reporter::form_err_diag(self.handle.buffer(), &spans, false);
-                        let err_msg = reporter::standardize_err(&msg, &ln_data, "");
+                        let err_msg =
+                            reporter::standardize_err(&msg, &ln_data, "", self.path, false);
 
                         return Err(ConfigLoadError::Unclosed(err_msg));
                     }

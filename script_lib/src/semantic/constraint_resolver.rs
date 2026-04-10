@@ -1,9 +1,11 @@
 use common::{
     builtins::{BuiltinType, BuiltinTypeKind},
+    core_error::ScriptError,
     fmter::{Formattable, Formatted},
     intern::Intern,
     keywords::{self, Keyword},
     metadata::ChernMetadata,
+    reporter::diagnostic::Diagnostic,
     symbols::{AstId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs, SymbolId, TypeId},
 };
 
@@ -48,7 +50,7 @@ impl ConstraintResolver<'_> {
         }
     }
 
-    pub fn resolve(&mut self) {
+    pub fn resolve(&mut self) -> Result<(), Vec<Diagnostic>> {
         for (id, item) in self.ast_info.items.iter().enumerate() {
             let ast_id = AstId::new(id as u32);
 
@@ -69,10 +71,13 @@ impl ConstraintResolver<'_> {
         }
 
         if !self.reporter.err_vec.is_empty() {
-            self.reporter
-                .emit_errors(&self.program.mods[self.current_idx].metadata);
-            std::process::exit(1);
+            let mut diags = Vec::new();
+            diags.append(&mut self.reporter.err_vec);
+
+            return Err(diags);
         }
+
+        Ok(())
     }
 
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {

@@ -63,36 +63,34 @@ fn process_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, St
         Err(core_err) => match core_err {
             CoreError::Config(cfg_load_err) => match cfg_load_err {
                 ConfigLoadError::Unclosed(msg) | ConfigLoadError::Module(msg) => Err(msg),
-                ConfigLoadError::IO(error) => todo!(),
+                // Should handle all prevelant IO errors inside of module scanner using reporter
+                ConfigLoadError::IO(e) => match e.kind() {
+                    e => {
+                        let msg = format!("Process exited unsuccessfully.\n{e}");
+                        return Err(msg);
+                    }
+                },
             },
-            CoreError::Script(script_err) => todo!(),
+            CoreError::Script(script_err) => match script_err {
+                ScriptError::Parser(diags) | ScriptError::Semantic(diags) => {
+                    for diag in &diags {
+                        eprintln!("{}", diag.msg);
+                    }
+
+                    eprintln!("Reported {} error(s)\n", diags.len());
+
+                    return Err("Failed to parse configuration file".to_string());
+                }
+                ScriptError::IO(e) => {
+                    let msg = format!("Process exited unsuccessfully.\n{e}");
+                    return Err(msg);
+                }
+            },
             CoreError::Serial(serial_error) => todo!(),
         },
     }
 }
 
-// let src = match fs::File::open(&check_cmd.path) {
+// let src = match fs::File::open(&check_cmd.path)
 //     Ok(f) => f,
-//     Err(e) => match e.kind() {
-//         io::ErrorKind::NotFound => {
-//             let msg = format!("No file found in path \"{}\"", check_cmd.path.display());
-//             CoreError::Config(ConfigLoadError::IO(msg))
-//         }
-//         io::ErrorKind::IsADirectory => {
-//             let msg = format!("The path \"{}\" is a directory", check_cmd.path.display());
-//             return Err(msg);
-//         }
-//         io::ErrorKind::PermissionDenied => {
-//             let msg = format!(
-//                 "The file \"{}\" does not have read permissions enabled",
-//                 check_cmd.path.display()
-//             );
-//
-//             return Err(msg);
-//         }
-//         e => {
-//             let msg = format!("Process exited unsuccessfully.\n{e}");
-//             return Err(msg);
-//         }
-//     },
 // };

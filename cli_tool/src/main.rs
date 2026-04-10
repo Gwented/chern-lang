@@ -17,7 +17,7 @@ fn main() {
         }
         Err(emsg) => {
             let (red, nc) = color::get_red(cli_cfg.can_color);
-            println!("{red}error{nc}: {emsg}");
+            println!("{red}exited{nc}: {emsg}");
         }
     }
 }
