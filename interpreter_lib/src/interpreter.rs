@@ -16,16 +16,12 @@ pub fn interpret_chern_cfg(path: &Path) -> Result<(), CoreError> {
     // syntax error within another module would not be reportable since the parser failed.
 
     // Not entirely sure what to do with program yet so staying outside for now
-    let mut program = Program::new(None);
-
-    let modules = modules::extract_modules(path, &mut interner)?;
+    let mut program = modules::extract_modules(path, &mut interner)?;
 
     //Temp
-    program.mods = modules;
-
     let mut all_asts: Vec<AstInfo> = Vec::new();
 
-    // Storing namespaces so that referencing can be made to existent outer module variables
+    // Storing namespaces first so that referencing can be made to accessible to other modules
     for module in &mut program.mods {
         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
             .tokenize(&mut interner);
@@ -36,11 +32,8 @@ pub fn interpret_chern_cfg(path: &Path) -> Result<(), CoreError> {
         all_asts.push(ast_info);
     }
 
-    // dbg!(program.mods);
-    // panic!("Namespaces");
-    for (i, module) in program.mods.iter_mut().enumerate() {
-        ConstraintResolver::new(&all_asts[i], &module.metadata, &interner, &mut module.table)
-            .resolve();
+    for i in 0..program.mods.len() {
+        ConstraintResolver::new(&all_asts[i], &interner, i, &mut program).resolve();
     }
 
     // Maybe bind is now gotten from module resolution

@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     ffi::OsString,
     fs,
     path::{Path, PathBuf},
@@ -10,24 +10,33 @@ use common::{
     core_error::{ConfigLoadError, ScriptError},
     intern::Intern,
     metadata::ChernMetadata,
-    symbols::{NameId, PathId},
+    symbols::{ModuleId, NameId, PathId},
 };
 pub mod mod_finder;
 
 use crate::{modules::mod_finder::ModuleFinder, semantic::representation::Table};
 
 pub struct Program {
-    // MOOOOOOOOOOOOOOODSSSS MODS
     pub bind: Option<PathId>,
+    pub mod_map: HashMap<NameId, ModuleId>,
     pub mods: Vec<Module>,
 }
 
 impl Program {
-    pub fn new(bind: Option<PathId>) -> Program {
+    pub fn new(
+        bind: Option<PathId>,
+        mod_map: HashMap<NameId, ModuleId>,
+        mods: Vec<Module>,
+    ) -> Program {
         Program {
             bind,
-            mods: Vec::new(),
+            mod_map,
+            mods,
         }
+    }
+
+    pub fn set_bind(&mut self, path_id: PathId) {
+        self.bind = Some(path_id);
     }
 }
 
@@ -35,7 +44,7 @@ impl Program {
 #[derive(Debug)]
 pub struct Module {
     /// File name that will be used internally
-    pub file_id: NameId,
+    pub name_id: NameId,
     /// Actual path used to find the file itself
     pub path_id: PathId,
     pub imports: Vec<PathId>,
@@ -51,7 +60,7 @@ impl Module {
         metadata: ChernMetadata,
     ) -> Module {
         Module {
-            file_id,
+            name_id: file_id,
             path_id,
             imports,
             metadata,
@@ -61,8 +70,7 @@ impl Module {
 }
 
 //TEST: Lets depending on self recursively as a module happen for now
-pub fn extract_modules(path: &Path, interner: &mut Intern) -> Result<Vec<Module>, ConfigLoadError> {
-    //???????????????????????????????????????????
+pub fn extract_modules(path: &Path, interner: &mut Intern) -> Result<Program, ConfigLoadError> {
     let src = fs::File::open(path)?;
     let main_metadata = ChernConfigLoader::new(path, src).load_config()?;
 
@@ -91,13 +99,22 @@ pub fn extract_modules(path: &Path, interner: &mut Intern) -> Result<Vec<Module>
 
     let main_mod = Module::new(file_id, path_id, main_imports, main_metadata);
 
+    let mut mod_map: HashMap<NameId, ModuleId> = HashMap::new();
+    mod_map.insert(main_mod.name_id, ModuleId::new(0));
+
     let mut seen: HashSet<PathId> = HashSet::new();
     seen.insert(main_mod.path_id);
 
     // Will incur borrowing issues unless the main_mod is put in last since the list of it's
     // imports is needed to start recursive process
     let mut other_mods: Vec<Module> = Vec::with_capacity(main_mod.imports.len());
-    resolve_modules(&mut seen, &mut other_mods, &main_mod.imports, interner)?;
+    resolve_modules(
+        &mut seen,
+        &mut other_mods,
+        &main_mod.imports,
+        &mut mod_map,
+        interner,
+    )?;
 
     // May change
     // Please change
@@ -121,7 +138,10 @@ pub fn extract_modules(path: &Path, interner: &mut Intern) -> Result<Vec<Module>
     //     println!("_______\n")
     // }
 
-    Ok(all_mods)
+    // TODO: PLEASE TEST THIS
+    let program = Program::new(None, mod_map, all_mods);
+
+    Ok(program)
 }
 
 /// This function recursively resolves each import within a hierarchy of imports after being
@@ -130,6 +150,7 @@ fn resolve_modules(
     seen: &mut HashSet<PathId>,
     modules: &mut Vec<Module>,
     imports: &Vec<PathId>,
+    mod_map: &mut HashMap<NameId, ModuleId>,
     interner: &mut Intern,
 ) -> Result<(), ConfigLoadError> {
     for path_id in imports {
@@ -155,7 +176,10 @@ fn resolve_modules(
             }
         };
 
-        let file_id = NameId::new(interner.intern(&file_name));
+        let name_id = NameId::new(interner.intern(&file_name));
+        // Modules start off at 0 since the main module can't be inserted before this so + 1 for
+        // correct indexing in the final vector
+        mod_map.insert(name_id, ModuleId::new((modules.len() + 1) as u32));
 
         let sub_imports = ModuleFinder::new(
             &metadata.src_bytes,
@@ -164,9 +188,9 @@ fn resolve_modules(
         )
         .collect_imports(interner);
 
-        let sub_mod = Module::new(file_id, *path_id, sub_imports, metadata);
+        let sub_mod = Module::new(name_id, *path_id, sub_imports, metadata);
 
-        resolve_modules(seen, modules, &sub_mod.imports, interner).unwrap();
+        resolve_modules(seen, modules, &sub_mod.imports, mod_map, interner)?;
 
         modules.push(sub_mod);
     }

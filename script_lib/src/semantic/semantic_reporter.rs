@@ -5,31 +5,29 @@ use common::{
     fmter::Formattable,
     keywords,
     metadata::ChernMetadata,
-    reporter,
+    reporter::{
+        self,
+        diagnostic::{Area, Diagnostic},
+    },
     symbols::{Span, TypeId},
 };
 
-use crate::{
-    algo,
-    semantic::error::{Diagnostic, SemanticError},
-};
+use crate::{algo, semantic::error::SemanticError};
 
 #[derive(Debug)]
-pub(super) struct SemanticReporter<'a> {
-    pub(super) metadata: &'a ChernMetadata,
+pub(super) struct SemanticReporter {
     pub(super) err_vec: Vec<Diagnostic>,
 }
 
-impl SemanticReporter<'_> {
-    pub(super) fn new(metadata: &ChernMetadata) -> SemanticReporter<'_> {
+impl SemanticReporter {
+    pub(super) fn new() -> SemanticReporter {
         SemanticReporter {
-            metadata,
             err_vec: Vec::new(),
         }
     }
 
     //WARN: Could be better looking
-    pub(super) fn report_semantic(&mut self, sem_err: SemanticError) {
+    pub(super) fn report_semantic(&mut self, sem_err: SemanticError, metadata: &ChernMetadata) {
         let (msg, spans) = match sem_err {
             SemanticError::UnsupportedArg(arg, type_kind, spans) => {
                 let msg = format!(
@@ -87,23 +85,27 @@ impl SemanticReporter<'_> {
             }
         };
 
-        let ln_data =
-            reporter::form_err_diag(&self.metadata.src_bytes, &spans, self.metadata.can_color);
+        let ln_data = reporter::form_err_diag(&metadata.src_bytes, &spans, metadata.can_color);
 
         let fmt_msg = reporter::standardize_err(&msg, &ln_data, "");
 
-        let diag = Diagnostic::new(fmt_msg);
+        let diag = Diagnostic::new(fmt_msg, Area::Script);
         self.err_vec.push(diag);
     }
 
     /// Draws red arrows under the span given. Option `err_name` represents whether or not a keyword that
     /// could be similar in name should be looked for.
-    pub(super) fn report_spanned(&mut self, msg: &str, err_name: Option<&str>, spans: &[Span]) {
-        let line_data =
-            reporter::form_err_diag(&self.metadata.src_bytes, spans, self.metadata.can_color);
+    pub(super) fn report_spanned(
+        &mut self,
+        msg: &str,
+        err_name: Option<&str>,
+        spans: &[Span],
+        metadata: &ChernMetadata,
+    ) {
+        let line_data = reporter::form_err_diag(&metadata.src_bytes, spans, metadata.can_color);
 
         let help = if let Some(name) = err_name {
-            self.try_help(name).unwrap_or_default()
+            self.try_help(name, metadata).unwrap_or_default()
         } else {
             "".to_string()
         };
@@ -111,23 +113,24 @@ impl SemanticReporter<'_> {
         // diag_msg?
         let msg = reporter::standardize_err(msg, &line_data, &help);
 
-        let diag = Diagnostic::new(msg.to_owned());
+        let diag = Diagnostic::new(msg, Area::Script);
 
         self.err_vec.push(diag);
     }
 
-    fn try_help(&self, err_name: &str) -> Option<String> {
+    fn try_help(&self, err_name: &str, metadata: &ChernMetadata) -> Option<String> {
         let found_kw = algo::fuzzy_match(err_name.as_bytes(), algo::FuzzyMatch::KW)?;
 
         let msg = format!("Found similar keyword \"{}\"", found_kw);
 
-        let help = reporter::standardize_help(&msg, self.metadata.can_color);
+        let help = reporter::standardize_help(&msg, metadata.can_color);
 
         Some(help)
     }
 
-    pub(super) fn emit_errors(&self) {
-        let (red, nc) = color::get_red(self.metadata.can_color);
+    // Will be elsewhere
+    pub(super) fn emit_errors(&self, metadata: &ChernMetadata) {
+        let (red, nc) = color::get_red(metadata.can_color);
 
         let header_err = format!("{red}error{nc}");
 
@@ -135,7 +138,7 @@ impl SemanticReporter<'_> {
 
         for err in &self.err_vec {
             // Are two syscalls like this constantly like this worst than making it a single string?
-            println!("From path => \"{}\"", self.metadata.path.display());
+            println!("From path => \"{}\"", metadata.path.display());
             println!("{header_err}: {}", err.msg);
         }
 

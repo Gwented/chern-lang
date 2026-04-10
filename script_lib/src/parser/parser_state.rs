@@ -9,14 +9,14 @@ const OVERRIDE_FLAG: u16 = 1 << 6;
 
 const NEUTRAL_SET: u16 = BIND_FLAG | ALIAS_FLAG;
 
-pub(super) struct StateFlag {
+pub(super) struct ParserState {
     pub(super) flag: u16,
 }
 
 // Could reduce duplication by manually enforcing setting it from the outside but im scared
-impl StateFlag {
-    pub(super) fn new() -> StateFlag {
-        StateFlag { flag: 1 }
+impl ParserState {
+    pub(super) fn new() -> ParserState {
+        ParserState { flag: 1 }
     }
 
     //WARN: Not sure if this is needed since sections already enforce only sections are next

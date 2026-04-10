@@ -29,6 +29,17 @@ impl SymbolId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ModuleId {
+    pub id: u32,
+}
+
+impl ModuleId {
+    pub fn new(id: u32) -> ModuleId {
+        ModuleId { id }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AstId {
     pub id: u32,
 }

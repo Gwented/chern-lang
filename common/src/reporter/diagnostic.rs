@@ -9,13 +9,21 @@ impl Reporter {
 }
 
 // Branch...BRANCH
+#[derive(Debug)]
 pub enum Area {
     ConfigLoad,
     Script,
     Serial,
 }
 
+#[derive(Debug)]
 pub struct Diagnostic {
-    msg: String,
-    area: Area,
+    pub msg: String,
+    pub area: Area,
+}
+
+impl Diagnostic {
+    pub fn new(msg: String, area: Area) -> Diagnostic {
+        Diagnostic { msg, area }
+    }
 }

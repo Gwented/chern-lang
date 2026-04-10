@@ -5,11 +5,14 @@
 // "I am not even supposed to be included"
 
 // Require forward slashes
-// import "../chrn_tests/defs.chrn"
 
 @def
+import "../chrn_tests/defs.chrn"
 var->
     var: i32 [StartsW("Hello")]
+
+    // parser needs this TypeExpr
+    // user: defs.User
 
 // alias x() = [IsEmpty, defs.DEFAULT(x = "4", y)]
 

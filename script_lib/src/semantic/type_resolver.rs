@@ -26,14 +26,15 @@ use crate::{
         semantic_reporter::SemanticReporter,
     },
 };
-/// Fills a given table with type information regarding the NameId and TypeId
+/// Does a namespace and type resolution, not including conditions, arguments or any other form
+/// of validation. NamespaceResolver + TypeResolver
 pub struct TypeResolver<'a> {
     ast_info: &'a AstInfo,
     interner: &'a Intern,
     //WARN: Horrors
     module: &'a mut Module,
     // Startup idea:
-    reporter: SemanticReporter<'a>,
+    reporter: SemanticReporter,
     //NOTE: May handle this differently but ok for now
     unknown_id: Option<TypeId>,
 }
@@ -49,7 +50,7 @@ impl TypeResolver<'_> {
             interner,
             module,
             //TODO: Separate this
-            reporter: SemanticReporter::new(&module.metadata),
+            reporter: SemanticReporter::new(),
             //TODO: This could be different
             unknown_id: None,
         }
@@ -79,7 +80,7 @@ impl TypeResolver<'_> {
         //FIXME: Check symbols here once
 
         if !self.reporter.err_vec.is_empty() {
-            self.reporter.emit_errors();
+            self.reporter.emit_errors(&self.module.metadata);
             std::process::exit(1);
         }
 
@@ -94,14 +95,17 @@ impl TypeResolver<'_> {
                 Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum, ast_id),
                 Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias, ast_id),
                 Item::Const(abs_const) => _ = self.resolve_const(abs_const, ast_id),
-                Item::Import(abstract_import) => todo!(),
+                Item::Import(abs_import) => todo!(),
             }
         }
+
+        dbg!(self.ast_info);
+        panic!();
 
         // Collecting possible same symbol errors
 
         if !self.reporter.err_vec.is_empty() {
-            self.reporter.emit_errors();
+            self.reporter.emit_errors(&self.module.metadata);
             std::process::exit(1);
         }
     }
@@ -138,8 +142,12 @@ impl TypeResolver<'_> {
                     "More than one field has the identifier \"{dup_name}\" within struct \"{struct_name}\""
                 );
 
-                self.reporter
-                    .report_spanned(&msg, None, &[orig_span, field_span]);
+                self.reporter.report_spanned(
+                    &msg,
+                    None,
+                    &[orig_span, field_span],
+                    &self.module.metadata,
+                );
             }
 
             seen.push((i, type_def.name_id));
@@ -178,8 +186,12 @@ impl TypeResolver<'_> {
                     "More than one variant has the identifier \"{dup_name}\" within enum \"{enum_name}\""
                 );
 
-                self.reporter
-                    .report_spanned(&msg, None, &[orig_span, variant_span]);
+                self.reporter.report_spanned(
+                    &msg,
+                    None,
+                    &[orig_span, variant_span],
+                    &self.module.metadata,
+                );
             }
 
             seen.push((i, variant.name_id));
@@ -246,8 +258,12 @@ impl TypeResolver<'_> {
 
                 let err_msg = format!("\"{err_name}\" is not defined as a type");
 
-                self.reporter
-                    .report_spanned(&err_msg, Some(err_name), &[span.clone()]);
+                self.reporter.report_spanned(
+                    &err_msg,
+                    Some(err_name),
+                    &[span.clone()],
+                    &self.module.metadata,
+                );
 
                 return Err(());
             }
@@ -270,8 +286,12 @@ impl TypeResolver<'_> {
 
                 let err_msg = format!("\"{err_name}\" is not defined as a type");
 
-                self.reporter
-                    .report_spanned(&err_msg, None, &[span.clone()]);
+                self.reporter.report_spanned(
+                    &err_msg,
+                    None,
+                    &[span.clone()],
+                    &self.module.metadata,
+                );
 
                 return Err(());
             }
@@ -286,7 +306,12 @@ impl TypeResolver<'_> {
                                     generic.args.len()
                                 );
 
-                                self.reporter.report_spanned(&msg, None, &[span.clone()]);
+                                self.reporter.report_spanned(
+                                    &msg,
+                                    None,
+                                    &[span.clone()],
+                                    &self.module.metadata,
+                                );
 
                                 return Err(());
                             }
@@ -307,7 +332,12 @@ impl TypeResolver<'_> {
                                     generic.args.len()
                                 );
 
-                                self.reporter.report_spanned(&msg, None, &[span.clone()]);
+                                self.reporter.report_spanned(
+                                    &msg,
+                                    None,
+                                    &[span.clone()],
+                                    &self.module.metadata,
+                                );
 
                                 return Err(());
                             }
@@ -331,7 +361,12 @@ impl TypeResolver<'_> {
                                     generic.args.len()
                                 );
 
-                                self.reporter.report_spanned(&msg, None, &[span.clone()]);
+                                self.reporter.report_spanned(
+                                    &msg,
+                                    None,
+                                    &[span.clone()],
+                                    &self.module.metadata,
+                                );
 
                                 return Err(());
                             }
@@ -354,8 +389,12 @@ impl TypeResolver<'_> {
                                 "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, and `Map` are valid data structures"
                             );
 
-                            self.reporter
-                                .report_spanned(&err_msg, Some(err_name), &[span.clone()]);
+                            self.reporter.report_spanned(
+                                &err_msg,
+                                Some(err_name),
+                                &[span.clone()],
+                                &self.module.metadata,
+                            );
 
                             Err(())
                         }
@@ -368,8 +407,12 @@ impl TypeResolver<'_> {
                             "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, and `Map` are valid data structures"
                         );
 
-                        self.reporter
-                            .report_spanned(&err_msg, Some(err_name), &[span.clone()]);
+                        self.reporter.report_spanned(
+                            &err_msg,
+                            Some(err_name),
+                            &[span.clone()],
+                            &self.module.metadata,
+                        );
 
                         Err(())
                     }
@@ -441,8 +484,12 @@ impl TypeResolver<'_> {
                     "Found more than one symbol with identifier \"{dup_name}\" in the same scope"
                 );
 
-                self.reporter
-                    .report_spanned(&msg, None, &[orig_span, dup_span]);
+                self.reporter.report_spanned(
+                    &msg,
+                    None,
+                    &[orig_span, dup_span],
+                    &self.module.metadata,
+                );
             }
         }
     }

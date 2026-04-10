@@ -2,7 +2,8 @@
 pub mod ast;
 mod context;
 mod error;
-mod parse_state;
+mod parser_state;
+
 use crate::parser::ast::{
     AbstractAlias, AbstractConst, AbstractEnum, AbstractFieldAccess, AbstractImport,
     AbstractStruct, AbstractTypeDef, AbstractVariant, AstInfo, BinaryOp, Expr, Generic, Item,
@@ -10,7 +11,7 @@ use crate::parser::ast::{
 };
 use crate::parser::context::Context;
 use crate::parser::error::Branch;
-use crate::parser::parse_state::StateFlag;
+use crate::parser::parser_state::ParserState;
 use crate::types::symbols::SpannedToken;
 use crate::types::token::{Token, TokenKind};
 use common::core_error::ScriptError;
@@ -30,7 +31,7 @@ pub fn parse(
 ) -> Result<AstInfo, ScriptError> {
     let mut ast_info = AstInfo::new();
 
-    let mut state = StateFlag::new();
+    let mut state = ParserState::new();
 
     let mut ctx = Context::new(&metadata, tokens);
 

@@ -8,6 +8,7 @@ use common::{
 };
 
 use crate::{
+    modules::{Module, Program},
     parser::ast::{
         AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Expr, Item, SpannedExpr, UnaryOp,
     },
@@ -26,22 +27,24 @@ use crate::{
 pub struct ConstraintResolver<'a> {
     ast_info: &'a AstInfo,
     interner: &'a Intern,
-    table: &'a mut Table,
-    reporter: SemanticReporter<'a>,
+    program: &'a mut Program,
+    current_idx: usize,
+    reporter: SemanticReporter,
 }
 
 impl ConstraintResolver<'_> {
     pub fn new<'a>(
         ast_info: &'a AstInfo,
-        metadata: &'a ChernMetadata,
         interner: &'a Intern,
-        table: &'a mut Table,
+        current_idx: usize,
+        program: &'a mut Program,
     ) -> ConstraintResolver<'a> {
         ConstraintResolver {
             ast_info,
             interner,
-            table,
-            reporter: SemanticReporter::new(metadata),
+            current_idx,
+            program,
+            reporter: SemanticReporter::new(),
         }
     }
 
@@ -60,20 +63,23 @@ impl ConstraintResolver<'_> {
                     _ = self.resolve_enum(enumeration, ast_id);
                 }
                 Item::Alias(abs_alias) => todo!(),
-                Item::Const(abstract_const) => todo!(),
-                Item::Import(abstract_import) => todo!(),
+                Item::Const(abs_const) => todo!(),
+                Item::Import(abs_import) => todo!(),
             }
         }
 
         if !self.reporter.err_vec.is_empty() {
-            self.reporter.emit_errors();
+            self.reporter
+                .emit_errors(&self.program.mods[self.current_idx].metadata);
             std::process::exit(1);
         }
     }
 
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
-        let sym_id = self.table.sym_ids[&ast_id];
-        let type_id = self.table.get_typedef(sym_id).type_id;
+        // First borrow starts here
+        let module = &self.program.mods[self.current_idx];
+        let sym_id = module.table.sym_ids[&ast_id];
+        let type_id = module.table.get_typedef(sym_id).type_id;
 
         let mut conds = Vec::new();
 
@@ -81,8 +87,9 @@ impl ConstraintResolver<'_> {
             conds.push(self.resolve_cond(expr, ast_id)?);
         }
 
-        // First borrow starts here
-        let ty = &self.table.types[self.table.get_typedef(sym_id).type_id.id as usize];
+        // Second borrow
+        let module = &self.program.mods[self.current_idx];
+        let ty = &module.table.types[module.table.get_typedef(sym_id).type_id.id as usize];
 
         // Checking if condition is valid for the given type
         // Using the Ast node's condition so that the span information is not lost
@@ -93,23 +100,27 @@ impl ConstraintResolver<'_> {
                 Type::Struct(_) | Type::Enum(_) => {
                     let msg = "Cannot give a `var->` defined variable a condition when it has a `struct` or `enum` type, define\nthis within `nest->`";
 
-                    self.reporter.report_spanned(msg, None, &[ast_span.clone()]);
+                    self.reporter
+                        .report_spanned(msg, None, &[ast_span.clone()], &module.metadata);
 
                     return Err(());
                 }
                 _ => (),
             }
 
-            if let Err(sem_err) = self.check_cond_constraints(type_id, &ast_span, cond, &mut vec![])
+            if let Err(sem_err) =
+                self.check_cond_constraints(type_id, module, &ast_span, cond, &mut vec![])
             {
-                self.reporter.report_semantic(sem_err);
+                self.reporter.report_semantic(sem_err, &module.metadata);
                 return Err(());
             }
         }
         //TODO: RESOLVE FUNC CONSTRAINTS HERE
 
+        // Third borrow
         // Re-borrowing due to resolution happening above being mutable
-        let ty = &self.table.types[self.table.get_typedef(sym_id).type_id.id as usize];
+        let module = &self.program.mods[self.current_idx];
+        let ty = &module.table.types[module.table.get_typedef(sym_id).type_id.id as usize];
 
         let mut args = Vec::new();
 
@@ -121,22 +132,24 @@ impl ConstraintResolver<'_> {
                         let span = Span::new(spanned_arg.span.start, spanned_arg.span.end);
                         let sem_err = SemanticError::VagueArg(spanned_arg.arg, vec![span]);
 
-                        self.reporter.report_semantic(sem_err);
+                        self.reporter.report_semantic(sem_err, &module.metadata);
                         return Err(());
                     }
                 }
                 _ => (),
             }
 
-            if let Err(sem_err) = self.resolve_arg(type_id, &spanned_arg, &mut vec![]) {
-                self.reporter.report_semantic(sem_err);
+            if let Err(sem_err) = self.resolve_arg(type_id, module, &spanned_arg, &mut vec![]) {
+                self.reporter.report_semantic(sem_err, &module.metadata);
                 return Err(());
             }
 
             args.push(spanned_arg.arg);
         }
 
-        let type_def = &mut self.table.get_typedef_mut(sym_id);
+        // Fourth borrow...
+        let module = &mut self.program.mods[self.current_idx];
+        let type_def = module.table.get_typedef_mut(sym_id);
         type_def.conds = conds;
         type_def.args = args;
 
@@ -148,9 +161,8 @@ impl ConstraintResolver<'_> {
     // struct id itself was passed, but then the loop would iterate over everything by default
     // which seems bad if they're just builtins etc.
     fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
-        // This looks weird
-
-        let sym_id = self.table.sym_ids[&ast_id];
+        let module = &self.program.mods[self.current_idx];
+        let sym_id = module.table.sym_ids[&ast_id];
 
         let mut conds: Vec<Cond> = Vec::new();
 
@@ -158,28 +170,33 @@ impl ConstraintResolver<'_> {
             conds.push(self.resolve_cond(expr, ast_id)?);
         }
 
-        let fields = &self.table.get_struct(sym_id).fields;
+        let module = &self.program.mods[self.current_idx];
+        let fields = &module.table.get_struct(sym_id).fields;
 
         for (i, cond) in conds.iter().enumerate() {
             let ast_span = &abs_struct.glob_conds[i].span;
 
             for field in fields {
                 if let Err(sem_err) =
-                    self.check_cond_constraints(field.type_id, &ast_span, cond, &mut vec![])
+                    self.check_cond_constraints(field.type_id, module, &ast_span, cond, &mut vec![])
                 {
-                    self.reporter.report_semantic(sem_err);
+                    self.reporter.report_semantic(sem_err, &module.metadata);
                     return Err(());
                 }
             }
         }
 
         let mut args: Vec<InnerArgs> = Vec::new();
-        let fields = &self.table.get_struct(sym_id).fields;
+
+        let module = &self.program.mods[self.current_idx];
+        let fields = &module.table.get_struct(sym_id).fields;
 
         for field in fields {
             for spanned_arg in &abs_struct.glob_args {
-                if let Err(sem_err) = self.resolve_arg(field.type_id, spanned_arg, &mut vec![]) {
-                    self.reporter.report_semantic(sem_err);
+                if let Err(sem_err) =
+                    self.resolve_arg(field.type_id, module, spanned_arg, &mut vec![])
+                {
+                    self.reporter.report_semantic(sem_err, &module.metadata);
                     return Err(());
                 }
 
@@ -187,7 +204,8 @@ impl ConstraintResolver<'_> {
             }
         }
 
-        let structure = &mut self.table.get_struct_mut(sym_id);
+        let module = &mut self.program.mods[self.current_idx];
+        let structure = module.table.get_struct_mut(sym_id);
 
         // I'm scared of this
         structure.args = args;
@@ -197,7 +215,8 @@ impl ConstraintResolver<'_> {
     }
 
     fn resolve_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) -> Result<(), ()> {
-        let sym_id = self.table.sym_ids[&ast_id];
+        let module = &self.program.mods[self.current_idx];
+        let sym_id = module.table.sym_ids[&ast_id];
 
         let mut conds: Vec<Cond> = Vec::new();
 
@@ -206,7 +225,8 @@ impl ConstraintResolver<'_> {
         }
 
         // First borrow
-        let variants = &self.table.get_enum(sym_id).variants;
+        let module = &self.program.mods[self.current_idx];
+        let variants = &module.table.get_enum(sym_id).variants;
 
         for (i, cond) in conds.iter().enumerate() {
             let ast_span = &abs_enum.glob_conds[i].span;
@@ -214,24 +234,27 @@ impl ConstraintResolver<'_> {
             for variant in variants {
                 if let Some(type_id) = variant.type_id {
                     if let Err(sem_err) =
-                        self.check_cond_constraints(type_id, &ast_span, cond, &mut vec![])
+                        self.check_cond_constraints(type_id, module, &ast_span, cond, &mut vec![])
                     {
-                        self.reporter.report_semantic(sem_err);
+                        self.reporter.report_semantic(sem_err, &module.metadata);
                     }
                 }
             }
         }
 
         // Re-borrow
-        let variants = &self.table.get_enum(sym_id).variants;
+        let module = &self.program.mods[self.current_idx];
+        let variants = &module.table.get_enum(sym_id).variants;
 
         let mut args: Vec<InnerArgs> = Vec::new();
 
         for variant in variants {
             for spanned_arg in &abs_enum.glob_args {
                 if let Some(type_id) = variant.type_id {
-                    if let Err(sem_err) = self.resolve_arg(type_id, spanned_arg, &mut vec![]) {
-                        self.reporter.report_semantic(sem_err);
+                    if let Err(sem_err) =
+                        self.resolve_arg(type_id, module, spanned_arg, &mut vec![])
+                    {
+                        self.reporter.report_semantic(sem_err, &module.metadata);
 
                         return Err(());
                     };
@@ -241,7 +264,8 @@ impl ConstraintResolver<'_> {
             }
         }
 
-        let enumeration = &mut self.table.get_enum_mut(sym_id);
+        let module = &mut self.program.mods[self.current_idx];
+        let enumeration = module.table.get_enum_mut(sym_id);
 
         enumeration.conds = conds;
         enumeration.args = args;
@@ -265,6 +289,7 @@ impl ConstraintResolver<'_> {
                     &err_msg,
                     Some(err_name),
                     &[spanned_expr.span.clone()],
+                    &self.program.mods[self.current_idx].metadata,
                 );
 
                 Err(())
@@ -293,14 +318,19 @@ impl ConstraintResolver<'_> {
                     }
                     _ => {
                         let msg = "Condition blocks must contain either keywords, or functions";
-                        self.reporter
-                            .report_spanned(msg, None, &[caller.span.clone()]);
+                        self.reporter.report_spanned(
+                            msg,
+                            None,
+                            &[caller.span.clone()],
+                            &self.program.mods[self.current_idx].metadata,
+                        );
                         return Err(());
                     }
                 };
 
-                let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
-                let type_id = TypeId::new(self.table.types.len() as u32);
+                let module = &self.program.mods[self.current_idx];
+                let sym_id = SymbolId::new(module.table.sym_ids.len() as u32);
+                let type_id = TypeId::new(module.table.types.len() as u32);
 
                 //TODO: Maybe handle this elsewhere
                 let (constraints, kind) = match Keyword::try_as_kw(name_id) {
@@ -348,14 +378,15 @@ impl ConstraintResolver<'_> {
                 match self.check_func_constraints(&func) {
                     Ok(_) => (),
                     Err(sem_err) => {
-                        self.reporter.report_semantic(sem_err);
+                        self.reporter.report_semantic(sem_err, &module.metadata);
                         return Err(());
                     }
                 };
 
                 let func_kind = func.kind;
 
-                self.table.symbols.insert(sym_id, Symbol::Func(func));
+                let module = &mut self.program.mods[self.current_idx];
+                module.table.symbols.insert(sym_id, Symbol::Func(func));
 
                 Ok(Cond::Func(sym_id, func_kind))
             }
@@ -367,6 +398,7 @@ impl ConstraintResolver<'_> {
                     &err_msg,
                     Some(err_name),
                     &[spanned_expr.span.clone()],
+                    &self.program.mods[self.current_idx].metadata,
                 );
 
                 Err(())
@@ -374,8 +406,12 @@ impl ConstraintResolver<'_> {
             Expr::Integer(_) | Expr::Float(_) => {
                 let err_msg = format!("Numerics cannot be used as conditions alone");
 
-                self.reporter
-                    .report_spanned(&err_msg, None, &[spanned_expr.span.clone()]);
+                self.reporter.report_spanned(
+                    &err_msg,
+                    None,
+                    &[spanned_expr.span.clone()],
+                    &self.program.mods[self.current_idx].metadata,
+                );
 
                 Err(())
             }
@@ -385,8 +421,12 @@ impl ConstraintResolver<'_> {
 
                 let err_msg = format!("Conditions cannot be accessed as fields");
 
-                self.reporter
-                    .report_spanned(&err_msg, None, &[spanned_expr.span.clone()]);
+                self.reporter.report_spanned(
+                    &err_msg,
+                    None,
+                    &[spanned_expr.span.clone()],
+                    &self.program.mods[self.current_idx].metadata,
+                );
 
                 Err(())
             }
@@ -400,12 +440,13 @@ impl ConstraintResolver<'_> {
     fn resolve_arg(
         &self,
         type_id: TypeId,
+        module: &Module,
         spanned_arg: &SpannedInnerArgs,
         visited: &mut Vec<TypeId>,
     ) -> Result<(), SemanticError> {
-        match &self.table.types[type_id.id as usize] {
+        match &module.table.types[type_id.id as usize] {
             Type::Struct(sym_id) => {
-                let structure = self.table.get_struct(*sym_id);
+                let structure = module.table.get_struct(*sym_id);
                 visited.push(structure.type_id);
 
                 for field in &structure.fields {
@@ -440,7 +481,7 @@ impl ConstraintResolver<'_> {
                     visited.push(field.type_id);
                     //FIXME:
 
-                    let arg_res = self.resolve_arg(field.type_id, spanned_arg, visited);
+                    let arg_res = self.resolve_arg(field.type_id, module, spanned_arg, visited);
 
                     // Need to get circular span in a more composed way that's not WEIRD
                     if let Err(SemanticError::UnsupportedArg(arg, kind, _)) = arg_res {
@@ -468,7 +509,7 @@ impl ConstraintResolver<'_> {
                 Ok(())
             }
             Type::Enum(sym_id) => {
-                let enumeration = self.table.get_enum(*sym_id);
+                let enumeration = module.table.get_enum(*sym_id);
                 visited.push(enumeration.type_id);
 
                 for variant in &enumeration.variants {
@@ -509,7 +550,7 @@ impl ConstraintResolver<'_> {
                             continue;
                         }
 
-                        let arg_res = self.resolve_arg(ty, spanned_arg, visited);
+                        let arg_res = self.resolve_arg(ty, module, spanned_arg, visited);
 
                         if let Err(SemanticError::UnsupportedArg(arg, fmted, _)) = arg_res {
                             let abs_enum = &self.ast_info.get_enum(enumeration.ast_id);
@@ -542,12 +583,12 @@ impl ConstraintResolver<'_> {
             Type::BuiltinType(builtin_type) => {
                 match builtin_type {
                     BuiltinType::Set(type_id) | BuiltinType::List(type_id) => {
-                        self.resolve_arg(*type_id, spanned_arg, visited)
+                        self.resolve_arg(*type_id, module, spanned_arg, visited)
                     }
                     BuiltinType::Map(key_id, val_id) => {
                         // This looks weird...
-                        self.resolve_arg(*key_id, spanned_arg, visited)?;
-                        self.resolve_arg(*val_id, spanned_arg, visited)
+                        self.resolve_arg(*key_id, module, spanned_arg, visited)?;
+                        self.resolve_arg(*val_id, module, spanned_arg, visited)
                     }
                     BuiltinType::Any(_) => Ok(()),
                     builtin_type => {
@@ -581,7 +622,7 @@ impl ConstraintResolver<'_> {
 
                     visited.push(*element);
 
-                    self.resolve_arg(*element, spanned_arg, visited)?;
+                    self.resolve_arg(*element, module, spanned_arg, visited)?;
                 }
 
                 Ok(())
@@ -616,11 +657,12 @@ impl ConstraintResolver<'_> {
     fn check_cond_constraints(
         &self,
         type_id: TypeId,
+        module: &Module,
         cond_span: &Span,
         cond: &Cond,
         visited: &mut Vec<TypeId>,
     ) -> Result<(), SemanticError> {
-        match &self.table.types[type_id.id as usize] {
+        match &module.table.types[type_id.id as usize] {
             Type::BuiltinType(builtin_type) => match cond {
                 Cond::IsEmpty | Cond::IsWhitespace => {
                     let kind = builtin_type.kind();
@@ -635,13 +677,15 @@ impl ConstraintResolver<'_> {
 
                     Ok(())
                 }
-                Cond::Not(inner) => self.check_cond_constraints(type_id, cond_span, inner, visited),
+                Cond::Not(inner) => {
+                    self.check_cond_constraints(type_id, module, cond_span, inner, visited)
+                }
                 // Need to check const, alias, and condition namespaces, and let modules stay
                 // lazily resolved. Exclamation point!
                 Cond::Func(sym_id, func_kind) => Ok(()),
             },
             Type::Struct(sym_id) => {
-                let structure = self.table.get_struct(*sym_id);
+                let structure = module.table.get_struct(*sym_id);
 
                 for (i, field) in structure.fields.iter().enumerate() {
                     //BUG: The structure.type_id == type_id does check if the last type it saw is
@@ -660,8 +704,13 @@ impl ConstraintResolver<'_> {
                         ));
                     }
 
-                    let cond_res =
-                        self.check_cond_constraints(field.type_id, cond_span, cond, visited);
+                    let cond_res = self.check_cond_constraints(
+                        field.type_id,
+                        module,
+                        cond_span,
+                        cond,
+                        visited,
+                    );
 
                     if let Err(SemanticError::UnsupportedCond(cond, fmted_ty, mut spans)) = cond_res
                     {
@@ -680,7 +729,7 @@ impl ConstraintResolver<'_> {
                 Ok(())
             }
             Type::Enum(sym_id) => {
-                let enumeration = self.table.get_enum(*sym_id);
+                let enumeration = module.table.get_enum(*sym_id);
                 visited.push(enumeration.type_id);
 
                 for (i, variant) in enumeration.variants.iter().enumerate() {
@@ -702,7 +751,8 @@ impl ConstraintResolver<'_> {
 
                         visited.push(ty);
 
-                        let cond_res = self.check_cond_constraints(ty, cond_span, cond, visited);
+                        let cond_res =
+                            self.check_cond_constraints(ty, module, cond_span, cond, visited);
 
                         if let Err(SemanticError::UnsupportedCond(cond, fmted_ty, mut spans)) =
                             cond_res
@@ -739,7 +789,7 @@ impl ConstraintResolver<'_> {
                         ));
                     }
 
-                    self.check_cond_constraints(*element, cond_span, cond, visited)?;
+                    self.check_cond_constraints(*element, module, cond_span, cond, visited)?;
                 }
 
                 Ok(())
