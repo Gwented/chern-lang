@@ -32,7 +32,7 @@ fn main() {
 
     let mut table = Table::new();
 
-    let ast_info = parser::parse(&metadata, &toks, &mut interner).unwrap();
+    // let ast_info = parser::parse(&metadata, &toks, &mut interner).unwrap();
 
     // linter::print_all(&ast_info, &interner);
 

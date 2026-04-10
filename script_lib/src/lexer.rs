@@ -37,7 +37,7 @@ impl Lexer<'_> {
         let mut illegal_toks: u8 = 0;
 
         // Could be removed
-        let mut in_def = false;
+        // let mut in_def = false;
 
         loop {
             self.skip_whitespace();
@@ -183,11 +183,11 @@ impl Lexer<'_> {
                     // NOTE: Could be removed if the initial loader starts the offset, AFTER the
                     // definition, but can stay like this for now.
                     if self.is_def_start() {
-                        in_def = true;
+                        // in_def = true;
                         self.skip(keywords::DEFINITION_SIZE);
                         // Should probably just have a read limit
                     } else if self.is_def_end() {
-                        in_def = false;
+                        // in_def = false;
 
                         toks.push(SpannedToken {
                             tok: Token::EOF,
@@ -386,7 +386,7 @@ impl Lexer<'_> {
                     if illegal_toks > MAX_ILLEGAL_TOKS {
                         // TODO: Maybe this should be at the end because technically @ is illegal too
                         eprintln!("Maximum illegal tokens found.\nReporting then aborting...");
-                        in_def = false;
+                        // in_def = false;
 
                         toks.push(SpannedToken {
                             tok: Token::EOF,
@@ -397,15 +397,6 @@ impl Lexer<'_> {
                     }
                 }
             }
-        }
-
-        //TODO: This also isn't possible after the loader so may remove
-        //Also odd handling
-        //WARN: Do not forget to remove this
-        if in_def && illegal_toks == MAX_ILLEGAL_TOKS {
-            // Should abort
-            eprintln!("Missing `@end`");
-            panic!();
         }
 
         toks
@@ -438,6 +429,7 @@ impl Lexer<'_> {
 
     //TODO: This defaults to i64 as of right now, but should stay interned in the future.
     // This could also be more readable by building up the string, but it's fine as is.
+    // Unicode
     fn read_num(&mut self, interner: &mut Intern) -> SpannedToken {
         let start = self.pos;
 

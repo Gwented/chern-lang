@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     core_error::ConfigLoadError, help_model::quote_model, keywords::DEFINITION_SIZE,
-    metadata::ChernMetadata, reporter, symbols::Span,
+    metadata::ModuleMetadata, reporter, symbols::Span,
 };
 
 const READ_LIMIT_OFFSET: usize = 500;
@@ -37,7 +37,7 @@ impl<R: Read> ChernConfigLoader<'_, R> {
     /// `@def` is present, and the offset of where to start reading the serialized data if an
     /// `@def` and `@end` is present. Returns a `ConfigLoadError` upon failure that has internal
     /// error details.
-    pub fn load_config(&mut self) -> Result<ChernMetadata, ConfigLoadError> {
+    pub fn load_config(&mut self) -> Result<ModuleMetadata, ConfigLoadError> {
         // Doesn't NEED definition but will error if declared and not closed
         let mut requires_end = false;
 
@@ -194,7 +194,7 @@ impl<R: Read> ChernConfigLoader<'_, R> {
                     {
                         let serial_start = self.pos + DEFINITION_SIZE;
 
-                        return Ok(ChernMetadata::new(
+                        return Ok(ModuleMetadata::new(
                             PathBuf::from(self.path),
                             self.handle.buffer()[..self.pos + DEFINITION_SIZE].to_vec(),
                             lex_start,
@@ -224,7 +224,7 @@ impl<R: Read> ChernConfigLoader<'_, R> {
         // Case of no @def and no @end which requires a '0' return since the entire file should be
         // read. This does not mean it is correct, it only means the read limit wasn't reached.
         if !requires_end {
-            Ok(ChernMetadata::new(
+            Ok(ModuleMetadata::new(
                 PathBuf::from(self.path),
                 self.handle.buffer()[..self.pos].to_vec(),
                 lex_start,

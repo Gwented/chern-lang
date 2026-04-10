@@ -1,11 +1,25 @@
 use std::{io::IsTerminal, path::PathBuf};
+// Will rellocate both eventually
+
+//TEST:
+#[derive(Debug)]
+pub struct ChernSettings {
+    pub can_color: bool,
+}
+
+impl ChernSettings {
+    pub fn new(can_color: bool) -> ChernSettings {
+        ChernSettings { can_color }
+    }
+}
 
 // Should not have can color
 #[derive(Debug)]
-pub struct ChernMetadata {
-    /// Path to chrn config file
+pub struct ModuleMetadata {
+    // Should maybe be path id
+    /// Path to chern config file
     pub path: PathBuf,
-    /// Bytes from chrn config file
+    /// Bytes from chern config file
     pub src_bytes: Vec<u8>,
     // / Amount of \n within config file so binary search can be done by error reporter
     // pub new_lines: Vec<usize>,
@@ -13,33 +27,22 @@ pub struct ChernMetadata {
     pub script_start: usize,
     /// The serial start which can be None if there is no serialized file within the config file
     pub serial_start: Option<usize>,
-    /// For preventing ANSI in places where it would be destructive
-    // May remove
-    pub can_color: bool,
 }
 
-impl ChernMetadata {
+impl ModuleMetadata {
     pub fn new(
         path: PathBuf,
         src_bytes: Vec<u8>,
-        lex_start: usize,
+        script_start: usize,
         serial_start: Option<usize>,
-    ) -> ChernMetadata {
-        // Does this actually make a difference?
-        let can_color = if std::io::stdout().is_terminal() && std::io::stderr().is_terminal() {
-            true
-        } else {
-            false
-        };
-
-        ChernMetadata {
+    ) -> ModuleMetadata {
+        ModuleMetadata {
             path,
             // new_lines: Vec::new(),
             src_bytes,
-            script_start: lex_start,
+            script_start,
             serial_start,
             //TODO: Could be env var
-            can_color,
         }
     }
 }

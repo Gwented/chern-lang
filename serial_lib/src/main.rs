@@ -1,6 +1,6 @@
 use std::{fs, io::Read, path::PathBuf};
 
-use common::{config_loader::ChernConfigLoader, metadata::ChernMetadata};
+use common::{config_loader::ChernConfigLoader, metadata::ModuleMetadata};
 use serial_lib::lexer::Lexer;
 
 // This would be in succession to script

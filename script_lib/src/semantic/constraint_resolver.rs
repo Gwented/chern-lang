@@ -4,7 +4,7 @@ use common::{
     fmter::{Formattable, Formatted},
     intern::Intern,
     keywords::{self, Keyword},
-    metadata::ChernMetadata,
+    metadata::{ChernSettings, ModuleMetadata},
     reporter::diagnostic::Diagnostic,
     symbols::{AstId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs, SymbolId, TypeId},
 };
@@ -31,11 +31,12 @@ pub struct ConstraintResolver<'a> {
     interner: &'a Intern,
     program: &'a mut Program,
     current_idx: usize,
-    reporter: SemanticReporter,
+    reporter: SemanticReporter<'a>,
 }
 
 impl ConstraintResolver<'_> {
     pub fn new<'a>(
+        settings: &'a ChernSettings,
         ast_info: &'a AstInfo,
         interner: &'a Intern,
         current_idx: usize,
@@ -46,7 +47,7 @@ impl ConstraintResolver<'_> {
             interner,
             current_idx,
             program,
-            reporter: SemanticReporter::new(),
+            reporter: SemanticReporter::new(settings),
         }
     }
 

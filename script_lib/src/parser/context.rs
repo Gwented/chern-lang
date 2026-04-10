@@ -2,7 +2,7 @@ use common::{
     color,
     intern::Intern,
     keywords,
-    metadata::ChernMetadata,
+    metadata::{ChernSettings, ModuleMetadata},
     reporter::{
         self,
         diagnostic::{Area, Diagnostic},
@@ -51,16 +51,22 @@ const A_BRANCH_FUNC_SET: u64 = A_BASE_EXIT_SET | token::C_BRACKET;
 
 #[derive(Debug)]
 pub(super) struct Context<'a> {
-    metadata: &'a ChernMetadata,
+    settings: &'a ChernSettings,
+    mod_metadata: &'a ModuleMetadata,
     toks: &'a [SpannedToken],
     pos: usize,
     pub(super) err_vec: Vec<Diagnostic>,
 }
 
 impl<'a> Context<'a> {
-    pub(super) fn new(metadata: &'a ChernMetadata, tokens: &'a [SpannedToken]) -> Context<'a> {
+    pub(super) fn new(
+        settings: &'a ChernSettings,
+        mod_metadata: &'a ModuleMetadata,
+        tokens: &'a [SpannedToken],
+    ) -> Context<'a> {
         Context {
-            metadata,
+            settings,
+            mod_metadata,
             toks: tokens,
             pos: 0,
             err_vec: Vec::new(),
@@ -104,7 +110,7 @@ impl<'a> Context<'a> {
         let span = self.safely_handle_span(&found);
 
         let ln_data =
-            reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
+            reporter::form_err_diag(&self.mod_metadata.src_bytes, &span, self.settings.can_color);
 
         let msg = if let Some(name) = id_opt {
             let msg = format!("(in {branch})\n{bmsg}\"{name}\"{amsg}");
@@ -113,8 +119,8 @@ impl<'a> Context<'a> {
                 &msg,
                 &ln_data,
                 &help,
-                &self.metadata.path,
-                self.metadata.can_color,
+                &self.mod_metadata.path,
+                self.settings.can_color,
             )
         } else {
             let msg = format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind());
@@ -123,8 +129,8 @@ impl<'a> Context<'a> {
                 &msg,
                 &ln_data,
                 &help,
-                &self.metadata.path,
-                self.metadata.can_color,
+                &self.mod_metadata.path,
+                self.settings.can_color,
             )
         };
 
@@ -150,7 +156,7 @@ impl<'a> Context<'a> {
         let span = self.safely_handle_span(found);
 
         let ln_data =
-            reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
+            reporter::form_err_diag(&self.mod_metadata.src_bytes, &span, self.settings.can_color);
 
         let base_msg = format!("(in {branch})\n{msg}");
 
@@ -158,8 +164,8 @@ impl<'a> Context<'a> {
             &base_msg,
             &ln_data,
             &help,
-            &self.metadata.path,
-            self.metadata.can_color,
+            &self.mod_metadata.path,
+            self.settings.can_color,
         );
 
         self.recover(branch);
@@ -201,8 +207,11 @@ impl<'a> Context<'a> {
 
             let span = self.safely_handle_span(found);
 
-            let ln_data =
-                reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
+            let ln_data = reporter::form_err_diag(
+                &self.mod_metadata.src_bytes,
+                &span,
+                self.settings.can_color,
+            );
 
             let help = self
                 .try_help(expected, &found, branch, interner)
@@ -218,8 +227,8 @@ impl<'a> Context<'a> {
                     &base_msg,
                     &ln_data,
                     &help,
-                    &self.metadata.path,
-                    self.metadata.can_color,
+                    &self.mod_metadata.path,
+                    self.settings.can_color,
                 )
             } else {
                 let base_msg = format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind());
@@ -228,8 +237,8 @@ impl<'a> Context<'a> {
                     &base_msg,
                     &ln_data,
                     &help,
-                    &self.metadata.path,
-                    self.metadata.can_color,
+                    &self.mod_metadata.path,
+                    self.settings.can_color,
                 )
             };
 
@@ -262,7 +271,7 @@ impl<'a> Context<'a> {
         let span = self.safely_handle_span(found);
 
         let ln_data =
-            reporter::form_err_diag(&self.metadata.src_bytes, &span, self.metadata.can_color);
+            reporter::form_err_diag(&self.mod_metadata.src_bytes, &span, self.settings.can_color);
 
         let base_msg = format!("(in {branch})\nExpected {emsg}, found {fmsg}");
 
@@ -270,8 +279,8 @@ impl<'a> Context<'a> {
             &base_msg,
             &ln_data,
             &help,
-            &self.metadata.path,
-            self.metadata.can_color,
+            &self.mod_metadata.path,
+            self.settings.can_color,
         );
 
         self.recover(branch);
@@ -318,6 +327,8 @@ impl<'a> Context<'a> {
     }
 
     //TODO: Give help_model the ability to send help
+    // TODO: Make a helper reporter so something like can_color doesn't need to be re-entered
+    // everytime
     fn try_help(
         &self,
         expected: TokenKind,
@@ -347,11 +358,11 @@ impl<'a> Context<'a> {
                     let help_diag = reporter::help_transform(
                         name,
                         &format!("{name}()"),
-                        self.metadata.can_color,
+                        self.settings.can_color,
                     );
 
                     // It looks weird now
-                    let help = reporter::standardize_help(&help_diag, self.metadata.can_color);
+                    let help = reporter::standardize_help(&help_diag, self.settings.can_color);
 
                     Some(help)
                 }
@@ -368,7 +379,7 @@ impl<'a> Context<'a> {
                         .then_some(algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect))??;
 
                     let msg = format!("Found similar \"{similar}\"");
-                    let help = reporter::standardize_help(&msg, self.metadata.can_color);
+                    let help = reporter::standardize_help(&msg, self.settings.can_color);
 
                     Some(help)
                 }
@@ -388,7 +399,7 @@ impl<'a> Context<'a> {
                     let similar_sect = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect)?;
 
                     let msg = format!("Found similar section \"{similar_sect}\"");
-                    let help = reporter::standardize_help(&msg, self.metadata.can_color);
+                    let help = reporter::standardize_help(&msg, self.settings.can_color);
 
                     Some(help)
                 }
@@ -425,7 +436,7 @@ impl<'a> Context<'a> {
             Branch::VarType => match found.tok {
                 Token::CAngleBracket if prev_kind == TokenKind::Comma => {
                     let msg = "Was there a trailing ',' or an intended second type?";
-                    let help = reporter::standardize_help(msg, self.metadata.can_color);
+                    let help = reporter::standardize_help(msg, self.settings.can_color);
 
                     Some(help)
                 }
@@ -434,13 +445,13 @@ impl<'a> Context<'a> {
             Branch::Cond => match found.tok {
                 Token::Id(id) if expected == TokenKind::CBracket => {
                     let msg = "Is there a missing comma to separate conditions?";
-                    let help = reporter::standardize_help(msg, self.metadata.can_color);
+                    let help = reporter::standardize_help(msg, self.settings.can_color);
 
                     Some(help)
                 }
                 Token::CBracket if prev_kind == TokenKind::Comma => {
                     let msg = "Remove trailing ',' or add a condition";
-                    let help = reporter::standardize_help(msg, self.metadata.can_color);
+                    let help = reporter::standardize_help(msg, self.settings.can_color);
 
                     Some(help)
                 }
@@ -449,7 +460,7 @@ impl<'a> Context<'a> {
             Branch::NestEnum => match found.tok.kind() {
                 TokenKind::Colon => {
                     let msg = "Enums use tuples to hold types";
-                    let help = reporter::standardize_help(msg, self.metadata.can_color);
+                    let help = reporter::standardize_help(msg, self.settings.can_color);
 
                     Some(help)
                 }
@@ -463,7 +474,7 @@ impl<'a> Context<'a> {
 
                     let help = reporter::standardize_help(
                         &format!("Found similar argument \"{similar_arg}\"",),
-                        self.metadata.can_color,
+                        self.settings.can_color,
                     );
 
                     Some(help)

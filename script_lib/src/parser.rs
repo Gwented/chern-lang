@@ -18,15 +18,15 @@ use common::core_error::ScriptError;
 use common::fmter::Formatted;
 use common::intern::Intern;
 use common::keywords::{self, Keyword};
-use common::metadata::ChernMetadata;
-use common::reporter::diagnostic::Diagnostic;
+use common::metadata::{ChernSettings, ModuleMetadata};
 use common::symbols::{InnerArgs, NameId, PathId, Span, SpannedInnerArgs};
 
 // May be lower
 const MAX_ERRORS: u8 = 3;
 
 pub fn parse(
-    metadata: &ChernMetadata,
+    settings: &ChernSettings,
+    mod_metadata: &ModuleMetadata,
     tokens: &Vec<SpannedToken>,
     interner: &Intern,
 ) -> Result<AstInfo, ScriptError> {
@@ -34,7 +34,7 @@ pub fn parse(
 
     let mut state = ParserState::new();
 
-    let mut ctx = Context::new(&metadata, tokens);
+    let mut ctx = Context::new(settings, mod_metadata, tokens);
 
     // WARN: THIS WAS CHANGED
     while ctx.peek_tok() != Token::EOF {

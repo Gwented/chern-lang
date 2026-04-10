@@ -1,15 +1,14 @@
 use std::{
     collections::{HashMap, HashSet},
-    ffi::OsString,
     fs,
     path::{Path, PathBuf},
 };
 
 use common::{
     config_loader::ChernConfigLoader,
-    core_error::{ConfigLoadError, ScriptError},
+    core_error::ConfigLoadError,
     intern::Intern,
-    metadata::ChernMetadata,
+    metadata::ModuleMetadata,
     symbols::{ModuleId, NameId, PathId},
 };
 pub mod mod_finder;
@@ -48,7 +47,7 @@ pub struct Module {
     /// Actual path used to find the file itself
     pub path_id: PathId,
     pub imports: Vec<PathId>,
-    pub metadata: ChernMetadata,
+    pub metadata: ModuleMetadata,
     pub table: Table,
 }
 
@@ -57,7 +56,7 @@ impl Module {
         file_id: NameId,
         path_id: PathId,
         imports: Vec<PathId>,
-        metadata: ChernMetadata,
+        metadata: ModuleMetadata,
     ) -> Module {
         Module {
             name_id: file_id,

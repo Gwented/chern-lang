@@ -4,7 +4,7 @@ use common::{
     builtins::BuiltinType,
     intern::Intern,
     keywords::{self, Keyword},
-    metadata::ChernMetadata,
+    metadata::{ChernSettings, ModuleMetadata},
     reporter::diagnostic::Diagnostic,
     symbols::{
         AstId, BuiltinTypeId, EnumId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs, StructId,
@@ -35,13 +35,14 @@ pub struct TypeResolver<'a> {
     //WARN: Horrors
     module: &'a mut Module,
     // Startup idea:
-    reporter: SemanticReporter,
+    reporter: SemanticReporter<'a>,
     //NOTE: May handle this differently but ok for now
     unknown_id: Option<TypeId>,
 }
 
 impl TypeResolver<'_> {
     pub fn new<'a>(
+        settings: &'a ChernSettings,
         ast_info: &'a AstInfo,
         interner: &'a Intern,
         module: &'a mut Module,
@@ -51,7 +52,7 @@ impl TypeResolver<'_> {
             interner,
             module,
             //TODO: Separate this
-            reporter: SemanticReporter::new(),
+            reporter: SemanticReporter::new(settings),
             //TODO: This could be different
             unknown_id: None,
         }

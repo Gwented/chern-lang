@@ -3,6 +3,7 @@ use std::{fs, io};
 use common::{
     config_loader::ChernConfigLoader,
     core_error::{ConfigLoadError, CoreError, ScriptError},
+    metadata::ChernSettings,
     reporter,
 };
 use interpreter_lib::interpreter;
@@ -55,7 +56,10 @@ fn process_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, St
         },
     };
 
-    match interpreter::interpret_chern_cfg(&check_cmd.path) {
+    // More like settings
+    let settings = ChernSettings::new(cli_cfg.can_color);
+
+    match interpreter::interpret_chern_cfg(&check_cmd.path, &settings) {
         Ok(_) => {
             let msg = format!("No errors found within file");
             Ok(msg)
@@ -77,12 +81,12 @@ fn process_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, St
                         eprintln!("{}", diag.msg);
                     }
 
-                    eprintln!("Reported {} error(s)\n", diags.len());
+                    eprintln!("Reported {} error(s)", diags.len());
 
                     return Err("Failed to parse configuration file".to_string());
                 }
                 ScriptError::IO(e) => {
-                    let msg = format!("Process exited unsuccessfully.\n{e}");
+                    let msg = format!("Process exited unsuccessfully. Reason: \n{e}");
                     return Err(msg);
                 }
             },
