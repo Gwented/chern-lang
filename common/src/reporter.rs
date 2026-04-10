@@ -1,11 +1,13 @@
 //TODO: ORGANIZE NEW ARCHITECTURE
 // MAKE PARAMS ONLY TAKE SPAN SINCE LINES ARE BUILT ANYWAYS
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+pub mod diagnostic;
 
 use crate::{color, symbols::Span};
 
 const TOTAL_SEPARATORS: usize = 60;
 
+//TEST:
 pub struct LineData {
     diag: String,
     ln: usize,
@@ -17,6 +19,7 @@ pub struct LineData {
 struct LineView {
     /// Span of the start and end line within `lines`
     ln_num_span: Span,
+    /// Detailed lines
     lines: Vec<Line>,
 }
 

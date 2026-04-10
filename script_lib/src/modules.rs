@@ -36,9 +36,8 @@ impl Program {
 pub struct Module {
     /// File name that will be used internally
     pub file_id: NameId,
-    /// Actual path id used to find the file itself
+    /// Actual path used to find the file itself
     pub path_id: PathId,
-    // May need FileId, PathId
     pub imports: Vec<PathId>,
     pub metadata: ChernMetadata,
     pub table: Table,
@@ -97,28 +96,30 @@ pub fn extract_modules(path: &Path, interner: &mut Intern) -> Result<Vec<Module>
 
     // Will incur borrowing issues unless the main_mod is put in last since the list of it's
     // imports is needed to start recursive process
-    let mut other_mods: Vec<Module> = Vec::new();
+    let mut other_mods: Vec<Module> = Vec::with_capacity(main_mod.imports.len());
     resolve_modules(&mut seen, &mut other_mods, &main_mod.imports, interner)?;
 
     // May change
+    // Please change
     let mut all_mods: Vec<Module> = Vec::new();
     all_mods.push(main_mod);
     all_mods.append(&mut other_mods);
 
     // Module viewing command
-    for module in &all_mods {
-        println!(
-            "Module -> {}",
-            interner.search_path(module.path_id.id as usize).display()
-        );
-        for path_id in &module.imports {
-            println!(
-                "\tImport -> {}",
-                interner.search_path(path_id.id as usize).display()
-            );
-        }
-        println!("_______\n")
-    }
+    // Module hierarchy command, dependencies, extended classes, Springboot support
+    // for module in &all_mods {
+    //     println!(
+    //         "Module -> {}",
+    //         interner.search_path(module.path_id.id as usize).display()
+    //     );
+    //     for path_id in &module.imports {
+    //         println!(
+    //             "\tImport -> {}",
+    //             interner.search_path(path_id.id as usize).display()
+    //         );
+    //     }
+    //     println!("_______\n")
+    // }
 
     Ok(all_mods)
 }

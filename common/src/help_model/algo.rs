@@ -46,6 +46,10 @@ pub fn cross_entropy(predictions: &[f32], targets: &[f32]) -> f32 {
     loss
 }
 
+pub fn mean_squared_error(predictions: &[f32], targets: &[f32]) -> f32 {
+    todo!();
+}
+
 pub fn dot_tensor1_f32(a: &Vec<f32>, b: &Vec<f32>) -> f32 {
     if a.len() != b.len() {
         panic!("Not same len in dot (Temp)");

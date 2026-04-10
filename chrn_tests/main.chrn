@@ -1,7 +1,29 @@
-I am messed up"
+// Need to re-route errors so they don't immediately form basic arrows to one so help messages
+// aren't just requirements because the err msgs themselves are misleading or bad
+
+// I am messed up"
 // "I am not even supposed to be included"
+
+// Require forward slashes
+// import "../chrn_tests/defs.chrn"
 
 @def
 var->
+    var: i32 [StartsW("Hello")]
 
+// alias x() = [IsEmpty, defs.DEFAULT(x = "4", y)]
+
+// const X = 4
 @end
+
+"Really
+
+
+
+
+Long
+
+Convincing
+
+
+Quotes"

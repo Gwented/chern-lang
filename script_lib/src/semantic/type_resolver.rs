@@ -12,9 +12,10 @@ use common::{
 };
 
 use crate::{
+    modules::Module,
     parser::ast::{
-        AbstractAlias, AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Expr,
-        Item, TypeExpr, UnaryOp,
+        AbstractAlias, AbstractConst, AbstractEnum, AbstractImport, AbstractStruct,
+        AbstractTypeDef, AstInfo, Expr, Item, TypeExpr, UnaryOp,
     },
     semantic::{
         error::SemanticError,
@@ -30,7 +31,7 @@ pub struct TypeResolver<'a> {
     ast_info: &'a AstInfo,
     interner: &'a Intern,
     //WARN: Horrors
-    table: &'a mut Table,
+    module: &'a mut Module,
     // Startup idea:
     reporter: SemanticReporter<'a>,
     //NOTE: May handle this differently but ok for now
@@ -40,15 +41,15 @@ pub struct TypeResolver<'a> {
 impl TypeResolver<'_> {
     pub fn new<'a>(
         ast_info: &'a AstInfo,
-        metadata: &'a ChernMetadata,
         interner: &'a Intern,
-        table: &'a mut Table,
+        module: &'a mut Module,
     ) -> TypeResolver<'a> {
         TypeResolver {
             ast_info,
             interner,
-            table,
-            reporter: SemanticReporter::new(metadata),
+            module,
+            //TODO: Separate this
+            reporter: SemanticReporter::new(&module.metadata),
             //TODO: This could be different
             unknown_id: None,
         }
@@ -69,11 +70,9 @@ impl TypeResolver<'_> {
                 Item::Alias(abs_alias) => self.register_alias(abs_alias, ast_id),
                 Item::Const(abs_const) => self.register_const(abs_const, ast_id),
                 // Maybe imports outside of this should be stored separately
-                Item::Import(abs_import) => todo!(),
+                Item::Import(abs_import) => self.register_import(abs_import, ast_id),
             }
         }
-
-        dbg!(&self.table.symbols);
 
         self.check_duplicates();
 
@@ -110,10 +109,10 @@ impl TypeResolver<'_> {
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
         let type_id = self.resolve_type_expr(&abs_typedef.type_expr, ast_id)?;
 
-        let sym_id = self.table.sym_ids[&ast_id];
+        let sym_id = self.module.table.sym_ids[&ast_id];
 
         // Assinging from `Unknown` to it's actual associated type
-        let type_def = self.table.get_typedef_mut(sym_id);
+        let type_def = self.module.table.get_typedef_mut(sym_id);
         type_def.type_id = type_id;
 
         Ok(())
@@ -150,9 +149,9 @@ impl TypeResolver<'_> {
             fields.push(field_repre);
         }
 
-        let sym_id = self.table.sym_ids[&ast_id];
+        let sym_id = self.module.table.sym_ids[&ast_id];
 
-        let struct_repre = self.table.get_struct_mut(sym_id);
+        let struct_repre = self.module.table.get_struct_mut(sym_id);
 
         struct_repre.fields.append(&mut fields);
 
@@ -194,9 +193,9 @@ impl TypeResolver<'_> {
             }
         }
 
-        let sym_id = self.table.sym_ids[&ast_id];
+        let sym_id = self.module.table.sym_ids[&ast_id];
 
-        let enum_repre = self.table.get_enum_mut(sym_id);
+        let enum_repre = self.module.table.get_enum_mut(sym_id);
 
         enum_repre.variants.append(&mut variants);
 
@@ -227,10 +226,10 @@ impl TypeResolver<'_> {
 
                 // Loop that checks if the name id was registered, then uses its corresponding ast_id to
                 // extract the name id's type and returns that as the type to be referenced
-                for (current_ast_id, current_name_id) in &self.table.name_ids {
+                for (current_ast_id, current_name_id) in &self.module.table.name_ids {
                     if current_name_id == name_id {
-                        let sym_id = self.table.sym_ids[&current_ast_id];
-                        let type_id = match &self.table.symbols[&sym_id] {
+                        let sym_id = self.module.table.sym_ids[&current_ast_id];
+                        let type_id = match &self.module.table.symbols[&sym_id] {
                             Symbol::Struct(struct_repre) => struct_repre.type_id,
                             Symbol::Func(func_repre) => func_repre.type_id,
                             Symbol::Enum(enum_repre) => enum_repre.type_id,
@@ -254,10 +253,10 @@ impl TypeResolver<'_> {
             }
             // Needs to be merged in a sensible way
             TypeExpr::Escaped(name_id, span) => {
-                for (current_ast_id, current_name_id) in &self.table.name_ids {
+                for (current_ast_id, current_name_id) in &self.module.table.name_ids {
                     if current_name_id == name_id {
-                        let sym_id = self.table.sym_ids[&current_ast_id];
-                        let type_id = match &self.table.symbols[&sym_id] {
+                        let sym_id = self.module.table.sym_ids[&current_ast_id];
+                        let type_id = match &self.module.table.symbols[&sym_id] {
                             Symbol::Struct(struct_repre) => struct_repre.type_id,
                             Symbol::Func(func_repre) => func_repre.type_id,
                             Symbol::Enum(enum_repre) => enum_repre.type_id,
@@ -295,9 +294,9 @@ impl TypeResolver<'_> {
                             let inner = self.resolve_type_expr(&generic.args[0], ast_id)?;
 
                             let list = BuiltinType::List(inner);
-                            let list_id = TypeId::new(self.table.types.len() as u32);
+                            let list_id = TypeId::new(self.module.table.types.len() as u32);
 
-                            self.table.types.push(Type::BuiltinType(list));
+                            self.module.table.types.push(Type::BuiltinType(list));
 
                             return Ok(list_id);
                         }
@@ -318,9 +317,9 @@ impl TypeResolver<'_> {
 
                             let map = BuiltinType::Map(key, val);
 
-                            let map_id = self.table.types.len() as u32;
+                            let map_id = self.module.table.types.len() as u32;
 
-                            self.table.types.push(Type::BuiltinType(map));
+                            self.module.table.types.push(Type::BuiltinType(map));
 
                             Ok(TypeId::new(map_id))
                         }
@@ -340,9 +339,9 @@ impl TypeResolver<'_> {
                             let inner = self.resolve_type_expr(&generic.args[0], ast_id)?;
 
                             let set = BuiltinType::Set(inner);
-                            let set_id = TypeId::new(self.table.types.len() as u32);
+                            let set_id = TypeId::new(self.module.table.types.len() as u32);
 
-                            self.table.types.push(Type::BuiltinType(set));
+                            self.module.table.types.push(Type::BuiltinType(set));
 
                             return Ok(set_id);
                         }
@@ -377,9 +376,10 @@ impl TypeResolver<'_> {
                 }
             }
             TypeExpr::Any(_) => {
-                let id = self.table.types.len() as u32;
+                let id = self.module.table.types.len() as u32;
 
-                self.table
+                self.module
+                    .table
                     .types
                     .push(Type::BuiltinType(BuiltinType::Any(None)));
 
@@ -395,10 +395,10 @@ impl TypeResolver<'_> {
                     elements.push(type_id);
                 }
 
-                let tuple_id = TypeId::new(self.table.types.len() as u32);
+                let tuple_id = TypeId::new(self.module.table.types.len() as u32);
                 let tuple = Tuple::new(elements, tuple_id);
 
-                self.table.types.push(Type::Tuple(tuple));
+                self.module.table.types.push(Type::Tuple(tuple));
 
                 Ok(tuple_id)
             }
@@ -410,7 +410,7 @@ impl TypeResolver<'_> {
         // Solely a HashMap for spanning
         let mut seen: HashMap<NameId, AstId> = HashMap::new();
 
-        for (ast_id, name_id) in &self.table.name_ids {
+        for (ast_id, name_id) in &self.module.table.name_ids {
             // Why is it not true if it exists false otherwise...seems backwards
             let ast_opt = seen.insert(*name_id, *ast_id);
 
@@ -471,75 +471,83 @@ impl TypeResolver<'_> {
     /// referenced
 
     fn register_typedef(&mut self, type_def: &AbstractTypeDef, ast_id: AstId) {
-        self.table.name_ids.insert(ast_id, type_def.name_id);
+        self.module.table.name_ids.insert(ast_id, type_def.name_id);
 
-        let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
-        self.table.sym_ids.insert(ast_id, sym_id);
+        let sym_id = SymbolId::new(self.module.table.sym_ids.len() as u32);
+        self.module.table.sym_ids.insert(ast_id, sym_id);
 
         //WARN: This type id is fake...
         let type_id = if let Some(id) = self.unknown_id {
             id
         } else {
-            let id = TypeId::new(self.table.types.len() as u32);
+            let id = TypeId::new(self.module.table.types.len() as u32);
             self.unknown_id = Some(id);
-            self.table.types.push(Type::Unknown);
+            self.module.table.types.push(Type::Unknown);
 
             id
         };
 
         let type_def_repre = TypeDefRepre::new(type_def.name_id, type_id, sym_id, ast_id);
 
-        self.table
+        self.module
+            .table
             .symbols
             .insert(sym_id, Symbol::TypeDef(type_def_repre));
     }
 
     fn register_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) {
-        self.table.name_ids.insert(ast_id, abs_struct.name_id);
+        self.module
+            .table
+            .name_ids
+            .insert(ast_id, abs_struct.name_id);
 
-        let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
-        self.table.sym_ids.insert(ast_id, sym_id);
+        let sym_id = SymbolId::new(self.module.table.sym_ids.len() as u32);
+        self.module.table.sym_ids.insert(ast_id, sym_id);
 
-        let type_id = TypeId::new(self.table.types.len() as u32);
+        let type_id = TypeId::new(self.module.table.types.len() as u32);
 
         let struct_repre =
             StructRepre::new(abs_struct.name_id, sym_id, ast_id, type_id, Vec::new());
 
-        self.table
+        self.module
+            .table
             .symbols
             .insert(sym_id, Symbol::Struct(struct_repre));
 
-        self.table.types.push(Type::Struct(sym_id));
+        self.module.table.types.push(Type::Struct(sym_id));
     }
 
     fn register_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) {
-        self.table.name_ids.insert(ast_id, abs_enum.name_id);
+        self.module.table.name_ids.insert(ast_id, abs_enum.name_id);
 
-        let type_id = TypeId::new(self.table.types.len() as u32);
+        let type_id = TypeId::new(self.module.table.types.len() as u32);
 
-        let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
+        let sym_id = SymbolId::new(self.module.table.sym_ids.len() as u32);
 
-        self.table.sym_ids.insert(ast_id, sym_id);
+        self.module.table.sym_ids.insert(ast_id, sym_id);
 
         let enum_repre = EnumRepre::new(abs_enum.name_id, sym_id, ast_id, type_id, Vec::new());
-        self.table.symbols.insert(sym_id, Symbol::Enum(enum_repre));
+        self.module
+            .table
+            .symbols
+            .insert(sym_id, Symbol::Enum(enum_repre));
 
-        self.table.types.push(Type::Enum(sym_id));
+        self.module.table.types.push(Type::Enum(sym_id));
     }
 
     fn register_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) {
-        self.table.name_ids.insert(ast_id, abs_alias.name_id);
+        self.module.table.name_ids.insert(ast_id, abs_alias.name_id);
 
-        let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
-        self.table.sym_ids.insert(ast_id, sym_id);
+        let sym_id = SymbolId::new(self.module.table.sym_ids.len() as u32);
+        self.module.table.sym_ids.insert(ast_id, sym_id);
 
         //Unkown type id for unregistered types
         let type_id = if let Some(id) = self.unknown_id {
             id
         } else {
-            let id = TypeId::new(self.table.types.len() as u32);
+            let id = TypeId::new(self.module.table.types.len() as u32);
             self.unknown_id = Some(id);
-            self.table.types.push(Type::Unknown);
+            self.module.table.types.push(Type::Unknown);
 
             id
         };
@@ -554,37 +562,66 @@ impl TypeResolver<'_> {
             Vec::new(),
         );
 
-        self.table
+        self.module
+            .table
             .symbols
             .insert(sym_id, Symbol::Alias(alias_repre));
 
-        self.table.types.push(Type::Alias(sym_id));
+        self.module.table.types.push(Type::Alias(sym_id));
     }
 
     //WARN: IS THIS RIGHT?
     fn register_const(&mut self, abs_const: &AbstractConst, ast_id: AstId) {
-        self.table.name_ids.insert(ast_id, abs_const.name_id);
+        self.module.table.name_ids.insert(ast_id, abs_const.name_id);
 
         let type_id = if let Some(id) = self.unknown_id {
             id
         } else {
-            let id = TypeId::new(self.table.types.len() as u32);
+            let id = TypeId::new(self.module.table.types.len() as u32);
             self.unknown_id = Some(id);
-            self.table.types.push(Type::Unknown);
+            self.module.table.types.push(Type::Unknown);
 
             id
         };
 
-        let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
+        let sym_id = SymbolId::new(self.module.table.sym_ids.len() as u32);
 
-        self.table.sym_ids.insert(ast_id, sym_id);
+        self.module.table.sym_ids.insert(ast_id, sym_id);
 
         let const_repre = ConstRepre::new(abs_const.name_id, sym_id, ast_id, type_id);
 
-        self.table
+        self.module
+            .table
             .symbols
             .insert(sym_id, Symbol::Const(const_repre));
 
-        self.table.types.push(Type::Const(sym_id));
+        self.module.table.types.push(Type::Const(sym_id));
+    }
+
+    fn register_import(&mut self, abs_import: &AbstractImport, ast_id: AstId) {
+        // self.table.name_ids.insert(ast_id, abs_const.name_id);
+        //
+        // let type_id = if let Some(id) = self.unknown_id {
+        //     id
+        // } else {
+        //     let id = TypeId::new(self.table.types.len() as u32);
+        //     self.unknown_id = Some(id);
+        //     self.table.types.push(Type::Unknown);
+        //
+        //     id
+        // };
+        //
+        // let sym_id = SymbolId::new(self.table.sym_ids.len() as u32);
+        //
+        // self.table.sym_ids.insert(ast_id, sym_id);
+        //
+        // let const_repre = ConstRepre::new(abs_const.name_id, sym_id, ast_id, type_id);
+        //
+        // self.table
+        //     .symbols
+        //     .insert(sym_id, Symbol::Const(const_repre));
+        //
+        // self.table.types.push(Type::Const(sym_id));
+        todo!("Import not done");
     }
 }

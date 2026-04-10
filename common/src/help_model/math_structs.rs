@@ -80,6 +80,11 @@ impl<T: Debug + PartialEq> Tensor2<T> {
         let idx = row * self.cols + col;
         &mut self.inner[idx]
     }
+
+    pub(crate) fn get_row(&self, row: usize) -> &[T] {
+        let row_idx = row * self.cols;
+        &self.inner[row_idx..row_idx + self.cols]
+    }
 }
 
 impl<T: Debug + PartialEq> Debug for Tensor2<T> {

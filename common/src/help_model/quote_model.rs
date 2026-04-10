@@ -213,26 +213,58 @@ pub fn quote_start_probability(src: &[u8], q_type: char, search_range: Range<usi
 
     // let embeddings: Vec<Vec<f32>> = algo::make_randomized_tensor1(5);
 
-    let mut q_graph = QuoteGraph::init(&toks);
-
     // What
-    let embeddings = Tensor2::from(&vec![vec![0.8, 0.3], vec![0.25, 0.15]]);
+    // 0 = Other, 1 = \n, 3 = alphanum
+    let embeddings = Tensor2::from(&vec![
+        // OBracket
+        vec![0.8, 0.3],
+        // CBracket
+        vec![0.25, 0.15],
+        //
+        // vec![0.9, 0.12],
+    ]);
 
     let weights = Tensor2::from(&vec![vec![0.8, 0.3], vec![0.25, 0.15]]);
-    let correct = Tensor2::from(&vec![vec![0.4, 0.2], vec![0.9, 0.3]]);
-
     let mut q_model = QuoteModel::with_presets(weights, embeddings);
 
-    for i in 1..=1000 {
-        let (loss, gradients) = train_model(&mut q_model, &correct, LR);
+    // "[[]"
+    let input: Vec<usize> = vec![0, 0, 1];
+
+    // Expected index guess for missing bracket
+    let expected: usize = 1;
+
+    for i in 1..=500 {
+        let (loss, gradients) = train_model(&q_model, &input, expected, LR);
 
         if i % 100 == 0 {
             println!("step {i} | loss={loss}\n");
-            dbg!(&q_model.weights);
         }
     }
 
-    panic!("End");
+    let mut q_graph = QuoteGraph::init(&toks);
+
+    // DOES NOTHING
+    q_graph.eval();
+
+    q_graph.display_scores();
+
+    let scores: Vec<f32> = q_graph.q_nodes.iter().map(|q| q.score).collect();
+    let highest_idx = algo::argmax(&scores).expect("temp");
+
+    let highest_q_node = &q_graph.q_nodes[highest_idx];
+
+    let mut spans: Vec<Span> = Vec::new();
+
+    spans.push(Span::new(
+        highest_q_node.src_start_pos,
+        highest_q_node.src_start_pos,
+    ));
+
+    if let Some(pos) = highest_q_node.src_end_pos {
+        spans.push(Span::new(pos, pos));
+    }
+
+    spans
 }
 
 /// Returns the amount to apply to the signal of the given token given the context
@@ -287,7 +319,6 @@ fn context_distance(ctx_toks: &Vec<TokenInfo>, current_tok: &TokenInfo, distance
         Token::Char(c) if c == '\n' => {
             // Distance of new lines from start means more than everything else
             let distance_sig = 1.0 / (1.0 + (distance - 4.5).exp());
-            dbg!(distance_sig);
 
             return distance_sig;
         }
@@ -331,32 +362,75 @@ impl QuoteModel {
     // }
 }
 
-fn train_model(q_model: &mut QuoteModel, expected: &Tensor2<f32>, lr: f32) -> (f32, Tensor2<f32>) {
-    dbg!(&q_model.weights);
+//TEST: Learning
+fn train_model(
+    q_model: &QuoteModel,
+    // Token ids
+    inputs: &Vec<usize>,
+    expected: usize,
+    lr: f32,
+) -> (f32, usize) {
+    let embedding_table = &q_model.embeddings;
 
-    let predictions = &q_model.weights;
+    let inputs: Vec<&[f32]> = vec![
+        // 0
+        embedding_table.get_row(inputs[0]),
+        // 0
+        embedding_table.get_row(inputs[1]),
+        // 1
+        embedding_table.get_row(inputs[2]),
+    ];
 
-    let loss = algo::cross_entropy(&q_model.weights.inner, &expected.inner);
+    let mut avgs: Vec<f32> = Vec::with_capacity(inputs.len());
+
+    for i in 0..inputs.len() {
+        avgs.push(0.0);
+        for j in 0..embedding_table.cols {
+            avgs[i] += inputs[i][j];
+        }
+
+        avgs[i] /= inputs.len() as f32;
+    }
+
+    let mut preds: Vec<f32> = Vec::new();
+
+    // Imagine
+    for row in 0..q_model.weights.rows {
+        let mut sum: f32 = 0.0;
+
+        for col in 0..q_model.weights.cols {
+            let weight = q_model.weights.get(row, col);
+
+            for i in 0..inputs.len() {
+                sum += weight * inputs[i][col];
+            }
+        }
+
+        preds.push(sum + q_model.bias);
+    }
+
+    let probs = algo::softmax(&preds);
+
+    let choice = algo::argmax(&probs).expect("No");
 
     let n = q_model.weights.inner.len() as f32;
-    let mut gradients_inner = Vec::with_capacity(q_model.weights.inner.len());
+    // let mut gradients_inner: Vec<f32> = Vec::with_capacity(q_model.weights.inner.len());
 
-    for (pred, target) in q_model.weights.inner.iter().zip(expected.inner.iter()) {
-        let grad = (pred - target) / n;
-        gradients_inner.push(grad);
-    }
+    // for (pred, target) in q_model.weights.inner.iter().zip(expected.inner.iter()) {
+    //     let grad = (pred - target) / n;
+    //     gradients_inner.push(grad);
+    // }
 
-    let gradients = Tensor2 {
-        inner: gradients_inner,
-        rows: predictions.rows,
-        cols: predictions.cols,
-    };
+    // let gradients = Tensor2 {
+    //     inner: gradients_inner,
+    //     rows: predictions.rows,
+    //     cols: predictions.cols,
+    // };
 
-    for i in 0..q_model.weights.inner.len() {
-        q_model.weights.inner[i] -= lr * gradients.inner[i];
-    }
+    // for i in 0..q_model.weights.inner.len() {
+    //     q_model.weights.inner[i] -= lr * gradients.inner[i];
+    // }
 
-    dbg!(&q_model.weights);
-
-    (loss, gradients)
+    // (loss, gradients)
+    (0.0, choice)
 }

@@ -169,7 +169,6 @@ pub fn parse(
                         TokenKind::SlimArrow,
                         "Expected a '->' after section `nest`, found ",
                         "",
-                        //TODO: Better help
                         Branch::Searching,
                         interner,
                     );

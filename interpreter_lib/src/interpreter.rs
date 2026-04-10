@@ -31,7 +31,7 @@ pub fn interpret_chern_cfg(path: &Path) -> Result<(), CoreError> {
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&module.metadata, &toks, &mut interner)?;
-        TypeResolver::new(&ast_info, &module.metadata, &interner, &mut module.table).resolve();
+        TypeResolver::new(&ast_info, &interner, module).resolve();
 
         all_asts.push(ast_info);
     }

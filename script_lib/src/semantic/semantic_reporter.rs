@@ -14,7 +14,6 @@ use crate::{
     semantic::error::{Diagnostic, SemanticError},
 };
 
-/// Amount of '-' to print for multiple error separation
 #[derive(Debug)]
 pub(super) struct SemanticReporter<'a> {
     pub(super) metadata: &'a ChernMetadata,

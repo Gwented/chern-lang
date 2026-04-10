@@ -12,7 +12,6 @@ pub const DEFINITION_SIZE: usize = 4;
 // Ensure ranges and all keyword functions are adjusted
 // Ensure tests are aligned
 
-//
 pub static KEYWORDS_ARRAY: [&str; 46] = [
     // primitives
     "i8", // 0
