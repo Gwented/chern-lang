@@ -461,7 +461,9 @@ impl ConstraintResolver<'_> {
                                 match &self.ast_info.items[structure.ast_id.id as usize] {
                                     // Weird looking hack
                                     Item::Struct(abs_struct) => {
-                                        abs_struct.fields[field.ast_id.id as usize].type_expr.span()
+                                        abs_struct.fields[field.ast_id.id as usize]
+                                            .spanned_ty_expr
+                                            .span
                                     }
                                     _ => unreachable!(),
                                 }
@@ -488,9 +490,8 @@ impl ConstraintResolver<'_> {
                         //COPY
                         let abs_struct = self.ast_info.get_struct(structure.ast_id);
                         let field_span = abs_struct.fields[field.ast_id.id as usize]
-                            .type_expr
-                            .span()
-                            .clone();
+                            .spanned_ty_expr
+                            .span;
 
                         //NOTE:
 
@@ -528,11 +529,10 @@ impl ConstraintResolver<'_> {
                                 {
                                     // or field span
                                     let ast_span = abs_enum.variants[variant.ast_id.id as usize]
-                                        .ty
+                                        .ty_expr
                                         .as_ref()
                                         .expect("The type was already found")
-                                        .span()
-                                        .clone();
+                                        .span;
 
                                     //NOTE:
                                     // This should be restructured
@@ -555,10 +555,10 @@ impl ConstraintResolver<'_> {
                         if let Err(SemanticError::UnsupportedArg(arg, fmted, _)) = arg_res {
                             let abs_enum = &self.ast_info.get_enum(enumeration.ast_id);
                             let variant_span = abs_enum.variants[variant.ast_id.id as usize]
-                                .ty
+                                .ty_expr
                                 .as_ref()
                                 .expect("Type already exists")
-                                .span()
+                                .span
                                 .clone();
 
                             //NOTE:
@@ -695,7 +695,7 @@ impl ConstraintResolver<'_> {
                     // dbg!(structure.type_id, field.type_id, type_id);
                     if structure.type_id == field.type_id || structure.type_id == type_id {
                         let abs_struct = &self.ast_info.get_struct(structure.ast_id);
-                        let field_span = abs_struct.fields[i].type_expr.span();
+                        let field_span = abs_struct.fields[i].spanned_ty_expr.span;
 
                         return Err(SemanticError::CircularCond(
                             cond.clone(),
@@ -715,7 +715,7 @@ impl ConstraintResolver<'_> {
                     if let Err(SemanticError::UnsupportedCond(cond, fmted_ty, mut spans)) = cond_res
                     {
                         let abs_struct = &self.ast_info.get_struct(structure.ast_id);
-                        let field_span = abs_struct.fields[i].type_expr.span();
+                        let field_span = abs_struct.fields[i].spanned_ty_expr.span;
                         spans.push(field_span);
 
                         return Err(SemanticError::UnsupportedCond(cond, fmted_ty, spans));
@@ -740,7 +740,7 @@ impl ConstraintResolver<'_> {
                                 &self.ast_info.get_enum(enumeration.ast_id).variants[i];
 
                             let variant_span =
-                                abs_variant.ty.as_ref().expect("Already found").span();
+                                abs_variant.ty_expr.as_ref().expect("Already found").span;
 
                             return Err(SemanticError::CircularCond(
                                 cond.clone(),
@@ -759,10 +759,10 @@ impl ConstraintResolver<'_> {
                         {
                             let abs_struct = &self.ast_info.get_enum(enumeration.ast_id);
                             let field_span = abs_struct.variants[i]
-                                .ty
+                                .ty_expr
                                 .as_ref()
                                 .expect("Already found")
-                                .span();
+                                .span;
 
                             spans.push(field_span);
 

@@ -480,7 +480,6 @@ impl<'a> Context<'a> {
             })
     }
 
-    // Maybe return option
     pub(super) fn peek_behind(&self, dest: usize) -> SpannedToken {
         self.toks
             .get(self.pos - dest)

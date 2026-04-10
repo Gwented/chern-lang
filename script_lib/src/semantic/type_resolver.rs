@@ -15,7 +15,7 @@ use crate::{
     modules::Module,
     parser::ast::{
         AbstractAlias, AbstractConst, AbstractEnum, AbstractImport, AbstractStruct,
-        AbstractTypeDef, AstInfo, Expr, Item, TypeExpr, UnaryOp,
+        AbstractTypeDef, AstInfo, Expr, Item, SpannedTypeExpr, TypeExpr, UnaryOp,
     },
     semantic::{
         error::SemanticError,
@@ -108,7 +108,7 @@ impl TypeResolver<'_> {
     }
 
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
-        let type_id = self.resolve_type_expr(&abs_typedef.type_expr, ast_id)?;
+        let type_id = self.resolve_type_expr(&abs_typedef.spanned_ty_expr, ast_id)?;
 
         let sym_id = self.module.table.sym_ids[&ast_id];
 
@@ -126,14 +126,14 @@ impl TypeResolver<'_> {
 
         // Checking if there are duplicate name ids within the same struct along with resolution
         for (i, type_def) in abs_struct.fields.iter().enumerate() {
-            let type_id = self.resolve_type_expr(&type_def.type_expr, ast_id)?;
+            let type_id = self.resolve_type_expr(&type_def.spanned_ty_expr, ast_id)?;
 
             if let Some(original) = seen.iter().find(|other| type_def.name_id == other.1) {
                 let struct_name = self.interner.search(abs_struct.name_id.id as usize);
                 let dup_name = self.interner.search(type_def.name_id.id as usize);
 
-                let orig_span = abs_struct.fields[original.0].name_span.clone();
-                let field_span = abs_struct.fields[i].name_span.clone();
+                let orig_span = abs_struct.fields[original.0].name_span;
+                let field_span = abs_struct.fields[i].name_span;
 
                 let msg = format!(
                     "More than one field has the identifier \"{dup_name}\" within struct \"{struct_name}\""
@@ -176,8 +176,8 @@ impl TypeResolver<'_> {
                 let enum_name = self.interner.search(abs_enum.name_id.id as usize);
                 let dup_name = self.interner.search(variant.name_id.id as usize);
 
-                let orig_span = abs_enum.variants[original.0].name_span.clone();
-                let variant_span = abs_enum.variants[i].name_span.clone();
+                let orig_span = abs_enum.variants[original.0].name_span;
+                let variant_span = abs_enum.variants[i].name_span;
 
                 let msg = format!(
                     "More than one variant has the identifier \"{dup_name}\" within enum \"{enum_name}\""
@@ -193,8 +193,8 @@ impl TypeResolver<'_> {
 
             seen.push((i, variant.name_id));
 
-            if let Some(ty) = &variant.ty {
-                let type_id = self.resolve_type_expr(ty, ast_id)?;
+            if let Some(spanned_ty_expr) = &variant.ty_expr {
+                let type_id = self.resolve_type_expr(&spanned_ty_expr, ast_id)?;
                 let variant_repre =
                     VariantRepre::new(variant.name_id, Some(type_id), AstId::new(i as u32));
 
@@ -214,8 +214,8 @@ impl TypeResolver<'_> {
     fn resolve_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) -> Result<(), ()> {
         // Should the variable check happen here?
         let mut params: Vec<TypeId> = Vec::new();
-        for (i, ty) in abs_alias.params.iter().enumerate() {
-            let type_id = self.resolve_type_expr(ty, ast_id)?;
+        for (i, spanned_ty_expr) in abs_alias.params.iter().enumerate() {
+            let type_id = self.resolve_type_expr(&spanned_ty_expr, ast_id)?;
             params.push(type_id);
         }
         todo!();
@@ -225,9 +225,13 @@ impl TypeResolver<'_> {
         todo!();
     }
 
-    fn resolve_type_expr(&mut self, ty: &TypeExpr, ast_id: AstId) -> Result<TypeId, ()> {
-        match ty {
-            TypeExpr::Var(name_id, span) => {
+    fn resolve_type_expr(
+        &mut self,
+        spanned_ty_expr: &SpannedTypeExpr,
+        ast_id: AstId,
+    ) -> Result<TypeId, ()> {
+        match &spanned_ty_expr.ty_expr {
+            TypeExpr::Var(name_id) => {
                 // Returns the name's id since it is a valid non-data structure intrinsic type
                 if let Some(_) = BuiltinType::try_from_id(name_id.id) {
                     return Ok(TypeId::new(name_id.id));
@@ -258,14 +262,14 @@ impl TypeResolver<'_> {
                 self.reporter.report_spanned(
                     &err_msg,
                     Some(err_name),
-                    &[span.clone()],
+                    &[spanned_ty_expr.span],
                     &self.module.metadata,
                 );
 
                 return Err(());
             }
             // Needs to be merged in a sensible way
-            TypeExpr::Escaped(name_id, span) => {
+            TypeExpr::Escaped(name_id) => {
                 for (current_ast_id, current_name_id) in &self.module.table.name_ids {
                     if current_name_id == name_id {
                         let sym_id = self.module.table.sym_ids[&current_ast_id];
@@ -286,13 +290,13 @@ impl TypeResolver<'_> {
                 self.reporter.report_spanned(
                     &err_msg,
                     None,
-                    &[span.clone()],
+                    &[spanned_ty_expr.span],
                     &self.module.metadata,
                 );
 
                 return Err(());
             }
-            TypeExpr::Generic(generic, span) => {
+            TypeExpr::Generic(generic) => {
                 match Keyword::try_as_kw(generic.base.id) {
                     // Self referential type ids used here
                     Some(kw) => match kw {
@@ -307,7 +311,7 @@ impl TypeResolver<'_> {
                                 self.reporter.report_spanned(
                                     &msg,
                                     None,
-                                    &[span.clone()],
+                                    &[spanned_ty_expr.span],
                                     &self.module.metadata,
                                 );
 
@@ -347,7 +351,7 @@ impl TypeResolver<'_> {
                                 self.reporter.report_spanned(
                                     &msg,
                                     None,
-                                    &[span.clone()],
+                                    &[spanned_ty_expr.span],
                                     &self.module.metadata,
                                 );
 
@@ -376,7 +380,7 @@ impl TypeResolver<'_> {
                                 self.reporter.report_spanned(
                                     &msg,
                                     None,
-                                    &[span.clone()],
+                                    &[spanned_ty_expr.span],
                                     &self.module.metadata,
                                 );
 
@@ -404,7 +408,7 @@ impl TypeResolver<'_> {
                             self.reporter.report_spanned(
                                 &err_msg,
                                 Some(err_name),
-                                &[span.clone()],
+                                &[spanned_ty_expr.span],
                                 &self.module.metadata,
                             );
 
@@ -422,7 +426,7 @@ impl TypeResolver<'_> {
                         self.reporter.report_spanned(
                             &err_msg,
                             Some(err_name),
-                            &[span.clone()],
+                            &[spanned_ty_expr.span],
                             &self.module.metadata,
                         );
 
@@ -430,7 +434,7 @@ impl TypeResolver<'_> {
                     }
                 }
             }
-            TypeExpr::Any(_) => {
+            TypeExpr::Any => {
                 let id = self.module.table.types.len() as u32;
 
                 self.module
@@ -442,7 +446,7 @@ impl TypeResolver<'_> {
             }
             // If a semantic error was returned I could control when things are reported by
             // intercepting
-            TypeExpr::Tuple(unres_tuple, _) => {
+            TypeExpr::Tuple(unres_tuple) => {
                 let mut elements: Vec<TypeId> = Vec::new();
 
                 for element in unres_tuple {
@@ -490,6 +494,7 @@ impl TypeResolver<'_> {
                     Item::Import(abs_import) => &abs_import.path_span,
                 }
                 .clone();
+
                 let dup_name = self.interner.search(name_id.id as usize);
 
                 let msg = format!(

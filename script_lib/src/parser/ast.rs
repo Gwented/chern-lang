@@ -153,33 +153,29 @@ impl Call {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct SpannedTypeExpr {
-    type_expr: TypeExpr,
-    span: Span,
+    pub(crate) ty_expr: TypeExpr,
+    pub(crate) span: Span,
+}
+
+impl SpannedTypeExpr {
+    pub fn new(ty_expr: TypeExpr, span: Span) -> SpannedTypeExpr {
+        SpannedTypeExpr { ty_expr, span }
+    }
 }
 
 #[derive(Debug)]
 pub(crate) enum TypeExpr {
-    Var(NameId, Span),
-    Escaped(NameId, Span),
+    Var(NameId),
+    Escaped(NameId),
     //_Generic
-    Generic(Generic, Span),
-    Tuple(Vec<TypeExpr>, Span),
-    Any(Span),
+    Generic(Generic),
+    Tuple(Vec<SpannedTypeExpr>),
+    Any,
 }
 
 //TEST: May just make a SpannedTypeExpr but this can work for now
-impl TypeExpr {
-    pub(crate) fn span(&self) -> Span {
-        match self {
-            TypeExpr::Var(_, span)
-            | TypeExpr::Generic(_, span)
-            | TypeExpr::Any(span)
-            | TypeExpr::Tuple(_, span)
-            | TypeExpr::Escaped(_, span) => span.clone(),
-        }
-    }
-}
 
 #[derive(Debug)]
 pub(crate) struct AbstractImport {
@@ -207,7 +203,7 @@ impl AbstractImport {
 pub(crate) struct AbstractConst {
     pub(crate) name_id: NameId,
     pub(crate) name_span: Span,
-    // pub(crate) type_expr: TypeExpr,
+    // pub(crate) type_expr: SPann,
     pub(crate) spanned_expr: SpannedExpr,
     pub(crate) is_priv: bool,
 }
@@ -234,7 +230,7 @@ impl AbstractConst {
 pub(crate) struct AbstractTypeDef {
     pub(crate) name_id: NameId,
     pub(crate) name_span: Span,
-    pub(crate) type_expr: TypeExpr,
+    pub(crate) spanned_ty_expr: SpannedTypeExpr,
     pub(crate) args: Vec<SpannedInnerArgs>,
     pub(crate) conds: Vec<SpannedExpr>,
 }
@@ -243,14 +239,14 @@ impl AbstractTypeDef {
     pub(crate) fn new(
         name_id: NameId,
         name_span: Span,
-        ty: TypeExpr,
+        ty_expr: SpannedTypeExpr,
         args: Vec<SpannedInnerArgs>,
         conds: Vec<SpannedExpr>,
     ) -> AbstractTypeDef {
         AbstractTypeDef {
             name_id,
             name_span,
-            type_expr: ty,
+            spanned_ty_expr: ty_expr,
             args,
             conds,
         }
@@ -324,7 +320,7 @@ pub(crate) struct AbstractVariant {
     pub(crate) name_id: NameId,
     pub(crate) name_span: Span,
     // I think this is right?
-    pub(crate) ty: Option<TypeExpr>,
+    pub(crate) ty_expr: Option<SpannedTypeExpr>,
     pub(crate) args: Vec<SpannedInnerArgs>,
     pub(crate) conds: Vec<SpannedExpr>,
 }
@@ -334,14 +330,14 @@ impl AbstractVariant {
         name_id: NameId,
         name_span: Span,
         // I think this is right?
-        ty: Option<TypeExpr>,
+        ty_expr: Option<SpannedTypeExpr>,
         conds: Vec<SpannedExpr>,
         args: Vec<SpannedInnerArgs>,
     ) -> AbstractVariant {
         AbstractVariant {
             name_id,
             name_span,
-            ty,
+            ty_expr,
             args,
             conds,
         }
@@ -386,15 +382,15 @@ impl AbstractFuncDecl {
 pub(crate) struct Param {
     pub(crate) name_id: NameId,
     pub(crate) name_span: Span,
-    pub(crate) type_expr: TypeExpr,
+    pub(crate) ty_expr: SpannedTypeExpr,
 }
 
 impl Param {
-    pub(crate) fn new(name_id: NameId, name_span: Span, type_expr: TypeExpr) -> Param {
+    pub(crate) fn new(name_id: NameId, name_span: Span, ty_expr: SpannedTypeExpr) -> Param {
         Param {
             name_id,
             name_span,
-            type_expr,
+            ty_expr,
         }
     }
 }
@@ -418,7 +414,7 @@ pub(crate) struct AbstractAlias {
     pub(crate) name_span: Span,
     // Variables only
     // May change to param
-    pub(crate) params: Vec<TypeExpr>,
+    pub(crate) params: Vec<SpannedTypeExpr>,
     pub(crate) conds: Vec<SpannedExpr>,
     pub(crate) args: Vec<SpannedInnerArgs>,
     pub(crate) is_priv: bool,
@@ -428,7 +424,7 @@ impl AbstractAlias {
     pub(crate) fn new(
         name_id: NameId,
         name_span: Span,
-        params: Vec<TypeExpr>,
+        params: Vec<SpannedTypeExpr>,
         conds: Vec<SpannedExpr>,
         args: Vec<SpannedInnerArgs>,
         is_priv: bool,
@@ -481,11 +477,11 @@ pub(crate) enum UnaryOp {
 pub(crate) struct Generic {
     pub(crate) base: NameId,
     // Change to tuple or something alike since max 2?
-    pub(crate) args: Vec<TypeExpr>,
+    pub(crate) args: Vec<SpannedTypeExpr>,
 }
 
 impl Generic {
-    pub(crate) fn new(base: NameId, args: Vec<TypeExpr>) -> Generic {
+    pub(crate) fn new(base: NameId, args: Vec<SpannedTypeExpr>) -> Generic {
         Generic { base, args }
     }
 }

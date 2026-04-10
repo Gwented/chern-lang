@@ -7,7 +7,7 @@ mod parser_state;
 use crate::parser::ast::{
     AbstractAlias, AbstractConst, AbstractEnum, AbstractFieldAccess, AbstractImport,
     AbstractStruct, AbstractTypeDef, AbstractVariant, AstInfo, BinaryOp, Expr, Generic, Item,
-    SpannedExpr, TypeExpr, Unary, UnaryOp,
+    SpannedExpr, SpannedTypeExpr, TypeExpr, Unary, UnaryOp,
 };
 use crate::parser::context::Context;
 use crate::parser::error::Branch;
@@ -415,7 +415,7 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
         interner,
     )?;
 
-    let type_res = parse_type(ctx, interner);
+    let ty_res = parse_type(ctx, interner);
 
     // WARN: DO NOT PROPOGATE
     let conds_res = if ctx.peek_kind() == TokenKind::OBracket {
@@ -435,7 +435,7 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
     }
 
     //WARN: May this is a little too forgiving
-    let ty = type_res?;
+    let ty = ty_res?;
     let conds = conds_res?;
     let args = args_res?;
 
@@ -841,16 +841,22 @@ fn parse_call_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedEx
 
 fn parse_unary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Token> {
     match ctx.peek_tok() {
+        // May 'let op = if' evenually to combine similar unaries
         Token::Hyphen => {
-            let span = ctx.advance_span();
+            let start = ctx.advance_span().start;
             let expr = parse_unary(ctx, interner)?;
+
+            let span = Span::new(start, expr.span.end);
             let unary = Unary::new(UnaryOp::Negate, Box::new(expr));
 
             Ok(SpannedExpr::new(Expr::Unary(unary), span))
         }
         Token::ExclamationPoint => {
-            let span = ctx.advance_span();
+            let start = ctx.advance_span().start;
+
             let expr = parse_unary(ctx, interner)?;
+            let span = Span::new(start, expr.span.end);
+
             let unary = Unary::new(UnaryOp::Not, Box::new(expr));
 
             Ok(SpannedExpr::new(Expr::Unary(unary), span))
@@ -860,7 +866,7 @@ fn parse_unary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Toke
 }
 
 // ENFORCE TYPE NAMING FOR GENERICS AT LEAST
-fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
+fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, Token> {
     match ctx.peek_tok() {
         Token::Id(id) if ctx.peek_ahead(1).tok.kind() == TokenKind::OAngleBracket => {
             let start = ctx.advance_span().start;
@@ -868,12 +874,14 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
             let name_id = NameId::new(id);
 
             //TODO: Needs to build up own type span
-            let (args, end) = parse_generic(ctx, interner)?;
+            let args = parse_generic(ctx, interner)?;
             let generic = Generic::new(name_id, args);
 
+            let end = ctx.peek_behind(1).span.end;
             let span = Span::new(start, end);
 
-            Ok(TypeExpr::Generic(generic, span))
+            let ty_expr = TypeExpr::Generic(generic);
+            Ok(SpannedTypeExpr::new(ty_expr, span))
         }
         Token::Tilde => {
             let span = ctx.advance_span();
@@ -887,21 +895,23 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
             )?;
 
             let name_id = NameId::new(plain_id);
+            let ty_expr = TypeExpr::Escaped(name_id);
 
-            Ok(TypeExpr::Escaped(name_id, span))
+            Ok(SpannedTypeExpr::new(ty_expr, span))
         }
         // Token::OParen => parse_tuple(ctx, interner),
         Token::Id(id) => {
             let span = ctx.advance_span();
 
             let name_id = NameId::new(id);
+            let ty_expr = TypeExpr::Var(name_id);
 
-            Ok(TypeExpr::Var(name_id, span))
+            Ok(SpannedTypeExpr::new(ty_expr, span))
         }
         Token::QuestionMark => {
             let span = ctx.advance_span();
 
-            Ok(TypeExpr::Any(span))
+            Ok(SpannedTypeExpr::new(TypeExpr::Any, span))
         }
         Token::Str(id) | Token::Integer(id, _) => {
             let name = interner.search(id as usize);
@@ -935,7 +945,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
 /// Parses assuming that within "List<i32>" the "List" part was skipped, which would leaves <i32>
 /// to be handled
 //WARN: USING BASIC SPAN IMPLEMENTATION AND MAY CHANGE
-fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<(Vec<TypeExpr>, usize), Token> {
+fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTypeExpr>, Token> {
     ctx.expect_verbose(
         TokenKind::OAngleBracket,
         "Expected a '<' to declare generic, found ",
@@ -944,7 +954,7 @@ fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<(Vec<TypeExpr>,
         interner,
     )?;
 
-    let mut args: Vec<TypeExpr> = Vec::new();
+    let mut args: Vec<SpannedTypeExpr> = Vec::new();
 
     let arg = parse_type(ctx, interner)?;
     args.push(arg);
@@ -956,8 +966,6 @@ fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<(Vec<TypeExpr>,
         args.push(other_arg);
     }
 
-    let end = ctx.peek_span().end;
-
     ctx.expect_verbose(
         TokenKind::CAngleBracket,
         "Expected a '>' to close generic parameters, found ",
@@ -966,11 +974,9 @@ fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<(Vec<TypeExpr>,
         interner,
     )?;
 
-    Ok((args, end))
+    Ok(args)
 }
 
-// /// This returns a vector
-// /// Handles everything and does not expect anything to be skipped
 // //TEST:
 // fn parse_tuple(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
 //     let start = ctx.peek_span().start;
@@ -1096,7 +1102,7 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
     let name_id = NameId::new(plain_id);
 
     // TODO: Maybe this shouldn't look like a tuple by default since it's misleading
-    let ty_opt: Option<TypeExpr> = if ctx.peek_kind() == TokenKind::Colon {
+    let ty_opt: Option<SpannedTypeExpr> = if ctx.peek_kind() == TokenKind::Colon {
         ctx.advance_tok();
         let ty = parse_type(ctx, interner)?;
         Some(ty)
@@ -1176,14 +1182,16 @@ fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<SpannedInnerArgs, T
     Ok(SpannedInnerArgs::new(arg, name_span))
 }
 
-fn parse_func_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<TypeExpr>, Token> {
-    let mut args: Vec<TypeExpr> = Vec::new();
+fn parse_func_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTypeExpr>, Token> {
+    let mut args: Vec<SpannedTypeExpr> = Vec::new();
 
     while ctx.peek_kind() != TokenKind::CParen {
         let expr = match ctx.peek_tok() {
             Token::Id(id) => {
                 let span = ctx.advance_span();
-                TypeExpr::Var(NameId::new(id), span)
+                let ty_expr = TypeExpr::Var(NameId::new(id));
+
+                SpannedTypeExpr::new(ty_expr, span)
             }
             Token::EOF => return Err(Token::Poison),
             t => {
