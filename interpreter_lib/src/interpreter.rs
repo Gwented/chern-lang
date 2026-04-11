@@ -21,7 +21,6 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
     // Doing this first since if modules were identified during the parsing stage any
     // syntax error within another module would not be reportable since the parser failed.
     let mut program = modules::extract_modules(path, &mut interner)?;
-
     let mut reporter = Reporter::new();
 
     let mut asts: Vec<AstInfo> = Vec::new();

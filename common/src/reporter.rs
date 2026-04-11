@@ -127,6 +127,8 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
 
     // Getting the largest number to see if the entire print should align with a bigger spacing
     let ln_num_width = get_num_width(ln_view.ln_num_span.end);
+    dbg!(ln_num_width);
+    // panic!();
 
     for ln in &ln_view.lines {
         for group in &ln_groups.span_groups {

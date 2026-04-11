@@ -1,16 +1,15 @@
-//TODO: Modifiers with bitwise flags
 pub mod ast;
+mod branch;
 mod context;
-mod error;
 mod parser_state;
 
 use crate::parser::ast::{
-    AbstractAlias, AbstractConst, AbstractEnum, AbstractFieldAccess, AbstractImport,
-    AbstractStruct, AbstractTypeDef, AbstractVariant, AstInfo, BinaryOp, Expr, Generic, Item,
-    SpannedExpr, SpannedTypeExpr, TypeExpr, Unary, UnaryOp,
+    AbstractAlias, AbstractConst, AbstractEnum, AbstractFieldAccess, AbstractStruct,
+    AbstractTypeDef, AbstractVariant, AstInfo, Expr, Generic, Item, SpannedExpr, SpannedTypeExpr,
+    TypeExpr, Unary, UnaryOp,
 };
+use crate::parser::branch::Branch;
 use crate::parser::context::Context;
-use crate::parser::error::Branch;
 use crate::parser::parser_state::ParserState;
 use crate::types::symbols::SpannedToken;
 use crate::types::token::{Token, TokenKind};
@@ -19,7 +18,7 @@ use common::fmter::Formatted;
 use common::intern::Intern;
 use common::keywords::{self, Keyword};
 use common::metadata::{ChernSettings, ModuleMetadata};
-use common::symbols::{InnerArgs, NameId, PathId, Span, SpannedInnerArgs};
+use common::symbols::{InnerArgs, NameId, Span, SpannedInnerArgs};
 
 // May be lower
 const MAX_ERRORS: u8 = 3;
@@ -103,9 +102,7 @@ pub fn parse(
                 id if id == Keyword::Import as u32 => {
                     ctx.advance_tok();
 
-                    if let Ok(import) = parse_import(&mut ctx, interner) {
-                        ast_info.items.push(Item::Import(import));
-                    }
+                    _ = check_import(&mut ctx, interner);
                 }
                 id if id == Keyword::Var as u32 => {
                     if !is_priv {
@@ -1289,13 +1286,11 @@ fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>
     Ok(conds)
 }
 
-// Need import item
-fn parse_import(ctx: &mut Context, interner: &Intern) -> Result<AbstractImport, Token> {
-    //TODD: Still uses the term literal internally despite change in name to "Str"
-    // NOTE: I don't know what to do with this yet so it stays as enforced utf-8
-    let path_span = ctx.peek_span();
-
-    let path_id = ctx.expect_id_verbose(
+//NOTE: Could make the first pass only resolve the basics so that module resolution for local
+//imports are handled without giving the module passer too much syntax knowledge, but fine for now.
+/// Only does syntax checking for import since modules are resolved on first pass.
+fn check_import(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
+    ctx.expect_id_verbose(
         TokenKind::Literal,
         "Expected a string literal path, found ",
         "",
@@ -1303,9 +1298,7 @@ fn parse_import(ctx: &mut Context, interner: &Intern) -> Result<AbstractImport, 
         interner,
     )?;
 
-    // No 'import as' as of right now
-
-    Ok(AbstractImport::new(PathId::new(path_id), path_span))
+    Ok(())
 }
 
 fn parse_export(ctx: &mut Context, interner: &Intern) -> Result<bool, ()> {

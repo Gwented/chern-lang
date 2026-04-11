@@ -6,8 +6,10 @@ use std::{
 
 use common::{
     intern::Intern,
-    symbols::{NameId, PathId},
+    symbols::{NameId, PathId, Span},
 };
+
+use crate::parser::ast::Import;
 
 pub struct ModuleFinder<'a> {
     src_bytes: &'a [u8],
@@ -28,8 +30,8 @@ impl ModuleFinder<'_> {
         }
     }
 
-    pub fn collect_imports(&mut self, interner: &mut Intern) -> Vec<PathId> {
-        let mut imports: Vec<PathId> = Vec::new();
+    pub(crate) fn collect_imports(&mut self, interner: &mut Intern) -> Vec<Import> {
+        let mut imports: Vec<Import> = Vec::new();
 
         loop {
             self.skip_until_i();
@@ -44,10 +46,8 @@ impl ModuleFinder<'_> {
                 // b'b' => if self.read_id(interner).is_some() {},
                 b'i' => {
                     if self.is_import() {
-                        let name_id = self.read_import_name(interner);
-                        imports.push(name_id);
-                    } else {
-                        self.advance();
+                        let import = self.parse_import(interner);
+                        imports.push(import);
                     }
                 }
                 b'"' => {
@@ -80,7 +80,7 @@ impl ModuleFinder<'_> {
     }
 
     /// Assumes first quote was skipped
-    fn read_import_name(&mut self, interner: &mut Intern) -> PathId {
+    fn parse_import(&mut self, interner: &mut Intern) -> Import {
         let start = self.pos;
 
         while self.pos < self.src_bytes.len() {
@@ -97,13 +97,33 @@ impl ModuleFinder<'_> {
 
         let end = self.pos - 1;
 
+        // - 1 to include quotes since that happens in the lexer. No other reason.
+        let path_span = Span::new(start - 1, end);
+
         //FIX:
         let os_str = OsStr::from_bytes(&self.src_bytes[start..end]);
         let import_name = PathBuf::from(os_str);
 
+        let name = match import_name.file_prefix().map(|n| n.to_str()) {
+            Some(Some(n)) => n,
+            _ => todo!("No control flow within mod_finder"),
+        };
+
+        // let file_name = match path.file_prefix().map(|n| n.to_str()) {
+        //     Some(Some(p)) => p,
+        //     _ => {
+        //         let msg = format!(
+        //             "The path \"{}\" does not have a valid UTF-8 file name usable within the program",
+        //             path.display()
+        //         );
+        //         return Err(ConfigLoadError::Module(msg));
+        //     }
+        // };
+
+        let name_id = NameId::new(interner.intern(&name));
         let path_id = PathId::new(interner.intern_path(&import_name));
 
-        path_id
+        Import::new(name_id, path_id, path_span)
     }
 
     fn skip_quotes(&mut self) {
@@ -215,6 +235,30 @@ impl ModuleFinder<'_> {
         true
     }
 
+    fn is_bind(&mut self) -> bool {
+        let start = self.pos;
+
+        while self.pos < self.src_bytes.len() && self.peek().is_ascii_alphabetic() {
+            self.advance();
+        }
+
+        let end = self.pos;
+
+        if &self.src_bytes[start..end] != b"bind" {
+            return false;
+        }
+
+        //FIX: Utf 98
+        self.skip_whitespace();
+
+        if self.peek() != b'"' {
+            return false;
+        }
+
+        self.advance();
+        true
+    }
+
     fn handle_multi_comment(&mut self) {
         let mut depth = 1;
 
@@ -267,6 +311,7 @@ impl ModuleFinder<'_> {
         }
     }
 
+    //TODO: Utf-11
     fn skip_whitespace(&mut self) {
         // Stopping at parts that may cause wrongful import reads
         while self.pos <= self.end && self.peek().is_ascii_whitespace() {

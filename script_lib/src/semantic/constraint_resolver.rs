@@ -67,7 +67,6 @@ impl ConstraintResolver<'_> {
                 }
                 Item::Alias(abs_alias) => todo!(),
                 Item::Const(abs_const) => todo!(),
-                Item::Import(abs_import) => todo!(),
             }
         }
 

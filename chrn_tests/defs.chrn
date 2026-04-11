@@ -1,7 +1,7 @@
 import "../chrn_tests/CHERNGENTS.chrn"
 
-export const READ = 0b00000001
-export const WRITE = 0b00000010
-export const EXEC = 0b00000100
+// export const READ = 0b00000001
+// export const WRITE = 0b00000010
+// export const EXEC = 0b00000100
 
-export alias VALID_PERMS() = [Equals(READ) || Equals(WRITE) || Equals(EDIT)]
+// export alias VALID_PERMS() = [Equals(READ) || Equals(WRITE) || Equals(EDIT)]

@@ -13,6 +13,7 @@ pub(super) enum Branch {
     VarType,
     Cond,
     FuncArgs,
+    /// #warn, #scient, etc parsing
     TypeArgs,
     Nest,
     NestType,

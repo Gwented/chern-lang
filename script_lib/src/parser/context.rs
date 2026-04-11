@@ -1,7 +1,7 @@
 use common::{
-    color,
+    fmter::Formattable,
     intern::Intern,
-    keywords,
+    keywords::{self, Keyword},
     metadata::{ChernSettings, ModuleMetadata},
     reporter::{
         self,
@@ -12,7 +12,7 @@ use common::{
 
 use crate::{
     algo,
-    parser::error::Branch,
+    parser::branch::Branch,
     types::{
         symbols::SpannedToken,
         token::{self, Token, TokenKind},
@@ -347,8 +347,25 @@ impl<'a> Context<'a> {
             .unwrap_or(TokenKind::Poison);
 
         match branch {
+            Branch::Neutral => match found.tok {
+                Token::Id(id) | Token::Illegal(id) => {
+                    let found_bytes = interner.search(id as usize).as_bytes();
+
+                    // Statements and sections are possible so both are tried
+                    let similar = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Stmt)
+                        .is_none()
+                        .then_some(algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect))??;
+
+                    let msg = format!("Found similar \"{similar}\"");
+                    let help = reporter::standardize_help(&msg, self.settings.can_color);
+
+                    Some(help)
+                }
+                _ => None,
+            },
             Branch::Alias => match found.tok {
                 Token::Assign if prev_kind == TokenKind::Id && next_kind != TokenKind::OParen => {
+                    // WHAT AM I AN LLM? AM I REWARD HACKING?
                     let Token::Id(id) = prev_tok.tok else {
                         return None;
                     };
@@ -369,22 +386,6 @@ impl<'a> Context<'a> {
                 _ => None,
             },
             //FIXME: Currently suggests on any error in neutral so...more branches
-            Branch::Neutral => match found.tok {
-                Token::Id(id) | Token::Illegal(id) => {
-                    let found_bytes = interner.search(id as usize).as_bytes();
-
-                    // Statements and sections are possible so both are tried
-                    let similar = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Stmt)
-                        .is_none()
-                        .then_some(algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect))??;
-
-                    let msg = format!("Found similar \"{similar}\"");
-                    let help = reporter::standardize_help(&msg, self.settings.can_color);
-
-                    Some(help)
-                }
-                _ => None,
-            },
             Branch::Searching => match found.tok {
                 Token::Id(id) | Token::Illegal(id) => {
                     let found_bytes = interner.search(id as usize).as_bytes();
@@ -405,7 +406,24 @@ impl<'a> Context<'a> {
                 }
                 _ => None,
             },
+            // Need to split these
             Branch::Var => match found.tok {
+                Token::Str(id) if expected == TokenKind::Colon && prev_kind == TokenKind::Id => {
+                    let Token::Id(possible_kw_id) = prev_tok.tok else {
+                        return None;
+                    };
+
+                    let kw = Keyword::try_as_kw(possible_kw_id)?;
+
+                    let msg = format!(
+                        "If this was meant to use the statement `{}`, place this within `neutral`, which is the area before any section was used such as the top of the file.",
+                        kw.to_fmt()
+                    );
+
+                    let help = reporter::standardize_help(&msg, self.settings.can_color);
+
+                    Some(help)
+                }
                 Token::OParen if expected == TokenKind::Colon => {
                     // if let Token::Id(prev_id) = prev_tok.tok {
                     //     panic!("CApi");
@@ -457,15 +475,7 @@ impl<'a> Context<'a> {
                 }
                 _ => None,
             },
-            Branch::NestEnum => match found.tok.kind() {
-                TokenKind::Colon => {
-                    let msg = "Enums use tuples to hold types";
-                    let help = reporter::standardize_help(msg, self.settings.can_color);
-
-                    Some(help)
-                }
-                _ => None,
-            },
+            // #warn, #scient, etc <--
             Branch::TypeArgs => match found.tok {
                 Token::Id(id) => {
                     let found_bytes = interner.search(id as usize).as_bytes();
@@ -496,10 +506,6 @@ impl<'a> Context<'a> {
         } else {
             vec![found.span.clone()]
         }
-    }
-
-    pub(super) fn skip(&mut self, dest: usize) {
-        self.pos += dest;
     }
 
     pub(super) fn peek_tok(&mut self) -> Token {

@@ -73,13 +73,12 @@ impl AstInfo {
 pub(crate) enum Item {
     //                                                 name: str [!IsEmpty, Range(0,5)]
     //TODO: Should these have spans? Do we REALLY want ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    //
+    // YES
     Var(AbstractTypeDef),
     Struct(AbstractStruct),
     Enum(AbstractEnum),
     Alias(AbstractAlias),
     Const(AbstractConst),
-    Import(AbstractImport),
     // Func(AbstractFunc),
 }
 
@@ -178,20 +177,26 @@ pub(crate) enum TypeExpr {
 //TEST: May just make a SpannedTypeExpr but this can work for now
 
 #[derive(Debug)]
-pub(crate) struct AbstractImport {
+pub(crate) struct Import {
+    pub(crate) name_id: NameId,
     pub(crate) path_id: PathId,
     pub(crate) path_span: Span,
     // pub(crate) alias: Option<NameId>,
 }
 
-impl AbstractImport {
+impl Import {
     pub(crate) fn new(
+        name_id: NameId,
         path_id: PathId,
         path_span: Span,
         //  alias_id: Option<NameId>,
         // Maybe "import as" eventually
-    ) -> AbstractImport {
-        AbstractImport { path_id, path_span }
+    ) -> Import {
+        Import {
+            name_id,
+            path_id,
+            path_span,
+        }
     }
 }
 

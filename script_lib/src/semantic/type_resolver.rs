@@ -15,14 +15,13 @@ use common::{
 use crate::{
     modules::Module,
     parser::ast::{
-        AbstractAlias, AbstractConst, AbstractEnum, AbstractImport, AbstractStruct,
-        AbstractTypeDef, AstInfo, Expr, Item, SpannedTypeExpr, TypeExpr, UnaryOp,
+        AbstractAlias, AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Expr,
+        Import, Item, SpannedTypeExpr, TypeExpr, UnaryOp,
     },
     semantic::{
-        error::SemanticError,
         representation::{
             AliasRepre, ConstRepre, EnumRepre, FieldRepre, FuncArgsRepre, FuncRepre, StructRepre,
-            Symbol, Table, Tuple, Type, TypeDefRepre, VariantRepre,
+            Symbol, Tuple, Type, TypeDefRepre, VariantRepre,
         },
         semantic_reporter::SemanticReporter,
     },
@@ -51,9 +50,8 @@ impl TypeResolver<'_> {
             ast_info,
             interner,
             module,
-            //TODO: Separate this
             reporter: SemanticReporter::new(settings),
-            //TODO: This could be different
+            //TODO: This should be different
             unknown_id: None,
         }
     }
@@ -73,7 +71,6 @@ impl TypeResolver<'_> {
                 Item::Alias(abs_alias) => self.register_alias(abs_alias, ast_id),
                 Item::Const(abs_const) => self.register_const(abs_const, ast_id),
                 // Maybe imports outside of this should be stored separately
-                Item::Import(abs_import) => self.register_import(abs_import, ast_id),
             }
         }
 
@@ -99,7 +96,6 @@ impl TypeResolver<'_> {
                 Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum, ast_id),
                 Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias, ast_id),
                 Item::Const(abs_const) => _ = self.resolve_const(abs_const, ast_id),
-                Item::Import(abs_import) => todo!(),
             }
         }
 
@@ -489,7 +485,6 @@ impl TypeResolver<'_> {
                     Item::Enum(abs_enum) => &abs_enum.name_span,
                     Item::Alias(abs_alias) => &abs_alias.name_span,
                     Item::Const(abs_const) => &abs_const.name_span,
-                    Item::Import(abs_import) => &abs_import.path_span,
                 }
                 .clone();
 
@@ -499,7 +494,6 @@ impl TypeResolver<'_> {
                     Item::Enum(abs_enum) => &abs_enum.name_span,
                     Item::Alias(abs_alias) => &abs_alias.name_span,
                     Item::Const(abs_const) => &abs_const.name_span,
-                    Item::Import(abs_import) => &abs_import.path_span,
                 }
                 .clone();
 
@@ -670,7 +664,7 @@ impl TypeResolver<'_> {
         self.module.table.types.push(Type::Const(sym_id));
     }
 
-    fn register_import(&mut self, abs_import: &AbstractImport, ast_id: AstId) {
+    fn register_import(&mut self, abs_import: &Import, ast_id: AstId) {
         // self.table.name_ids.insert(ast_id, abs_const.name_id);
         //
         // let type_id = if let Some(id) = self.unknown_id {

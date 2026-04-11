@@ -100,8 +100,10 @@ pub mod tests {
 
         assert_eq!(keywords::SECT_START..=keywords::SECT_END, 35..=38);
 
+        // BigFloat is right before data structures, which can't be pre-loaded, so it is the test
+        // case that confirms the pre-loaded variables are not anything beyond basic primitives
         assert_eq!(
-            keywords::KEYWORDS_ARRAY[(keywords::TYPE_END - 4) as usize],
+            keywords::KEYWORDS_ARRAY[(keywords::TYPE_END - 5) as usize],
             "BigFloat"
         );
 

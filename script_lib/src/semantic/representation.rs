@@ -59,7 +59,7 @@ impl Table {
         };
 
         // TEST: Taking away the data structures with - 3
-        for i in 0..keywords::TYPE_END - 3 {
+        for i in 0..keywords::TYPE_END - 5 {
             let ty = BuiltinType::try_from_id(i as u32).expect("Builtin type not updated");
             table.types.push(Type::BuiltinType(ty));
         }

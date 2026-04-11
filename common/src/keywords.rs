@@ -50,10 +50,9 @@ pub static KEYWORDS_ARRAY: [&str; 46] = [
     // structures
     "struct",
     "enum", // 28
-    // Directives?
+    // Statements
     "import",
     "export", // 30
-    // Statements
     "bind",
     "alias", // 32
     "const",
@@ -161,9 +160,9 @@ impl Formattable for Keyword {
             Keyword::Set => Formatted::Set,
             Keyword::Tuple => Formatted::Tuple,
             Keyword::Self_ => Formatted::Self_,
-            Keyword::Struct => Formatted::Sized,
-            Keyword::Enum => Formatted::Sized,
-            Keyword::Import => Formatted::Sized,
+            Keyword::Struct => Formatted::Struct,
+            Keyword::Enum => Formatted::Enum,
+            Keyword::Import => Formatted::Import,
             Keyword::Export => Formatted::Export,
             Keyword::Bind => Formatted::Bind,
             Keyword::Alias => Formatted::Alias,
@@ -185,6 +184,7 @@ impl Formattable for Keyword {
 }
 
 impl Keyword {
+    /// Returns Some keyword that matches the given id or None
     pub fn try_as_kw(id: u32) -> Option<Keyword> {
         match id {
             // Using literal because scared of if
@@ -238,6 +238,14 @@ impl Keyword {
         }
     }
 
+    /// Returns Some keyword that is considered a statement or None
+    pub fn try_as_stmt(id: u32) -> Option<Keyword> {
+        if !stmt_range().contains(&(id as usize)) {
+            return None;
+        }
+
+        Keyword::try_as_kw(id)
+    }
     // pub fn try_as_builtin(id: u32) -> Option<Keyword> {
     //     if let Some(kw) = Self::try_as_kw(id) {
     //         match kw {
@@ -273,9 +281,9 @@ impl Keyword {
 
 //WARN: Not sure about the amount of casting everywhere
 const TYPE_START: u32 = 0;
-pub const TYPE_END: u32 = 25;
+pub const TYPE_END: u32 = 26;
 
-const STMT_START: u32 = 31;
+const STMT_START: u32 = 29;
 const STMT_END: u32 = 34;
 
 pub const SECT_START: u32 = 35;
