@@ -6,10 +6,7 @@ use common::{
     builtins::{BuiltinType, BuiltinTypeKind},
     fmter::{Formattable, Formatted},
     keywords,
-    symbols::{
-        AstId, BuiltinTypeId, EnumId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs, StructId,
-        SymbolId, TypeDefId, TypeId,
-    },
+    symbols::{AstId, InnerArgs, NameId, Span, SymbolId, TypeId, ValueId},
 };
 
 use crate::{semantic::constraints::ArgConstraint, types::symbols::Cond};
@@ -165,15 +162,23 @@ pub(super) struct ConstRepre {
     pub(super) ast_id: AstId,
     // It's position in the Type array
     pub(super) type_id: TypeId,
+    pub(super) value_id: ValueId,
 }
 
 impl ConstRepre {
-    pub fn new(name_id: NameId, sym_id: SymbolId, ast_id: AstId, type_id: TypeId) -> ConstRepre {
+    pub fn new(
+        name_id: NameId,
+        sym_id: SymbolId,
+        ast_id: AstId,
+        type_id: TypeId,
+        value_id: ValueId,
+    ) -> ConstRepre {
         ConstRepre {
             name_id,
             sym_id,
             ast_id,
             type_id,
+            value_id,
         }
     }
 }

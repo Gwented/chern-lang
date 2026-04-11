@@ -24,38 +24,6 @@ pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
 
 // What if this had 2 probability models?
 fn process_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, String> {
-    let src = match fs::File::open(&check_cmd.path) {
-        Ok(f) => f,
-        Err(e) => match e.kind() {
-            io::ErrorKind::NotFound => {
-                let msg = format!("No file found in path \"{}\"", check_cmd.path.display());
-                return Err(msg);
-            }
-            io::ErrorKind::IsADirectory => {
-                let msg = format!("The path \"{}\" is a directory", check_cmd.path.display());
-                return Err(msg);
-            }
-            io::ErrorKind::PermissionDenied => {
-                // let file_name = check_cmd
-                //     .path
-                //     .file_name()
-                //     .map(|f| f.to_os_string())
-                //     .unwrap_or(OsString::from(&check_cmd.path));
-
-                let msg = format!(
-                    "The file \"{}\" does not have read permissions enabled",
-                    check_cmd.path.display()
-                );
-
-                return Err(msg);
-            }
-            e => {
-                let msg = format!("Process exited unsuccessfully.\n{e}");
-                return Err(msg);
-            }
-        },
-    };
-
     // More like settings
     let settings = ChernSettings::new(cli_cfg.can_color);
 
@@ -66,11 +34,14 @@ fn process_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, St
         }
         Err(core_err) => match core_err {
             CoreError::Config(cfg_load_err) => match cfg_load_err {
-                ConfigLoadError::Unclosed(msg) | ConfigLoadError::Module(msg) => Err(msg),
+                ConfigLoadError::Unclosed(msg) | ConfigLoadError::Module(msg) => {
+                    eprintln!("{msg}");
+                    return Err("Failed to parse configuration file".to_string());
+                }
                 // Should handle all prevelant IO errors inside of module scanner using reporter
                 ConfigLoadError::IO(e) => match e.kind() {
                     e => {
-                        let msg = format!("Process exited unsuccessfully.\n{e}");
+                        let msg = format!("Process exited unsuccessfully. Reason: {e}");
                         return Err(msg);
                     }
                 },
@@ -86,7 +57,7 @@ fn process_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, St
                     return Err("Failed to parse configuration file".to_string());
                 }
                 ScriptError::IO(e) => {
-                    let msg = format!("Process exited unsuccessfully. Reason: \n{e}");
+                    let msg = format!("Process exited unsuccessfully. Reason: {e}");
                     return Err(msg);
                 }
             },

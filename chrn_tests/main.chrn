@@ -4,16 +4,16 @@
 // I am messed up"
 // "I am not even supposed to be included"
 
-// Require forward slashes
 
 @def
 
+// Require forward slashes
 bind "../"
-import "../chrn_tests/docs.md"
+import "../chrn_tests/dcs.md"
 import "../chrn_tests/defs.chrn"
 
 var->
-    // var: Tuple<str, u8, str> [StartsW("Hello")]
+    var: Tuple<str, u8, str> [StartsW("Hello")]
 
     // parser needs this TypeExpr
     // user: defs.User

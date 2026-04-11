@@ -8,12 +8,14 @@ use common::{
     config_loader::ChernConfigLoader,
     core_error::ConfigLoadError,
     intern::Intern,
-    metadata::ModuleMetadata,
+    metadata::{ChernSettings, ModuleMetadata},
+    reporter,
     symbols::{ModuleId, NameId, PathId},
 };
 pub mod mod_finder;
 
 use crate::{
+    iyo::file_ops,
     modules::mod_finder::ModuleFinder,
     parser::ast::{Bind, Import},
     semantic::representation::Table,
@@ -74,10 +76,18 @@ impl Module {
 //TEST: Lets depending on self recursively as a module happen for now
 /// Takes in a path to a `chern` config file, then recursively resolved all imports associated with
 /// the path given in separate modules.
-pub fn extract_modules(path: &Path, interner: &mut Intern) -> Result<Program, ConfigLoadError> {
+pub fn extract_modules(
+    path: &Path,
+    settings: &ChernSettings,
+    interner: &mut Intern,
+) -> Result<Program, ConfigLoadError> {
     // Maybe the cli should still do something about this since if the first path given
     // isn't valid, it WOULD warrent a basic error
-    let src = fs::File::open(path)?;
+    let src = match file_ops::fopen(path) {
+        Ok(f) => f,
+        Err(e) => return Err(ConfigLoadError::Module(e)),
+    };
+
     let main_metadata = ChernConfigLoader::new(path, src).load_config()?;
 
     // Get's actual file name so that any reference such as, "global.CONSTANT_VALUE" can be
@@ -118,8 +128,9 @@ pub fn extract_modules(path: &Path, interner: &mut Intern) -> Result<Program, Co
     resolve_modules(
         &mut seen,
         &mut other_mods,
-        &main_mod.imports,
+        &main_mod,
         &mut mod_map,
+        settings,
         interner,
     )?;
 
@@ -153,14 +164,16 @@ pub fn extract_modules(path: &Path, interner: &mut Intern) -> Result<Program, Co
 }
 
 /// This function recursively resolves each import after being given a root module with imports to go off of.
+// Maybe this has gone a little bit too far
 fn resolve_modules(
     seen: &mut HashSet<PathId>,
     modules: &mut Vec<Module>,
-    imports: &Vec<Import>,
+    prev_mod: &Module,
     mod_map: &mut HashMap<NameId, ModuleId>,
+    settings: &ChernSettings,
     interner: &mut Intern,
 ) -> Result<(), ConfigLoadError> {
-    for import in imports {
+    for import in &prev_mod.imports {
         if seen.contains(&import.path_id) {
             continue;
         }
@@ -168,10 +181,37 @@ fn resolve_modules(
         seen.insert(import.path_id);
 
         let path = interner.search_path(import.path_id.id as usize);
-        // TODO: Non-hacky way of getting spans
+        // TODO: Correctly reporting
+        // let src = match file_ops::fopen(path) {
+        //     Ok(f) => f,
+        //     Err(e) => return Err(ConfigLoadError::Module(e)),
+        // };
         let src = match fs::File::open(path) {
             Ok(f) => f,
-            Err(e) => return Err(e.into()),
+            Err(e) => {
+                let msg = match e.kind() {
+                    std::io::ErrorKind::NotFound => {
+                        format!("Could not find the file \"{}\"", path.display())
+                    }
+                    std::io::ErrorKind::PermissionDenied => {
+                        format!("No permission to access file \"{}\"", path.display())
+                    }
+                    std::io::ErrorKind::IsADirectory => {
+                        format!("The path \"{}\" is a directory", path.display())
+                    }
+                    _ => todo!(),
+                };
+
+                let ln_data = reporter::form_err_diag(
+                    &prev_mod.metadata.src_bytes,
+                    &[import.path_span],
+                    settings.can_color,
+                );
+                let full_msg =
+                    reporter::standardize_err(&msg, &ln_data, "", path, settings.can_color);
+
+                return Err(ConfigLoadError::Module(full_msg));
+            }
         };
 
         let mod_metadata = ChernConfigLoader::new(path, src).load_config()?;
@@ -180,11 +220,15 @@ fn resolve_modules(
         let file_name = match path.file_prefix().map(|n| n.to_str()) {
             Some(Some(p)) => p.to_string(),
             _ => {
-                let msg = format!(
-                    "The path \"{}\" does not have a valid UTF-8 file name usable within the program",
-                    path.display()
-                );
-                return Err(ConfigLoadError::Module(msg));
+                if let Some(alias_id) = import.alias_id {
+                    interner.search(alias_id.id as usize).to_string()
+                } else {
+                    let msg = format!(
+                        "The path \"{}\" does not have a valid UTF-8 file name usable within the program. Consider using 'as' give it an alias if a file name change is not possible.",
+                        path.display()
+                    );
+                    return Err(ConfigLoadError::Module(msg));
+                }
             }
         };
 
@@ -199,7 +243,7 @@ fn resolve_modules(
 
         let sub_mod = Module::new(name_id, import.path_id, sub_imports, mod_metadata);
 
-        resolve_modules(seen, modules, &sub_mod.imports, mod_map, interner)?;
+        resolve_modules(seen, modules, &sub_mod, mod_map, settings, interner)?;
 
         // Modules start off at 0 since the main module can't be inserted before this so + 1 for
         // correct indexing in the final vector

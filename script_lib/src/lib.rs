@@ -3,6 +3,7 @@ mod algo;
 pub mod lexer;
 // Should not be pub
 pub mod ir;
+mod iyo;
 pub mod linter;
 pub mod modules;
 pub mod parser;

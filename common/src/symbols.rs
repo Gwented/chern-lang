@@ -40,6 +40,17 @@ impl ModuleId {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ValueId {
+    pub id: u32,
+}
+
+impl ValueId {
+    pub fn new(id: u32) -> ValueId {
+        ValueId { id }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AstId {
     pub id: u32,
 }
@@ -69,61 +80,6 @@ pub struct PathId {
 impl PathId {
     pub fn new(id: u32) -> PathId {
         PathId { id }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FuncId {
-    pub id: u32,
-}
-
-impl FuncId {
-    pub fn new(id: u32) -> FuncId {
-        FuncId { id }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EnumId {
-    pub id: u32,
-}
-
-impl EnumId {
-    pub fn new(id: u32) -> EnumId {
-        EnumId { id }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StructId {
-    pub id: u32,
-}
-
-impl StructId {
-    pub fn new(id: u32) -> StructId {
-        StructId { id }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BuiltinTypeId {
-    pub id: u32,
-}
-
-impl BuiltinTypeId {
-    pub fn new(id: u32) -> BuiltinTypeId {
-        BuiltinTypeId { id }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TypeDefId {
-    pub id: u32,
-}
-
-impl TypeDefId {
-    pub fn new(id: u32) -> TypeDefId {
-        TypeDefId { id }
     }
 }
 

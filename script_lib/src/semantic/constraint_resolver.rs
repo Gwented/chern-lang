@@ -6,21 +6,19 @@ use common::{
     keywords::{self, Keyword},
     metadata::{ChernSettings, ModuleMetadata},
     reporter::diagnostic::Diagnostic,
-    symbols::{AstId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs, SymbolId, TypeId},
+    symbols::{AstId, InnerArgs, NameId, Span, SpannedInnerArgs, SymbolId, TypeId},
 };
 
 use crate::{
     modules::{Module, Program},
     parser::ast::{
-        AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Expr, Item, SpannedExpr, UnaryOp,
+        AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Expr, Item,
+        SpannedExpr, UnaryOp,
     },
     semantic::{
         constraints::ArgConstraint,
         error::SemanticError,
-        representation::{
-            FieldRepre, FuncArgsKind, FuncArgsRepre, FuncKind, FuncRepre, Symbol, Table, Type,
-            VariantRepre,
-        },
+        representation::{FuncArgsRepre, FuncKind, FuncRepre, Symbol, Type},
         semantic_reporter::SemanticReporter,
     },
     types::symbols::Cond,
@@ -56,17 +54,19 @@ impl ConstraintResolver<'_> {
             let ast_id = AstId::new(id as u32);
 
             match item {
-                Item::Var(type_def) => {
-                    _ = self.resolve_typedef(type_def, ast_id);
+                Item::Var(abs_typedef) => {
+                    _ = self.resolve_typedef(abs_typedef, ast_id);
                 }
-                Item::Struct(structure) => {
-                    _ = self.resolve_struct(structure, ast_id);
+                Item::Struct(abs_struct) => {
+                    _ = self.resolve_struct(abs_struct, ast_id);
                 }
-                Item::Enum(enumeration) => {
-                    _ = self.resolve_enum(enumeration, ast_id);
+                Item::Enum(abs_enum) => {
+                    _ = self.resolve_enum(abs_enum, ast_id);
                 }
                 Item::Alias(abs_alias) => todo!(),
-                Item::Const(abs_const) => todo!(),
+                Item::Const(abs_const) => {
+                    _ = self.resolve_const(abs_const, ast_id);
+                }
             }
         }
 
@@ -276,6 +276,12 @@ impl ConstraintResolver<'_> {
         enumeration.args = args;
 
         Ok(())
+    }
+
+    fn resolve_const(&mut self, abs_const: &AbstractConst, ast_id: AstId) -> Result<(), ()> {
+        let module = &self.program.mods[self.current_idx];
+        let sym_id = module.table.sym_ids[&ast_id];
+        todo!();
     }
 
     // Do we need ast id?

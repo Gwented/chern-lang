@@ -208,7 +208,6 @@ impl Bind {
 pub(crate) struct AbstractConst {
     pub(crate) name_id: NameId,
     pub(crate) name_span: Span,
-    // pub(crate) type_expr: SPann,
     pub(crate) spanned_expr: SpannedExpr,
     pub(crate) is_priv: bool,
 }
@@ -217,14 +216,12 @@ impl AbstractConst {
     pub(crate) fn new(
         name_id: NameId,
         name_span: Span,
-        // type_expr: TypeExpr,
         spanned_expr: SpannedExpr,
         is_priv: bool,
     ) -> AbstractConst {
         AbstractConst {
             name_id,
             name_span,
-            // type_expr,
             spanned_expr,
             is_priv,
         }

@@ -6,10 +6,7 @@ use common::{
     keywords::{self, Keyword},
     metadata::{ChernSettings, ModuleMetadata},
     reporter::diagnostic::Diagnostic,
-    symbols::{
-        AstId, BuiltinTypeId, EnumId, FuncId, InnerArgs, NameId, Span, SpannedInnerArgs, StructId,
-        SymbolId, TypeDefId, TypeId,
-    },
+    symbols::{AstId, InnerArgs, NameId, SymbolId, TypeId, ValueId},
 };
 
 use crate::{
@@ -74,9 +71,8 @@ impl TypeResolver<'_> {
             }
         }
 
+        // Collecting possible same symbol errors
         self.check_duplicates();
-
-        //FIXME: Check symbols here once
 
         if !self.reporter.err_vec.is_empty() {
             let mut diags = Vec::new();
@@ -95,11 +91,9 @@ impl TypeResolver<'_> {
                 Item::Struct(abs_struct) => _ = self.resolve_struct(abs_struct, ast_id),
                 Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum, ast_id),
                 Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias, ast_id),
-                Item::Const(abs_const) => _ = self.resolve_const(abs_const, ast_id),
+                Item::Const(_) => (),
             }
         }
-
-        // Collecting possible same symbol errors
 
         if !self.reporter.err_vec.is_empty() {
             let mut diags = Vec::new();
@@ -222,10 +216,7 @@ impl TypeResolver<'_> {
             let type_id = self.resolve_type_expr(&spanned_ty_expr, ast_id)?;
             params.push(type_id);
         }
-        todo!();
-    }
-
-    fn resolve_const(&mut self, abs_const: &AbstractConst, ast_id: AstId) -> Result<(), ()> {
+        dbg!(&params);
         todo!();
     }
 
@@ -654,7 +645,8 @@ impl TypeResolver<'_> {
 
         self.module.table.sym_ids.insert(ast_id, sym_id);
 
-        let const_repre = ConstRepre::new(abs_const.name_id, sym_id, ast_id, type_id);
+        let const_repre =
+            ConstRepre::new(abs_const.name_id, sym_id, ast_id, type_id, ValueId::new(0));
 
         self.module
             .table
