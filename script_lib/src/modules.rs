@@ -14,18 +14,20 @@ use common::{
 pub mod mod_finder;
 
 use crate::{
-    modules::mod_finder::ModuleFinder, parser::ast::Import, semantic::representation::Table,
+    modules::mod_finder::ModuleFinder,
+    parser::ast::{Bind, Import},
+    semantic::representation::Table,
 };
 
 pub struct Program {
-    pub bind: Option<PathId>,
+    pub bind: Option<Bind>,
     pub mod_map: HashMap<NameId, ModuleId>,
     pub mods: Vec<Module>,
 }
 
 impl Program {
     pub fn new(
-        bind: Option<PathId>,
+        bind: Option<Bind>,
         mod_map: HashMap<NameId, ModuleId>,
         mods: Vec<Module>,
     ) -> Program {
@@ -34,10 +36,6 @@ impl Program {
             mod_map,
             mods,
         }
-    }
-
-    pub fn set_bind(&mut self, path_id: PathId) {
-        self.bind = Some(path_id);
     }
 }
 
@@ -99,7 +97,7 @@ pub fn extract_modules(path: &Path, interner: &mut Intern) -> Result<Program, Co
     let name_id = NameId::new(interner.intern(&file_name));
     let path_id = PathId::new(interner.intern_path(path));
 
-    let main_imports = ModuleFinder::new(
+    let (bind, main_imports) = ModuleFinder::new(
         &main_metadata.src_bytes,
         main_metadata.script_start,
         main_metadata.serial_start,
@@ -149,7 +147,7 @@ pub fn extract_modules(path: &Path, interner: &mut Intern) -> Result<Program, Co
     // }
     // panic!();
 
-    let program = Program::new(None, mod_map, all_mods);
+    let program = Program::new(bind, mod_map, all_mods);
 
     Ok(program)
 }
@@ -192,7 +190,7 @@ fn resolve_modules(
 
         let name_id = NameId::new(interner.intern(&file_name));
 
-        let sub_imports = ModuleFinder::new(
+        let (_, sub_imports) = ModuleFinder::new(
             &mod_metadata.src_bytes,
             mod_metadata.script_start,
             mod_metadata.serial_start,

@@ -16,8 +16,7 @@ char, bool, (maybe capital) str, struct, enum,  nil, BigInt, BigFloat, List, Map
 `struct` for a structure of data.
 `enum` for an Enum type which can also hold data.
 
-// Not sure what to do with this keyword yet
-`Tuple`
+`Tuple`: 
 
 ## [Operators]
 `!`: NOT operator.
@@ -32,9 +31,9 @@ char, bool, (maybe capital) str, struct, enum,  nil, BigInt, BigFloat, List, Map
 `enum`: for an Enum type which can also hold data.
 
 ## Workspace
-- NOT FOR COMPLEXITY, JUST FOR AN ENFORCED CONVENTION. I WANT BINARY
+- NOT FOR COMPLEXITY, JUST FOR AN ENFORCED CONVENTION. I WANT BINARY. Make binary
 
-## Actions (Ignore this)
+## Actions (Ignore this. Entirely ignore this)
 extract env vars
 ```chrn
 
@@ -55,7 +54,7 @@ var->
 alias gopher(x, y) = !IsEmpty, Range(x = 0.0, y = 5.2), StartsW("ch") EndsW("ern") Contains("chern")
 
 var->
-    special_stir: str [gopher(0.5, _)] // defaults to (0.5, 5.0) 
+    special_stir: str [gopher(0.5, _)] // defaults to (0.5, 5.2) 
 
     stirring: str [gopher(2.0, 5.0)] // Works as normal
 ```
@@ -161,7 +160,7 @@ nest->
     }
 
     enum State {
-        Ready(str, unsized) // Can optionally store types
+        Ready: Tuple<str, unsized> // Can optionally store types
         InProgress
         Failed
     }
@@ -199,7 +198,7 @@ There is also a "like" category. A "JAVA_LIKE" category would have all of the in
             color: Color
         }
 
-        enum Color {Red(u8) Blue(u8) Green(u8) } #hex
+        enum Color {Red: Tuple<u8> Blue: Tuple<u8> Green: Tuple<u8> }// #hex
 @end
 ```
 

@@ -3,24 +3,12 @@ use common::symbols::{AstId, InnerArgs, NameId, PathId, Span, SpannedInnerArgs};
 
 #[derive(Debug)]
 pub struct AstInfo {
-    pub(crate) bind: Option<NameId>,
     pub(crate) items: Vec<Item>,
 }
 
 impl AstInfo {
     pub(crate) fn new() -> AstInfo {
-        AstInfo {
-            bind: None,
-            items: Vec::new(),
-        }
-    }
-
-    pub(crate) fn set_bind(&mut self, bind: NameId) {
-        self.bind = Some(bind);
-    }
-
-    pub(crate) fn has_bind(&self) -> bool {
-        self.bind.is_some()
+        AstInfo { items: Vec::new() }
     }
 
     pub(crate) fn get_typedef(&self, ast_id: AstId) -> &AbstractTypeDef {
@@ -174,14 +162,14 @@ pub(crate) enum TypeExpr {
     Any,
 }
 
-//TEST: May just make a SpannedTypeExpr but this can work for now
+//TEST: Relocate reollacl rreellocrelac
 
 #[derive(Debug)]
-pub(crate) struct Import {
+pub struct Import {
     pub(crate) name_id: NameId,
     pub(crate) path_id: PathId,
     pub(crate) path_span: Span,
-    // pub(crate) alias: Option<NameId>,
+    pub(crate) alias_id: Option<NameId>,
 }
 
 impl Import {
@@ -189,14 +177,26 @@ impl Import {
         name_id: NameId,
         path_id: PathId,
         path_span: Span,
-        //  alias_id: Option<NameId>,
+        alias_id: Option<NameId>,
         // Maybe "import as" eventually
     ) -> Import {
         Import {
             name_id,
             path_id,
             path_span,
+            alias_id,
         }
+    }
+}
+
+pub struct Bind {
+    pub path_id: PathId,
+    pub path_span: Span,
+}
+
+impl Bind {
+    pub(crate) fn new(path_id: PathId, path_span: Span) -> Bind {
+        Bind { path_id, path_span }
     }
 }
 

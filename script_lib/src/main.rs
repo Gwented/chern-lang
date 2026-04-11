@@ -3,8 +3,6 @@ use std::{path::PathBuf, time::Instant};
 use common::{config_loader::ChernConfigLoader, intern::Intern};
 use script_lib::{
     lexer::Lexer,
-    linter,
-    parser::{self},
     semantic::{
         constraint_resolver::ConstraintResolver, representation::Table, type_resolver::TypeResolver,
     },

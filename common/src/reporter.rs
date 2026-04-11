@@ -127,8 +127,6 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
 
     // Getting the largest number to see if the entire print should align with a bigger spacing
     let ln_num_width = get_num_width(ln_view.ln_num_span.end);
-    dbg!(ln_num_width);
-    // panic!();
 
     for ln in &ln_view.lines {
         for group in &ln_groups.span_groups {
@@ -439,11 +437,11 @@ pub fn standardize_help(msg: &str, can_color: bool) -> String {
 
 /// Is the preferred function for getting number widths to avoid allocating strings just for number sizes
 fn get_num_width(num: usize) -> usize {
-    let mut size = 1;
+    let mut size = 0;
     let mut i = num;
 
-    while i >= 10 {
-        i /= num;
+    while i != 0 {
+        i /= 10;
         size += 1;
     }
 

@@ -1,15 +1,12 @@
-use std::{
-    ffi::{OsStr, OsString},
-    os::unix::ffi::{OsStrExt, OsStringExt},
-    path::PathBuf,
-};
+use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::PathBuf};
 
 use common::{
     intern::Intern,
+    keywords::Keyword,
     symbols::{NameId, PathId, Span},
 };
 
-use crate::parser::ast::Import;
+use crate::parser::ast::{Bind, Import};
 
 pub struct ModuleFinder<'a> {
     src_bytes: &'a [u8],
@@ -30,11 +27,12 @@ impl ModuleFinder<'_> {
         }
     }
 
-    pub(crate) fn collect_imports(&mut self, interner: &mut Intern) -> Vec<Import> {
+    pub(crate) fn collect_imports(&mut self, interner: &mut Intern) -> (Option<Bind>, Vec<Import>) {
         let mut imports: Vec<Import> = Vec::new();
+        let mut bind: Option<Bind> = None;
 
         loop {
-            self.skip_until_i();
+            self.skip_until_important();
 
             if self.pos >= self.end && self.peek() == b'\0' {
                 break;
@@ -49,6 +47,13 @@ impl ModuleFinder<'_> {
                         let import = self.parse_import(interner);
                         imports.push(import);
                     }
+                }
+                b'b' => {
+                    if self.is_bind() {
+                        bind = Some(self.parse_bind(interner));
+                    }
+                    //
+                    self.advance();
                 }
                 b'"' => {
                     self.skip_quotes();
@@ -70,7 +75,7 @@ impl ModuleFinder<'_> {
             }
         }
 
-        imports
+        (bind, imports)
     }
 
     fn handle_comment(&mut self) {
@@ -79,8 +84,9 @@ impl ModuleFinder<'_> {
         }
     }
 
-    /// Assumes first quote was skipped
+    /// Assumes the starting point is at the start quote
     fn parse_import(&mut self, interner: &mut Intern) -> Import {
+        self.advance();
         let start = self.pos;
 
         while self.pos < self.src_bytes.len() {
@@ -98,32 +104,80 @@ impl ModuleFinder<'_> {
         let end = self.pos - 1;
 
         // - 1 to include quotes since that happens in the lexer. No other reason.
-        let path_span = Span::new(start - 1, end);
 
         //FIX:
         let os_str = OsStr::from_bytes(&self.src_bytes[start..end]);
-        let import_name = PathBuf::from(os_str);
+        let import_path = PathBuf::from(os_str);
 
-        let name = match import_name.file_prefix().map(|n| n.to_str()) {
+        // No control flow
+        let file_name = match import_path.file_prefix().map(|n| n.to_str()) {
             Some(Some(n)) => n,
-            _ => todo!("No control flow within mod_finder"),
+            e => panic!("{:?}", e),
         };
 
-        // let file_name = match path.file_prefix().map(|n| n.to_str()) {
-        //     Some(Some(p)) => p,
-        //     _ => {
-        //         let msg = format!(
-        //             "The path \"{}\" does not have a valid UTF-8 file name usable within the program",
-        //             path.display()
-        //         );
-        //         return Err(ConfigLoadError::Module(msg));
-        //     }
-        // };
+        let name_id = NameId::new(interner.intern(&file_name));
+        let path_id = PathId::new(interner.intern_path(&import_path));
+        let path_span = Span::new(start - 1, end);
 
-        let name_id = NameId::new(interner.intern(&name));
-        let path_id = PathId::new(interner.intern_path(&import_name));
+        let alias_id: Option<NameId> = if self.is_as() {
+            self.skip_whitespace();
+            Some(self.read_id(interner))
+        } else {
+            None
+        };
 
-        Import::new(name_id, path_id, path_span)
+        self.skip_whitespace();
+
+        Import::new(name_id, path_id, path_span, alias_id)
+    }
+
+    fn parse_bind(&mut self, interner: &mut Intern) -> Bind {
+        self.advance();
+        let start = self.pos;
+
+        while self.pos < self.src_bytes.len() {
+            match self.peek() {
+                b'"' => {
+                    self.advance();
+                    break;
+                }
+                _ => {
+                    self.advance();
+                }
+            }
+        }
+
+        let end = self.pos - 1;
+
+        let os_str = OsStr::from_bytes(&self.src_bytes[start..end]);
+        let bind_path = PathBuf::from(os_str);
+
+        // - 1 to include quotes since that happens in the lexer. No other reason.
+        let path_id = PathId::new(interner.intern_path(&bind_path));
+        let path_span = Span::new(start - 1, end);
+
+        Bind::new(path_id, path_span)
+    }
+
+    fn read_id(&mut self, interner: &mut Intern) -> NameId {
+        let start = self.pos;
+
+        while self.pos < self.src_bytes.len() && self.peek_char().is_alphanumeric()
+            || self.peek() == b'_'
+        {
+            self.advance_char();
+        }
+
+        let end = self.pos;
+
+        // Enforces utf-8 but module paths themselves don't need to be valid utf-8, am I
+        // hallucinating?
+        let id_str = str::from_utf8(&self.src_bytes[start..end])
+            .expect("Cannot fail due to loop only accepting valid UTF-8 characters.");
+
+        let id = interner.intern(&id_str);
+
+        NameId::new(id)
     }
 
     fn skip_quotes(&mut self) {
@@ -230,9 +284,19 @@ impl ModuleFinder<'_> {
             return false;
         }
 
-        // Skipping first quote
-        self.advance();
         true
+    }
+
+    // WARN: Suspicipus
+    fn is_as(&mut self) -> bool {
+        self.skip_whitespace();
+
+        if self.pos + 1 < self.src_bytes.len() && &self.src_bytes[self.pos..self.pos + 1] == b"as" {
+            self.skip(2);
+            return true;
+        }
+
+        false
     }
 
     fn is_bind(&mut self) -> bool {
@@ -255,7 +319,6 @@ impl ModuleFinder<'_> {
             return false;
         }
 
-        self.advance();
         true
     }
 
@@ -287,6 +350,32 @@ impl ModuleFinder<'_> {
         self.src_bytes.get(self.pos).copied().unwrap_or(b'\0')
     }
 
+    fn peek_char(&mut self) -> char {
+        let b = self.peek();
+
+        if b <= 127 {
+            return b as char;
+        }
+
+        let end = std::cmp::min(self.pos + 3, self.src_bytes.len());
+
+        let chunk = &self.src_bytes[self.pos..end];
+
+        // Lazy evaluation to avoid utf-8 checking entire self.bytes
+        std::str::from_utf8(chunk)
+            .ok()
+            .and_then(|c| c.chars().next())
+            .unwrap_or('\0')
+    }
+
+    fn advance_char(&mut self) -> char {
+        let ch = self.peek_char();
+
+        self.pos += ch.len_utf8();
+
+        ch
+    }
+
     fn peek_ahead(&mut self, dest: usize) -> u8 {
         self.src_bytes
             .get(self.pos + dest)
@@ -300,10 +389,11 @@ impl ModuleFinder<'_> {
         b
     }
 
-    fn skip_until_i(&mut self) {
+    fn skip_until_important(&mut self) {
         // Stopping at parts that may cause wrongful import reads
         while self.pos <= self.end
             && self.peek() != b'i'
+            && self.peek() != b'b'
             && self.peek() != b'"'
             && self.peek() != b'/'
         {
@@ -311,11 +401,13 @@ impl ModuleFinder<'_> {
         }
     }
 
-    //TODO: Utf-11
     fn skip_whitespace(&mut self) {
-        // Stopping at parts that may cause wrongful import reads
-        while self.pos <= self.end && self.peek().is_ascii_whitespace() {
+        while self.peek().is_ascii_whitespace() {
             self.advance();
+        }
+
+        while self.peek_char().is_whitespace() {
+            self.advance_char();
         }
     }
 }

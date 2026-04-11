@@ -12,7 +12,7 @@ pub const DEFINITION_SIZE: usize = 4;
 // Ensure ranges and all keyword functions are adjusted
 // Ensure tests are aligned
 
-pub static KEYWORDS_ARRAY: [&str; 46] = [
+pub static KEYWORDS_ARRAY: [&str; 47] = [
     // primitives
     "i8", // 0
     "u8",
@@ -40,7 +40,6 @@ pub static KEYWORDS_ARRAY: [&str; 46] = [
     "Map",
     "Set", // 24
     "Tuple",
-    // Special kiwis
     "self", // 26
     // "Integer"
     // "Rational" (Rat)
@@ -62,15 +61,17 @@ pub static KEYWORDS_ARRAY: [&str; 46] = [
     "nest", // 36
     "complex",
     "override", // 38
+    // Special kiwis
+    "as",
     // Predicate keywords
-    "IsEmpty",
-    "IsWhitespace", // 40
+    "IsEmpty", // 40
+    "IsWhitespace",
     // Predicates (Function)
-    "Range",
-    "StartsW", // 42
-    "EndsW",
-    "Contains", // 44
-    "Equals",
+    "Range", // 42
+    "StartsW",
+    "EndsW", // 44
+    "Contains",
+    "Equals", // 46
 ];
 // "Nat" // 37
 // "Real" // 38
@@ -121,13 +122,14 @@ pub enum Keyword {
     Nest = 36,
     Complex = 37,
     Override = 38,
-    IsEmpty = 39,
-    IsWhitespace = 40,
-    Range = 41,
-    StartsW = 42,
-    EndsW = 43,
-    Contains = 44,
-    Equals = 45,
+    As = 39,
+    IsEmpty = 40,
+    IsWhitespace = 41,
+    Range = 42,
+    StartsW = 43,
+    EndsW = 44,
+    Contains = 45,
+    Equals = 46,
 }
 
 impl Formattable for Keyword {
@@ -179,6 +181,7 @@ impl Formattable for Keyword {
             Keyword::EndsW => Formatted::FuncEndsW,
             Keyword::Contains => Formatted::FuncContains,
             Keyword::Equals => Formatted::FuncEquals,
+            Keyword::As => Formatted::As,
         }
     }
 }
@@ -227,13 +230,14 @@ impl Keyword {
             36 => Some(Keyword::Nest),
             37 => Some(Keyword::Complex),
             38 => Some(Keyword::Override),
-            39 => Some(Keyword::IsEmpty),
-            40 => Some(Keyword::IsWhitespace),
-            41 => Some(Keyword::Range),
-            42 => Some(Keyword::StartsW),
-            43 => Some(Keyword::EndsW),
-            44 => Some(Keyword::Contains),
-            45 => Some(Keyword::Equals),
+            39 => Some(Keyword::As),
+            40 => Some(Keyword::IsEmpty),
+            41 => Some(Keyword::IsWhitespace),
+            42 => Some(Keyword::Range),
+            43 => Some(Keyword::StartsW),
+            44 => Some(Keyword::EndsW),
+            45 => Some(Keyword::Contains),
+            46 => Some(Keyword::Equals),
             _ => None,
         }
     }
@@ -289,8 +293,8 @@ const STMT_END: u32 = 34;
 pub const SECT_START: u32 = 35;
 pub const SECT_END: u32 = 38;
 
-const PREDICATE_START: u32 = 39;
-const PREDICATE_END: u32 = 45;
+const PREDICATE_START: u32 = 40;
+const PREDICATE_END: u32 = 46;
 
 //WARN: The amount of casting here is painful. SEVERELY painful.
 pub fn is_type(id: u32) -> bool {

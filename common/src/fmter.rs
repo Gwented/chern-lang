@@ -51,6 +51,7 @@ pub enum Formatted {
     Self_,
     Complex,
     Override,
+    As,
     IsEmpty,
     IsWhitespace,
     FuncRange,
@@ -119,6 +120,7 @@ impl Display for Formatted {
             Formatted::Nothing => write!(f, ""),
             Formatted::Tuple => write!(f, "tuple"),
             Formatted::Self_ => write!(f, "self"),
+            Formatted::As => write!(f, "as"),
         }
     }
 }

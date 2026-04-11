@@ -8,10 +8,12 @@
 
 @def
 
+bind "../"
+import "../chrn_tests/docs.md"
+import "../chrn_tests/defs.chrn"
+
 var->
-    import "../chrn_tests/defs.chrn" as
-best->
-/*    // var: Tuple<str, u8, str> [StartsW("Hello")]
+    // var: Tuple<str, u8, str> [StartsW("Hello")]
 
     // parser needs this TypeExpr
     // user: defs.User
@@ -23,7 +25,6 @@ nest->
         InProgress
         Failed
     }
-    */
 
 // alias x() = [IsEmpty, defs.DEFAULT(x = "4", y)]
 

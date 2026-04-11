@@ -76,7 +76,7 @@ pub fn parse(
                         state.flip_bind();
                     }
 
-                    _ = parse_bind_stmt(&mut ctx, &mut ast_info, interner);
+                    _ = check_bind(&mut ctx, &interner);
                 }
                 id if id == Keyword::Alias as u32 => {
                     ctx.advance_tok();
@@ -378,12 +378,8 @@ fn parse_alias_stmt(
     Ok(alias)
 }
 
-fn parse_bind_stmt(
-    ctx: &mut Context,
-    ast_info: &mut AstInfo,
-    interner: &Intern,
-) -> Result<(), Token> {
-    let name_id = ctx.expect_id_verbose(
+fn check_bind(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
+    ctx.expect_id_verbose(
         TokenKind::Str,
         "Expected a string literal after `bind`, found ",
         "",
@@ -392,9 +388,30 @@ fn parse_bind_stmt(
         interner,
     )?;
 
-    let name_id = NameId::new(name_id);
+    Ok(())
+}
 
-    ast_info.set_bind(name_id);
+fn check_import(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
+    ctx.expect_id_verbose(
+        TokenKind::Str,
+        "Expected a string literal path, found ",
+        "",
+        Branch::Neutral(NeutralBranch::Import),
+        interner,
+    )?;
+
+    if let Token::Id(id) = ctx.peek_tok()
+        && id == Keyword::As as u32
+    {
+        ctx.advance_tok();
+        ctx.expect_id_verbose(
+            TokenKind::Id,
+            "Expected an alias for the given import after keyword `as`, found ",
+            "",
+            Branch::Neutral(NeutralBranch::Import),
+            interner,
+        )?;
+    }
 
     Ok(())
 }
@@ -1299,18 +1316,6 @@ fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>
 //NOTE: Could make the first pass only resolve the basics so that module resolution for local
 //imports are handled without giving the module passer too much syntax knowledge, but fine for now.
 /// Only does syntax checking for import since modules are resolved on first pass.
-fn check_import(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
-    ctx.expect_id_verbose(
-        TokenKind::Str,
-        "Expected a string literal path, found ",
-        "",
-        Branch::Neutral(NeutralBranch::Import),
-        interner,
-    )?;
-
-    Ok(())
-}
-
 fn parse_export(ctx: &mut Context, interner: &Intern) -> Result<bool, ()> {
     let mut is_priv = true;
 

@@ -313,7 +313,7 @@ impl<'a> Context<'a> {
                 NeutralBranch::Searching => (C_STMT_NEUTRAL_SET, A_BASE_EXIT_SET),
                 NeutralBranch::Bind => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
                 NeutralBranch::Alias => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
-                NeutralBranch::Const => todo!(),
+                NeutralBranch::Const => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
                 NeutralBranch::Import => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             },
             Branch::Section(sect_branch) => match sect_branch {
@@ -350,7 +350,7 @@ impl<'a> Context<'a> {
             .toks
             .get(self.pos + 1)
             .map(|t| t.tok.kind())
-            .unwrap_or(TokenKind::Poison);
+            .unwrap_or(TokenKind::EOF);
 
         match branch {
             Branch::Neutral(neutral_branch) => match neutral_branch {
@@ -467,7 +467,7 @@ impl<'a> Context<'a> {
                     }
                     _ => None,
                 },
-                SectionBranch::NestType => todo!(),
+                // SectionBranch::NestType => todo!(),
                 // SectionBranch::NestEnum => todo!(),
                 // SectionBranch::Complex => todo!(),
                 // SectionBranch::Override => todo!(),
@@ -535,30 +535,10 @@ impl<'a> Context<'a> {
             },
             _ => None,
         }
-        //     //FIXME: Currently suggests on any error in neutral so...more branches
     }
-    //     // #warn, #scient, etc <--
-    //     Branch::TypeArgs => match found.tok {
-    //         Token::Id(id) => {
-    //             let found_bytes = interner.search(id as usize).as_bytes();
-    //
-    //             let similar_arg = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Arg)?;
-    //
-    //             let help = reporter::standardize_help(
-    //                 &format!("Found similar argument \"{similar_arg}\"",),
-    //                 self.settings.can_color,
-    //             );
-    //
-    //             Some(help)
-    //         }
-    //         _ => None,
-    //     },
-    //     _ => None,
-    // }
 
     /// Intended to handle the case where EOF is reached due to errors likely wanting to show the
     /// last token TO EOF, rather than just EOF
-    //WARN: IF ANYTHING HAPPENS TO ERROR MESSAGES REMOVE THIS
     fn safely_handle_span(&self, found: &SpannedToken) -> Vec<Span> {
         if found.tok.kind() == TokenKind::EOF {
             // Minus 2 since we advanced at the beginning
