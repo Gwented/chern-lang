@@ -9,7 +9,6 @@
 
 // Require forward slashes
 bind "../"
-import "../chrn_tests/dcs.md"
 import "../chrn_tests/defs.chrn"
 
 var->
@@ -20,7 +19,7 @@ var->
 nest->
     struct Data {}
 
-    enum State {
+    export enum State {
         Ready: Tuple<Data, str>
         InProgress
         Failed

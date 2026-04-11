@@ -181,12 +181,22 @@ fn resolve_modules(
         seen.insert(import.path_id);
 
         let path = interner.search_path(import.path_id.id as usize);
-        // TODO: Correctly reporting
-        // let src = match file_ops::fopen(path) {
-        //     Ok(f) => f,
-        //     Err(e) => return Err(ConfigLoadError::Module(e)),
-        // };
         let src = match fs::File::open(path) {
+            // Why.
+            Ok(_) if path.is_dir() => {
+                let msg = format!("The path \"{}\" is a directory", path.display());
+
+                let ln_data = reporter::form_err_diag(
+                    &prev_mod.metadata.src_bytes,
+                    &[import.path_span],
+                    settings.can_color,
+                );
+                let prev_path = interner.search_path(prev_mod.path_id.id as usize);
+                let full_msg =
+                    reporter::standardize_err(&msg, &ln_data, "", prev_path, settings.can_color);
+
+                return Err(ConfigLoadError::Module(full_msg));
+            }
             Ok(f) => f,
             Err(e) => {
                 let msg = match e.kind() {
@@ -199,7 +209,7 @@ fn resolve_modules(
                     std::io::ErrorKind::IsADirectory => {
                         format!("The path \"{}\" is a directory", path.display())
                     }
-                    _ => todo!(),
+                    e => format!("{e}"),
                 };
 
                 let ln_data = reporter::form_err_diag(
@@ -207,8 +217,9 @@ fn resolve_modules(
                     &[import.path_span],
                     settings.can_color,
                 );
+                let prev_path = interner.search_path(prev_mod.path_id.id as usize);
                 let full_msg =
-                    reporter::standardize_err(&msg, &ln_data, "", path, settings.can_color);
+                    reporter::standardize_err(&msg, &ln_data, "", prev_path, settings.can_color);
 
                 return Err(ConfigLoadError::Module(full_msg));
             }
@@ -247,7 +258,7 @@ fn resolve_modules(
 
         // Modules start off at 0 since the main module can't be inserted before this so + 1 for
         // correct indexing in the final vector
-        mod_map.insert(name_id, ModuleId::new((modules.len() + 1) as u32));
+        mod_map.insert(name_id, ModuleId::new(modules.len() + 1));
         modules.push(sub_mod);
     }
 

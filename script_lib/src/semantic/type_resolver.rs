@@ -47,7 +47,7 @@ impl TypeResolver<'_> {
             ast_info,
             interner,
             module,
-            reporter: SemanticReporter::new(settings),
+            reporter: SemanticReporter::new(settings, interner),
             //TODO: This should be different
             unknown_id: None,
         }
@@ -91,7 +91,7 @@ impl TypeResolver<'_> {
                 Item::Struct(abs_struct) => _ = self.resolve_struct(abs_struct, ast_id),
                 Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum, ast_id),
                 Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias, ast_id),
-                Item::Const(_) => (),
+                Item::Const(abs_const) => _ = self.resolve_const(abs_const, ast_id),
             }
         }
 
@@ -117,6 +117,10 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
+    fn resolve_const(&mut self, abs_const: &AbstractConst, ast_id: AstId) -> Result<(), ()> {
+        todo!();
+    }
+
     fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
         let mut fields: Vec<FieldRepre> = Vec::new();
 
@@ -137,12 +141,8 @@ impl TypeResolver<'_> {
                     "More than one field has the identifier \"{dup_name}\" within struct \"{struct_name}\""
                 );
 
-                self.reporter.report_spanned(
-                    &msg,
-                    None,
-                    &[orig_span, field_span],
-                    &self.module.metadata,
-                );
+                self.reporter
+                    .report_spanned(&msg, None, &[orig_span, field_span], &self.module);
             }
 
             seen.push((i, type_def.name_id));
@@ -181,12 +181,8 @@ impl TypeResolver<'_> {
                     "More than one variant has the identifier \"{dup_name}\" within enum \"{enum_name}\""
                 );
 
-                self.reporter.report_spanned(
-                    &msg,
-                    None,
-                    &[orig_span, variant_span],
-                    &self.module.metadata,
-                );
+                self.reporter
+                    .report_spanned(&msg, None, &[orig_span, variant_span], &self.module);
             }
 
             seen.push((i, variant.name_id));
@@ -258,7 +254,7 @@ impl TypeResolver<'_> {
                     &err_msg,
                     Some(err_name),
                     &[spanned_ty_expr.span],
-                    &self.module.metadata,
+                    &self.module,
                 );
 
                 return Err(());
@@ -282,12 +278,8 @@ impl TypeResolver<'_> {
 
                 let err_msg = format!("\"{err_name}\" is not defined as a type");
 
-                self.reporter.report_spanned(
-                    &err_msg,
-                    None,
-                    &[spanned_ty_expr.span],
-                    &self.module.metadata,
-                );
+                self.reporter
+                    .report_spanned(&err_msg, None, &[spanned_ty_expr.span], &self.module);
 
                 return Err(());
             }
@@ -307,7 +299,7 @@ impl TypeResolver<'_> {
                                     &msg,
                                     None,
                                     &[spanned_ty_expr.span],
-                                    &self.module.metadata,
+                                    &self.module,
                                 );
 
                                 return Err(());
@@ -347,7 +339,7 @@ impl TypeResolver<'_> {
                                     &msg,
                                     None,
                                     &[spanned_ty_expr.span],
-                                    &self.module.metadata,
+                                    &self.module,
                                 );
 
                                 return Err(());
@@ -376,7 +368,7 @@ impl TypeResolver<'_> {
                                     &msg,
                                     None,
                                     &[spanned_ty_expr.span],
-                                    &self.module.metadata,
+                                    &self.module,
                                 );
 
                                 return Err(());
@@ -404,7 +396,7 @@ impl TypeResolver<'_> {
                                 &err_msg,
                                 Some(err_name),
                                 &[spanned_ty_expr.span],
-                                &self.module.metadata,
+                                &self.module,
                             );
 
                             Err(())
@@ -422,7 +414,7 @@ impl TypeResolver<'_> {
                             &err_msg,
                             Some(err_name),
                             &[spanned_ty_expr.span],
-                            &self.module.metadata,
+                            &self.module,
                         );
 
                         Err(())
@@ -494,12 +486,8 @@ impl TypeResolver<'_> {
                     "Found more than one symbol with identifier \"{dup_name}\" in the same scope"
                 );
 
-                self.reporter.report_spanned(
-                    &msg,
-                    None,
-                    &[orig_span, dup_span],
-                    &self.module.metadata,
-                );
+                self.reporter
+                    .report_spanned(&msg, None, &[orig_span, dup_span], &self.module);
             }
         }
     }

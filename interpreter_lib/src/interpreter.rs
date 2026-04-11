@@ -15,7 +15,6 @@ use script_lib::{
 
 // Maybe this shouldn't take metadata externally
 pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), CoreError> {
-    // No extra usage of this as of right now
     let mut interner = Intern::init();
 
     // Doing this first since if modules were identified during the parsing stage any
@@ -25,16 +24,18 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
 
     let mut asts: Vec<AstInfo> = Vec::new();
 
-    // Storing namespaces first so that referencing can be made to accessible to other modules
+    // Need to separate namespace resolution and type resolver because if the modules namespaces
+    // aren't resolved first, then type resolution isn't possible since it could be using types
+    // from elsewhere, which are not known yet.
     for module in &mut program.mods {
         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
             .tokenize(&mut interner);
 
-        let ast_info = match parser::parse(settings, &module.metadata, &toks, &mut interner) {
+        let ast_info = match parser::parse(settings, &module, &toks, &mut interner) {
             Ok(info) => info,
             Err(script_err) => match script_err {
-                ScriptError::Parser(mut diagnostics) | ScriptError::Semantic(mut diagnostics) => {
-                    reporter.diags.append(&mut diagnostics);
+                ScriptError::Parser(mut diags) | ScriptError::Semantic(mut diags) => {
+                    reporter.diags.append(&mut diags);
                     continue;
                 }
                 e => return Err(e.into()),

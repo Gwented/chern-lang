@@ -3,6 +3,7 @@ mod branch;
 mod context;
 mod parser_state;
 
+use crate::modules::Module;
 use crate::parser::ast::{
     AbstractAlias, AbstractConst, AbstractEnum, AbstractFieldAccess, AbstractStruct,
     AbstractTypeDef, AbstractVariant, AstInfo, Expr, Generic, Item, SpannedExpr, SpannedTypeExpr,
@@ -25,7 +26,7 @@ const MAX_ERRORS: u8 = 3;
 
 pub fn parse(
     settings: &ChernSettings,
-    mod_metadata: &ModuleMetadata,
+    module: &Module,
     tokens: &Vec<SpannedToken>,
     interner: &Intern,
 ) -> Result<AstInfo, ScriptError> {
@@ -33,7 +34,7 @@ pub fn parse(
 
     let mut state = ParserState::new();
 
-    let mut ctx = Context::new(settings, mod_metadata, tokens);
+    let mut ctx = Context::new(settings, module, tokens);
 
     // WARN: THIS WAS CHANGED
     while ctx.peek_tok() != Token::EOF {
@@ -105,6 +106,15 @@ pub fn parse(
                     }
                 }
                 id if id == Keyword::Import as u32 => {
+                    if !is_priv {
+                        report_export(
+                            &mut ctx,
+                            Formatted::Import,
+                            Branch::Neutral(NeutralBranch::Searching),
+                            interner,
+                        );
+                    }
+
                     ctx.advance_tok();
 
                     _ = check_import(&mut ctx, interner);
@@ -113,8 +123,8 @@ pub fn parse(
                     if !is_priv {
                         report_export(
                             &mut ctx,
-                            Formatted::Bind,
-                            Branch::Neutral(NeutralBranch::Searching),
+                            Formatted::Var,
+                            Branch::Section(SectionBranch::Searching),
                             interner,
                         );
                     }
@@ -126,7 +136,7 @@ pub fn parse(
                     if state.has_var() {
                         ctx.report_verbose(
                             "Found `var` section more than once",
-                            Branch::Searching,
+                            Branch::Section(SectionBranch::Searching),
                             interner,
                         );
 
@@ -139,7 +149,7 @@ pub fn parse(
                         TokenKind::SlimArrow,
                         "Expected a '->' after section `var`, found ",
                         "",
-                        Branch::Searching,
+                        Branch::Section(SectionBranch::Searching),
                         interner,
                     );
 
@@ -159,7 +169,12 @@ pub fn parse(
                 }
                 id if id == Keyword::Nest as u32 => {
                     if !is_priv {
-                        report_export(&mut ctx, Formatted::Var, Branch::Searching, interner);
+                        report_export(
+                            &mut ctx,
+                            Formatted::Nest,
+                            Branch::Section(SectionBranch::Searching),
+                            interner,
+                        );
                     }
 
                     ctx.advance_tok();
@@ -167,7 +182,7 @@ pub fn parse(
                     if state.has_nest() {
                         ctx.report_verbose(
                             "Found `nest` section more than once",
-                            Branch::Searching,
+                            Branch::Section(SectionBranch::Searching),
                             interner,
                         );
                         continue;
@@ -179,7 +194,7 @@ pub fn parse(
                         TokenKind::SlimArrow,
                         "Expected a '->' after section `nest`, found ",
                         "",
-                        Branch::Searching,
+                        Branch::Section(SectionBranch::Searching),
                         interner,
                     );
 
@@ -191,7 +206,12 @@ pub fn parse(
                             break;
                         }
 
-                        if let Ok(item) = parse_nest_sect(&mut ctx, interner) {
+                        let is_priv = match parse_export(&mut ctx, interner) {
+                            Ok(p) => p,
+                            Err(_) => continue,
+                        };
+
+                        if let Ok(item) = parse_nest_sect(&mut ctx, is_priv, interner) {
                             ast_info.items.push(item);
                         }
                     }
@@ -207,7 +227,7 @@ pub fn parse(
                     if state.has_complex() {
                         ctx.report_verbose(
                             "Found \"complex\" section more than once",
-                            Branch::Searching,
+                            Branch::Section(SectionBranch::Searching),
                             interner,
                         );
                         continue;
@@ -219,7 +239,7 @@ pub fn parse(
                         TokenKind::SlimArrow,
                         "Expected a '->' after section `complex`, found ",
                         "",
-                        Branch::Searching,
+                        Branch::Section(SectionBranch::Searching),
                         interner,
                     );
 
@@ -244,7 +264,7 @@ pub fn parse(
                     if state.has_override() {
                         ctx.report_verbose(
                             "Found \"override\" section more than once",
-                            Branch::Searching,
+                            Branch::Section(SectionBranch::Searching),
                             interner,
                         );
                         continue;
@@ -256,7 +276,7 @@ pub fn parse(
                         TokenKind::SlimArrow,
                         "Expected a '->' after section `override`, found ",
                         "",
-                        Branch::Searching,
+                        Branch::Section(SectionBranch::Searching),
                         interner,
                     );
                     // Please lint empty sections please emit 40000 warns for slightly misplaced
@@ -280,12 +300,21 @@ pub fn parse(
                     let name = interner.search(id as usize);
                     let fmsg = format!("identifier \"{name}\"");
 
-                    ctx.report_template(
-                        "a section with a '->' after",
-                        &fmsg,
-                        Branch::Searching,
-                        interner,
-                    );
+                    if state.is_neutral() {
+                        ctx.report_template(
+                            "a statement or section",
+                            &fmsg,
+                            Branch::Neutral(NeutralBranch::Searching),
+                            interner,
+                        );
+                    } else {
+                        ctx.report_template(
+                            "a section with a '->' after",
+                            &fmsg,
+                            Branch::Section(SectionBranch::Searching),
+                            interner,
+                        );
+                    }
                 }
             },
             Token::Illegal(id) => {
@@ -468,7 +497,7 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
     Ok(abs_typedef)
 }
 
-fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> {
+fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Result<Item, Token> {
     // Wait what is this error?
     let id = ctx.expect_id_verbose(
         TokenKind::Id,
@@ -537,7 +566,7 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
             };
 
             // Unsure if structures or enums will have fields so just stays for now
-            let structure = AbstractStruct::new(name_id, name_span, conds, args, fields);
+            let structure = AbstractStruct::new(name_id, name_span, conds, args, fields, is_priv);
 
             Item::Struct(structure)
         }
@@ -592,7 +621,7 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
             };
 
             let enumeration =
-                AbstractEnum::new(name_id, name_span, variants, glob_conds, glob_args);
+                AbstractEnum::new(name_id, name_span, variants, glob_conds, glob_args, is_priv);
 
             Item::Enum(enumeration)
         }

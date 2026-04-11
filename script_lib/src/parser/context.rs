@@ -12,6 +12,7 @@ use common::{
 
 use crate::{
     algo,
+    modules::Module,
     parser::{NeutralBranch, SectionBranch, branch::Branch},
     types::{
         symbols::SpannedToken,
@@ -52,7 +53,7 @@ const A_BRANCH_FUNC_SET: u64 = A_BASE_EXIT_SET | token::C_BRACKET;
 #[derive(Debug)]
 pub(super) struct Context<'a> {
     settings: &'a ChernSettings,
-    mod_metadata: &'a ModuleMetadata,
+    module: &'a Module,
     toks: &'a [SpannedToken],
     pos: usize,
     pub(super) err_vec: Vec<Diagnostic>,
@@ -61,13 +62,13 @@ pub(super) struct Context<'a> {
 impl<'a> Context<'a> {
     pub(super) fn new(
         settings: &'a ChernSettings,
-        mod_metadata: &'a ModuleMetadata,
-        tokens: &'a [SpannedToken],
+        module: &'a Module,
+        toks: &'a [SpannedToken],
     ) -> Context<'a> {
         Context {
             settings,
-            mod_metadata,
-            toks: tokens,
+            module,
+            toks,
             pos: 0,
             err_vec: Vec::new(),
         }
@@ -109,8 +110,11 @@ impl<'a> Context<'a> {
 
         let span = self.safely_handle_span(&found);
 
-        let ln_data =
-            reporter::form_err_diag(&self.mod_metadata.src_bytes, &span, self.settings.can_color);
+        let ln_data = reporter::form_err_diag(
+            &self.module.metadata.src_bytes,
+            &span,
+            self.settings.can_color,
+        );
 
         let msg = if let Some(name) = id_opt {
             let msg = format!("(in {branch})\n{bmsg}\"{name}\"{amsg}");
@@ -119,7 +123,7 @@ impl<'a> Context<'a> {
                 &msg,
                 &ln_data,
                 &help,
-                &self.mod_metadata.path,
+                interner.search_path(self.module.path_id.id as usize),
                 self.settings.can_color,
             )
         } else {
@@ -129,7 +133,7 @@ impl<'a> Context<'a> {
                 &msg,
                 &ln_data,
                 &help,
-                &self.mod_metadata.path,
+                interner.search_path(self.module.path_id.id as usize),
                 self.settings.can_color,
             )
         };
@@ -156,8 +160,11 @@ impl<'a> Context<'a> {
 
         let span = self.safely_handle_span(found);
 
-        let ln_data =
-            reporter::form_err_diag(&self.mod_metadata.src_bytes, &span, self.settings.can_color);
+        let ln_data = reporter::form_err_diag(
+            &self.module.metadata.src_bytes,
+            &span,
+            self.settings.can_color,
+        );
 
         let base_msg = format!("(in {branch})\n{msg}");
 
@@ -165,7 +172,7 @@ impl<'a> Context<'a> {
             &base_msg,
             &ln_data,
             &help,
-            &self.mod_metadata.path,
+            interner.search_path(self.module.path_id.id as usize),
             self.settings.can_color,
         );
 
@@ -209,7 +216,7 @@ impl<'a> Context<'a> {
             let span = self.safely_handle_span(found);
 
             let ln_data = reporter::form_err_diag(
-                &self.mod_metadata.src_bytes,
+                &self.module.metadata.src_bytes,
                 &span,
                 self.settings.can_color,
             );
@@ -228,7 +235,7 @@ impl<'a> Context<'a> {
                     &base_msg,
                     &ln_data,
                     &help,
-                    &self.mod_metadata.path,
+                    interner.search_path(self.module.path_id.id as usize),
                     self.settings.can_color,
                 )
             } else {
@@ -238,7 +245,7 @@ impl<'a> Context<'a> {
                     &base_msg,
                     &ln_data,
                     &help,
-                    &self.mod_metadata.path,
+                    interner.search_path(self.module.path_id.id as usize),
                     self.settings.can_color,
                 )
             };
@@ -271,8 +278,11 @@ impl<'a> Context<'a> {
 
         let span = self.safely_handle_span(found);
 
-        let ln_data =
-            reporter::form_err_diag(&self.mod_metadata.src_bytes, &span, self.settings.can_color);
+        let ln_data = reporter::form_err_diag(
+            &self.module.metadata.src_bytes,
+            &span,
+            self.settings.can_color,
+        );
 
         let base_msg = format!("(in {branch})\nExpected {emsg}, found {fmsg}");
 
@@ -280,7 +290,7 @@ impl<'a> Context<'a> {
             &base_msg,
             &ln_data,
             &help,
-            &self.mod_metadata.path,
+            interner.search_path(self.module.path_id.id as usize),
             self.settings.can_color,
         );
 
@@ -317,6 +327,7 @@ impl<'a> Context<'a> {
                 NeutralBranch::Import => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             },
             Branch::Section(sect_branch) => match sect_branch {
+                SectionBranch::Searching => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
                 SectionBranch::Var => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
                 SectionBranch::Nest => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
                 SectionBranch::NestType => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),

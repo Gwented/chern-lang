@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::{
-    core_error::ConfigLoadError, help_model::quote_model, keywords::DEFINITION_SIZE,
-    metadata::ModuleMetadata, reporter, symbols::Span,
+    core_error::ConfigLoadError, help_model::quote_model, intern::Intern,
+    keywords::DEFINITION_SIZE, metadata::ModuleMetadata, reporter, symbols::Span,
 };
 
 const READ_LIMIT_OFFSET: usize = 500;
@@ -195,7 +195,6 @@ impl<R: Read> ChernConfigLoader<'_, R> {
                         let serial_start = self.pos + DEFINITION_SIZE;
 
                         return Ok(ModuleMetadata::new(
-                            PathBuf::from(self.path),
                             self.handle.buffer()[..self.pos + DEFINITION_SIZE].to_vec(),
                             lex_start,
                             Some(serial_start),
@@ -225,7 +224,6 @@ impl<R: Read> ChernConfigLoader<'_, R> {
         // read. This does not mean it is correct, it only means the read limit wasn't reached.
         if !requires_end {
             Ok(ModuleMetadata::new(
-                PathBuf::from(self.path),
                 self.handle.buffer()[..self.pos].to_vec(),
                 lex_start,
                 None,

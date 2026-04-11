@@ -108,9 +108,6 @@ impl Table {
         match &self.symbols[&sym_id] {
             symbol => match symbol {
                 Symbol::Func(func_repre) => func_repre,
-                // Symbol::TypeDef(type_def_repre) => todo!(),
-                // Symbol::Struct(struct_repre) => Some(struct_repre),
-                // Symbol::Enum(enum_repre) => todo!(),
                 _ => unreachable!(),
             },
         }
@@ -120,9 +117,6 @@ impl Table {
         match self.symbols.get_mut(&sym_id) {
             Some(symbol) => match symbol {
                 Symbol::Func(func_repre) => func_repre,
-                // Symbol::TypeDef(type_def_repre) => todo!(),
-                // Symbol::Struct(struct_repre) => Some(struct_repre),
-                // Symbol::Enum(enum_repre) => todo!(),
                 _ => unreachable!(),
             },
             None => unreachable!(),
@@ -133,9 +127,6 @@ impl Table {
         match &self.symbols[&sym_id] {
             symbol => match symbol {
                 Symbol::Enum(enum_repre) => enum_repre,
-                // Symbol::Func(func_repre) => Some(func_repre),
-                // Symbol::TypeDef(type_def_repre) => todo!(),
-                // Symbol::Struct(struct_repre) => Some(struct_repre),
                 _ => unreachable!(),
             },
         }
@@ -145,9 +136,25 @@ impl Table {
         match self.symbols.get_mut(&sym_id) {
             Some(symbol) => match symbol {
                 Symbol::Enum(enum_repre) => enum_repre,
-                // Symbol::Func(func_repre) => Some(func_repre),
-                // Symbol::TypeDef(type_def_repre) => todo!(),
-                // Symbol::Struct(struct_repre) => Some(struct_repre),
+                _ => unreachable!(),
+            },
+            None => unreachable!(),
+        }
+    }
+
+    pub(super) fn get_const(&self, sym_id: SymbolId) -> &ConstRepre {
+        match &self.symbols[&sym_id] {
+            symbol => match symbol {
+                Symbol::Const(const_repre) => const_repre,
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    pub(super) fn get_const_mut(&mut self, sym_id: SymbolId) -> &mut ConstRepre {
+        match self.symbols.get_mut(&sym_id) {
+            Some(symbol) => match symbol {
+                Symbol::Const(const_repre) => const_repre,
                 _ => unreachable!(),
             },
             None => unreachable!(),

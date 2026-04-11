@@ -16,14 +16,14 @@ use crate::{
 pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
     match &cli.command {
         // Lint sub-command?
-        Commands::Check(check_cmd) => process_check(&check_cmd, &cli_cfg),
+        Commands::Check(check_cmd) => exec_check(&check_cmd, &cli_cfg),
         Commands::Fmt(fmt_cmd) => todo!(),
         Commands::Gen(gen_cmd) => todo!(),
     }
 }
 
 // What if this had 2 probability models?
-fn process_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, String> {
+fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, String> {
     // More like settings
     let settings = ChernSettings::new(cli_cfg.can_color);
 
@@ -61,7 +61,7 @@ fn process_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, St
                     return Err(msg);
                 }
             },
-            CoreError::Serial(serial_error) => todo!(),
+            _ => unreachable!(),
         },
     }
 }

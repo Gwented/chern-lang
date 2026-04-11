@@ -262,7 +262,7 @@ pub(crate) struct AbstractStruct {
     pub(crate) glob_conds: Vec<SpannedExpr>,
     pub(crate) glob_args: Vec<SpannedInnerArgs>,
     pub(crate) fields: Vec<AbstractTypeDef>,
-    // pub(crate) visibility: Visibility,
+    pub(crate) is_priv: bool,
 }
 
 impl AbstractStruct {
@@ -272,6 +272,7 @@ impl AbstractStruct {
         glob_conds: Vec<SpannedExpr>,
         glob_args: Vec<SpannedInnerArgs>,
         fields: Vec<AbstractTypeDef>,
+        is_priv: bool,
         // visibility: Visibility,
     ) -> AbstractStruct {
         AbstractStruct {
@@ -280,7 +281,7 @@ impl AbstractStruct {
             glob_args,
             glob_conds,
             fields,
-            // visibility,
+            is_priv, // visibility,
         }
     }
 }
@@ -293,6 +294,7 @@ pub(crate) struct AbstractEnum {
     pub(crate) variants: Vec<AbstractVariant>,
     pub(crate) glob_conds: Vec<SpannedExpr>,
     pub(crate) glob_args: Vec<SpannedInnerArgs>,
+    pub(crate) is_priv: bool,
     // pub(crate) visibility: Visibility,
 }
 
@@ -303,7 +305,7 @@ impl AbstractEnum {
         variants: Vec<AbstractVariant>,
         glob_conds: Vec<SpannedExpr>,
         glob_args: Vec<SpannedInnerArgs>,
-        // visibility: Visibility,
+        is_priv: bool,
     ) -> AbstractEnum {
         AbstractEnum {
             name_id,
@@ -311,7 +313,7 @@ impl AbstractEnum {
             variants,
             glob_conds,
             glob_args,
-            // visibility,
+            is_priv,
         }
     }
 }

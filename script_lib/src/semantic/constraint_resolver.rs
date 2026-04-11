@@ -1,10 +1,9 @@
 use common::{
-    builtins::{BuiltinType, BuiltinTypeKind},
-    core_error::ScriptError,
+    builtins::BuiltinType,
     fmter::{Formattable, Formatted},
     intern::Intern,
     keywords::{self, Keyword},
-    metadata::{ChernSettings, ModuleMetadata},
+    metadata::ChernSettings,
     reporter::diagnostic::Diagnostic,
     symbols::{AstId, InnerArgs, NameId, Span, SpannedInnerArgs, SymbolId, TypeId},
 };
@@ -45,7 +44,7 @@ impl ConstraintResolver<'_> {
             interner,
             current_idx,
             program,
-            reporter: SemanticReporter::new(settings),
+            reporter: SemanticReporter::new(settings, interner),
         }
     }
 
@@ -64,9 +63,7 @@ impl ConstraintResolver<'_> {
                     _ = self.resolve_enum(abs_enum, ast_id);
                 }
                 Item::Alias(abs_alias) => todo!(),
-                Item::Const(abs_const) => {
-                    _ = self.resolve_const(abs_const, ast_id);
-                }
+                Item::Const(abs_const) => (),
             }
         }
 
@@ -106,7 +103,7 @@ impl ConstraintResolver<'_> {
                     let msg = "Cannot give a `var->` defined variable a condition when it has a `struct` or `enum` type, define\nthis within `nest->`";
 
                     self.reporter
-                        .report_spanned(msg, None, &[ast_span.clone()], &module.metadata);
+                        .report_spanned(msg, None, &[ast_span.clone()], &module);
 
                     return Err(());
                 }
@@ -116,7 +113,7 @@ impl ConstraintResolver<'_> {
             if let Err(sem_err) =
                 self.check_cond_constraints(type_id, module, &ast_span, cond, &mut vec![])
             {
-                self.reporter.report_semantic(sem_err, &module.metadata);
+                self.reporter.report_semantic(sem_err, &module);
                 return Err(());
             }
         }
@@ -137,7 +134,7 @@ impl ConstraintResolver<'_> {
                         let span = Span::new(spanned_arg.span.start, spanned_arg.span.end);
                         let sem_err = SemanticError::VagueArg(spanned_arg.arg, vec![span]);
 
-                        self.reporter.report_semantic(sem_err, &module.metadata);
+                        self.reporter.report_semantic(sem_err, &module);
                         return Err(());
                     }
                 }
@@ -145,7 +142,7 @@ impl ConstraintResolver<'_> {
             }
 
             if let Err(sem_err) = self.resolve_arg(type_id, module, &spanned_arg, &mut vec![]) {
-                self.reporter.report_semantic(sem_err, &module.metadata);
+                self.reporter.report_semantic(sem_err, &module);
                 return Err(());
             }
 
@@ -185,7 +182,7 @@ impl ConstraintResolver<'_> {
                 if let Err(sem_err) =
                     self.check_cond_constraints(field.type_id, module, &ast_span, cond, &mut vec![])
                 {
-                    self.reporter.report_semantic(sem_err, &module.metadata);
+                    self.reporter.report_semantic(sem_err, &module);
                     return Err(());
                 }
             }
@@ -201,7 +198,7 @@ impl ConstraintResolver<'_> {
                 if let Err(sem_err) =
                     self.resolve_arg(field.type_id, module, spanned_arg, &mut vec![])
                 {
-                    self.reporter.report_semantic(sem_err, &module.metadata);
+                    self.reporter.report_semantic(sem_err, &module);
                     return Err(());
                 }
 
@@ -241,13 +238,13 @@ impl ConstraintResolver<'_> {
                     if let Err(sem_err) =
                         self.check_cond_constraints(type_id, module, &ast_span, cond, &mut vec![])
                     {
-                        self.reporter.report_semantic(sem_err, &module.metadata);
+                        self.reporter.report_semantic(sem_err, &module);
                     }
                 }
             }
         }
 
-        // Re-borrow
+        // Second borrow
         let module = &self.program.mods[self.current_idx];
         let variants = &module.table.get_enum(sym_id).variants;
 
@@ -259,7 +256,7 @@ impl ConstraintResolver<'_> {
                     if let Err(sem_err) =
                         self.resolve_arg(type_id, module, spanned_arg, &mut vec![])
                     {
-                        self.reporter.report_semantic(sem_err, &module.metadata);
+                        self.reporter.report_semantic(sem_err, &module);
 
                         return Err(());
                     };
@@ -278,12 +275,6 @@ impl ConstraintResolver<'_> {
         Ok(())
     }
 
-    fn resolve_const(&mut self, abs_const: &AbstractConst, ast_id: AstId) -> Result<(), ()> {
-        let module = &self.program.mods[self.current_idx];
-        let sym_id = module.table.sym_ids[&ast_id];
-        todo!();
-    }
-
     // Do we need ast id?
     fn resolve_cond(&mut self, spanned_expr: &SpannedExpr, ast_id: AstId) -> Result<Cond, ()> {
         match &spanned_expr.expr {
@@ -300,7 +291,7 @@ impl ConstraintResolver<'_> {
                     &err_msg,
                     Some(err_name),
                     &[spanned_expr.span.clone()],
-                    &self.program.mods[self.current_idx].metadata,
+                    &self.program.mods[self.current_idx],
                 );
 
                 Err(())
@@ -333,7 +324,7 @@ impl ConstraintResolver<'_> {
                             msg,
                             None,
                             &[caller.span.clone()],
-                            &self.program.mods[self.current_idx].metadata,
+                            &self.program.mods[self.current_idx],
                         );
                         return Err(());
                     }
@@ -389,7 +380,7 @@ impl ConstraintResolver<'_> {
                 match self.check_func_constraints(&func) {
                     Ok(_) => (),
                     Err(sem_err) => {
-                        self.reporter.report_semantic(sem_err, &module.metadata);
+                        self.reporter.report_semantic(sem_err, &module);
                         return Err(());
                     }
                 };
@@ -409,7 +400,7 @@ impl ConstraintResolver<'_> {
                     &err_msg,
                     Some(err_name),
                     &[spanned_expr.span.clone()],
-                    &self.program.mods[self.current_idx].metadata,
+                    &self.program.mods[self.current_idx],
                 );
 
                 Err(())
@@ -421,7 +412,7 @@ impl ConstraintResolver<'_> {
                     &err_msg,
                     None,
                     &[spanned_expr.span.clone()],
-                    &self.program.mods[self.current_idx].metadata,
+                    &self.program.mods[self.current_idx],
                 );
 
                 Err(())
@@ -436,7 +427,7 @@ impl ConstraintResolver<'_> {
                     &err_msg,
                     None,
                     &[spanned_expr.span.clone()],
-                    &self.program.mods[self.current_idx].metadata,
+                    &self.program.mods[self.current_idx],
                 );
 
                 Err(())

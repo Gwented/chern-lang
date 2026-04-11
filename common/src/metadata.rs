@@ -17,8 +17,6 @@ impl ChernSettings {
 #[derive(Debug)]
 pub struct ModuleMetadata {
     // Should maybe be path id
-    /// Path to chern config file
-    pub path: PathBuf,
     /// Bytes from chern config file
     pub src_bytes: Vec<u8>,
     // / Amount of \n within config file so binary search can be done by error reporter
@@ -31,13 +29,11 @@ pub struct ModuleMetadata {
 
 impl ModuleMetadata {
     pub fn new(
-        path: PathBuf,
         src_bytes: Vec<u8>,
         script_start: usize,
         serial_start: Option<usize>,
     ) -> ModuleMetadata {
         ModuleMetadata {
-            path,
             // new_lines: Vec::new(),
             src_bytes,
             script_start,

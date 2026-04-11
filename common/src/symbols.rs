@@ -30,11 +30,11 @@ impl SymbolId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ModuleId {
-    pub id: u32,
+    pub id: usize,
 }
 
 impl ModuleId {
-    pub fn new(id: u32) -> ModuleId {
+    pub fn new(id: usize) -> ModuleId {
         ModuleId { id }
     }
 }

@@ -25,6 +25,7 @@ pub(super) enum NeutralBranch {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum SectionBranch {
+    Searching,
     Var,
     Nest,
     NestType,
@@ -46,6 +47,7 @@ impl Display for Branch {
                 NeutralBranch::Import => write!(f, "import"),
             },
             Branch::Section(sect_branch) => match sect_branch {
+                SectionBranch::Searching => write!(f, "searching for section"),
                 SectionBranch::Var => write!(f, "var"),
                 SectionBranch::Nest => write!(f, "nest"),
                 SectionBranch::NestType => write!(f, "[type]"),
