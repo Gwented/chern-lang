@@ -10,6 +10,7 @@
 
 var->
     import "../chrn_tests/defs.chrn" as
+best->
 /*    // var: Tuple<str, u8, str> [StartsW("Hello")]
 
     // parser needs this TypeExpr

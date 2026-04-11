@@ -8,7 +8,7 @@ use crate::parser::ast::{
     AbstractTypeDef, AbstractVariant, AstInfo, Expr, Generic, Item, SpannedExpr, SpannedTypeExpr,
     TypeExpr, Unary, UnaryOp,
 };
-use crate::parser::branch::Branch;
+use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::Context;
 use crate::parser::parser_state::ParserState;
 use crate::types::symbols::SpannedToken;
@@ -54,7 +54,12 @@ pub fn parse(
             Token::Id(id) => match id {
                 id if id == Keyword::Bind as u32 => {
                     if !is_priv {
-                        report_export(&mut ctx, Formatted::Bind, Branch::Neutral, interner);
+                        report_export(
+                            &mut ctx,
+                            Formatted::Bind,
+                            Branch::Neutral(NeutralBranch::Searching),
+                            interner,
+                        );
                     }
 
                     ctx.advance_tok();
@@ -62,7 +67,7 @@ pub fn parse(
                     if state.has_bind() {
                         ctx.report_verbose(
                             "Found a bind statement more than once",
-                            Branch::Neutral,
+                            Branch::Neutral(NeutralBranch::Searching),
                             interner,
                         );
 
@@ -79,7 +84,7 @@ pub fn parse(
                     if state.has_alias() {
                         ctx.report_verbose(
                             "Found a `bind` statement more than once",
-                            Branch::Neutral,
+                            Branch::Neutral(NeutralBranch::Searching),
                             interner,
                         );
 
@@ -106,7 +111,12 @@ pub fn parse(
                 }
                 id if id == Keyword::Var as u32 => {
                     if !is_priv {
-                        report_export(&mut ctx, Formatted::Bind, Branch::Neutral, interner);
+                        report_export(
+                            &mut ctx,
+                            Formatted::Bind,
+                            Branch::Neutral(NeutralBranch::Searching),
+                            interner,
+                        );
                     }
 
                     ctx.advance_tok();
@@ -325,7 +335,7 @@ fn parse_alias_stmt(
         TokenKind::Id,
         "Expected an identifier after \"alias\", found ",
         "",
-        Branch::Alias,
+        Branch::Neutral(NeutralBranch::Alias),
         interner,
     )?;
 
@@ -337,7 +347,7 @@ fn parse_alias_stmt(
         TokenKind::OParen,
         &format!("Expected parameters to define alias \"{err_name}\", found "),
         "",
-        Branch::Alias,
+        Branch::Neutral(NeutralBranch::Alias),
         interner,
     )?;
 
@@ -347,7 +357,7 @@ fn parse_alias_stmt(
         TokenKind::Assign,
         &format!("Expected '=' to define alias \"{err_name}\", found "),
         "",
-        Branch::Alias,
+        Branch::Neutral(NeutralBranch::Alias),
         interner,
     )?;
 
@@ -374,11 +384,11 @@ fn parse_bind_stmt(
     interner: &Intern,
 ) -> Result<(), Token> {
     let name_id = ctx.expect_id_verbose(
-        TokenKind::Literal,
+        TokenKind::Str,
         "Expected a string literal after `bind`, found ",
         "",
         // Maybe it is still a branch
-        Branch::Bind,
+        Branch::Neutral(NeutralBranch::Bind),
         interner,
     )?;
 
@@ -396,7 +406,7 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
         TokenKind::Id,
         "Expected an identifier to declare a type, found ",
         "",
-        Branch::Var,
+        Branch::Section(SectionBranch::Var),
         interner,
     )?;
 
@@ -408,7 +418,7 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
         TokenKind::Colon,
         &format!("Expected a ':' after identifier \"{err_name}\" to declare a type, found "),
         "",
-        Branch::Var,
+        Branch::Section(SectionBranch::Var),
         interner,
     )?;
 
@@ -447,7 +457,7 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
         TokenKind::Id,
         "Expected the keyword \"enum\" or \"struct\", found ",
         "",
-        Branch::Nest,
+        Branch::Section(SectionBranch::Nest),
         interner,
     )?;
 
@@ -467,7 +477,7 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
                 TokenKind::Id,
                 "Expected an identifier for the given structure. found ",
                 "",
-                Branch::Nest,
+                Branch::Section(SectionBranch::Nest),
                 interner,
             )?;
 
@@ -478,7 +488,7 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
                     &format!(
                         "To use known types as struct identifiers, prefix with \"~{struct_name}\" "
                     ),
-                    Branch::NestType,
+                    Branch::Section(SectionBranch::Nest),
                     interner,
                 );
 
@@ -491,7 +501,7 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
                 TokenKind::OCurlyBracket,
                 &format!("Expected a '{{' to define struct \"{struct_name}\", found "),
                 "",
-                Branch::Nest,
+                Branch::Section(SectionBranch::Nest),
                 interner,
             )?;
 
@@ -520,9 +530,9 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
 
             let plain_id = ctx.expect_id_verbose(
                 TokenKind::Id,
-                "Expected an identifier for the given enum. found ",
+                "Expected an identifier for the given enum variant, found ",
                 "",
-                Branch::Nest,
+                Branch::Section(SectionBranch::Nest),
                 interner,
             )?;
 
@@ -533,7 +543,7 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
                     &format!(
                         "To use known types as enum identifiers, prefix with \"~{enum_name}\" "
                     ),
-                    Branch::NestType,
+                    Branch::Section(SectionBranch::Nest),
                     interner,
                 );
 
@@ -544,7 +554,7 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
                 TokenKind::OCurlyBracket,
                 &format!("Expected a '{{' to define enum \"{enum_name}\", found"),
                 "",
-                Branch::Nest,
+                Branch::Section(SectionBranch::Nest),
                 interner,
             )?;
 
@@ -576,7 +586,7 @@ fn parse_nest_sect(ctx: &mut Context, interner: &Intern) -> Result<Item, Token> 
                 &format!(
                     "Expected the keyword \"enum\" or \"struct\", found identifier \"{name}\""
                 ),
-                Branch::NestType,
+                Branch::Section(SectionBranch::Nest),
                 interner,
             );
 
@@ -608,7 +618,7 @@ fn parse_const(
         TokenKind::Id,
         "Expected an identifier after `const`, found ",
         "",
-        Branch::Neutral,
+        Branch::Neutral(NeutralBranch::Const),
         interner,
     )?;
 
@@ -618,7 +628,7 @@ fn parse_const(
         TokenKind::Assign,
         "Expected '=' to declare const value, found ",
         "",
-        Branch::Neutral,
+        Branch::Neutral(NeutralBranch::Const),
         interner,
     )?;
 
@@ -784,7 +794,7 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
 
             ctx.report_verbose(
                 "Expected an expression, found <eof>",
-                Branch::VarType,
+                Branch::Type,
                 interner,
             );
 
@@ -887,7 +897,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
                 TokenKind::Id,
                 "Expected an identifier for an escaped type, found ",
                 "",
-                Branch::VarType,
+                Branch::Type,
                 interner,
             )?;
 
@@ -917,14 +927,14 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
             ctx.advance_tok();
 
             let fmt_tok = format!("{} \"{name}\"", kind);
-            ctx.report_template("a type", &fmt_tok, Branch::VarType, interner);
+            ctx.report_template("a type", &fmt_tok, Branch::Type, interner);
 
             Err(Token::Str(id))
         }
         Token::EOF => {
             ctx.advance_tok();
 
-            ctx.report_verbose("Expected type, found <eof>", Branch::VarType, interner);
+            ctx.report_verbose("Expected type, found <eof>", Branch::Type, interner);
             Err(Token::EOF)
         }
         t => {
@@ -932,7 +942,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
 
             let fmt_tok = format!("'{}'", t.kind());
 
-            ctx.report_template("a type", &fmt_tok, Branch::VarType, interner);
+            ctx.report_template("a type", &fmt_tok, Branch::Type, interner);
             //WARN:
             Err(Token::Poison)
         }
@@ -947,7 +957,7 @@ fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedType
         TokenKind::OAngleBracket,
         "Expected a '<' to declare generic, found ",
         "",
-        Branch::VarType,
+        Branch::Type,
         interner,
     )?;
 
@@ -967,7 +977,7 @@ fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedType
         TokenKind::CAngleBracket,
         "Expected a '>' to close generic parameters, found ",
         "",
-        Branch::VarType,
+        Branch::Type,
         interner,
     )?;
 
@@ -1044,7 +1054,7 @@ fn handle_struct_fields(
         TokenKind::CCurlyBracket,
         &format!("Expected a '}}' to close struct \"{struct_name}\", found "),
         "",
-        Branch::NestType,
+        Branch::Section(SectionBranch::NestType),
         interner,
     )?;
 
@@ -1077,7 +1087,7 @@ fn handle_enum_variants(
         TokenKind::CCurlyBracket,
         &format!("Expected a '}}' to close enum \"{enum_name}\", found "),
         "",
-        Branch::NestEnum,
+        Branch::Section(SectionBranch::NestEnum),
         interner,
     )?;
 
@@ -1092,7 +1102,7 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
         TokenKind::Id,
         "Expected an identifier for a variant, found ",
         "",
-        Branch::NestType,
+        Branch::Section(SectionBranch::NestType),
         interner,
     )?;
 
@@ -1291,10 +1301,10 @@ fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>
 /// Only does syntax checking for import since modules are resolved on first pass.
 fn check_import(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
     ctx.expect_id_verbose(
-        TokenKind::Literal,
+        TokenKind::Str,
         "Expected a string literal path, found ",
         "",
-        Branch::Import,
+        Branch::Neutral(NeutralBranch::Import),
         interner,
     )?;
 

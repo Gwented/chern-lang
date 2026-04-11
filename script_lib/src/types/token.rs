@@ -66,7 +66,7 @@ impl Token {
     pub(crate) fn kind(&self) -> TokenKind {
         match self {
             Token::Id(_) => TokenKind::Id,
-            Token::Str(_) => TokenKind::Literal,
+            Token::Str(_) => TokenKind::Str,
             Token::Integer(_, _) => TokenKind::Integer,
             Token::Float(_, _) => TokenKind::Float,
             Token::Char(_) => TokenKind::Char,
@@ -133,7 +133,7 @@ impl Token {
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub(crate) enum TokenKind {
     Id,
-    Literal,
+    Str,
     Integer,
     Float,
     Char,
@@ -179,7 +179,7 @@ impl Display for TokenKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TokenKind::Id => write!(f, "identifier"),
-            TokenKind::Literal => write!(f, "string literal"),
+            TokenKind::Str => write!(f, "string literal"),
             TokenKind::Integer => write!(f, "integer"),
             TokenKind::Float => write!(f, "float"),
             TokenKind::Char => write!(f, "char"),
@@ -274,7 +274,7 @@ impl TokenKind {
         // Ignore this...
         match self {
             TokenKind::Id => ID,
-            TokenKind::Literal => LITERAL,
+            TokenKind::Str => LITERAL,
             TokenKind::Integer => INTEGER,
             TokenKind::Float => FLOAT,
             TokenKind::Char => CHAR,

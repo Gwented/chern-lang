@@ -12,7 +12,7 @@ use common::{
 
 use crate::{
     algo,
-    parser::branch::Branch,
+    parser::{NeutralBranch, SectionBranch, branch::Branch},
     types::{
         symbols::SpannedToken,
         token::{self, Token, TokenKind},
@@ -34,9 +34,9 @@ const C_BRANCH_VAR_SET: u64 = C_BASE_EXIT_SET;
 const A_BRANCH_VAR_SET: u64 = A_BASE_EXIT_SET | token::COLON;
 
 // WARN: NestType should probably be responsible for C_CURLY but maybe not
-const C_BRANCH_VAR_TYPE_SET: u64 = C_BASE_EXIT_SET | token::O_BRACKET | token::HASH_SYMBOL;
+const C_BRANCH_TYPE_SET: u64 = C_BASE_EXIT_SET | token::O_BRACKET | token::HASH_SYMBOL;
 
-const A_BRANCH_VAR_TYPE_SET: u64 = A_BASE_EXIT_SET | token::COLON;
+const A_BRANCH_TYPE_SET: u64 = A_BASE_EXIT_SET | token::COLON;
 
 // Probably shouldn't account for hash symbol since it is not apart of the loop
 const C_BRANCH_COND_SET: u64 = C_BASE_EXIT_SET | token::HASH_SYMBOL | token::C_CURLY_BRACKET;
@@ -146,6 +146,7 @@ impl<'a> Context<'a> {
     // BOF
     /// Intended for basic errors that need little context after
     /// ALWAYS advance before using this or ensure an advance happened before.
+    // Need Keyword token to actually help more
     pub(super) fn report_verbose(&mut self, msg: &str, branch: Branch, interner: &Intern) {
         let found = &self.toks[self.pos - 1];
 
@@ -307,22 +308,27 @@ impl<'a> Context<'a> {
     fn match_branch(&self, branch: Branch) -> (u64, u64) {
         match branch {
             Branch::Broken => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
-            Branch::Neutral => (C_STMT_NEUTRAL_SET, A_BASE_EXIT_SET),
-            Branch::Alias => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
-            Branch::Import => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Searching => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
-            Branch::Bind => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
-            Branch::Var => (C_BRANCH_VAR_SET, A_BRANCH_VAR_SET),
-            Branch::VarType => (C_BRANCH_VAR_TYPE_SET, A_BRANCH_VAR_TYPE_SET),
+            Branch::Neutral(neutral_branch) => match neutral_branch {
+                NeutralBranch::Searching => (C_STMT_NEUTRAL_SET, A_BASE_EXIT_SET),
+                NeutralBranch::Bind => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
+                NeutralBranch::Alias => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
+                NeutralBranch::Const => todo!(),
+                NeutralBranch::Import => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
+            },
+            Branch::Section(sect_branch) => match sect_branch {
+                SectionBranch::Var => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
+                SectionBranch::Nest => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
+                SectionBranch::NestType => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
+                SectionBranch::NestEnum => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
+                SectionBranch::Complex => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
+                SectionBranch::Override => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
+            },
+            Branch::Expr => (C_BRANCH_COND_SET, A_BRANCH_COND_SET),
             Branch::Cond => (C_BRANCH_COND_SET, A_BRANCH_COND_SET),
+            Branch::Type => (C_BRANCH_TYPE_SET, A_BRANCH_TYPE_SET),
             Branch::FuncArgs => (C_BRANCH_FUNC_SET, A_BRANCH_FUNC_SET),
             Branch::TypeArgs => (C_BRANCH_TYPE_ARGS_SET, A_BRANCH_TYPE_ARGS_SET),
-            Branch::Nest => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
-            Branch::NestType => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
-            Branch::NestEnum => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
-            Branch::Complex => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
-            Branch::Override => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
-            Branch::Expr => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
         }
     }
 
@@ -347,119 +353,146 @@ impl<'a> Context<'a> {
             .unwrap_or(TokenKind::Poison);
 
         match branch {
-            Branch::Neutral => match found.tok {
-                Token::Id(id) | Token::Illegal(id) => {
-                    let found_bytes = interner.search(id as usize).as_bytes();
+            Branch::Neutral(neutral_branch) => match neutral_branch {
+                // WHAT IF the MODEL predicted if it should ALLOW for something to be parsed AS
+                // A SECTION if it LOOKS like one?
+                NeutralBranch::Searching => match found.tok {
+                    // Found stray unrecognizable identifier in neutral
+                    Token::Id(id) | Token::Illegal(id) => {
+                        let found_bytes = interner.search(id as usize).as_bytes();
 
-                    // Statements and sections are possible so both are tried
-                    let similar = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Stmt)
-                        .is_none()
-                        .then_some(algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect))??;
+                        // Statements and sections are possible so both are tried
+                        let similar = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Stmt)
+                            .is_none()
+                            .then_some(algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect))??;
 
-                    let msg = format!("Found similar \"{similar}\"");
-                    let help = reporter::standardize_help(&msg, self.settings.can_color);
+                        let msg = format!("Found similar \"{similar}\"");
+                        let help = reporter::standardize_help(&msg, self.settings.can_color);
 
-                    Some(help)
-                }
+                        Some(help)
+                    }
+                    _ => None,
+                },
+                NeutralBranch::Alias => match found.tok {
+                    // Alias missing parameters
+                    Token::Assign
+                        if prev_kind == TokenKind::Id && next_kind != TokenKind::OParen =>
+                    {
+                        // WHAT AM I AN LLM? AM I REWARD HACKING?
+                        let Token::Id(id) = prev_tok.tok else {
+                            return None;
+                        };
+
+                        let name = interner.search(id as usize);
+
+                        let help_diag = reporter::help_transform(
+                            name,
+                            &format!("{name}()"),
+                            self.settings.can_color,
+                        );
+
+                        // It looks weird now
+                        let help = reporter::standardize_help(&help_diag, self.settings.can_color);
+
+                        Some(help)
+                    }
+                    _ => None,
+                },
                 _ => None,
             },
-            Branch::Alias => match found.tok {
-                Token::Assign if prev_kind == TokenKind::Id && next_kind != TokenKind::OParen => {
-                    // WHAT AM I AN LLM? AM I REWARD HACKING?
-                    let Token::Id(id) = prev_tok.tok else {
-                        return None;
-                    };
+            Branch::Section(sect_branch) => match sect_branch {
+                SectionBranch::Var => match found.tok {
+                    Token::Str(id)
+                        if expected == TokenKind::Colon && prev_kind == TokenKind::Id =>
+                    {
+                        let Token::Id(possible_kw_id) = prev_tok.tok else {
+                            return None;
+                        };
 
-                    let name = interner.search(id as usize);
+                        let kw = Keyword::try_as_kw(possible_kw_id)?;
 
-                    let help_diag = reporter::help_transform(
-                        name,
-                        &format!("{name}()"),
-                        self.settings.can_color,
-                    );
+                        let msg = format!(
+                            "If this was meant to use the statement `{}`, place this within `neutral`, which is the area before any section was used.",
+                            kw.to_fmt()
+                        );
 
-                    // It looks weird now
-                    let help = reporter::standardize_help(&help_diag, self.settings.can_color);
+                        let help = reporter::standardize_help(&msg, self.settings.can_color);
 
-                    Some(help)
-                }
-                _ => None,
+                        Some(help)
+                    }
+                    Token::OParen if expected == TokenKind::Colon => {
+                        // if let Token::Id(prev_id) = prev_tok.tok {
+                        //     panic!("CApi");
+                        // }
+                        //
+                        None
+                        // let msg = "Is this missing '[' to define conditions?";
+                        //
+                        // let span = Span::new(prev_tok.span.start, found.span.end);
+                        //
+                        // let fmt_help = reporter::form_suggest_diag(
+                        //     &self.metadata.src_bytes,
+                        //     &span,
+                        //     "+",
+                        //     "[",
+                        //     true,
+                        //     self.metadata.can_color,
+                        // );
+                        //
+                        // let msg = reporter::standardize_help(&msg, self.metadata.can_color);
+                        //
+                        // let built_help = format!("{fmt_help}\n{msg}");
+                        //
+                        // Some(built_help)
+                    }
+                    _ => None,
+                },
+                SectionBranch::Nest => match found.tok {
+                    // This will not be usable until a keyword token is made
+                    Token::Id(id) if expected == TokenKind::Id && next_kind == TokenKind::Str => {
+                        let Token::Id(possible_kw_id) = prev_tok.tok else {
+                            return None;
+                        };
+
+                        let kw = Keyword::try_as_kw(possible_kw_id)?;
+
+                        let msg = format!(
+                            "If this was meant to use the statement `{}`, place this within `neutral`, which is the area before any section was used.",
+                            kw.to_fmt()
+                        );
+
+                        let help = reporter::standardize_help(&msg, self.settings.can_color);
+
+                        Some(help)
+                    }
+                    _ => None,
+                },
+                SectionBranch::NestType => todo!(),
+                // SectionBranch::NestEnum => todo!(),
+                // SectionBranch::Complex => todo!(),
+                // SectionBranch::Override => todo!(),
+                s => match found.tok {
+                    Token::Id(id) | Token::Illegal(id) => {
+                        let found_bytes = interner.search(id as usize).as_bytes();
+
+                        // If it's already a valid section name then it won't send false help
+                        if keywords::sect_range().contains(&(id as usize)) {
+                            return None;
+                        };
+
+                        // Maybe this should return None if it directly IS a direct match since it is
+                        // just a range check
+                        let similar_sect = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect)?;
+
+                        let msg = format!("Found similar section \"{similar_sect}\"");
+                        let help = reporter::standardize_help(&msg, self.settings.can_color);
+
+                        Some(help)
+                    }
+                    _ => None,
+                },
             },
-            //FIXME: Currently suggests on any error in neutral so...more branches
-            Branch::Searching => match found.tok {
-                Token::Id(id) | Token::Illegal(id) => {
-                    let found_bytes = interner.search(id as usize).as_bytes();
-
-                    // If it's already a valid section name then it won't send false help
-                    if keywords::sect_range().contains(&(id as usize)) {
-                        return None;
-                    };
-
-                    // Maybe this should return None if it directly IS a direct match since it is
-                    // just a range check
-                    let similar_sect = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect)?;
-
-                    let msg = format!("Found similar section \"{similar_sect}\"");
-                    let help = reporter::standardize_help(&msg, self.settings.can_color);
-
-                    Some(help)
-                }
-                _ => None,
-            },
-            // Need to split these
-            Branch::Var => match found.tok {
-                Token::Str(id) if expected == TokenKind::Colon && prev_kind == TokenKind::Id => {
-                    let Token::Id(possible_kw_id) = prev_tok.tok else {
-                        return None;
-                    };
-
-                    let kw = Keyword::try_as_kw(possible_kw_id)?;
-
-                    let msg = format!(
-                        "If this was meant to use the statement `{}`, place this within `neutral`, which is the area before any section was used such as the top of the file.",
-                        kw.to_fmt()
-                    );
-
-                    let help = reporter::standardize_help(&msg, self.settings.can_color);
-
-                    Some(help)
-                }
-                Token::OParen if expected == TokenKind::Colon => {
-                    // if let Token::Id(prev_id) = prev_tok.tok {
-                    //     panic!("CApi");
-                    // }
-                    //
-                    None
-                    // let msg = "Is this missing '[' to define conditions?";
-                    //
-                    // let span = Span::new(prev_tok.span.start, found.span.end);
-                    //
-                    // let fmt_help = reporter::form_suggest_diag(
-                    //     &self.metadata.src_bytes,
-                    //     &span,
-                    //     "+",
-                    //     "[",
-                    //     true,
-                    //     self.metadata.can_color,
-                    // );
-                    //
-                    // let msg = reporter::standardize_help(&msg, self.metadata.can_color);
-                    //
-                    // let built_help = format!("{fmt_help}\n{msg}");
-                    //
-                    // Some(built_help)
-                }
-                _ => None,
-            },
-            Branch::VarType => match found.tok {
-                Token::CAngleBracket if prev_kind == TokenKind::Comma => {
-                    let msg = "Was there a trailing ',' or an intended second type?";
-                    let help = reporter::standardize_help(msg, self.settings.can_color);
-
-                    Some(help)
-                }
-                _ => None,
-            },
+            // Branch::Expr => todo!(),
             Branch::Cond => match found.tok {
                 Token::Id(id) if expected == TokenKind::CBracket => {
                     let msg = "Is there a missing comma to separate conditions?";
@@ -475,7 +508,16 @@ impl<'a> Context<'a> {
                 }
                 _ => None,
             },
-            // #warn, #scient, etc <--
+            Branch::Type => match found.tok {
+                Token::CAngleBracket if prev_kind == TokenKind::Comma => {
+                    let msg = "Was there a trailing ',' or an intended second type?";
+                    let help = reporter::standardize_help(msg, self.settings.can_color);
+
+                    Some(help)
+                }
+                _ => None,
+            },
+            // Branch::FuncArgs => todo!(),
             Branch::TypeArgs => match found.tok {
                 Token::Id(id) => {
                     let found_bytes = interner.search(id as usize).as_bytes();
@@ -493,7 +535,26 @@ impl<'a> Context<'a> {
             },
             _ => None,
         }
+        //     //FIXME: Currently suggests on any error in neutral so...more branches
     }
+    //     // #warn, #scient, etc <--
+    //     Branch::TypeArgs => match found.tok {
+    //         Token::Id(id) => {
+    //             let found_bytes = interner.search(id as usize).as_bytes();
+    //
+    //             let similar_arg = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Arg)?;
+    //
+    //             let help = reporter::standardize_help(
+    //                 &format!("Found similar argument \"{similar_arg}\"",),
+    //                 self.settings.can_color,
+    //             );
+    //
+    //             Some(help)
+    //         }
+    //         _ => None,
+    //     },
+    //     _ => None,
+    // }
 
     /// Intended to handle the case where EOF is reached due to errors likely wanting to show the
     /// last token TO EOF, rather than just EOF
