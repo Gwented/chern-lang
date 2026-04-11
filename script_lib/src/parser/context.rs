@@ -315,6 +315,7 @@ impl<'a> Context<'a> {
     }
 
     // AM I TO ASSUME YOU CANNOT READ TEMPO?
+    // Yes. You may.
     fn match_branch(&self, branch: Branch) -> (u64, u64) {
         match branch {
             Branch::Broken => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),

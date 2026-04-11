@@ -155,15 +155,14 @@ impl SpannedTypeExpr {
 #[derive(Debug)]
 pub(crate) enum TypeExpr {
     Var(NameId),
+    Path(Vec<SpannedTypeExpr>),
     Escaped(NameId),
-    //_Generic
     Generic(Generic),
     Tuple(Vec<SpannedTypeExpr>),
     Any,
 }
 
 //TEST: Relocate reollacl rreellocrelac
-
 #[derive(Debug)]
 pub struct Import {
     pub(crate) name_id: NameId,

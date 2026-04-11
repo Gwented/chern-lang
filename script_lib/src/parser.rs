@@ -328,7 +328,7 @@ pub fn parse(
             }
             Token::EOF => break,
             t => match t {
-                Token::Id(id) | Token::Str(id) | Token::Integer(id, _) => {
+                Token::Id(id) | Token::Str(id) | Token::Integer(id, _) | Token::Float(id, _) => {
                     ctx.advance_tok();
 
                     let name = interner.search(id as usize);
@@ -743,6 +743,7 @@ fn parse_expr(ctx: &mut Context, min_bp: u8, interner: &Intern) -> Result<Spanne
 
             ctx.advance_tok();
 
+            // Redundant
             let field_id = ctx.expect_id_verbose(
                 TokenKind::Id,
                 "Expected a field identifier after '.', found ",
@@ -919,6 +920,7 @@ fn parse_unary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Toke
 }
 
 // ENFORCE TYPE NAMING FOR GENERICS AT LEAST
+/// Recursive function for parsing all type expressions
 fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, Token> {
     match ctx.peek_tok() {
         Token::Id(id) if ctx.peek_ahead(1).tok.kind() == TokenKind::OAngleBracket => {
@@ -926,7 +928,6 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
 
             let name_id = NameId::new(id);
 
-            //TODO: Needs to build up own type span
             let args = parse_generic(ctx, interner)?;
             let generic = Generic::new(name_id, args);
 
@@ -936,12 +937,21 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
             let ty_expr = TypeExpr::Generic(generic);
             Ok(SpannedTypeExpr::new(ty_expr, span))
         }
+        Token::Id(id) if ctx.peek_ahead(1).tok.kind() == TokenKind::Dot => {
+            let start = ctx.peek_span().start;
+            let ty_path = parse_type_path(ctx, interner)?;
+            let end = ctx.peek_behind(1).span.end;
+
+            let span = Span::new(start, end);
+
+            Ok(SpannedTypeExpr::new(TypeExpr::Path(ty_path), span))
+        }
         Token::Tilde => {
             let span = ctx.advance_span();
 
             let plain_id = ctx.expect_id_verbose(
                 TokenKind::Id,
-                "Expected an identifier for an escaped type, found ",
+                "Expected an identifier for an escaped type after '~', found ",
                 "",
                 Branch::Type,
                 interner,
@@ -980,7 +990,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
         Token::EOF => {
             ctx.advance_tok();
 
-            ctx.report_verbose("Expected type, found <eof>", Branch::Type, interner);
+            ctx.report_verbose("Expected a type, found <eof>", Branch::Type, interner);
             Err(Token::EOF)
         }
         t => {
@@ -995,7 +1005,78 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
     }
 }
 
-/// Parses assuming that within "List<i32>" the "List" part was skipped, which would leaves <i32>
+/// Assumes this function was called after a token of identifier type was found with a dot after
+/// it.
+fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTypeExpr>, Token> {
+    let mut ty_path: Vec<SpannedTypeExpr> = Vec::new();
+
+    loop {
+        // Breaking here since 'List<i32>.inner' doesn't exist
+        if ctx.peek_ahead(1).tok == Token::Dot {
+            let span = ctx.peek_span();
+            let name_id = ctx.expect_id_verbose(
+                TokenKind::Id,
+                "Expected an identifier after dot reference, found ",
+                "",
+                Branch::Type,
+                interner,
+            )?;
+
+            ctx.advance_tok();
+
+            let spanned_ty_expr = SpannedTypeExpr::new(TypeExpr::Var(NameId::new(name_id)), span);
+            ty_path.push(spanned_ty_expr);
+        }
+
+        if ctx.peek_ahead(1).tok != Token::Dot {
+            break;
+        }
+
+        // if ctx.peek_tok() == Token::Tilde {
+        //     ctx.advance_tok();
+        // }
+    }
+
+    //FIX: Given
+    //```
+    //var->
+    //  user: person.name.
+    //nest->
+    //```
+    // 'nest' will be seen as the rest of the dot, as opposed to a
+    // keyword, now meaning the error message will be far more misleading than 'found keyword in
+    // dot mention'.
+
+    // NOTE: Handling the case where the user is referencing an escaped type name
+    let is_escaped = if ctx.peek_tok() == Token::Tilde {
+        ctx.advance_tok();
+        true
+    } else {
+        false
+    };
+
+    let span = ctx.peek_span();
+    let final_id = ctx.expect_id_verbose(
+        TokenKind::Id,
+        "Expected a complete dot reference chain, found ",
+        "",
+        Branch::Type,
+        interner,
+    )?;
+
+    let ty_expr = if is_escaped {
+        TypeExpr::Escaped(NameId::new(final_id))
+    } else {
+        TypeExpr::Var(NameId::new(final_id))
+    };
+
+    let final_expr = SpannedTypeExpr::new(ty_expr, span);
+    ty_path.push(final_expr);
+
+    Ok(ty_path)
+}
+
+/// Parses assuming that within "List<i32>" the "List" part was skipped, which would leave <i32>
 /// to be handled
 //WARN: USING BASIC SPAN IMPLEMENTATION AND MAY CHANGE
 fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTypeExpr>, Token> {

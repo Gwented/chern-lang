@@ -259,7 +259,6 @@ impl TypeResolver<'_> {
 
                 return Err(());
             }
-            // Needs to be merged in a sensible way
             TypeExpr::Escaped(name_id) => {
                 for (current_ast_id, current_name_id) in &self.module.table.name_ids {
                     if current_name_id == name_id {
@@ -431,8 +430,6 @@ impl TypeResolver<'_> {
 
                 Ok(TypeId::new(id))
             }
-            // If a semantic error was returned I could control when things are reported by
-            // intercepting
             TypeExpr::Tuple(unres_tuple) => {
                 let mut elements: Vec<TypeId> = Vec::new();
 
@@ -447,6 +444,12 @@ impl TypeResolver<'_> {
                 self.module.table.types.push(Type::Tuple(tuple));
 
                 Ok(tuple_id)
+            }
+            TypeExpr::Path(spanned_ty_exprs) => {
+                dbg!(spanned_ty_exprs);
+                for spanned_ty_expr in spanned_ty_exprs {}
+
+                todo!();
             }
         }
     }

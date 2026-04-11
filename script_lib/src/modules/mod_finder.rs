@@ -2,7 +2,6 @@ use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::PathBuf};
 
 use common::{
     intern::Intern,
-    keywords::Keyword,
     symbols::{NameId, PathId, Span},
 };
 

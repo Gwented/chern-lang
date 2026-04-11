@@ -24,7 +24,7 @@
 //             Item::Var(ty) => {
 //                 let name = interner.search(ty.name_id.id as usize);
 //                 println!("TypeDef {name} [");
-//                 print_type(&ty.type_expr, indent + 2, interner);
+//                 print_type(&ty.ty_expr, indent + 2, interner);
 //
 //                 print_exprs(&ty.conds, indent + 2, interner);
 //
@@ -43,7 +43,7 @@
 //
 //                     println!("{temp_spaces}{name}");
 //
-//                     print_type(&ty.type_expr, temp_indent, interner);
+//                     print_type(&ty.ty_expr, temp_indent, interner);
 //
 //                     print_exprs(&ty.conds, temp_indent, interner);
 //
@@ -70,8 +70,8 @@
 //                 let name = interner.search(abs_alias.name_id.id as usize);
 //                 println!("Alias {name} [");
 //
-//                 for type_expr in &abs_alias.params {
-//                     print_type(type_expr, indent + 2, interner);
+//                 for ty_expr in &abs_alias.params {
+//                     print_type(ty_expr, indent + 2, interner);
 //                 }
 //                 print_exprs(&abs_alias.conds, indent + 2, interner);
 //                 print_args(&abs_alias.args, indent + 2, interner);
@@ -104,9 +104,9 @@
 //         TypeExpr::Any(_) => {
 //             println!("{spaces}Any");
 //         }
-//         TypeExpr::Tuple(type_exprs, _) => {
+//         TypeExpr::Tuple(ty_exprs, _) => {
 //             println!("{spaces}tuple:");
-//             for thing in type_exprs {
+//             for thing in ty_exprs {
 //                 print_type(thing, indent + 2, interner);
 //             }
 //             println!("{spaces}]");

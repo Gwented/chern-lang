@@ -8,35 +8,41 @@
 
 - Binary representation. <-
 
+- `@def` and `@end` syntax is intended to lock script behavior into one block and so that the language constraints can be applied without needing a dedicated outer file that uses `bind`. Everything after `@end` will be considered the serialized file.
+
+It is not recommended to type above `@def` without comments due to the initial scan needed to make this work needing to avoid reading past `@end` while also skipping comments and quotes that could also have it's keywords inside but are unintended for it to read.
+
 ## Types
-i8, u8, i16, u16, i32, u32, i64, u64
+i8, u8, i16, u16, i32, u32, i64, u64,
 i128, u128, f16, f32, f64, f128, sized, unsized,
-char, bool, (maybe capital) str, struct, enum,  nil, BigInt, BigFloat, List, Map, Set, Tuple,
+char, bool, str, struct, enum, nil, BigInt, BigFloat, List, Map, Set, Tuple
 
-`struct` for a structure of data.
-`enum` for an Enum type which can also hold data.
+`struct`: For defining a structure of data.
+`enum`: For defining an enum type which can also hold enumerations with types.
+`Tuple`: Holds any amount of types within generic parameters.
 
-`Tuple`: 
+## Prefix Operations
+`!`: NOT
+`-` NEGATE
 
-## [Operators]
-`!`: NOT operator.
-`&&`: AND operator.
-`||` OR operator.
+## Binary Operations
+`+` ADD
+`-` SUB
+`*` MULT
+`%` MOD
+`&&`: AND
+`||` OR
 
-## Keywords
 // TODO:
-`self`: Refers to current serialized data being looked at
-
-`struct`: for a structure of data.
-`enum`: for an Enum type which can also hold data.
+// TODO:
 
 ## Workspace
 - NOT FOR COMPLEXITY, JUST FOR AN ENFORCED CONVENTION. I WANT BINARY. Make binary
 
 ## Actions (Ignore this. Entirely ignore this)
 extract env vars
-```chrn
 
+```chrn
 alias LongDefault(x, y) = [!IsEmpty, Range(x, y), StartsW("ch"), EndsW("ern"), Contains("chern")]
 
 alias ShortDefault() = IsWhitespace
@@ -108,10 +114,9 @@ nest->
 `const`: Allows the declaration of variables under a constant variable rather than only literals. The type is always inferred to be the lowest possible data type given the context it's used in.
 
 `export`: Allows for the exported value to be used externally when imported.
+This can be applied to `struct`, `enum`, `const`, and `alias`.
 
-`import`: Imports `.chrn` file which allows for anything exported within the imported file to be used outside of it.
-
-// TODO
+`import`: Imports `.chrn` file which allows for anything exported within the imported file to be used.
 
 `alias`: Allows for predicates and arguments to be stored within a single function call for convenience.
 
@@ -126,11 +131,11 @@ var->
     some_str: str [ShortDefault()]
 ```
 
-`bind`: Defines where a serialized file is located that should be checked, or deserialized.
+`bind`: Defines where a serialized file is located that should be checked, or deserialized. This is not needed if the script file is situated within the serialized data itself.
 
 ## Sections
 
-- Sections instruct how data is parsed. They exist as opposed to keywords so that data is always defined in a readable, predictable manner.
+- Sections instruct how data is parsed. They exist so that data is always defined in a readable, predictable manner.
 
 - The `->` operator is used after section keywords to swap to the section. There cannot be more than one of each section.
 
@@ -160,7 +165,7 @@ nest->
     }
 
     enum State {
-        Ready: Tuple<str, unsized> // Can optionally store types
+        Ready: Tuple<str, unsized>
         InProgress
         Failed
     }
@@ -175,14 +180,47 @@ There is also a "like" category. A "JAVA_LIKE" category would have all of the in
 `complex->`: Define complex rules
 
 ## Arguments
-`#warn`: Would warn instead of terminating.
+`#warn`: Would warn instead of terminating upon seeing a wrongful constraint of any kind.
 
-//DOES NOT EXIST
-`#ignore`: Ignores all errors and warns on the type this is applied to for serialized data related errors.
-
-`#ign_if`: (Would remove anything that didn't align under condition rather than crash or warn.)
+`#ignore`: Ignores all errors for the type this is applied to for serialized data related errors.
 
 `#scient`, `#hex`, `#bin`, `#octo`: Numeric notations to output in serialized file.
+
+// DOES NOT EXIST
+`#unicode`
+`#ignore_rm`: (Would remove anything that didn't align under condition rather than crash or warn.)
+//DOES NOT EXIST
+
+- Arguments can be applied to all types within a `struct` or `enum` if put directly after declaration
+```
+    var->
+        name: str #warn
+        age: u8
+        pets: List<Pet> [!IsEmpty, Range(5, 15)] #warn // This warn only applied to this specific field
+    nest->
+        // Any failed constraints will be completely ignored
+        struct Pet {
+            name: str [!IsWhitespace] // (Ignore this) Actions would allow for "If WS then Concat("...")"
+            color: Color
+        } #ignore
+
+        // Enforces that all types within `Color` will be serialized in hex form
+        enum Color {Red: Tuple<u8> Blue: Tuple<u8> Green: Tuple<u8> } #hex
+```
+```
+```
+
+## Other keywords
+`as`: Allows for aliasing imports
+
+```
+import "definitions.chrn" as defs
+import "invalid_utf8_name.chrn" as valid_name
+
+const VALUE = defs.MAGIC_NUMBER + valid_name.OTHER_MAGICAL_NUMBER
+```
+```
+```
 
 #### Full example of language
 
@@ -198,13 +236,12 @@ There is also a "like" category. A "JAVA_LIKE" category would have all of the in
             color: Color
         }
 
-        enum Color {Red: Tuple<u8> Blue: Tuple<u8> Green: Tuple<u8> }// #hex
+        enum Color {Red: Tuple<u8> Blue: Tuple<u8> Green: Tuple<u8> } #hex
 @end
 ```
 
 
-# I FORGOT ABOUT UNICODE
-Allows for notation to serialize to be a specific notation. Unicode.
+# FORGOT ABOUT UNICODE
 
 ## POSSIBLE FEATURES
 

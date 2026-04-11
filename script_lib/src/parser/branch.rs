@@ -38,16 +38,16 @@ impl Display for Branch {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Branch::Broken => write!(f, "abort"),
-            Branch::Searching => write!(f, "neutral"),
+            Branch::Searching => write!(f, "searching [neutral]"),
             Branch::Neutral(neutral_branch) => match neutral_branch {
-                NeutralBranch::Searching => write!(f, "neutral"),
+                NeutralBranch::Searching => write!(f, "searching [neutral]"),
                 NeutralBranch::Alias => write!(f, "alias"),
                 NeutralBranch::Bind => write!(f, "bind"),
                 NeutralBranch::Const => write!(f, "const"),
                 NeutralBranch::Import => write!(f, "import"),
             },
             Branch::Section(sect_branch) => match sect_branch {
-                SectionBranch::Searching => write!(f, "searching for section"),
+                SectionBranch::Searching => write!(f, "searching [section]"),
                 SectionBranch::Var => write!(f, "var"),
                 SectionBranch::Nest => write!(f, "nest"),
                 SectionBranch::NestType => write!(f, "[type]"),

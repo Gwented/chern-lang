@@ -9,15 +9,15 @@
 
 // Require forward slashes
 bind "../"
-import "../chrn_tests/defs.chrn"
+// import "../chrn_tests/defs.chrn"
 
 var->
     var: Tuple<str, u8, str> [StartsW("Hello")]
+    user: defs.~str
 
     // parser needs this TypeExpr
-    // user: defs.User
 nest->
-    struct Data {}
+    export struct Data {}
 
     export enum State {
         Ready: Tuple<Data, str>
@@ -29,6 +29,8 @@ nest->
 
 // const X = 4
 @end
+    // Should generate help message or override original error message
+    user: defs.User.Generic<i32>
 
 "Really
 
