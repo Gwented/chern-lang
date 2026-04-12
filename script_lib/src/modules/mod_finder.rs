@@ -290,7 +290,7 @@ impl ModuleFinder<'_> {
     fn is_as(&mut self) -> bool {
         self.skip_whitespace();
 
-        if self.pos + 1 < self.src_bytes.len() && &self.src_bytes[self.pos..self.pos + 1] == b"as" {
+        if self.pos + 2 < self.src_bytes.len() && &self.src_bytes[self.pos..self.pos + 2] == b"as" {
             self.skip(2);
             return true;
         }

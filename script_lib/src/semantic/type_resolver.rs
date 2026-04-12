@@ -471,6 +471,7 @@ impl TypeResolver<'_> {
                 let module = match &spanned_ty_exprs[0].ty_expr {
                     TypeExpr::Var(name_id) => {
                         if let Some(mod_id) = self.program.mod_map.get(name_id) {
+                            dbg!(self.interner.search(name_id.id as usize));
                             &self.program.mods[mod_id.id]
                         } else {
                             let err_name = self.interner.search(name_id.id as usize);
@@ -503,8 +504,8 @@ impl TypeResolver<'_> {
                         Symbol::Enum(enum_repre) => enum_repre.type_id,
                         // There is no reason to disallow typedefs other than, because.
                         _ => {
+                            // Suspicious error message
                             let msg = format!(
-                                // Suspicious error message
                                 "Only `enum` and `struct` can be used as type annotated references",
                             );
 
@@ -521,7 +522,6 @@ impl TypeResolver<'_> {
 
                     if sym_info.is_priv && sym_info.owner != self.current_mod {
                         let err_name = self.interner.search(name_id.id as usize);
-
                         let msg = format!("The type `{err_name}` is private",);
 
                         self.reporter.report_spanned(

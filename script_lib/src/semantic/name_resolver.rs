@@ -235,6 +235,14 @@ impl NamespaceResolver<'_> {
         self.program.types.push(ty_info);
     }
 
+    // fn register_import_aliases(&mut self) {
+    //     // let module = &self.program.mods[self.current_mod.id];
+    //     //
+    //     // for import in &module.imports {
+    //     //     if let Some(name_id) = import.alias_id {}
+    //     // }
+    // }
+
     /// Checks registered namespace for duplicates and collects errors if any are found
     fn check_duplicates(&mut self) {
         // Solely a HashMap for spanning

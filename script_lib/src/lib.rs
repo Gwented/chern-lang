@@ -35,9 +35,7 @@ mod tests {
 
         for tok in &toks {
             match tok.tok {
-                Token::Id(id) | Token::Str(id) => {
-                    dbg!(interner.search(id as usize));
-                }
+                Token::Id(id) | Token::Str(id) => {}
                 _ => (),
             }
         }

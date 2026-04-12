@@ -8,11 +8,10 @@
 @def
 
 // Require forward slashes
-bind "../"
-import "../chrn_tests/defs.chrn"
+import "../chrn_tests/defs.chrn" as maddie_burger
 
 var->
-    user: defs.var
+    user: maddie_burger.Person
     // var: Tuple<str, u8, str> [StartsW("Hello")]
 
     // parser needs this TypeExpr

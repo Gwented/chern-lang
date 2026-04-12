@@ -254,6 +254,7 @@ pub fn extract_modules(
         &main_mod,
         &mut mod_map,
         settings,
+        1,
         interner,
     )?;
 
@@ -294,6 +295,7 @@ fn resolve_modules(
     prev_mod: &Module,
     mod_map: &mut HashMap<NameId, ModuleId>,
     settings: &ChernSettings,
+    current_mod_id: usize,
     interner: &mut Intern,
 ) -> Result<(), ConfigLoadError> {
     for import in &prev_mod.imports {
@@ -354,8 +356,8 @@ fn resolve_modules(
         let file_name = match path.file_prefix().map(|n| n.to_str()) {
             Some(Some(p)) => p.to_string(),
             _ => {
-                if let Some(alias_id) = import.alias_id {
-                    interner.search(alias_id.id as usize).to_string()
+                if let Some(name_id) = import.alias_id {
+                    interner.search(name_id.id as usize).to_string()
                 } else {
                     let msg = format!(
                         "The path \"{}\" does not have a valid UTF-8 file name usable within the program. Consider using 'as' give it an alias if a file name change is not possible.",
@@ -375,22 +377,33 @@ fn resolve_modules(
         )
         .collect_imports(interner);
 
-        //WARN: COMPUTED LATER. WILL CHANGE CONTROL FLOW SO THIS DOESN'T NEED TO HAPPEN
-        let mut sub_mod = Module::new(
+        let sub_mod = Module::new(
             name_id,
             import.path_id,
-            ModuleId::new(10000),
+            ModuleId::new(current_mod_id),
             sub_imports,
             mod_metadata,
         );
 
-        resolve_modules(seen, modules, &sub_mod, mod_map, settings, interner)?;
+        if let Some(alias_id) = import.alias_id {
+            mod_map.insert(alias_id, ModuleId::new(current_mod_id));
+        }
+
+        resolve_modules(
+            seen,
+            modules,
+            &sub_mod,
+            mod_map,
+            settings,
+            current_mod_id + 1,
+            interner,
+        )?;
+
+        modules.push(sub_mod);
+        mod_map.insert(name_id, ModuleId::new(current_mod_id));
 
         // Modules start off at 0 since the main module can't be inserted before this so + 1 for
         // correct indexing in the final vector
-        sub_mod.mod_id = ModuleId::new(modules.len() + 1);
-        mod_map.insert(name_id, ModuleId::new(modules.len() + 1));
-        modules.push(sub_mod);
     }
 
     Ok(())
