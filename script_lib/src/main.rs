@@ -1,6 +1,6 @@
 use std::{path::PathBuf, time::Instant};
 
-use common::{config_loader::ChernConfigLoader, intern::Intern};
+use common::{config_loader::ChernConfigLoader, intern::Intern, metadata::ChernSettings};
 use script_lib::{
     lexer::Lexer,
     semantic::{
@@ -15,14 +15,15 @@ fn main() {
 
     let file = std::fs::File::open(&path).unwrap();
 
-    let metadata = match ChernConfigLoader::new(&path, file).load_config() {
-        Ok(meta) => meta,
-        Err(_) => {
-            eprintln!("From path => {}\n", path.display());
-            eprintln!("(Test) Exiting");
-            std::process::exit(1);
-        }
-    };
+    let metadata =
+        match ChernConfigLoader::new(&path, file, &ChernSettings::new(true)).load_config() {
+            Ok(meta) => meta,
+            Err(_) => {
+                eprintln!("From path => {}\n", path.display());
+                eprintln!("(Test) Exiting");
+                std::process::exit(1);
+            }
+        };
 
     let mut interner = Intern::init();
 

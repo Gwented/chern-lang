@@ -246,7 +246,7 @@ pub fn quote_start_probability(src: &[u8], q_type: char, search_range: Range<usi
     // DOES NOTHING
     q_graph.eval();
 
-    q_graph.display_scores();
+    // q_graph.display_scores();
 
     let scores: Vec<f32> = q_graph.q_nodes.iter().map(|q| q.score).collect();
     let highest_idx = algo::argmax(&scores).expect("temp");
@@ -410,8 +410,10 @@ fn train_model(
     }
 
     let probs = algo::softmax(&preds);
+    dbg!(&preds);
 
     let choice = algo::argmax(&probs).expect("No");
+    panic!();
 
     let n = q_model.weights.inner.len() as f32;
     // let mut gradients_inner: Vec<f32> = Vec::with_capacity(q_model.weights.inner.len());

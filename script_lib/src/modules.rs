@@ -210,7 +210,7 @@ pub fn extract_modules(
         Err(e) => return Err(ConfigLoadError::Module(e)),
     };
 
-    let main_metadata = ChernConfigLoader::new(path, src).load_config()?;
+    let main_metadata = ChernConfigLoader::new(path, src, settings).load_config()?;
 
     // Get's actual file name so that any reference such as, "global.CONSTANT_VALUE" can be
     // accessed by using the file's name, which has to be valid UTF-8 unlike it's path.
@@ -350,7 +350,7 @@ fn resolve_modules(
             }
         };
 
-        let mod_metadata = ChernConfigLoader::new(path, src).load_config()?;
+        let mod_metadata = ChernConfigLoader::new(path, src, settings).load_config()?;
 
         //Oh my
         let file_name = match path.file_prefix().map(|n| n.to_str()) {

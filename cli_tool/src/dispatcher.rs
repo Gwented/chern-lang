@@ -15,7 +15,7 @@ use crate::{
 
 pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
     match &cli.command {
-        // Lint sub-command?
+        // Lint sub-command? eslint
         Commands::Check(check_cmd) => exec_check(&check_cmd, &cli_cfg),
         Commands::Fmt(fmt_cmd) => todo!(),
         Commands::Gen(gen_cmd) => todo!(),
@@ -24,7 +24,6 @@ pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
 
 // What if this had 2 probability models?
 fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, String> {
-    // More like settings
     let settings = ChernSettings::new(cli_cfg.can_color);
 
     match interpreter::interpret_chern_cfg(&check_cmd.path, &settings) {
@@ -38,7 +37,6 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
                     eprintln!("{msg}");
                     return Err("Failed to parse configuration file".to_string());
                 }
-                // Should handle all prevelant IO errors inside of module scanner using reporter
                 ConfigLoadError::IO(e) => match e.kind() {
                     e => {
                         let msg = format!("Process exited unsuccessfully. Reason: {e}");
@@ -65,7 +63,3 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
         },
     }
 }
-
-// let src = match fs::File::open(&check_cmd.path)
-//     Ok(f) => f,
-// };

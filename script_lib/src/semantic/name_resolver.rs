@@ -31,7 +31,6 @@ pub struct NamespaceResolver<'a> {
     current_mod: ModuleId,
     reporter: SemanticReporter<'a>,
     //NOTE: May handle this differently but ok for now
-    unknown_id: Option<TypeId>,
 }
 
 impl NamespaceResolver<'_> {
@@ -49,7 +48,6 @@ impl NamespaceResolver<'_> {
             current_mod,
             reporter: SemanticReporter::new(settings, interner),
             //TODO: This will be different
-            unknown_id: None,
         }
     }
 
@@ -96,17 +94,10 @@ impl NamespaceResolver<'_> {
         let sym_id = SymbolId::new(self.program.symbols.len() as u32);
         module.table.sym_ids.insert(ast_id, sym_id);
 
-        //WARN: This type id is fake...
-        let type_id = if let Some(id) = self.unknown_id {
-            id
-        } else {
-            let id = TypeId::new(self.program.types.len() as u32);
-            self.unknown_id = Some(id);
-            let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
-            self.program.types.push(ty_info);
-
-            id
-        };
+        // Promising a type will exist in the given index
+        let type_id = TypeId::new(self.program.types.len() as u32);
+        let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
+        self.program.types.push(ty_info);
 
         let type_def_repre = TypeDefRepre::new(abs_typedef.name_id, type_id, sym_id, ast_id);
 
@@ -164,19 +155,9 @@ impl NamespaceResolver<'_> {
         let sym_id = SymbolId::new(self.program.symbols.len() as u32);
         module.table.sym_ids.insert(ast_id, sym_id);
 
-        // Unkown type id for unregistered types
-        // FIX:
-        let type_id = if let Some(id) = self.unknown_id {
-            id
-        } else {
-            let id = TypeId::new(self.program.types.len() as u32);
-            self.unknown_id = Some(id);
-
-            let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
-            self.program.types.push(ty_info);
-
-            id
-        };
+        let type_id = TypeId::new(self.program.types.len() as u32);
+        let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
+        self.program.types.push(ty_info);
 
         let alias_repre = AliasRepre::new(
             abs_alias.name_id,
@@ -205,17 +186,9 @@ impl NamespaceResolver<'_> {
         let module = &mut self.program.mods[self.current_mod.id];
         module.table.name_ids.insert(ast_id, abs_const.name_id);
 
-        let type_id = if let Some(id) = self.unknown_id {
-            id
-        } else {
-            let id = TypeId::new(self.program.types.len() as u32);
-            self.unknown_id = Some(id);
-
-            let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
-            self.program.types.push(ty_info);
-
-            id
-        };
+        let type_id = TypeId::new(self.program.types.len() as u32);
+        let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
+        self.program.types.push(ty_info);
 
         let sym_id = SymbolId::new(self.program.symbols.len() as u32);
         module.table.sym_ids.insert(ast_id, sym_id);
@@ -234,14 +207,6 @@ impl NamespaceResolver<'_> {
         let ty_info = TypeInfo::new(Type::Const(sym_id), Some(self.current_mod));
         self.program.types.push(ty_info);
     }
-
-    // fn register_import_aliases(&mut self) {
-    //     // let module = &self.program.mods[self.current_mod.id];
-    //     //
-    //     // for import in &module.imports {
-    //     //     if let Some(name_id) = import.alias_id {}
-    //     // }
-    // }
 
     /// Checks registered namespace for duplicates and collects errors if any are found
     fn check_duplicates(&mut self) {

@@ -5,10 +5,13 @@ use common::{
     keywords::{self, Keyword},
     metadata::ChernSettings,
     reporter::diagnostic::Diagnostic,
-    symbols::{AstId, InnerArgs, ModuleId, NameId, Span, SpannedInnerArgs, SymbolId, TypeId},
+    symbols::{
+        AstId, InnerArgs, ModuleId, NameId, Span, SpannedInnerArgs, SymbolId, TypeId, ValueId,
+    },
 };
 
 use crate::{
+    ir::values::Value,
     modules::{Module, Program},
     parser::ast::{
         AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Expr, Item,
@@ -63,6 +66,8 @@ impl ConstraintResolver<'_> {
                     _ = self.resolve_enum(abs_enum, ast_id);
                 }
                 Item::Alias(abs_alias) => todo!(),
+                // Does not have complex constraints
+                // But maybe should resolve it's value?
                 Item::Const(abs_const) => (),
             }
         }
@@ -380,6 +385,7 @@ impl ConstraintResolver<'_> {
 
                 let func_kind = func.kind;
 
+                // Conditions are private by default
                 let sym_info = SymbolInfo::new(Symbol::Func(func), true, self.current_mod);
                 self.program.symbols.insert(sym_id, sym_info);
 
@@ -398,7 +404,7 @@ impl ConstraintResolver<'_> {
 
                 Err(())
             }
-            Expr::Integer(_) | Expr::Float(_) => {
+            Expr::Integer(_, _) | Expr::Float(_, _) => {
                 let err_msg = format!("Numerics cannot be used as conditions alone");
 
                 self.reporter.report_spanned(
@@ -633,17 +639,58 @@ impl ConstraintResolver<'_> {
     fn resolve_func_arg(&self, spanned_expr: &SpannedExpr) -> Result<FuncArgsRepre, ()> {
         match &spanned_expr.expr {
             Expr::Str(name_id) => Ok(FuncArgsRepre::Str(*name_id)),
-            Expr::Integer(num) => Ok(FuncArgsRepre::Integer(*num)),
+            Expr::Integer(id, _) => {
+                let num = self
+                    .interner
+                    .search(*id as usize)
+                    .parse()
+                    .expect("I don't know");
+
+                Ok(FuncArgsRepre::Integer(num))
+            }
+            Expr::Float(id, _) => {
+                let num = self
+                    .interner
+                    .search(*id as usize)
+                    .parse()
+                    .expect("I don't know");
+
+                Ok(FuncArgsRepre::Float(num))
+            }
             Expr::Char(ch) => Ok(FuncArgsRepre::Char(*ch)),
-            Expr::Float(num) => Ok(FuncArgsRepre::Float(*num)),
             Expr::Var(name_id) => {
                 todo!()
             }
             Expr::Call(_, _) => todo!(),
-            Expr::FieldAccess(abs_field_access) => todo!(),
+            Expr::FieldAccess(abs_field_access) => {
+                let base = self.resolve_expr(&abs_field_access.base);
+                todo!();
+            }
             Expr::Unary(unary) => todo!(),
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),
             Expr::Default(_, expr) => todo!(),
+        }
+    }
+
+    fn resolve_expr(&self, spanned_expr: &SpannedExpr) -> Result<Value, ()> {
+        match &spanned_expr.expr {
+            Expr::Var(name_id) => {
+                let module = &self.program.mods[self.current_mod.id];
+                if let Some(ast_id) = module.table.get_ast_id(*name_id) {
+                    panic!("Hi");
+                }
+
+                todo!();
+            }
+            Expr::Default(name_id, spanned_expr) => todo!(),
+            Expr::Integer(_, _) => todo!(),
+            Expr::Float(_, _) => todo!(),
+            Expr::Str(name_id) => todo!(),
+            Expr::Char(_) => todo!(),
+            Expr::Call(spanned_expr, spanned_exprs) => todo!(),
+            Expr::FieldAccess(abstract_field_access) => todo!(),
+            Expr::Unary(unary) => todo!(),
+            Expr::BinaryExpr { lhs, op, rhs } => todo!(),
         }
     }
 

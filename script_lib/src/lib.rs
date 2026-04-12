@@ -14,7 +14,7 @@ mod types;
 mod tests {
     use std::path::Path;
 
-    use common::{config_loader::ChernConfigLoader, intern::Intern};
+    use common::{config_loader::ChernConfigLoader, intern::Intern, metadata::ChernSettings};
 
     use crate::{
         lexer::Lexer,
@@ -25,9 +25,10 @@ mod tests {
     fn lex_tok_test() {
         let text = r#"bind "./some/path""#;
 
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
 
         let mut interner = Intern::init();
 
@@ -52,14 +53,21 @@ mod tests {
         // Properly closed @def and @end
         let correct = r#"@defbind "./some/path"@end"#;
 
-        let opt = ChernConfigLoader::new(Path::new(""), correct.as_bytes()).load_config();
+        let opt = ChernConfigLoader::new(
+            Path::new(""),
+            correct.as_bytes(),
+            &ChernSettings::new(false),
+        )
+        .load_config();
 
         assert_eq!(true, opt.is_ok());
 
         // Improper @def without an @end
         let wrong = r#"@defbind "./some/path""#;
 
-        let opt = ChernConfigLoader::new(Path::new(""), wrong.as_bytes()).load_config();
+        let opt =
+            ChernConfigLoader::new(Path::new(""), wrong.as_bytes(), &ChernSettings::new(false))
+                .load_config();
 
         assert_eq!(true, opt.is_err());
     }
@@ -70,9 +78,10 @@ mod tests {
     fn char_literal_test() {
         // Valid single character
         let text = "'a'";
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
         let mut interner = Intern::init();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
@@ -85,9 +94,11 @@ mod tests {
 
         // Valid escaped character
         let text = "'\\n'";
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
+
         let mut interner = Intern::init();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
@@ -100,9 +111,10 @@ mod tests {
 
         // Valid hex escape
         let text = "'\\x2F'";
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
         let mut interner = Intern::init();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
@@ -115,9 +127,10 @@ mod tests {
 
         // Invalid character
         let text = "'aa'";
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
         let mut interner = Intern::init();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
@@ -130,9 +143,10 @@ mod tests {
 
         // Invalid hex escape
         let text = "'\\x2'";
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
         let mut interner = Intern::init();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
@@ -146,9 +160,10 @@ mod tests {
         // I can't actually read hex
         // Invalid hex digits
         let text = "'\\x255'";
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
         let mut interner = Intern::init();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
@@ -161,9 +176,10 @@ mod tests {
 
         // Unknown escape
         let text = "'\\q'";
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
         let mut interner = Intern::init();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
@@ -176,9 +192,10 @@ mod tests {
 
         // Out of range escape
         let text = "'\\x1Y'";
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
         let mut interner = Intern::init();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
@@ -204,8 +221,10 @@ mod tests {
         "
         .as_bytes();
 
-        let correct = ChernConfigLoader::new(Path::new(""), correct).load_config();
-        let wrong = ChernConfigLoader::new(Path::new(""), wrong).load_config();
+        let correct = ChernConfigLoader::new(Path::new(""), correct, &ChernSettings::new(false))
+            .load_config();
+        let wrong =
+            ChernConfigLoader::new(Path::new(""), wrong, &ChernSettings::new(false)).load_config();
 
         assert_eq!(true, correct.is_ok());
         assert_eq!(true, wrong.is_err());
@@ -216,9 +235,10 @@ mod tests {
     fn start_and_serial_offset_test() {
         let text = format!("adwh@def var-> int: i32 @endhi");
 
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
         dbg!(metadata.serial_start);
 
         assert_eq!(&text[4..], &text[metadata.script_start..]);
@@ -230,9 +250,10 @@ mod tests {
     fn lex_notation_test() {
         // Hex Test (Hex Text (Hex Test))
         let text = "0xff";
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
         let mut interner = Intern::init();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
@@ -246,9 +267,10 @@ mod tests {
 
         // Binary
         let text = "0b1010";
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
         let mut interner = Intern::init();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
@@ -262,9 +284,10 @@ mod tests {
 
         // Octal
         let text = "0o77";
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
         let mut interner = Intern::init();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
@@ -278,9 +301,10 @@ mod tests {
 
         // Decimal
         let text = "42";
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
 
         let mut interner = Intern::init();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
@@ -295,9 +319,10 @@ mod tests {
 
         // Float with decimal
         let text = "3.14";
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
         let mut interner = Intern::init();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
@@ -311,9 +336,10 @@ mod tests {
 
         // Positive Scientific Notation
         let text = "1e+23";
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
         let mut interner = Intern::init();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
@@ -327,9 +353,10 @@ mod tests {
 
         // Negative Scientific Notation
         let text = "1e-23";
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
         let mut interner = Intern::init();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
@@ -343,9 +370,10 @@ mod tests {
 
         // Underscored Numbers
         let text = "1_000_000";
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
         let mut interner = Intern::init();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
@@ -359,9 +387,10 @@ mod tests {
 
         // Underscored Hex
         let text = "0x_ff_ff";
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes())
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChernConfigLoader::new(Path::new(""), text.as_bytes(), &ChernSettings::new(false))
+                .load_config()
+                .unwrap();
         let mut interner = Intern::init();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 

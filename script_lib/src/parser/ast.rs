@@ -1,6 +1,8 @@
 //NOTE: MAY MAKE EXPRESSION THAT HELPS RESOLVE SEMANTIC TYPES MORE CLEANLY
 use common::symbols::{AstId, InnerArgs, NameId, PathId, Span, SpannedInnerArgs};
 
+use crate::types::token::Notation;
+
 #[derive(Debug)]
 pub struct AstInfo {
     pub(crate) items: Vec<Item>,
@@ -92,8 +94,8 @@ pub(crate) enum Expr {
     // Staying capped at i64 and f64 for pacing purposes
     // TODO: Need to likely carry notation here
     // Also maybe should be a "literal" type
-    Integer(i64),
-    Float(f64),
+    Integer(u32, Notation),
+    Float(u32, Notation),
     Str(NameId),
     Char(char),
     Call(Box<SpannedExpr>, Vec<SpannedExpr>),

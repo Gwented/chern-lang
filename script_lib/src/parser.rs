@@ -809,21 +809,13 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
         }
         Token::Integer(id, notation) => {
             let span = ctx.advance_span();
-            let num: i64 = interner
-                .search(id as usize)
-                .parse()
-                .expect("Lexer broke (Integer)");
 
-            Ok(SpannedExpr::new(Expr::Integer(num), span))
+            Ok(SpannedExpr::new(Expr::Integer(id, notation), span))
         }
         Token::Float(id, notation) => {
             let span = ctx.advance_span();
-            let num: f64 = interner
-                .search(id as usize)
-                .parse()
-                .expect("Lexer broke (Float)");
 
-            Ok(SpannedExpr::new(Expr::Float(num), span))
+            Ok(SpannedExpr::new(Expr::Float(id, notation), span))
         }
         Token::Str(id) => {
             let span = ctx.advance_span();

@@ -31,8 +31,8 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
     // Need to separate namespace resolution and type resolver because if the modules namespaces
     // aren't resolved first, then type resolution isn't possible since it could be using types
     // from elsewhere, which are not known yet.
-    for i in 0..program.mods.len() {
-        let module = &program.mods[i];
+    for mod_idx in 0..program.mods.len() {
+        let module = &program.mods[mod_idx];
         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
             .tokenize(&mut interner);
 

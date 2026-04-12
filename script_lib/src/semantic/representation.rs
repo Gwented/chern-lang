@@ -13,6 +13,7 @@ use crate::{semantic::constraints::ArgConstraint, types::symbols::Cond};
 // is that a gui framework
 // Maybe named, global table, program table
 
+#[derive(Debug)]
 pub struct TypeInfo {
     pub ty: Type,
     pub owner: Option<ModuleId>,
@@ -25,7 +26,7 @@ impl TypeInfo {
 }
 
 #[derive(Debug)]
-pub(crate) struct SymbolInfo {
+pub struct SymbolInfo {
     pub symbol: Symbol,
     pub owner: ModuleId,
     pub is_priv: bool,

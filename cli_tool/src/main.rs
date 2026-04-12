@@ -7,6 +7,7 @@ fn main() {
     // Need a root config that defines where "can_color" comes from
     let cli_cfg = CliConfig::new();
     let cli = args::Cli::parse();
+    let time = std::time::Instant::now();
 
     // Is borrowed so that the program success or error messages can be colored from one place.
     // Could change

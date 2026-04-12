@@ -6,8 +6,13 @@ use std::{
 };
 
 use crate::{
-    core_error::ConfigLoadError, help_model::quote_model, intern::Intern,
-    keywords::DEFINITION_SIZE, metadata::ModuleMetadata, reporter, symbols::Span,
+    core_error::ConfigLoadError,
+    help_model::quote_model,
+    intern::Intern,
+    keywords::DEFINITION_SIZE,
+    metadata::{ChernSettings, ModuleMetadata},
+    reporter,
+    symbols::Span,
 };
 
 const READ_LIMIT_OFFSET: usize = 500;
@@ -17,6 +22,7 @@ pub struct ChernConfigLoader<'a, R: Read> {
     // Configuration file path
     path: &'a Path,
     handle: BufReader<R>,
+    settings: &'a ChernSettings,
     pos: usize,
     lines_read: usize,
 }
@@ -24,9 +30,14 @@ pub struct ChernConfigLoader<'a, R: Read> {
 //NOTE: This forces paths to be given, but if the chern file itself doesn't have a path given
 //then the language doesn't work anyways. May leave as is.
 impl<R: Read> ChernConfigLoader<'_, R> {
-    pub fn new(path: &Path, handle: R) -> ChernConfigLoader<'_, R> {
+    pub fn new<'a>(
+        path: &'a Path,
+        handle: R,
+        settings: &'a ChernSettings,
+    ) -> ChernConfigLoader<'a, R> {
         ChernConfigLoader {
             path,
+            settings,
             handle: BufReader::new(handle),
             pos: 0,
             lines_read: 1,

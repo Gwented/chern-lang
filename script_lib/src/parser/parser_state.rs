@@ -1,4 +1,5 @@
 // Statements
+const DEFAULT_FLAG: u16 = 1 << 0;
 const BIND_FLAG: u16 = 1 << 1;
 const ALIAS_FLAG: u16 = 1 << 2;
 // Sections
@@ -7,7 +8,7 @@ const NEST_FLAG: u16 = 1 << 4;
 const COMPLEX_FLAG: u16 = 1 << 5;
 const OVERRIDE_FLAG: u16 = 1 << 6;
 
-const NEUTRAL_SET: u16 = BIND_FLAG | ALIAS_FLAG;
+const NEUTRAL_SET: u16 = DEFAULT_FLAG | BIND_FLAG | ALIAS_FLAG;
 
 pub(super) struct ParserState {
     pub(super) flag: u16,
@@ -16,15 +17,15 @@ pub(super) struct ParserState {
 // Could reduce duplication by manually enforcing setting it from the outside but im scared
 impl ParserState {
     pub(super) fn new() -> ParserState {
-        ParserState { flag: 1 }
+        ParserState { flag: DEFAULT_FLAG }
     }
 
     //WARN: Not sure if this is needed since sections already enforce only sections are next
     // It actually doesn't matter if it's neutral or not besides visually from what I can tell
     // May remove.
     pub(super) fn is_neutral(&self) -> bool {
-        // If the bits of self.flag and NEUTRAL_SET are not all the same then will return false
-        (self.flag & NEUTRAL_SET) == NEUTRAL_SET
+        // If self.flag's value exists within neutral set
+        (self.flag | NEUTRAL_SET) == NEUTRAL_SET
     }
 
     // Is this elixer?

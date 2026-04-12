@@ -10,10 +10,11 @@ use common::{
 };
 
 use crate::{
+    ir::values::Value,
     modules::{Module, Program},
     parser::ast::{
-        AbstractAlias, AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Expr,
-        Import, Item, SpannedTypeExpr, TypeExpr, UnaryOp,
+        AbstractAlias, AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo,
+        BinaryOp, Expr, Import, Item, SpannedExpr, SpannedTypeExpr, TypeExpr, UnaryOp,
     },
     semantic::{
         representation::{
@@ -88,15 +89,53 @@ impl TypeResolver<'_> {
         let module = &mut self.program.mods[self.current_mod.id];
         let sym_id = module.table.sym_ids[&ast_id];
 
-        // Assinging from `Unknown` to it's actual associated type
+        // Assinging from `Unknown` to it's actual type
         let type_def = self.program.get_typedef_mut(sym_id);
         type_def.type_id = type_id;
 
         Ok(())
     }
 
+    // Const infers the type from the value so maybe this is ok?
     fn resolve_const(&mut self, abs_const: &AbstractConst, ast_id: AstId) -> Result<(), ()> {
+        let module = &self.program.mods[self.current_mod.id];
+        let sym_id = module.table.sym_ids[&ast_id];
+
+        let val = self.resolve_expr(&abs_const.spanned_expr)?;
+
+        let type_id = match val {
+            Value::I64(num) => {
+                let type_id = TypeId::new(Keyword::I64 as u32);
+                let ty = Type::BuiltinType(BuiltinType::I64);
+                // TypeInfo::new(Type::BuiltinType(self.current_mod.id), None);
+                todo!();
+            }
+            Value::Var(sym_info) => todo!(),
+            Value::F64(_) => todo!(),
+            Value::Char(_) => todo!(),
+            Value::Tuple(values) => todo!(),
+            Value::Str(type_info) => todo!(),
+            Value::Unknown => todo!(),
+        };
+
+        let const_repre = self.program.get_const_mut(sym_id);
+
         todo!();
+    }
+
+    fn infer_type(&self, spanned_expr: &SpannedExpr) -> TypeInfo {
+        match &spanned_expr.expr {
+            Expr::Var(name_id) => todo!(),
+            Expr::Default(name_id, spanned_expr) => todo!(),
+            Expr::Integer(_, _) => todo!(),
+            Expr::Float(_, _) => todo!(),
+            Expr::Str(name_id) => todo!(),
+            Expr::Char(_) => todo!(),
+            Expr::Call(spanned_expr, spanned_exprs) => todo!(),
+            Expr::FieldAccess(abstract_field_access) => todo!(),
+            Expr::Unary(unary) => todo!(),
+            Expr::BinaryExpr { lhs, op, rhs } => todo!(),
+        }
     }
 
     fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
@@ -471,7 +510,6 @@ impl TypeResolver<'_> {
                 let module = match &spanned_ty_exprs[0].ty_expr {
                     TypeExpr::Var(name_id) => {
                         if let Some(mod_id) = self.program.mod_map.get(name_id) {
-                            dbg!(self.interner.search(name_id.id as usize));
                             &self.program.mods[mod_id.id]
                         } else {
                             let err_name = self.interner.search(name_id.id as usize);
@@ -560,18 +598,43 @@ impl TypeResolver<'_> {
 
     // How do we solve this?
     // I DONT KNOW
-    fn resolve_expr(&mut self, expr: &Expr) -> Result<TypeId, ()> {
-        match expr {
+    fn resolve_expr(&mut self, spanned_expr: &SpannedExpr) -> Result<Value, ()> {
+        match &spanned_expr.expr {
+            Expr::Integer(num, _) => {
+                // Ok(Value::I64(*num));
+                todo!();
+            }
+            Expr::Float(num, _) => {
+                // Ok(Value::F64(*num))
+                todo!();
+            }
+            Expr::Char(c) => Ok(Value::Char(*c)),
             Expr::Var(name_id) => todo!(),
-            Expr::Integer(num) => todo!(),
-            Expr::Float(num) => todo!(),
+            Expr::Default(name_id, spanned_expr) => todo!(),
             Expr::Str(name_id) => todo!(),
-            Expr::Call(_, _) => todo!(),
+            Expr::Call(spanned_expr, spanned_exprs) => todo!(),
             Expr::FieldAccess(abs_field_access) => todo!(),
+            Expr::BinaryExpr { lhs, op, rhs } => {
+                let res_lhs = self.resolve_expr(lhs)?;
+                let res_rhs = self.resolve_expr(rhs)?;
+
+                let res = match op {
+                    BinaryOp::Add => todo!(),
+                    BinaryOp::Sub => todo!(),
+                    BinaryOp::Mult => todo!(),
+                    BinaryOp::Div => todo!(),
+                    BinaryOp::Greater => todo!(),
+                    BinaryOp::Less => todo!(),
+                    BinaryOp::GreaterOrEq => todo!(),
+                    BinaryOp::LessOrEq => todo!(),
+                    BinaryOp::Mod => todo!(),
+                    BinaryOp::And => todo!(),
+                    BinaryOp::Or => todo!(),
+                    BinaryOp::EqualTo => todo!(),
+                    BinaryOp::NotEq => todo!(),
+                };
+            }
             Expr::Unary(unary) => todo!(),
-            Expr::BinaryExpr { lhs, op, rhs } => todo!(),
-            Expr::Char(_) => todo!(),
-            Expr::Default(_, expr) => todo!(),
         }
     }
 }
