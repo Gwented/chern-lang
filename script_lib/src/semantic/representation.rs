@@ -6,7 +6,7 @@ use common::{
     builtins::{BuiltinType, BuiltinTypeKind},
     fmter::{Formattable, Formatted},
     keywords,
-    symbols::{AstId, InnerArgs, NameId, Span, SymbolId, TypeId, ValueId},
+    symbols::{AstId, InnerArgs, ModuleId, NameId, Span, SymbolId, TypeId, ValueId},
 };
 
 use crate::{semantic::constraints::ArgConstraint, types::symbols::Cond};
@@ -15,8 +15,13 @@ use crate::{semantic::constraints::ArgConstraint, types::symbols::Cond};
 // is that a gui framework
 // Maybe named, global table, program table
 
+pub struct TypeInfo {
+    ty: Type,
+    owner: ModuleId,
+}
+
 #[derive(Debug)]
-pub(super) enum Type {
+pub enum Type {
     BuiltinType(BuiltinType),
     Struct(SymbolId),
     Enum(SymbolId),
@@ -529,7 +534,7 @@ impl Display for FuncKind {
 }
 
 #[derive(Debug)]
-pub(super) struct Tuple {
+pub struct Tuple {
     pub(super) elements: Vec<TypeId>,
     pub(super) type_id: TypeId,
 }

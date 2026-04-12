@@ -18,13 +18,14 @@ use crate::{
     iyo::file_ops,
     modules::mod_finder::ModuleFinder,
     parser::ast::{Bind, Import},
-    semantic::representation::Table,
+    semantic::representation::{Table, Type},
 };
 
 pub struct Program {
     pub bind: Option<Bind>,
     pub mod_map: HashMap<NameId, ModuleId>,
     pub mods: Vec<Module>,
+    // pub types: Vec<Type>,
 }
 
 impl Program {

@@ -9,17 +9,17 @@
 
 // Require forward slashes
 bind "../"
-// import "../chrn_tests/defs.chrn"
+import "../chrn_tests/defs.chrn"
 
 var->
     var: Tuple<str, u8, str> [StartsW("Hello")]
-    user: defs.~str
+    user: defs.Person
 
     // parser needs this TypeExpr
 nest->
-    export struct Data {}
+    struct Data {}
 
-    export enum State {
+    enum State {
         Ready: Tuple<Data, str>
         InProgress
         Failed

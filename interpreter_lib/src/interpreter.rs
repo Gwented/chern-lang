@@ -10,7 +10,10 @@ use script_lib::{
     lexer::Lexer,
     modules::{self},
     parser::{self, ast::AstInfo},
-    semantic::{constraint_resolver::ConstraintResolver, type_resolver::TypeResolver},
+    semantic::{
+        constraint_resolver::ConstraintResolver, name_resolver::NamespaceResolver,
+        type_resolver::TypeResolver,
+    },
 };
 
 // Maybe this shouldn't take metadata externally
@@ -42,10 +45,10 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
             },
         };
 
-        match TypeResolver::new(settings, &ast_info, &interner, module).resolve() {
+        match NamespaceResolver::new(settings, &ast_info, &interner, module).resolve() {
             Ok(_) => (),
             Err(mut diags) => reporter.diags.append(&mut diags),
-        };
+        }
 
         asts.push(ast_info);
     }
@@ -56,6 +59,11 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
 
     // I don't know
     for i in 0..program.mods.len() {
+        match TypeResolver::new(settings, &asts[i], i, &interner, &mut program).resolve() {
+            Ok(_) => (),
+            Err(mut diags) => reporter.diags.append(&mut diags),
+        };
+
         match ConstraintResolver::new(settings, &asts[i], &interner, i, &mut program).resolve() {
             Ok(_) => (),
             Err(mut diags) => reporter.diags.append(&mut diags),

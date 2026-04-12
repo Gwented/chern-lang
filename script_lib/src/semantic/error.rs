@@ -1,7 +1,6 @@
 use common::{
-    builtins::BuiltinTypeKind,
-    fmter::{Formattable, Formatted},
-    symbols::{InnerArgs, Span, SpannedInnerArgs, TypeId},
+    fmter::Formatted,
+    symbols::{InnerArgs, Span},
 };
 
 use crate::{

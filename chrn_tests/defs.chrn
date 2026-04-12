@@ -1,7 +1,13 @@
-import "../chrn_tests/CHERNGENTS.chrn"
+import "../chrn_tests/main.chrn"
 
-export const READ = 0b00000001
-export const WRITE = 0b00000010
-export const EXEC = 0b00000100
+// export const READ = 0b00000001
+// export const WRITE = 0b00000010
+// export const EXEC = 0b00000100
 
 // export alias VALID_PERMS() = [Equals(READ) || Equals(WRITE) || Equals(EDIT)]
+
+nest->
+    struct Person {
+        name: str
+        age: u8
+    }
