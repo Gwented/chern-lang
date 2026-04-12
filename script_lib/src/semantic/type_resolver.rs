@@ -6,7 +6,7 @@ use common::{
     keywords::{self, Keyword},
     metadata::{ChernSettings, ModuleMetadata},
     reporter::diagnostic::Diagnostic,
-    symbols::{AstId, InnerArgs, NameId, SymbolId, TypeId, ValueId},
+    symbols::{AstId, InnerArgs, ModuleId, NameId, SymbolId, TypeId, ValueId},
 };
 
 use crate::{
@@ -18,7 +18,7 @@ use crate::{
     semantic::{
         representation::{
             AliasRepre, ConstRepre, EnumRepre, FieldRepre, FuncArgsRepre, FuncRepre, StructRepre,
-            Symbol, Tuple, Type, TypeDefRepre, VariantRepre,
+            Symbol, Tuple, Type, TypeDefRepre, TypeInfo, VariantRepre,
         },
         semantic_reporter::SemanticReporter,
     },
@@ -30,7 +30,7 @@ pub struct TypeResolver<'a> {
     interner: &'a Intern,
     //WARN: Horrors
     program: &'a mut Program,
-    current_idx: usize,
+    current_mod: ModuleId,
     // Startup idea:
     reporter: SemanticReporter<'a>,
     //NOTE: May handle this differently but ok for now
@@ -40,13 +40,13 @@ impl TypeResolver<'_> {
     pub fn new<'a>(
         settings: &'a ChernSettings,
         ast_info: &'a AstInfo,
-        current_idx: usize,
+        current_idx: ModuleId,
         interner: &'a Intern,
         program: &'a mut Program,
     ) -> TypeResolver<'a> {
         TypeResolver {
             ast_info,
-            current_idx,
+            current_mod: current_idx,
             reporter: SemanticReporter::new(settings, interner),
             interner,
             program,
@@ -85,11 +85,11 @@ impl TypeResolver<'_> {
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
         let type_id = self.resolve_type_expr(&abs_typedef.spanned_ty_expr, ast_id)?;
 
-        let module = &mut self.program.mods[self.current_idx];
+        let module = &mut self.program.mods[self.current_mod.id];
         let sym_id = module.table.sym_ids[&ast_id];
 
         // Assinging from `Unknown` to it's actual associated type
-        let type_def = module.table.get_typedef_mut(sym_id);
+        let type_def = self.program.get_typedef_mut(sym_id);
         type_def.type_id = type_id;
 
         Ok(())
@@ -123,7 +123,7 @@ impl TypeResolver<'_> {
                     &msg,
                     None,
                     &[orig_span, field_span],
-                    &self.program.mods[self.current_idx],
+                    &self.program.mods[self.current_mod.id],
                 );
             }
 
@@ -134,10 +134,10 @@ impl TypeResolver<'_> {
             fields.push(field_repre);
         }
 
-        let module = &mut self.program.mods[self.current_idx];
+        let module = &mut self.program.mods[self.current_mod.id];
         let sym_id = module.table.sym_ids[&ast_id];
 
-        let struct_repre = module.table.get_struct_mut(sym_id);
+        let struct_repre = self.program.get_struct_mut(sym_id);
 
         struct_repre.fields.append(&mut fields);
 
@@ -168,7 +168,7 @@ impl TypeResolver<'_> {
                     &msg,
                     None,
                     &[orig_span, variant_span],
-                    &self.program.mods[self.current_idx],
+                    &self.program.mods[self.current_mod.id],
                 );
             }
 
@@ -183,9 +183,9 @@ impl TypeResolver<'_> {
             }
         }
 
-        let module = &mut self.program.mods[self.current_idx];
+        let module = &mut self.program.mods[self.current_mod.id];
         let sym_id = module.table.sym_ids[&ast_id];
-        let enum_repre = module.table.get_enum_mut(sym_id);
+        let enum_repre = self.program.get_enum_mut(sym_id);
 
         enum_repre.variants.append(&mut variants);
 
@@ -217,13 +217,13 @@ impl TypeResolver<'_> {
 
                 // Loop that checks if the name id was registered, then uses its corresponding ast_id to
                 // extract the name id's type and returns that as the type to be referenced
-                let module = &self.program.mods[self.current_idx];
+                let module = &self.program.mods[self.current_mod.id];
 
                 for (current_ast_id, current_name_id) in &module.table.name_ids {
                     if current_name_id == name_id {
                         let sym_id = module.table.sym_ids[&current_ast_id];
 
-                        let type_id = match &module.table.symbols[&sym_id] {
+                        let type_id = match &self.program.symbols[&sym_id].symbol {
                             Symbol::Struct(struct_repre) => struct_repre.type_id,
                             Symbol::Func(func_repre) => func_repre.type_id,
                             Symbol::Enum(enum_repre) => enum_repre.type_id,
@@ -254,12 +254,12 @@ impl TypeResolver<'_> {
                 return Err(());
             }
             TypeExpr::Escaped(name_id) => {
-                let module = &self.program.mods[self.current_idx];
+                let module = &self.program.mods[self.current_mod.id];
 
                 for (current_ast_id, current_name_id) in &module.table.name_ids {
                     if current_name_id == name_id {
                         let sym_id = module.table.sym_ids[&current_ast_id];
-                        let type_id = match &module.table.symbols[&sym_id] {
+                        let type_id = match &self.program.symbols[&sym_id].symbol {
                             Symbol::Struct(struct_repre) => struct_repre.type_id,
                             Symbol::Func(func_repre) => func_repre.type_id,
                             Symbol::Enum(enum_repre) => enum_repre.type_id,
@@ -294,7 +294,7 @@ impl TypeResolver<'_> {
                                     &msg,
                                     None,
                                     &[spanned_ty_expr.span],
-                                    &self.program.mods[self.current_idx],
+                                    &self.program.mods[self.current_mod.id],
                                 );
 
                                 return Err(());
@@ -302,12 +302,11 @@ impl TypeResolver<'_> {
 
                             let inner = self.resolve_type_expr(&generic.args[0], ast_id)?;
 
-                            let module = &mut self.program.mods[self.current_idx];
+                            let list = Type::BuiltinType(BuiltinType::List(inner));
+                            let list_id = TypeId::new(self.program.types.len() as u32);
 
-                            let list = BuiltinType::List(inner);
-                            let list_id = TypeId::new(module.table.types.len() as u32);
-
-                            module.table.types.push(Type::BuiltinType(list));
+                            let ty_info = TypeInfo::new(list, Some(self.current_mod));
+                            self.program.types.push(ty_info);
 
                             return Ok(list_id);
                         }
@@ -318,12 +317,11 @@ impl TypeResolver<'_> {
                                 elements.push(self.resolve_type_expr(arg, ast_id)?);
                             }
 
-                            let module = &mut self.program.mods[self.current_idx];
+                            let type_id = TypeId::new(self.program.types.len() as u32);
+                            let tuple = Type::Tuple(Tuple::new(elements, type_id));
 
-                            let type_id = TypeId::new(module.table.types.len() as u32);
-                            let tuple = Tuple::new(elements, type_id);
-
-                            module.table.types.push(Type::Tuple(tuple));
+                            let ty_info = TypeInfo::new(tuple, Some(self.current_mod));
+                            self.program.types.push(ty_info);
 
                             Ok(type_id)
                         }
@@ -338,7 +336,7 @@ impl TypeResolver<'_> {
                                     &msg,
                                     None,
                                     &[spanned_ty_expr.span],
-                                    &self.program.mods[self.current_idx],
+                                    &self.program.mods[self.current_mod.id],
                                 );
 
                                 return Err(());
@@ -347,13 +345,11 @@ impl TypeResolver<'_> {
                             let key = self.resolve_type_expr(&generic.args[0], ast_id)?;
                             let val = self.resolve_type_expr(&generic.args[1], ast_id)?;
 
-                            let map = BuiltinType::Map(key, val);
+                            let map = Type::BuiltinType(BuiltinType::Map(key, val));
+                            let map_id = self.program.types.len() as u32;
 
-                            let module = &mut self.program.mods[self.current_idx];
-
-                            let map_id = module.table.types.len() as u32;
-
-                            module.table.types.push(Type::BuiltinType(map));
+                            let ty_info = TypeInfo::new(map, Some(self.current_mod));
+                            self.program.types.push(ty_info);
 
                             Ok(TypeId::new(map_id))
                         }
@@ -369,7 +365,7 @@ impl TypeResolver<'_> {
                                     &msg,
                                     None,
                                     &[spanned_ty_expr.span],
-                                    &self.program.mods[self.current_idx],
+                                    &self.program.mods[self.current_mod.id],
                                 );
 
                                 return Err(());
@@ -377,12 +373,11 @@ impl TypeResolver<'_> {
 
                             let inner = self.resolve_type_expr(&generic.args[0], ast_id)?;
 
-                            let module = &mut self.program.mods[self.current_idx];
+                            let set = Type::BuiltinType(BuiltinType::Set(inner));
+                            let set_id = TypeId::new(self.program.types.len() as u32);
 
-                            let set = BuiltinType::Set(inner);
-                            let set_id = TypeId::new(module.table.types.len() as u32);
-
-                            module.table.types.push(Type::BuiltinType(set));
+                            let ty_info = TypeInfo::new(set, Some(self.current_mod));
+                            self.program.types.push(ty_info);
 
                             return Ok(set_id);
                         }
@@ -399,7 +394,7 @@ impl TypeResolver<'_> {
                                 &err_msg,
                                 Some(err_name),
                                 &[spanned_ty_expr.span],
-                                &self.program.mods[self.current_idx],
+                                &self.program.mods[self.current_mod.id],
                             );
 
                             Err(())
@@ -417,7 +412,7 @@ impl TypeResolver<'_> {
                             &err_msg,
                             Some(err_name),
                             &[spanned_ty_expr.span],
-                            &self.program.mods[self.current_idx],
+                            &self.program.mods[self.current_mod.id],
                         );
 
                         Err(())
@@ -425,14 +420,14 @@ impl TypeResolver<'_> {
                 }
             }
             TypeExpr::Any => {
-                let module = &mut self.program.mods[self.current_idx];
+                let id = self.program.types.len() as u32;
 
-                let id = module.table.types.len() as u32;
+                let ty_info = TypeInfo::new(
+                    Type::BuiltinType(BuiltinType::Any(None)),
+                    Some(self.current_mod),
+                );
 
-                module
-                    .table
-                    .types
-                    .push(Type::BuiltinType(BuiltinType::Any(None)));
+                self.program.types.push(ty_info);
 
                 Ok(TypeId::new(id))
             }
@@ -444,12 +439,11 @@ impl TypeResolver<'_> {
                     elements.push(type_id);
                 }
 
-                let module = &mut self.program.mods[self.current_idx];
+                let tuple_id = TypeId::new(self.program.types.len() as u32);
+                let tuple = Type::Tuple(Tuple::new(elements, tuple_id));
 
-                let tuple_id = TypeId::new(module.table.types.len() as u32);
-                let tuple = Tuple::new(elements, tuple_id);
-
-                module.table.types.push(Type::Tuple(tuple));
+                let ty_info = TypeInfo::new(tuple, Some(self.current_mod));
+                self.program.types.push(ty_info);
 
                 Ok(tuple_id)
             }

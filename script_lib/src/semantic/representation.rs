@@ -1,11 +1,9 @@
 // TypeId is the index of the type itself, OR the type it's pointing to
-use core::error;
 use std::{collections::HashMap, fmt::Display};
 
 use common::{
     builtins::{BuiltinType, BuiltinTypeKind},
     fmter::{Formattable, Formatted},
-    keywords,
     symbols::{AstId, InnerArgs, ModuleId, NameId, Span, SymbolId, TypeId, ValueId},
 };
 
@@ -16,8 +14,25 @@ use crate::{semantic::constraints::ArgConstraint, types::symbols::Cond};
 // Maybe named, global table, program table
 
 pub struct TypeInfo {
-    ty: Type,
-    owner: ModuleId,
+    pub ty: Type,
+    pub owner: Option<ModuleId>,
+}
+
+impl TypeInfo {
+    pub fn new(ty: Type, owner: Option<ModuleId>) -> TypeInfo {
+        TypeInfo { ty, owner }
+    }
+}
+
+pub(crate) struct SymbolInfo {
+    pub symbol: Symbol,
+    pub owner: ModuleId,
+}
+
+impl SymbolInfo {
+    pub fn new(symbol: Symbol, owner: ModuleId) -> SymbolInfo {
+        SymbolInfo { symbol, owner }
+    }
 }
 
 #[derive(Debug)]
@@ -33,7 +48,7 @@ pub enum Type {
 }
 
 #[derive(Debug)]
-pub(super) enum Symbol {
+pub(crate) enum Symbol {
     TypeDef(TypeDefRepre),
     Struct(StructRepre),
     Func(FuncRepre),
@@ -44,137 +59,125 @@ pub(super) enum Symbol {
 
 #[derive(Debug)]
 pub struct Table {
-    pub(super) name_ids: HashMap<AstId, NameId>,
+    pub(crate) name_ids: HashMap<AstId, NameId>,
     // Can still change some to vec maybe
-    pub(super) sym_ids: HashMap<AstId, SymbolId>,
-    pub(super) symbols: HashMap<SymbolId, Symbol>,
-    pub(super) types: Vec<Type>,
+    pub(crate) sym_ids: HashMap<AstId, SymbolId>,
 }
 
 impl Table {
     pub fn new() -> Table {
-        let mut table = Table {
+        Table {
             name_ids: HashMap::new(),
             sym_ids: HashMap::new(),
-            symbols: HashMap::new(),
-            types: Vec::new(),
-        };
-
-        // TEST: Taking away the data structures with - 3
-        for i in 0..keywords::TYPE_END - 5 {
-            let ty = BuiltinType::try_from_id(i as u32).expect("Builtin type not updated");
-            table.types.push(Type::BuiltinType(ty));
         }
-
-        table
     }
 
     // Is there a reason to return err?
-    pub(super) fn get_typedef(&self, sym_id: SymbolId) -> &TypeDefRepre {
-        match &self.symbols[&sym_id] {
-            symbol => match symbol {
-                Symbol::TypeDef(type_def_repre) => type_def_repre,
-                _ => unreachable!(),
-            },
-        }
-    }
-
-    pub(super) fn get_typedef_mut(&mut self, sym_id: SymbolId) -> &mut TypeDefRepre {
-        match self.symbols.get_mut(&sym_id) {
-            Some(symbol) => match symbol {
-                Symbol::TypeDef(type_def_repre) => type_def_repre,
-                _ => unreachable!(),
-            },
-            _ => unreachable!(),
-        }
-    }
-
-    pub(super) fn get_struct(&self, sym_id: SymbolId) -> &StructRepre {
-        match self.symbols.get(&sym_id) {
-            Some(symbol) => match symbol {
-                Symbol::Struct(struct_repre) => struct_repre,
-                _ => unreachable!(),
-            },
-            None => unreachable!(),
-        }
-    }
-
-    pub(super) fn get_struct_mut(&mut self, sym_id: SymbolId) -> &mut StructRepre {
-        match self.symbols.get_mut(&sym_id) {
-            Some(symbol) => match symbol {
-                Symbol::Struct(struct_repre) => struct_repre,
-                _ => unreachable!(),
-            },
-            None => unreachable!(),
-        }
-    }
-
-    pub(super) fn get_func(&self, sym_id: SymbolId) -> &FuncRepre {
-        match &self.symbols[&sym_id] {
-            symbol => match symbol {
-                Symbol::Func(func_repre) => func_repre,
-                _ => unreachable!(),
-            },
-        }
-    }
-
-    pub(super) fn get_func_mut(&mut self, sym_id: SymbolId) -> &mut FuncRepre {
-        match self.symbols.get_mut(&sym_id) {
-            Some(symbol) => match symbol {
-                Symbol::Func(func_repre) => func_repre,
-                _ => unreachable!(),
-            },
-            None => unreachable!(),
-        }
-    }
-
-    pub(super) fn get_enum(&self, sym_id: SymbolId) -> &EnumRepre {
-        match &self.symbols[&sym_id] {
-            symbol => match symbol {
-                Symbol::Enum(enum_repre) => enum_repre,
-                _ => unreachable!(),
-            },
-        }
-    }
-
-    pub(super) fn get_enum_mut(&mut self, sym_id: SymbolId) -> &mut EnumRepre {
-        match self.symbols.get_mut(&sym_id) {
-            Some(symbol) => match symbol {
-                Symbol::Enum(enum_repre) => enum_repre,
-                _ => unreachable!(),
-            },
-            None => unreachable!(),
-        }
-    }
-
-    pub(super) fn get_const(&self, sym_id: SymbolId) -> &ConstRepre {
-        match &self.symbols[&sym_id] {
-            symbol => match symbol {
-                Symbol::Const(const_repre) => const_repre,
-                _ => unreachable!(),
-            },
-        }
-    }
-
-    pub(super) fn get_const_mut(&mut self, sym_id: SymbolId) -> &mut ConstRepre {
-        match self.symbols.get_mut(&sym_id) {
-            Some(symbol) => match symbol {
-                Symbol::Const(const_repre) => const_repre,
-                _ => unreachable!(),
-            },
-            None => unreachable!(),
-        }
-    }
+    // pub(crate) fn get_typedef(&self, sym_id: SymbolId) -> &TypeDefRepre {
+    //     match &self.symbols[&sym_id] {
+    //         symbol => match symbol {
+    //             Symbol::TypeDef(type_def_repre) => type_def_repre,
+    //             _ => unreachable!(),
+    //         },
+    //     }
+    // }
+    //
+    // pub(crate) fn get_typedef_mut(&mut self, sym_id: SymbolId) -> &mut TypeDefRepre {
+    //     match self.symbols.get_mut(&sym_id) {
+    //         Some(symbol) => match symbol {
+    //             Symbol::TypeDef(type_def_repre) => type_def_repre,
+    //             _ => unreachable!(),
+    //         },
+    //         _ => unreachable!(),
+    //     }
+    // }
+    //
+    // pub(crate) fn get_struct(&self, sym_id: SymbolId) -> &StructRepre {
+    //     match self.symbols.get(&sym_id) {
+    //         Some(symbol) => match symbol {
+    //             Symbol::Struct(struct_repre) => struct_repre,
+    //             _ => unreachable!(),
+    //         },
+    //         None => unreachable!(),
+    //     }
+    // }
+    //
+    // pub(crate) fn get_struct_mut(&mut self, sym_id: SymbolId) -> &mut StructRepre {
+    //     match self.symbols.get_mut(&sym_id) {
+    //         Some(symbol) => match symbol {
+    //             Symbol::Struct(struct_repre) => struct_repre,
+    //             _ => unreachable!(),
+    //         },
+    //         None => unreachable!(),
+    //     }
+    // }
+    //
+    // pub(crate) fn get_func(&self, sym_id: SymbolId) -> &FuncRepre {
+    //     match &self.symbols[&sym_id] {
+    //         symbol => match symbol {
+    //             Symbol::Func(func_repre) => func_repre,
+    //             _ => unreachable!(),
+    //         },
+    //     }
+    // }
+    //
+    // pub(crate) fn get_func_mut(&mut self, sym_id: SymbolId) -> &mut FuncRepre {
+    //     match self.symbols.get_mut(&sym_id) {
+    //         Some(symbol) => match symbol {
+    //             Symbol::Func(func_repre) => func_repre,
+    //             _ => unreachable!(),
+    //         },
+    //         None => unreachable!(),
+    //     }
+    // }
+    //
+    // pub(crate) fn get_enum(&self, sym_id: SymbolId) -> &EnumRepre {
+    //     match &self.symbols[&sym_id] {
+    //         symbol => match symbol {
+    //             Symbol::Enum(enum_repre) => enum_repre,
+    //             _ => unreachable!(),
+    //         },
+    //     }
+    // }
+    //
+    // pub(crate) fn get_enum_mut(&mut self, sym_id: SymbolId) -> &mut EnumRepre {
+    //     match self.symbols.get_mut(&sym_id) {
+    //         Some(symbol) => match symbol {
+    //             Symbol::Enum(enum_repre) => enum_repre,
+    //             _ => unreachable!(),
+    //         },
+    //         None => unreachable!(),
+    //     }
+    // }
+    //
+    // pub(crate) fn get_const(&self, sym_id: SymbolId) -> &ConstRepre {
+    //     match &self.symbols[&sym_id] {
+    //         symbol => match symbol {
+    //             Symbol::Const(const_repre) => const_repre,
+    //             _ => unreachable!(),
+    //         },
+    //     }
+    // }
+    //
+    // pub(crate) fn get_const_mut(&mut self, sym_id: SymbolId) -> &mut ConstRepre {
+    //     match self.symbols.get_mut(&sym_id) {
+    //         Some(symbol) => match symbol {
+    //             Symbol::Const(const_repre) => const_repre,
+    //             _ => unreachable!(),
+    //         },
+    //         None => unreachable!(),
+    //     }
+    // }
 }
 
 #[derive(Debug)]
-pub(super) struct ConstRepre {
-    pub(super) name_id: NameId,
-    pub(super) sym_id: SymbolId,
-    pub(super) ast_id: AstId,
+pub(crate) struct ConstRepre {
+    pub(crate) name_id: NameId,
+    pub(crate) sym_id: SymbolId,
+    pub(crate) ast_id: AstId,
     // It's position in the Type array
-    pub(super) type_id: TypeId,
-    pub(super) value_id: ValueId,
+    pub(crate) type_id: TypeId,
+    pub(crate) value_id: ValueId,
 }
 
 impl ConstRepre {
@@ -196,19 +199,19 @@ impl ConstRepre {
 }
 
 #[derive(Debug)]
-pub(super) struct StructRepre {
-    pub(super) name_id: NameId,
-    pub(super) sym_id: SymbolId,
-    pub(super) ast_id: AstId,
+pub(crate) struct StructRepre {
+    pub(crate) name_id: NameId,
+    pub(crate) sym_id: SymbolId,
+    pub(crate) ast_id: AstId,
     // It's position in the Type array
-    pub(super) type_id: TypeId,
-    pub(super) fields: Vec<FieldRepre>,
-    pub(super) args: Vec<InnerArgs>,
-    pub(super) conds: Vec<Cond>,
+    pub(crate) type_id: TypeId,
+    pub(crate) fields: Vec<FieldRepre>,
+    pub(crate) args: Vec<InnerArgs>,
+    pub(crate) conds: Vec<Cond>,
 }
 
 impl StructRepre {
-    pub fn new(
+    pub(crate) fn new(
         name_id: NameId,
         sym_id: SymbolId,
         ast_id: AstId,
@@ -239,15 +242,15 @@ impl StructRepre {
 }
 
 #[derive(Debug)]
-pub(super) struct EnumRepre {
-    pub(super) name_id: NameId,
+pub(crate) struct EnumRepre {
+    pub(crate) name_id: NameId,
     // Unsure about this positioning, I am hallucinating.
-    pub(super) sym_id: SymbolId,
-    pub(super) ast_id: AstId,
-    pub(super) type_id: TypeId,
-    pub(super) variants: Vec<VariantRepre>,
-    pub(super) args: Vec<InnerArgs>,
-    pub(super) conds: Vec<Cond>,
+    pub(crate) sym_id: SymbolId,
+    pub(crate) ast_id: AstId,
+    pub(crate) type_id: TypeId,
+    pub(crate) variants: Vec<VariantRepre>,
+    pub(crate) args: Vec<InnerArgs>,
+    pub(crate) conds: Vec<Cond>,
 }
 
 impl EnumRepre {
@@ -272,14 +275,14 @@ impl EnumRepre {
 
 #[derive(Debug)]
 pub struct VariantRepre {
-    pub(super) name_id: NameId,
+    pub(crate) name_id: NameId,
     // Because enum types are nullable
-    pub(super) type_id: Option<TypeId>,
+    pub(crate) type_id: Option<TypeId>,
     // Possible tuple
     // Points to variant within original Ast enum
-    pub(super) ast_id: AstId,
-    pub(super) args: Vec<InnerArgs>,
-    pub(super) conds: Vec<Cond>,
+    pub(crate) ast_id: AstId,
+    pub(crate) args: Vec<InnerArgs>,
+    pub(crate) conds: Vec<Cond>,
 }
 
 impl VariantRepre {
@@ -295,13 +298,13 @@ impl VariantRepre {
 }
 
 #[derive(Debug)]
-pub(super) struct TypeDefRepre {
-    pub(super) name_id: NameId,
-    pub(super) sym_id: SymbolId,
-    pub(super) ast_id: AstId,
-    pub(super) type_id: TypeId,
-    pub(super) conds: Vec<Cond>,
-    pub(super) args: Vec<InnerArgs>,
+pub(crate) struct TypeDefRepre {
+    pub(crate) name_id: NameId,
+    pub(crate) sym_id: SymbolId,
+    pub(crate) ast_id: AstId,
+    pub(crate) type_id: TypeId,
+    pub(crate) conds: Vec<Cond>,
+    pub(crate) args: Vec<InnerArgs>,
 }
 
 impl TypeDefRepre {
@@ -319,17 +322,17 @@ impl TypeDefRepre {
 
 #[derive(Debug)]
 pub(crate) struct FuncRepre {
-    pub(super) name_id: NameId,
+    pub(crate) name_id: NameId,
     // Type reference to it's own position in the `Type` array
-    pub(super) type_id: TypeId,
-    pub(super) call_span: Span,
-    pub(super) kind: FuncKind,
-    pub(super) constraints: Vec<ArgConstraint>,
-    pub(super) args: Vec<FuncArgsRepre>,
+    pub(crate) type_id: TypeId,
+    pub(crate) call_span: Span,
+    pub(crate) kind: FuncKind,
+    pub(crate) constraints: Vec<ArgConstraint>,
+    pub(crate) args: Vec<FuncArgsRepre>,
 }
 
 impl FuncRepre {
-    pub(super) fn new(
+    pub(crate) fn new(
         name_id: NameId,
         type_id: TypeId,
         call_span: Span,
@@ -445,15 +448,15 @@ pub(crate) enum FuncArgsKind {
 }
 
 #[derive(Debug)]
-pub(super) struct FieldRepre {
-    pub(super) name_id: NameId,
-    pub(super) type_id: TypeId,
+pub(crate) struct FieldRepre {
+    pub(crate) name_id: NameId,
+    pub(crate) type_id: TypeId,
     // Ast contained field id, maybe this should just be AstId
-    pub(super) ast_id: AstId,
+    pub(crate) ast_id: AstId,
 }
 
 impl FieldRepre {
-    pub fn new(name_id: NameId, type_id: TypeId, ast_id: AstId) -> FieldRepre {
+    pub(crate) fn new(name_id: NameId, type_id: TypeId, ast_id: AstId) -> FieldRepre {
         FieldRepre {
             name_id,
             type_id,
@@ -463,16 +466,16 @@ impl FieldRepre {
 }
 
 #[derive(Debug)]
-pub(super) struct AliasRepre {
+pub(crate) struct AliasRepre {
     pub(crate) name_id: NameId,
-    pub(super) sym_id: SymbolId,
-    pub(super) ast_id: AstId,
+    pub(crate) sym_id: SymbolId,
+    pub(crate) ast_id: AstId,
     // Refers to self's type id position
     // Maybe call this type_addr?
-    pub(super) type_id: TypeId,
+    pub(crate) type_id: TypeId,
     pub(crate) params: Vec<TypeId>,
-    pub(super) conds: Vec<Cond>,
-    pub(super) args: Vec<InnerArgs>,
+    pub(crate) conds: Vec<Cond>,
+    pub(crate) args: Vec<InnerArgs>,
 }
 
 impl AliasRepre {
@@ -535,8 +538,8 @@ impl Display for FuncKind {
 
 #[derive(Debug)]
 pub struct Tuple {
-    pub(super) elements: Vec<TypeId>,
-    pub(super) type_id: TypeId,
+    pub(crate) elements: Vec<TypeId>,
+    pub(crate) type_id: TypeId,
 }
 
 impl Tuple {

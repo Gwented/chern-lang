@@ -5,12 +5,14 @@ use std::{
 };
 
 use common::{
+    builtins::BuiltinType,
     config_loader::ChernConfigLoader,
     core_error::ConfigLoadError,
     intern::Intern,
+    keywords,
     metadata::{ChernSettings, ModuleMetadata},
     reporter,
-    symbols::{ModuleId, NameId, PathId},
+    symbols::{ModuleId, NameId, PathId, SymbolId},
 };
 pub mod mod_finder;
 
@@ -18,14 +20,18 @@ use crate::{
     iyo::file_ops,
     modules::mod_finder::ModuleFinder,
     parser::ast::{Bind, Import},
-    semantic::representation::{Table, Type},
+    semantic::representation::{
+        ConstRepre, EnumRepre, FuncRepre, StructRepre, Symbol, SymbolInfo, Table, Type,
+        TypeDefRepre, TypeInfo,
+    },
 };
 
 pub struct Program {
     pub bind: Option<Bind>,
     pub mod_map: HashMap<NameId, ModuleId>,
     pub mods: Vec<Module>,
-    // pub types: Vec<Type>,
+    pub types: Vec<TypeInfo>,
+    pub(crate) symbols: HashMap<SymbolId, SymbolInfo>,
 }
 
 impl Program {
@@ -34,11 +40,122 @@ impl Program {
         mod_map: HashMap<NameId, ModuleId>,
         mods: Vec<Module>,
     ) -> Program {
+        let mut types: Vec<TypeInfo> = Vec::new();
+
+        // If this fails something was messed up within keywords itself
+        for i in 0..keywords::TYPE_END - 5 {
+            let ty = BuiltinType::try_from_id(i as u32).expect("Builtin type not updated");
+            types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+        }
+
         Program {
             bind,
             mod_map,
             mods,
+            types,
+            symbols: HashMap::new(),
         }
+    }
+
+    // Is there a reason to return err?
+    pub(super) fn get_typedef(&self, sym_id: SymbolId) -> &TypeDefRepre {
+        match &self.symbols[&sym_id] {
+            sym_info => match &sym_info.symbol {
+                Symbol::TypeDef(type_def_repre) => type_def_repre,
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    pub(super) fn get_typedef_mut(&mut self, sym_id: SymbolId) -> &mut TypeDefRepre {
+        match self.symbols.get_mut(&sym_id) {
+            Some(sym_info) => match &mut sym_info.symbol {
+                Symbol::TypeDef(type_def_repre) => type_def_repre,
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    pub(super) fn get_struct(&self, sym_id: SymbolId) -> &StructRepre {
+        match self.symbols.get(&sym_id) {
+            Some(sym_info) => match &sym_info.symbol {
+                Symbol::Struct(struct_repre) => struct_repre,
+                _ => unreachable!(),
+            },
+            None => unreachable!(),
+        }
+    }
+
+    pub(super) fn get_struct_mut(&mut self, sym_id: SymbolId) -> &mut StructRepre {
+        match self.symbols.get_mut(&sym_id) {
+            Some(sym_info) => match &mut sym_info.symbol {
+                Symbol::Struct(struct_repre) => struct_repre,
+                _ => unreachable!(),
+            },
+            None => unreachable!(),
+        }
+    }
+
+    pub(super) fn get_func(&self, sym_id: SymbolId) -> &FuncRepre {
+        match &self.symbols[&sym_id] {
+            sym_info => match &sym_info.symbol {
+                Symbol::Func(func_repre) => func_repre,
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    pub(super) fn get_func_mut(&mut self, sym_id: SymbolId) -> &mut FuncRepre {
+        match self.symbols.get_mut(&sym_id) {
+            Some(sym_info) => match &mut sym_info.symbol {
+                Symbol::Func(func_repre) => func_repre,
+                _ => unreachable!(),
+            },
+            None => unreachable!(),
+        }
+    }
+
+    pub(super) fn get_enum(&self, sym_id: SymbolId) -> &EnumRepre {
+        match &self.symbols[&sym_id] {
+            sym_info => match &sym_info.symbol {
+                Symbol::Enum(enum_repre) => enum_repre,
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    pub(super) fn get_enum_mut(&mut self, sym_id: SymbolId) -> &mut EnumRepre {
+        match self.symbols.get_mut(&sym_id) {
+            Some(sym_info) => match &mut sym_info.symbol {
+                Symbol::Enum(enum_repre) => enum_repre,
+                _ => unreachable!(),
+            },
+            None => unreachable!(),
+        }
+    }
+
+    pub(super) fn get_const(&self, sym_id: SymbolId) -> &ConstRepre {
+        match &self.symbols[&sym_id] {
+            sym_info => match &sym_info.symbol {
+                Symbol::Const(const_repre) => const_repre,
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    pub(super) fn get_const_mut(&mut self, sym_id: SymbolId) -> &mut ConstRepre {
+        match self.symbols.get_mut(&sym_id) {
+            Some(sym_info) => match &mut sym_info.symbol {
+                Symbol::Const(const_repre) => const_repre,
+                _ => unreachable!(),
+            },
+            None => unreachable!(),
+        }
+    }
+
+    pub(super) fn get_owner(&self, sym_id: SymbolId) -> ModuleId {
+        self.symbols[&sym_id].owner
     }
 }
 
@@ -51,6 +168,8 @@ pub struct Module {
     pub name_id: NameId,
     /// Actual path used to find the file itself
     pub path_id: PathId,
+    /// It's own module id position
+    pub mod_id: ModuleId,
     /// Imports found in the module
     pub imports: Vec<Import>,
     pub metadata: ModuleMetadata,
@@ -61,12 +180,14 @@ impl Module {
     pub fn new(
         name_id: NameId,
         path_id: PathId,
+        mod_id: ModuleId,
         imports: Vec<Import>,
         metadata: ModuleMetadata,
     ) -> Module {
         Module {
             name_id,
             path_id,
+            mod_id,
             imports,
             metadata,
             table: Table::new(),
@@ -115,10 +236,11 @@ pub fn extract_modules(
     )
     .collect_imports(interner);
 
-    let main_mod = Module::new(name_id, path_id, main_imports, main_metadata);
+    let mod_id = ModuleId::new(0);
+    let main_mod = Module::new(name_id, path_id, mod_id, main_imports, main_metadata);
 
     let mut mod_map: HashMap<NameId, ModuleId> = HashMap::new();
-    mod_map.insert(main_mod.name_id, ModuleId::new(0));
+    mod_map.insert(main_mod.name_id, mod_id);
 
     let mut seen: HashSet<PathId> = HashSet::new();
     seen.insert(main_mod.path_id);
@@ -253,12 +375,20 @@ fn resolve_modules(
         )
         .collect_imports(interner);
 
-        let sub_mod = Module::new(name_id, import.path_id, sub_imports, mod_metadata);
+        //WARN: COMPUTED LATER. WILL CHANGE CONTROL FLOW SO THIS DOESN'T NEED TO HAPPEN
+        let mut sub_mod = Module::new(
+            name_id,
+            import.path_id,
+            ModuleId::new(10000),
+            sub_imports,
+            mod_metadata,
+        );
 
         resolve_modules(seen, modules, &sub_mod, mod_map, settings, interner)?;
 
         // Modules start off at 0 since the main module can't be inserted before this so + 1 for
         // correct indexing in the final vector
+        sub_mod.mod_id = ModuleId::new(modules.len() + 1);
         mod_map.insert(name_id, ModuleId::new(modules.len() + 1));
         modules.push(sub_mod);
     }

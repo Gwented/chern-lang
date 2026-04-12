@@ -5,6 +5,7 @@ use common::{
     intern::Intern,
     metadata::ChernSettings,
     reporter::diagnostic::Reporter,
+    symbols::ModuleId,
 };
 use script_lib::{
     lexer::Lexer,
@@ -30,7 +31,8 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
     // Need to separate namespace resolution and type resolver because if the modules namespaces
     // aren't resolved first, then type resolution isn't possible since it could be using types
     // from elsewhere, which are not known yet.
-    for module in &mut program.mods {
+    for i in 0..program.mods.len() {
+        let module = &program.mods[i];
         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
             .tokenize(&mut interner);
 
@@ -45,7 +47,9 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
             },
         };
 
-        match NamespaceResolver::new(settings, &ast_info, &interner, module).resolve() {
+        match NamespaceResolver::new(settings, &ast_info, &interner, module.mod_id, &mut program)
+            .resolve()
+        {
             Ok(_) => (),
             Err(mut diags) => reporter.diags.append(&mut diags),
         }
@@ -59,12 +63,14 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
 
     // I don't know
     for i in 0..program.mods.len() {
-        match TypeResolver::new(settings, &asts[i], i, &interner, &mut program).resolve() {
+        let mod_id = ModuleId::new(i);
+        match TypeResolver::new(settings, &asts[i], mod_id, &interner, &mut program).resolve() {
             Ok(_) => (),
             Err(mut diags) => reporter.diags.append(&mut diags),
         };
 
-        match ConstraintResolver::new(settings, &asts[i], &interner, i, &mut program).resolve() {
+        match ConstraintResolver::new(settings, &asts[i], &interner, mod_id, &mut program).resolve()
+        {
             Ok(_) => (),
             Err(mut diags) => reporter.diags.append(&mut diags),
         };
