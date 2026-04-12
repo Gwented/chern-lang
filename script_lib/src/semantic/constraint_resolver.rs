@@ -66,9 +66,9 @@ impl ConstraintResolver<'_> {
                     _ = self.resolve_enum(abs_enum, ast_id);
                 }
                 Item::Alias(abs_alias) => todo!(),
-                // Does not have complex constraints
-                // But maybe should resolve it's value?
-                Item::Const(abs_const) => (),
+                Item::Const(abs_const) => {
+                    _ = self.resolve_const(abs_const, ast_id);
+                }
             }
         }
 
@@ -78,6 +78,28 @@ impl ConstraintResolver<'_> {
 
             return Err(diags);
         }
+
+        Ok(())
+    }
+
+    fn resolve_const(&mut self, abs_const: &AbstractConst, ast_id: AstId) -> Result<(), ()> {
+        let module = &self.program.mods[self.current_mod.id];
+        let sym_id = module.table.sym_ids[&ast_id];
+
+        let value = match self.resolve_expr(&abs_const.spanned_expr) {
+            Ok(v) => v,
+            Err(sem_err) => {
+                self.reporter.report_semantic(sem_err, module);
+                return Err(());
+            }
+        };
+
+        let value_id = ValueId::new(self.program.values.len());
+        self.program.values.push(value);
+
+        // Setting const from an `Unknown` value to whatever was found
+        let const_repre = self.program.get_const_mut(sym_id);
+        const_repre.value_id = value_id;
 
         Ok(())
     }
@@ -307,7 +329,13 @@ impl ConstraintResolver<'_> {
                 let mut func_args: Vec<FuncArgsRepre> = Vec::new();
 
                 for expr in args {
-                    let arg = self.resolve_func_arg(expr)?;
+                    let arg = match self.resolve_func_arg(expr) {
+                        Ok(a) => a,
+                        Err(sem_err) => {
+                            self.reporter.report_semantic(todo!(), todo!());
+                            todo!();
+                        }
+                    };
                     func_args.push(arg);
                 }
 
@@ -636,43 +664,24 @@ impl ConstraintResolver<'_> {
         }
     }
 
-    fn resolve_func_arg(&self, spanned_expr: &SpannedExpr) -> Result<FuncArgsRepre, ()> {
-        match &spanned_expr.expr {
-            Expr::Str(name_id) => Ok(FuncArgsRepre::Str(*name_id)),
-            Expr::Integer(id, _) => {
-                let num = self
-                    .interner
-                    .search(*id as usize)
-                    .parse()
-                    .expect("I don't know");
+    fn resolve_func_arg(&self, spanned_expr: &SpannedExpr) -> Result<FuncArgsRepre, SemanticError> {
+        let value = self.resolve_expr(spanned_expr)?;
 
-                Ok(FuncArgsRepre::Integer(num))
-            }
-            Expr::Float(id, _) => {
-                let num = self
-                    .interner
-                    .search(*id as usize)
-                    .parse()
-                    .expect("I don't know");
-
-                Ok(FuncArgsRepre::Float(num))
-            }
-            Expr::Char(ch) => Ok(FuncArgsRepre::Char(*ch)),
-            Expr::Var(name_id) => {
-                todo!()
-            }
-            Expr::Call(_, _) => todo!(),
-            Expr::FieldAccess(abs_field_access) => {
-                let base = self.resolve_expr(&abs_field_access.base);
+        match value {
+            Value::Var(sym_info) => todo!(),
+            Value::I128(v) => {
                 todo!();
             }
-            Expr::Unary(unary) => todo!(),
-            Expr::BinaryExpr { lhs, op, rhs } => todo!(),
-            Expr::Default(_, expr) => todo!(),
+            Value::U128(_) => todo!(),
+            Value::F64(_) => todo!(),
+            Value::Char(_) => todo!(),
+            Value::Tuple(vals) => todo!(),
+            Value::Str(ty_info) => todo!(),
+            Value::Unknown => todo!(),
         }
     }
 
-    fn resolve_expr(&self, spanned_expr: &SpannedExpr) -> Result<Value, ()> {
+    fn resolve_expr(&self, spanned_expr: &SpannedExpr) -> Result<Value, SemanticError> {
         match &spanned_expr.expr {
             Expr::Var(name_id) => {
                 let module = &self.program.mods[self.current_mod.id];
@@ -682,11 +691,29 @@ impl ConstraintResolver<'_> {
 
                 todo!();
             }
+            Expr::Integer(id, _) => {
+                if let Ok(num) = self.interner.search(*id as usize).parse::<i128>() {
+                    Ok(Value::I128(num))
+                } else if let Ok(num) = self.interner.search(*id as usize).parse::<u128>() {
+                    Ok(Value::U128(num))
+                } else {
+                    Err(SemanticError::NumericOverflow(
+                        *id,
+                        Formatted::U128,
+                        vec![spanned_expr.span],
+                    ))
+                }
+            }
+            Expr::Float(id, _) => {
+                if let Ok(num) = self.interner.search(*id as usize).parse::<f64>() {
+                    Ok(Value::F64(num))
+                } else {
+                    panic!("Type no work");
+                }
+            }
+            Expr::Char(c) => Ok(Value::Char(*c)),
             Expr::Default(name_id, spanned_expr) => todo!(),
-            Expr::Integer(_, _) => todo!(),
-            Expr::Float(_, _) => todo!(),
             Expr::Str(name_id) => todo!(),
-            Expr::Char(_) => todo!(),
             Expr::Call(spanned_expr, spanned_exprs) => todo!(),
             Expr::FieldAccess(abstract_field_access) => todo!(),
             Expr::Unary(unary) => todo!(),

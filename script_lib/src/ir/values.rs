@@ -7,8 +7,10 @@ use crate::semantic::representation::{SymbolInfo, TypeInfo};
 #[derive(Debug)]
 pub enum Value {
     Var(SymbolInfo),
-    I64(i64),
+    I128(i128),
+    U128(u128),
     F64(f64),
+    // I64(i64),
     Char(char),
     Tuple(Vec<Value>),
     Str(TypeInfo),

@@ -96,23 +96,15 @@ pub(crate) struct ConstRepre {
     pub(crate) sym_id: SymbolId,
     pub(crate) ast_id: AstId,
     // It's position in the Type array
-    pub(crate) type_id: TypeId,
     pub(crate) value_id: ValueId,
 }
 
 impl ConstRepre {
-    pub fn new(
-        name_id: NameId,
-        sym_id: SymbolId,
-        ast_id: AstId,
-        type_id: TypeId,
-        value_id: ValueId,
-    ) -> ConstRepre {
+    pub fn new(name_id: NameId, sym_id: SymbolId, ast_id: AstId, value_id: ValueId) -> ConstRepre {
         ConstRepre {
             name_id,
             sym_id,
             ast_id,
-            type_id,
             value_id,
         }
     }
@@ -148,17 +140,6 @@ impl StructRepre {
             conds: Vec::new(),
         }
     }
-
-    // Likely too complex to be handled inside like this and should maybe be given a baked version
-    // so that it can focus on checking arg types or the keyword of the cond.
-    // pub fn supports_cond(&self, cond: Cond) -> bool {
-    //     match cond {
-    //         Cond::IsEmpty => todo!(),
-    //         Cond::IsWhitespace => todo!(),
-    //         Cond::Func(func_id) => todo!(),
-    //         Cond::Not(cond) => todo!(),
-    //     }
-    // }
 }
 
 #[derive(Debug)]
@@ -274,12 +255,12 @@ impl FuncRepre {
 // I'm scared of this
 #[derive(Debug)]
 pub(crate) enum FuncArgsRepre {
-    Integer(i64),
-    Float(f64),
+    Integer(ValueId),
+    Float(ValueId),
     Char(char),
     //TEST:
     Var(TypeId, BuiltinTypeKind),
-    Default(TypeId, BuiltinTypeKind, Box<FuncArgsRepre>),
+    Default(TypeId, BuiltinTypeKind, ValueId),
     Str(NameId),
 }
 

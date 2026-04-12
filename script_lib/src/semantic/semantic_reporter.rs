@@ -60,7 +60,7 @@ impl<'a> SemanticReporter<'a> {
 
                 (msg, spans)
             }
-            // Weird merge needs to happen but both just need to be Formatted Formatted
+            //NOTE: This will be impossible eventually when BigInteger related math is added
             SemanticError::CircularArg(arg, fmted_ty, spans) => {
                 let msg = format!(
                     // Suspicious error message
@@ -80,6 +80,15 @@ impl<'a> SemanticReporter<'a> {
                 let msg = format!(
                     "The condition \"{}\" is not supported for type `{fmted_ty}`",
                     cond.to_fmt()
+                );
+
+                (msg, spans)
+            }
+            SemanticError::NumericOverflow(id, fmtted_ty, spans) => {
+                let overflown_num = self.interner.search(id as usize);
+                let msg = format!(
+                    "The type `{fmtted_ty}` had an overflow with the value \"{}\" ",
+                    overflown_num
                 );
 
                 (msg, spans)

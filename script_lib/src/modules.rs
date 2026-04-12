@@ -17,6 +17,7 @@ use common::{
 pub mod mod_finder;
 
 use crate::{
+    ir::values::Value,
     iyo::file_ops,
     modules::mod_finder::ModuleFinder,
     parser::ast::{Bind, Import},
@@ -31,6 +32,7 @@ pub struct Program {
     pub mod_map: HashMap<NameId, ModuleId>,
     pub mods: Vec<Module>,
     pub types: Vec<TypeInfo>,
+    pub values: Vec<Value>,
     pub(crate) symbols: HashMap<SymbolId, SymbolInfo>,
 }
 
@@ -42,17 +44,23 @@ impl Program {
     ) -> Program {
         let mut types: Vec<TypeInfo> = Vec::new();
 
+        // Pre-loading keywords
         // If this fails something was messed up within keywords itself
         for i in 0..keywords::TYPE_END - 5 {
             let ty = BuiltinType::try_from_id(i as u32).expect("Builtin type not updated");
             types.push(TypeInfo::new(Type::BuiltinType(ty), None));
         }
 
+        // Pre-loading Null
+        let mut values: Vec<Value> = Vec::new();
+        values.push(Value::Unknown);
+
         Program {
             bind,
             mod_map,
             mods,
             types,
+            values,
             symbols: HashMap::new(),
         }
     }

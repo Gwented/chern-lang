@@ -186,15 +186,14 @@ impl NamespaceResolver<'_> {
         let module = &mut self.program.mods[self.current_mod.id];
         module.table.name_ids.insert(ast_id, abs_const.name_id);
 
-        let type_id = TypeId::new(self.program.types.len() as u32);
-        let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
-        self.program.types.push(ty_info);
+        // let type_id = TypeId::new(self.program.types.len() as u32);
+        // let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
+        // self.program.types.push(ty_info);
 
         let sym_id = SymbolId::new(self.program.symbols.len() as u32);
         module.table.sym_ids.insert(ast_id, sym_id);
 
-        let const_repre =
-            ConstRepre::new(abs_const.name_id, sym_id, ast_id, type_id, ValueId::new(0));
+        let const_repre = ConstRepre::new(abs_const.name_id, sym_id, ast_id, ValueId::new(0));
 
         let sym_info = SymbolInfo::new(
             Symbol::Const(const_repre),

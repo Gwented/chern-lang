@@ -76,18 +76,18 @@ impl Display for Formatted {
             | Formatted::I32
             | Formatted::U32
             | Formatted::I64
-            | Formatted::U64
-            | Formatted::I128
-            | Formatted::U128
-            | Formatted::Sized
-            | Formatted::BigInt
-            | Formatted::Unsized => write!(f, "Integer"),
+            | Formatted::U64 => write!(f, "Integer"),
+            Formatted::Sized => write!(f, "sized"),
+            Formatted::Unsized => write!(f, "unsized"),
+            Formatted::BigInt => write!(f, "BigInt"),
+            Formatted::U128 => write!(f, "u128"),
+            Formatted::I128 => write!(f, "i128"),
             Formatted::F16
             | Formatted::F32
             | Formatted::Float
             | Formatted::F64
-            | Formatted::F128
-            | Formatted::BigFloat => write!(f, "Float"),
+            | Formatted::F128 => write!(f, "Float"),
+            Formatted::BigFloat => write!(f, "BigFloat"),
             Formatted::Char => write!(f, "char"),
             Formatted::Str => write!(f, "str"),
             Formatted::Bool => write!(f, "bool"),

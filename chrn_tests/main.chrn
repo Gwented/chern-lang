@@ -7,14 +7,14 @@
 
 @def
 
-const FAR = 9223372036854775808
+const FAR = 340282366920938463463374607431768211456
 
 // Require forward slashes
 // import "../chrn_tests/defs.chrn" as maddie_burger
 
 var->
     // user: maddie_burger.Person
-    var: Tuple<str, u8, str> [StartsW(5)]
+    var: Tuple<str, u8, str>
 
     // parser needs this TypeExpr
 nest->
