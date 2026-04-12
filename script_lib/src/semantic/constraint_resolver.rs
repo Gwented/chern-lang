@@ -324,7 +324,7 @@ impl ConstraintResolver<'_> {
                 };
 
                 let module = &self.program.mods[self.current_mod.id];
-                let sym_id = SymbolId::new(module.table.sym_ids.len() as u32);
+                let sym_id = SymbolId::new(self.program.symbols.len() as u32);
                 let type_id = TypeId::new(self.program.types.len() as u32);
 
                 //TODO: Maybe handle this elsewhere
@@ -380,7 +380,7 @@ impl ConstraintResolver<'_> {
 
                 let func_kind = func.kind;
 
-                let sym_info = SymbolInfo::new(Symbol::Func(func), self.current_mod);
+                let sym_info = SymbolInfo::new(Symbol::Func(func), true, self.current_mod);
                 self.program.symbols.insert(sym_id, sym_info);
 
                 Ok(Cond::Func(sym_id, func_kind))

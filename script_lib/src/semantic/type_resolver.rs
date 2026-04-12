@@ -6,7 +6,7 @@ use common::{
     keywords::{self, Keyword},
     metadata::{ChernSettings, ModuleMetadata},
     reporter::diagnostic::Diagnostic,
-    symbols::{AstId, InnerArgs, ModuleId, NameId, SymbolId, TypeId, ValueId},
+    symbols::{AstId, InnerArgs, ModuleId, NameId, Span, SymbolId, TypeId, ValueId},
 };
 
 use crate::{
@@ -18,7 +18,7 @@ use crate::{
     semantic::{
         representation::{
             AliasRepre, ConstRepre, EnumRepre, FieldRepre, FuncArgsRepre, FuncRepre, StructRepre,
-            Symbol, Tuple, Type, TypeDefRepre, TypeInfo, VariantRepre,
+            Symbol, SymbolInfo, Tuple, Type, TypeDefRepre, TypeInfo, VariantRepre,
         },
         semantic_reporter::SemanticReporter,
     },
@@ -219,25 +219,20 @@ impl TypeResolver<'_> {
                 // extract the name id's type and returns that as the type to be referenced
                 let module = &self.program.mods[self.current_mod.id];
 
-                for (current_ast_id, current_name_id) in &module.table.name_ids {
-                    if current_name_id == name_id {
-                        let sym_id = module.table.sym_ids[&current_ast_id];
+                // Should this be a method?
+                if let Some(ast_id) = module.table.get_ast_id(*name_id) {
+                    let sym_id = module.table.sym_ids[&ast_id];
 
-                        let type_id = match &self.program.symbols[&sym_id].symbol {
-                            Symbol::Struct(struct_repre) => struct_repre.type_id,
-                            Symbol::Func(func_repre) => func_repre.type_id,
-                            Symbol::Enum(enum_repre) => enum_repre.type_id,
-                            // This is not possible
-                            // Symbol::TypeDef(type_def_repre) => type_def_repre.type_id,
-                            _ => unreachable!("Typedefs are unknown by default"),
-                        };
+                    let type_id = match &self.program.symbols[&sym_id].symbol {
+                        Symbol::Struct(struct_repre) => struct_repre.type_id,
+                        Symbol::Func(func_repre) => func_repre.type_id,
+                        Symbol::Enum(enum_repre) => enum_repre.type_id,
+                        Symbol::Alias(alias_repre) => alias_repre.type_id,
+                        Symbol::Const(const_repre) => const_repre.type_id,
+                        Symbol::TypeDef(_) => unreachable!("Typedefs are unknown by default"),
+                    };
 
-                        return Ok(type_id);
-                    }
-                }
-
-                if self.program.mod_map.contains_key(name_id) {
-                    panic!("Containment");
+                    return Ok(type_id);
                 }
 
                 let err_name = self.interner.search(name_id.id as usize);
@@ -256,17 +251,19 @@ impl TypeResolver<'_> {
             TypeExpr::Escaped(name_id) => {
                 let module = &self.program.mods[self.current_mod.id];
 
-                for (current_ast_id, current_name_id) in &module.table.name_ids {
-                    if current_name_id == name_id {
-                        let sym_id = module.table.sym_ids[&current_ast_id];
-                        let type_id = match &self.program.symbols[&sym_id].symbol {
-                            Symbol::Struct(struct_repre) => struct_repre.type_id,
-                            Symbol::Func(func_repre) => func_repre.type_id,
-                            Symbol::Enum(enum_repre) => enum_repre.type_id,
-                            _ => unreachable!(),
-                        };
-                        return Ok(type_id);
-                    }
+                if let Some(ast_id) = module.table.get_ast_id(*name_id) {
+                    let sym_id = module.table.sym_ids[&ast_id];
+
+                    let type_id = match &self.program.symbols[&sym_id].symbol {
+                        Symbol::Struct(struct_repre) => struct_repre.type_id,
+                        Symbol::Func(func_repre) => func_repre.type_id,
+                        Symbol::Enum(enum_repre) => enum_repre.type_id,
+                        Symbol::Alias(alias_repre) => alias_repre.type_id,
+                        Symbol::Const(const_repre) => const_repre.type_id,
+                        Symbol::TypeDef(_) => unreachable!("Typedefs are unknown by default"),
+                    };
+
+                    return Ok(type_id);
                 }
 
                 let err_name = self.interner.search(name_id.id as usize);
@@ -387,7 +384,7 @@ impl TypeResolver<'_> {
                             //WARN: Questionablly phrased error message
                             //This COULD change so this will not be upheld at the parsing stage
                             let err_msg = format!(
-                                "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, and `Map` are valid data structures"
+                                "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, `Tuple`, and `Map` are valid data structures"
                             );
 
                             self.reporter.report_spanned(
@@ -405,7 +402,7 @@ impl TypeResolver<'_> {
                         let err_name = self.interner.search(generic.base.id as usize);
 
                         let err_msg = format!(
-                            "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, and `Map` are valid data structures"
+                            "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, `Tuple`, and `Map` are valid data structures"
                         );
 
                         self.reporter.report_spanned(
@@ -447,13 +444,116 @@ impl TypeResolver<'_> {
 
                 Ok(tuple_id)
             }
+            //FIX: Need to make sure MAYBE that the type referenced isn't a builtin one
             TypeExpr::Path(spanned_ty_exprs) => {
-                for spanned_ty_expr in spanned_ty_exprs {
-                    let ty_expr = self.resolve_type_expr(spanned_ty_expr, ast_id)?;
-                    panic!("resoved");
+                // The parser disallows < 2 type pathing to actually exist so indexing should be
+                // safe here
+                if spanned_ty_exprs.len() != 2 {
+                    let msg = format!(
+                        "Only 1 dot reference can be used for types, but {} were found",
+                        spanned_ty_exprs.len() - 1
+                    );
+
+                    let spans: Vec<Span> = spanned_ty_exprs
+                        .iter()
+                        .skip(1)
+                        .map(|expr| expr.span)
+                        .collect();
+
+                    self.reporter.report_spanned(
+                        &msg,
+                        None,
+                        &spans,
+                        &self.program.mods[self.current_mod.id],
+                    );
                 }
 
-                todo!();
+                let module = match &spanned_ty_exprs[0].ty_expr {
+                    TypeExpr::Var(name_id) => {
+                        if let Some(mod_id) = self.program.mod_map.get(name_id) {
+                            &self.program.mods[mod_id.id]
+                        } else {
+                            let err_name = self.interner.search(name_id.id as usize);
+                            let msg = format!("The module `{err_name}` does not exist");
+
+                            self.reporter.report_spanned(
+                                &msg,
+                                None,
+                                &[spanned_ty_exprs[0].span],
+                                &self.program.mods[self.current_mod.id],
+                            );
+                            return Err(());
+                        }
+                    }
+                    _ => unreachable!("Parser does not pick this up"),
+                };
+
+                let name_id = match &spanned_ty_exprs[1].ty_expr {
+                    TypeExpr::Var(name_id) | TypeExpr::Escaped(name_id) => name_id,
+                    _ => unreachable!("Parser does not pick this up"),
+                };
+
+                if let Some(ast_id) = module.table.get_ast_id(*name_id) {
+                    let sym_id = module.table.sym_ids[&ast_id];
+                    let sym_info = &self.program.symbols[&sym_id];
+
+                    //WARN: Are there scoping issues here? Like C++ level?
+                    let type_id = match &sym_info.symbol {
+                        Symbol::Struct(struct_repre) => struct_repre.type_id,
+                        Symbol::Enum(enum_repre) => enum_repre.type_id,
+                        // There is no reason to disallow typedefs other than, because.
+                        _ => {
+                            let msg = format!(
+                                // Suspicious error message
+                                "Only `enum` and `struct` can be used as type annotated references",
+                            );
+
+                            self.reporter.report_spanned(
+                                &msg,
+                                None,
+                                &[spanned_ty_exprs[1].span],
+                                &self.program.mods[self.current_mod.id],
+                            );
+
+                            return Err(());
+                        }
+                    };
+
+                    if sym_info.is_priv && sym_info.owner != self.current_mod {
+                        let err_name = self.interner.search(name_id.id as usize);
+
+                        let msg = format!("The type `{err_name}` is private",);
+
+                        self.reporter.report_spanned(
+                            &msg,
+                            None,
+                            &[spanned_ty_exprs[1].span],
+                            &self.program.mods[self.current_mod.id],
+                        );
+                    }
+
+                    // HAPPY PATH DONE
+                    return Ok(type_id);
+                }
+
+                // No matching namespace within the module given was found for name_id
+
+                let err_name = self.interner.search(name_id.id as usize);
+                let err_mod_name = self.interner.search(module.name_id.id as usize);
+
+                // FIND SIMILAR CAN BE DONE, IT CAN BE DONE later.
+                let msg = format!(
+                    "The type `{err_name}` does not exist within the module `{err_mod_name}`",
+                );
+
+                self.reporter.report_spanned(
+                    &msg,
+                    None,
+                    &[spanned_ty_exprs[1].span],
+                    &self.program.mods[self.current_mod.id],
+                );
+
+                Err(())
             }
         }
     }

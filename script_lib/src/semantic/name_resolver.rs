@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
 use common::{
-    builtins::BuiltinType,
     intern::Intern,
-    keywords::Keyword,
     metadata::ChernSettings,
     reporter::diagnostic::Diagnostic,
     symbols::{AstId, ModuleId, NameId, SymbolId, TypeId, ValueId},
@@ -91,9 +89,9 @@ impl NamespaceResolver<'_> {
     /// Gives the typedef an id attached to `Unknown` which is to be resolved later
     /// Registers the unfinished representation with it's symbol id so that it can still be
     /// referenced
-    fn register_typedef(&mut self, type_def: &AbstractTypeDef, ast_id: AstId) {
+    fn register_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) {
         let module = &mut self.program.mods[self.current_mod.id];
-        module.table.name_ids.insert(ast_id, type_def.name_id);
+        module.table.name_ids.insert(ast_id, abs_typedef.name_id);
 
         let sym_id = SymbolId::new(self.program.symbols.len() as u32);
         module.table.sym_ids.insert(ast_id, sym_id);
@@ -110,9 +108,9 @@ impl NamespaceResolver<'_> {
             id
         };
 
-        let type_def_repre = TypeDefRepre::new(type_def.name_id, type_id, sym_id, ast_id);
+        let type_def_repre = TypeDefRepre::new(abs_typedef.name_id, type_id, sym_id, ast_id);
 
-        let sym_info = SymbolInfo::new(Symbol::TypeDef(type_def_repre), self.current_mod);
+        let sym_info = SymbolInfo::new(Symbol::TypeDef(type_def_repre), true, self.current_mod);
         self.program.symbols.insert(sym_id, sym_info);
     }
 
@@ -128,7 +126,12 @@ impl NamespaceResolver<'_> {
         let struct_repre =
             StructRepre::new(abs_struct.name_id, sym_id, ast_id, type_id, Vec::new());
 
-        let sym_info = SymbolInfo::new(Symbol::Struct(struct_repre), self.current_mod);
+        let sym_info = SymbolInfo::new(
+            Symbol::Struct(struct_repre),
+            abs_struct.is_priv,
+            self.current_mod,
+        );
+
         self.program.symbols.insert(sym_id, sym_info);
 
         let ty_info = TypeInfo::new(Type::Struct(sym_id), Some(self.current_mod));
@@ -146,7 +149,8 @@ impl NamespaceResolver<'_> {
 
         let enum_repre = EnumRepre::new(abs_enum.name_id, sym_id, ast_id, type_id, Vec::new());
 
-        let sym_info = SymbolInfo::new(Symbol::Enum(enum_repre), self.current_mod);
+        let sym_info =
+            SymbolInfo::new(Symbol::Enum(enum_repre), abs_enum.is_priv, self.current_mod);
         self.program.symbols.insert(sym_id, sym_info);
 
         let ty_info = TypeInfo::new(Type::Enum(sym_id), Some(self.current_mod));
@@ -184,7 +188,12 @@ impl NamespaceResolver<'_> {
             Vec::new(),
         );
 
-        let sym_info = SymbolInfo::new(Symbol::Alias(alias_repre), self.current_mod);
+        let sym_info = SymbolInfo::new(
+            Symbol::Alias(alias_repre),
+            abs_alias.is_priv,
+            self.current_mod,
+        );
+
         self.program.symbols.insert(sym_id, sym_info);
 
         let ty_info = TypeInfo::new(Type::Alias(sym_id), Some(self.current_mod));
@@ -214,7 +223,12 @@ impl NamespaceResolver<'_> {
         let const_repre =
             ConstRepre::new(abs_const.name_id, sym_id, ast_id, type_id, ValueId::new(0));
 
-        let sym_info = SymbolInfo::new(Symbol::Const(const_repre), self.current_mod);
+        let sym_info = SymbolInfo::new(
+            Symbol::Const(const_repre),
+            abs_const.is_priv,
+            self.current_mod,
+        );
+
         self.program.symbols.insert(sym_id, sym_info);
 
         let ty_info = TypeInfo::new(Type::Const(sym_id), Some(self.current_mod));
@@ -267,4 +281,3 @@ impl NamespaceResolver<'_> {
         }
     }
 }
-

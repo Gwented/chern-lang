@@ -24,14 +24,20 @@ impl TypeInfo {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct SymbolInfo {
     pub symbol: Symbol,
     pub owner: ModuleId,
+    pub is_priv: bool,
 }
 
 impl SymbolInfo {
-    pub fn new(symbol: Symbol, owner: ModuleId) -> SymbolInfo {
-        SymbolInfo { symbol, owner }
+    pub fn new(symbol: Symbol, is_priv: bool, owner: ModuleId) -> SymbolInfo {
+        SymbolInfo {
+            symbol,
+            is_priv,
+            owner,
+        }
     }
 }
 
@@ -72,102 +78,15 @@ impl Table {
         }
     }
 
-    // Is there a reason to return err?
-    // pub(crate) fn get_typedef(&self, sym_id: SymbolId) -> &TypeDefRepre {
-    //     match &self.symbols[&sym_id] {
-    //         symbol => match symbol {
-    //             Symbol::TypeDef(type_def_repre) => type_def_repre,
-    //             _ => unreachable!(),
-    //         },
-    //     }
-    // }
-    //
-    // pub(crate) fn get_typedef_mut(&mut self, sym_id: SymbolId) -> &mut TypeDefRepre {
-    //     match self.symbols.get_mut(&sym_id) {
-    //         Some(symbol) => match symbol {
-    //             Symbol::TypeDef(type_def_repre) => type_def_repre,
-    //             _ => unreachable!(),
-    //         },
-    //         _ => unreachable!(),
-    //     }
-    // }
-    //
-    // pub(crate) fn get_struct(&self, sym_id: SymbolId) -> &StructRepre {
-    //     match self.symbols.get(&sym_id) {
-    //         Some(symbol) => match symbol {
-    //             Symbol::Struct(struct_repre) => struct_repre,
-    //             _ => unreachable!(),
-    //         },
-    //         None => unreachable!(),
-    //     }
-    // }
-    //
-    // pub(crate) fn get_struct_mut(&mut self, sym_id: SymbolId) -> &mut StructRepre {
-    //     match self.symbols.get_mut(&sym_id) {
-    //         Some(symbol) => match symbol {
-    //             Symbol::Struct(struct_repre) => struct_repre,
-    //             _ => unreachable!(),
-    //         },
-    //         None => unreachable!(),
-    //     }
-    // }
-    //
-    // pub(crate) fn get_func(&self, sym_id: SymbolId) -> &FuncRepre {
-    //     match &self.symbols[&sym_id] {
-    //         symbol => match symbol {
-    //             Symbol::Func(func_repre) => func_repre,
-    //             _ => unreachable!(),
-    //         },
-    //     }
-    // }
-    //
-    // pub(crate) fn get_func_mut(&mut self, sym_id: SymbolId) -> &mut FuncRepre {
-    //     match self.symbols.get_mut(&sym_id) {
-    //         Some(symbol) => match symbol {
-    //             Symbol::Func(func_repre) => func_repre,
-    //             _ => unreachable!(),
-    //         },
-    //         None => unreachable!(),
-    //     }
-    // }
-    //
-    // pub(crate) fn get_enum(&self, sym_id: SymbolId) -> &EnumRepre {
-    //     match &self.symbols[&sym_id] {
-    //         symbol => match symbol {
-    //             Symbol::Enum(enum_repre) => enum_repre,
-    //             _ => unreachable!(),
-    //         },
-    //     }
-    // }
-    //
-    // pub(crate) fn get_enum_mut(&mut self, sym_id: SymbolId) -> &mut EnumRepre {
-    //     match self.symbols.get_mut(&sym_id) {
-    //         Some(symbol) => match symbol {
-    //             Symbol::Enum(enum_repre) => enum_repre,
-    //             _ => unreachable!(),
-    //         },
-    //         None => unreachable!(),
-    //     }
-    // }
-    //
-    // pub(crate) fn get_const(&self, sym_id: SymbolId) -> &ConstRepre {
-    //     match &self.symbols[&sym_id] {
-    //         symbol => match symbol {
-    //             Symbol::Const(const_repre) => const_repre,
-    //             _ => unreachable!(),
-    //         },
-    //     }
-    // }
-    //
-    // pub(crate) fn get_const_mut(&mut self, sym_id: SymbolId) -> &mut ConstRepre {
-    //     match self.symbols.get_mut(&sym_id) {
-    //         Some(symbol) => match symbol {
-    //             Symbol::Const(const_repre) => const_repre,
-    //             _ => unreachable!(),
-    //         },
-    //         None => unreachable!(),
-    //     }
-    // }
+    pub fn get_ast_id(&self, name_id: NameId) -> Option<AstId> {
+        for (current_ast_id, current_name_id) in &self.name_ids {
+            if *current_name_id == name_id {
+                return Some(*current_ast_id);
+            }
+        }
+
+        None
+    }
 }
 
 #[derive(Debug)]

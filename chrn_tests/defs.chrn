@@ -4,8 +4,10 @@ import "../chrn_tests/main.chrn"
 // export const WRITE = 0b00000010
 // export const EXEC = 0b00000100
 
-// export alias VALID_PERMS() = [Equals(READ) || Equals(WRITE) || Equals(EDIT)]
+// alias VALID_PERMS() = [Equals(READ) || Equals(WRITE) || Equals(EDIT)]
 
+var->
+    var: Tuple<str, u8, str> [StartsW("Hello")]
 nest->
     struct Person {
         name: str

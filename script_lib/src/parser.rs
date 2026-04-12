@@ -1010,8 +1010,10 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
 fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTypeExpr>, Token> {
     let mut ty_path: Vec<SpannedTypeExpr> = Vec::new();
 
+    // Technically only allows 2 type paths total since, there is no scenario where it would be
+    // possible otherwise, but this will still allow any amount because it ensures any future
+    // development decision to change this will be easier
     loop {
-        // Breaking here since 'List<i32>.inner' doesn't exist
         if ctx.peek_ahead(1).tok == Token::Dot {
             let span = ctx.peek_span();
             let name_id = ctx.expect_id_verbose(
