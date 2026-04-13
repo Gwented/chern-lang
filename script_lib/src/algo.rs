@@ -1,6 +1,6 @@
 use std::cmp;
 
-use common::keywords;
+use chern_core::keywords;
 
 pub(crate) enum FuzzyMatch {
     KW,
@@ -22,7 +22,7 @@ pub fn fuzzy_match(given: &[u8], target: FuzzyMatch) -> Option<&str> {
             given,
             // TODO: Please rename this
             // Please
-            &common::symbols::ARGS_ARRAY,
+            &chern_core::id_types::ARGS_ARRAY,
         ),
     }
 }

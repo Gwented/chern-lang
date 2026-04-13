@@ -1,12 +1,12 @@
+use chern_core::intern::Intern;
 use common::{
     fmter::Formattable,
-    intern::Intern,
-    metadata::{ChernSettings, ModuleMetadata},
+    metadata::ChernSettings,
     reporter::{
         self,
         diagnostic::{Area, Diagnostic},
     },
-    symbols::{Span, TypeId},
+    span::Span,
 };
 
 use crate::{algo, modules::Module, semantic::error::SemanticError};
@@ -47,7 +47,7 @@ impl<'a> SemanticReporter<'a> {
 
                 (msg, spans)
             }
-            SemanticError::ConstraintMismatch(constraint, type_kind, func_kind, spans) => {
+            SemanticError::FuncConstraintMismatch(constraint, type_kind, func_kind, spans) => {
                 let msg = format!(
                     "The type `{type_kind}` does not follow constraint `{constraint}` for function \"{func_kind}\""
                 );
@@ -60,7 +60,6 @@ impl<'a> SemanticReporter<'a> {
 
                 (msg, spans)
             }
-            //NOTE: This will be impossible eventually when BigInteger related math is added
             SemanticError::CircularArg(arg, fmted_ty, spans) => {
                 let msg = format!(
                     // Suspicious error message
@@ -89,6 +88,13 @@ impl<'a> SemanticReporter<'a> {
                 let msg = format!(
                     "The type `{fmtted_ty}` had an overflow with the value \"{}\" ",
                     overflown_num
+                );
+
+                (msg, spans)
+            }
+            SemanticError::BinaryOpMismatch(fmtted_lhs, fmtted_rhs, fmtted_op, spans) => {
+                let msg = format!(
+                    "The type `{fmtted_lhs}` cannot apply `{fmtted_op}` to type `{fmtted_rhs}`",
                 );
 
                 (msg, spans)

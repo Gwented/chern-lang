@@ -1,20 +1,21 @@
 // Need to re-route errors so they don't immediately form basic arrows to one so help messages
 // aren't just requirements because the err msgs themselves are misleading or bad
-
+// Enforce keywords
 
 // I am messed up"
 // "I am not even supposed to be included"
 
+
 @def
 
-const FAR = 340282366920938463463374607431768211456
+const CONSTANT = (4 + 2) * 8 + "Hello"
 
 // Require forward slashes
 // import "../chrn_tests/defs.chrn" as maddie_burger
 
 var->
     // user: maddie_burger.Person
-    var: Tuple<str, u8, str>
+    var: Tuple<str, u8, str> // [StartsW(5)]
 
     // parser needs this TypeExpr
 nest->

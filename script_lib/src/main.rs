@@ -1,12 +1,8 @@
 use std::{path::PathBuf, time::Instant};
 
-use common::{config_loader::ChernConfigLoader, intern::Intern, metadata::ChernSettings};
-use script_lib::{
-    lexer::Lexer,
-    semantic::{
-        constraint_resolver::ConstraintResolver, representation::Table, type_resolver::TypeResolver,
-    },
-};
+use chern_core::{config_loader::ChernConfigLoader, intern::Intern};
+use common::metadata::ChernSettings;
+use script_lib::{lexer::Lexer, semantic::representation::Table};
 
 fn main() {
     let start = Instant::now();

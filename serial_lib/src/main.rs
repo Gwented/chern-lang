@@ -1,9 +1,7 @@
-use std::{fs, io::Read, path::PathBuf};
+use std::{fs, path::PathBuf};
 
-use common::{
-    config_loader::ChernConfigLoader,
-    metadata::{ChernSettings, ModuleMetadata},
-};
+use chern_core::config_loader::ChernConfigLoader;
+use common::metadata::ChernSettings;
 use serial_lib::lexer::Lexer;
 
 // This would be in succession to script

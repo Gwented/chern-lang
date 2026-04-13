@@ -1,21 +1,23 @@
-use common::{
+use chern_core::{
     builtins::BuiltinType,
-    fmter::{Formattable, Formatted},
+    id_types::{AstId, InnerArgs, ModuleId, NameId, SpannedInnerArgs, SymbolId, TypeId, ValueId},
     intern::Intern,
-    keywords::{self, Keyword},
+    keywords::Keyword,
+    values::Value,
+};
+use common::{
+    fmter::{Formattable, Formatted},
     metadata::ChernSettings,
     reporter::diagnostic::Diagnostic,
-    symbols::{
-        AstId, InnerArgs, ModuleId, NameId, Span, SpannedInnerArgs, SymbolId, TypeId, ValueId,
-    },
+    span::Span,
 };
 
 use crate::{
-    ir::values::Value,
+    evaluator,
     modules::{Module, Program},
     parser::ast::{
-        AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Expr, Item,
-        SpannedExpr, UnaryOp,
+        AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, BinaryOp, Expr,
+        Item, SpannedExpr, UnaryOp,
     },
     semantic::{
         constraints::ArgConstraint,
@@ -664,21 +666,11 @@ impl ConstraintResolver<'_> {
         }
     }
 
+    // Maybe the goal is to resolve as any expressions as possible and attach the value to it's ast
+    // id?
     fn resolve_func_arg(&self, spanned_expr: &SpannedExpr) -> Result<FuncArgsRepre, SemanticError> {
         let value = self.resolve_expr(spanned_expr)?;
-
-        match value {
-            Value::Var(sym_info) => todo!(),
-            Value::I128(v) => {
-                todo!();
-            }
-            Value::U128(_) => todo!(),
-            Value::F64(_) => todo!(),
-            Value::Char(_) => todo!(),
-            Value::Tuple(vals) => todo!(),
-            Value::Str(ty_info) => todo!(),
-            Value::Unknown => todo!(),
-        }
+        todo!();
     }
 
     fn resolve_expr(&self, spanned_expr: &SpannedExpr) -> Result<Value, SemanticError> {
@@ -694,12 +686,10 @@ impl ConstraintResolver<'_> {
             Expr::Integer(id, _) => {
                 if let Ok(num) = self.interner.search(*id as usize).parse::<i128>() {
                     Ok(Value::I128(num))
-                } else if let Ok(num) = self.interner.search(*id as usize).parse::<u128>() {
-                    Ok(Value::U128(num))
                 } else {
                     Err(SemanticError::NumericOverflow(
                         *id,
-                        Formatted::U128,
+                        Formatted::Integer,
                         vec![spanned_expr.span],
                     ))
                 }
@@ -708,17 +698,79 @@ impl ConstraintResolver<'_> {
                 if let Ok(num) = self.interner.search(*id as usize).parse::<f64>() {
                     Ok(Value::F64(num))
                 } else {
-                    panic!("Type no work");
+                    Err(SemanticError::NumericOverflow(
+                        *id,
+                        Formatted::Float,
+                        vec![spanned_expr.span],
+                    ))
                 }
+            }
+            Expr::BinaryExpr { lhs, op, rhs } => {
+                let lhs_val = self.resolve_expr(&*lhs)?;
+                let rhs_val = self.resolve_expr(&*rhs)?;
+
+                let res = match op {
+                    BinaryOp::Add => {
+                        if evaluator::is_compatible(&lhs_val, *op, &rhs_val) {
+                            panic!("hallo");
+                        }
+
+                        self.apply_binary_op(&lhs_val, *op, &rhs_val)?;
+
+                        todo!();
+                    }
+                    BinaryOp::Sub => todo!(),
+                    BinaryOp::Mult => todo!(),
+                    BinaryOp::Divide => todo!(),
+                    BinaryOp::Greater => todo!(),
+                    BinaryOp::Less => todo!(),
+                    BinaryOp::GreaterOrEq => todo!(),
+                    BinaryOp::LessOrEq => todo!(),
+                    BinaryOp::Mod => todo!(),
+                    BinaryOp::And => todo!(),
+                    BinaryOp::Or => todo!(),
+                    BinaryOp::EqTo => todo!(),
+                    BinaryOp::NotEq => todo!(),
+                };
+
+                dbg!(&lhs_val, &rhs_val);
+                panic!();
             }
             Expr::Char(c) => Ok(Value::Char(*c)),
             Expr::Default(name_id, spanned_expr) => todo!(),
-            Expr::Str(name_id) => todo!(),
+            Expr::Str(name_id) => Ok(Value::InternedStr(*name_id)),
             Expr::Call(spanned_expr, spanned_exprs) => todo!(),
             Expr::FieldAccess(abstract_field_access) => todo!(),
             Expr::Unary(unary) => todo!(),
-            Expr::BinaryExpr { lhs, op, rhs } => todo!(),
         }
+    }
+
+    //TEST:
+    fn apply_binary_op(
+        &self,
+        lhs: &Value,
+        op: BinaryOp,
+        rhs: &Value,
+    ) -> Result<Value, SemanticError> {
+        match op {
+            BinaryOp::Add => {
+                todo!();
+            }
+            BinaryOp::Sub => todo!(),
+            BinaryOp::Mult => todo!(),
+            BinaryOp::Divide => todo!(),
+            BinaryOp::Greater => todo!(),
+            BinaryOp::Less => todo!(),
+            BinaryOp::GreaterOrEq => todo!(),
+            BinaryOp::LessOrEq => todo!(),
+            BinaryOp::Mod => todo!(),
+            BinaryOp::And => todo!(),
+            BinaryOp::Or => todo!(),
+            BinaryOp::EqTo => todo!(),
+            BinaryOp::NotEq => todo!(),
+        }
+
+        todo!();
     }
 
     /// Returns a success if all conditions align with the type of the given `type_id`
@@ -849,7 +901,7 @@ impl ConstraintResolver<'_> {
                         ));
                     }
 
-                    self.check_cond_constraints(*element, cond_span, cond, visited)?;
+                    self.check_cond_constraints(element.clone(), cond_span, cond, visited)?;
                 }
 
                 Ok(())
@@ -873,7 +925,7 @@ impl ConstraintResolver<'_> {
                             FuncArgsRepre::Integer(_) | FuncArgsRepre::Float(_) => continue,
                             FuncArgsRepre::Var(_, type_kind) => {
                                 if !type_kind.is_numeric() {
-                                    return Err(SemanticError::ConstraintMismatch(
+                                    return Err(SemanticError::FuncConstraintMismatch(
                                         ArgConstraint::Numeric,
                                         type_kind.to_fmt(),
                                         func.kind,
@@ -882,7 +934,7 @@ impl ConstraintResolver<'_> {
                                 }
                             }
                             invalid_type => {
-                                return Err(SemanticError::ConstraintMismatch(
+                                return Err(SemanticError::FuncConstraintMismatch(
                                     ArgConstraint::Numeric,
                                     invalid_type.to_builtin_kind().to_fmt(),
                                     func.kind,
@@ -904,7 +956,7 @@ impl ConstraintResolver<'_> {
                         if arg.kind() != req_type {
                             // There is no general "number" to give so may adjust this
 
-                            return Err(SemanticError::ConstraintMismatch(
+                            return Err(SemanticError::FuncConstraintMismatch(
                                 constraint,
                                 arg.to_builtin_kind().to_fmt(),
                                 func.kind,
@@ -926,7 +978,7 @@ impl ConstraintResolver<'_> {
                 ArgConstraint::Integer => {
                     for arg in &func.args {
                         if !arg.is_integer() {
-                            SemanticError::ConstraintMismatch(
+                            SemanticError::FuncConstraintMismatch(
                                 ArgConstraint::Integer,
                                 arg.to_builtin_kind().to_fmt(),
                                 func.kind,
@@ -938,7 +990,7 @@ impl ConstraintResolver<'_> {
                 ArgConstraint::Float => {
                     for arg in &func.args {
                         if !arg.is_float() {
-                            SemanticError::ConstraintMismatch(
+                            SemanticError::FuncConstraintMismatch(
                                 ArgConstraint::Float,
                                 arg.to_builtin_kind().to_fmt(),
                                 func.kind,
@@ -950,7 +1002,7 @@ impl ConstraintResolver<'_> {
                 ArgConstraint::Str => {
                     for arg in &func.args {
                         if !arg.is_str() {
-                            SemanticError::ConstraintMismatch(
+                            SemanticError::FuncConstraintMismatch(
                                 ArgConstraint::Str,
                                 arg.to_builtin_kind().to_fmt(),
                                 func.kind,

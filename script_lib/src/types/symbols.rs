@@ -1,8 +1,7 @@
+use chern_core::{builtins::BuiltinTypeKind, id_types::SymbolId, keywords::Keyword};
 use common::{
-    builtins::BuiltinTypeKind,
     fmter::{Formattable, Formatted},
-    keywords::Keyword,
-    symbols::{Span, SymbolId},
+    span::Span,
 };
 
 use crate::{semantic::representation::FuncKind, types::token::Token};

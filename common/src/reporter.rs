@@ -3,9 +3,9 @@ use std::path::Path;
 //TODO: ORGANIZE NEW ARCHITECTURE
 // MAKE PARAMS ONLY TAKE SPAN SINCE LINES ARE BUILT ANYWAYS
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
-pub mod diagnostic;
 
-use crate::{color, symbols::Span};
+use crate::{color, span::Span};
+pub mod diagnostic;
 
 const TOTAL_SEPARATORS: usize = 60;
 

@@ -1,9 +1,10 @@
 use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::PathBuf};
 
-use common::{
+use chern_core::{
+    id_types::{NameId, PathId},
     intern::Intern,
-    symbols::{NameId, PathId, Span},
 };
+use common::span::Span;
 
 use crate::parser::ast::{Bind, Import};
 

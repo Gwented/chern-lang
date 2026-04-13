@@ -1,21 +1,21 @@
 use std::{fmt::Debug, ops::Range};
 
 #[derive(Eq, PartialEq)]
-pub(crate) struct Tensor2<T: Debug + PartialEq> {
-    pub(crate) inner: Vec<T>,
-    pub(crate) rows: usize,
-    pub(crate) cols: usize,
+pub struct Tensor2<T: Debug + PartialEq> {
+    pub inner: Vec<T>,
+    pub rows: usize,
+    pub cols: usize,
 }
 
 impl Tensor2<f32> {
-    pub(crate) fn with_zeros(rows: usize, cols: usize) -> Tensor2<f32> {
+    pub fn with_zeros(rows: usize, cols: usize) -> Tensor2<f32> {
         let size = rows * cols;
         let inner = vec![0f32; size];
 
         Tensor2 { inner, rows, cols }
     }
 
-    pub(crate) fn with_random(rows: usize, cols: usize, range: Range<f32>) -> Tensor2<f32> {
+    pub fn with_random(rows: usize, cols: usize, range: Range<f32>) -> Tensor2<f32> {
         let size = rows * cols;
         let mut inner = vec![0f32; size];
 
@@ -26,7 +26,7 @@ impl Tensor2<f32> {
         Tensor2 { inner, rows, cols }
     }
 
-    pub(crate) fn dot(&self, other: &Tensor2<f32>) -> Tensor2<f32> {
+    pub fn dot(&self, other: &Tensor2<f32>) -> Tensor2<f32> {
         if self.rows * self.cols != other.rows * other.cols {
             panic!(
                 "Attempt to dot product `self` {}x{} with `other` {}x{}",
@@ -56,7 +56,7 @@ impl Tensor2<f32> {
 }
 
 impl<T: Debug + PartialEq> Tensor2<T> {
-    pub(crate) fn get(&self, row: usize, col: usize) -> &T {
+    pub fn get(&self, row: usize, col: usize) -> &T {
         if row > self.rows - 1 || col > self.cols - 1 {
             panic!(
                 "Given index of row {} and col {} is invalid for `self` of row {} and col {}",
@@ -69,7 +69,7 @@ impl<T: Debug + PartialEq> Tensor2<T> {
         &self.inner[idx]
     }
 
-    pub(crate) fn get_mut(&mut self, row: usize, col: usize) -> &mut T {
+    pub fn get_mut(&mut self, row: usize, col: usize) -> &mut T {
         if row > self.rows - 1 || col > self.cols - 1 {
             panic!(
                 "Given index of row {} and col {} is invalid for `self` of row {} and col {}",
@@ -81,7 +81,7 @@ impl<T: Debug + PartialEq> Tensor2<T> {
         &mut self.inner[idx]
     }
 
-    pub(crate) fn get_row(&self, row: usize) -> &[T] {
+    pub fn get_row(&self, row: usize) -> &[T] {
         let row_idx = row * self.cols;
         &self.inner[row_idx..row_idx + self.cols]
     }

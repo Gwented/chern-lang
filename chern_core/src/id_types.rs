@@ -1,9 +1,8 @@
 use std::fmt::Display;
 
-use crate::{
-    builtins::{BuiltinType, BuiltinTypeKind},
-    keywords::Keyword,
-};
+use common::span::Span;
+
+use crate::builtins::BuiltinType;
 
 // This isn't an accurate name anymore...
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -83,47 +82,28 @@ impl PathId {
     }
 }
 
-//TODO: Should maybe be somewhere else but fine for now
-//Could this be u32?
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Span {
-    pub start: usize,
-    pub end: usize,
-}
+// pub struct SpannedNameId {
+//     pub name_id: NameId,
+//     pub span: Span,
+// }
+//
+// impl SpannedNameId {
+//     pub fn new(name_id: NameId, span: Span) -> SpannedNameId {
+//         SpannedNameId { name_id, span }
+//     }
+// }
 
-impl Span {
-    pub fn new(start: usize, end: usize) -> Span {
-        Span { start, end }
-    }
-
-    // pub fn contains_inclusive(&self, span: &Span) -> bool {
-    //     let self_range = self.start..=self.end;
-    //     let other_range = span.start..=span.end;
-    // }
-}
-
-pub struct SpannedNameId {
-    pub name_id: NameId,
-    pub span: Span,
-}
-
-impl SpannedNameId {
-    pub fn new(name_id: NameId, span: Span) -> SpannedNameId {
-        SpannedNameId { name_id, span }
-    }
-}
-
-pub struct SpannedBuiltinType {
-    pub ty: BuiltinType,
-    pub span: Span,
-}
-
-impl SpannedBuiltinType {
-    pub fn new(ty: BuiltinType, span: Span) -> SpannedBuiltinType {
-        SpannedBuiltinType { ty, span }
-    }
-}
-
+// pub struct SpannedBuiltinType {
+//     pub ty: BuiltinType,
+//     pub span: Span,
+// }
+//
+// impl SpannedBuiltinType {
+//     pub fn new(ty: BuiltinType, span: Span) -> SpannedBuiltinType {
+//         SpannedBuiltinType { ty, span }
+//     }
+// }
+//
 /// If a new argument is added ensure this is updated
 pub static ARGS_ARRAY: [&str; 6] = ["warn", "scient", "hex", "bin", "octal", "ignore"];
 

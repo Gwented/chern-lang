@@ -1,7 +1,7 @@
 // Yes, this lexer looks odd.
 use std::ops::Range;
 
-use crate::{help_model::quote_model::token::TokenInfo, keywords};
+use crate::{keywords, quote_model::TokenInfo};
 
 use super::token::Token;
 
@@ -66,6 +66,7 @@ impl<'a> Lexer<'a> {
                             in_comment: self.in_comment,
                         });
 
+                        //WARN: TEMP
                         self.skip(keywords::DEFINITION_SIZE);
                     } else if self.is_def_end() {
                         self.in_def = false;

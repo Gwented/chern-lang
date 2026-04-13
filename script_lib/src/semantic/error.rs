@@ -1,7 +1,5 @@
-use common::{
-    fmter::Formatted,
-    symbols::{InnerArgs, Span},
-};
+use chern_core::id_types::InnerArgs;
+use common::{fmter::Formatted, span::Span};
 
 use crate::{
     semantic::{constraints::ArgConstraint, representation::FuncKind},
@@ -10,7 +8,7 @@ use crate::{
 
 pub(super) enum SemanticError {
     /// Constraint, found type(builtin or user), function kind, spans
-    ConstraintMismatch(ArgConstraint, Formatted, FuncKind, Vec<Span>),
+    FuncConstraintMismatch(ArgConstraint, Formatted, FuncKind, Vec<Span>),
     /// Constraint, function type, amount of incorrect params found, spans
     ArgMiscount(ArgConstraint, FuncKind, u8, Vec<Span>),
     /// Argument failed at, found type, spans
@@ -27,4 +25,6 @@ pub(super) enum SemanticError {
     CircularCond(Cond, Formatted, Vec<Span>),
     /// The type overflown, the interned string, spans
     NumericOverflow(u32, Formatted, Vec<Span>),
+    /// Lhs, rhs, Op, spans
+    BinaryOpMismatch(Formatted, Formatted, Formatted, Vec<Span>),
 }

@@ -1,13 +1,15 @@
-use common::{
-    fmter::Formattable,
+use chern_core::{
     intern::Intern,
     keywords::{self, Keyword},
-    metadata::{ChernSettings, ModuleMetadata},
+};
+use common::{
+    fmter::Formattable,
+    metadata::ChernSettings,
     reporter::{
         self,
         diagnostic::{Area, Diagnostic},
     },
-    symbols::Span,
+    span::Span,
 };
 
 use crate::{

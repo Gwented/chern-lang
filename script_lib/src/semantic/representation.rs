@@ -1,10 +1,13 @@
 // TypeId is the index of the type itself, OR the type it's pointing to
 use std::{collections::HashMap, fmt::Display};
 
-use common::{
+use chern_core::{
     builtins::{BuiltinType, BuiltinTypeKind},
+    id_types::{AstId, InnerArgs, ModuleId, NameId, SymbolId, TypeId, ValueId},
+};
+use common::{
     fmter::{Formattable, Formatted},
-    symbols::{AstId, InnerArgs, ModuleId, NameId, Span, SymbolId, TypeId, ValueId},
+    span::Span,
 };
 
 use crate::{semantic::constraints::ArgConstraint, types::symbols::Cond};

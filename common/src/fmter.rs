@@ -5,6 +5,9 @@ use std::fmt::Display;
 /// A trait meant to unify the way in which parts of the program are printed
 pub trait Formattable {
     fn to_fmt(&self) -> Formatted;
+    // fn to_general(fmtted: Formatted) -> Formatted {
+    //     match fmtted {}
+    // }
 }
 
 //TEST: May change in form but a general print format is needed
@@ -38,6 +41,7 @@ pub enum Formatted {
     Map,
     Set,
     Tuple,
+    UnknownType,
     Struct,
     Enum,
     Import,
@@ -52,6 +56,19 @@ pub enum Formatted {
     Complex,
     Override,
     As,
+    OpAdd,
+    OpSub,
+    OpMult,
+    OpDivide,
+    OpGreater,
+    OpLess,
+    OpGreaterOrEq,
+    OpLessOrEq,
+    OpMod,
+    OpAnd,
+    OpOr,
+    OpEqualTo,
+    OpNotEq,
     IsEmpty,
     IsWhitespace,
     FuncRange,
@@ -68,25 +85,25 @@ pub enum Formatted {
 impl Display for Formatted {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Formatted::Integer
-            | Formatted::I8
-            | Formatted::U8
-            | Formatted::I16
-            | Formatted::U16
-            | Formatted::I32
-            | Formatted::U32
-            | Formatted::I64
-            | Formatted::U64 => write!(f, "Integer"),
+            Formatted::Integer => write!(f, "Integer"),
+            Formatted::F128 => write!(f, "Float"),
+            Formatted::I8 => write!(f, "i8"),
+            Formatted::U8 => write!(f, "u8"),
+            Formatted::I16 => write!(f, "i16"),
+            Formatted::U16 => write!(f, "u16"),
+            Formatted::I32 => write!(f, "i32"),
+            Formatted::U32 => write!(f, "u32"),
+            Formatted::I64 => write!(f, "i64"),
+            Formatted::U64 => write!(f, "u64"),
+            Formatted::Float => write!(f, "Float"),
             Formatted::Sized => write!(f, "sized"),
             Formatted::Unsized => write!(f, "unsized"),
             Formatted::BigInt => write!(f, "BigInt"),
             Formatted::U128 => write!(f, "u128"),
             Formatted::I128 => write!(f, "i128"),
-            Formatted::F16
-            | Formatted::F32
-            | Formatted::Float
-            | Formatted::F64
-            | Formatted::F128 => write!(f, "Float"),
+            Formatted::F16 => write!(f, "f16"),
+            Formatted::F32 => write!(f, "f32"),
+            Formatted::F64 => write!(f, "f64"),
             Formatted::BigFloat => write!(f, "BigFloat"),
             Formatted::Char => write!(f, "char"),
             Formatted::Str => write!(f, "str"),
@@ -120,7 +137,21 @@ impl Display for Formatted {
             Formatted::Nothing => write!(f, ""),
             Formatted::Tuple => write!(f, "tuple"),
             Formatted::Self_ => write!(f, "self"),
+            Formatted::UnknownType => write!(f, "untyped"),
             Formatted::As => write!(f, "as"),
+            Formatted::OpAdd => write!(f, "+"),
+            Formatted::OpSub => write!(f, "-"),
+            Formatted::OpMult => write!(f, "*"),
+            Formatted::OpDivide => write!(f, "/"),
+            Formatted::OpGreater => write!(f, ">"),
+            Formatted::OpLess => write!(f, "<"),
+            Formatted::OpGreaterOrEq => write!(f, ">="),
+            Formatted::OpLessOrEq => write!(f, "<="),
+            Formatted::OpMod => write!(f, "%"),
+            Formatted::OpAnd => write!(f, "&&"),
+            Formatted::OpOr => write!(f, "||"),
+            Formatted::OpEqualTo => write!(f, "=="),
+            Formatted::OpNotEq => write!(f, "!="),
         }
     }
 }

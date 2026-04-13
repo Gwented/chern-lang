@@ -4,20 +4,23 @@ use std::{
     path::Path,
 };
 
-use common::{
-    builtins::BuiltinType,
-    config_loader::ChernConfigLoader,
-    core_error::ConfigLoadError,
-    intern::Intern,
-    keywords,
-    metadata::{ChernSettings, ModuleMetadata},
-    reporter,
-    symbols::{ModuleId, NameId, PathId, SymbolId},
-};
 pub mod mod_finder;
 
+use chern_core::{
+    builtins::BuiltinType,
+    config_loader::ChernConfigLoader,
+    id_types::{ModuleId, NameId, PathId, SymbolId},
+    intern::Intern,
+    keywords,
+    values::Value,
+};
+use common::{
+    core_error::ConfigLoadError,
+    metadata::{ChernSettings, ModuleMetadata},
+    reporter,
+};
+
 use crate::{
-    ir::values::Value,
     iyo::file_ops,
     modules::mod_finder::ModuleFinder,
     parser::ast::{Bind, Import},

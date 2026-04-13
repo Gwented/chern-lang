@@ -1,11 +1,10 @@
 use std::path::Path;
 
+use chern_core::{id_types::ModuleId, intern::Intern};
 use common::{
     core_error::{CoreError, ScriptError},
-    intern::Intern,
     metadata::ChernSettings,
     reporter::diagnostic::Reporter,
-    symbols::ModuleId,
 };
 use script_lib::{
     lexer::Lexer,

@@ -1,22 +1,20 @@
 use std::collections::HashMap;
 
-use common::{
+use chern_core::{
+    id_types::{AstId, ModuleId, NameId, SymbolId, TypeId, ValueId},
     intern::Intern,
-    metadata::ChernSettings,
-    reporter::diagnostic::Diagnostic,
-    symbols::{AstId, ModuleId, NameId, SymbolId, TypeId, ValueId},
 };
+use common::{metadata::ChernSettings, reporter::diagnostic::Diagnostic};
 
 use crate::{
-    modules::{Module, Program},
+    modules::Program,
     parser::ast::{
-        AbstractAlias, AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo,
-        Import, Item, SpannedTypeExpr, TypeExpr,
+        AbstractAlias, AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Item,
     },
     semantic::{
         representation::{
-            AliasRepre, ConstRepre, EnumRepre, FieldRepre, StructRepre, Symbol, SymbolInfo, Tuple,
-            Type, TypeDefRepre, TypeInfo, VariantRepre,
+            AliasRepre, ConstRepre, EnumRepre, StructRepre, Symbol, SymbolInfo, Type, TypeDefRepre,
+            TypeInfo,
         },
         semantic_reporter::SemanticReporter,
     },

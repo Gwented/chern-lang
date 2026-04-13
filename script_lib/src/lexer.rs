@@ -1,5 +1,7 @@
 //TODO: Path ids
-use common::{intern::Intern, keywords, symbols::Span};
+
+use chern_core::{intern::Intern, keywords};
+use common::span::Span;
 
 use crate::{
     types::symbols::SpannedToken,

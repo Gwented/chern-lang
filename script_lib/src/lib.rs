@@ -2,7 +2,7 @@
 mod algo;
 pub mod lexer;
 // Should not be pub
-pub mod ir;
+mod evaluator;
 mod iyo;
 pub mod linter;
 pub mod modules;
@@ -14,7 +14,8 @@ mod types;
 mod tests {
     use std::path::Path;
 
-    use common::{config_loader::ChernConfigLoader, intern::Intern, metadata::ChernSettings};
+    use chern_core::{config_loader::ChernConfigLoader, intern::Intern};
+    use common::metadata::ChernSettings;
 
     use crate::{
         lexer::Lexer,

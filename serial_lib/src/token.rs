@@ -1,6 +1,6 @@
 // May or may not use same tokens as script
 
-use common::symbols::Span;
+use common::span::Span;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]

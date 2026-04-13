@@ -1,26 +1,19 @@
-use std::collections::{HashMap, HashSet};
-
-use common::{
+use chern_core::{
     builtins::BuiltinType,
+    id_types::{AstId, ModuleId, NameId, TypeId},
     intern::Intern,
-    keywords::{self, Keyword},
-    metadata::{ChernSettings, ModuleMetadata},
-    reporter::diagnostic::Diagnostic,
-    symbols::{AstId, InnerArgs, ModuleId, NameId, Span, SymbolId, TypeId, ValueId},
+    keywords::Keyword,
 };
+use common::{metadata::ChernSettings, reporter::diagnostic::Diagnostic, span::Span};
 
 use crate::{
-    ir::values::Value,
-    modules::{Module, Program},
+    modules::Program,
     parser::ast::{
-        AbstractAlias, AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo,
-        BinaryOp, Expr, Import, Item, SpannedExpr, SpannedTypeExpr, TypeExpr, UnaryOp,
+        AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Item,
+        SpannedTypeExpr, TypeExpr,
     },
     semantic::{
-        representation::{
-            AliasRepre, ConstRepre, EnumRepre, FieldRepre, FuncArgsRepre, FuncRepre, StructRepre,
-            Symbol, SymbolInfo, Tuple, Type, TypeDefRepre, TypeInfo, VariantRepre,
-        },
+        representation::{FieldRepre, Symbol, Tuple, Type, TypeInfo, VariantRepre},
         semantic_reporter::SemanticReporter,
     },
 };
@@ -99,7 +92,6 @@ impl TypeResolver<'_> {
 
     fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
         let mut fields: Vec<FieldRepre> = Vec::new();
-
         let mut seen: Vec<(usize, NameId)> = Vec::new();
 
         // Checking if there are duplicate name ids within the same struct along with resolution

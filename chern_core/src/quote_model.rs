@@ -7,16 +7,14 @@ mod token;
 
 use std::ops::Range;
 
-use crate::{
-    help_model::{
-        algo,
-        math_structs::Tensor2,
-        quote_model::{
-            self,
-            token::{Token, TokenInfo},
-        },
-    },
-    symbols::Span,
+use common::{
+    help_model::{algo, math_structs::Tensor2},
+    span::Span,
+};
+
+use crate::quote_model::{
+    self,
+    token::{Token, TokenInfo},
 };
 
 const W_TOK: f32 = 0.6;

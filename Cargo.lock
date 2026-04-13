@@ -82,6 +82,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "chern_core"
+version = "0.1.0"
+dependencies = [
+ "common",
+]
+
+[[package]]
 name = "chrn"
 version = "0.1.0"
 dependencies = [
@@ -222,6 +229,7 @@ dependencies = [
 name = "interpreter_lib"
 version = "0.1.0"
 dependencies = [
+ "chern_core",
  "common",
  "script_lib",
  "serial_lib",
@@ -324,6 +332,7 @@ checksum = "0c8d0fd677905edcbeedbf2edb6494d676f0e98d54d5cf9bda0b061cb8fb8aba"
 name = "script_lib"
 version = "0.1.0"
 dependencies = [
+ "chern_core",
  "common",
  "unicode-width",
 ]
@@ -380,6 +389,7 @@ dependencies = [
 name = "serial_lib"
 version = "0.1.0"
 dependencies = [
+ "chern_core",
  "common",
  "script_lib",
 ]

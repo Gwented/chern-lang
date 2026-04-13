@@ -1,4 +1,5 @@
-use common::{intern::Intern, symbols::Span};
+use chern_core::intern::Intern;
+use common::span::Span;
 
 use crate::token::{SpannedToken, Token};
 

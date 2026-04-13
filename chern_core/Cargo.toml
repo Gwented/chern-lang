@@ -1,9 +1,7 @@
 [package]
-name = "serial_lib"
+name = "chern_core"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
 common = { path = "../common/" }
-script_lib = { path = "../script_lib/" }
-chern_core = { path = "../chern_core/" }

@@ -1,5 +1,3 @@
-use crate::symbols::Span;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Token {
     Def,

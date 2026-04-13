@@ -1,6 +1,6 @@
 use std::ops::RangeInclusive;
 
-use crate::fmter::{Formattable, Formatted};
+use common::fmter::{Formattable, Formatted};
 
 /// Known size in bytes for `@def` and `@end`
 pub const DEFINITION_SIZE: usize = 4;
@@ -133,7 +133,7 @@ pub enum Keyword {
 }
 
 impl Formattable for Keyword {
-    fn to_fmt(&self) -> crate::fmter::Formatted {
+    fn to_fmt(&self) -> common::fmter::Formatted {
         match self {
             Keyword::I8 => Formatted::I8,
             Keyword::U8 => Formatted::U8,

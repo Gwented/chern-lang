@@ -1,10 +1,8 @@
 use std::fmt::Display;
 
-use crate::{
-    fmter::{Formattable, Formatted},
-    keywords::Keyword,
-    symbols::TypeId,
-};
+use common::fmter::{Formattable, Formatted};
+
+use crate::{id_types::TypeId, keywords::Keyword};
 
 //TEST: Serial and script interact with this directly so
 #[derive(Debug)]

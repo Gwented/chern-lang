@@ -1,5 +1,9 @@
+use chern_core::id_types::{AstId, NameId, PathId, SpannedInnerArgs};
 //NOTE: MAY MAKE EXPRESSION THAT HELPS RESOLVE SEMANTIC TYPES MORE CLEANLY
-use common::symbols::{AstId, InnerArgs, NameId, PathId, Span, SpannedInnerArgs};
+use common::{
+    fmter::{Formattable, Formatted},
+    span::Span,
+};
 
 use crate::types::token::Notation;
 
@@ -110,12 +114,12 @@ pub(crate) enum Expr {
 
 pub const PRECEDENCE_ONE: u8 = 1;
 pub const PRECEDENCE_TWO: u8 = 2;
-#[derive(Debug)]
-pub(crate) enum BinaryOp {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinaryOp {
     Add,
     Sub,
     Mult,
-    Div,
+    Divide,
     Greater,
     Less,
     GreaterOrEq,
@@ -123,8 +127,66 @@ pub(crate) enum BinaryOp {
     Mod,
     And,
     Or,
-    EqualTo,
+    EqTo,
     NotEq,
+}
+
+impl BinaryOp {
+    pub fn is_arithmetic_op(&self) -> bool {
+        match self {
+            BinaryOp::Add
+            | BinaryOp::Sub
+            | BinaryOp::Mult
+            | BinaryOp::Divide
+            | BinaryOp::Greater
+            | BinaryOp::Mod => true,
+            BinaryOp::Less
+            | BinaryOp::GreaterOrEq
+            | BinaryOp::LessOrEq
+            | BinaryOp::And
+            | BinaryOp::Or
+            | BinaryOp::EqTo
+            | BinaryOp::NotEq => false,
+        }
+    }
+
+    pub fn is_bool_op(&self) -> bool {
+        match self {
+            BinaryOp::Less
+            | BinaryOp::GreaterOrEq
+            | BinaryOp::LessOrEq
+            | BinaryOp::And
+            | BinaryOp::Or
+            | BinaryOp::EqTo
+            | BinaryOp::NotEq => true,
+            BinaryOp::Add
+            | BinaryOp::Sub
+            | BinaryOp::Mult
+            | BinaryOp::Divide
+            | BinaryOp::Greater
+            | BinaryOp::Mod => false,
+        }
+    }
+}
+
+impl Formattable for BinaryOp {
+    fn to_fmt(&self) -> common::fmter::Formatted {
+        match self {
+            BinaryOp::Add => Formatted::OpAdd,
+            BinaryOp::Sub => Formatted::OpSub,
+            BinaryOp::Mult => Formatted::OpMult,
+            BinaryOp::Divide => Formatted::OpDivide,
+            BinaryOp::Greater => Formatted::OpGreater,
+            BinaryOp::Less => Formatted::OpLess,
+            BinaryOp::GreaterOrEq => Formatted::OpGreaterOrEq,
+            BinaryOp::LessOrEq => Formatted::OpLessOrEq,
+            BinaryOp::Mod => Formatted::OpMod,
+            BinaryOp::And => Formatted::OpAnd,
+            BinaryOp::Or => Formatted::OpOr,
+            BinaryOp::EqTo => Formatted::OpEqualTo,
+            BinaryOp::NotEq => Formatted::OpNotEq,
+        }
+    }
 }
 
 #[derive(Debug)]
