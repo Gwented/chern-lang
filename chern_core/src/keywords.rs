@@ -258,37 +258,6 @@ impl Keyword {
 
         Keyword::try_as_kw(id)
     }
-    // pub fn try_as_builtin(id: u32) -> Option<Keyword> {
-    //     if let Some(kw) = Self::try_as_kw(id) {
-    //         match kw {
-    //             Keyword::I8
-    //             | Keyword::U8
-    //             | Keyword::I16
-    //             | Keyword::U16
-    //             | Keyword::F16
-    //             | Keyword::I32
-    //             | Keyword::U32
-    //             | Keyword::F32
-    //             | Keyword::I64
-    //             | Keyword::U64
-    //             | Keyword::F64
-    //             | Keyword::I128
-    //             | Keyword::U128
-    //             | Keyword::F128
-    //             | Keyword::Sized
-    //             | Keyword::Unsized
-    //             | Keyword::Char
-    //             | Keyword::Str
-    //             | Keyword::Bool
-    //             | Keyword::Nil
-    //             | Keyword::BigInt
-    //             | Keyword::BigFloat => return Some(kw),
-    //             _ => return None,
-    //         }
-    //     }
-    //
-    //     None
-    // }
 }
 
 //WARN: Not sure about the amount of casting everywhere

@@ -23,7 +23,7 @@ pub(super) enum SemanticError {
     //TODO: Combine
     CircularArg(InnerArgs, Formatted, Vec<Span>),
     CircularCond(Cond, Formatted, Vec<Span>),
-    /// The type overflown, the interned string, spans
+    /// The interned string, type overflown, spans
     NumericOverflow(u32, Formatted, Vec<Span>),
     /// Lhs, rhs, Op, spans
     BinaryOpMismatch(Formatted, Formatted, Formatted, Vec<Span>),

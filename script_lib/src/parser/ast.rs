@@ -115,8 +115,6 @@ pub(crate) enum Expr {
     },
 }
 
-pub const PRECEDENCE_ONE: u8 = 1;
-pub const PRECEDENCE_TWO: u8 = 2;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
@@ -132,6 +130,12 @@ pub enum BinaryOp {
     Or,
     EqTo,
     NotEq,
+    BitOr,
+    BitAnd,
+    BitNot,
+    BitRightShift,
+    BitLeftShift,
+    BitXor,
 }
 
 impl BinaryOp {
@@ -142,6 +146,12 @@ impl BinaryOp {
             | BinaryOp::Mult
             | BinaryOp::Divide
             | BinaryOp::Greater
+            | BinaryOp::BitOr
+            | BinaryOp::BitAnd
+            | BinaryOp::BitNot
+            | BinaryOp::BitRightShift
+            | BinaryOp::BitLeftShift
+            | BinaryOp::BitXor
             | BinaryOp::Mod => true,
             BinaryOp::Less
             | BinaryOp::GreaterOrEq
@@ -161,6 +171,12 @@ impl BinaryOp {
             | BinaryOp::And
             | BinaryOp::Or
             | BinaryOp::EqTo
+            | BinaryOp::BitOr
+            | BinaryOp::BitAnd
+            | BinaryOp::BitNot
+            | BinaryOp::BitRightShift
+            | BinaryOp::BitLeftShift
+            | BinaryOp::BitXor
             | BinaryOp::NotEq => true,
             BinaryOp::Add
             | BinaryOp::Sub
@@ -188,6 +204,12 @@ impl Formattable for BinaryOp {
             BinaryOp::Or => Formatted::OpOr,
             BinaryOp::EqTo => Formatted::OpEqualTo,
             BinaryOp::NotEq => Formatted::OpNotEq,
+            BinaryOp::BitOr => Formatted::OpBitOr,
+            BinaryOp::BitAnd => Formatted::OpBitAnd,
+            BinaryOp::BitNot => Formatted::OpBitNot,
+            BinaryOp::BitRightShift => Formatted::OpBitRightShift,
+            BinaryOp::BitLeftShift => Formatted::OpBitLeftShift,
+            BinaryOp::BitXor => Formatted::OpBitXor,
         }
     }
 }

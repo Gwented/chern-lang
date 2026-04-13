@@ -592,9 +592,7 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
 
             if !is_escaped && keywords::is_type(plain_id) {
                 ctx.report_verbose(
-                    &format!(
-                        "To use known types as enum identifiers, prefix with \"~{enum_name}\" "
-                    ),
+                    &format!("To use known types as enum identifiers, prefix with `~{enum_name}` "),
                     Branch::Section(SectionBranch::Nest),
                     interner,
                 );
@@ -604,7 +602,7 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
-                &format!("Expected a '{{' to define enum \"{enum_name}\", found"),
+                &format!("Expected a '{{' to define enum `{enum_name}`, found"),
                 "",
                 Branch::Section(SectionBranch::Nest),
                 interner,
@@ -635,9 +633,7 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
             let name = interner.search(id as usize);
 
             ctx.report_verbose(
-                &format!(
-                    "Expected the keyword \"enum\" or \"struct\", found identifier \"{name}\""
-                ),
+                &format!("Expected the keyword `enum` or `struct`, found identifier \"{name}\""),
                 Branch::Section(SectionBranch::Nest),
                 interner,
             );
@@ -1031,10 +1027,6 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
         if ctx.peek_ahead(1).tok != Token::Dot {
             break;
         }
-
-        // if ctx.peek_tok() == Token::Tilde {
-        //     ctx.advance_tok();
-        // }
     }
 
     //FIX: Given

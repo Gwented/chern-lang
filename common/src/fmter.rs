@@ -69,6 +69,12 @@ pub enum Formatted {
     OpOr,
     OpEqualTo,
     OpNotEq,
+    OpBitOr,
+    OpBitAnd,
+    OpBitNot,
+    OpBitRightShift,
+    OpBitLeftShift,
+    OpBitXor,
     True,
     False,
     IsEmpty,
@@ -156,6 +162,12 @@ impl Display for Formatted {
             Formatted::OpOr => write!(f, "||"),
             Formatted::OpEqualTo => write!(f, "=="),
             Formatted::OpNotEq => write!(f, "!="),
+            Formatted::OpBitOr => write!(f, "|"),
+            Formatted::OpBitAnd => write!(f, "&"),
+            Formatted::OpBitNot => write!(f, "~"),
+            Formatted::OpBitRightShift => write!(f, ">>"),
+            Formatted::OpBitLeftShift => write!(f, "<<"),
+            Formatted::OpBitXor => write!(f, "^"),
         }
     }
 }

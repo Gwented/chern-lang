@@ -13,7 +13,7 @@ pub enum Value {
     Bool(bool),
     Char(char),
     Tuple(Vec<Value>),
-    InternedStr(NameId),
+    CompileStr(NameId),
     RuntimeStr(String),
     Unknown,
 }
@@ -26,7 +26,7 @@ impl Value {
             Value::Bool(_) => ValueKind::Bool,
             Value::Char(_) => ValueKind::Char,
             Value::Tuple(_) => ValueKind::Tuple,
-            Value::InternedStr(_) => ValueKind::InternedStr,
+            Value::CompileStr(_) => ValueKind::InternedStr,
             Value::RuntimeStr(_) => ValueKind::RuntimeStr,
             Value::Unknown => ValueKind::Unknown,
         }

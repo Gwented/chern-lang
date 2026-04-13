@@ -3,10 +3,12 @@
 ## Goal
 - To allow for instructions that state how to serialize data without something like macros or annotations. All features outside of this are entirely negligible.
 
+# SCRIPT
+
 ## BEHAVIOR
 - Ends program by default when type information is incorrect unless `#warn` is used.
 
-- Binary representation. <-
+- Binary representation
 
 - `@def` and `@end` syntax is intended to lock script behavior into one block and so that the language constraints can be applied without needing a dedicated outer file that uses `bind`. Everything after `@end` will be considered the serialized file.
 
@@ -21,7 +23,7 @@ char, bool, str, struct, enum, nil, BigInt, BigFloat, List, Map, Set, Tuple
 `enum`: For defining an enum type which can also hold enumerations with types.
 `Tuple`: Holds any amount of types within generic parameters.
 
-## Prefix Operations
+## Prefix/Unary Operations
 `!`: NOT
 `-` NEGATE
 
@@ -33,31 +35,17 @@ char, bool, str, struct, enum, nil, BigInt, BigFloat, List, Map, Set, Tuple
 `&&`: AND
 `||` OR
 
-// TODO:
-// TODO:
-
 ## Workspace
 - NOT FOR COMPLEXITY, JUST FOR AN ENFORCED CONVENTION. I WANT BINARY. Make binary
 
 ## Actions (Ignore this. Entirely ignore this)
 extract env vars
 
-```chrn
-alias LongDefault(x, y) = [!IsEmpty, Range(x, y), StartsW("ch"), EndsW("ern"), Contains("chern")]
-
-alias ShortDefault() = IsWhitespace
-
-var->
-    special_string: str [LongDefault(0, 5)]
-
-    some_str: str [ShortDefault()]
-```
-
-# DOES NOT EXIST YET
+### DOES NOT EXIST YET
 `_`: Match all for ignoring parameters
 
 ```chrn
-alias gopher(x, y) = !IsEmpty, Range(x = 0.0, y = 5.2), StartsW("ch") EndsW("ern") Contains("chern")
+alias gopher(x, y) = [!IsEmpty, Range(x = 0.0, y = 5.2), StartsW("ch") EndsW("ern") Contains("chern")]
 
 var->
     special_stir: str [gopher(0.5, _)] // defaults to (0.5, 5.2) 
@@ -68,22 +56,21 @@ var->
 `?`: Infers type and expects type consistency throughout entire given serialized data file type.
 Maybe this should just mean it's original intent of, ignore the type.
 
-`~`: Name bypass operator for when naming types.
+`~`: Name bypass operator for when defined types have the same identifier as language builtin types.
 
 Example:
 ```chrn
 var->
     x: ~str
 nest->
-    // Should enforce this
-    struct ~str { // Could also just be "str" but it is best to maintain the prefix '~'
+    struct ~str {
         ptr: u8
         len: unsized
         capacity: unsized
     }
 ```
 
-# DOES NOT EXIST YET
+### DOES NOT EXIST YET
 `(range)`: Explicit range syntax. The '=' is required. `0..=5`
 
 ## [Predicates]
@@ -92,8 +79,6 @@ nest->
 `IsWhitespace`: Checks if a string is only whitespace within UTF-8 standards, or is empty.
 
 ## Functions
-
-// WHAT IF ALL OF THESE WORKED ON NUMBERS?
 
 `Equals(Variadic)`: Checks serialized value for equality against given argument
 
@@ -110,7 +95,6 @@ nest->
 
 ## Statements
 
-// TODO
 `const`: Allows the declaration of variables under a constant variable rather than only literals. The type is always inferred to be the lowest possible data type given the context it's used in.
 
 `export`: Allows for the exported value to be used externally when imported.
@@ -121,7 +105,6 @@ This can be applied to `struct`, `enum`, `const`, and `alias`.
 `alias`: Allows for predicates and arguments to be stored within a single function call for convenience.
 
 ```chrn
-// Maybe if there's only one condition allow no brackets?
 alias ShortDefault() = [IsWhitespace]
 
 alias LongDefault(x, y) = [!IsEmpty, Range(x, y), StartsW("ch") EndsW("ern") Contains("chern")]
@@ -174,9 +157,6 @@ nest->
 # DOES NOT EXIST YET
 `override->`: What to default to when a language doesn't contain a particular type. Language defaults exist but this can change any if needed.
 
-(Probably not a good idea)
-There is also a "like" category. A "JAVA_LIKE" category would have all of the int, short, logic for a batch of languages.
-
 `complex->`: Define complex rules
 
 ## Arguments
@@ -219,8 +199,6 @@ import "invalid_utf8_name.chrn" as valid_name
 
 const VALUE = defs.MAGIC_NUMBER + valid_name.OTHER_MAGICAL_NUMBER
 ```
-```
-```
 
 #### Full example of language
 
@@ -241,14 +219,11 @@ const VALUE = defs.MAGIC_NUMBER + valid_name.OTHER_MAGICAL_NUMBER
 ```
 
 
-# FORGOT ABOUT UNICODE
+## FORGOT ABOUT UNICODE
 
 ## POSSIBLE FEATURES
 
 (CLI related) Utilities to alter actual main file, such as trimming all strings.
-
-Maybe arithmetic
-# Ok maybe
 
 Matrix declarations.
 Tensor(N-dim)<f32> more so a convenience wrapper over `List<List<f32>>` (Although tensors are usually in binary) WHICH IS WHY THIS NEEDS A BINARY REPRESENTATION <-----
@@ -257,3 +232,5 @@ matrix: Tensor2<f32>
 
 Unified serialization rules for any md file.
 Yaml, XML(Forgot this existed), Json, BINARY(I don't know) BINARY, BINARY
+
+# SERIAL

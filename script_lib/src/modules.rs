@@ -45,7 +45,7 @@ impl Program {
 
         // Pre-loading keywords
         // If this fails something was messed up within keywords itself
-        for i in 0..keywords::TYPE_END - 5 {
+        for i in 0..keywords::TYPE_END - 4 {
             let ty = BuiltinType::try_from_id(i as u32).expect("Builtin type not updated");
             types.push(TypeInfo::new(Type::BuiltinType(ty), None));
         }

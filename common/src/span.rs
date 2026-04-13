@@ -11,8 +11,9 @@ impl Span {
         Span { start, end }
     }
 
-    // pub fn contains_inclusive(&self, span: &Span) -> bool {
-    //     let self_range = self.start..=self.end;
-    //     let other_range = span.start..=span.end;
-    // }
+    pub fn merge(&self, other: Span) -> Span {
+        let start = self.start.min(other.start);
+        let end = self.end.max(other.end);
+        Span::new(start, end)
+    }
 }

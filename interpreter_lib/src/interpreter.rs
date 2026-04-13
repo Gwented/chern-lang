@@ -80,18 +80,9 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
         return Err(ScriptError::Semantic(reporter.diags).into());
     }
 
-    let main_mod = &program.mods[0];
-    // Option for bind to take priority over start
-    let toks = if let Some(start) = main_mod.metadata.serial_start {
-        serial_lib::lexer::Lexer::new(&main_mod.metadata.src_bytes, start)
-    } else if let Some(bind) = program.bind {
-        todo!()
-    } else {
-        todo!()
-    };
+    // let main_mod = &program.mods[0];
 
-    dbg!(toks);
-    panic!("End of end with end");
+    // Src bytes does not contain the rest of the file so the serial lexer must perform io. Again.
 
     // Maybe bind is now gotten from module resolution
 

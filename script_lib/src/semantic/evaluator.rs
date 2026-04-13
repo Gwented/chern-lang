@@ -1,24 +1,48 @@
-use chern_core::values::Value;
+use chern_core::{keywords::Keyword, values::Value};
 
 use crate::{parser::ast::BinaryOp, semantic::error::SemanticError};
-
-pub fn eval_vals() -> Value {
-    todo!();
-}
 
 pub fn is_compatible(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
     match lhs {
         Value::I128(_) => match op {
-            _ => match rhs {
+            BinaryOp::Add
+            | BinaryOp::Sub
+            | BinaryOp::Mult
+            | BinaryOp::Divide
+            | BinaryOp::Greater
+            | BinaryOp::Less
+            | BinaryOp::GreaterOrEq
+            | BinaryOp::LessOrEq
+            | BinaryOp::Mod
+            | BinaryOp::EqTo
+            | BinaryOp::BitOr
+            | BinaryOp::BitAnd
+            | BinaryOp::BitNot
+            | BinaryOp::BitRightShift
+            | BinaryOp::BitLeftShift
+            | BinaryOp::BitXor
+            | BinaryOp::NotEq => match rhs {
                 Value::I128(_) => true,
                 _ => false,
             },
+            BinaryOp::And | BinaryOp::Or => false,
         },
         Value::F64(_) => match op {
-            _ => match rhs {
-                Value::I128(_) => true,
+            BinaryOp::Add
+            | BinaryOp::Sub
+            | BinaryOp::Mult
+            | BinaryOp::Divide
+            | BinaryOp::Greater
+            | BinaryOp::Less
+            | BinaryOp::GreaterOrEq
+            | BinaryOp::LessOrEq
+            | BinaryOp::Mod
+            | BinaryOp::EqTo
+            | BinaryOp::NotEq => match rhs {
+                Value::F64(_) => true,
                 _ => false,
             },
+            _ => false,
         },
         Value::Bool(_) => {
             if op.is_bool_op() && rhs.is_bool() {
@@ -29,35 +53,271 @@ pub fn is_compatible(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
         }
         // Not right now
         Value::Char(_) => false,
-        // Not right now
-        Value::InternedStr(_) => false,
-        // Not right now
-        Value::RuntimeStr(_) => false,
-        Value::Tuple(_) => false,
-        Value::Unknown => false,
+        Value::CompileStr(_) => match op {
+            BinaryOp::EqTo => match rhs {
+                Value::CompileStr(_) => true,
+                _ => false,
+            },
+            BinaryOp::NotEq => match rhs {
+                Value::CompileStr(_) => true,
+                _ => false,
+            },
+            // Not right now
+            // BinaryOp::Add => todo!(),
+            // BinaryOp::Greater => todo!(),
+            // BinaryOp::Less => todo!(),
+            // BinaryOp::GreaterOrEq => todo!(),
+            // BinaryOp::LessOrEq => todo!(),
+            _ => false,
+        },
+        Value::Tuple(_) | Value::Unknown => false,
+        // Only semantic has access to these functions due a HIR being used for serial as opposed
+        // to Expr so this compile time step cannot touch runtime
+        Value::RuntimeStr(_) => unreachable!("Impossible at compile time"),
     }
 }
 
+// Not my best work
 /// Applies operation assuming that lhs and rhs were checked for compatibility
+//TODO: BIGFLOAT
 pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, SemanticError> {
     match op {
-        BinaryOp::Add => {
-            todo!();
-            if lhs.is_bool() || rhs.is_bool() {}
-        }
-        BinaryOp::Sub => todo!(),
-        BinaryOp::Mult => todo!(),
-        BinaryOp::Divide => todo!(),
-        BinaryOp::Greater => todo!(),
-        BinaryOp::Less => todo!(),
-        BinaryOp::GreaterOrEq => todo!(),
-        BinaryOp::LessOrEq => todo!(),
-        BinaryOp::Mod => todo!(),
-        BinaryOp::And => todo!(),
-        BinaryOp::Or => todo!(),
-        BinaryOp::EqTo => todo!(),
-        BinaryOp::NotEq => todo!(),
-    }
+        BinaryOp::Add => match lhs {
+            Value::I128(lhs_inner) => match rhs {
+                Value::I128(rhs_inner) => Ok(Value::I128(lhs_inner + rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::F64(lhs_inner) => match rhs {
+                Value::F64(rhs_inner) => Ok(Value::F64(lhs_inner + rhs_inner)),
+                _ => unreachable!(),
+            },
+            // In case this is forgotten to be updated
+            Value::Bool(_)
+            | Value::Char(_)
+            | Value::Tuple(_)
+            | Value::CompileStr(_)
+            | Value::RuntimeStr(_)
+            | Value::Unknown => unreachable!(),
+        },
+        BinaryOp::Sub => match lhs {
+            Value::I128(lhs_inner) => match rhs {
+                Value::I128(rhs_inner) => Ok(Value::I128(lhs_inner - rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::F64(lhs_inner) => match rhs {
+                Value::F64(rhs_inner) => Ok(Value::F64(lhs_inner - rhs_inner)),
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        },
+        BinaryOp::Mult => match lhs {
+            Value::I128(lhs_inner) => match rhs {
+                Value::I128(rhs_inner) => Ok(Value::I128(lhs_inner * rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::F64(lhs_inner) => match rhs {
+                Value::F64(rhs_inner) => Ok(Value::F64(lhs_inner * rhs_inner)),
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        },
+        BinaryOp::Divide => match lhs {
+            Value::I128(lhs_inner) => match rhs {
+                Value::I128(rhs_inner) => {
+                    if *rhs_inner == 0 {
+                        panic!("Center a div");
+                    }
 
-    todo!();
+                    Ok(Value::I128(lhs_inner / rhs_inner))
+                }
+                _ => unreachable!(),
+            },
+            Value::F64(lhs_inner) => match rhs {
+                Value::F64(rhs_inner) => {
+                    if *rhs_inner == 0.0 {
+                        panic!("Center a div");
+                    }
+
+                    Ok(Value::F64(lhs_inner / rhs_inner))
+                }
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        },
+        BinaryOp::Greater => match lhs {
+            Value::I128(lhs_inner) => match rhs {
+                Value::I128(rhs_inner) => Ok(Value::Bool(lhs_inner > rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::F64(lhs_inner) => match rhs {
+                Value::F64(rhs_inner) => Ok(Value::Bool(lhs_inner > rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::Char(lhs_inner) => match rhs {
+                Value::Char(rhs_inner) => Ok(Value::Bool(lhs_inner > rhs_inner)),
+                _ => unreachable!(),
+            },
+            // Value::CompileStr(name_id) => todo!(),
+            // Value::RuntimeStr(_) => todo!(),
+            _ => unreachable!(),
+        },
+        BinaryOp::Less => match lhs {
+            Value::I128(lhs_inner) => match rhs {
+                Value::I128(rhs_inner) => Ok(Value::Bool(lhs_inner < rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::F64(lhs_inner) => match rhs {
+                Value::F64(rhs_inner) => Ok(Value::Bool(lhs_inner < rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::Char(lhs_inner) => match rhs {
+                Value::Char(rhs_inner) => Ok(Value::Bool(lhs_inner < rhs_inner)),
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        },
+        BinaryOp::GreaterOrEq => match lhs {
+            Value::I128(lhs_inner) => match rhs {
+                Value::I128(rhs_inner) => Ok(Value::Bool(lhs_inner >= rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::F64(lhs_inner) => match rhs {
+                Value::F64(rhs_inner) => Ok(Value::Bool(lhs_inner >= rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::Char(lhs_inner) => match rhs {
+                Value::Char(rhs_inner) => Ok(Value::Bool(lhs_inner >= rhs_inner)),
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        },
+        BinaryOp::LessOrEq => match lhs {
+            Value::I128(lhs_inner) => match rhs {
+                Value::I128(rhs_inner) => Ok(Value::Bool(lhs_inner <= rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::F64(lhs_inner) => match rhs {
+                Value::F64(rhs_inner) => Ok(Value::Bool(lhs_inner <= rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::Char(lhs_inner) => match rhs {
+                Value::Char(rhs_inner) => Ok(Value::Bool(lhs_inner <= rhs_inner)),
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        },
+        BinaryOp::Mod => match lhs {
+            Value::I128(lhs_inner) => match rhs {
+                Value::I128(rhs_inner) => Ok(Value::I128(lhs_inner % rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::F64(lhs_inner) => match rhs {
+                Value::F64(rhs_inner) => Ok(Value::F64(lhs_inner % rhs_inner)),
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        },
+        BinaryOp::And => match lhs {
+            Value::Bool(lhs_inner) => match rhs {
+                Value::Bool(rhs_inner) => Ok(Value::Bool(*lhs_inner && *rhs_inner)),
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        },
+        BinaryOp::Or => match lhs {
+            Value::Bool(lhs_inner) => match rhs {
+                Value::Bool(rhs_inner) => Ok(Value::Bool(*lhs_inner || *rhs_inner)),
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        },
+        BinaryOp::EqTo => match lhs {
+            Value::I128(lhs_inner) => match rhs {
+                Value::I128(rhs_inner) => Ok(Value::Bool(lhs_inner == rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::F64(lhs_inner) => match rhs {
+                Value::F64(rhs_inner) => Ok(Value::Bool(lhs_inner == rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::Bool(lhs_inner) => match rhs {
+                Value::Bool(rhs_inner) => Ok(Value::Bool(lhs_inner == rhs_inner)),
+                Value::CompileStr(rhs_inner) => {
+                    if rhs_inner.id == Keyword::True as u32 {
+                        return Ok(Value::Bool(*lhs_inner == true));
+                    } else if rhs_inner.id == Keyword::False as u32 {
+                        return Ok(Value::Bool(*lhs_inner == false));
+                    }
+
+                    unreachable!()
+                }
+                _ => unreachable!(),
+            },
+            Value::Char(lhs_inner) => match rhs {
+                Value::Char(rhs_inner) => Ok(Value::Bool(lhs_inner == rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::CompileStr(lhs_inner) => match rhs {
+                Value::CompileStr(rhs_inner) => Ok(Value::Bool(lhs_inner == rhs_inner)),
+                Value::Bool(rhs_inner) => {
+                    if lhs_inner.id == Keyword::True as u32 {
+                        return Ok(Value::Bool(true == *rhs_inner));
+                    } else if lhs_inner.id == Keyword::False as u32 {
+                        return Ok(Value::Bool(false == *rhs_inner));
+                    }
+
+                    unreachable!()
+                }
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        },
+        BinaryOp::NotEq => match lhs {
+            Value::I128(lhs_inner) => match rhs {
+                Value::I128(rhs_inner) => Ok(Value::Bool(lhs_inner != rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::F64(lhs_inner) => match rhs {
+                Value::F64(rhs_inner) => Ok(Value::Bool(lhs_inner != rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::Bool(lhs_inner) => match rhs {
+                Value::Bool(rhs_inner) => Ok(Value::Bool(lhs_inner != rhs_inner)),
+                Value::CompileStr(rhs_inner) => {
+                    if rhs_inner.id == Keyword::True as u32 {
+                        return Ok(Value::Bool(*lhs_inner != true));
+                    } else if rhs_inner.id == Keyword::False as u32 {
+                        return Ok(Value::Bool(*lhs_inner != false));
+                    }
+
+                    unreachable!()
+                }
+                _ => unreachable!(),
+            },
+            Value::Char(lhs_inner) => match rhs {
+                Value::Char(rhs_inner) => Ok(Value::Bool(lhs_inner != rhs_inner)),
+                _ => unreachable!(),
+            },
+            Value::CompileStr(lhs_inner) => match rhs {
+                Value::CompileStr(rhs_inner) => Ok(Value::Bool(lhs_inner != rhs_inner)),
+                Value::Bool(rhs_inner) => {
+                    if lhs_inner.id == Keyword::True as u32 {
+                        return Ok(Value::Bool(true != *rhs_inner));
+                    } else if lhs_inner.id == Keyword::False as u32 {
+                        return Ok(Value::Bool(false != *rhs_inner));
+                    }
+
+                    unreachable!()
+                }
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        },
+        BinaryOp::BitOr => todo!(),
+        BinaryOp::BitAnd => todo!(),
+        BinaryOp::BitNot => todo!(),
+        BinaryOp::BitRightShift => todo!(),
+        BinaryOp::BitLeftShift => todo!(),
+        BinaryOp::BitXor => todo!(),
+    }
 }

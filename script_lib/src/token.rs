@@ -62,6 +62,7 @@ pub(crate) enum Token {
     And,
     Or,
     At,
+    Caret,
     ExclamationPoint,
     Tilde,
     VerticalBar,
@@ -109,6 +110,7 @@ impl Token {
             Token::Hyphen => TokenKind::Hyphen,
             Token::ExclamationPoint => TokenKind::ExclamationPoint,
             Token::Asterisk => TokenKind::Asterisk,
+            Token::Caret => TokenKind::Caret,
             Token::Tilde => TokenKind::Tilde,
             Token::Dot => TokenKind::Dot,
             Token::VerticalBar => TokenKind::VerticalBar,
@@ -133,6 +135,12 @@ impl Token {
             Token::NotEq => Some((BinaryOp::NotEq, 4)),
             Token::And => Some((BinaryOp::And, 5)),
             Token::Or => Some((BinaryOp::Or, 6)),
+            Token::Tilde => todo!(),
+            Token::VerticalBar => todo!(),
+            Token::Ampersand => todo!(),
+            Token::Caret => todo!(),
+            // Token::RightShift => todo!(),
+            // Token::LeftShift => todo!(),
             _ => None,
         }
     }
@@ -173,6 +181,7 @@ pub(crate) enum TokenKind {
     At,
     And,
     Or,
+    Caret,
     ExclamationPoint,
     Asterisk,
     Tilde,
@@ -227,6 +236,7 @@ impl Display for TokenKind {
             TokenKind::Illegal => write!(f, "illegal"),
             TokenKind::EOF => write!(f, "<eof>"),
             TokenKind::Poison => write!(f, "<poisoned>"),
+            TokenKind::Caret => write!(f, "^"),
         }
     }
 }
@@ -273,8 +283,9 @@ pub const ILLEGAL: u64 = 1 << 35;
 pub const OR: u64 = 1 << 36;
 pub const AND: u64 = 1 << 37;
 pub const AMPERSAND: u64 = 38;
-pub const POISON: u64 = 1 << 39;
-pub const EOF: u64 = 1 << 40;
+pub const CARET: u64 = 39;
+pub const POISON: u64 = 1 << 40;
+pub const EOF: u64 = 1 << 41;
 
 //FIX: PLEASE ASSERT THIS THING
 impl TokenKind {
@@ -320,6 +331,7 @@ impl TokenKind {
             TokenKind::Or => OR,
             TokenKind::And => AND,
             TokenKind::NotEq => NOT_EQ,
+            TokenKind::Caret => CARET,
             TokenKind::Ampersand => AMPERSAND,
             TokenKind::EOF => EOF,
         }

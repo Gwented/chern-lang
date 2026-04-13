@@ -14,7 +14,7 @@
         } #warn
 
         enum State {
-            Ready((i32, i32))
+            Ready: Tuple<i32, i32>
             InProgress
             Failed
         }

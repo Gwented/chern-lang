@@ -4,9 +4,10 @@ export const READ = 0b00000001
 
 // alias VALID_PERMS() = [Equals(READ) || Equals(WRITE) || Equals(EDIT)]
 
+const X = 2 && 4 == 2
+
 var->
-    // Did not expect for this to be exportable so easily, might allow it at this point
-    var: Tuple<str, u8, str> [StartsW("Hello")]
+    // var: Tuple<str, u8, str> [StartsW("Hello")]
 nest->
     export struct Person {
         name: str

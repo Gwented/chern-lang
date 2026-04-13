@@ -13,9 +13,10 @@ pub(crate) enum Notation {
     Hex = 16,
 }
 
+#[derive(Debug)]
 pub struct SpannedToken {
     pub(crate) tok: Token,
-    pub span: Span,
+    pub(crate) span: Span,
 }
 
 #[derive(Debug, Clone, Copy)]

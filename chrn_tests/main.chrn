@@ -4,17 +4,19 @@
 
 // I am messed up"
 // "I am not even supposed to be included"
+// Unary ops aren't appllied to wrapped expressions
 
 
 @def
 
-const CONSTANT = (4 + 2) * 8 + "Hello"
+const CONSTANT = (4 + 2) * 8 | 8
 
 // Require forward slashes
-// import "../chrn_tests/defs.chrn" as maddie_burger
+import "../chrn_tests/defs.chrn" as maddie_burger
 
 var->
-    // user: maddie_burger.Person
+    user: maddie_burger.erson
+    thing: BigFloat
     var: Tuple<str, u8, str> // [StartsW(5)]
 
     // parser needs this TypeExpr

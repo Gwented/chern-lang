@@ -89,13 +89,16 @@ impl ConstraintResolver<'_> {
         let module = &self.program.mods[self.current_mod.id];
         let sym_id = module.table.sym_ids[&ast_id];
 
-        let value = match self.resolve_expr(&abs_const.spanned_expr) {
+        //TEST:
+        let value = match self.resolve_expr(&abs_const.spanned_expr, true) {
             Ok(v) => v,
             Err(sem_err) => {
                 self.reporter.report_semantic(sem_err, module);
                 return Err(());
             }
         };
+
+        dbg!(&value);
 
         let value_id = ValueId::new(self.program.values.len());
         self.program.values.push(value);
@@ -667,14 +670,18 @@ impl ConstraintResolver<'_> {
         }
     }
 
-    // Maybe the goal is to resolve as any expressions as possible and attach the value to it's ast
+    // Maybe the goal is to resolve as many expressions as possible and attach the value to it's ast
     // id?
     fn resolve_func_arg(&self, spanned_expr: &SpannedExpr) -> Result<FuncArgsRepre, SemanticError> {
-        let value = self.resolve_expr(spanned_expr)?;
+        let value = self.resolve_expr(spanned_expr, false)?;
         todo!();
     }
 
-    fn resolve_expr(&self, spanned_expr: &SpannedExpr) -> Result<Value, SemanticError> {
+    fn resolve_expr(
+        &self,
+        spanned_expr: &SpannedExpr,
+        is_const: bool,
+    ) -> Result<Value, SemanticError> {
         match &spanned_expr.expr {
             Expr::Var(name_id) => {
                 let module = &self.program.mods[self.current_mod.id];
@@ -707,40 +714,32 @@ impl ConstraintResolver<'_> {
                 }
             }
             Expr::BinaryExpr { lhs, op, rhs } => {
-                let lhs_val = self.resolve_expr(&*lhs)?;
-                let rhs_val = self.resolve_expr(&*rhs)?;
+                let lhs_val = self.resolve_expr(&*lhs, is_const)?;
+                let rhs_val = self.resolve_expr(&*rhs, is_const)?;
 
-                let res = match op {
-                    BinaryOp::Add => {
-                        if !evaluator::is_compatible(&lhs_val, *op, &rhs_val) {
-                            panic!("hallo");
-                        }
+                if !evaluator::is_compatible(&lhs_val, *op, &rhs_val) {
+                    let full_span = lhs.span.merge(rhs.span);
+                    return Err(SemanticError::BinaryOpMismatch(
+                        lhs_val.kind().to_fmt(),
+                        rhs_val.kind().to_fmt(),
+                        op.to_fmt(),
+                        vec![full_span],
+                    ));
+                }
 
-                        evaluator::apply_binary_op(&lhs_val, *op, &rhs_val)?;
-
-                        todo!();
-                    }
-                    BinaryOp::Sub => todo!(),
-                    BinaryOp::Mult => todo!(),
-                    BinaryOp::Divide => todo!(),
-                    BinaryOp::Greater => todo!(),
-                    BinaryOp::Less => todo!(),
-                    BinaryOp::GreaterOrEq => todo!(),
-                    BinaryOp::LessOrEq => todo!(),
-                    BinaryOp::Mod => todo!(),
-                    BinaryOp::And => todo!(),
-                    BinaryOp::Or => todo!(),
-                    BinaryOp::EqTo => todo!(),
-                    BinaryOp::NotEq => todo!(),
-                };
-
-                dbg!(&lhs_val, &rhs_val);
-                panic!();
+                evaluator::apply_binary_op(&lhs_val, *op, &rhs_val)
             }
             Expr::Char(c) => Ok(Value::Char(*c)),
             Expr::Default(name_id, spanned_expr) => todo!(),
-            Expr::Str(name_id) => Ok(Value::InternedStr(*name_id)),
-            Expr::Call(spanned_expr, spanned_exprs) => todo!(),
+            Expr::Str(name_id) => Ok(Value::CompileStr(*name_id)),
+            // Const should check it's
+            Expr::Call(caller, spanned_exprs) => {
+                if is_const {
+                    todo!();
+                }
+
+                todo!();
+            }
             Expr::FieldAccess(abstract_field_access) => todo!(),
             Expr::Unary(unary) => todo!(),
         }
