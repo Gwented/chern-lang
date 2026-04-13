@@ -3,10 +3,7 @@
 use chern_core::{intern::Intern, keywords};
 use common::span::Span;
 
-use crate::{
-    types::symbols::SpannedToken,
-    types::token::{Notation, Token},
-};
+use crate::token::{Notation, SpannedToken, Token};
 
 const MAX_ILLEGAL_TOKS: u8 = 5;
 

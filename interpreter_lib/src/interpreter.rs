@@ -2,8 +2,8 @@ use std::path::Path;
 
 use chern_core::{id_types::ModuleId, intern::Intern};
 use common::{
+    chern_settings::ChernSettings,
     core_error::{CoreError, ScriptError},
-    metadata::ChernSettings,
     reporter::diagnostic::Reporter,
 };
 use script_lib::{
@@ -79,6 +79,19 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
         // Suspicious into usage
         return Err(ScriptError::Semantic(reporter.diags).into());
     }
+
+    let main_mod = &program.mods[0];
+    // Option for bind to take priority over start
+    let toks = if let Some(start) = main_mod.metadata.serial_start {
+        serial_lib::lexer::Lexer::new(&main_mod.metadata.src_bytes, start)
+    } else if let Some(bind) = program.bind {
+        todo!()
+    } else {
+        todo!()
+    };
+
+    dbg!(toks);
+    panic!("End of end with end");
 
     // Maybe bind is now gotten from module resolution
 

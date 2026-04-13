@@ -1,6 +1,6 @@
 pub mod builtins;
-pub mod config_loader;
 pub mod id_types;
+pub mod inner_args;
 pub mod intern;
 pub mod keywords;
 pub mod lang_config;
@@ -18,6 +18,7 @@ pub mod tests {
     pub fn primitives_test() {
         let interner = Intern::init();
 
+        // Checking if array itself aligns with the enums
         // Types
         assert_eq!("i8", interner.search(Keyword::I8 as usize));
         assert_eq!("u8", interner.search(Keyword::U8 as usize));
@@ -65,7 +66,9 @@ pub mod tests {
         assert_eq!("override", interner.search(Keyword::Override as usize));
         // Other keywords
         assert_eq!("as", interner.search(Keyword::As as usize));
-        // Keywords & Funcs
+        // Predicates & Funcs
+        assert_eq!("true", interner.search(Keyword::True as usize));
+        assert_eq!("false", interner.search(Keyword::False as usize));
         assert_eq!("IsEmpty", interner.search(Keyword::IsEmpty as usize));
         assert_eq!(
             "IsWhitespace",
@@ -102,6 +105,6 @@ pub mod tests {
         );
 
         // This is to force me to check even if it was done correctly
-        assert_eq!(keywords::KEYWORDS_ARRAY.len(), 47);
+        assert_eq!(keywords::KEYWORDS_ARRAY.len(), 49);
     }
 }

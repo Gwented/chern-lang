@@ -12,14 +12,14 @@ use crate::parser::ast::{
 use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::Context;
 use crate::parser::parser_state::ParserState;
-use crate::types::symbols::SpannedToken;
-use crate::types::token::{Token, TokenKind};
-use chern_core::id_types::{InnerArgs, NameId, SpannedInnerArgs};
+use crate::token::{SpannedToken, Token, TokenKind};
+use chern_core::id_types::NameId;
+use chern_core::inner_args::{InnerArgs, SpannedInnerArgs};
 use chern_core::intern::Intern;
 use chern_core::keywords::{self, Keyword};
+use common::chern_settings::ChernSettings;
 use common::core_error::ScriptError;
 use common::fmter::Formatted;
-use common::metadata::ChernSettings;
 use common::span::Span;
 
 // May be lower
@@ -124,7 +124,7 @@ pub fn parse(
                     if !is_priv {
                         report_export(
                             &mut ctx,
-                            Formatted::Var,
+                            Formatted::SectVar,
                             Branch::Section(SectionBranch::Searching),
                             interner,
                         );
@@ -172,7 +172,7 @@ pub fn parse(
                     if !is_priv {
                         report_export(
                             &mut ctx,
-                            Formatted::Nest,
+                            Formatted::SectNest,
                             Branch::Section(SectionBranch::Searching),
                             interner,
                         );
@@ -219,7 +219,7 @@ pub fn parse(
                 }
                 id if id == Keyword::Complex as u32 => {
                     if !is_priv {
-                        report_export(&mut ctx, Formatted::Nest, Branch::Searching, interner);
+                        report_export(&mut ctx, Formatted::SectNest, Branch::Searching, interner);
                     }
 
                     todo!("Complex not done");
@@ -257,7 +257,12 @@ pub fn parse(
                 }
                 id if id == Keyword::Override as u32 => {
                     if !is_priv {
-                        report_export(&mut ctx, Formatted::Complex, Branch::Searching, interner);
+                        report_export(
+                            &mut ctx,
+                            Formatted::SectComplex,
+                            Branch::Searching,
+                            interner,
+                        );
                     }
 
                     ctx.advance_tok();

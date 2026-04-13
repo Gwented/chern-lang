@@ -4,7 +4,7 @@ use chern_core::{
     id_types::{AstId, ModuleId, NameId, SymbolId, TypeId, ValueId},
     intern::Intern,
 };
-use common::{metadata::ChernSettings, reporter::diagnostic::Diagnostic};
+use common::{chern_settings::ChernSettings, reporter::diagnostic::Diagnostic};
 
 use crate::{
     modules::Program,

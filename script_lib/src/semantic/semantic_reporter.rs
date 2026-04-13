@@ -1,7 +1,7 @@
 use chern_core::intern::Intern;
 use common::{
+    chern_settings::ChernSettings,
     fmter::Formattable,
-    metadata::ChernSettings,
     reporter::{
         self,
         diagnostic::{Area, Diagnostic},

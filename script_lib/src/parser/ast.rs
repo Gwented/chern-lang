@@ -1,11 +1,14 @@
-use chern_core::id_types::{AstId, NameId, PathId, SpannedInnerArgs};
+use chern_core::{
+    id_types::{AstId, NameId, PathId},
+    inner_args::SpannedInnerArgs,
+};
 //NOTE: MAY MAKE EXPRESSION THAT HELPS RESOLVE SEMANTIC TYPES MORE CLEANLY
 use common::{
     fmter::{Formattable, Formatted},
     span::Span,
 };
 
-use crate::types::token::Notation;
+use crate::token::Notation;
 
 #[derive(Debug)]
 pub struct AstInfo {

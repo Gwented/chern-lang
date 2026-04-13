@@ -12,8 +12,8 @@ pub const DEFINITION_SIZE: usize = 4;
 // Ensure ranges and all keyword functions are adjusted
 // Ensure tests are aligned
 
-pub static KEYWORDS_ARRAY: [&str; 47] = [
-    // primitives
+pub static KEYWORDS_ARRAY: [&str; 49] = [
+    // types
     "i8", // 0
     "u8",
     "i16",
@@ -64,14 +64,16 @@ pub static KEYWORDS_ARRAY: [&str; 47] = [
     // Special kiwis
     "as",
     // Predicate keywords
-    "IsEmpty", // 40
+    "true", // 40
+    "false",
+    "IsEmpty", // 42
     "IsWhitespace",
-    // Predicates (Function)
-    "Range", // 42
+    // Functions
+    "Range", // 44
     "StartsW",
-    "EndsW", // 44
+    "EndsW", // 46
     "Contains",
-    "Equals", // 46
+    "Equals", // 48
 ];
 // "Nat" // 37
 // "Real" // 38
@@ -123,13 +125,15 @@ pub enum Keyword {
     Complex = 37,
     Override = 38,
     As = 39,
-    IsEmpty = 40,
-    IsWhitespace = 41,
-    Range = 42,
-    StartsW = 43,
-    EndsW = 44,
-    Contains = 45,
-    Equals = 46,
+    True = 40,
+    False = 41,
+    IsEmpty = 42,
+    IsWhitespace = 43,
+    Range = 44,
+    StartsW = 45,
+    EndsW = 46,
+    Contains = 47,
+    Equals = 48,
 }
 
 impl Formattable for Keyword {
@@ -170,10 +174,12 @@ impl Formattable for Keyword {
             Keyword::Alias => Formatted::Alias,
             Keyword::Const => Formatted::Const,
             Keyword::Change => Formatted::Change,
-            Keyword::Var => Formatted::Var,
-            Keyword::Nest => Formatted::Nest,
-            Keyword::Complex => Formatted::Complex,
-            Keyword::Override => Formatted::Override,
+            Keyword::Var => Formatted::SectVar,
+            Keyword::Nest => Formatted::SectNest,
+            Keyword::Complex => Formatted::SectComplex,
+            Keyword::Override => Formatted::SectOverride,
+            Keyword::True => Formatted::True,
+            Keyword::False => Formatted::False,
             Keyword::IsEmpty => Formatted::IsEmpty,
             Keyword::IsWhitespace => Formatted::IsWhitespace,
             Keyword::Range => Formatted::FuncRange,
@@ -231,13 +237,15 @@ impl Keyword {
             37 => Some(Keyword::Complex),
             38 => Some(Keyword::Override),
             39 => Some(Keyword::As),
-            40 => Some(Keyword::IsEmpty),
-            41 => Some(Keyword::IsWhitespace),
-            42 => Some(Keyword::Range),
-            43 => Some(Keyword::StartsW),
-            44 => Some(Keyword::EndsW),
-            45 => Some(Keyword::Contains),
-            46 => Some(Keyword::Equals),
+            40 => Some(Keyword::True),
+            41 => Some(Keyword::False),
+            42 => Some(Keyword::IsEmpty),
+            43 => Some(Keyword::IsWhitespace),
+            44 => Some(Keyword::Range),
+            45 => Some(Keyword::StartsW),
+            46 => Some(Keyword::EndsW),
+            47 => Some(Keyword::Contains),
+            48 => Some(Keyword::Equals),
             _ => None,
         }
     }
@@ -293,8 +301,9 @@ const STMT_END: u32 = 34;
 pub const SECT_START: u32 = 35;
 pub const SECT_END: u32 = 38;
 
+//TODO: Suspicious classification
 const PREDICATE_START: u32 = 40;
-const PREDICATE_END: u32 = 46;
+const PREDICATE_END: u32 = 48;
 
 //WARN: The amount of casting here is painful. SEVERELY painful.
 pub fn is_type(id: u32) -> bool {

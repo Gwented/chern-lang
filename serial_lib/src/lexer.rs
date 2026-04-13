@@ -3,6 +3,7 @@ use common::span::Span;
 
 use crate::token::{SpannedToken, Token};
 
+#[derive(Debug)]
 pub struct Lexer<'a> {
     src_bytes: &'a [u8],
     pos: usize,

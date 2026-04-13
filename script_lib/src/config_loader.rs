@@ -4,14 +4,10 @@ use std::{
     path::Path,
 };
 
-use common::{
-    core_error::ConfigLoadError,
-    metadata::{ChernSettings, ModuleMetadata},
-    reporter,
-    span::Span,
-};
+use chern_core::{keywords::DEFINITION_SIZE, quote_model};
+use common::{chern_settings::ChernSettings, core_error::ConfigLoadError, reporter, span::Span};
 
-use crate::{keywords::DEFINITION_SIZE, quote_model};
+use crate::modules::ModuleMetadata;
 
 const READ_LIMIT_OFFSET: usize = 500;
 

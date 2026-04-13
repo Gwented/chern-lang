@@ -1,6 +1,6 @@
 use common::{
+    chern_settings::ChernSettings,
     core_error::{ConfigLoadError, CoreError, ScriptError},
-    metadata::ChernSettings,
 };
 use interpreter_lib::interpreter;
 

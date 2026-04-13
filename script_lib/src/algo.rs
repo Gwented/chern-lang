@@ -22,7 +22,7 @@ pub fn fuzzy_match(given: &[u8], target: FuzzyMatch) -> Option<&str> {
             given,
             // TODO: Please rename this
             // Please
-            &chern_core::id_types::ARGS_ARRAY,
+            &chern_core::inner_args::ARGS_ARRAY,
         ),
     }
 }

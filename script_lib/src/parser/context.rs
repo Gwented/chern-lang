@@ -3,8 +3,8 @@ use chern_core::{
     keywords::{self, Keyword},
 };
 use common::{
+    chern_settings::ChernSettings,
     fmter::Formattable,
-    metadata::ChernSettings,
     reporter::{
         self,
         diagnostic::{Area, Diagnostic},
@@ -16,10 +16,7 @@ use crate::{
     algo,
     modules::Module,
     parser::{NeutralBranch, SectionBranch, branch::Branch},
-    types::{
-        symbols::SpannedToken,
-        token::{self, Token, TokenKind},
-    },
+    token::{self, SpannedToken, Token, TokenKind},
 };
 
 //NOTE: C_ == current. A_ == ahead

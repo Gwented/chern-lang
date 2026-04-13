@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use common::span::Span;
+
 use crate::parser::ast::BinaryOp;
 
 #[repr(u8)]
@@ -11,6 +13,12 @@ pub(crate) enum Notation {
     Decimal = 10,
     Octal = 8,
     Hex = 16,
+}
+
+#[derive(Debug, Clone)]
+pub struct SpannedToken {
+    pub(crate) tok: Token,
+    pub span: Span,
 }
 
 // WHAT

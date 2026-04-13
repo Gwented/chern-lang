@@ -1,10 +1,7 @@
-use chern_core::{
-    builtins::BuiltinType,
-    id_types::{AstId, ModuleId, NameId, TypeId},
-    intern::Intern,
-    keywords::Keyword,
-};
-use common::{metadata::ChernSettings, reporter::diagnostic::Diagnostic, span::Span};
+use chern_core::id_types::{AstId, ModuleId, NameId, TypeId};
+use chern_core::{builtins::BuiltinType, intern::Intern, keywords::Keyword};
+use common::chern_settings::ChernSettings;
+use common::{reporter::diagnostic::Diagnostic, span::Span};
 
 use crate::{
     modules::Program,

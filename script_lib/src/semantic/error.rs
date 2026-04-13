@@ -1,9 +1,9 @@
-use chern_core::id_types::InnerArgs;
+use chern_core::inner_args::InnerArgs;
 use common::{fmter::Formatted, span::Span};
 
 use crate::{
+    conditions::Cond,
     semantic::{constraints::ArgConstraint, representation::FuncKind},
-    types::symbols::Cond,
 };
 
 pub(super) enum SemanticError {

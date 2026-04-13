@@ -2,24 +2,27 @@
 mod algo;
 pub mod lexer;
 // Should not be pub
-mod evaluator;
+pub mod conditions;
+pub mod config_loader;
+pub mod hir;
 mod iyo;
 pub mod linter;
 pub mod modules;
 pub mod parser;
 pub mod semantic;
-mod types;
+mod token;
 
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
-    use chern_core::{config_loader::ChernConfigLoader, intern::Intern};
-    use common::metadata::ChernSettings;
+    use chern_core::intern::Intern;
+    use common::chern_settings::ChernSettings;
 
     use crate::{
+        config_loader::ChernConfigLoader,
         lexer::Lexer,
-        types::token::{Notation, Token},
+        token::{Notation, Token},
     };
 
     #[test]

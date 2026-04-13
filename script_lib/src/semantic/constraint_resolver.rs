@@ -1,19 +1,20 @@
 use chern_core::{
     builtins::BuiltinType,
-    id_types::{AstId, InnerArgs, ModuleId, NameId, SpannedInnerArgs, SymbolId, TypeId, ValueId},
+    id_types::{AstId, ModuleId, NameId, SymbolId, TypeId, ValueId},
+    inner_args::{InnerArgs, SpannedInnerArgs},
     intern::Intern,
     keywords::Keyword,
     values::Value,
 };
 use common::{
+    chern_settings::ChernSettings,
     fmter::{Formattable, Formatted},
-    metadata::ChernSettings,
     reporter::diagnostic::Diagnostic,
     span::Span,
 };
 
 use crate::{
-    evaluator,
+    conditions::Cond,
     modules::{Module, Program},
     parser::ast::{
         AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, BinaryOp, Expr,
@@ -22,10 +23,10 @@ use crate::{
     semantic::{
         constraints::ArgConstraint,
         error::SemanticError,
+        evaluator,
         representation::{FuncArgsRepre, FuncKind, FuncRepre, Symbol, SymbolInfo, Type},
         semantic_reporter::SemanticReporter,
     },
-    types::symbols::Cond,
 };
 
 pub struct ConstraintResolver<'a> {
@@ -711,11 +712,11 @@ impl ConstraintResolver<'_> {
 
                 let res = match op {
                     BinaryOp::Add => {
-                        if evaluator::is_compatible(&lhs_val, *op, &rhs_val) {
+                        if !evaluator::is_compatible(&lhs_val, *op, &rhs_val) {
                             panic!("hallo");
                         }
 
-                        self.apply_binary_op(&lhs_val, *op, &rhs_val)?;
+                        evaluator::apply_binary_op(&lhs_val, *op, &rhs_val)?;
 
                         todo!();
                     }
@@ -746,32 +747,6 @@ impl ConstraintResolver<'_> {
     }
 
     //TEST:
-    fn apply_binary_op(
-        &self,
-        lhs: &Value,
-        op: BinaryOp,
-        rhs: &Value,
-    ) -> Result<Value, SemanticError> {
-        match op {
-            BinaryOp::Add => {
-                todo!();
-            }
-            BinaryOp::Sub => todo!(),
-            BinaryOp::Mult => todo!(),
-            BinaryOp::Divide => todo!(),
-            BinaryOp::Greater => todo!(),
-            BinaryOp::Less => todo!(),
-            BinaryOp::GreaterOrEq => todo!(),
-            BinaryOp::LessOrEq => todo!(),
-            BinaryOp::Mod => todo!(),
-            BinaryOp::And => todo!(),
-            BinaryOp::Or => todo!(),
-            BinaryOp::EqTo => todo!(),
-            BinaryOp::NotEq => todo!(),
-        }
-
-        todo!();
-    }
 
     /// Returns a success if all conditions align with the type of the given `type_id`
     /// Takes in the type id that is being checked for validity, the ast id

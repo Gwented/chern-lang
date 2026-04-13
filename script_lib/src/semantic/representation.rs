@@ -3,14 +3,15 @@ use std::{collections::HashMap, fmt::Display};
 
 use chern_core::{
     builtins::{BuiltinType, BuiltinTypeKind},
-    id_types::{AstId, InnerArgs, ModuleId, NameId, SymbolId, TypeId, ValueId},
+    id_types::{AstId, ModuleId, NameId, SymbolId, TypeId, ValueId},
+    inner_args::InnerArgs,
 };
 use common::{
     fmter::{Formattable, Formatted},
     span::Span,
 };
 
-use crate::{semantic::constraints::ArgConstraint, types::symbols::Cond};
+use crate::{conditions::Cond, semantic::constraints::ArgConstraint};
 
 // What is a drop? I am new to thinking i have never thought before what is RAII
 // is that a gui framework

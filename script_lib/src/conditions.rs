@@ -1,16 +1,7 @@
 use chern_core::{builtins::BuiltinTypeKind, id_types::SymbolId, keywords::Keyword};
-use common::{
-    fmter::{Formattable, Formatted},
-    span::Span,
-};
+use common::fmter::{Formattable, Formatted};
 
-use crate::{semantic::representation::FuncKind, types::token::Token};
-
-#[derive(Debug, Clone)]
-pub struct SpannedToken {
-    pub(crate) tok: Token,
-    pub span: Span,
-}
+use crate::semantic::representation::FuncKind;
 
 // Spanned cond can't exist because conds are expressions
 #[derive(Debug, Clone)]

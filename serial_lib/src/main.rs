@@ -1,7 +1,7 @@
 use std::{fs, path::PathBuf};
 
-use chern_core::config_loader::ChernConfigLoader;
-use common::metadata::ChernSettings;
+use common::chern_settings::ChernSettings;
+use script_lib::config_loader::ChernConfigLoader;
 use serial_lib::lexer::Lexer;
 
 // This would be in succession to script
