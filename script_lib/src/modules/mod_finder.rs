@@ -105,9 +105,12 @@ impl ModuleFinder<'_> {
 
         // - 1 to include quotes since that happens in the lexer. No other reason.
 
-        //FIX:
+        //FIXME:
         let os_str = OsStr::from_bytes(&self.src_bytes[start..end]);
-        let import_path = PathBuf::from(os_str);
+        let import_path = match PathBuf::from(os_str).canonicalize() {
+            Ok(p) => p,
+            Err(e) => panic!("{:?}", e),
+        };
 
         // No control flow
         let file_name = match import_path.file_prefix().map(|n| n.to_str()) {

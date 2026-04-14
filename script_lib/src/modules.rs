@@ -7,11 +7,8 @@ use std::{
 pub mod mod_finder;
 
 use chern_core::{
-    builtins::BuiltinType,
     id_types::{ModuleId, NameId, PathId, SymbolId},
     intern::Intern,
-    keywords,
-    values::Value,
 };
 use common::{chern_settings::ChernSettings, core_error::ConfigLoadError, reporter};
 
@@ -20,151 +17,12 @@ use crate::{
     iyo::file_ops,
     modules::mod_finder::ModuleFinder,
     parser::ast::{Bind, Import},
-    semantic::representation::{
-        ConstRepre, EnumRepre, FuncRepre, StructRepre, Symbol, SymbolInfo, Table, Type,
-        TypeDefRepre, TypeInfo,
+    script_compiler::ScriptCompiler,
+    semantic::{
+        representation::Table,
+        scopes::{Scope, ScopeManager},
     },
 };
-
-pub struct Program {
-    pub bind: Option<Bind>,
-    pub mod_map: HashMap<NameId, ModuleId>,
-    pub mods: Vec<Module>,
-    pub types: Vec<TypeInfo>,
-    pub values: Vec<Value>,
-    pub(crate) symbols: HashMap<SymbolId, SymbolInfo>,
-}
-
-impl Program {
-    pub fn new(
-        bind: Option<Bind>,
-        mod_map: HashMap<NameId, ModuleId>,
-        mods: Vec<Module>,
-    ) -> Program {
-        let mut types: Vec<TypeInfo> = Vec::new();
-
-        // Pre-loading keywords
-        // If this fails something was messed up within keywords itself
-        for i in 0..keywords::TYPE_END - 4 {
-            let ty = BuiltinType::try_from_id(i as u32).expect("Builtin type not updated");
-            types.push(TypeInfo::new(Type::BuiltinType(ty), None));
-        }
-
-        // Pre-loading Null
-        let mut values: Vec<Value> = Vec::new();
-        values.push(Value::Unknown);
-
-        Program {
-            bind,
-            mod_map,
-            mods,
-            types,
-            values,
-            symbols: HashMap::new(),
-        }
-    }
-
-    // Is there a reason to return err?
-    pub(super) fn get_typedef(&self, sym_id: SymbolId) -> &TypeDefRepre {
-        match &self.symbols[&sym_id] {
-            sym_info => match &sym_info.symbol {
-                Symbol::TypeDef(type_def_repre) => type_def_repre,
-                _ => unreachable!(),
-            },
-        }
-    }
-
-    pub(super) fn get_typedef_mut(&mut self, sym_id: SymbolId) -> &mut TypeDefRepre {
-        match self.symbols.get_mut(&sym_id) {
-            Some(sym_info) => match &mut sym_info.symbol {
-                Symbol::TypeDef(type_def_repre) => type_def_repre,
-                _ => unreachable!(),
-            },
-            _ => unreachable!(),
-        }
-    }
-
-    pub(super) fn get_struct(&self, sym_id: SymbolId) -> &StructRepre {
-        match self.symbols.get(&sym_id) {
-            Some(sym_info) => match &sym_info.symbol {
-                Symbol::Struct(struct_repre) => struct_repre,
-                _ => unreachable!(),
-            },
-            None => unreachable!(),
-        }
-    }
-
-    pub(super) fn get_struct_mut(&mut self, sym_id: SymbolId) -> &mut StructRepre {
-        match self.symbols.get_mut(&sym_id) {
-            Some(sym_info) => match &mut sym_info.symbol {
-                Symbol::Struct(struct_repre) => struct_repre,
-                _ => unreachable!(),
-            },
-            None => unreachable!(),
-        }
-    }
-
-    pub(super) fn get_func(&self, sym_id: SymbolId) -> &FuncRepre {
-        match &self.symbols[&sym_id] {
-            sym_info => match &sym_info.symbol {
-                Symbol::Func(func_repre) => func_repre,
-                _ => unreachable!(),
-            },
-        }
-    }
-
-    pub(super) fn get_func_mut(&mut self, sym_id: SymbolId) -> &mut FuncRepre {
-        match self.symbols.get_mut(&sym_id) {
-            Some(sym_info) => match &mut sym_info.symbol {
-                Symbol::Func(func_repre) => func_repre,
-                _ => unreachable!(),
-            },
-            None => unreachable!(),
-        }
-    }
-
-    pub(super) fn get_enum(&self, sym_id: SymbolId) -> &EnumRepre {
-        match &self.symbols[&sym_id] {
-            sym_info => match &sym_info.symbol {
-                Symbol::Enum(enum_repre) => enum_repre,
-                _ => unreachable!(),
-            },
-        }
-    }
-
-    pub(super) fn get_enum_mut(&mut self, sym_id: SymbolId) -> &mut EnumRepre {
-        match self.symbols.get_mut(&sym_id) {
-            Some(sym_info) => match &mut sym_info.symbol {
-                Symbol::Enum(enum_repre) => enum_repre,
-                _ => unreachable!(),
-            },
-            None => unreachable!(),
-        }
-    }
-
-    pub(super) fn get_const(&self, sym_id: SymbolId) -> &ConstRepre {
-        match &self.symbols[&sym_id] {
-            sym_info => match &sym_info.symbol {
-                Symbol::Const(const_repre) => const_repre,
-                _ => unreachable!(),
-            },
-        }
-    }
-
-    pub(super) fn get_const_mut(&mut self, sym_id: SymbolId) -> &mut ConstRepre {
-        match self.symbols.get_mut(&sym_id) {
-            Some(sym_info) => match &mut sym_info.symbol {
-                Symbol::Const(const_repre) => const_repre,
-                _ => unreachable!(),
-            },
-            None => unreachable!(),
-        }
-    }
-
-    pub(super) fn get_owner(&self, sym_id: SymbolId) -> ModuleId {
-        self.symbols[&sym_id].owner
-    }
-}
 
 // What about OUR name?
 // What?
@@ -179,8 +37,8 @@ pub struct Module {
     pub mod_id: ModuleId,
     /// Imports found in the module
     pub imports: Vec<Import>,
+    pub(crate) scope_manager: ScopeManager,
     pub metadata: ModuleMetadata,
-    pub table: Table,
 }
 
 impl Module {
@@ -196,15 +54,14 @@ impl Module {
             path_id,
             mod_id,
             imports,
+            scope_manager: ScopeManager::new(),
             metadata,
-            table: Table::new(),
         }
     }
 }
 
 #[derive(Debug)]
 pub struct ModuleMetadata {
-    // Should maybe be path id
     /// Bytes from chern config file
     pub src_bytes: Vec<u8>,
     // / Amount of \n within config file so binary search can be done by error reporter
@@ -235,10 +92,11 @@ impl ModuleMetadata {
 /// Takes in a path to a `chern` config file, then recursively resolved all imports associated with
 /// the path given in separate modules.
 pub fn extract_modules(
+    // Does this get canonicalized here or earlier..
     path: &Path,
     settings: &ChernSettings,
     interner: &mut Intern,
-) -> Result<Program, ConfigLoadError> {
+) -> Result<ScriptCompiler, ConfigLoadError> {
     // Maybe the cli should still do something about this since if the first path given
     // isn't valid, it WOULD warrent a basic error
     let src = match file_ops::fopen(path) {
@@ -318,9 +176,9 @@ pub fn extract_modules(
     // }
     // panic!();
 
-    let program = Program::new(bind, mod_map, all_mods);
+    let compiler = ScriptCompiler::new(bind, mod_map, all_mods);
 
-    Ok(program)
+    Ok(compiler)
 }
 
 /// This function recursively resolves each import after being given a root module with imports to go off of.

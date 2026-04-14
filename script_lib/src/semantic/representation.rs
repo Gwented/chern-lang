@@ -70,6 +70,7 @@ pub(crate) enum Symbol {
 
 #[derive(Debug)]
 pub struct Table {
+    // Type specific tables
     pub(crate) name_ids: HashMap<AstId, NameId>,
     // Can still change some to vec maybe
     pub(crate) sym_ids: HashMap<AstId, SymbolId>,
@@ -81,16 +82,6 @@ impl Table {
             name_ids: HashMap::new(),
             sym_ids: HashMap::new(),
         }
-    }
-
-    pub fn get_ast_id(&self, name_id: NameId) -> Option<AstId> {
-        for (current_ast_id, current_name_id) in &self.name_ids {
-            if *current_name_id == name_id {
-                return Some(*current_ast_id);
-            }
-        }
-
-        None
     }
 }
 

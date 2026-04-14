@@ -1,4 +1,2 @@
-import "../chrn_tests/main.chrn"
-
-// export const W_TOK = 1.5
-// export const W_POS = 0.7
+export TOKEN_SELLER_MSG = "TOKEN SELLER! GIVE ME YOUR STRONGEST TOKENS!"
+export STRONGEST_TOKENS = 0e-5

@@ -7,10 +7,10 @@ use chern_core::{
 use common::{chern_settings::ChernSettings, reporter::diagnostic::Diagnostic};
 
 use crate::{
-    modules::Program,
     parser::ast::{
         AbstractAlias, AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Item,
     },
+    script_compiler::ScriptCompiler,
     semantic::{
         representation::{
             AliasRepre, ConstRepre, EnumRepre, StructRepre, Symbol, SymbolInfo, Type, TypeDefRepre,
@@ -20,12 +20,12 @@ use crate::{
     },
 };
 
+use super::scopes::ScopeType;
+
 pub struct NamespaceResolver<'a> {
     ast_info: &'a AstInfo,
     interner: &'a Intern,
-    //WARN: Horrors
-    program: &'a mut Program,
-    // HELP
+    compiler: &'a mut ScriptCompiler,
     current_mod: ModuleId,
     reporter: SemanticReporter<'a>,
     //NOTE: May handle this differently but ok for now
@@ -37,20 +37,18 @@ impl NamespaceResolver<'_> {
         ast_info: &'a AstInfo,
         interner: &'a Intern,
         current_mod: ModuleId,
-        program: &'a mut Program,
+        compiler: &'a mut ScriptCompiler,
     ) -> NamespaceResolver<'a> {
         NamespaceResolver {
             ast_info,
             interner,
-            program,
+            compiler,
             current_mod,
             reporter: SemanticReporter::new(settings, interner),
             //TODO: This will be different
         }
     }
 
-    //FIXME: USE A SINGULAR VECTOR INDEXED BY NAMEID LATER OVER A HASHMAP NOT NOW PLEASE NOT NOW
-    // Ok. But when. I don't know.
     //TODO: Check structures of data for same name symbols
     pub fn resolve(&mut self) -> Result<(), Vec<Diagnostic>> {
         // Registering namespaces
@@ -67,6 +65,7 @@ impl NamespaceResolver<'_> {
             }
         }
 
+        //FIX: This needs scoping
         // Collecting possible same symbol errors
         self.check_duplicates();
 
@@ -86,31 +85,38 @@ impl NamespaceResolver<'_> {
     /// Registers the unfinished representation with it's symbol id so that it can still be
     /// referenced
     fn register_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) {
-        let module = &mut self.program.mods[self.current_mod.id];
-        module.table.name_ids.insert(ast_id, abs_typedef.name_id);
+        // This will all likely fail eventually
+        let module = &mut self.compiler.mods[self.current_mod.id];
+        let scope_id = module.scope_manager.push_scope(ScopeType::Var);
+        let table = &mut module.scope_manager.get_scope_mut(scope_id).table;
 
-        let sym_id = SymbolId::new(self.program.symbols.len() as u32);
-        module.table.sym_ids.insert(ast_id, sym_id);
+        table.name_ids.insert(ast_id, abs_typedef.name_id);
+
+        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+        table.sym_ids.insert(ast_id, sym_id);
 
         // Promising a type will exist in the given index
-        let type_id = TypeId::new(self.program.types.len() as u32);
+        let type_id = TypeId::new(self.compiler.types.len() as u32);
         let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
-        self.program.types.push(ty_info);
+        self.compiler.types.push(ty_info);
 
         let type_def_repre = TypeDefRepre::new(abs_typedef.name_id, type_id, sym_id, ast_id);
 
         let sym_info = SymbolInfo::new(Symbol::TypeDef(type_def_repre), true, self.current_mod);
-        self.program.symbols.insert(sym_id, sym_info);
+        self.compiler.symbols.insert(sym_id, sym_info);
     }
 
     fn register_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) {
-        let module = &mut self.program.mods[self.current_mod.id];
-        module.table.name_ids.insert(ast_id, abs_struct.name_id);
+        let module = &mut self.compiler.mods[self.current_mod.id];
+        let scope_id = module.scope_manager.push_scope(ScopeType::Nest);
+        let table = &mut module.scope_manager.get_scope_mut(scope_id).table;
 
-        let sym_id = SymbolId::new(self.program.symbols.len() as u32);
-        module.table.sym_ids.insert(ast_id, sym_id);
+        table.name_ids.insert(ast_id, abs_struct.name_id);
 
-        let type_id = TypeId::new(self.program.types.len() as u32);
+        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+        table.sym_ids.insert(ast_id, sym_id);
+
+        let type_id = TypeId::new(self.compiler.types.len() as u32);
 
         let struct_repre =
             StructRepre::new(abs_struct.name_id, sym_id, ast_id, type_id, Vec::new());
@@ -121,41 +127,47 @@ impl NamespaceResolver<'_> {
             self.current_mod,
         );
 
-        self.program.symbols.insert(sym_id, sym_info);
+        self.compiler.symbols.insert(sym_id, sym_info);
 
         let ty_info = TypeInfo::new(Type::Struct(sym_id), Some(self.current_mod));
-        self.program.types.push(ty_info);
+        self.compiler.types.push(ty_info);
     }
 
     fn register_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) {
-        let module = &mut self.program.mods[self.current_mod.id];
-        module.table.name_ids.insert(ast_id, abs_enum.name_id);
+        let module = &mut self.compiler.mods[self.current_mod.id];
+        let scope_id = module.scope_manager.push_scope(ScopeType::Nest);
+        let table = &mut module.scope_manager.get_scope_mut(scope_id).table;
 
-        let sym_id = SymbolId::new(self.program.symbols.len() as u32);
-        let type_id = TypeId::new(self.program.types.len() as u32);
+        table.name_ids.insert(ast_id, abs_enum.name_id);
 
-        module.table.sym_ids.insert(ast_id, sym_id);
+        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+        let type_id = TypeId::new(self.compiler.types.len() as u32);
+
+        table.sym_ids.insert(ast_id, sym_id);
 
         let enum_repre = EnumRepre::new(abs_enum.name_id, sym_id, ast_id, type_id, Vec::new());
 
         let sym_info =
             SymbolInfo::new(Symbol::Enum(enum_repre), abs_enum.is_priv, self.current_mod);
-        self.program.symbols.insert(sym_id, sym_info);
+        self.compiler.symbols.insert(sym_id, sym_info);
 
         let ty_info = TypeInfo::new(Type::Enum(sym_id), Some(self.current_mod));
-        self.program.types.push(ty_info);
+        self.compiler.types.push(ty_info);
     }
 
     fn register_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) {
-        let module = &mut self.program.mods[self.current_mod.id];
-        module.table.name_ids.insert(ast_id, abs_alias.name_id);
+        let module = &mut self.compiler.mods[self.current_mod.id];
+        let scope_id = module.scope_manager.push_scope(ScopeType::Neutral);
+        let table = &mut module.scope_manager.get_scope_mut(scope_id).table;
 
-        let sym_id = SymbolId::new(self.program.symbols.len() as u32);
-        module.table.sym_ids.insert(ast_id, sym_id);
+        table.name_ids.insert(ast_id, abs_alias.name_id);
 
-        let type_id = TypeId::new(self.program.types.len() as u32);
+        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+        table.sym_ids.insert(ast_id, sym_id);
+
+        let type_id = TypeId::new(self.compiler.types.len() as u32);
         let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
-        self.program.types.push(ty_info);
+        self.compiler.types.push(ty_info);
 
         let alias_repre = AliasRepre::new(
             abs_alias.name_id,
@@ -173,23 +185,26 @@ impl NamespaceResolver<'_> {
             self.current_mod,
         );
 
-        self.program.symbols.insert(sym_id, sym_info);
+        self.compiler.symbols.insert(sym_id, sym_info);
 
         let ty_info = TypeInfo::new(Type::Alias(sym_id), Some(self.current_mod));
-        self.program.types.push(ty_info);
+        self.compiler.types.push(ty_info);
     }
 
     //WARN: IS THIS RIGHT?
     fn register_const(&mut self, abs_const: &AbstractConst, ast_id: AstId) {
-        let module = &mut self.program.mods[self.current_mod.id];
-        module.table.name_ids.insert(ast_id, abs_const.name_id);
+        let module = &mut self.compiler.mods[self.current_mod.id];
+        let scope_id = module.scope_manager.push_scope(ScopeType::Neutral);
+        let table = &mut module.scope_manager.get_scope_mut(scope_id).table;
+
+        table.name_ids.insert(ast_id, abs_const.name_id);
 
         // let type_id = TypeId::new(self.program.types.len() as u32);
         // let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
         // self.program.types.push(ty_info);
 
-        let sym_id = SymbolId::new(self.program.symbols.len() as u32);
-        module.table.sym_ids.insert(ast_id, sym_id);
+        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+        table.sym_ids.insert(ast_id, sym_id);
 
         let const_repre = ConstRepre::new(abs_const.name_id, sym_id, ast_id, ValueId::new(0));
 
@@ -199,55 +214,68 @@ impl NamespaceResolver<'_> {
             self.current_mod,
         );
 
-        self.program.symbols.insert(sym_id, sym_info);
+        self.compiler.symbols.insert(sym_id, sym_info);
 
         let ty_info = TypeInfo::new(Type::Const(sym_id), Some(self.current_mod));
-        self.program.types.push(ty_info);
+        self.compiler.types.push(ty_info);
     }
 
+    // Cannot check for this since the type is not known
     /// Checks registered namespace for duplicates and collects errors if any are found
     fn check_duplicates(&mut self) {
         // Solely a HashMap for spanning
         let mut seen: HashMap<NameId, AstId> = HashMap::new();
 
-        let module = &self.program.mods[self.current_mod.id];
-        for (ast_id, name_id) in &module.table.name_ids {
-            // Why is it not true if it exists false otherwise...seems backwards
-            let ast_opt = seen.insert(*name_id, *ast_id);
+        //NOTE: Suspicious
+        let module = &self.compiler.mods[self.current_mod.id];
 
-            if let Some(orig_ast_id) = ast_opt {
-                let item = &self.ast_info.items[orig_ast_id.id as usize];
-                let orig_span = match item {
-                    Item::Var(abs_typedef) => &abs_typedef.name_span,
-                    Item::Struct(abs_struct) => &abs_struct.name_span,
-                    Item::Enum(abs_enum) => &abs_enum.name_span,
-                    Item::Alias(abs_alias) => &abs_alias.name_span,
-                    Item::Const(abs_const) => &abs_const.name_span,
+        // Searching if there are any duplicates with respect to the scope
+        for scope in &module.scope_manager.scopes {
+            for (ast_id, name_id) in &scope.table.name_ids {
+                // Why is it not true if it exists false otherwise...seems backwards
+                let ast_opt = seen.insert(*name_id, *ast_id);
+
+                // If the current name id exists in "seen"
+                if let Some(orig_ast_id) = ast_opt {
+                    dbg!("Ouch");
+                    let item = &self.ast_info.items[orig_ast_id.id as usize];
+                    let orig_span = match item {
+                        Item::Var(abs_typedef) => &abs_typedef.name_span,
+                        Item::Struct(abs_struct) => &abs_struct.name_span,
+                        Item::Enum(abs_enum) => &abs_enum.name_span,
+                        Item::Alias(abs_alias) => &abs_alias.name_span,
+                        Item::Const(abs_const) => &abs_const.name_span,
+                    }
+                    .clone();
+
+                    let dup_span = match &self.ast_info.items[ast_id.id as usize] {
+                        Item::Var(abs_typedef) => &abs_typedef.name_span,
+                        Item::Struct(abs_struct) => &abs_struct.name_span,
+                        Item::Enum(abs_enum) => &abs_enum.name_span,
+                        Item::Alias(abs_alias) => &abs_alias.name_span,
+                        Item::Const(abs_const) => &abs_const.name_span,
+                    }
+                    .clone();
+
+                    let dup_name = self.interner.search(name_id.id as usize);
+
+                    let msg = format!(
+                        "Found more than one symbol with identifier \"{dup_name}\" in the section `{}`",
+                        scope.scope_type
+                    );
+
+                    self.reporter.report_spanned(
+                        &msg,
+                        None,
+                        &[orig_span, dup_span],
+                        &self.compiler.mods[self.current_mod.id],
+                    );
                 }
-                .clone();
-
-                let dup_span = match &self.ast_info.items[ast_id.id as usize] {
-                    Item::Var(abs_typedef) => &abs_typedef.name_span,
-                    Item::Struct(abs_struct) => &abs_struct.name_span,
-                    Item::Enum(abs_enum) => &abs_enum.name_span,
-                    Item::Alias(abs_alias) => &abs_alias.name_span,
-                    Item::Const(abs_const) => &abs_const.name_span,
-                }
-                .clone();
-
-                let dup_name = self.interner.search(name_id.id as usize);
-
-                let msg = format!(
-                    "Found more than one symbol with identifier \"{dup_name}\" in the same scope"
-                );
-
-                self.reporter.report_spanned(
-                    &msg,
-                    None,
-                    &[orig_span, dup_span],
-                    &self.program.mods[self.current_mod.id],
-                );
             }
+
+            // Clearing after finishing one table
+            // More suspicious
+            seen.clear();
         }
     }
 }

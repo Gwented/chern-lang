@@ -7,9 +7,8 @@ use common::{
     reporter::diagnostic::Reporter,
 };
 use script_lib::{
-    lexer::Lexer,
     modules::{self},
-    parser::{self, ast::AstInfo},
+    parser::ast::AstInfo,
     semantic::{
         constraint_resolver::ConstraintResolver, name_resolver::NamespaceResolver,
         type_resolver::TypeResolver,
@@ -22,7 +21,7 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
 
     // Doing this first since if modules were identified during the parsing stage any
     // syntax error within another module would not be reportable since the parser failed.
-    let mut program = modules::extract_modules(path, settings, &mut interner)?;
+    let mut script_compiler = modules::extract_modules(path, settings, &mut interner)?;
     let mut reporter = Reporter::new();
 
     let mut asts: Vec<AstInfo> = Vec::new();
@@ -30,12 +29,13 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
     // Need to separate namespace resolution and type resolver because if the modules namespaces
     // aren't resolved first, then type resolution isn't possible since it could be using types
     // from elsewhere, which are not known yet.
-    for mod_idx in 0..program.mods.len() {
-        let module = &program.mods[mod_idx];
-        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
-            .tokenize(&mut interner);
+    for mod_idx in 0..script_compiler.mods.len() {
+        let module = &script_compiler.mods[mod_idx];
+        let toks =
+            script_lib::lexer::Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+                .tokenize(&mut interner);
 
-        let ast_info = match parser::parse(settings, &module, &toks, &mut interner) {
+        let ast_info = match script_lib::parser::parse(settings, &module, &toks, &mut interner) {
             Ok(info) => info,
             Err(script_err) => match script_err {
                 ScriptError::Parser(mut diags) | ScriptError::Semantic(mut diags) => {
@@ -46,8 +46,14 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
             },
         };
 
-        match NamespaceResolver::new(settings, &ast_info, &interner, module.mod_id, &mut program)
-            .resolve()
+        match NamespaceResolver::new(
+            settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut script_compiler,
+        )
+        .resolve()
         {
             Ok(_) => (),
             Err(mut diags) => reporter.diags.append(&mut diags),
@@ -60,15 +66,19 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
         return Err(ScriptError::Semantic(reporter.diags).into());
     }
 
-    // I don't know
-    for i in 0..program.mods.len() {
+    // If I name this mod_idx this will turn into the worst looking match statement I have seen in
+    // my very short life
+    for i in 0..script_compiler.mods.len() {
         let mod_id = ModuleId::new(i);
-        match TypeResolver::new(settings, &asts[i], mod_id, &interner, &mut program).resolve() {
+        match TypeResolver::new(settings, &asts[i], mod_id, &interner, &mut script_compiler)
+            .resolve()
+        {
             Ok(_) => (),
             Err(mut diags) => reporter.diags.append(&mut diags),
         };
 
-        match ConstraintResolver::new(settings, &asts[i], &interner, mod_id, &mut program).resolve()
+        match ConstraintResolver::new(settings, &asts[i], &interner, mod_id, &mut script_compiler)
+            .resolve()
         {
             Ok(_) => (),
             Err(mut diags) => reporter.diags.append(&mut diags),
@@ -76,7 +86,6 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
     }
 
     if !reporter.diags.is_empty() {
-        // Suspicious into usage
         return Err(ScriptError::Semantic(reporter.diags).into());
     }
 

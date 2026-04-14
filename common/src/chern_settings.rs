@@ -11,3 +11,11 @@ impl ChernSettings {
         ChernSettings { can_color }
     }
 }
+
+impl Default for ChernSettings {
+    fn default() -> Self {
+        Self {
+            can_color: Default::default(),
+        }
+    }
+}

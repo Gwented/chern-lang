@@ -6,6 +6,7 @@ use crate::{
     semantic::{constraints::ArgConstraint, representation::FuncKind},
 };
 
+//TODO: Change this majorly. Make many mistakes. Hallucinate.
 pub(super) enum SemanticError {
     /// Constraint, found type(builtin or user), function kind, spans
     FuncConstraintMismatch(ArgConstraint, Formatted, FuncKind, Vec<Span>),

@@ -277,6 +277,7 @@ impl Import {
     }
 }
 
+#[derive(Debug, Default)]
 pub struct Bind {
     pub path_id: PathId,
     pub path_span: Span,

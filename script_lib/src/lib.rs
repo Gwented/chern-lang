@@ -9,12 +9,36 @@ mod iyo;
 pub mod linter;
 pub mod modules;
 pub mod parser;
+pub mod script_compiler;
 pub mod semantic;
 mod token;
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    impl Module {
+        pub(super) fn mock(metadata: ModuleMetadata) -> Module {
+            Module::new(
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                metadata,
+            )
+        }
+    }
+
+    // impl Intern {
+    //     pub(super) fn mock(metadata: ModuleMetadata) -> Module {
+    //         Intern {
+    //             id_map: todo!(),
+    //             path_map: todo!(),
+    //             stored_strs: todo!(),
+    //             stored_paths: todo!(),
+    //             pos: todo!(),
+    //         }
+    //     }
+    // }
+    use std::{collections::HashMap, path::Path};
 
     use chern_core::intern::Intern;
     use common::chern_settings::ChernSettings;
@@ -22,6 +46,10 @@ mod tests {
     use crate::{
         config_loader::ChernConfigLoader,
         lexer::Lexer,
+        modules::{Module, ModuleMetadata},
+        parser::{self},
+        script_compiler::ScriptCompiler,
+        semantic::name_resolver::NamespaceResolver,
         token::{Notation, Token},
     };
 
@@ -405,5 +433,47 @@ mod tests {
             }
             _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
         }
+    }
+
+    #[test]
+    fn scope_test() {
+        let mut interner = Intern::init();
+        let settings = ChernSettings::default();
+
+        let text = "
+            var->
+                duplicate: i32
+                duplicate: i32
+            ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::mock(metadata);
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        // Calls `reporter` internally but the path is fake so this fails
+        // let res = NamespaceResolver::new(
+        //     &settings,
+        //     &ast_info,
+        //     &interner,
+        //     module.mod_id,
+        //     &mut compiler,
+        // )
+        // .resolve();
+        //
+        // assert_eq!(res.is_err(), true);
     }
 }

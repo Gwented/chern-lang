@@ -15,16 +15,18 @@ use common::{
 
 use crate::{
     conditions::Cond,
-    modules::{Module, Program},
+    modules::Module,
     parser::ast::{
         AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, BinaryOp, Expr,
         Item, SpannedExpr, UnaryOp,
     },
+    script_compiler::{ScriptCompiler, VALUE_FALSE_POS, VALUE_TRUE_POS, VALUE_UNKNOWN_POS},
     semantic::{
         constraints::ArgConstraint,
         error::SemanticError,
         evaluator,
         representation::{FuncArgsRepre, FuncKind, FuncRepre, Symbol, SymbolInfo, Type},
+        scopes::ScopeType,
         semantic_reporter::SemanticReporter,
     },
 };
@@ -32,8 +34,9 @@ use crate::{
 pub struct ConstraintResolver<'a> {
     ast_info: &'a AstInfo,
     interner: &'a Intern,
-    program: &'a mut Program,
+    compiler: &'a mut ScriptCompiler,
     current_mod: ModuleId,
+    unresolved: Vec<SymbolId>,
     reporter: SemanticReporter<'a>,
 }
 
@@ -43,13 +46,14 @@ impl ConstraintResolver<'_> {
         ast_info: &'a AstInfo,
         interner: &'a Intern,
         current_mod: ModuleId,
-        program: &'a mut Program,
+        compiler: &'a mut ScriptCompiler,
     ) -> ConstraintResolver<'a> {
         ConstraintResolver {
             ast_info,
             interner,
             current_mod,
-            program,
+            compiler,
+            unresolved: Vec::new(),
             reporter: SemanticReporter::new(settings, interner),
         }
     }
@@ -74,6 +78,8 @@ impl ConstraintResolver<'_> {
                 }
             }
         }
+        //FIX:
+        //Maybe push unresolved values into a queue then after this resolve the remaining
 
         if !self.reporter.err_vec.is_empty() {
             let mut diags = Vec::new();
@@ -86,35 +92,39 @@ impl ConstraintResolver<'_> {
     }
 
     fn resolve_const(&mut self, abs_const: &AbstractConst, ast_id: AstId) -> Result<(), ()> {
-        let module = &self.program.mods[self.current_mod.id];
-        let sym_id = module.table.sym_ids[&ast_id];
+        let module = &self.compiler.mods[self.current_mod.id];
+        let scope_id = module.scope_manager.extract_scope_id(ScopeType::Neutral);
+        let table = &module.scope_manager.get_scope(scope_id).table;
+
+        let sym_id = table.sym_ids[&ast_id];
 
         //TEST:
-        let value = match self.resolve_expr(&abs_const.spanned_expr, true) {
+        let val_id = match self.resolve_expr(&abs_const.spanned_expr, ScopeType::Neutral, false) {
             Ok(v) => v,
             Err(sem_err) => {
-                self.reporter.report_semantic(sem_err, module);
+                self.reporter
+                    .report_semantic(sem_err, &self.compiler.mods[self.current_mod.id]);
                 return Err(());
             }
         };
 
-        dbg!(&value);
-
-        let value_id = ValueId::new(self.program.values.len());
-        self.program.values.push(value);
+        dbg!(&self.compiler.values[val_id.id]);
 
         // Setting const from an `Unknown` value to whatever was found
-        let const_repre = self.program.get_const_mut(sym_id);
-        const_repre.value_id = value_id;
+        let const_repre = self.compiler.get_const_mut(sym_id);
+        const_repre.value_id = val_id;
 
         Ok(())
     }
 
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
         // First borrow starts here
-        let module = &self.program.mods[self.current_mod.id];
-        let sym_id = module.table.sym_ids[&ast_id];
-        let type_id = self.program.get_typedef(sym_id).type_id;
+        let module = &self.compiler.mods[self.current_mod.id];
+        let scope_id = module.scope_manager.extract_scope_id(ScopeType::Var);
+        let table = &module.scope_manager.get_scope(scope_id).table;
+
+        let sym_id = table.sym_ids[&ast_id];
+        let type_id = self.compiler.get_typedef(sym_id).type_id;
 
         let mut conds = Vec::new();
 
@@ -123,8 +133,8 @@ impl ConstraintResolver<'_> {
         }
 
         // Second borrow
-        let module = &self.program.mods[self.current_mod.id];
-        let ty = &self.program.types[self.program.get_typedef(sym_id).type_id.id as usize].ty;
+        let module = &self.compiler.mods[self.current_mod.id];
+        let ty = &self.compiler.types[self.compiler.get_typedef(sym_id).type_id.id as usize].ty;
 
         // Checking if condition is valid for the given type
         // Using the Ast node's condition so that the span information is not lost
@@ -153,7 +163,7 @@ impl ConstraintResolver<'_> {
 
         // Third borrow
         // Re-borrowing due to resolution happening above being mutable
-        let ty = &self.program.types[self.program.get_typedef(sym_id).type_id.id as usize].ty;
+        let ty = &self.compiler.types[self.compiler.get_typedef(sym_id).type_id.id as usize].ty;
 
         let mut args = Vec::new();
 
@@ -181,7 +191,7 @@ impl ConstraintResolver<'_> {
         }
 
         // Fourth borrow...
-        let type_def = &mut self.program.get_typedef_mut(sym_id);
+        let type_def = &mut self.compiler.get_typedef_mut(sym_id);
         type_def.conds = conds;
         type_def.args = args;
 
@@ -193,8 +203,11 @@ impl ConstraintResolver<'_> {
     // struct id itself was passed, but then the loop would iterate over everything by default
     // which seems bad if they're just builtins etc.
     fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
-        let module = &self.program.mods[self.current_mod.id];
-        let sym_id = module.table.sym_ids[&ast_id];
+        let module = &self.compiler.mods[self.current_mod.id];
+        let scope_id = module.scope_manager.extract_scope_id(ScopeType::Nest);
+        let table = &module.scope_manager.get_scope(scope_id).table;
+
+        let sym_id = table.sym_ids[&ast_id];
 
         let mut conds: Vec<Cond> = Vec::new();
 
@@ -202,8 +215,8 @@ impl ConstraintResolver<'_> {
             conds.push(self.resolve_cond(expr, ast_id)?);
         }
 
-        let module = &self.program.mods[self.current_mod.id];
-        let fields = &self.program.get_struct(sym_id).fields;
+        let module = &self.compiler.mods[self.current_mod.id];
+        let fields = &self.compiler.get_struct(sym_id).fields;
 
         for (i, cond) in conds.iter().enumerate() {
             let ast_span = &abs_struct.glob_conds[i].span;
@@ -220,7 +233,7 @@ impl ConstraintResolver<'_> {
 
         let mut args: Vec<InnerArgs> = Vec::new();
 
-        let fields = &self.program.get_struct(sym_id).fields;
+        let fields = &self.compiler.get_struct(sym_id).fields;
 
         for field in fields {
             for spanned_arg in &abs_struct.glob_args {
@@ -235,7 +248,7 @@ impl ConstraintResolver<'_> {
             }
         }
 
-        let structure = self.program.get_struct_mut(sym_id);
+        let structure = self.compiler.get_struct_mut(sym_id);
 
         // I'm scared of this
         structure.args = args;
@@ -245,8 +258,11 @@ impl ConstraintResolver<'_> {
     }
 
     fn resolve_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) -> Result<(), ()> {
-        let module = &self.program.mods[self.current_mod.id];
-        let sym_id = module.table.sym_ids[&ast_id];
+        let module = &self.compiler.mods[self.current_mod.id];
+        let scope_id = module.scope_manager.extract_scope_id(ScopeType::Nest);
+        let table = &module.scope_manager.get_scope(scope_id).table;
+
+        let sym_id = table.sym_ids[&ast_id];
 
         let mut conds: Vec<Cond> = Vec::new();
 
@@ -255,8 +271,8 @@ impl ConstraintResolver<'_> {
         }
 
         // First borrow
-        let module = &self.program.mods[self.current_mod.id];
-        let variants = &self.program.get_enum(sym_id).variants;
+        let module = &self.compiler.mods[self.current_mod.id];
+        let variants = &self.compiler.get_enum(sym_id).variants;
 
         for (i, cond) in conds.iter().enumerate() {
             let ast_span = &abs_enum.glob_conds[i].span;
@@ -273,7 +289,7 @@ impl ConstraintResolver<'_> {
         }
 
         // Second borrow
-        let variants = &self.program.get_enum(sym_id).variants;
+        let variants = &self.compiler.get_enum(sym_id).variants;
 
         let mut args: Vec<InnerArgs> = Vec::new();
 
@@ -293,7 +309,7 @@ impl ConstraintResolver<'_> {
             }
         }
 
-        let enumeration = self.program.get_enum_mut(sym_id);
+        let enumeration = self.compiler.get_enum_mut(sym_id);
 
         enumeration.conds = conds;
         enumeration.args = args;
@@ -317,7 +333,7 @@ impl ConstraintResolver<'_> {
                     &err_msg,
                     Some(err_name),
                     &[spanned_expr.span.clone()],
-                    &self.program.mods[self.current_mod.id],
+                    &self.compiler.mods[self.current_mod.id],
                 );
 
                 Err(())
@@ -356,15 +372,15 @@ impl ConstraintResolver<'_> {
                             msg,
                             None,
                             &[caller.span.clone()],
-                            &self.program.mods[self.current_mod.id],
+                            &self.compiler.mods[self.current_mod.id],
                         );
                         return Err(());
                     }
                 };
 
-                let module = &self.program.mods[self.current_mod.id];
-                let sym_id = SymbolId::new(self.program.symbols.len() as u32);
-                let type_id = TypeId::new(self.program.types.len() as u32);
+                let module = &self.compiler.mods[self.current_mod.id];
+                let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+                let type_id = TypeId::new(self.compiler.types.len() as u32);
 
                 //TODO: Maybe handle this elsewhere
                 let (constraints, kind) = match Keyword::try_as_kw(name_id) {
@@ -421,7 +437,7 @@ impl ConstraintResolver<'_> {
 
                 // Conditions are private by default
                 let sym_info = SymbolInfo::new(Symbol::Func(func), true, self.current_mod);
-                self.program.symbols.insert(sym_id, sym_info);
+                self.compiler.symbols.insert(sym_id, sym_info);
 
                 Ok(Cond::Func(sym_id, func_kind))
             }
@@ -433,7 +449,7 @@ impl ConstraintResolver<'_> {
                     &err_msg,
                     Some(err_name),
                     &[spanned_expr.span.clone()],
-                    &self.program.mods[self.current_mod.id],
+                    &self.compiler.mods[self.current_mod.id],
                 );
 
                 Err(())
@@ -445,7 +461,7 @@ impl ConstraintResolver<'_> {
                     &err_msg,
                     None,
                     &[spanned_expr.span.clone()],
-                    &self.program.mods[self.current_mod.id],
+                    &self.compiler.mods[self.current_mod.id],
                 );
 
                 Err(())
@@ -460,7 +476,7 @@ impl ConstraintResolver<'_> {
                     &err_msg,
                     None,
                     &[spanned_expr.span.clone()],
-                    &self.program.mods[self.current_mod.id],
+                    &self.compiler.mods[self.current_mod.id],
                 );
 
                 Err(())
@@ -479,9 +495,9 @@ impl ConstraintResolver<'_> {
         spanned_arg: &SpannedInnerArgs,
         visited: &mut Vec<TypeId>,
     ) -> Result<(), SemanticError> {
-        match &self.program.types[type_id.id as usize].ty {
+        match &self.compiler.types[type_id.id as usize].ty {
             Type::Struct(sym_id) => {
-                let structure = self.program.get_struct(*sym_id);
+                let structure = self.compiler.get_struct(*sym_id);
                 visited.push(structure.type_id);
 
                 for field in &structure.fields {
@@ -545,7 +561,7 @@ impl ConstraintResolver<'_> {
                 Ok(())
             }
             Type::Enum(sym_id) => {
-                let enumeration = self.program.get_enum(*sym_id);
+                let enumeration = self.compiler.get_enum(*sym_id);
                 visited.push(enumeration.type_id);
 
                 for variant in &enumeration.variants {
@@ -673,27 +689,57 @@ impl ConstraintResolver<'_> {
     // Maybe the goal is to resolve as many expressions as possible and attach the value to it's ast
     // id?
     fn resolve_func_arg(&self, spanned_expr: &SpannedExpr) -> Result<FuncArgsRepre, SemanticError> {
-        let value = self.resolve_expr(spanned_expr, false)?;
         todo!();
     }
 
     fn resolve_expr(
-        &self,
+        &mut self,
         spanned_expr: &SpannedExpr,
-        is_const: bool,
-    ) -> Result<Value, SemanticError> {
+        scope_type: ScopeType,
+        needs_resolution: bool,
+    ) -> Result<ValueId, SemanticError> {
         match &spanned_expr.expr {
             Expr::Var(name_id) => {
-                let module = &self.program.mods[self.current_mod.id];
-                if let Some(ast_id) = module.table.get_ast_id(*name_id) {
-                    panic!("Hi");
+                if name_id.id == Keyword::True as u32 {
+                    return Ok(ValueId::new(VALUE_TRUE_POS));
+                } else if name_id.id == Keyword::False as u32 {
+                    return Ok(ValueId::new(VALUE_FALSE_POS));
                 }
 
-                todo!();
+                let module = &self.compiler.mods[self.current_mod.id];
+
+                if let Some((ast_id, location)) =
+                    module.scope_manager.get_ast_id(*name_id, scope_type)
+                {
+                    let scope_id = module.scope_manager.extract_scope_id(location);
+                    let table = &module.scope_manager.get_scope(scope_id).table;
+
+                    let sym_id = table.sym_ids[&ast_id];
+                    let symbol = &self.compiler.symbols[&sym_id].symbol;
+                    match symbol {
+                        Symbol::Const(const_repre) => {
+                            if needs_resolution && const_repre.value_id.id == VALUE_UNKNOWN_POS {
+                                panic!("eep");
+                            }
+
+                            return Ok(const_repre.value_id);
+                        }
+                        Symbol::Struct(struct_repre) => todo!(),
+                        Symbol::Func(func_repre) => todo!(),
+                        Symbol::Enum(enum_repre) => todo!(),
+                        Symbol::Alias(alias_repre) => todo!(),
+                        Symbol::TypeDef(type_def_repre) => todo!(),
+                    }
+                }
+
+                todo!()
             }
             Expr::Integer(id, _) => {
                 if let Ok(num) = self.interner.search(*id as usize).parse::<i128>() {
-                    Ok(Value::I128(num))
+                    let value_id = ValueId::new(self.compiler.values.len());
+                    self.compiler.values.push(Value::I128(num));
+
+                    Ok(value_id)
                 } else {
                     Err(SemanticError::NumericOverflow(
                         *id,
@@ -703,8 +749,12 @@ impl ConstraintResolver<'_> {
                 }
             }
             Expr::Float(id, _) => {
+                // No BigFloat yet
                 if let Ok(num) = self.interner.search(*id as usize).parse::<f64>() {
-                    Ok(Value::F64(num))
+                    let value_id = ValueId::new(self.compiler.values.len());
+                    self.compiler.values.push(Value::F64(num));
+
+                    Ok(value_id)
                 } else {
                     Err(SemanticError::NumericOverflow(
                         *id,
@@ -714,8 +764,11 @@ impl ConstraintResolver<'_> {
                 }
             }
             Expr::BinaryExpr { lhs, op, rhs } => {
-                let lhs_val = self.resolve_expr(&*lhs, is_const)?;
-                let rhs_val = self.resolve_expr(&*rhs, is_const)?;
+                let lhs_id = self.resolve_expr(&*lhs, scope_type, needs_resolution)?;
+                let rhs_id = self.resolve_expr(&*rhs, scope_type, needs_resolution)?;
+
+                let lhs_val = &self.compiler.values[lhs_id.id];
+                let rhs_val = &self.compiler.values[rhs_id.id];
 
                 if !evaluator::is_compatible(&lhs_val, *op, &rhs_val) {
                     let full_span = lhs.span.merge(rhs.span);
@@ -727,14 +780,28 @@ impl ConstraintResolver<'_> {
                     ));
                 }
 
-                evaluator::apply_binary_op(&lhs_val, *op, &rhs_val)
+                let val_id = ValueId::new(self.compiler.values.len());
+                let val = evaluator::apply_binary_op(&lhs_val, *op, &rhs_val)?;
+                self.compiler.values.push(val);
+
+                Ok(val_id)
             }
-            Expr::Char(c) => Ok(Value::Char(*c)),
+            Expr::Char(c) => {
+                let val_id = ValueId::new(self.compiler.values.len());
+                self.compiler.values.push(Value::Char(*c));
+
+                Ok(val_id)
+            }
             Expr::Default(name_id, spanned_expr) => todo!(),
-            Expr::Str(name_id) => Ok(Value::CompileStr(*name_id)),
+            Expr::Str(name_id) => {
+                let val_id = ValueId::new(self.compiler.values.len());
+                self.compiler.values.push(Value::CompileStr(*name_id));
+
+                Ok(val_id)
+            }
             // Const should check it's
             Expr::Call(caller, spanned_exprs) => {
-                if is_const {
+                if needs_resolution {
                     todo!();
                 }
 
@@ -756,7 +823,7 @@ impl ConstraintResolver<'_> {
         cond: &Cond,
         visited: &mut Vec<TypeId>,
     ) -> Result<(), SemanticError> {
-        match &self.program.types[type_id.id as usize].ty {
+        match &self.compiler.types[type_id.id as usize].ty {
             Type::BuiltinType(builtin_type) => match cond {
                 Cond::IsEmpty | Cond::IsWhitespace => {
                     let kind = builtin_type.kind();
@@ -777,7 +844,7 @@ impl ConstraintResolver<'_> {
                 Cond::Func(sym_id, func_kind) => Ok(()),
             },
             Type::Struct(sym_id) => {
-                let structure = self.program.get_struct(*sym_id);
+                let structure = self.compiler.get_struct(*sym_id);
 
                 for (i, field) in structure.fields.iter().enumerate() {
                     //BUG: The structure.type_id == type_id does check if the last type it saw is
@@ -816,7 +883,7 @@ impl ConstraintResolver<'_> {
                 Ok(())
             }
             Type::Enum(sym_id) => {
-                let enumeration = self.program.get_enum(*sym_id);
+                let enumeration = self.compiler.get_enum(*sym_id);
                 visited.push(enumeration.type_id);
 
                 for (i, variant) in enumeration.variants.iter().enumerate() {

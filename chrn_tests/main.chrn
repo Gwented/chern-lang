@@ -5,17 +5,20 @@
 // I am messed up"
 // "I am not even supposed to be included"
 // Unary ops aren't appllied to wrapped expressions
+// The tilde has to be chaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaanged
 
 
 @def
 
-const CONSTANT = (4 + 2) * 8 | 8
+const export = READ
+const CONSTANT = (export == 4) == true
 
 // Require forward slashes
-import "../chrn_tests/defs.chrn" as maddie_burger
+import "../chrn_tests/defs.chrn" as chern
 
 var->
-    user: maddie_burger.erson
+    export: i32
+    user: chern.Person
     thing: BigFloat
     var: Tuple<str, u8, str> // [StartsW(5)]
 

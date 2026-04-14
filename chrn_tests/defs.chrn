@@ -4,7 +4,7 @@ export const READ = 0b00000001
 
 // alias VALID_PERMS() = [Equals(READ) || Equals(WRITE) || Equals(EDIT)]
 
-const X = 2 && 4 == 2
+// alias Person() = [IsEmpty]
 
 var->
     // var: Tuple<str, u8, str> [StartsW("Hello")]
