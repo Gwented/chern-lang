@@ -31,7 +31,7 @@ impl ScopeManager {
     /// that means the parser itself already checked if it was legal grammar-wise.
     pub(crate) fn extract_scope_id(&self, scope_type: ScopeType) -> ScopeId {
         self.find_scope(scope_type)
-            .expect("Semantic OR Parser broke")
+            .expect("Either semantic broke, parser broke, or modules broke")
             .scope_id
     }
 

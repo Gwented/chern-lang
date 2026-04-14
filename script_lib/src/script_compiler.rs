@@ -43,6 +43,9 @@ impl ScriptCompiler {
 
         // Pre-loading keywords
         // If this fails something was messed up within keywords itself
+        //
+        // This must be subtracted or else it will include builtin types that are data structures
+        // which are of course not pre-loadable.
         for i in 0..keywords::TYPE_END - 4 {
             let ty = BuiltinType::try_from_id(i as u32).expect("Builtin type not updated");
             types.push(TypeInfo::new(Type::BuiltinType(ty), None));

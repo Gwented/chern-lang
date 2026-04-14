@@ -237,7 +237,6 @@ impl NamespaceResolver<'_> {
 
                 // If the current name id exists in "seen"
                 if let Some(orig_ast_id) = ast_opt {
-                    dbg!("Ouch");
                     let item = &self.ast_info.items[orig_ast_id.id as usize];
                     let orig_span = match item {
                         Item::Var(abs_typedef) => &abs_typedef.name_span,

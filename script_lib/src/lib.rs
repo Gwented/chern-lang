@@ -15,41 +15,48 @@ mod token;
 
 #[cfg(test)]
 mod tests {
-    impl Module {
-        pub(super) fn mock(metadata: ModuleMetadata) -> Module {
-            Module::new(
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-                metadata,
-            )
+    // -- Helpers --
+    /// Creates fake strings for the amounts given
+    fn mock_interner(str_amt: usize, path_amt: usize) -> Intern {
+        let mut interner = Intern::init();
+
+        for idx in 0..str_amt {
+            let s = format!("dummyname{idx}");
+            interner.intern(&s);
         }
+
+        for idx in 0..path_amt {
+            let p = format!("dummyimport{idx}");
+            let p = Path::new(&p);
+            interner.intern_path(&p);
+        }
+
+        interner
     }
 
-    // impl Intern {
-    //     pub(super) fn mock(metadata: ModuleMetadata) -> Module {
-    //         Intern {
-    //             id_map: todo!(),
-    //             path_map: todo!(),
-    //             stored_strs: todo!(),
-    //             stored_paths: todo!(),
-    //             pos: todo!(),
-    //         }
-    //     }
-    // }
     use std::{collections::HashMap, path::Path};
 
-    use chern_core::intern::Intern;
+    use chern_core::{
+        id_types::{ModuleId, NameId, PathId},
+        intern::Intern,
+        keywords,
+        values::Value,
+    };
     use common::chern_settings::ChernSettings;
 
     use crate::{
         config_loader::ChernConfigLoader,
         lexer::Lexer,
-        modules::{Module, ModuleMetadata},
-        parser::{self},
-        script_compiler::ScriptCompiler,
-        semantic::name_resolver::NamespaceResolver,
+        modules::Module,
+        parser::{
+            self,
+            ast::{AstInfo, Import},
+        },
+        script_compiler::{ScriptCompiler, VALUE_FALSE_POS, VALUE_TRUE_POS},
+        semantic::{
+            constraint_resolver::ConstraintResolver, name_resolver::NamespaceResolver,
+            scopes::ScopeType, type_resolver::TypeResolver,
+        },
         token::{Notation, Token},
     };
 
@@ -65,13 +72,6 @@ mod tests {
         let mut interner = Intern::init();
 
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        for tok in &toks {
-            match tok.tok {
-                Token::Id(id) | Token::Str(id) => {}
-                _ => (),
-            }
-        }
 
         assert_eq!(
             None, metadata.serial_start,
@@ -436,24 +436,30 @@ mod tests {
     }
 
     #[test]
-    fn scope_test() {
-        let mut interner = Intern::init();
+    fn nameresolver_duplicate_simple_test() {
+        // -- NEUTRAL --
+        let mut interner = mock_interner(0, 1);
         let settings = ChernSettings::default();
 
-        let text = "
-            var->
-                duplicate: i32
-                duplicate: i32
+        let wrong = "
+            const DUPLICATE = 3
+            const DUPLICATE = \"Hi\"
             ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+        let metadata = ChernConfigLoader::new(Path::new(""), wrong.as_bytes(), &settings)
             .load_config()
             .unwrap();
 
         // Doing this first since if modules were identified during the parsing stage any
         // syntax error within another module would not be reportable since the parser failed.
 
-        let module = Module::mock(metadata);
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
 
         let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
 
@@ -465,15 +471,1231 @@ mod tests {
         let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
 
         // Calls `reporter` internally but the path is fake so this fails
-        // let res = NamespaceResolver::new(
+        let res = NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve();
+
+        assert_eq!(res.is_err(), true);
+
+        let mut interner = mock_interner(0, 1);
+        let settings = ChernSettings::default();
+
+        let correct = "
+                const ORIGINAL = 2 + 2
+                const NEW = \"Hallo\"
+            ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), correct.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        // Calls `reporter` internally but the path is fake so this fails
+        let res = NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve();
+
+        assert_eq!(res.is_ok(), true);
+
+        // -- VAR --
+        let mut interner = mock_interner(0, 1);
+        let settings = ChernSettings::default();
+
+        let wrong = "
+            var->
+                duplicate: i32
+                duplicate: i8
+            ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), wrong.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        // Calls `reporter` internally but the path is fake so this fails
+        let res = NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve();
+
+        assert_eq!(res.is_err(), true);
+
+        let mut interner = mock_interner(0, 1);
+        let settings = ChernSettings::default();
+
+        let correct = "
+            var->
+                original: u32
+                new: i8
+            ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), correct.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        // Calls `reporter` internally but the path is fake so this fails
+        let res = NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve();
+
+        assert_eq!(res.is_ok(), true);
+
+        // -- NEST --
+        let mut interner = mock_interner(0, 1);
+        let settings = ChernSettings::default();
+
+        let wrong = "
+            nest->
+                struct Duplicate {}
+                struct Duplicate {}
+            ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), wrong.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        // Calls `reporter` internally but the path is fake so this fails
+        let res = NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve();
+
+        assert_eq!(res.is_err(), true);
+
+        let mut interner = mock_interner(0, 1);
+        let settings = ChernSettings::default();
+
+        let correct = "
+            nest->
+                struct Original {}
+                struct New {}
+            ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), correct.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        // Calls `reporter` internally but the path is fake so this fails
+        let res = NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve();
+
+        assert_eq!(res.is_ok(), true);
+        //TEST: -- COMPLEX --
+
+        //TEST: -- OVERRIDE --
+    }
+
+    #[test]
+    fn module_simple_test() {
+        // -- NEUTRAL --
+        let mut interner = mock_interner(0, 2);
+        let settings = ChernSettings::default();
+
+        let main_txt = "
+            const CONSTANT = 3
+        ";
+
+        let main_meta = ChernConfigLoader::new(Path::new(""), main_txt.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let sub_import = Import::new(NameId::new(1), PathId::new(1), Default::default(), None);
+
+        let main_mod = Module::new(
+            NameId::new(0),
+            PathId::new(0),
+            ModuleId::new(0),
+            vec![sub_import],
+            main_meta,
+        );
+
+        let sub_txt = "
+            const OTHER_CONSTANT = 5
+        ";
+
+        let sub_meta = ChernConfigLoader::new(Path::new(""), sub_txt.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        let sub_mod = Module::new(
+            NameId::new(1),
+            PathId::new(1),
+            ModuleId::new(1),
+            Default::default(),
+            sub_meta,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![main_mod, sub_mod]);
+
+        let mut asts: Vec<AstInfo> = Vec::new();
+
+        for mod_idx in 0..compiler.mods.len() {
+            let module = &compiler.mods[mod_idx];
+            let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+                .tokenize(&mut interner);
+
+            let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+            NamespaceResolver::new(
+                &settings,
+                &ast_info,
+                &interner,
+                module.mod_id,
+                &mut compiler,
+            )
+            .resolve()
+            .unwrap();
+
+            asts.push(ast_info);
+        }
+
+        for i in 0..compiler.mods.len() {
+            let mod_id = ModuleId::new(i);
+            TypeResolver::new(&settings, &asts[i], mod_id, &interner, &mut compiler)
+                .resolve()
+                .unwrap();
+
+            ConstraintResolver::new(&settings, &asts[i], &interner, mod_id, &mut compiler)
+                .resolve()
+                .unwrap();
+        }
+    }
+
+    // // Would need an automated constructor for mocking modules
+    // #[test]
+    // fn module_alias_test() {
+    //     // -- NEUTRAL --
+    //     let mut interner = mock_interner(2, 2);
+    //     let settings = ChernSettings::default();
+    //
+    //     let main_txt = "
+    //         var->
+    //             //reference: dummyname1.Structure
+    //             //other_reference: dummyname1.Enumeration
+    //     ";
+    //
+    //     let main_meta = ChernConfigLoader::new(Path::new(""), main_txt.as_bytes(), &settings)
+    //         .load_config()
+    //         .unwrap();
+    //
+    //     // Doing this first since if modules were identified during the parsing stage any
+    //     // syntax error within another module would not be reportable since the parser failed.
+    //
+    //     let sub_name = (keywords::KEYWORDS_ARRAY.len() + 2) as u32;
+    //
+    //     let sub_import = Import::new(
+    //         NameId::new(sub_name),
+    //         PathId::new(1),
+    //         Default::default(),
+    //         Some(NameId::new(0)),
+    //     );
+    //
+    //     let main_mod = Module::new(
+    //         NameId::new(0),
+    //         PathId::new(0),
+    //         ModuleId::new(0),
+    //         vec![sub_import],
+    //         main_meta,
+    //     );
+    //
+    //     let sub_txt = "
+    //         nest->
+    //             enum Enumeration {}
+    //             struct Structure {}
+    //     ";
+    //
+    //     let sub_meta = ChernConfigLoader::new(Path::new(""), sub_txt.as_bytes(), &settings)
+    //         .load_config()
+    //         .unwrap();
+    //
+    //     let sub_mod = Module::new(
+    //         NameId::new(1),
+    //         PathId::new(1),
+    //         ModuleId::new(1),
+    //         Default::default(),
+    //         sub_meta,
+    //     );
+    //
+    //     let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![main_mod, sub_mod]);
+    //
+    //     let mut asts: Vec<AstInfo> = Vec::new();
+    //
+    //     for mod_idx in 0..compiler.mods.len() {
+    //         let module = &compiler.mods[mod_idx];
+    //         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //             .tokenize(&mut interner);
+    //
+    //         let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+    //
+    //         NamespaceResolver::new(
+    //             &settings,
+    //             &ast_info,
+    //             &interner,
+    //             module.mod_id,
+    //             &mut compiler,
+    //         )
+    //         .resolve()
+    //         .unwrap();
+    //
+    //         asts.push(ast_info);
+    //     }
+    //
+    //     for i in 0..compiler.mods.len() {
+    //         let mod_id = ModuleId::new(i);
+    //         TypeResolver::new(&settings, &asts[i], mod_id, &interner, &mut compiler)
+    //             .resolve()
+    //             .unwrap();
+    //
+    //         ConstraintResolver::new(&settings, &asts[i], &interner, mod_id, &mut compiler)
+    //             .resolve()
+    //             .unwrap();
+    //     }
+    // }
+
+    #[test]
+    fn scope_simple_test() {
+        // -- NEUTRAL --
+        let mut interner = mock_interner(0, 1);
+        let settings = ChernSettings::default();
+
+        let text = "
+            const CONSTANT = 3
+            ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        // Calls `reporter` internally but the path is fake so this fails
+        NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        let module = &compiler.mods[0];
+
+        assert_eq!(module.scope_manager.scopes.len(), 1);
+        assert_eq!(
+            module.scope_manager.scopes[0].scope_type,
+            ScopeType::Neutral
+        );
+
+        // -- VAR --
+        let mut interner = mock_interner(0, 1);
+        let settings = ChernSettings::default();
+
+        let text = "
+            var->
+                variable: i32
+            ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        // Calls `reporter` internally but the path is fake so this fails
+        NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        let module = &compiler.mods[0];
+
+        assert_eq!(module.scope_manager.scopes.len(), 1);
+        assert_eq!(module.scope_manager.scopes[0].scope_type, ScopeType::Var);
+
+        // -- NEST --
+        let mut interner = mock_interner(0, 1);
+        let settings = ChernSettings::default();
+
+        let text = "
+            nest->
+                struct Thing1 {}
+                struct Thing2 {}
+            ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        // Calls `reporter` internally but the path is fake so this fails
+        NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        let module = &compiler.mods[0];
+
+        assert_eq!(module.scope_manager.scopes.len(), 1);
+        assert_eq!(module.scope_manager.scopes[0].scope_type, ScopeType::Nest);
+
+        // //TEST: -- COMPLEX --
+        // let mut interner = mock_interner(0, 1);
+        // let settings = ChernSettings::default();
+        //
+        // let text = "
+        //     complex->
+        //
+        //     ";
+        //
+        // let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+        //     .load_config()
+        //     .unwrap();
+        //
+        // // Doing this first since if modules were identified during the parsing stage any
+        // // syntax error within another module would not be reportable since the parser failed.
+        //
+        // let module = Module::mock(metadata);
+        //
+        // let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        //
+        // let module = &compiler.mods[0];
+        //
+        // let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+        //     .tokenize(&mut interner);
+        //
+        // let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+        //
+        // // Calls `reporter` internally but the path is fake so this fails
+        // NamespaceResolver::new(
         //     &settings,
         //     &ast_info,
         //     &interner,
         //     module.mod_id,
         //     &mut compiler,
         // )
-        // .resolve();
+        // .resolve()
+        // .unwrap();
         //
-        // assert_eq!(res.is_err(), true);
+        // let module = &compiler.mods[0];
+        //
+        // assert_eq!(module.scope_manager.scopes.len(), 1);
+        // assert_eq!(
+        //     module.scope_manager.scopes[0].scope_type,
+        //     ScopeType::Complex
+        // );
+        //
+        // //TEST: -- OVERRIDE --
+        // let mut interner = mock_interner(0, 1);
+        // let settings = ChernSettings::default();
+        //
+        // let text = "
+        //     complex->
+        //
+        //     ";
+        //
+        // let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+        //     .load_config()
+        //     .unwrap();
+        //
+        // // Doing this first since if modules were identified during the parsing stage any
+        // // syntax error within another module would not be reportable since the parser failed.
+        //
+        // let module = Module::mock(metadata);
+        //
+        // let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        //
+        // let module = &compiler.mods[0];
+        //
+        // let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+        //     .tokenize(&mut interner);
+        //
+        // let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+        //
+        // // Calls `reporter` internally but the path is fake so this fails
+        // NamespaceResolver::new(
+        //     &settings,
+        //     &ast_info,
+        //     &interner,
+        //     module.mod_id,
+        //     &mut compiler,
+        // )
+        // .resolve()
+        // .unwrap();
+        //
+        // let module = &compiler.mods[0];
+        //
+        // assert_eq!(module.scope_manager.scopes.len(), 1);
+        // assert_eq!(
+        //     module.scope_manager.scopes[0].scope_type,
+        //     ScopeType::Override
+        // );
+
+        // -- All scopes --
+        let mut interner = mock_interner(0, 1);
+        let settings = ChernSettings::default();
+
+        //TODO: Complex and Override
+        let text = "
+            const NEUTRAL = 3
+            var->
+                var: Nest
+            nest->
+                struct Nest {}
+            ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        //TODO: Override and Complex
+        let module = &compiler.mods[0];
+        assert_eq!(module.scope_manager.scopes.len(), 3);
+        assert_eq!(
+            module.scope_manager.scopes[0].scope_type,
+            ScopeType::Neutral
+        );
+        assert_eq!(module.scope_manager.scopes[1].scope_type, ScopeType::Var);
+        assert_eq!(module.scope_manager.scopes[2].scope_type, ScopeType::Nest);
+    }
+
+    #[test]
+    fn type_resolver_simple_test() {
+        let mut interner = mock_interner(0, 1);
+        let settings = ChernSettings::default();
+
+        let wrong = "
+            var->
+                primitive: i32
+                undeclared_type: Thing
+            ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), wrong.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        let res = TypeResolver::new(
+            &settings,
+            &ast_info,
+            Default::default(),
+            &interner,
+            &mut compiler,
+        )
+        .resolve();
+
+        assert_eq!(res.is_err(), true);
+
+        let mut interner = mock_interner(0, 1);
+        let settings = ChernSettings::default();
+
+        let correct = "
+            var->
+                primitive: i32
+                declared_type: Thing
+            nest->
+                struct Thing {}
+            ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), correct.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        let res = TypeResolver::new(
+            &settings,
+            &ast_info,
+            Default::default(),
+            &interner,
+            &mut compiler,
+        )
+        .resolve();
+
+        assert_eq!(res.is_ok(), true);
+    }
+
+    #[test]
+    fn type_resolver_complex_test() {
+        let mut interner = mock_interner(0, 1);
+        let settings = ChernSettings::default();
+
+        let text = "
+            const CONSTANT = 4
+            ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        TypeResolver::new(
+            &settings,
+            &ast_info,
+            Default::default(),
+            &interner,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        assert_eq!(compiler.symbols.len(), 1);
+    }
+
+    #[test]
+    fn constraint_resolver_const_test() {
+        let mut interner = mock_interner(0, 1);
+        let settings = ChernSettings::default();
+
+        let text = "
+            const CONSTANT = 4
+            ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let pre_loaded_values = compiler.values.len();
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        TypeResolver::new(
+            &settings,
+            &ast_info,
+            Default::default(),
+            &interner,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        ConstraintResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            ModuleId::new(0),
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        assert_eq!(compiler.symbols.len(), 1);
+        assert_eq!(compiler.values.len() - pre_loaded_values, 1);
+        match &compiler.values[compiler.values.len() - 1] {
+            Value::I128(_) => (),
+            _ => panic!("Value mistmatch"),
+        };
+
+        let mut interner = mock_interner(0, 1);
+        let settings = ChernSettings::default();
+
+        let text = "
+            const CONSTANT = \"Hallo\"
+        ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let pre_loaded_values = compiler.values.len();
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        TypeResolver::new(
+            &settings,
+            &ast_info,
+            Default::default(),
+            &interner,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        ConstraintResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            ModuleId::new(0),
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        assert_eq!(compiler.symbols.len(), 1);
+        assert_eq!(compiler.values.len() - pre_loaded_values, 1);
+        match &compiler.values[compiler.values.len() - 1] {
+            Value::CompileStr(_) => (),
+            _ => panic!("Value mistmatch"),
+        };
+
+        let mut interner = mock_interner(0, 1);
+        let settings = ChernSettings::default();
+
+        let text = "
+            const CONSTANT = 0e-5
+        ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let pre_loaded_values = compiler.values.len();
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        TypeResolver::new(
+            &settings,
+            &ast_info,
+            Default::default(),
+            &interner,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        ConstraintResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            ModuleId::new(0),
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        assert_eq!(compiler.symbols.len(), 1);
+        assert_eq!(compiler.values.len() - pre_loaded_values, 1);
+        match &compiler.values[compiler.values.len() - 1] {
+            Value::F64(_) => (),
+            _ => panic!("Value mistmatch"),
+        };
+
+        let mut interner = mock_interner(0, 1);
+        let settings = ChernSettings::default();
+
+        let text = "
+            const CONSTANT = true
+        ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        TypeResolver::new(
+            &settings,
+            &ast_info,
+            Default::default(),
+            &interner,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        ConstraintResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            ModuleId::new(0),
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        assert_eq!(compiler.symbols.len(), 1);
+        assert_eq!(VALUE_TRUE_POS, 1);
+        match &compiler.values[VALUE_TRUE_POS] {
+            Value::Bool(true) => (),
+            _ => panic!("Value mistmatch"),
+        };
+
+        let text = "
+            const CONSTANT = false
+        ";
+
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        let module = &compiler.mods[0];
+
+        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+        NamespaceResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            module.mod_id,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        TypeResolver::new(
+            &settings,
+            &ast_info,
+            Default::default(),
+            &interner,
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        ConstraintResolver::new(
+            &settings,
+            &ast_info,
+            &interner,
+            ModuleId::new(0),
+            &mut compiler,
+        )
+        .resolve()
+        .unwrap();
+
+        assert_eq!(compiler.symbols.len(), 1);
+        assert_eq!(VALUE_FALSE_POS, 0);
+        match &compiler.values[VALUE_FALSE_POS] {
+            Value::Bool(false) => (),
+            _ => panic!("Value mistmatch"),
+        };
     }
 }

@@ -66,8 +66,6 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
         return Err(ScriptError::Semantic(reporter.diags).into());
     }
 
-    // If I name this mod_idx this will turn into the worst looking match statement I have seen in
-    // my very short life
     for i in 0..script_compiler.mods.len() {
         let mod_id = ModuleId::new(i);
         match TypeResolver::new(settings, &asts[i], mod_id, &interner, &mut script_compiler)
