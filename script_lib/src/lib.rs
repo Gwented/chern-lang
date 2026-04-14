@@ -1,11 +1,10 @@
 // Should this be pub(crate)?
 mod algo;
-pub mod lexer;
-// Should not be pub
 pub mod conditions;
 pub mod config_loader;
 pub mod hir;
 mod iyo;
+pub mod lexer;
 pub mod linter;
 pub mod modules;
 pub mod parser;
@@ -33,6 +32,90 @@ mod tests {
 
         interner
     }
+
+    fn mock_single_module_compiler(text: &str) -> (Intern, ChernSettings, ScriptCompiler) {
+        let interner = mock_interner(0, 1);
+        let settings = ChernSettings::default();
+
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        let module = Module::new(
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            metadata,
+        );
+
+        let compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+
+        (interner, settings, compiler)
+    }
+
+    fn mock_import(
+        name: &str,
+        path_name: &str,
+        alias_id: Option<&str>,
+        interner: &mut Intern,
+    ) -> Import {
+        Import::new(
+            NameId::new(interner.intern(name)),
+            PathId::new(interner.intern_path(&Path::new(path_name))),
+            Default::default(),
+            alias_id.map(|a| NameId::new(interner.intern(&a))),
+        )
+    }
+
+    fn mock_single_module(
+        name: &str,
+        path_name: &str,
+        imports: Vec<Import>,
+        mod_id: usize,
+        text: &str,
+        interner: &mut Intern,
+    ) -> Module {
+        let settings = ChernSettings::default();
+        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+            .load_config()
+            .unwrap();
+
+        Module::new(
+            NameId::new(interner.intern(name)),
+            PathId::new(interner.intern_path(Path::new(path_name))),
+            ModuleId::new(mod_id),
+            imports,
+            metadata,
+        )
+    }
+
+    fn mock_multiple_module_compiler(
+        modules: Vec<Module>,
+    ) -> (Intern, ChernSettings, ScriptCompiler) {
+        let interner = mock_interner(0, modules.len());
+        let settings = ChernSettings::default();
+
+        let mut mod_map = HashMap::new();
+
+        for module in &modules {
+            mod_map.insert(module.name_id, module.mod_id);
+        }
+
+        for i in 0..modules.len() {
+            for import in modules.iter().flat_map(|m| &m.imports) {
+                if let Some(alias_id) = import.alias_id {
+                    mod_map.insert(alias_id, ModuleId::new(i));
+                }
+            }
+        }
+
+        let compiler = ScriptCompiler::new(None, mod_map, modules);
+
+        (interner, settings, compiler)
+    }
+    // Builder?
+    //fn setup_multiple_modules(text: &str, ) -> (Intern, ChernSettings, ScriptCompiler) {}
 
     use std::{collections::HashMap, path::Path};
 
@@ -438,30 +521,12 @@ mod tests {
     #[test]
     fn nameresolver_duplicate_simple_test() {
         // -- NEUTRAL --
-        let mut interner = mock_interner(0, 1);
-        let settings = ChernSettings::default();
-
         let wrong = "
             const DUPLICATE = 3
             const DUPLICATE = \"Hi\"
             ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), wrong.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
 
         let module = &compiler.mods[0];
 
@@ -482,30 +547,12 @@ mod tests {
 
         assert_eq!(res.is_err(), true);
 
-        let mut interner = mock_interner(0, 1);
-        let settings = ChernSettings::default();
-
         let correct = "
                 const ORIGINAL = 2 + 2
                 const NEW = \"Hallo\"
             ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), correct.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
 
         let module = &compiler.mods[0];
 
@@ -527,31 +574,15 @@ mod tests {
         assert_eq!(res.is_ok(), true);
 
         // -- VAR --
-        let mut interner = mock_interner(0, 1);
-        let settings = ChernSettings::default();
-
         let wrong = "
             var->
                 duplicate: i32
                 duplicate: i8
             ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), wrong.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
         // Doing this first since if modules were identified during the parsing stage any
         // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
 
         let module = &compiler.mods[0];
 
@@ -572,31 +603,13 @@ mod tests {
 
         assert_eq!(res.is_err(), true);
 
-        let mut interner = mock_interner(0, 1);
-        let settings = ChernSettings::default();
-
         let correct = "
             var->
                 original: u32
                 new: i8
             ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), correct.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
 
         let module = &compiler.mods[0];
 
@@ -627,22 +640,7 @@ mod tests {
                 struct Duplicate {}
             ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), wrong.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
 
         let module = &compiler.mods[0];
 
@@ -663,31 +661,13 @@ mod tests {
 
         assert_eq!(res.is_err(), true);
 
-        let mut interner = mock_interner(0, 1);
-        let settings = ChernSettings::default();
-
         let correct = "
             nest->
                 struct Original {}
                 struct New {}
             ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), correct.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
 
         let module = &compiler.mods[0];
 
@@ -791,123 +771,231 @@ mod tests {
         }
     }
 
-    // // Would need an automated constructor for mocking modules
-    // #[test]
-    // fn module_alias_test() {
-    //     // -- NEUTRAL --
-    //     let mut interner = mock_interner(2, 2);
-    //     let settings = ChernSettings::default();
-    //
-    //     let main_txt = "
-    //         var->
-    //             //reference: dummyname1.Structure
-    //             //other_reference: dummyname1.Enumeration
-    //     ";
-    //
-    //     let main_meta = ChernConfigLoader::new(Path::new(""), main_txt.as_bytes(), &settings)
-    //         .load_config()
-    //         .unwrap();
-    //
-    //     // Doing this first since if modules were identified during the parsing stage any
-    //     // syntax error within another module would not be reportable since the parser failed.
-    //
-    //     let sub_name = (keywords::KEYWORDS_ARRAY.len() + 2) as u32;
-    //
-    //     let sub_import = Import::new(
-    //         NameId::new(sub_name),
-    //         PathId::new(1),
-    //         Default::default(),
-    //         Some(NameId::new(0)),
-    //     );
-    //
-    //     let main_mod = Module::new(
-    //         NameId::new(0),
-    //         PathId::new(0),
-    //         ModuleId::new(0),
-    //         vec![sub_import],
-    //         main_meta,
-    //     );
-    //
-    //     let sub_txt = "
-    //         nest->
-    //             enum Enumeration {}
-    //             struct Structure {}
-    //     ";
-    //
-    //     let sub_meta = ChernConfigLoader::new(Path::new(""), sub_txt.as_bytes(), &settings)
-    //         .load_config()
-    //         .unwrap();
-    //
-    //     let sub_mod = Module::new(
-    //         NameId::new(1),
-    //         PathId::new(1),
-    //         ModuleId::new(1),
-    //         Default::default(),
-    //         sub_meta,
-    //     );
-    //
-    //     let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![main_mod, sub_mod]);
-    //
-    //     let mut asts: Vec<AstInfo> = Vec::new();
-    //
-    //     for mod_idx in 0..compiler.mods.len() {
-    //         let module = &compiler.mods[mod_idx];
-    //         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
-    //             .tokenize(&mut interner);
-    //
-    //         let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
-    //
-    //         NamespaceResolver::new(
-    //             &settings,
-    //             &ast_info,
-    //             &interner,
-    //             module.mod_id,
-    //             &mut compiler,
-    //         )
-    //         .resolve()
-    //         .unwrap();
-    //
-    //         asts.push(ast_info);
-    //     }
-    //
-    //     for i in 0..compiler.mods.len() {
-    //         let mod_id = ModuleId::new(i);
-    //         TypeResolver::new(&settings, &asts[i], mod_id, &interner, &mut compiler)
-    //             .resolve()
-    //             .unwrap();
-    //
-    //         ConstraintResolver::new(&settings, &asts[i], &interner, mod_id, &mut compiler)
-    //             .resolve()
-    //             .unwrap();
-    //     }
-    // }
+    #[test]
+    fn module_alias_test() {
+        let mut interner = Intern::init();
+
+        let main_txt = "
+            var->
+                reference: sub_alias.Structure
+                other_reference: sub_alias.Enumeration
+        ";
+
+        let import = mock_import("sub_module", "sub_path", Some("sub_alias"), &mut interner);
+
+        let main_mod = mock_single_module(
+            "main",
+            "main_path",
+            vec![import],
+            0,
+            main_txt,
+            &mut interner,
+        );
+
+        let sub_txt = "
+            nest->
+                export enum Enumeration {}
+                export struct Structure {}
+        ";
+
+        let sub_mod = mock_single_module(
+            "sub_module",
+            "sub_path",
+            Default::default(),
+            1,
+            sub_txt,
+            &mut interner,
+        );
+
+        let (_, settings, mut compiler) = mock_multiple_module_compiler(vec![main_mod, sub_mod]);
+
+        let mut asts: Vec<AstInfo> = Vec::new();
+
+        for mod_idx in 0..compiler.mods.len() {
+            let module = &compiler.mods[mod_idx];
+            let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+                .tokenize(&mut interner);
+
+            let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+            NamespaceResolver::new(
+                &settings,
+                &ast_info,
+                &interner,
+                module.mod_id,
+                &mut compiler,
+            )
+            .resolve()
+            .unwrap();
+
+            asts.push(ast_info);
+        }
+
+        for i in 0..compiler.mods.len() {
+            let mod_id = ModuleId::new(i);
+            TypeResolver::new(&settings, &asts[i], mod_id, &interner, &mut compiler)
+                .resolve()
+                .unwrap();
+
+            ConstraintResolver::new(&settings, &asts[i], &interner, mod_id, &mut compiler)
+                .resolve()
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn module_privacy_test() {
+        // -- PRIVATE AND FAILING --
+        let mut interner = Intern::init();
+
+        let main_txt = "
+            var->
+                reference: sub_module.Structure
+                other_reference: sub_module.Enumeration
+        ";
+
+        let import = mock_import("sub_module", "sub_path", Some("sub_alias"), &mut interner);
+
+        let main_mod = mock_single_module(
+            "main",
+            "main_path",
+            vec![import],
+            0,
+            main_txt,
+            &mut interner,
+        );
+
+        let sub_txt = "
+            nest->
+                enum Enumeration {}
+                struct Structure {}
+        ";
+
+        let sub_mod = mock_single_module(
+            "sub_module",
+            "sub_path",
+            Default::default(),
+            1,
+            sub_txt,
+            &mut interner,
+        );
+
+        let (_, settings, mut compiler) = mock_multiple_module_compiler(vec![main_mod, sub_mod]);
+
+        let mut asts: Vec<AstInfo> = Vec::new();
+
+        for mod_idx in 0..compiler.mods.len() {
+            let module = &compiler.mods[mod_idx];
+            let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+                .tokenize(&mut interner);
+
+            let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+            NamespaceResolver::new(
+                &settings,
+                &ast_info,
+                &interner,
+                module.mod_id,
+                &mut compiler,
+            )
+            .resolve()
+            .unwrap();
+
+            asts.push(ast_info);
+        }
+
+        let mut results = Vec::new();
+
+        for i in 0..compiler.mods.len() {
+            let mod_id = ModuleId::new(i);
+            results.push(
+                TypeResolver::new(&settings, &asts[i], mod_id, &interner, &mut compiler).resolve(),
+            );
+        }
+
+        assert_eq!(results[0].is_err(), true, "Not exported");
+        assert_eq!(results[1].is_ok(), true, "Is fine in own context");
+
+        // -- PUBLIC AND SUCCEEDING --
+        let mut interner = Intern::init();
+
+        let main_txt = "
+            var->
+                reference: sub_module.Structure
+                other_reference: sub_module.Enumeration
+        ";
+
+        let import = mock_import("sub_module", "sub_path", Some("sub_alias"), &mut interner);
+
+        let main_mod = mock_single_module(
+            "main",
+            "main_path",
+            vec![import],
+            0,
+            main_txt,
+            &mut interner,
+        );
+
+        let sub_txt = "
+            nest->
+                export enum Enumeration {}
+                export struct Structure {}
+        ";
+
+        let sub_mod = mock_single_module(
+            "sub_module",
+            "sub_path",
+            Default::default(),
+            1,
+            sub_txt,
+            &mut interner,
+        );
+
+        let (_, settings, mut compiler) = mock_multiple_module_compiler(vec![main_mod, sub_mod]);
+
+        let mut asts: Vec<AstInfo> = Vec::new();
+
+        for mod_idx in 0..compiler.mods.len() {
+            let module = &compiler.mods[mod_idx];
+            let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+                .tokenize(&mut interner);
+
+            let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+
+            NamespaceResolver::new(
+                &settings,
+                &ast_info,
+                &interner,
+                module.mod_id,
+                &mut compiler,
+            )
+            .resolve()
+            .unwrap();
+
+            asts.push(ast_info);
+        }
+
+        let mut results = Vec::new();
+
+        for i in 0..compiler.mods.len() {
+            let mod_id = ModuleId::new(i);
+            results.push(
+                TypeResolver::new(&settings, &asts[i], mod_id, &interner, &mut compiler).resolve(),
+            );
+        }
+
+        assert_eq!(results[0].is_ok(), true);
+        assert_eq!(results[1].is_ok(), true);
+    }
 
     #[test]
     fn scope_simple_test() {
         // -- NEUTRAL --
-        let mut interner = mock_interner(0, 1);
-        let settings = ChernSettings::default();
-
         let text = "
             const CONSTANT = 3
             ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
         let module = &compiler.mods[0];
 
@@ -936,30 +1024,12 @@ mod tests {
         );
 
         // -- VAR --
-        let mut interner = mock_interner(0, 1);
-        let settings = ChernSettings::default();
-
         let text = "
             var->
                 variable: i32
             ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
         let module = &compiler.mods[0];
 
@@ -985,31 +1055,13 @@ mod tests {
         assert_eq!(module.scope_manager.scopes[0].scope_type, ScopeType::Var);
 
         // -- NEST --
-        let mut interner = mock_interner(0, 1);
-        let settings = ChernSettings::default();
-
         let text = "
             nest->
                 struct Thing1 {}
                 struct Thing2 {}
             ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
         let module = &compiler.mods[0];
 
@@ -1139,22 +1191,7 @@ mod tests {
                 struct Nest {}
             ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
         let module = &compiler.mods[0];
 
@@ -1186,31 +1223,13 @@ mod tests {
 
     #[test]
     fn type_resolver_simple_test() {
-        let mut interner = mock_interner(0, 1);
-        let settings = ChernSettings::default();
-
         let wrong = "
             var->
                 primitive: i32
                 undeclared_type: Thing
             ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), wrong.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
 
         let module = &compiler.mods[0];
 
@@ -1240,9 +1259,6 @@ mod tests {
 
         assert_eq!(res.is_err(), true);
 
-        let mut interner = mock_interner(0, 1);
-        let settings = ChernSettings::default();
-
         let correct = "
             var->
                 primitive: i32
@@ -1251,22 +1267,7 @@ mod tests {
                 struct Thing {}
             ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), correct.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
 
         let module = &compiler.mods[0];
 
@@ -1299,29 +1300,11 @@ mod tests {
 
     #[test]
     fn type_resolver_complex_test() {
-        let mut interner = mock_interner(0, 1);
-        let settings = ChernSettings::default();
-
         let text = "
             const CONSTANT = 4
             ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
         let module = &compiler.mods[0];
 
@@ -1355,29 +1338,11 @@ mod tests {
 
     #[test]
     fn constraint_resolver_const_test() {
-        let mut interner = mock_interner(0, 1);
-        let settings = ChernSettings::default();
-
         let text = "
             const CONSTANT = 4
             ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
         let pre_loaded_values = compiler.values.len();
 
@@ -1425,29 +1390,11 @@ mod tests {
             _ => panic!("Value mistmatch"),
         };
 
-        let mut interner = mock_interner(0, 1);
-        let settings = ChernSettings::default();
-
         let text = "
             const CONSTANT = \"Hallo\"
         ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
         let pre_loaded_values = compiler.values.len();
 
@@ -1495,29 +1442,11 @@ mod tests {
             _ => panic!("Value mistmatch"),
         };
 
-        let mut interner = mock_interner(0, 1);
-        let settings = ChernSettings::default();
-
         let text = "
             const CONSTANT = 0e-5
         ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
         let pre_loaded_values = compiler.values.len();
 
@@ -1565,29 +1494,11 @@ mod tests {
             _ => panic!("Value mistmatch"),
         };
 
-        let mut interner = mock_interner(0, 1);
-        let settings = ChernSettings::default();
-
         let text = "
             const CONSTANT = true
         ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
         let module = &compiler.mods[0];
 
@@ -1637,22 +1548,7 @@ mod tests {
             const CONSTANT = false
         ";
 
-        let metadata = ChernConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            metadata,
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
+        let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
         let module = &compiler.mods[0];
 
