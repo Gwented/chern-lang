@@ -1,8 +1,30 @@
 use chern_core::{keywords::Keyword, values::Value};
 
-use crate::{parser::ast::BinaryOp, semantic::error::SemanticError};
+use crate::{
+    parser::ast::{BinaryOp, UnaryOp},
+    semantic::error::SemanticError,
+};
 
-pub fn is_compatible(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
+pub fn is_compatible_unary(op: UnaryOp, operand: &Value) -> bool {
+    match op {
+        UnaryOp::Not => match operand {
+            Value::Bool(_) => true,
+            Value::I128(_)
+            | Value::F64(_)
+            | Value::Char(_)
+            | Value::Tuple(_)
+            | Value::CompileStr(_)
+            | Value::RuntimeStr(_)
+            | Value::Unknown => false,
+        },
+        UnaryOp::Negate => match operand {
+            Value::I128(_) | Value::F64(_) => true,
+            _ => false,
+        },
+    }
+}
+
+pub fn is_compatible_binary(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
     match lhs {
         Value::I128(_) => match op {
             BinaryOp::Add
@@ -74,6 +96,26 @@ pub fn is_compatible(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
         // Only semantic has access to these functions due a HIR being used for serial as opposed
         // to Expr so this compile time step cannot touch runtime
         Value::RuntimeStr(_) => unreachable!("Impossible at compile time"),
+    }
+}
+
+pub fn apply_unary_op(op: UnaryOp, operand: &Value) -> Result<Value, SemanticError> {
+    match op {
+        UnaryOp::Not => match operand {
+            Value::Bool(v) => Ok(Value::Bool(!v)),
+            Value::F64(_)
+            | Value::I128(_)
+            | Value::Char(_)
+            | Value::Tuple(_)
+            | Value::CompileStr(_)
+            | Value::RuntimeStr(_)
+            | Value::Unknown => unreachable!(),
+        },
+        UnaryOp::Negate => match operand {
+            Value::I128(v) => Ok(Value::I128(-v)),
+            Value::F64(v) => Ok(Value::F64(-v)),
+            _ => unreachable!(),
+        },
     }
 }
 

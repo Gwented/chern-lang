@@ -23,7 +23,7 @@ use crate::{
     script_compiler::{ScriptCompiler, VALUE_FALSE_POS, VALUE_TRUE_POS, VALUE_UNKNOWN_POS},
     semantic::{
         constraints::ArgConstraint,
-        error::SemanticError,
+        error::{MathError, SemanticError},
         evaluator,
         representation::{FuncArgsRepre, FuncKind, FuncRepre, Symbol, SymbolInfo, Type},
         scopes::ScopeType,
@@ -730,9 +730,22 @@ impl ConstraintResolver<'_> {
                         Symbol::Alias(alias_repre) => todo!(),
                         Symbol::TypeDef(type_def_repre) => todo!(),
                     }
-                }
+                } else {
+                    // SemanticError needs centralization
+                    todo!("Semantic error not done");
+                    // let name = self.interner.search(name_id.id as usize);
+                    // let msg = format!(
+                    //     "The variable `{name}` was not found in the current module's scope"
+                    // );
 
-                todo!()
+                    // return self.reporter.report_spanned(
+                    //     &msg,
+                    //     Some(name),
+                    //     &[spanned_expr.span],
+                    //     module,
+                    // );
+                    // Err(())
+                }
             }
             Expr::Integer(id, _) => {
                 if let Ok(num) = self.interner.search(*id as usize).parse::<i128>() {
@@ -770,14 +783,15 @@ impl ConstraintResolver<'_> {
                 let lhs_val = &self.compiler.values[lhs_id.id];
                 let rhs_val = &self.compiler.values[rhs_id.id];
 
-                if !evaluator::is_compatible(&lhs_val, *op, &rhs_val) {
+                if !evaluator::is_compatible_binary(&lhs_val, *op, &rhs_val) {
                     let full_span = lhs.span.merge(rhs.span);
-                    return Err(SemanticError::BinaryOpMismatch(
+
+                    return Err(MathError::BinaryOpMismatch(
                         lhs_val.kind().to_fmt(),
                         rhs_val.kind().to_fmt(),
                         op.to_fmt(),
                         vec![full_span],
-                    ));
+                    ))?;
                 }
 
                 let val_id = ValueId::new(self.compiler.values.len());
@@ -807,8 +821,30 @@ impl ConstraintResolver<'_> {
 
                 todo!();
             }
-            Expr::FieldAccess(abstract_field_access) => todo!(),
-            Expr::Unary(unary) => todo!(),
+            Expr::FieldAccess(abs_field_access) => {
+                dbg!(&abs_field_access.base);
+                todo!();
+            }
+            Expr::Unary(unary) => {
+                let operand_id =
+                    self.resolve_expr(&unary.spanned_expr, scope_type, needs_resolution)?;
+                let operand = &self.compiler.values[operand_id.id];
+
+                if !evaluator::is_compatible_unary(unary.op, operand) {
+                    return Err(MathError::UnaryOpMismatch(
+                        operand.kind().to_fmt(),
+                        unary.op.to_fmt(),
+                        vec![spanned_expr.span],
+                    ))?;
+                }
+
+                let res = evaluator::apply_unary_op(unary.op, operand)?;
+                let val_id = ValueId::new(self.compiler.values.len());
+
+                self.compiler.values.push(res);
+
+                Ok(val_id)
+            }
         }
     }
 

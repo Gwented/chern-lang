@@ -84,6 +84,7 @@ pub enum Formatted {
     FuncEndsW,
     FuncContains,
     FuncEquals,
+    ExclamationPoint,
     Cond,
     UserFunc,
     // Hmm...
@@ -165,6 +166,7 @@ impl Display for Formatted {
             Formatted::OpBitOr => write!(f, "|"),
             Formatted::OpBitAnd => write!(f, "&"),
             Formatted::OpBitNot => write!(f, "~"),
+            Formatted::ExclamationPoint => write!(f, "!"),
             Formatted::OpBitRightShift => write!(f, ">>"),
             Formatted::OpBitLeftShift => write!(f, "<<"),
             Formatted::OpBitXor => write!(f, "^"),

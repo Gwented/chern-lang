@@ -26,6 +26,18 @@ pub(super) enum SemanticError {
     CircularCond(Cond, Formatted, Vec<Span>),
     /// The interned string, type overflown, spans
     NumericOverflow(u32, Formatted, Vec<Span>),
+    Math(MathError),
+}
+
+pub(super) enum MathError {
     /// Lhs, rhs, Op, spans
     BinaryOpMismatch(Formatted, Formatted, Formatted, Vec<Span>),
+    /// operand, op, spans
+    UnaryOpMismatch(Formatted, Formatted, Vec<Span>),
+}
+
+impl From<MathError> for SemanticError {
+    fn from(math_err: MathError) -> Self {
+        SemanticError::Math(math_err)
+    }
 }

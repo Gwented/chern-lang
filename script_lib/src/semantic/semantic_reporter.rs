@@ -11,6 +11,8 @@ use common::{
 
 use crate::{algo, modules::Module, semantic::error::SemanticError};
 
+use super::error::MathError;
+
 #[derive(Debug)]
 pub(super) struct SemanticReporter<'a> {
     pub(super) err_vec: Vec<Diagnostic>,
@@ -92,13 +94,20 @@ impl<'a> SemanticReporter<'a> {
 
                 (msg, spans)
             }
-            SemanticError::BinaryOpMismatch(fmtted_lhs, fmtted_rhs, fmtted_op, spans) => {
-                let msg = format!(
-                    "The type `{fmtted_lhs}` cannot apply `{fmtted_op}` to type `{fmtted_rhs}`",
-                );
+            SemanticError::Math(math_error) => match math_error {
+                MathError::BinaryOpMismatch(fmtted_lhs, fmtted_rhs, fmtted_op, spans) => {
+                    let msg = format!(
+                        "The type `{fmtted_lhs}` cannot apply `{fmtted_op}` to type `{fmtted_rhs}`",
+                    );
 
-                (msg, spans)
-            }
+                    (msg, spans)
+                }
+                MathError::UnaryOpMismatch(fmtted_operand, fmtted_op, spans) => {
+                    let msg = format!("Cannot apply `{fmtted_op}` to type `{fmtted_operand}`",);
+
+                    (msg, spans)
+                }
+            },
         };
 
         let ln_data =

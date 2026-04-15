@@ -560,10 +560,19 @@ impl Unary {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) enum UnaryOp {
     Not,
     Negate,
+}
+
+impl Formattable for UnaryOp {
+    fn to_fmt(&self) -> Formatted {
+        match self {
+            UnaryOp::Not => Formatted::ExclamationPoint,
+            UnaryOp::Negate => Formatted::OpSub,
+        }
+    }
 }
 
 #[derive(Debug)]

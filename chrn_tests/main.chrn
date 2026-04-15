@@ -9,15 +9,15 @@
 
 @def
 
-const export = READ
-const CONSTANT = (export == 4) == true
+//const export = defs.READ
+const true = &32
 
 // Require forward slashes
-import "../chrn_tests/defs.chrn" as chern
+//import "../chrn_tests/defs.chrn" as chern
 
 var->
     export: i32
-    user: chern.Person
+    // user: chern.Person
     thing: BigFloat
     var: Tuple<str, u8, str> // [StartsW(5)]
 
