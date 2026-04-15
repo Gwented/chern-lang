@@ -125,7 +125,7 @@ impl Token {
             Token::Plus => Some((BinaryOp::Add, 1)),
             Token::Hyphen => Some((BinaryOp::Sub, 1)),
             Token::Asterisk => Some((BinaryOp::Mult, 2)),
-            Token::Slash => Some((BinaryOp::Divide, 2)),
+            Token::Slash => Some((BinaryOp::Div, 2)),
             Token::Percent => Some((BinaryOp::Mod, 2)),
             Token::OAngleBracket => Some((BinaryOp::Less, 3)),
             Token::CAngleBracket => Some((BinaryOp::Greater, 3)),

@@ -1,4 +1,4 @@
-use chern_core::inner_args::InnerArgs;
+use chern_core::{id_types::NameId, inner_args::InnerArgs};
 use common::{fmter::Formatted, span::Span};
 
 use crate::{
@@ -8,6 +8,8 @@ use crate::{
 
 //TODO: Change this majorly. Make many mistakes. Hallucinate.
 pub(super) enum SemanticError {
+    /// msg, spans
+    General(String, Vec<Span>),
     /// Constraint, found type(builtin or user), function kind, spans
     FuncConstraintMismatch(ArgConstraint, Formatted, FuncKind, Vec<Span>),
     /// Constraint, function type, amount of incorrect params found, spans
@@ -25,7 +27,10 @@ pub(super) enum SemanticError {
     CircularArg(InnerArgs, Formatted, Vec<Span>),
     CircularCond(Cond, Formatted, Vec<Span>),
     /// The interned string, type overflown, spans
+    //WARN: This technically shouldn't exist since BigInt/BigFloat would exist
     NumericOverflow(u32, Formatted, Vec<Span>),
+    //TODO: Maybe option name id?
+    UndefinedMember(Span),
     Math(MathError),
 }
 
@@ -34,6 +39,8 @@ pub(super) enum MathError {
     BinaryOpMismatch(Formatted, Formatted, Formatted, Vec<Span>),
     /// operand, op, spans
     UnaryOpMismatch(Formatted, Formatted, Vec<Span>),
+    /// Lhs, rhs, spans
+    DivideByZero(Formatted, Vec<Span>),
 }
 
 impl From<MathError> for SemanticError {

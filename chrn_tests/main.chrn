@@ -9,13 +9,14 @@
 
 @def
 
-//const export = defs.READ
-const true = &32
+const true = defs.READ + 2
 
 // Require forward slashes
-//import "../chrn_tests/defs.chrn" as chern
+import "../chrn_tests/defs.chrn" as chern
 
 var->
+    // Sure I guess
+    // defs.var
     export: i32
     // user: chern.Person
     thing: BigFloat

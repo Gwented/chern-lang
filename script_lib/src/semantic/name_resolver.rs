@@ -49,7 +49,6 @@ impl NamespaceResolver<'_> {
         }
     }
 
-    //TODO: Check structures of data for same name symbols
     pub fn resolve(&mut self) -> Result<(), Vec<Diagnostic>> {
         // Registering namespaces
         for (id, item) in self.ast_info.items.iter().enumerate() {
@@ -61,12 +60,10 @@ impl NamespaceResolver<'_> {
                 Item::Enum(abs_enum) => self.register_enum(abs_enum, ast_id),
                 Item::Alias(abs_alias) => self.register_alias(abs_alias, ast_id),
                 Item::Const(abs_const) => self.register_const(abs_const, ast_id),
-                // Maybe imports outside of this should be stored separately
             }
         }
 
-        //FIX: This needs scoping
-        // Collecting possible same symbol errors
+        // Type specific needed
         self.check_duplicates();
 
         if !self.reporter.err_vec.is_empty() {
@@ -87,8 +84,8 @@ impl NamespaceResolver<'_> {
     fn register_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) {
         // This will all likely fail eventually
         let module = &mut self.compiler.mods[self.current_mod.id];
-        let scope_id = module.scope_manager.push_scope(ScopeType::Var);
-        let table = &mut module.scope_manager.get_scope_mut(scope_id).table;
+        let scope_id = module.push_scope(ScopeType::Var);
+        let table = &mut module.get_scope_mut(scope_id).table;
 
         table.name_ids.insert(ast_id, abs_typedef.name_id);
 
@@ -108,8 +105,8 @@ impl NamespaceResolver<'_> {
 
     fn register_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) {
         let module = &mut self.compiler.mods[self.current_mod.id];
-        let scope_id = module.scope_manager.push_scope(ScopeType::Nest);
-        let table = &mut module.scope_manager.get_scope_mut(scope_id).table;
+        let scope_id = module.push_scope(ScopeType::Nest);
+        let table = &mut module.get_scope_mut(scope_id).table;
 
         table.name_ids.insert(ast_id, abs_struct.name_id);
 
@@ -135,8 +132,8 @@ impl NamespaceResolver<'_> {
 
     fn register_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) {
         let module = &mut self.compiler.mods[self.current_mod.id];
-        let scope_id = module.scope_manager.push_scope(ScopeType::Nest);
-        let table = &mut module.scope_manager.get_scope_mut(scope_id).table;
+        let scope_id = module.push_scope(ScopeType::Nest);
+        let table = &mut module.get_scope_mut(scope_id).table;
 
         table.name_ids.insert(ast_id, abs_enum.name_id);
 
@@ -157,8 +154,8 @@ impl NamespaceResolver<'_> {
 
     fn register_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) {
         let module = &mut self.compiler.mods[self.current_mod.id];
-        let scope_id = module.scope_manager.push_scope(ScopeType::Neutral);
-        let table = &mut module.scope_manager.get_scope_mut(scope_id).table;
+        let scope_id = module.push_scope(ScopeType::Neutral);
+        let table = &mut module.get_scope_mut(scope_id).table;
 
         table.name_ids.insert(ast_id, abs_alias.name_id);
 
@@ -194,8 +191,8 @@ impl NamespaceResolver<'_> {
     //WARN: IS THIS RIGHT?
     fn register_const(&mut self, abs_const: &AbstractConst, ast_id: AstId) {
         let module = &mut self.compiler.mods[self.current_mod.id];
-        let scope_id = module.scope_manager.push_scope(ScopeType::Neutral);
-        let table = &mut module.scope_manager.get_scope_mut(scope_id).table;
+        let scope_id = module.push_scope(ScopeType::Neutral);
+        let table = &mut module.get_scope_mut(scope_id).table;
 
         table.name_ids.insert(ast_id, abs_const.name_id);
 
@@ -206,7 +203,7 @@ impl NamespaceResolver<'_> {
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
         table.sym_ids.insert(ast_id, sym_id);
 
-        let const_repre = ConstRepre::new(abs_const.name_id, sym_id, ast_id, ValueId::new(0));
+        let const_repre = ConstRepre::new(abs_const.name_id, sym_id, ast_id, None);
 
         let sym_info = SymbolInfo::new(
             Symbol::Const(const_repre),
@@ -230,7 +227,7 @@ impl NamespaceResolver<'_> {
         let module = &self.compiler.mods[self.current_mod.id];
 
         // Searching if there are any duplicates with respect to the scope
-        for scope in &module.scope_manager.scopes {
+        for scope in &module.scopes {
             for (ast_id, name_id) in &scope.table.name_ids {
                 // Why is it not true if it exists false otherwise...seems backwards
                 let ast_opt = seen.insert(*name_id, *ast_id);

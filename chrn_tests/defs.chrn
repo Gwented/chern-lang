@@ -6,7 +6,7 @@ export const READ = 0b00000001
 
 // alias Person() = [IsEmpty]
 
-const true = false
+const true = defs.Constant
 
 var->
     // var: Tuple<str, u8, str> [StartsW("Hello")]

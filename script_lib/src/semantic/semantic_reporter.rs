@@ -94,6 +94,7 @@ impl<'a> SemanticReporter<'a> {
 
                 (msg, spans)
             }
+            SemanticError::General(msg, spans) => (msg, spans),
             SemanticError::Math(math_error) => match math_error {
                 MathError::BinaryOpMismatch(fmtted_lhs, fmtted_rhs, fmtted_op, spans) => {
                     let msg = format!(
@@ -107,7 +108,17 @@ impl<'a> SemanticReporter<'a> {
 
                     (msg, spans)
                 }
+                MathError::DivideByZero(_, spans) => {
+                    let msg = format!("Cannot divide by zero");
+
+                    (msg, spans);
+                    todo!();
+                }
             },
+            SemanticError::UndefinedMember(span) => {
+                let msg = format!("Cannot infer member access");
+                (msg, [span].to_vec())
+            }
         };
 
         let ln_data =

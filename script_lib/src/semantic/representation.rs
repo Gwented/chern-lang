@@ -85,22 +85,28 @@ impl Table {
     }
 }
 
+// Are these technically HIR?
 #[derive(Debug)]
 pub(crate) struct ConstRepre {
     pub(crate) name_id: NameId,
     pub(crate) sym_id: SymbolId,
     pub(crate) ast_id: AstId,
     // It's position in the Type array
-    pub(crate) value_id: ValueId,
+    pub(crate) val_id: Option<ValueId>,
 }
 
 impl ConstRepre {
-    pub fn new(name_id: NameId, sym_id: SymbolId, ast_id: AstId, value_id: ValueId) -> ConstRepre {
+    pub fn new(
+        name_id: NameId,
+        sym_id: SymbolId,
+        ast_id: AstId,
+        val_id: Option<ValueId>,
+    ) -> ConstRepre {
         ConstRepre {
             name_id,
             sym_id,
             ast_id,
-            value_id,
+            val_id,
         }
     }
 }
@@ -396,6 +402,25 @@ impl AliasRepre {
     }
 }
 
+#[derive(Debug)]
+pub struct Tuple {
+    pub(crate) elements: Vec<TypeId>,
+    pub(crate) type_id: TypeId,
+}
+
+impl Tuple {
+    pub fn new(elements: Vec<TypeId>, type_id: TypeId) -> Tuple {
+        Tuple { elements, type_id }
+    }
+}
+
+//TEST:
+pub(crate) enum PossibleMember {
+    Module(ModuleId),
+    Var(ValueId),
+    Nothing,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FuncKind {
     Contains,
@@ -429,17 +454,5 @@ impl Display for FuncKind {
             FuncKind::UserDefined => write!(f, "<Hi>"),
             FuncKind::Equals => write!(f, "Equals"),
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct Tuple {
-    pub(crate) elements: Vec<TypeId>,
-    pub(crate) type_id: TypeId,
-}
-
-impl Tuple {
-    pub fn new(elements: Vec<TypeId>, type_id: TypeId) -> Tuple {
-        Tuple { elements, type_id }
     }
 }

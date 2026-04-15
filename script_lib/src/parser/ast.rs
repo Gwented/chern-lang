@@ -98,7 +98,6 @@ pub(crate) enum Expr {
     Var(NameId),
     /// Variable name, along with optional default type
     Default(NameId, Box<SpannedExpr>),
-    // Staying capped at i64 and f64 for pacing purposes
     // TODO: Need to likely carry notation here
     // Also maybe should be a "literal" type
     Integer(u32, Notation),
@@ -106,7 +105,7 @@ pub(crate) enum Expr {
     Str(NameId),
     Char(char),
     Call(Box<SpannedExpr>, Vec<SpannedExpr>),
-    FieldAccess(AbstractFieldAccess),
+    MemberAccess(AbstractMemberAccess),
     Unary(Unary),
     BinaryExpr {
         lhs: Box<SpannedExpr>,
@@ -120,7 +119,7 @@ pub enum BinaryOp {
     Add,
     Sub,
     Mult,
-    Divide,
+    Div,
     Greater,
     Less,
     GreaterOrEq,
@@ -144,7 +143,7 @@ impl BinaryOp {
             BinaryOp::Add
             | BinaryOp::Sub
             | BinaryOp::Mult
-            | BinaryOp::Divide
+            | BinaryOp::Div
             | BinaryOp::Greater
             | BinaryOp::BitOr
             | BinaryOp::BitAnd
@@ -181,7 +180,7 @@ impl BinaryOp {
             BinaryOp::Add
             | BinaryOp::Sub
             | BinaryOp::Mult
-            | BinaryOp::Divide
+            | BinaryOp::Div
             | BinaryOp::Greater
             | BinaryOp::Mod => false,
         }
@@ -194,7 +193,7 @@ impl Formattable for BinaryOp {
             BinaryOp::Add => Formatted::OpAdd,
             BinaryOp::Sub => Formatted::OpSub,
             BinaryOp::Mult => Formatted::OpMult,
-            BinaryOp::Divide => Formatted::OpDivide,
+            BinaryOp::Div => Formatted::OpDivide,
             BinaryOp::Greater => Formatted::OpGreater,
             BinaryOp::Less => Formatted::OpLess,
             BinaryOp::GreaterOrEq => Formatted::OpGreaterOrEq,
@@ -534,14 +533,14 @@ impl AbstractAlias {
 }
 
 #[derive(Debug)]
-pub(crate) struct AbstractFieldAccess {
+pub(crate) struct AbstractMemberAccess {
     pub(crate) base: Box<SpannedExpr>,
     pub(crate) field: NameId,
 }
 
-impl AbstractFieldAccess {
-    pub(crate) fn new(base: Box<SpannedExpr>, field: NameId) -> AbstractFieldAccess {
-        AbstractFieldAccess { base, field }
+impl AbstractMemberAccess {
+    pub(crate) fn new(base: Box<SpannedExpr>, field: NameId) -> AbstractMemberAccess {
+        AbstractMemberAccess { base, field }
     }
 }
 

@@ -1017,11 +1017,8 @@ mod tests {
 
         let module = &compiler.mods[0];
 
-        assert_eq!(module.scope_manager.scopes.len(), 1);
-        assert_eq!(
-            module.scope_manager.scopes[0].scope_type,
-            ScopeType::Neutral
-        );
+        assert_eq!(module.scopes.len(), 1);
+        assert_eq!(module.scopes[0].scope_type, ScopeType::Neutral);
 
         // -- VAR --
         let text = "
@@ -1051,8 +1048,8 @@ mod tests {
 
         let module = &compiler.mods[0];
 
-        assert_eq!(module.scope_manager.scopes.len(), 1);
-        assert_eq!(module.scope_manager.scopes[0].scope_type, ScopeType::Var);
+        assert_eq!(module.scopes.len(), 1);
+        assert_eq!(module.scopes[0].scope_type, ScopeType::Var);
 
         // -- NEST --
         let text = "
@@ -1083,8 +1080,8 @@ mod tests {
 
         let module = &compiler.mods[0];
 
-        assert_eq!(module.scope_manager.scopes.len(), 1);
-        assert_eq!(module.scope_manager.scopes[0].scope_type, ScopeType::Nest);
+        assert_eq!(module.scopes.len(), 1);
+        assert_eq!(module.scopes[0].scope_type, ScopeType::Nest);
 
         // //TEST: -- COMPLEX --
         // let mut interner = mock_interner(0, 1);
@@ -1212,13 +1209,10 @@ mod tests {
 
         //TODO: Override and Complex
         let module = &compiler.mods[0];
-        assert_eq!(module.scope_manager.scopes.len(), 3);
-        assert_eq!(
-            module.scope_manager.scopes[0].scope_type,
-            ScopeType::Neutral
-        );
-        assert_eq!(module.scope_manager.scopes[1].scope_type, ScopeType::Var);
-        assert_eq!(module.scope_manager.scopes[2].scope_type, ScopeType::Nest);
+        assert_eq!(module.scopes.len(), 3);
+        assert_eq!(module.scopes[0].scope_type, ScopeType::Neutral);
+        assert_eq!(module.scopes[1].scope_type, ScopeType::Var);
+        assert_eq!(module.scopes[2].scope_type, ScopeType::Nest);
     }
 
     #[test]

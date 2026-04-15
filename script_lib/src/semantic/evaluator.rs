@@ -2,7 +2,7 @@ use chern_core::{keywords::Keyword, values::Value};
 
 use crate::{
     parser::ast::{BinaryOp, UnaryOp},
-    semantic::error::SemanticError,
+    semantic::error::{MathError, SemanticError},
 };
 
 pub fn is_compatible_unary(op: UnaryOp, operand: &Value) -> bool {
@@ -30,7 +30,7 @@ pub fn is_compatible_binary(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
             BinaryOp::Add
             | BinaryOp::Sub
             | BinaryOp::Mult
-            | BinaryOp::Divide
+            | BinaryOp::Div
             | BinaryOp::Greater
             | BinaryOp::Less
             | BinaryOp::GreaterOrEq
@@ -53,7 +53,7 @@ pub fn is_compatible_binary(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
             BinaryOp::Add
             | BinaryOp::Sub
             | BinaryOp::Mult
-            | BinaryOp::Divide
+            | BinaryOp::Div
             | BinaryOp::Greater
             | BinaryOp::Less
             | BinaryOp::GreaterOrEq
@@ -122,6 +122,7 @@ pub fn apply_unary_op(op: UnaryOp, operand: &Value) -> Result<Value, SemanticErr
 // Not my best work
 /// Applies operation assuming that lhs and rhs were checked for compatibility
 //TODO: BIGFLOAT
+//Maybe have all error handling happen here?
 pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, SemanticError> {
     match op {
         BinaryOp::Add => match lhs {
@@ -163,11 +164,11 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
             },
             _ => unreachable!(),
         },
-        BinaryOp::Divide => match lhs {
+        BinaryOp::Div => match lhs {
             Value::I128(lhs_inner) => match rhs {
                 Value::I128(rhs_inner) => {
                     if *rhs_inner == 0 {
-                        panic!("Center a div");
+                        todo!("Center a div");
                     }
 
                     Ok(Value::I128(lhs_inner / rhs_inner))
@@ -363,3 +364,7 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
         BinaryOp::BitXor => todo!(),
     }
 }
+
+// pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value, spans: Vec<Span>) -> Result<Value, SemanticError> {
+//     todo!();
+// }

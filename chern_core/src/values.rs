@@ -1,6 +1,6 @@
 use common::fmter::{Formattable, Formatted};
 
-use crate::id_types::NameId;
+use crate::id_types::{NameId, ValueId};
 
 // The value system of script would be simple but the serial does need this too so maybe re-use
 // it?
@@ -66,4 +66,9 @@ impl Formattable for ValueKind {
             ValueKind::Unknown => Formatted::Nothing,
         }
     }
+}
+
+pub enum ValueResult {
+    Resolved(ValueId),
+    Unresolved,
 }

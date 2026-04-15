@@ -5,7 +5,7 @@ mod parser_state;
 
 use crate::modules::Module;
 use crate::parser::ast::{
-    AbstractAlias, AbstractConst, AbstractEnum, AbstractFieldAccess, AbstractStruct,
+    AbstractAlias, AbstractConst, AbstractEnum, AbstractMemberAccess, AbstractStruct,
     AbstractTypeDef, AbstractVariant, AstInfo, Expr, Generic, Item, SpannedExpr, SpannedTypeExpr,
     TypeExpr, Unary, UnaryOp,
 };
@@ -757,7 +757,7 @@ fn parse_expr(ctx: &mut Context, min_bp: u8, interner: &Intern) -> Result<Spanne
             let span = Span::new(lhs.span.start, ctx.peek_behind(1).span.end);
 
             lhs = SpannedExpr::new(
-                Expr::FieldAccess(AbstractFieldAccess::new(
+                Expr::MemberAccess(AbstractMemberAccess::new(
                     Box::new(lhs),
                     NameId::new(field_id),
                 )),

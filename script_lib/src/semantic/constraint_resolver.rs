@@ -4,7 +4,7 @@ use chern_core::{
     inner_args::{InnerArgs, SpannedInnerArgs},
     intern::Intern,
     keywords::Keyword,
-    values::Value,
+    values::{Value, ValueResult},
 };
 use common::{
     chern_settings::ChernSettings,
@@ -17,15 +17,17 @@ use crate::{
     conditions::Cond,
     modules::Module,
     parser::ast::{
-        AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, BinaryOp, Expr,
-        Item, SpannedExpr, UnaryOp,
+        AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Expr, Item,
+        SpannedExpr, UnaryOp,
     },
-    script_compiler::{ScriptCompiler, VALUE_FALSE_POS, VALUE_TRUE_POS, VALUE_UNKNOWN_POS},
+    script_compiler::{ScriptCompiler, VALUE_FALSE_POS, VALUE_TRUE_POS},
     semantic::{
         constraints::ArgConstraint,
         error::{MathError, SemanticError},
         evaluator,
-        representation::{FuncArgsRepre, FuncKind, FuncRepre, Symbol, SymbolInfo, Type},
+        representation::{
+            FuncArgsRepre, FuncKind, FuncRepre, PossibleMember, Symbol, SymbolInfo, Type,
+        },
         scopes::ScopeType,
         semantic_reporter::SemanticReporter,
     },
@@ -40,8 +42,9 @@ pub struct ConstraintResolver<'a> {
     reporter: SemanticReporter<'a>,
 }
 
-impl ConstraintResolver<'_> {
-    pub fn new<'a>(
+// Maybe just give module control flow to the resolver
+impl<'a> ConstraintResolver<'a> {
+    pub fn new(
         settings: &'a ChernSettings,
         ast_info: &'a AstInfo,
         interner: &'a Intern,
@@ -78,8 +81,10 @@ impl ConstraintResolver<'_> {
                 }
             }
         }
-        //FIX:
-        //Maybe push unresolved values into a queue then after this resolve the remaining
+
+        if !self.unresolved.is_empty() {
+            eprintln!("Unresolved state not ready");
+        }
 
         if !self.reporter.err_vec.is_empty() {
             let mut diags = Vec::new();
@@ -93,14 +98,20 @@ impl ConstraintResolver<'_> {
 
     fn resolve_const(&mut self, abs_const: &AbstractConst, ast_id: AstId) -> Result<(), ()> {
         let module = &self.compiler.mods[self.current_mod.id];
-        let scope_id = module.scope_manager.extract_scope_id(ScopeType::Neutral);
-        let table = &module.scope_manager.get_scope(scope_id).table;
+        let scope_id = module.extract_scope_id(ScopeType::Neutral);
+        let table = &module.get_scope(scope_id).table;
 
         let sym_id = table.sym_ids[&ast_id];
 
         //TEST:
-        let val_id = match self.resolve_expr(&abs_const.spanned_expr, ScopeType::Neutral, false) {
-            Ok(v) => v,
+        let val_id = match self.resolve_expr(&abs_const.spanned_expr, ScopeType::Neutral) {
+            Ok(v) => match v {
+                ValueResult::Resolved(v_inner) => v_inner,
+                ValueResult::Unresolved => {
+                    self.unresolved.push(sym_id);
+                    return Ok(());
+                }
+            },
             Err(sem_err) => {
                 self.reporter
                     .report_semantic(sem_err, &self.compiler.mods[self.current_mod.id]);
@@ -112,7 +123,7 @@ impl ConstraintResolver<'_> {
 
         // Setting const from an `Unknown` value to whatever was found
         let const_repre = self.compiler.get_const_mut(sym_id);
-        const_repre.value_id = val_id;
+        const_repre.val_id = Some(val_id);
 
         Ok(())
     }
@@ -120,8 +131,8 @@ impl ConstraintResolver<'_> {
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
         // First borrow starts here
         let module = &self.compiler.mods[self.current_mod.id];
-        let scope_id = module.scope_manager.extract_scope_id(ScopeType::Var);
-        let table = &module.scope_manager.get_scope(scope_id).table;
+        let scope_id = module.extract_scope_id(ScopeType::Var);
+        let table = &module.get_scope(scope_id).table;
 
         let sym_id = table.sym_ids[&ast_id];
         let type_id = self.compiler.get_typedef(sym_id).type_id;
@@ -204,8 +215,8 @@ impl ConstraintResolver<'_> {
     // which seems bad if they're just builtins etc.
     fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
         let module = &self.compiler.mods[self.current_mod.id];
-        let scope_id = module.scope_manager.extract_scope_id(ScopeType::Nest);
-        let table = &module.scope_manager.get_scope(scope_id).table;
+        let scope_id = module.extract_scope_id(ScopeType::Nest);
+        let table = &module.get_scope(scope_id).table;
 
         let sym_id = table.sym_ids[&ast_id];
 
@@ -259,8 +270,8 @@ impl ConstraintResolver<'_> {
 
     fn resolve_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) -> Result<(), ()> {
         let module = &self.compiler.mods[self.current_mod.id];
-        let scope_id = module.scope_manager.extract_scope_id(ScopeType::Nest);
-        let table = &module.scope_manager.get_scope(scope_id).table;
+        let scope_id = module.extract_scope_id(ScopeType::Nest);
+        let table = &module.get_scope(scope_id).table;
 
         let sym_id = table.sym_ids[&ast_id];
 
@@ -363,7 +374,7 @@ impl ConstraintResolver<'_> {
 
                 let name_id = match caller.as_ref().expr {
                     Expr::Var(name_id) => name_id.id,
-                    Expr::FieldAccess(ref abs_field_access) => {
+                    Expr::MemberAccess(ref abs_field_access) => {
                         todo!();
                     }
                     _ => {
@@ -466,7 +477,8 @@ impl ConstraintResolver<'_> {
 
                 Err(())
             }
-            Expr::FieldAccess(field_access) => {
+            // Parsing-wise this is not possible. Maybe I don't know.
+            Expr::MemberAccess(field_access) => {
                 //TODO: Is this worth evaluating as an expression just to get the name?
                 // Sure
 
@@ -696,55 +708,44 @@ impl ConstraintResolver<'_> {
         &mut self,
         spanned_expr: &SpannedExpr,
         scope_type: ScopeType,
-        needs_resolution: bool,
-    ) -> Result<ValueId, SemanticError> {
+        // This assists for lazily evaluating expressions.
+    ) -> Result<ValueResult, SemanticError> {
         match &spanned_expr.expr {
             Expr::Var(name_id) => {
                 if name_id.id == Keyword::True as u32 {
-                    return Ok(ValueId::new(VALUE_TRUE_POS));
+                    return Ok(ValueResult::Resolved(ValueId::new(VALUE_TRUE_POS)));
                 } else if name_id.id == Keyword::False as u32 {
-                    return Ok(ValueId::new(VALUE_FALSE_POS));
+                    return Ok(ValueResult::Resolved(ValueId::new(VALUE_FALSE_POS)));
                 }
 
                 let module = &self.compiler.mods[self.current_mod.id];
 
-                if let Some((ast_id, location)) =
-                    module.scope_manager.get_ast_id(*name_id, scope_type)
-                {
-                    let scope_id = module.scope_manager.extract_scope_id(location);
-                    let table = &module.scope_manager.get_scope(scope_id).table;
-
-                    let sym_id = table.sym_ids[&ast_id];
+                if let Some(sym_id) = module.get_sym_id(*name_id, scope_type) {
                     let symbol = &self.compiler.symbols[&sym_id].symbol;
                     match symbol {
                         Symbol::Const(const_repre) => {
-                            if needs_resolution && const_repre.value_id.id == VALUE_UNKNOWN_POS {
-                                panic!("eep");
+                            if let Some(val_id) = const_repre.val_id {
+                                return Ok(ValueResult::Resolved(val_id));
                             }
 
-                            return Ok(const_repre.value_id);
+                            Ok(ValueResult::Unresolved)
                         }
+                        // I don't think most of these are possible
                         Symbol::Struct(struct_repre) => todo!(),
                         Symbol::Func(func_repre) => todo!(),
                         Symbol::Enum(enum_repre) => todo!(),
                         Symbol::Alias(alias_repre) => todo!(),
-                        Symbol::TypeDef(type_def_repre) => todo!(),
+                        // Scoping disallows this entirely
+                        Symbol::TypeDef(type_def_repre) => unreachable!(),
                     }
                 } else {
                     // SemanticError needs centralization
-                    todo!("Semantic error not done");
-                    // let name = self.interner.search(name_id.id as usize);
-                    // let msg = format!(
-                    //     "The variable `{name}` was not found in the current module's scope"
-                    // );
+                    let name = self.interner.search(name_id.id as usize);
+                    let msg = format!(
+                        "The variable `{name}` was not found in the current module's scope"
+                    );
 
-                    // return self.reporter.report_spanned(
-                    //     &msg,
-                    //     Some(name),
-                    //     &[spanned_expr.span],
-                    //     module,
-                    // );
-                    // Err(())
+                    Err(SemanticError::General(msg, vec![spanned_expr.span]))
                 }
             }
             Expr::Integer(id, _) => {
@@ -752,7 +753,7 @@ impl ConstraintResolver<'_> {
                     let value_id = ValueId::new(self.compiler.values.len());
                     self.compiler.values.push(Value::I128(num));
 
-                    Ok(value_id)
+                    Ok(ValueResult::Resolved(value_id))
                 } else {
                     Err(SemanticError::NumericOverflow(
                         *id,
@@ -767,7 +768,7 @@ impl ConstraintResolver<'_> {
                     let value_id = ValueId::new(self.compiler.values.len());
                     self.compiler.values.push(Value::F64(num));
 
-                    Ok(value_id)
+                    Ok(ValueResult::Resolved(value_id))
                 } else {
                     Err(SemanticError::NumericOverflow(
                         *id,
@@ -777,11 +778,20 @@ impl ConstraintResolver<'_> {
                 }
             }
             Expr::BinaryExpr { lhs, op, rhs } => {
-                let lhs_id = self.resolve_expr(&*lhs, scope_type, needs_resolution)?;
-                let rhs_id = self.resolve_expr(&*rhs, scope_type, needs_resolution)?;
+                let lhs_id = match self.resolve_expr(&*lhs, scope_type)? {
+                    ValueResult::Resolved(inner) => inner,
+                    ValueResult::Unresolved => return Ok(ValueResult::Unresolved),
+                };
+
+                let rhs_id = match self.resolve_expr(&*rhs, scope_type)? {
+                    ValueResult::Resolved(inner) => inner,
+                    ValueResult::Unresolved => return Ok(ValueResult::Unresolved),
+                };
 
                 let lhs_val = &self.compiler.values[lhs_id.id];
                 let rhs_val = &self.compiler.values[rhs_id.id];
+                dbg!(&lhs_val);
+                dbg!(&rhs_val);
 
                 if !evaluator::is_compatible_binary(&lhs_val, *op, &rhs_val) {
                     let full_span = lhs.span.merge(rhs.span);
@@ -798,36 +808,70 @@ impl ConstraintResolver<'_> {
                 let val = evaluator::apply_binary_op(&lhs_val, *op, &rhs_val)?;
                 self.compiler.values.push(val);
 
-                Ok(val_id)
+                Ok(ValueResult::Resolved(val_id))
             }
             Expr::Char(c) => {
                 let val_id = ValueId::new(self.compiler.values.len());
                 self.compiler.values.push(Value::Char(*c));
 
-                Ok(val_id)
+                Ok(ValueResult::Resolved(val_id))
             }
-            Expr::Default(name_id, spanned_expr) => todo!(),
+            Expr::Default(name_id, spanned_expr) => {
+                // DO NOT QUESTION THIS
+                if self.interner.search(name_id.id as usize) == "_" {}
+
+                todo!();
+            }
             Expr::Str(name_id) => {
                 let val_id = ValueId::new(self.compiler.values.len());
                 self.compiler.values.push(Value::CompileStr(*name_id));
 
-                Ok(val_id)
+                Ok(ValueResult::Resolved(val_id))
             }
-            // Const should check it's
             Expr::Call(caller, spanned_exprs) => {
-                if needs_resolution {
-                    todo!();
-                }
-
                 todo!();
             }
-            Expr::FieldAccess(abs_field_access) => {
-                dbg!(&abs_field_access.base);
-                todo!();
+            Expr::MemberAccess(abs_member_access) => {
+                match self.resolve_member(&abs_member_access.base, scope_type)? {
+                    PossibleMember::Module(mod_id) => {
+                        let extern_mod = &mut self.compiler.mods[mod_id.id];
+                        if let Some(sym_id) =
+                            extern_mod.get_sym_id(abs_member_access.field, scope_type)
+                        {
+                            let symbol = &self.compiler.symbols[&sym_id].symbol;
+                            match symbol {
+                                Symbol::Const(const_repre) => {
+                                    if let Some(val_id) = const_repre.val_id {
+                                        return Ok(ValueResult::Resolved(val_id));
+                                    }
+
+                                    Ok(ValueResult::Unresolved)
+                                }
+                                // I don't think most of these are possible
+                                Symbol::Struct(struct_repre) => todo!(),
+                                Symbol::Func(func_repre) => todo!(),
+                                Symbol::Enum(enum_repre) => todo!(),
+                                Symbol::Alias(alias_repre) => todo!(),
+                                // Scoping disallows this entirely
+                                Symbol::TypeDef(type_def_repre) => unreachable!(),
+                            }
+                        } else {
+                            dbg!("Not done");
+                            Ok(ValueResult::Unresolved)
+                        }
+                    }
+                    PossibleMember::Var(val_id) => {
+                        ValueResult::Resolved(val_id);
+                        panic!("Uhh");
+                    }
+                    PossibleMember::Nothing => Ok(ValueResult::Unresolved),
+                }
             }
             Expr::Unary(unary) => {
-                let operand_id =
-                    self.resolve_expr(&unary.spanned_expr, scope_type, needs_resolution)?;
+                let operand_id = match self.resolve_expr(&unary.spanned_expr, scope_type)? {
+                    ValueResult::Resolved(id) => id,
+                    ValueResult::Unresolved => return Ok(ValueResult::Unresolved),
+                };
                 let operand = &self.compiler.values[operand_id.id];
 
                 if !evaluator::is_compatible_unary(unary.op, operand) {
@@ -838,14 +882,35 @@ impl ConstraintResolver<'_> {
                     ))?;
                 }
 
-                let res = evaluator::apply_unary_op(unary.op, operand)?;
+                let val = evaluator::apply_unary_op(unary.op, operand)?;
                 let val_id = ValueId::new(self.compiler.values.len());
 
-                self.compiler.values.push(res);
+                self.compiler.values.push(val);
 
-                Ok(val_id)
+                Ok(ValueResult::Resolved(val_id))
             }
         }
+    }
+
+    fn resolve_member(
+        &mut self,
+        member: &SpannedExpr,
+        scope_type: ScopeType,
+    ) -> Result<PossibleMember, SemanticError> {
+        if let Ok(val_res) = self.resolve_expr(member, scope_type) {
+            match val_res {
+                ValueResult::Resolved(val_id) => return Ok(PossibleMember::Var(val_id)),
+                ValueResult::Unresolved => return Ok(PossibleMember::Nothing),
+            };
+        }
+
+        if let Expr::Var(name_id) = member.expr {
+            if let Some(mod_id) = self.compiler.mod_map.get(&name_id) {
+                return Ok(PossibleMember::Module(*mod_id));
+            }
+        }
+
+        Err(SemanticError::UndefinedMember(member.span))
     }
 
     //TEST:

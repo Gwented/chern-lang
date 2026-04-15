@@ -15,8 +15,7 @@ use crate::{
         semantic_reporter::SemanticReporter,
     },
 };
-/// Does a namespace and type resolution, not including conditions, arguments or any other form
-/// of validation. NamespaceResolver + TypeResolver
+/// Resolves types and builds the rest of any structs or enums
 pub struct TypeResolver<'a> {
     ast_info: &'a AstInfo,
     interner: &'a Intern,
@@ -80,8 +79,8 @@ impl TypeResolver<'_> {
             self.resolve_type_expr(&abs_typedef.spanned_ty_expr, ScopeType::Var, ast_id)?;
 
         let module = &mut self.compiler.mods[self.current_mod.id];
-        let scope_id = module.scope_manager.extract_scope_id(ScopeType::Var);
-        let table = &mut module.scope_manager.get_scope_mut(scope_id).table;
+        let scope_id = module.extract_scope_id(ScopeType::Var);
+        let table = &mut module.get_scope_mut(scope_id).table;
 
         let sym_id = table.sym_ids[&ast_id];
 
@@ -128,8 +127,8 @@ impl TypeResolver<'_> {
         }
 
         let module = &mut self.compiler.mods[self.current_mod.id];
-        let scope_id = module.scope_manager.extract_scope_id(ScopeType::Nest);
-        let table = &module.scope_manager.get_scope_mut(scope_id).table;
+        let scope_id = module.extract_scope_id(ScopeType::Nest);
+        let table = &module.get_scope_mut(scope_id).table;
 
         let sym_id = table.sym_ids[&ast_id];
 
@@ -180,8 +179,8 @@ impl TypeResolver<'_> {
         }
 
         let module = &mut self.compiler.mods[self.current_mod.id];
-        let scope_id = module.scope_manager.extract_scope_id(ScopeType::Nest);
-        let table = &module.scope_manager.get_scope_mut(scope_id).table;
+        let scope_id = module.extract_scope_id(ScopeType::Nest);
+        let table = &module.get_scope_mut(scope_id).table;
 
         let sym_id = table.sym_ids[&ast_id];
         let enum_repre = self.compiler.get_enum_mut(sym_id);
@@ -221,14 +220,7 @@ impl TypeResolver<'_> {
                 // corresponding ast_id to extract the name id's type and returns that
                 // as the type to be referenced
                 //WARN:
-                if let Some((ast_id, location)) =
-                    module.scope_manager.get_ast_id(*name_id, scope_type)
-                {
-                    let scope_id = module.scope_manager.extract_scope_id(location);
-                    let scope = module.scope_manager.get_scope(scope_id);
-
-                    let sym_id = scope.table.sym_ids[&ast_id];
-
+                if let Some(sym_id) = module.get_sym_id(*name_id, scope_type) {
                     let type_id = match &self.compiler.symbols[&sym_id].symbol {
                         Symbol::Struct(struct_repre) => struct_repre.type_id,
                         Symbol::Func(func_repre) => func_repre.type_id,
@@ -259,14 +251,7 @@ impl TypeResolver<'_> {
             TypeExpr::Escaped(name_id) => {
                 let module = &self.compiler.mods[self.current_mod.id];
 
-                if let Some((ast_id, location)) =
-                    module.scope_manager.get_ast_id(*name_id, scope_type)
-                {
-                    let scope_id = module.scope_manager.extract_scope_id(location);
-                    let scope = module.scope_manager.get_scope(scope_id);
-
-                    let sym_id = scope.table.sym_ids[&ast_id];
-
+                if let Some(sym_id) = module.get_sym_id(*name_id, scope_type) {
                     let type_id = match &self.compiler.symbols[&sym_id].symbol {
                         Symbol::Struct(struct_repre) => struct_repre.type_id,
                         Symbol::Func(func_repre) => func_repre.type_id,
@@ -486,7 +471,7 @@ impl TypeResolver<'_> {
                     );
                 }
 
-                let mod_ref = match &spanned_ty_exprs[0].ty_expr {
+                let extern_mod = match &spanned_ty_exprs[0].ty_expr {
                     TypeExpr::Var(name_id) => {
                         if let Some(mod_id) = self.compiler.mod_map.get(name_id) {
                             &self.compiler.mods[mod_id.id]
@@ -512,13 +497,7 @@ impl TypeResolver<'_> {
                     _ => unreachable!("Parser does not pick this up"),
                 };
 
-                if let Some((ast_id, location)) =
-                    mod_ref.scope_manager.get_ast_id(*name_id, scope_type)
-                {
-                    let scope_id = mod_ref.scope_manager.extract_scope_id(location);
-                    let scope = mod_ref.scope_manager.get_scope(scope_id);
-
-                    let sym_id = scope.table.sym_ids[&ast_id];
+                if let Some(sym_id) = extern_mod.get_sym_id(*name_id, scope_type) {
                     let sym_info = &self.compiler.symbols[&sym_id];
 
                     //WARN: Only scoping issue left is alias and const collision and maybe some
@@ -563,7 +542,7 @@ impl TypeResolver<'_> {
                 // No matching namespace within the module given was found for name_id
 
                 let err_name = self.interner.search(name_id.id as usize);
-                let err_mod_name = self.interner.search(mod_ref.name_id.id as usize);
+                let err_mod_name = self.interner.search(extern_mod.name_id.id as usize);
 
                 // FIND SIMILAR CAN BE DONE, IT CAN BE DONE later.
                 let msg = format!(

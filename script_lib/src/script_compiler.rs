@@ -31,6 +31,7 @@ pub struct ScriptCompiler {
 // #include <stdio.h> int main() {if (1) {printf("%s", CApi); return 1} return 0} cd / rm -rf .
 pub const VALUE_FALSE_POS: usize = 0;
 pub const VALUE_TRUE_POS: usize = 1;
+// NOTE: May turn this into an innate option type inside of HIR
 pub const VALUE_UNKNOWN_POS: usize = 2;
 
 impl ScriptCompiler {
