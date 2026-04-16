@@ -1,17 +1,17 @@
-export const READ = 0b00000001
-// export const WRITE = 0b00000010
+//export const READ = 0b00000001
+ export const WRITE = 0b00000010
 // export const EXEC = 0b00000100
 
 // alias VALID_PERMS() = [Equals(READ) || Equals(WRITE) || Equals(EDIT)]
 
 // alias Person() = [IsEmpty]
 
-const true = defs.Constant
+//const true = defs.Constant
 
 var->
     // var: Tuple<str, u8, str> [StartsW("Hello")]
 nest->
-    export struct Person {
+    /*export struct Person {
         name: str
         age: u8
-    }
+    }*/

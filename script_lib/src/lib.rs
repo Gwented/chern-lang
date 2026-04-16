@@ -137,8 +137,10 @@ mod tests {
         },
         script_compiler::{ScriptCompiler, VALUE_FALSE_POS, VALUE_TRUE_POS},
         semantic::{
-            constraint_resolver::ConstraintResolver, name_resolver::NamespaceResolver,
-            scopes::ScopeType, type_resolver::TypeResolver,
+            constraint_resolver::{ConstraintResolver, value_context::ValueContext},
+            name_resolver::NamespaceResolver,
+            scopes::ScopeType,
+            type_resolver::TypeResolver,
         },
         token::{Notation, Token},
     };
@@ -332,7 +334,7 @@ mod tests {
 
         // Unclosed multi-line comment
         let wrong = "
-            /* /* */ 
+            /* /* */
         "
         .as_bytes();
 
@@ -759,15 +761,23 @@ mod tests {
             asts.push(ast_info);
         }
 
+        let mut val_ctx = ValueContext::new();
         for i in 0..compiler.mods.len() {
             let mod_id = ModuleId::new(i);
             TypeResolver::new(&settings, &asts[i], mod_id, &interner, &mut compiler)
                 .resolve()
                 .unwrap();
 
-            ConstraintResolver::new(&settings, &asts[i], &interner, mod_id, &mut compiler)
-                .resolve()
-                .unwrap();
+            ConstraintResolver::new(
+                &settings,
+                &asts,
+                &interner,
+                mod_id,
+                &mut val_ctx,
+                &mut compiler,
+            )
+            .resolve()
+            .unwrap();
         }
     }
 
@@ -836,10 +846,21 @@ mod tests {
             TypeResolver::new(&settings, &asts[i], mod_id, &interner, &mut compiler)
                 .resolve()
                 .unwrap();
+        }
 
-            ConstraintResolver::new(&settings, &asts[i], &interner, mod_id, &mut compiler)
-                .resolve()
-                .unwrap();
+        let mut val_ctx = ValueContext::new();
+        for i in 0..compiler.mods.len() {
+            let mod_id = ModuleId::new(i);
+            ConstraintResolver::new(
+                &settings,
+                &asts,
+                &interner,
+                mod_id,
+                &mut val_ctx,
+                &mut compiler,
+            )
+            .resolve()
+            .unwrap();
         }
     }
 
@@ -1367,11 +1388,14 @@ mod tests {
         .resolve()
         .unwrap();
 
+        let mut val_ctx = ValueContext::new();
+
         ConstraintResolver::new(
             &settings,
-            &ast_info,
+            &[ast_info],
             &interner,
-            ModuleId::new(0),
+            Default::default(),
+            &mut val_ctx,
             &mut compiler,
         )
         .resolve()
@@ -1421,9 +1445,10 @@ mod tests {
 
         ConstraintResolver::new(
             &settings,
-            &ast_info,
+            &[ast_info],
             &interner,
-            ModuleId::new(0),
+            Default::default(),
+            &mut val_ctx,
             &mut compiler,
         )
         .resolve()
@@ -1473,9 +1498,10 @@ mod tests {
 
         ConstraintResolver::new(
             &settings,
-            &ast_info,
+            &[ast_info],
             &interner,
-            ModuleId::new(0),
+            Default::default(),
+            &mut val_ctx,
             &mut compiler,
         )
         .resolve()
@@ -1523,9 +1549,10 @@ mod tests {
 
         ConstraintResolver::new(
             &settings,
-            &ast_info,
+            &[ast_info],
             &interner,
-            ModuleId::new(0),
+            Default::default(),
+            &mut val_ctx,
             &mut compiler,
         )
         .resolve()
@@ -1573,9 +1600,10 @@ mod tests {
 
         ConstraintResolver::new(
             &settings,
-            &ast_info,
+            &[ast_info],
             &interner,
-            ModuleId::new(0),
+            Default::default(),
+            &mut val_ctx,
             &mut compiler,
         )
         .resolve()

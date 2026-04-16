@@ -31,17 +31,16 @@ impl TypeResolver<'_> {
     pub fn new<'a>(
         settings: &'a ChernSettings,
         ast_info: &'a AstInfo,
-        current_idx: ModuleId,
+        current_mod: ModuleId,
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,
     ) -> TypeResolver<'a> {
         TypeResolver {
             ast_info,
-            current_mod: current_idx,
+            current_mod,
             reporter: SemanticReporter::new(settings, interner),
             interner,
             compiler,
-            //TODO: This should be different
         }
     }
 

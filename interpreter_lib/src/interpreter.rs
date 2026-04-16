@@ -10,7 +10,8 @@ use script_lib::{
     modules::{self},
     parser::ast::AstInfo,
     semantic::{
-        constraint_resolver::ConstraintResolver, name_resolver::NamespaceResolver,
+        constraint_resolver::{ConstraintResolver, value_context::ValueContext},
+        name_resolver::NamespaceResolver,
         type_resolver::TypeResolver,
     },
 };
@@ -74,9 +75,24 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
             Ok(_) => (),
             Err(mut diags) => reporter.diags.append(&mut diags),
         };
+    }
 
-        match ConstraintResolver::new(settings, &asts[i], &interner, mod_id, &mut script_compiler)
-            .resolve()
+    // For ensuring a stateful piece of context is retained for resolving all module variables.
+    // This is not a value resolver
+    let mut val_ctx = ValueContext::new();
+
+    // Not my best work
+    for i in 0..script_compiler.mods.len() {
+        let mod_id = ModuleId::new(i);
+        match ConstraintResolver::new(
+            settings,
+            &asts,
+            &interner,
+            mod_id,
+            &mut val_ctx,
+            &mut script_compiler,
+        )
+        .resolve()
         {
             Ok(_) => (),
             Err(mut diags) => reporter.diags.append(&mut diags),

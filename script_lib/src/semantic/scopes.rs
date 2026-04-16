@@ -1,15 +1,8 @@
 use std::fmt::Display;
 
-use chern_core::id_types::{AstId, NameId, ScopeId};
+use chern_core::id_types::ScopeId;
 
 use crate::semantic::representation::Table;
-
-// ScrumMaster
-// Purely exists for the ability to use methods to wrap scope indexing
-// Nesting nesting tiesetntnesting
-
-// So to search we would need the module id and namespace, meaning we now need to check which scope
-// a given module starts at.
 
 // Neutral, var, nest, and complex scopes can only access variables from neutral and nest.
 // Override is unsure

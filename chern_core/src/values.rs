@@ -68,6 +68,7 @@ impl Formattable for ValueKind {
     }
 }
 
+#[derive(Debug)]
 pub enum ValueResult {
     Resolved(ValueId),
     Unresolved,

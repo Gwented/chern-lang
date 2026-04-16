@@ -1,3 +1,6 @@
+pub mod value_context;
+use std::collections::VecDeque;
+
 use chern_core::{
     builtins::BuiltinType,
     id_types::{AstId, ModuleId, NameId, SymbolId, TypeId, ValueId},
@@ -22,6 +25,7 @@ use crate::{
     },
     script_compiler::{ScriptCompiler, VALUE_FALSE_POS, VALUE_TRUE_POS},
     semantic::{
+        constraint_resolver::value_context::{Job, JobStatus, ValueContext},
         constraints::ArgConstraint,
         error::{MathError, SemanticError},
         evaluator,
@@ -34,11 +38,13 @@ use crate::{
 };
 
 pub struct ConstraintResolver<'a> {
-    ast_info: &'a AstInfo,
+    ast_info: &'a [AstInfo],
     interner: &'a Intern,
     compiler: &'a mut ScriptCompiler,
+    // We reward hack here
+    /// If module and ast ids are not the same, this will break. (Will change(Right?))
     current_mod: ModuleId,
-    unresolved: Vec<SymbolId>,
+    val_ctx: &'a mut ValueContext,
     reporter: SemanticReporter<'a>,
 }
 
@@ -46,9 +52,10 @@ pub struct ConstraintResolver<'a> {
 impl<'a> ConstraintResolver<'a> {
     pub fn new(
         settings: &'a ChernSettings,
-        ast_info: &'a AstInfo,
+        ast_info: &'a [AstInfo],
         interner: &'a Intern,
         current_mod: ModuleId,
+        val_ctx: &'a mut ValueContext,
         compiler: &'a mut ScriptCompiler,
     ) -> ConstraintResolver<'a> {
         ConstraintResolver {
@@ -56,13 +63,13 @@ impl<'a> ConstraintResolver<'a> {
             interner,
             current_mod,
             compiler,
-            unresolved: Vec::new(),
+            val_ctx,
             reporter: SemanticReporter::new(settings, interner),
         }
     }
 
     pub fn resolve(&mut self) -> Result<(), Vec<Diagnostic>> {
-        for (id, item) in self.ast_info.items.iter().enumerate() {
+        for (id, item) in self.ast_info[self.current_mod.id].items.iter().enumerate() {
             let ast_id = AstId::new(id as u32);
 
             match item {
@@ -82,8 +89,20 @@ impl<'a> ConstraintResolver<'a> {
             }
         }
 
-        if !self.unresolved.is_empty() {
-            eprintln!("Unresolved state not ready");
+        //NOTE: Subject to change
+
+        // Starts jobs upon resolving everything from all modules
+        if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 1].mod_id {
+            match self.resolve_leftover_jobs() {
+                Ok(_) => (),
+                Err(_) => {
+                    let mut jobs: VecDeque<Job> = VecDeque::new();
+                    jobs.append(&mut self.val_ctx.jobs);
+                    for job in jobs {
+                        self.report_job(job);
+                    }
+                }
+            };
         }
 
         if !self.reporter.err_vec.is_empty() {
@@ -91,6 +110,85 @@ impl<'a> ConstraintResolver<'a> {
             diags.append(&mut self.reporter.err_vec);
 
             return Err(diags);
+        }
+
+        Ok(())
+    }
+
+    fn report_job(&mut self, job: Job) {
+        let sym_info = &self.compiler.symbols[&job.sym_id];
+        match &sym_info.symbol {
+            Symbol::Const(_) => {
+                let msg = format!("Could not evaluate constant");
+                self.reporter.report_spanned(
+                    &msg,
+                    None,
+                    &[job.span],
+                    &self.compiler.mods[self.current_mod.id],
+                );
+            }
+            Symbol::TypeDef(type_def_repre) => todo!(),
+            Symbol::Struct(struct_repre) => todo!(),
+            Symbol::Func(func_repre) => todo!(),
+            Symbol::Enum(enum_repre) => todo!(),
+            Symbol::Alias(alias_repre) => todo!(),
+        }
+    }
+
+    fn resolve_leftover_jobs(&mut self) -> Result<(), ()> {
+        // Tracking if a full cycle was reached given the amount of jobs which should be
+        // deterministic (Assuming it's right)
+        let mut full_cycle = self.val_ctx.jobs.len();
+        let mut cycle = 0;
+
+        while let Some(job) = self.val_ctx.jobs.pop_front() {
+            self.current_mod = job.mod_id;
+            let val_res = match &self.ast_info[job.mod_id.id].items[job.ast_id.id as usize] {
+                Item::Const(abs_const) => {
+                    match self.resolve_expr(&abs_const.spanned_expr, job.scope_type) {
+                        Ok(res) => res,
+                        Err(sem_err) => {
+                            self.reporter
+                                .report_semantic(sem_err, &self.compiler.mods[job.mod_id.id]);
+
+                            return Err(());
+                        }
+                    }
+                }
+                // Item::Var(abs_typedef) => resolve_typedef(abs_typedef, job.ast_id),
+                // Item::Struct(abs_struct) => self.resolve_struct(abs_struct, job.ast_id),
+                // Item::Enum(abs_enum) => self.resolve_enum(abs_enum, job.ast_id),
+                // Item::Alias(abs_alias) => todo!(),
+                _ => todo!(),
+            };
+
+            match val_res {
+                ValueResult::Resolved(val_id) => {
+                    // I can't
+                    cycle = 0;
+                    full_cycle -= 1;
+                    let sym_info = self.compiler.symbols.get_mut(&job.sym_id).expect("Exists");
+
+                    match &mut sym_info.symbol {
+                        Symbol::Const(const_repre) => {
+                            const_repre.val_id = Some(val_id);
+                        }
+                        Symbol::TypeDef(type_def_repre) => todo!(),
+                        Symbol::Struct(struct_repre) => todo!(),
+                        Symbol::Func(func_repre) => todo!(),
+                        Symbol::Enum(enum_repre) => todo!(),
+                        Symbol::Alias(alias_repre) => todo!(),
+                    }
+                }
+                ValueResult::Unresolved => {
+                    cycle += 1;
+                    self.val_ctx.jobs.push_back(job);
+
+                    if cycle > full_cycle {
+                        return Err(());
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -107,8 +205,18 @@ impl<'a> ConstraintResolver<'a> {
         let val_id = match self.resolve_expr(&abs_const.spanned_expr, ScopeType::Neutral) {
             Ok(v) => match v {
                 ValueResult::Resolved(v_inner) => v_inner,
+                // TODO: Who is the one that pushes the job? Only the original caller?
                 ValueResult::Unresolved => {
-                    self.unresolved.push(sym_id);
+                    let job = Job::new(
+                        sym_id,
+                        self.current_mod,
+                        ast_id,
+                        abs_const.spanned_expr.span,
+                        scope_id,
+                        ScopeType::Neutral,
+                    );
+
+                    self.val_ctx.jobs.push_back(job);
                     return Ok(());
                 }
             },
@@ -118,8 +226,6 @@ impl<'a> ConstraintResolver<'a> {
                 return Err(());
             }
         };
-
-        dbg!(&self.compiler.values[val_id.id]);
 
         // Setting const from an `Unknown` value to whatever was found
         let const_repre = self.compiler.get_const_mut(sym_id);
@@ -478,7 +584,7 @@ impl<'a> ConstraintResolver<'a> {
                 Err(())
             }
             // Parsing-wise this is not possible. Maybe I don't know.
-            Expr::MemberAccess(field_access) => {
+            Expr::MemberAccess(member_access) => {
                 //TODO: Is this worth evaluating as an expression just to get the name?
                 // Sure
 
@@ -520,17 +626,18 @@ impl<'a> ConstraintResolver<'a> {
                         //FIXME:
                         //COPY
                         if !spanned_arg.arg.is_basic() {
-                            let field_span =
-                                match &self.ast_info.items[structure.ast_id.id as usize] {
-                                    // Weird looking hack
-                                    Item::Struct(abs_struct) => {
-                                        abs_struct.fields[field.ast_id.id as usize]
-                                            .spanned_ty_expr
-                                            .span
-                                    }
-                                    _ => unreachable!(),
+                            let field_span = match &self.ast_info[self.current_mod.id].items
+                                [structure.ast_id.id as usize]
+                            {
+                                // Weird looking hack
+                                Item::Struct(abs_struct) => {
+                                    abs_struct.fields[field.ast_id.id as usize]
+                                        .spanned_ty_expr
+                                        .span
                                 }
-                                .clone();
+                                _ => unreachable!(),
+                            }
+                            .clone();
                             //NOTE:
 
                             return Err(SemanticError::CircularArg(
@@ -551,7 +658,8 @@ impl<'a> ConstraintResolver<'a> {
                     // Need to get circular span in a more composed way that's not WEIRD
                     if let Err(SemanticError::UnsupportedArg(arg, kind, _)) = arg_res {
                         //COPY
-                        let abs_struct = self.ast_info.get_struct(structure.ast_id);
+                        let abs_struct =
+                            self.ast_info[self.current_mod.id].get_struct(structure.ast_id);
                         let field_span = abs_struct.fields[field.ast_id.id as usize]
                             .spanned_ty_expr
                             .span;
@@ -587,8 +695,8 @@ impl<'a> ConstraintResolver<'a> {
                         // different context.
                         if enumeration.type_id.id == ty.id || enumeration.type_id == type_id {
                             if !spanned_arg.arg.is_basic() {
-                                if let Item::Enum(abs_enum) =
-                                    &self.ast_info.items[enumeration.ast_id.id as usize]
+                                if let Item::Enum(abs_enum) = &self.ast_info[self.current_mod.id]
+                                    .items[enumeration.ast_id.id as usize]
                                 {
                                     // or field span
                                     let ast_span = abs_enum.variants[variant.ast_id.id as usize]
@@ -616,7 +724,8 @@ impl<'a> ConstraintResolver<'a> {
                         let arg_res = self.resolve_arg(ty, module, spanned_arg, visited);
 
                         if let Err(SemanticError::UnsupportedArg(arg, fmted, _)) = arg_res {
-                            let abs_enum = &self.ast_info.get_enum(enumeration.ast_id);
+                            let abs_enum =
+                                &self.ast_info[self.current_mod.id].get_enum(enumeration.ast_id);
                             let variant_span = abs_enum.variants[variant.ast_id.id as usize]
                                 .ty_expr
                                 .as_ref()
@@ -741,9 +850,9 @@ impl<'a> ConstraintResolver<'a> {
                 } else {
                     // SemanticError needs centralization
                     let name = self.interner.search(name_id.id as usize);
-                    let msg = format!(
-                        "The variable `{name}` was not found in the current module's scope"
-                    );
+                    let mod_name = self.interner.search(module.name_id.id as usize);
+                    let msg =
+                        format!("The variable `{name}` was not found in the module `{mod_name}`");
 
                     Err(SemanticError::General(msg, vec![spanned_expr.span]))
                 }
@@ -790,8 +899,6 @@ impl<'a> ConstraintResolver<'a> {
 
                 let lhs_val = &self.compiler.values[lhs_id.id];
                 let rhs_val = &self.compiler.values[rhs_id.id];
-                dbg!(&lhs_val);
-                dbg!(&rhs_val);
 
                 if !evaluator::is_compatible_binary(&lhs_val, *op, &rhs_val) {
                     let full_span = lhs.span.merge(rhs.span);
@@ -856,13 +963,12 @@ impl<'a> ConstraintResolver<'a> {
                                 Symbol::TypeDef(type_def_repre) => unreachable!(),
                             }
                         } else {
-                            dbg!("Not done");
                             Ok(ValueResult::Unresolved)
                         }
                     }
                     PossibleMember::Var(val_id) => {
                         ValueResult::Resolved(val_id);
-                        panic!("Uhh");
+                        unimplemented!("Nothing matches this case yet");
                     }
                     PossibleMember::Nothing => Ok(ValueResult::Unresolved),
                 }
@@ -952,9 +1058,9 @@ impl<'a> ConstraintResolver<'a> {
                     //itself, but that could also just mean the last type was a structure that just
                     //so happened to have the same type id
                     //
-                    // dbg!(structure.type_id, field.type_id, type_id);
                     if structure.type_id == field.type_id || structure.type_id == type_id {
-                        let abs_struct = &self.ast_info.get_struct(structure.ast_id);
+                        let abs_struct =
+                            &self.ast_info[self.current_mod.id].get_struct(structure.ast_id);
                         let field_span = abs_struct.fields[i].spanned_ty_expr.span;
 
                         return Err(SemanticError::CircularCond(
@@ -969,7 +1075,8 @@ impl<'a> ConstraintResolver<'a> {
 
                     if let Err(SemanticError::UnsupportedCond(cond, fmted_ty, mut spans)) = cond_res
                     {
-                        let abs_struct = &self.ast_info.get_struct(structure.ast_id);
+                        let abs_struct =
+                            &self.ast_info[self.current_mod.id].get_struct(structure.ast_id);
                         let field_span = abs_struct.fields[i].spanned_ty_expr.span;
                         spans.push(field_span);
 
@@ -991,8 +1098,9 @@ impl<'a> ConstraintResolver<'a> {
                     if let Some(ty) = variant.type_id {
                         // Circular ref checking
                         if visited.contains(&ty) {
-                            let abs_variant =
-                                &self.ast_info.get_enum(enumeration.ast_id).variants[i];
+                            let abs_variant = &self.ast_info[self.current_mod.id]
+                                .get_enum(enumeration.ast_id)
+                                .variants[i];
 
                             let variant_span =
                                 abs_variant.ty_expr.as_ref().expect("Already found").span;
@@ -1011,7 +1119,8 @@ impl<'a> ConstraintResolver<'a> {
                         if let Err(SemanticError::UnsupportedCond(cond, fmted_ty, mut spans)) =
                             cond_res
                         {
-                            let abs_struct = &self.ast_info.get_enum(enumeration.ast_id);
+                            let abs_struct =
+                                &self.ast_info[self.current_mod.id].get_enum(enumeration.ast_id);
                             let field_span = abs_struct.variants[i]
                                 .ty_expr
                                 .as_ref()

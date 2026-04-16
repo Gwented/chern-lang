@@ -8,11 +8,14 @@
 // The tilde has to be chaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaanged
 
 @def
-
-const true = defs.READ + 2
-
-// Require forward slashes
 import "../chrn_tests/defs.chrn" as chern
+
+//const HELLO = 4
+
+const true = defs.WRITE + defs.WRITE
+
+@end
+// Require forward slashes
 
 var->
     // Sure I guess

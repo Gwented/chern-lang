@@ -68,6 +68,19 @@ pub(crate) enum Symbol {
     Const(ConstRepre),
 }
 
+impl Symbol {
+    pub(crate) fn name_id(&self) -> NameId {
+        match self {
+            Symbol::TypeDef(type_def_repre) => type_def_repre.name_id,
+            Symbol::Struct(struct_repre) => struct_repre.name_id,
+            Symbol::Func(func_repre) => func_repre.name_id,
+            Symbol::Enum(enum_repre) => enum_repre.name_id,
+            Symbol::Alias(alias_repre) => alias_repre.name_id,
+            Symbol::Const(const_repre) => const_repre.name_id,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Table {
     // Type specific tables
