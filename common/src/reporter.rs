@@ -86,6 +86,8 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
     // Curating spans to ensure all spans that may exceed their line are properly cut for their
     // line so later formatting is not made more complicated
     let mut curated_spans: Vec<Span> = Vec::new();
+    // dbg!(src_bytes[19] as char);
+    // panic!();
 
     //Maybe can be handled better
     for ln in &ln_view.lines {
@@ -93,7 +95,12 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
         for span in spans {
             // Checking if the line actually has the span which would otherwise push entire lines
             // by default.
-            if !range.contains(&span.start) && !range.contains(&span.end) {
+
+            // This is a little dangerous since it means it'll painstakingly have to go through
+            // each individual line and push valid diagnostics, but there's a read limit so it
+            // should be fine for the config loader.
+            if !range.contains(&span.start) && !range.contains(&span.end) && span.start != span.end
+            {
                 continue;
             }
 
@@ -103,10 +110,9 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
 
     // --THIRD--
     // Putting all spans into a key-value pair so that they can have their errors reported in
-    // groups. This is to avoid the persistent issue of span print duplicates.
+    // groups. This is to avoid the issue of span print duplicates.
     let mut ln_groups: LineGroups = LineGroups::new();
 
-    //FIXME: OR HERE
     for (i, ln_span) in ln_view.lines.iter().map(|ln| &ln.ln_span).enumerate() {
         let range = ln_span.start..=ln_span.end;
 
@@ -117,8 +123,6 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
             }
         }
     }
-
-    //FIXME: FILTER HERE IN-CASE OF DUPLICATES
 
     // --FOURTH--
     // Giving each group their own diagnostic
@@ -141,13 +145,12 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
     // Taking what this particular error message handler wants to display out of the fully made
     // error messages.
 
-    //TODO:
-
     let mut final_diag = String::new();
 
     // Will maybe just create this earlier so 2 strings aren't alloced
     let num_spaces = " ".repeat(ln_num_width);
 
+    // Bit of a weird way to output desired formatting
     final_diag.push_str(&format!("{num_spaces}|"));
     final_diag.push_str(&fmtted_diags[0]);
 
@@ -216,7 +219,8 @@ fn curate_span(ln: &Line, span: &Span) -> Span {
 
 /// Goes from the start to the end of the span collecting all line data so that any sort of later
 /// complex error handling does not need any re-computation, and has a high level view of all lines
-/// in the given span.
+/// in the given span. New lines are never in a line's span unless the line only contains a single
+/// new line.
 fn form_ln_view(src_bytes: &[u8], span: &Span) -> LineView {
     // Getting the first line's start position since span.start could start later in the actual
     // line. May make this something that just needs to be done outside.
@@ -368,8 +372,12 @@ fn form_ln_diag(
     // Maybe separating this basic line from the formatted arrows could be better later
     let mut plain_ln = String::new();
 
-    // Is an inclusive range since spans are inclusive, exclusive
-    plain_ln.push_str(&src_str[ln.ln_span.start..=ln.ln_span.end]);
+    // Lines containing only a new line are empty lines that were found by the line view function.
+    // This prevents formatting errors by just ignoring new line only lines
+    if src_str.as_bytes()[ln.ln_span.start] != b'\n' {
+        // Is an inclusive range since spans are inclusive, exclusive
+        plain_ln.push_str(&src_str[ln.ln_span.start..=ln.ln_span.end]);
+    }
 
     let (red, nc) = color::get_red(can_color);
 
