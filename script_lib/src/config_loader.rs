@@ -236,7 +236,10 @@ impl<R: Read> ChernConfigLoader<'_, R> {
                         requires_end = true;
                         lex_start = self.pos;
                         self.skip(DEFINITION_SIZE);
-                        def_span = Some(Span::new(span_start, self.pos));
+                        // self.pos + DEFINITION_SIZE stops exactly at the 'f' in '@def' which
+                        // doesn't align with (inclusive, exclusive) spanning within the lexer so
+                        // it needs to be taken down by 1.
+                        def_span = Some(Span::new(span_start, self.pos - 1));
                     }
 
                     self.advance();
@@ -348,7 +351,7 @@ impl<R: Read> ChernConfigLoader<'_, R> {
             // To include full multi-line syntax. / + 1 = /*
             let comment_span = Span::new(comment_start, comment_start + 1);
 
-            let eof_span = Span::new(self.pos - 1, self.pos - 1);
+            let eof_span = Span::new(self.pos, self.pos);
             dbg!(comment_span, eof_span);
 
             let ln_data = reporter::form_err_diag(

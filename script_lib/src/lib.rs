@@ -177,6 +177,8 @@ mod tests {
         assert_eq!(true, opt.is_ok());
 
         // Improper @def without an @end
+        // This type of error is more likely to break the diagnostic reporting but is fixed for
+        // now.
         let wrong = r#"@defbind "./some/path""#;
 
         let opt =

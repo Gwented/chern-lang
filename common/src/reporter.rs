@@ -91,12 +91,10 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
     for ln in &ln_view.lines {
         let ln_range = ln.ln_span.start..=ln.ln_span.end;
         for span in spans {
-            // Checking if the line actually has the span which would otherwise push entire lines
-            // by default.
-
-            // WARN: Seemingly working condition for avoiding pushing spans if the line does not
-            // contain it.
-            if *ln_range.start() > span.end || *ln_range.end() < span.start {
+            // If the line does not contain the span then it is skipped.
+            // The curate span function would form the entire line by default without this check.
+            if span.start > *ln_range.end() || *ln_range.start() > span.end {
+                // dbg!(&ln_range, span);
                 continue;
             }
 
@@ -157,6 +155,14 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
         final_diag.push_str(&fmtted_diags[fmtted_diags.len() - 1]);
     } else if fmtted_diags.len() == 2 {
         final_diag.push_str(&fmtted_diags[1]);
+    }
+
+    let eof_byte_pos = src_bytes.len() - 1;
+    // The length of diagnostics is checked too because the line view picks up empty lines but
+    // ignores eof. If it didn't check the lenght of diagnostics then "EOF" would be awkwardly
+    // shoved into the diagnostics.
+    if eof_byte_pos == spans[spans.len() - 1].end && fmtted_diags.len() == 1 {
+        final_diag.push_str("\nEOF");
     }
 
     // Is + 1 because columns count starting by 1
@@ -300,7 +306,7 @@ fn form_ln_view(src_bytes: &[u8], span: &Span) -> LineView {
             i += 1;
         }
 
-        // WARN: TEMP EOF '@end' EDGE CASE PRINTING
+        // WARN: TEMP '@end' EDGE CASE PRINTING
         if i == span.end && span.end == src_bytes.len() {
             let current_end = i - 1;
 
@@ -316,16 +322,30 @@ fn form_ln_view(src_bytes: &[u8], span: &Span) -> LineView {
     }
 
     // WARN: This seemingly works fine
+    // lex_tok_test_rev causes this error
     if lines.is_empty() {
         let only_ln = Line {
-            ln_num: current_ln_num,
+            ln_num: first_ln_num,
             ln_span: span.clone(),
         };
 
         lines.push(only_ln);
     }
 
-    let ln_span = Span::new(first_ln_num, current_ln_num);
+    // // TEST:
+    // // EOF is not able to be picked up by the main loop so it is checked for here so the last eof
+    // // byte can be accurately printed
+    // let eof_byte_pos = src_bytes.len() - 1;
+    // if eof_byte_pos == span.end {
+    //     lines.push(Line {
+    //         // current_ln_num is always set to the next possible new line, meaning it's only correct in
+    //         // the context that a new line is next
+    //         ln_num: current_ln_num,
+    //         ln_span: Span::new(eof_byte_pos, eof_byte_pos),
+    //     });
+    // }
+
+    let ln_span = Span::new(first_ln_num, lines[lines.len() - 1].ln_num);
     LineView {
         ln_num_span: ln_span,
         lines,
@@ -370,7 +390,7 @@ fn form_ln_diag(
     src_str: &str,
     ln: &Line,
     ln_num_width: usize,
-    grouped_spans: &Vec<Span>,
+    grouped_spans: &[Span],
     // color:
     // pointer_type: char
     can_color: bool,
@@ -390,7 +410,23 @@ fn form_ln_diag(
     let mut pointers = String::new();
     let mut last_span_start = ln.ln_span.start;
 
+    // let eof_byte_pos = src_str.as_bytes().len() - 1;
+
     for span in grouped_spans {
+        // dbg!(ln, grouped_spans);
+        // dbg!(span);
+        // //  TEST: EOF
+        // if last_span_start == eof_byte_pos {
+        //     break;
+        // }
+
+        debug_assert!(
+            last_span_start <= span.end,
+            "'form_ln_diag' failed diagnostic spanning. last_span_start: {} <= span.end: {}",
+            last_span_start,
+            span.end
+        );
+
         let space_count = get_chars_width(src_str, last_span_start, span.start);
 
         // Space count added makes last_span_start one before the actual span. The difference of
@@ -402,10 +438,16 @@ fn form_ln_diag(
         // Since the function is inclusive, exclusive a + 1 is needed
         let arrow_count = get_chars_width(src_str, span.start, span.end + 1);
         let arrows = "^".repeat(arrow_count);
+        dbg!(arrow_count);
         let colored_arrows = format!("{red}{arrows}{nc}");
 
         pointers.push_str(&colored_arrows);
     }
+
+    //TEST:
+    // if eof_byte_pos == grouped_spans[grouped_spans.len() - 1].end {
+    //     return "".to_string();
+    // }
 
     let current_ln_num_size = get_num_width(ln.ln_num);
     let bar_spaces = " ".repeat(ln_num_width);
