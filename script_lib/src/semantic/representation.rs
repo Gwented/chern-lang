@@ -79,6 +79,17 @@ impl Symbol {
             Symbol::Const(const_repre) => const_repre.name_id,
         }
     }
+
+    pub(crate) fn type_id(&self) -> TypeId {
+        match self {
+            Symbol::TypeDef(type_def_repre) => type_def_repre.type_id,
+            Symbol::Struct(struct_repre) => struct_repre.type_id,
+            Symbol::Func(func_repre) => func_repre.type_id,
+            Symbol::Enum(enum_repre) => enum_repre.type_id,
+            Symbol::Alias(alias_repre) => alias_repre.type_id,
+            Symbol::Const(const_repre) => const_repre.type_id,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -98,13 +109,13 @@ impl Table {
     }
 }
 
-// Are these technically HIR?
 #[derive(Debug)]
 pub(crate) struct ConstRepre {
     pub(crate) name_id: NameId,
     pub(crate) sym_id: SymbolId,
     pub(crate) ast_id: AstId,
     // It's position in the Type array
+    pub(crate) type_id: TypeId,
     pub(crate) val_id: Option<ValueId>,
 }
 
@@ -112,12 +123,14 @@ impl ConstRepre {
     pub fn new(
         name_id: NameId,
         sym_id: SymbolId,
+        type_id: TypeId,
         ast_id: AstId,
         val_id: Option<ValueId>,
     ) -> ConstRepre {
         ConstRepre {
             name_id,
             sym_id,
+            type_id,
             ast_id,
             val_id,
         }
@@ -430,6 +443,7 @@ impl Tuple {
 //TEST:
 pub(crate) enum PossibleMember {
     Module(ModuleId),
+    Type(TypeId),
     Var(ValueId),
     Nothing,
 }

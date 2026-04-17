@@ -164,7 +164,7 @@ pub fn parse(
                         }
 
                         if let Ok(type_def) = parse_var_sect(&mut ctx, interner) {
-                            ast_info.items.push(Item::Var(type_def));
+                            ast_info.items.push(Item::TypeDef(type_def));
                         }
                     }
                 }
@@ -661,6 +661,12 @@ fn parse_const(
     interner: &Intern,
 ) -> Result<AbstractConst, Token> {
     let name_span = ctx.peek_span();
+
+    // Handle identifier method in case of a tilde?
+    // skip_escape?
+    if ctx.peek_tok() == Token::Tilde {
+        ctx.advance_tok();
+    }
 
     let plain_id = ctx.expect_id_verbose(
         TokenKind::Id,

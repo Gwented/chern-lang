@@ -23,7 +23,7 @@ impl AstInfo {
     pub(crate) fn get_typedef(&self, ast_id: AstId) -> &AbstractTypeDef {
         match &self.items[ast_id.id as usize] {
             item => match item {
-                Item::Var(abs_typedef) => abs_typedef,
+                Item::TypeDef(abs_typedef) => abs_typedef,
                 _ => unreachable!(),
             },
         }
@@ -64,30 +64,38 @@ impl AstInfo {
             },
         }
     }
-
-    pub(crate) fn get_ast_span(&self, ast_id: AstId) -> Span {
-        match &self.items[ast_id.id as usize] {
-            Item::Var(abs_typedef) => abs_typedef.name_span,
-            Item::Struct(abs_struct) => abs_struct.name_span,
-            Item::Enum(abs_enum) => abs_enum.name_span,
-            Item::Alias(abs_alias) => abs_alias.name_span,
-            Item::Const(abs_const) => abs_const.name_span,
-        }
-    }
+    //
+    // pub(crate) fn get_ast_span(&self, ast_id: AstId) -> Span {
+    //     match &self.items[ast_id.id as usize] {
+    //         Item::TypeDef(abs_typedef) => abs_typedef.name_span,
+    //         Item::Struct(abs_struct) => abs_struct.name_span,
+    //         Item::Enum(abs_enum) => abs_enum.name_span,
+    //         Item::Alias(abs_alias) => abs_alias.name_span,
+    //         Item::Const(abs_const) => abs_const.name_span,
+    //     }
+    // }
 }
 
 #[derive(Debug)]
 pub(crate) enum Item {
     //                                                 name: str [!IsEmpty, Range(0,5)]
-    //TODO: Should these have spans? Do we REALLY want ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    // YES
-    Var(AbstractTypeDef),
+    // Should these have spans? Do we REALLY want      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    TypeDef(AbstractTypeDef),
     Struct(AbstractStruct),
     Enum(AbstractEnum),
     Alias(AbstractAlias),
     Const(AbstractConst),
     // Func(AbstractFunc),
 }
+
+//TEST:
+// #[derive(Debug)]
+// pub(crate) enum Section {
+//     Var(Vec<Item>),
+//     Nest(Vec<Item>),
+//     Override(Vec<Item>),
+//     Complex(Vec<Item>),
+// }
 
 #[derive(Debug)]
 pub(crate) struct SpannedExpr {
@@ -259,46 +267,6 @@ pub(crate) enum TypeExpr {
     Tuple(Vec<SpannedTypeExpr>),
     Any,
 }
-
-//TEST: Relocate reollacl rreellocrelac
-#[derive(Debug)]
-pub struct Import {
-    pub(crate) name_id: NameId,
-    pub(crate) path_id: PathId,
-    pub(crate) path_span: Span,
-    pub(crate) alias_id: Option<NameId>,
-}
-
-impl Import {
-    pub(crate) fn new(
-        name_id: NameId,
-        path_id: PathId,
-        path_span: Span,
-        alias_id: Option<NameId>,
-        // Maybe "import as" eventually
-    ) -> Import {
-        Import {
-            name_id,
-            path_id,
-            path_span,
-            alias_id,
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct Bind {
-    pub path_id: PathId,
-    pub path_span: Span,
-}
-
-impl Bind {
-    pub(crate) fn new(path_id: PathId, path_span: Span) -> Bind {
-        Bind { path_id, path_span }
-    }
-}
-
-// Maybe put in enum exclusively if not needed outside
 
 // Maybe type inference could pick up on the fact that if a definition has a condition, and that
 // condition is applied to only a particular bit size, then it should be that bit size

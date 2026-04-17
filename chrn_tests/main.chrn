@@ -12,7 +12,7 @@ import "../chrn_tests/defs.chrn" as chern
 
 //const HELLO = 4
 
-const true = defs.WRITE + defs.WRITE
+const ~true = person.name
 
 @end
 // Require forward slashes

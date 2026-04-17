@@ -86,21 +86,17 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
     // Curating spans to ensure all spans that may exceed their line are properly cut for their
     // line so later formatting is not made more complicated
     let mut curated_spans: Vec<Span> = Vec::new();
-    // dbg!(src_bytes[19] as char);
-    // panic!();
 
     //Maybe can be handled better
     for ln in &ln_view.lines {
-        let range = ln.ln_span.start..=ln.ln_span.end;
+        let ln_range = ln.ln_span.start..=ln.ln_span.end;
         for span in spans {
             // Checking if the line actually has the span which would otherwise push entire lines
             // by default.
 
-            // This is a little dangerous since it means it'll painstakingly have to go through
-            // each individual line and push valid diagnostics, but there's a read limit so it
-            // should be fine for the config loader.
-            if !range.contains(&span.start) && !range.contains(&span.end) && span.start != span.end
-            {
+            // WARN: Seemingly working condition for avoiding pushing spans if the line does not
+            // contain it.
+            if *ln_range.start() > span.end || *ln_range.end() < span.start {
                 continue;
             }
 
@@ -234,10 +230,10 @@ fn form_ln_view(src_bytes: &[u8], span: &Span) -> LineView {
     // Every i is not a current start, but every current start is i + 1 or 2.
     let mut current_start = first_ln_start;
 
-    let ln_start = get_ln_num(src_bytes, span.start);
+    let first_ln_num = get_ln_num(src_bytes, span.start);
 
     // To assign a line number to all processed lines
-    let mut current_ln_num = ln_start;
+    let mut current_ln_num = first_ln_num;
 
     //NOTE: Uses the first_ln_start as the default first line, then goes through every line within the
     // given span until it reaches the end of the span, collecting all `Line` information.
@@ -319,7 +315,17 @@ fn form_ln_view(src_bytes: &[u8], span: &Span) -> LineView {
         }
     }
 
-    let ln_span = Span::new(ln_start, current_ln_num);
+    // WARN: This seemingly works fine
+    if lines.is_empty() {
+        let only_ln = Line {
+            ln_num: current_ln_num,
+            ln_span: span.clone(),
+        };
+
+        lines.push(only_ln);
+    }
+
+    let ln_span = Span::new(first_ln_num, current_ln_num);
     LineView {
         ln_num_span: ln_span,
         lines,
@@ -369,7 +375,6 @@ fn form_ln_diag(
     // pointer_type: char
     can_color: bool,
 ) -> String {
-    // Maybe separating this basic line from the formatted arrows could be better later
     let mut plain_ln = String::new();
 
     // Lines containing only a new line are empty lines that were found by the line view function.

@@ -55,7 +55,7 @@ impl NamespaceResolver<'_> {
             let ast_id = AstId::new(id as u32);
 
             match item {
-                Item::Var(abs_typedef) => self.register_typedef(abs_typedef, ast_id),
+                Item::TypeDef(abs_typedef) => self.register_typedef(abs_typedef, ast_id),
                 Item::Struct(abs_struct) => self.register_struct(abs_struct, ast_id),
                 Item::Enum(abs_enum) => self.register_enum(abs_enum, ast_id),
                 Item::Alias(abs_alias) => self.register_alias(abs_alias, ast_id),
@@ -203,7 +203,13 @@ impl NamespaceResolver<'_> {
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
         table.sym_ids.insert(ast_id, sym_id);
 
-        let const_repre = ConstRepre::new(abs_const.name_id, sym_id, ast_id, None);
+        let type_id = TypeId::new(self.compiler.types.len() as u32);
+        // This is pushed instead of just set just in case index level mutation as opposed to a new
+        // id entirely would like to be used.
+        let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
+        self.compiler.types.push(ty_info);
+
+        let const_repre = ConstRepre::new(abs_const.name_id, sym_id, type_id, ast_id, None);
 
         let sym_info = SymbolInfo::new(
             Symbol::Const(const_repre),
@@ -236,7 +242,7 @@ impl NamespaceResolver<'_> {
                 if let Some(orig_ast_id) = ast_opt {
                     let item = &self.ast_info.items[orig_ast_id.id as usize];
                     let orig_span = match item {
-                        Item::Var(abs_typedef) => &abs_typedef.name_span,
+                        Item::TypeDef(abs_typedef) => &abs_typedef.name_span,
                         Item::Struct(abs_struct) => &abs_struct.name_span,
                         Item::Enum(abs_enum) => &abs_enum.name_span,
                         Item::Alias(abs_alias) => &abs_alias.name_span,
@@ -245,7 +251,7 @@ impl NamespaceResolver<'_> {
                     .clone();
 
                     let dup_span = match &self.ast_info.items[ast_id.id as usize] {
-                        Item::Var(abs_typedef) => &abs_typedef.name_span,
+                        Item::TypeDef(abs_typedef) => &abs_typedef.name_span,
                         Item::Struct(abs_struct) => &abs_struct.name_span,
                         Item::Enum(abs_enum) => &abs_enum.name_span,
                         Item::Alias(abs_alias) => &abs_alias.name_span,

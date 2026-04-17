@@ -10,19 +10,55 @@ use chern_core::{
     id_types::{AstId, ModuleId, NameId, PathId, ScopeId, SymbolId},
     intern::Intern,
 };
-use common::{chern_settings::ChernSettings, core_error::ConfigLoadError, reporter};
+use common::{chern_settings::ChernSettings, core_error::ConfigLoadError, reporter, span::Span};
 
 use crate::{
     config_loader::ChernConfigLoader,
     iyo::file_ops,
     modules::mod_finder::ModuleFinder,
-    parser::ast::{Bind, Import},
     script_compiler::ScriptCompiler,
     semantic::{
         representation::Table,
         scopes::{Scope, ScopeType},
     },
 };
+//TEST: Relocate reollacl rreellocrelac
+#[derive(Debug)]
+pub struct Import {
+    pub(crate) name_id: NameId,
+    pub(crate) path_id: PathId,
+    pub(crate) path_span: Span,
+    pub(crate) alias_id: Option<NameId>,
+}
+
+impl Import {
+    pub(crate) fn new(
+        name_id: NameId,
+        path_id: PathId,
+        path_span: Span,
+        alias_id: Option<NameId>,
+        // Maybe "import as" eventually
+    ) -> Import {
+        Import {
+            name_id,
+            path_id,
+            path_span,
+            alias_id,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Bind {
+    pub path_id: PathId,
+    pub path_span: Span,
+}
+
+impl Bind {
+    pub(crate) fn new(path_id: PathId, path_span: Span) -> Bind {
+        Bind { path_id, path_span }
+    }
+}
 
 // What about OUR name?
 // What?
@@ -120,34 +156,6 @@ impl Module {
 
                         let sym_id = scope.table.sym_ids[&current_ast_id];
                         return Some(sym_id);
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
-    // And type?
-    /// Checks if the name id corresponds to an ast id within the given `ScopeType`.
-    /// Returns a tuple of the `AstId` and `ScopeType` the `NameId` was found in. Returns None if
-    /// no scopes contain the given `NameId`.
-    pub(crate) fn get_extern_ast_id(
-        &self,
-        name_id: NameId,
-        scope_type: ScopeType,
-    ) -> Option<(AstId, ScopeType)> {
-        // I don't think this can fail. Should maybe expect for clarity.
-        let allowed_scope_types = scope_type.accessible_scopes();
-
-        // Loops over all allowed scopes and checks their individual namespaces
-        for allowed_scope_type in allowed_scope_types {
-            // In this scenario the scope may or may not exist since this could be used from
-            // another module
-            if let Some(scope) = self.find_scope(allowed_scope_type) {
-                for (current_ast_id, current_name_id) in &scope.table.name_ids {
-                    if *current_name_id == name_id {
-                        return Some((*current_ast_id, allowed_scope_type));
                     }
                 }
             }

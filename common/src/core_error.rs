@@ -29,6 +29,7 @@ impl From<SerialError> for CoreError {
 }
 
 /// Error type for ChernConfigLoader
+// More like startup error now
 #[derive(Debug)]
 pub enum ConfigLoadError {
     Unclosed(String),

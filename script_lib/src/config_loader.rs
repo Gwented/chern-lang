@@ -46,6 +46,8 @@ impl<R: Read> ChernConfigLoader<'_, R> {
         // Doesn't NEED definition but will error if declared and not closed
         let mut requires_end = false;
 
+        // Setup to allow for unclosed quotes to be tracked since this stage is very sensitive to
+        // such errors.
         let mut first_double_quote = None;
         let mut first_single_quote = None;
 
@@ -54,7 +56,7 @@ impl<R: Read> ChernConfigLoader<'_, R> {
 
         let mut lex_start = 0;
 
-        // let mut def_span = None;
+        let mut def_span: Option<Span> = None;
 
         self.handle.fill_buf()?;
 
@@ -69,8 +71,8 @@ impl<R: Read> ChernConfigLoader<'_, R> {
                 // May reduce duplication by using mini-state that keeps track of quotes but fine
                 // for now
                 b'"' => {
-                    // Even though this can't fail
                     let quote_start = self.pos;
+                    // Even though this can't fail
                     let quote_type = self.advance().unwrap_or(b'\0');
 
                     if quote_type == b'\'' {
@@ -110,9 +112,19 @@ impl<R: Read> ChernConfigLoader<'_, R> {
                             [Span::new(quote_start, quote_start)].to_vec()
                         };
 
-                        let ln_data = reporter::form_err_diag(self.handle.buffer(), &spans, false);
-                        let err_msg =
-                            reporter::standardize_err(&msg, &ln_data, "", self.path, false);
+                        let ln_data = reporter::form_err_diag(
+                            self.handle.buffer(),
+                            &spans,
+                            self.settings.can_color,
+                        );
+
+                        let err_msg = reporter::standardize_err(
+                            &msg,
+                            &ln_data,
+                            "",
+                            self.path,
+                            self.settings.can_color,
+                        );
 
                         return Err(ConfigLoadError::Unclosed(err_msg));
                     }
@@ -158,9 +170,19 @@ impl<R: Read> ChernConfigLoader<'_, R> {
                             [Span::new(quote_start, quote_start)].to_vec()
                         };
 
-                        let ln_data = reporter::form_err_diag(self.handle.buffer(), &spans, false);
-                        let err_msg =
-                            reporter::standardize_err(&msg, &ln_data, "", self.path, false);
+                        let ln_data = reporter::form_err_diag(
+                            self.handle.buffer(),
+                            &spans,
+                            self.settings.can_color,
+                        );
+
+                        let err_msg = reporter::standardize_err(
+                            &msg,
+                            &ln_data,
+                            "",
+                            self.path,
+                            self.settings.can_color,
+                        );
 
                         return Err(ConfigLoadError::Unclosed(err_msg));
                     }
@@ -213,7 +235,8 @@ impl<R: Read> ChernConfigLoader<'_, R> {
                     {
                         requires_end = true;
                         lex_start = self.pos;
-                        // def_span = Some(Span::new(span_start, self.pos));
+                        self.skip(DEFINITION_SIZE);
+                        def_span = Some(Span::new(span_start, self.pos));
                     }
 
                     self.advance();
@@ -234,13 +257,31 @@ impl<R: Read> ChernConfigLoader<'_, R> {
                 None,
             ))
         } else {
-            let msg = format!(
-                "Could not find `@end` after `@def` from path \"{}\" after reading {} line(s)",
-                self.path.display(),
-                self.lines_read
+            let msg = format!("Could not find `@end` after `@def`");
+
+            let def_span = def_span.expect("@def must exist for this branch to be seen");
+            // Explicitly declaring this so the end of the file can be pointed at too
+
+            // Ensuring an indexable character is the last character
+            let eof_pos = if self.pos == self.handle.buffer().len() {
+                self.pos - 1
+            } else {
+                self.pos
+            };
+
+            let eof_span = Span::new(eof_pos, eof_pos);
+            dbg!(def_span, eof_span);
+
+            let ln_data = reporter::form_err_diag(
+                self.handle.buffer(),
+                &[def_span, eof_span],
+                self.settings.can_color,
             );
 
-            Err(ConfigLoadError::Unclosed(msg))
+            let err_msg =
+                reporter::standardize_err(&msg, &ln_data, "", self.path, self.settings.can_color);
+
+            Err(ConfigLoadError::Unclosed(err_msg))
         }
     }
 
@@ -280,8 +321,8 @@ impl<R: Read> ChernConfigLoader<'_, R> {
     fn handle_multi_comment(&mut self) -> Result<(), ConfigLoadError> {
         let mut depth = 1;
 
-        let comment_start = self.lines_read;
-        // - 1 to include the '//' or '/*' part of a comment
+        // To adjust multi-comment start to the first '/'. /*c - 2 = /
+        let comment_start = self.pos - 2;
 
         while let Some(current_byte) = self.peek()
             && depth > 0
@@ -302,12 +343,24 @@ impl<R: Read> ChernConfigLoader<'_, R> {
         }
 
         if depth > 0 {
-            let msg = format!(
-                "Found unclosed multi-line comment in configuration file which started at line {}",
-                comment_start
+            let msg = format!("Found unclosed multi-line comment in configuration file");
+
+            // To include full multi-line syntax. / + 1 = /*
+            let comment_span = Span::new(comment_start, comment_start + 1);
+
+            let eof_span = Span::new(self.pos - 1, self.pos - 1);
+            dbg!(comment_span, eof_span);
+
+            let ln_data = reporter::form_err_diag(
+                self.handle.buffer(),
+                &[comment_span, eof_span],
+                self.settings.can_color,
             );
 
-            return Err(ConfigLoadError::Unclosed(msg));
+            let err_msg =
+                reporter::standardize_err(&msg, &ln_data, "", self.path, self.settings.can_color);
+
+            return Err(ConfigLoadError::Unclosed(err_msg));
         }
 
         Ok(())

@@ -73,7 +73,7 @@ impl<'a> ConstraintResolver<'a> {
             let ast_id = AstId::new(id as u32);
 
             match item {
-                Item::Var(abs_typedef) => {
+                Item::TypeDef(abs_typedef) => {
                     _ = self.resolve_typedef(abs_typedef, ast_id);
                 }
                 Item::Struct(abs_struct) => {
@@ -966,6 +966,9 @@ impl<'a> ConstraintResolver<'a> {
                             Ok(ValueResult::Unresolved)
                         }
                     }
+                    PossibleMember::Type(type_id) => {
+                        todo!("Type id");
+                    }
                     PossibleMember::Var(val_id) => {
                         ValueResult::Resolved(val_id);
                         unimplemented!("Nothing matches this case yet");
@@ -978,6 +981,7 @@ impl<'a> ConstraintResolver<'a> {
                     ValueResult::Resolved(id) => id,
                     ValueResult::Unresolved => return Ok(ValueResult::Unresolved),
                 };
+
                 let operand = &self.compiler.values[operand_id.id];
 
                 if !evaluator::is_compatible_unary(unary.op, operand) {
@@ -1011,8 +1015,28 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         if let Expr::Var(name_id) = member.expr {
+            dbg!(self.interner.search(name_id.id as usize));
             if let Some(mod_id) = self.compiler.mod_map.get(&name_id) {
                 return Ok(PossibleMember::Module(*mod_id));
+            }
+
+            let module = &self.compiler.mods[self.current_mod.id];
+            if let Some(sym_id) = module.get_sym_id(name_id, scope_type) {
+                let type_id = self.compiler.symbols[&sym_id].symbol.type_id();
+                return Ok(PossibleMember::Type(type_id));
+            } else {
+                if name_id.id == Keyword::Self_ as u32 {
+                    panic!();
+                }
+                // What if this was in order of priority
+                // No
+                // Dot reference sounds better
+                let msg = format!(
+                    "Could not find the variable `{}`",
+                    self.interner.search(name_id.id as usize)
+                );
+
+                return Err(SemanticError::General(msg, vec![member.span]));
             }
         }
 

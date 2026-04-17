@@ -54,7 +54,7 @@ impl TypeResolver<'_> {
             let ast_id = AstId::new(id as u32);
 
             match item {
-                Item::Var(abs_typedef) => _ = self.resolve_typedef(abs_typedef, ast_id),
+                Item::TypeDef(abs_typedef) => _ = self.resolve_typedef(abs_typedef, ast_id),
                 Item::Struct(abs_struct) => _ = self.resolve_struct(abs_struct, ast_id),
                 Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum, ast_id),
                 Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias, ast_id),

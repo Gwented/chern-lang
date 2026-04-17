@@ -2,14 +2,13 @@ use std::collections::HashMap;
 
 use chern_core::{
     builtins::BuiltinType,
-    id_types::{ModuleId, NameId, SymbolId},
+    id_types::{ModuleId, NameId, SymbolId, TypeId},
     keywords,
     values::Value,
 };
 
 use crate::{
-    modules::Module,
-    parser::ast::Bind,
+    modules::{Bind, Module},
     semantic::representation::{
         ConstRepre, EnumRepre, FuncRepre, StructRepre, Symbol, SymbolInfo, Type, TypeDefRepre,
         TypeInfo,

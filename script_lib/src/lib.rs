@@ -130,11 +130,8 @@ mod tests {
     use crate::{
         config_loader::ChernConfigLoader,
         lexer::Lexer,
-        modules::Module,
-        parser::{
-            self,
-            ast::{AstInfo, Import},
-        },
+        modules::{Import, Module},
+        parser::{self, ast::AstInfo},
         script_compiler::{ScriptCompiler, VALUE_FALSE_POS, VALUE_TRUE_POS},
         semantic::{
             constraint_resolver::{ConstraintResolver, value_context::ValueContext},

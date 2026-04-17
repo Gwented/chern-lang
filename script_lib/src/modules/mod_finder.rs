@@ -6,7 +6,7 @@ use chern_core::{
 };
 use common::span::Span;
 
-use crate::parser::ast::{Bind, Import};
+use crate::modules::{Bind, Import};
 
 pub struct ModuleFinder<'a> {
     src_bytes: &'a [u8],

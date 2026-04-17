@@ -28,7 +28,7 @@ use crate::{
 const C_BASE_EXIT_SET: u64 = token::EOF | token::ILLEGAL;
 const A_BASE_EXIT_SET: u64 = token::SLIM_ARROW;
 
-const C_STMT_NEUTRAL_SET: u64 = C_BASE_EXIT_SET | token::ID;
+const C_STMT_NEUTRAL_SET: u64 = C_BASE_EXIT_SET /*| token::Keyword*/ ;
 
 const C_BRANCH_VAR_SET: u64 = C_BASE_EXIT_SET;
 const A_BRANCH_VAR_SET: u64 = A_BASE_EXIT_SET | token::COLON;
@@ -85,7 +85,6 @@ impl<'a> Context<'a> {
         // WARN: IF ANYTHING GOES WRONG ADD THE IF STATEMENTS BACK FOR EOF
         let found = self.advance();
 
-        //TEST: I JUST WANTED TO USE REFERENCES
         let id_opt = match found.tok {
             Token::Id(id) | Token::Str(id) | Token::Integer(id, _) | Token::Float(id, _) => {
                 if found.tok.kind() == expected {
@@ -136,8 +135,6 @@ impl<'a> Context<'a> {
                 self.settings.can_color,
             )
         };
-
-        // let msg = self.standardize_diag(msg);
 
         self.err_vec.push(Diagnostic::new(msg, Area::Script));
 
