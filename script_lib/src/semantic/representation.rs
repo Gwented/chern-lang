@@ -46,6 +46,7 @@ impl SymbolInfo {
     }
 }
 
+//NOTE: Should be in chern_core?
 #[derive(Debug)]
 pub enum Type {
     BuiltinType(BuiltinType),
@@ -53,7 +54,7 @@ pub enum Type {
     Enum(SymbolId),
     Func(SymbolId),
     Alias(SymbolId),
-    Const(SymbolId),
+    Var(SymbolId),
     Tuple(Tuple),
     Unknown,
 }
@@ -65,7 +66,7 @@ pub(crate) enum Symbol {
     Func(FuncRepre),
     Enum(EnumRepre),
     Alias(AliasRepre),
-    Const(ConstRepre),
+    Var(VarRepre),
 }
 
 impl Symbol {
@@ -76,7 +77,7 @@ impl Symbol {
             Symbol::Func(func_repre) => func_repre.name_id,
             Symbol::Enum(enum_repre) => enum_repre.name_id,
             Symbol::Alias(alias_repre) => alias_repre.name_id,
-            Symbol::Const(const_repre) => const_repre.name_id,
+            Symbol::Var(var_repre) => var_repre.name_id,
         }
     }
 
@@ -87,7 +88,7 @@ impl Symbol {
             Symbol::Func(func_repre) => func_repre.type_id,
             Symbol::Enum(enum_repre) => enum_repre.type_id,
             Symbol::Alias(alias_repre) => alias_repre.type_id,
-            Symbol::Const(const_repre) => const_repre.type_id,
+            Symbol::Var(var_repre) => var_repre.type_id,
         }
     }
 }
@@ -109,30 +110,32 @@ impl Table {
     }
 }
 
+pub(crate) enum ResolvedExpr {}
+
 #[derive(Debug)]
-pub(crate) struct ConstRepre {
+pub(crate) struct VarRepre {
     pub(crate) name_id: NameId,
     pub(crate) sym_id: SymbolId,
     pub(crate) ast_id: AstId,
     // It's position in the Type array
     pub(crate) type_id: TypeId,
-    pub(crate) val_id: Option<ValueId>,
+    pub(crate) const_val: Option<ValueId>,
 }
 
-impl ConstRepre {
+impl VarRepre {
     pub fn new(
         name_id: NameId,
         sym_id: SymbolId,
         type_id: TypeId,
         ast_id: AstId,
         val_id: Option<ValueId>,
-    ) -> ConstRepre {
-        ConstRepre {
+    ) -> VarRepre {
+        VarRepre {
             name_id,
             sym_id,
             type_id,
             ast_id,
-            val_id,
+            const_val: val_id,
         }
     }
 }

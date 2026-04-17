@@ -58,8 +58,8 @@ impl TypeResolver<'_> {
                 Item::Struct(abs_struct) => _ = self.resolve_struct(abs_struct, ast_id),
                 Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum, ast_id),
                 Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias, ast_id),
-                // Const values don't have assigned types
-                Item::Const(_) => (),
+                // Const values are inferred
+                Item::VarDecl(_) => (),
             }
         }
 
@@ -226,7 +226,7 @@ impl TypeResolver<'_> {
                         Symbol::Enum(enum_repre) => enum_repre.type_id,
                         Symbol::Alias(alias_repre) => alias_repre.type_id,
                         // Const variables have strictly inferred types
-                        Symbol::Const(_) | Symbol::TypeDef(_) => {
+                        Symbol::Var(_) | Symbol::TypeDef(_) => {
                             unreachable!("Typed as `Unknown` by default")
                         }
                     };
@@ -256,7 +256,7 @@ impl TypeResolver<'_> {
                         Symbol::Func(func_repre) => func_repre.type_id,
                         Symbol::Enum(enum_repre) => enum_repre.type_id,
                         Symbol::Alias(alias_repre) => alias_repre.type_id,
-                        Symbol::Const(_) | Symbol::TypeDef(_) => {
+                        Symbol::Var(_) | Symbol::TypeDef(_) => {
                             unreachable!("Typed as `Unknown` by default")
                         }
                     };

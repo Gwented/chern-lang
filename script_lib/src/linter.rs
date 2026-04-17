@@ -78,8 +78,8 @@
 //
 //                 println!("]");
 //             }
-//             Item::Const(abs_const) => {
-//                 let name = interner.search(abs_const.name_id.id as usize);
+//             Item::Const(abs_var) => {
+//                 let name = interner.search(abs_var.name_id.id as usize);
 //                 println!("Const {name} [");
 //             }
 //             Item::Import(abstract_import) => (),

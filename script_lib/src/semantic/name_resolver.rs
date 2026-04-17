@@ -8,13 +8,13 @@ use common::{chern_settings::ChernSettings, reporter::diagnostic::Diagnostic};
 
 use crate::{
     parser::ast::{
-        AbstractAlias, AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Item,
+        AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Item,
     },
     script_compiler::ScriptCompiler,
     semantic::{
         representation::{
-            AliasRepre, ConstRepre, EnumRepre, StructRepre, Symbol, SymbolInfo, Type, TypeDefRepre,
-            TypeInfo,
+            AliasRepre, EnumRepre, StructRepre, Symbol, SymbolInfo, Type, TypeDefRepre, TypeInfo,
+            VarRepre,
         },
         semantic_reporter::SemanticReporter,
     },
@@ -59,7 +59,8 @@ impl NamespaceResolver<'_> {
                 Item::Struct(abs_struct) => self.register_struct(abs_struct, ast_id),
                 Item::Enum(abs_enum) => self.register_enum(abs_enum, ast_id),
                 Item::Alias(abs_alias) => self.register_alias(abs_alias, ast_id),
-                Item::Const(abs_const) => self.register_const(abs_const, ast_id),
+                // Stmt let
+                Item::VarDecl(abs_var) => self.register_var(abs_var, ast_id),
             }
         }
 
@@ -189,12 +190,12 @@ impl NamespaceResolver<'_> {
     }
 
     //WARN: IS THIS RIGHT?
-    fn register_const(&mut self, abs_const: &AbstractConst, ast_id: AstId) {
+    fn register_var(&mut self, abs_var: &AbstractVar, ast_id: AstId) {
         let module = &mut self.compiler.mods[self.current_mod.id];
         let scope_id = module.push_scope(ScopeType::Neutral);
         let table = &mut module.get_scope_mut(scope_id).table;
 
-        table.name_ids.insert(ast_id, abs_const.name_id);
+        table.name_ids.insert(ast_id, abs_var.name_id);
 
         // let type_id = TypeId::new(self.program.types.len() as u32);
         // let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
@@ -209,17 +210,13 @@ impl NamespaceResolver<'_> {
         let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
         self.compiler.types.push(ty_info);
 
-        let const_repre = ConstRepre::new(abs_const.name_id, sym_id, type_id, ast_id, None);
+        let const_repre = VarRepre::new(abs_var.name_id, sym_id, type_id, ast_id, None);
 
-        let sym_info = SymbolInfo::new(
-            Symbol::Const(const_repre),
-            abs_const.is_priv,
-            self.current_mod,
-        );
+        let sym_info = SymbolInfo::new(Symbol::Var(const_repre), abs_var.is_priv, self.current_mod);
 
         self.compiler.symbols.insert(sym_id, sym_info);
 
-        let ty_info = TypeInfo::new(Type::Const(sym_id), Some(self.current_mod));
+        let ty_info = TypeInfo::new(Type::Var(sym_id), Some(self.current_mod));
         self.compiler.types.push(ty_info);
     }
 
@@ -246,7 +243,7 @@ impl NamespaceResolver<'_> {
                         Item::Struct(abs_struct) => &abs_struct.name_span,
                         Item::Enum(abs_enum) => &abs_enum.name_span,
                         Item::Alias(abs_alias) => &abs_alias.name_span,
-                        Item::Const(abs_const) => &abs_const.name_span,
+                        Item::VarDecl(abs_var) => &abs_var.name_span,
                     }
                     .clone();
 
@@ -255,7 +252,7 @@ impl NamespaceResolver<'_> {
                         Item::Struct(abs_struct) => &abs_struct.name_span,
                         Item::Enum(abs_enum) => &abs_enum.name_span,
                         Item::Alias(abs_alias) => &abs_alias.name_span,
-                        Item::Const(abs_const) => &abs_const.name_span,
+                        Item::VarDecl(abs_var) => &abs_var.name_span,
                     }
                     .clone();
 

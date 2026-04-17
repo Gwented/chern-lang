@@ -20,7 +20,7 @@ impl PathId {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct TypeId {
     pub id: u32,
 }
@@ -53,7 +53,7 @@ impl ModuleId {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct ScopeId {
     pub id: usize,
 }
@@ -75,7 +75,18 @@ impl AstId {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ExprId {
+    pub id: u32,
+}
+
+impl ExprId {
+    pub fn new(id: u32) -> ExprId {
+        ExprId { id }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct ValueId {
     pub id: usize,
 }

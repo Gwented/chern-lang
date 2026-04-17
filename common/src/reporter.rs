@@ -438,7 +438,6 @@ fn form_ln_diag(
         // Since the function is inclusive, exclusive a + 1 is needed
         let arrow_count = get_chars_width(src_str, span.start, span.end + 1);
         let arrows = "^".repeat(arrow_count);
-        dbg!(arrow_count);
         let colored_arrows = format!("{red}{arrows}{nc}");
 
         pointers.push_str(&colored_arrows);

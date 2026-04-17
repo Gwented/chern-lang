@@ -57,7 +57,7 @@ pub mod tests {
         assert_eq!("export", interner.search(Keyword::Export as usize));
         assert_eq!("bind", interner.search(Keyword::Bind as usize));
         assert_eq!("alias", interner.search(Keyword::Alias as usize));
-        assert_eq!("const", interner.search(Keyword::Const as usize));
+        assert_eq!("let", interner.search(Keyword::Let as usize));
         assert_eq!("change", interner.search(Keyword::Change as usize));
         // Sections
         assert_eq!("var", interner.search(Keyword::Var as usize));

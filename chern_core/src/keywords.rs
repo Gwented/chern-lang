@@ -54,7 +54,7 @@ pub static KEYWORDS_ARRAY: [&str; 49] = [
     "export", // 30
     "bind",
     "alias", // 32
-    "const",
+    "let",
     "change", // 34
     // Section names
     "var",
@@ -118,7 +118,7 @@ pub enum Keyword {
     Export = 30,
     Bind = 31,
     Alias = 32,
-    Const = 33,
+    Let = 33,
     Change = 34,
     Var = 35,
     Nest = 36,
@@ -172,7 +172,7 @@ impl Formattable for Keyword {
             Keyword::Export => Formatted::Export,
             Keyword::Bind => Formatted::Bind,
             Keyword::Alias => Formatted::Alias,
-            Keyword::Const => Formatted::Const,
+            Keyword::Let => Formatted::Let,
             Keyword::Change => Formatted::Change,
             Keyword::Var => Formatted::SectVar,
             Keyword::Nest => Formatted::SectNest,
@@ -230,7 +230,7 @@ impl Keyword {
             30 => Some(Keyword::Export),
             31 => Some(Keyword::Bind),
             32 => Some(Keyword::Alias),
-            33 => Some(Keyword::Const),
+            33 => Some(Keyword::Let),
             34 => Some(Keyword::Change),
             35 => Some(Keyword::Var),
             36 => Some(Keyword::Nest),

@@ -38,10 +38,10 @@ impl AstInfo {
         }
     }
 
-    pub(crate) fn get_const(&self, ast_id: AstId) -> &AbstractConst {
+    pub(crate) fn get_const(&self, ast_id: AstId) -> &AbstractVar {
         match &self.items[ast_id.id as usize] {
             item => match item {
-                Item::Const(abs_const) => abs_const,
+                Item::VarDecl(abs_var) => abs_var,
                 _ => unreachable!(),
             },
         }
@@ -64,16 +64,16 @@ impl AstInfo {
             },
         }
     }
-    //
-    // pub(crate) fn get_ast_span(&self, ast_id: AstId) -> Span {
-    //     match &self.items[ast_id.id as usize] {
-    //         Item::TypeDef(abs_typedef) => abs_typedef.name_span,
-    //         Item::Struct(abs_struct) => abs_struct.name_span,
-    //         Item::Enum(abs_enum) => abs_enum.name_span,
-    //         Item::Alias(abs_alias) => abs_alias.name_span,
-    //         Item::Const(abs_const) => abs_const.name_span,
-    //     }
-    // }
+
+    pub(crate) fn get_ast_span(&self, ast_id: AstId) -> Span {
+        match &self.items[ast_id.id as usize] {
+            Item::TypeDef(abs_typedef) => abs_typedef.name_span,
+            Item::Struct(abs_struct) => abs_struct.name_span,
+            Item::Enum(abs_enum) => abs_enum.name_span,
+            Item::Alias(abs_alias) => abs_alias.name_span,
+            Item::VarDecl(abs_var) => abs_var.name_span,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -84,7 +84,7 @@ pub(crate) enum Item {
     Struct(AbstractStruct),
     Enum(AbstractEnum),
     Alias(AbstractAlias),
-    Const(AbstractConst),
+    VarDecl(AbstractVar),
     // Func(AbstractFunc),
 }
 
@@ -271,21 +271,21 @@ pub(crate) enum TypeExpr {
 // Maybe type inference could pick up on the fact that if a definition has a condition, and that
 // condition is applied to only a particular bit size, then it should be that bit size
 #[derive(Debug)]
-pub(crate) struct AbstractConst {
+pub(crate) struct AbstractVar {
     pub(crate) name_id: NameId,
     pub(crate) name_span: Span,
     pub(crate) spanned_expr: SpannedExpr,
     pub(crate) is_priv: bool,
 }
 
-impl AbstractConst {
+impl AbstractVar {
     pub(crate) fn new(
         name_id: NameId,
         name_span: Span,
         spanned_expr: SpannedExpr,
         is_priv: bool,
-    ) -> AbstractConst {
-        AbstractConst {
+    ) -> AbstractVar {
+        AbstractVar {
             name_id,
             name_span,
             spanned_expr,

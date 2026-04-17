@@ -68,6 +68,7 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
     }
 
     for i in 0..script_compiler.mods.len() {
+        dbg!(i);
         let mod_id = ModuleId::new(i);
         match TypeResolver::new(settings, &asts[i], mod_id, &interner, &mut script_compiler)
             .resolve()

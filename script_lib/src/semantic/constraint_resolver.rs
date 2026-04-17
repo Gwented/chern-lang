@@ -20,7 +20,7 @@ use crate::{
     conditions::Cond,
     modules::Module,
     parser::ast::{
-        AbstractConst, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Expr, Item,
+        AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Expr, Item,
         SpannedExpr, UnaryOp,
     },
     script_compiler::{ScriptCompiler, VALUE_FALSE_POS, VALUE_TRUE_POS},
@@ -83,8 +83,8 @@ impl<'a> ConstraintResolver<'a> {
                     _ = self.resolve_enum(abs_enum, ast_id);
                 }
                 Item::Alias(abs_alias) => todo!(),
-                Item::Const(abs_const) => {
-                    _ = self.resolve_const(abs_const, ast_id);
+                Item::VarDecl(abs_var) => {
+                    _ = self.resolve_let(abs_var, ast_id);
                 }
             }
         }
@@ -118,8 +118,8 @@ impl<'a> ConstraintResolver<'a> {
     fn report_job(&mut self, job: Job) {
         let sym_info = &self.compiler.symbols[&job.sym_id];
         match &sym_info.symbol {
-            Symbol::Const(_) => {
-                let msg = format!("Could not evaluate constant");
+            Symbol::Var(_) => {
+                let msg = format!("Could not evaluate");
                 self.reporter.report_spanned(
                     &msg,
                     None,
@@ -144,8 +144,8 @@ impl<'a> ConstraintResolver<'a> {
         while let Some(job) = self.val_ctx.jobs.pop_front() {
             self.current_mod = job.mod_id;
             let val_res = match &self.ast_info[job.mod_id.id].items[job.ast_id.id as usize] {
-                Item::Const(abs_const) => {
-                    match self.resolve_expr(&abs_const.spanned_expr, job.scope_type) {
+                Item::VarDecl(abs_var) => {
+                    match self.resolve_expr(&abs_var.spanned_expr, job.scope_type) {
                         Ok(res) => res,
                         Err(sem_err) => {
                             self.reporter
@@ -170,8 +170,8 @@ impl<'a> ConstraintResolver<'a> {
                     let sym_info = self.compiler.symbols.get_mut(&job.sym_id).expect("Exists");
 
                     match &mut sym_info.symbol {
-                        Symbol::Const(const_repre) => {
-                            const_repre.val_id = Some(val_id);
+                        Symbol::Var(var_repre) => {
+                            var_repre.const_val = Some(val_id);
                         }
                         Symbol::TypeDef(type_def_repre) => todo!(),
                         Symbol::Struct(struct_repre) => todo!(),
@@ -194,7 +194,7 @@ impl<'a> ConstraintResolver<'a> {
         Ok(())
     }
 
-    fn resolve_const(&mut self, abs_const: &AbstractConst, ast_id: AstId) -> Result<(), ()> {
+    fn resolve_let(&mut self, abs_var: &AbstractVar, ast_id: AstId) -> Result<(), ()> {
         let module = &self.compiler.mods[self.current_mod.id];
         let scope_id = module.extract_scope_id(ScopeType::Neutral);
         let table = &module.get_scope(scope_id).table;
@@ -202,7 +202,7 @@ impl<'a> ConstraintResolver<'a> {
         let sym_id = table.sym_ids[&ast_id];
 
         //TEST:
-        let val_id = match self.resolve_expr(&abs_const.spanned_expr, ScopeType::Neutral) {
+        let val_id = match self.resolve_expr(&abs_var.spanned_expr, ScopeType::Neutral) {
             Ok(v) => match v {
                 ValueResult::Resolved(v_inner) => v_inner,
                 // TODO: Who is the one that pushes the job? Only the original caller?
@@ -211,7 +211,7 @@ impl<'a> ConstraintResolver<'a> {
                         sym_id,
                         self.current_mod,
                         ast_id,
-                        abs_const.spanned_expr.span,
+                        abs_var.spanned_expr.span,
                         scope_id,
                         ScopeType::Neutral,
                     );
@@ -228,8 +228,8 @@ impl<'a> ConstraintResolver<'a> {
         };
 
         // Setting const from an `Unknown` value to whatever was found
-        let const_repre = self.compiler.get_const_mut(sym_id);
-        const_repre.val_id = Some(val_id);
+        let var_repre = self.compiler.get_var_mut(sym_id);
+        var_repre.const_val = Some(val_id);
 
         Ok(())
     }
@@ -803,7 +803,7 @@ impl<'a> ConstraintResolver<'a> {
             Type::Alias(_) | Type::Unknown => {
                 unreachable!("Parser and semantic cannot produce these variants. I think.")
             }
-            Type::Const(symbol_id) => todo!(),
+            Type::Var(symbol_id) => todo!(),
         }
     }
 
@@ -832,8 +832,8 @@ impl<'a> ConstraintResolver<'a> {
                 if let Some(sym_id) = module.get_sym_id(*name_id, scope_type) {
                     let symbol = &self.compiler.symbols[&sym_id].symbol;
                     match symbol {
-                        Symbol::Const(const_repre) => {
-                            if let Some(val_id) = const_repre.val_id {
+                        Symbol::Var(var_repre) => {
+                            if let Some(val_id) = var_repre.const_val {
                                 return Ok(ValueResult::Resolved(val_id));
                             }
 
@@ -947,8 +947,8 @@ impl<'a> ConstraintResolver<'a> {
                         {
                             let symbol = &self.compiler.symbols[&sym_id].symbol;
                             match symbol {
-                                Symbol::Const(const_repre) => {
-                                    if let Some(val_id) = const_repre.val_id {
+                                Symbol::Var(var_repre) => {
+                                    if let Some(val_id) = var_repre.const_val {
                                         return Ok(ValueResult::Resolved(val_id));
                                     }
 
@@ -1015,7 +1015,6 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         if let Expr::Var(name_id) = member.expr {
-            dbg!(self.interner.search(name_id.id as usize));
             if let Some(mod_id) = self.compiler.mod_map.get(&name_id) {
                 return Ok(PossibleMember::Module(*mod_id));
             }
@@ -1032,7 +1031,7 @@ impl<'a> ConstraintResolver<'a> {
                 // No
                 // Dot reference sounds better
                 let msg = format!(
-                    "Could not find the variable `{}`",
+                    "Could not find the symbol `{}` as a module, type, or value",
                     self.interner.search(name_id.id as usize)
                 );
 
@@ -1185,7 +1184,7 @@ impl<'a> ConstraintResolver<'a> {
             Type::Unknown | Type::Func(_) => {
                 unreachable!("Parser and semantic cannot produce these variants")
             }
-            Type::Const(symbol_id) => todo!(),
+            Type::Var(symbol_id) => todo!(),
         }
     }
 

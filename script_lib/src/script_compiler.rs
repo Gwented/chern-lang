@@ -10,8 +10,8 @@ use chern_core::{
 use crate::{
     modules::{Bind, Module},
     semantic::representation::{
-        ConstRepre, EnumRepre, FuncRepre, StructRepre, Symbol, SymbolInfo, Type, TypeDefRepre,
-        TypeInfo,
+        EnumRepre, FuncRepre, StructRepre, Symbol, SymbolInfo, Type, TypeDefRepre, TypeInfo,
+        VarRepre,
     },
 };
 
@@ -144,19 +144,19 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_const(&self, sym_id: SymbolId) -> &ConstRepre {
+    pub(super) fn get_var(&self, sym_id: SymbolId) -> &VarRepre {
         match &self.symbols[&sym_id] {
             sym_info => match &sym_info.symbol {
-                Symbol::Const(const_repre) => const_repre,
+                Symbol::Var(var_repre) => var_repre,
                 _ => unreachable!(),
             },
         }
     }
 
-    pub(super) fn get_const_mut(&mut self, sym_id: SymbolId) -> &mut ConstRepre {
+    pub(super) fn get_var_mut(&mut self, sym_id: SymbolId) -> &mut VarRepre {
         match self.symbols.get_mut(&sym_id) {
             Some(sym_info) => match &mut sym_info.symbol {
-                Symbol::Const(const_repre) => const_repre,
+                Symbol::Var(var_repre) => var_repre,
                 _ => unreachable!(),
             },
             None => unreachable!(),

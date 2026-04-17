@@ -320,7 +320,7 @@ impl<'a> Context<'a> {
                 NeutralBranch::Searching => (C_STMT_NEUTRAL_SET, A_BASE_EXIT_SET),
                 NeutralBranch::Bind => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
                 NeutralBranch::Alias => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
-                NeutralBranch::Const => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
+                NeutralBranch::Let => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
                 NeutralBranch::Import => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             },
             Branch::Section(sect_branch) => match sect_branch {

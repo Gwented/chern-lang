@@ -17,7 +17,7 @@ var->
 // Have literals being printed shown have their new lines replaced with spaces
 
 // alias
-// const
+// let
 // type tied constraints
 // export
 

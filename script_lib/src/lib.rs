@@ -523,8 +523,8 @@ mod tests {
     fn nameresolver_duplicate_simple_test() {
         // -- NEUTRAL --
         let wrong = "
-            const DUPLICATE = 3
-            const DUPLICATE = \"Hi\"
+            let DUPLICATE = 3
+            let DUPLICATE = \"Hi\"
             ";
 
         let (mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
@@ -549,8 +549,8 @@ mod tests {
         assert_eq!(res.is_err(), true);
 
         let correct = "
-                const ORIGINAL = 2 + 2
-                const NEW = \"Hallo\"
+                let ORIGINAL = 2 + 2
+                let NEW = \"Hallo\"
             ";
 
         let (mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
@@ -700,7 +700,7 @@ mod tests {
         let settings = ChernSettings::default();
 
         let main_txt = "
-            const CONSTANT = 3
+            let CONSTANT = 3
         ";
 
         let main_meta = ChernConfigLoader::new(Path::new(""), main_txt.as_bytes(), &settings)
@@ -721,7 +721,7 @@ mod tests {
         );
 
         let sub_txt = "
-            const OTHER_CONSTANT = 5
+            let OTHER_CONSTANT = 5
         ";
 
         let sub_meta = ChernConfigLoader::new(Path::new(""), sub_txt.as_bytes(), &settings)
@@ -1012,7 +1012,7 @@ mod tests {
     fn scope_simple_test() {
         // -- NEUTRAL --
         let text = "
-            const CONSTANT = 3
+            let CONSTANT = 3
             ";
 
         let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
@@ -1201,7 +1201,7 @@ mod tests {
 
         //TODO: Complex and Override
         let text = "
-            const NEUTRAL = 3
+            let NEUTRAL = 3
             var->
                 var: Nest
             nest->
@@ -1315,7 +1315,7 @@ mod tests {
     #[test]
     fn type_resolver_complex_test() {
         let text = "
-            const CONSTANT = 4
+            let CONSTANT = 4
             ";
 
         let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
@@ -1351,9 +1351,9 @@ mod tests {
     }
 
     #[test]
-    fn constraint_resolver_const_test() {
+    fn constraint_resolver_let_test() {
         let text = "
-            const CONSTANT = 4
+            let CONSTANT = 4
             ";
 
         let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
@@ -1408,7 +1408,7 @@ mod tests {
         };
 
         let text = "
-            const CONSTANT = \"Hallo\"
+            let CONSTANT = \"Hallo\"
         ";
 
         let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
@@ -1461,7 +1461,7 @@ mod tests {
         };
 
         let text = "
-            const CONSTANT = 0e-5
+            let CONSTANT = 0e-5
         ";
 
         let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
@@ -1514,7 +1514,7 @@ mod tests {
         };
 
         let text = "
-            const CONSTANT = true
+            let CONSTANT = true
         ";
 
         let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
@@ -1565,7 +1565,7 @@ mod tests {
         };
 
         let text = "
-            const CONSTANT = false
+            let CONSTANT = false
         ";
 
         let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);

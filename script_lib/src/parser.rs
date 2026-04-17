@@ -5,8 +5,8 @@ mod parser_state;
 
 use crate::modules::Module;
 use crate::parser::ast::{
-    AbstractAlias, AbstractConst, AbstractEnum, AbstractMemberAccess, AbstractStruct,
-    AbstractTypeDef, AbstractVariant, AstInfo, Expr, Generic, Item, SpannedExpr, SpannedTypeExpr,
+    AbstractAlias, AbstractEnum, AbstractMemberAccess, AbstractStruct, AbstractTypeDef,
+    AbstractVar, AbstractVariant, AstInfo, Expr, Generic, Item, SpannedExpr, SpannedTypeExpr,
     TypeExpr, Unary, UnaryOp,
 };
 use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
@@ -99,11 +99,11 @@ pub fn parse(
                         ast_info.items.push(Item::Alias(alias));
                     };
                 }
-                id if id == Keyword::Const as u32 => {
+                id if id == Keyword::Let as u32 => {
                     ctx.advance_tok();
 
-                    if let Ok(abs_const) = parse_const(&mut ctx, is_priv, interner) {
-                        ast_info.items.push(Item::Const(abs_const));
+                    if let Ok(abs_var) = parse_const(&mut ctx, is_priv, interner) {
+                        ast_info.items.push(Item::VarDecl(abs_var));
                     }
                 }
                 id if id == Keyword::Import as u32 => {
@@ -655,11 +655,7 @@ fn parse_override_sect(ctx: &mut Context, interner: &Intern) -> Result<(), Token
     todo!()
 }
 
-fn parse_const(
-    ctx: &mut Context,
-    is_priv: bool,
-    interner: &Intern,
-) -> Result<AbstractConst, Token> {
+fn parse_const(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Result<AbstractVar, Token> {
     let name_span = ctx.peek_span();
 
     // Handle identifier method in case of a tilde?
@@ -672,7 +668,7 @@ fn parse_const(
         TokenKind::Id,
         "Expected an identifier after `const`, found ",
         "",
-        Branch::Neutral(NeutralBranch::Const),
+        Branch::Neutral(NeutralBranch::Let),
         interner,
     )?;
 
@@ -682,15 +678,15 @@ fn parse_const(
         TokenKind::Assign,
         "Expected '=' to declare const value, found ",
         "",
-        Branch::Neutral(NeutralBranch::Const),
+        Branch::Neutral(NeutralBranch::Let),
         interner,
     )?;
 
     let spanned_expr = parse_expr(ctx, 0, interner)?;
 
-    let abs_const = AbstractConst::new(name_id, name_span, spanned_expr, is_priv);
+    let abs_var = AbstractVar::new(name_id, name_span, spanned_expr, is_priv);
 
-    Ok(abs_const)
+    Ok(abs_var)
 }
 
 /// Pratt Parser main entry-point

@@ -1,7 +1,8 @@
-//export const READ = 0b00000001
- export const WRITE = 0b00000010
-// export const EXEC = 0b00000100
+//export let READ = 0b00000001
+export let WRITE = 0b00000010
+// export let EXEC = 0b00000100
 
+import "../chrn_tests/main.chrn"
 // alias VALID_PERMS() = [Equals(READ) || Equals(WRITE) || Equals(EDIT)]
 
 // alias Person() = [IsEmpty]

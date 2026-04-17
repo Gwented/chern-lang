@@ -273,7 +273,6 @@ impl<R: Read> ChernConfigLoader<'_, R> {
             };
 
             let eof_span = Span::new(eof_pos, eof_pos);
-            dbg!(def_span, eof_span);
 
             let ln_data = reporter::form_err_diag(
                 self.handle.buffer(),
@@ -352,7 +351,6 @@ impl<R: Read> ChernConfigLoader<'_, R> {
             let comment_span = Span::new(comment_start, comment_start + 1);
 
             let eof_span = Span::new(self.pos, self.pos);
-            dbg!(comment_span, eof_span);
 
             let ln_data = reporter::form_err_diag(
                 self.handle.buffer(),

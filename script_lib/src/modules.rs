@@ -137,9 +137,9 @@ impl Module {
     }
 
     // And type?
-    /// Checks if the name id corresponds to an ast id within the given `ScopeType`.
+    /// Checks if the name id corresponds to a `SymbolId` within the given `ScopeType`.
     /// Returns a tuple of the `AstId` and `ScopeType` the `NameId` was found in. Returns None if
-    /// no scopes contain the given `NameId`.
+    /// no accessible scopes contain the given `NameId`.
     pub(crate) fn get_sym_id(&self, name_id: NameId, scope_type: ScopeType) -> Option<SymbolId> {
         // I don't think this can fail. Should maybe expect for clarity.
         let allowed_scope_types = scope_type.accessible_scopes();
@@ -213,14 +213,18 @@ pub fn extract_modules(
     settings: &ChernSettings,
     interner: &mut Intern,
 ) -> Result<ScriptCompiler, ConfigLoadError> {
-    // Maybe the cli should still do something about this since if the first path given
-    // isn't valid, it WOULD warrent a basic error
-    let src = match file_ops::fopen(path) {
+    // This MUST be explicitly
+    let path = match path.canonicalize() {
+        Ok(p) => p,
+        Err(e) => todo!(),
+    };
+
+    let src = match file_ops::fopen(&path) {
         Ok(f) => f,
         Err(e) => return Err(ConfigLoadError::Module(e)),
     };
 
-    let main_metadata = ChernConfigLoader::new(path, src, settings).load_config()?;
+    let main_metadata = ChernConfigLoader::new(&path, src, settings).load_config()?;
 
     // Get's actual file name so that any reference such as, "global.CONSTANT_VALUE" can be
     // accessed by using the file's name, which has to be valid UTF-8 unlike it's path.
@@ -237,7 +241,7 @@ pub fn extract_modules(
     };
 
     let name_id = NameId::new(interner.intern(&file_name));
-    let path_id = PathId::new(interner.intern_path(path));
+    let path_id = PathId::new(interner.intern_path(&path));
 
     let (bind, main_imports) = ModuleFinder::new(
         &main_metadata.src_bytes,
@@ -264,7 +268,6 @@ pub fn extract_modules(
         &main_mod,
         &mut mod_map,
         settings,
-        1,
         interner,
     )?;
 
@@ -273,6 +276,17 @@ pub fn extract_modules(
     let mut all_mods: Vec<Module> = Vec::new();
     all_mods.push(main_mod);
     all_mods.append(&mut other_mods);
+
+    all_mods.iter().for_each(|m| {
+        println!(
+            "Module \"{}\" nid = {}\nPath: \"{}\" | ModuleId = {:?}\n{:#?}",
+            interner.search(m.name_id.id as usize),
+            m.name_id.id,
+            interner.search_path(m.path_id.id as usize).display(),
+            m.mod_id.id,
+            m.imports
+        );
+    });
 
     // Module viewing command
     // Module hierarchy command, dependencies, extended classes, Springboot support
@@ -305,13 +319,14 @@ fn resolve_modules(
     prev_mod: &Module,
     mod_map: &mut HashMap<NameId, ModuleId>,
     settings: &ChernSettings,
-    current_mod_id: usize,
     interner: &mut Intern,
 ) -> Result<(), ConfigLoadError> {
     for import in &prev_mod.imports {
         if seen.contains(&import.path_id) {
             continue;
         }
+
+        let current_mod_id = seen.len();
 
         seen.insert(import.path_id);
 
@@ -370,7 +385,7 @@ fn resolve_modules(
                     interner.search(name_id.id as usize).to_string()
                 } else {
                     let msg = format!(
-                        "The path \"{}\" does not have a valid UTF-8 file name usable within the program. Consider using 'as' give it an alias if a file name change is not possible.",
+                        "The path \"{}\" does not have a valid UTF-8 file name usable within the program. Consider using 'as' to give it an alias if a file name change is not possible.",
                         path.display()
                     );
                     return Err(ConfigLoadError::Module(msg));
@@ -399,15 +414,11 @@ fn resolve_modules(
             mod_map.insert(alias_id, ModuleId::new(current_mod_id));
         }
 
-        resolve_modules(
-            seen,
-            modules,
-            &sub_mod,
-            mod_map,
-            settings,
-            current_mod_id + 1,
-            interner,
-        )?;
+        resolve_modules(seen, modules, &sub_mod, mod_map, settings, interner)?;
+
+        // if sub_mod.name_id.id == 50 {
+        //     panic!("Hi");
+        // }
 
         modules.push(sub_mod);
         mod_map.insert(name_id, ModuleId::new(current_mod_id));
