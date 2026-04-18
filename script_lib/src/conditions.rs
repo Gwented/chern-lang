@@ -31,7 +31,7 @@ impl Cond {
     /// conditions.
     // This is really really really really smelly
     pub fn try_from_id(id: u32) -> Option<Cond> {
-        match Keyword::try_as_kw(id) {
+        match Keyword::try_from_interned_id(id) {
             Some(kw) => match kw {
                 Keyword::IsEmpty => Some(Cond::IsEmpty),
                 Keyword::IsWhitespace => Some(Cond::IsWhitespace),

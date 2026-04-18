@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use chern_core::keywords::Keyword;
 use common::span::Span;
 
 use crate::parser::ast::BinaryOp;
@@ -25,7 +26,8 @@ pub struct SpannedToken {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Token {
     // To help with error messages
-    // Keyword(Keyword),
+    Keyword(Keyword),
+    BoolLiteral(bool),
     Id(u32),
     Str(u32),
     Integer(u32, Notation),
@@ -115,6 +117,8 @@ impl Token {
             Token::Dot => TokenKind::Dot,
             Token::VerticalBar => TokenKind::VerticalBar,
             Token::Illegal(_) => TokenKind::Illegal,
+            Token::Keyword(_) => TokenKind::Keyword,
+            Token::BoolLiteral(_) => TokenKind::Bool,
             Token::EOF => TokenKind::EOF,
         }
     }
@@ -148,6 +152,7 @@ impl Token {
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub(crate) enum TokenKind {
+    Keyword,
     Id,
     Str,
     Integer,
@@ -187,11 +192,13 @@ pub(crate) enum TokenKind {
     Tilde,
     Dot,
     VerticalBar,
+    Bool,
     Illegal,
     Poison,
     EOF,
 }
 
+//FIX: REMOVE
 impl Display for TokenKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -237,6 +244,8 @@ impl Display for TokenKind {
             TokenKind::EOF => write!(f, "<eof>"),
             TokenKind::Poison => write!(f, "<poisoned>"),
             TokenKind::Caret => write!(f, "^"),
+            TokenKind::Bool => write!(f, "bool"),
+            TokenKind::Keyword => write!(f, "keyword"),
         }
     }
 }
@@ -244,48 +253,50 @@ impl Display for TokenKind {
 // Please assert this
 // We don't need assertions.
 // Please.
-pub const ID: u64 = 1 << 0;
-pub const LITERAL: u64 = 1 << 1;
-pub const INTEGER: u64 = 1 << 2;
-pub const FLOAT: u64 = 1 << 3;
-pub const CHAR: u64 = 1 << 4;
-pub const O_BRACKET: u64 = 1 << 5;
-pub const C_BRACKET: u64 = 1 << 6;
-pub const O_CURLY_BRACKET: u64 = 1 << 7;
-pub const C_CURLY_BRACKET: u64 = 1 << 8;
-pub const QUESTION_MARK: u64 = 1 << 9;
-pub const ASSIGN: u64 = 1 << 10;
-pub const EQUAL_TO: u64 = 1 << 11;
-pub const WALRUS: u64 = 1 << 12;
-pub const O_ANGLE_BRACKET: u64 = 1 << 13;
-pub const C_ANGLE_BRACKET: u64 = 1 << 14;
-pub const COMMA: u64 = 1 << 15;
-pub const SLIM_ARROW: u64 = 1 << 16;
-pub const SLASH: u64 = 1 << 17;
-pub const HASH_SYMBOL: u64 = 1 << 18;
-pub const DOT_RANGE: u64 = 1 << 19;
-pub const PERCENT: u64 = 1 << 20;
-pub const COLON: u64 = 1 << 21;
-pub const O_PAREN: u64 = 1 << 22;
-pub const C_PAREN: u64 = 1 << 23;
-pub const PLUS: u64 = 1 << 24;
-pub const HYPHEN: u64 = 1 << 25;
-pub const ASTERISK: u64 = 1 << 26;
-pub const AT: u64 = 1 << 27;
-pub const NOT_EQ: u64 = 1 << 28;
-pub const GREATER_OR_EQ: u64 = 1 << 29;
-pub const LESS_OR_EQ: u64 = 1 << 30;
-pub const EXCLAMATION_POINT: u64 = 1 << 31;
-pub const TILDE: u64 = 1 << 32;
-pub const DOT: u64 = 1 << 33;
-pub const VERTICAL_BAR: u64 = 1 << 34;
-pub const ILLEGAL: u64 = 1 << 35;
-pub const OR: u64 = 1 << 36;
-pub const AND: u64 = 1 << 37;
-pub const AMPERSAND: u64 = 38;
-pub const CARET: u64 = 39;
-pub const POISON: u64 = 1 << 40;
-pub const EOF: u64 = 1 << 41;
+pub(crate) const ID: u64 = 1 << 0;
+pub(crate) const LITERAL: u64 = 1 << 1;
+pub(crate) const INTEGER: u64 = 1 << 2;
+pub(crate) const FLOAT: u64 = 1 << 3;
+pub(crate) const CHAR: u64 = 1 << 4;
+pub(crate) const O_BRACKET: u64 = 1 << 5;
+pub(crate) const C_BRACKET: u64 = 1 << 6;
+pub(crate) const O_CURLY_BRACKET: u64 = 1 << 7;
+pub(crate) const C_CURLY_BRACKET: u64 = 1 << 8;
+pub(crate) const QUESTION_MARK: u64 = 1 << 9;
+pub(crate) const ASSIGN: u64 = 1 << 10;
+pub(crate) const EQUAL_TO: u64 = 1 << 11;
+pub(crate) const WALRUS: u64 = 1 << 12;
+pub(crate) const O_ANGLE_BRACKET: u64 = 1 << 13;
+pub(crate) const C_ANGLE_BRACKET: u64 = 1 << 14;
+pub(crate) const COMMA: u64 = 1 << 15;
+pub(crate) const SLIM_ARROW: u64 = 1 << 16;
+pub(crate) const SLASH: u64 = 1 << 17;
+pub(crate) const HASH_SYMBOL: u64 = 1 << 18;
+pub(crate) const DOT_RANGE: u64 = 1 << 19;
+pub(crate) const PERCENT: u64 = 1 << 20;
+pub(crate) const COLON: u64 = 1 << 21;
+pub(crate) const O_PAREN: u64 = 1 << 22;
+pub(crate) const C_PAREN: u64 = 1 << 23;
+pub(crate) const PLUS: u64 = 1 << 24;
+pub(crate) const HYPHEN: u64 = 1 << 25;
+pub(crate) const ASTERISK: u64 = 1 << 26;
+pub(crate) const AT: u64 = 1 << 27;
+pub(crate) const NOT_EQ: u64 = 1 << 28;
+pub(crate) const GREATER_OR_EQ: u64 = 1 << 29;
+pub(crate) const LESS_OR_EQ: u64 = 1 << 30;
+pub(crate) const EXCLAMATION_POINT: u64 = 1 << 31;
+pub(crate) const TILDE: u64 = 1 << 32;
+pub(crate) const DOT: u64 = 1 << 33;
+pub(crate) const VERTICAL_BAR: u64 = 1 << 34;
+pub(crate) const ILLEGAL: u64 = 1 << 35;
+pub(crate) const OR: u64 = 1 << 36;
+pub(crate) const AND: u64 = 1 << 37;
+pub(crate) const AMPERSAND: u64 = 38;
+pub(crate) const CARET: u64 = 39;
+pub(crate) const POISON: u64 = 1 << 40;
+pub(crate) const KEYWORD: u64 = 1 << 41;
+pub(crate) const BOOL: u64 = 1 << 42;
+pub(crate) const EOF: u64 = 1 << 43;
 
 //FIX: PLEASE ASSERT THIS THING
 impl TokenKind {
@@ -333,6 +344,8 @@ impl TokenKind {
             TokenKind::NotEq => NOT_EQ,
             TokenKind::Caret => CARET,
             TokenKind::Ampersand => AMPERSAND,
+            TokenKind::Keyword => KEYWORD,
+            TokenKind::Bool => BOOL,
             TokenKind::EOF => EOF,
         }
     }

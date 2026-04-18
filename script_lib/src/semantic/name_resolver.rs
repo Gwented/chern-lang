@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chern_core::{
-    id_types::{AstId, ModuleId, NameId, SymbolId, TypeId, ValueId},
+    id_types::{AstId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
     intern::Intern,
 };
 use common::{chern_settings::ChernSettings, reporter::diagnostic::Diagnostic};
@@ -224,7 +224,7 @@ impl NamespaceResolver<'_> {
     /// Checks registered namespace for duplicates and collects errors if any are found
     fn check_duplicates(&mut self) {
         // Solely a HashMap for spanning
-        let mut seen: HashMap<NameId, AstId> = HashMap::new();
+        let mut seen: HashMap<InternedId, AstId> = HashMap::new();
 
         //NOTE: Suspicious
         let module = &self.compiler.mods[self.current_mod.id];

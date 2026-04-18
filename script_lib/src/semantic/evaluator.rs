@@ -13,7 +13,7 @@ pub fn is_compatible_unary(op: UnaryOp, operand: &Value) -> bool {
             | Value::F64(_)
             | Value::Char(_)
             | Value::Tuple(_)
-            | Value::CompileStr(_)
+            | Value::InternedStr(_)
             | Value::RuntimeStr(_)
             | Value::Unknown => false,
         },
@@ -75,13 +75,13 @@ pub fn is_compatible_binary(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
         }
         // Not right now
         Value::Char(_) => false,
-        Value::CompileStr(_) => match op {
+        Value::InternedStr(_) => match op {
             BinaryOp::EqTo => match rhs {
-                Value::CompileStr(_) => true,
+                Value::InternedStr(_) => true,
                 _ => false,
             },
             BinaryOp::NotEq => match rhs {
-                Value::CompileStr(_) => true,
+                Value::InternedStr(_) => true,
                 _ => false,
             },
             // Not right now
@@ -107,7 +107,7 @@ pub fn apply_unary_op(op: UnaryOp, operand: &Value) -> Result<Value, SemanticErr
             | Value::I128(_)
             | Value::Char(_)
             | Value::Tuple(_)
-            | Value::CompileStr(_)
+            | Value::InternedStr(_)
             | Value::RuntimeStr(_)
             | Value::Unknown => unreachable!(),
         },
@@ -138,7 +138,7 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
             Value::Bool(_)
             | Value::Char(_)
             | Value::Tuple(_)
-            | Value::CompileStr(_)
+            | Value::InternedStr(_)
             | Value::RuntimeStr(_)
             | Value::Unknown => unreachable!(),
         },
@@ -285,34 +285,34 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
             },
             Value::Bool(lhs_inner) => match rhs {
                 Value::Bool(rhs_inner) => Ok(Value::Bool(lhs_inner == rhs_inner)),
-                Value::CompileStr(rhs_inner) => {
-                    if rhs_inner.id == Keyword::True as u32 {
-                        return Ok(Value::Bool(*lhs_inner == true));
-                    } else if rhs_inner.id == Keyword::False as u32 {
-                        return Ok(Value::Bool(*lhs_inner == false));
-                    }
-
-                    unreachable!()
-                }
+                // Value::InternedStr(rhs_inner) => {
+                //     if rhs_inner.id == Keyword::True as u32 {
+                //         return Ok(Value::Bool(*lhs_inner == true));
+                //     } else if rhs_inner.id == Keyword::False as u32 {
+                //         return Ok(Value::Bool(*lhs_inner == false));
+                //     }
+                //
+                //     unreachable!()
+                // }
                 _ => unreachable!(),
             },
             Value::Char(lhs_inner) => match rhs {
                 Value::Char(rhs_inner) => Ok(Value::Bool(lhs_inner == rhs_inner)),
                 _ => unreachable!(),
             },
-            Value::CompileStr(lhs_inner) => match rhs {
-                Value::CompileStr(rhs_inner) => Ok(Value::Bool(lhs_inner == rhs_inner)),
-                Value::Bool(rhs_inner) => {
-                    if lhs_inner.id == Keyword::True as u32 {
-                        return Ok(Value::Bool(true == *rhs_inner));
-                    } else if lhs_inner.id == Keyword::False as u32 {
-                        return Ok(Value::Bool(false == *rhs_inner));
-                    }
-
-                    unreachable!()
-                }
-                _ => unreachable!(),
-            },
+            // Value::InternedStr(lhs_inner) => match rhs {
+            //     Value::InternedStr(rhs_inner) => Ok(Value::Bool(lhs_inner == rhs_inner)),
+            //     Value::Bool(rhs_inner) => {
+            //         if lhs_inner.id == Keyword::True as u32 {
+            //             return Ok(Value::Bool(true == *rhs_inner));
+            //         } else if lhs_inner.id == Keyword::False as u32 {
+            //             return Ok(Value::Bool(false == *rhs_inner));
+            //         }
+            //
+            //         unreachable!()
+            //     }
+            //     _ => unreachable!(),
+            // },
             _ => unreachable!(),
         },
         BinaryOp::NotEq => match lhs {
@@ -326,32 +326,32 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
             },
             Value::Bool(lhs_inner) => match rhs {
                 Value::Bool(rhs_inner) => Ok(Value::Bool(lhs_inner != rhs_inner)),
-                Value::CompileStr(rhs_inner) => {
-                    if rhs_inner.id == Keyword::True as u32 {
-                        return Ok(Value::Bool(*lhs_inner != true));
-                    } else if rhs_inner.id == Keyword::False as u32 {
-                        return Ok(Value::Bool(*lhs_inner != false));
-                    }
-
-                    unreachable!()
-                }
+                // Value::InternedStr(rhs_inner) => {
+                //     if rhs_inner.id == Keyword::True as u32 {
+                //         return Ok(Value::Bool(*lhs_inner != true));
+                //     } else if rhs_inner.id == Keyword::False as u32 {
+                //         return Ok(Value::Bool(*lhs_inner != false));
+                //     }
+                //
+                //     unreachable!()
+                // }
                 _ => unreachable!(),
             },
             Value::Char(lhs_inner) => match rhs {
                 Value::Char(rhs_inner) => Ok(Value::Bool(lhs_inner != rhs_inner)),
                 _ => unreachable!(),
             },
-            Value::CompileStr(lhs_inner) => match rhs {
-                Value::CompileStr(rhs_inner) => Ok(Value::Bool(lhs_inner != rhs_inner)),
-                Value::Bool(rhs_inner) => {
-                    if lhs_inner.id == Keyword::True as u32 {
-                        return Ok(Value::Bool(true != *rhs_inner));
-                    } else if lhs_inner.id == Keyword::False as u32 {
-                        return Ok(Value::Bool(false != *rhs_inner));
-                    }
-
-                    unreachable!()
-                }
+            Value::InternedStr(lhs_inner) => match rhs {
+                Value::InternedStr(rhs_inner) => Ok(Value::Bool(lhs_inner != rhs_inner)),
+                // Value::Bool(rhs_inner) => {
+                //     if lhs_inner.id == Keyword::True as u32 {
+                //         return Ok(Value::Bool(true != *rhs_inner));
+                //     } else if lhs_inner.id == Keyword::False as u32 {
+                //         return Ok(Value::Bool(false != *rhs_inner));
+                //     }
+                //
+                //     unreachable!()
+                // }
                 _ => unreachable!(),
             },
             _ => unreachable!(),

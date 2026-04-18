@@ -1,4 +1,4 @@
-use chern_core::{id_types::NameId, inner_args::InnerArgs};
+use chern_core::{id_types::InternedId, inner_args::InnerArgs};
 use common::{fmter::Formatted, span::Span};
 
 use crate::{

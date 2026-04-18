@@ -61,10 +61,10 @@ mod tests {
         interner: &mut Intern,
     ) -> Import {
         Import::new(
-            NameId::new(interner.intern(name)),
+            InternedId::new(interner.intern(name)),
             PathId::new(interner.intern_path(&Path::new(path_name))),
             Default::default(),
-            alias_id.map(|a| NameId::new(interner.intern(&a))),
+            alias_id.map(|a| InternedId::new(interner.intern(&a))),
         )
     }
 
@@ -82,7 +82,7 @@ mod tests {
             .unwrap();
 
         Module::new(
-            NameId::new(interner.intern(name)),
+            InternedId::new(interner.intern(name)),
             PathId::new(interner.intern_path(Path::new(path_name))),
             ModuleId::new(mod_id),
             imports,
@@ -120,7 +120,7 @@ mod tests {
     use std::{collections::HashMap, path::Path};
 
     use chern_core::{
-        id_types::{ModuleId, NameId, PathId},
+        id_types::{InternedId, ModuleId, PathId},
         intern::Intern,
         keywords,
         values::Value,
@@ -710,10 +710,10 @@ mod tests {
         // Doing this first since if modules were identified during the parsing stage any
         // syntax error within another module would not be reportable since the parser failed.
 
-        let sub_import = Import::new(NameId::new(1), PathId::new(1), Default::default(), None);
+        let sub_import = Import::new(InternedId::new(1), PathId::new(1), Default::default(), None);
 
         let main_mod = Module::new(
-            NameId::new(0),
+            InternedId::new(0),
             PathId::new(0),
             ModuleId::new(0),
             vec![sub_import],
@@ -729,7 +729,7 @@ mod tests {
             .unwrap();
 
         let sub_mod = Module::new(
-            NameId::new(1),
+            InternedId::new(1),
             PathId::new(1),
             ModuleId::new(1),
             Default::default(),
@@ -1203,7 +1203,7 @@ mod tests {
         let text = "
             let NEUTRAL = 3
             var->
-                var: Nest
+                e#var: Nest
             nest->
                 struct Nest {}
             ";
@@ -1456,7 +1456,7 @@ mod tests {
         assert_eq!(compiler.symbols.len(), 1);
         assert_eq!(compiler.values.len() - pre_loaded_values, 1);
         match &compiler.values[compiler.values.len() - 1] {
-            Value::CompileStr(_) => (),
+            Value::InternedStr(_) => (),
             _ => panic!("Value mistmatch"),
         };
 

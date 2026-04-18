@@ -9,102 +9,297 @@ pub mod values;
 
 #[cfg(test)]
 pub mod tests {
-    use crate::{
-        intern::Intern,
-        keywords::{self, Keyword},
-    };
+    use crate::intern::{self, Intern};
 
     #[test]
-    pub fn primitives_test() {
+    pub fn keyword_intern_alignment() {
         let interner = Intern::init();
 
-        // Checking if array itself aligns with the enums
-        // Types
-        assert_eq!("i8", interner.search(Keyword::I8 as usize));
-        assert_eq!("u8", interner.search(Keyword::U8 as usize));
-        assert_eq!("i16", interner.search(Keyword::I16 as usize));
-        assert_eq!("u16", interner.search(Keyword::U16 as usize));
-        assert_eq!("f16", interner.search(Keyword::F16 as usize));
-        assert_eq!("i32", interner.search(Keyword::I32 as usize));
-        assert_eq!("u32", interner.search(Keyword::U32 as usize));
-        assert_eq!("f32", interner.search(Keyword::F32 as usize));
-        assert_eq!("i64", interner.search(Keyword::I64 as usize));
-        assert_eq!("u64", interner.search(Keyword::U64 as usize));
-        assert_eq!("f64", interner.search(Keyword::F64 as usize));
-        assert_eq!("i128", interner.search(Keyword::I128 as usize));
-        assert_eq!("u128", interner.search(Keyword::U128 as usize));
-        assert_eq!("f128", interner.search(Keyword::F128 as usize));
-        assert_eq!("sized", interner.search(Keyword::Sized as usize));
-        // Thank you formatter for making this harder to read
-        assert_eq!("unsized", interner.search(Keyword::Unsized as usize));
-        assert_eq!("char", interner.search(Keyword::Char as usize));
-        assert_eq!("str", interner.search(Keyword::Str as usize));
-        assert_eq!("bool", interner.search(Keyword::Bool as usize));
-        assert_eq!("nil", interner.search(Keyword::Nil as usize));
-        assert_eq!("BigInt", interner.search(Keyword::BigInt as usize));
-        assert_eq!("BigFloat", interner.search(Keyword::BigFloat as usize));
-        assert_eq!("List", interner.search(Keyword::List as usize));
-        assert_eq!("Map", interner.search(Keyword::Map as usize));
-        assert_eq!("Set", interner.search(Keyword::Set as usize));
-        assert_eq!("Tuple", interner.search(Keyword::Tuple as usize));
-        // Structures
-        assert_eq!("self", interner.search(Keyword::Self_ as usize));
-        assert_eq!("struct", interner.search(Keyword::Struct as usize));
-        assert_eq!("enum", interner.search(Keyword::Enum as usize));
-        // I have never used JS or TS in any serious manner
-        // Statements
-        assert_eq!("import", interner.search(Keyword::Import as usize));
-        assert_eq!("export", interner.search(Keyword::Export as usize));
-        assert_eq!("bind", interner.search(Keyword::Bind as usize));
-        assert_eq!("alias", interner.search(Keyword::Alias as usize));
-        assert_eq!("let", interner.search(Keyword::Let as usize));
-        assert_eq!("change", interner.search(Keyword::Change as usize));
-        // Sections
-        assert_eq!("var", interner.search(Keyword::Var as usize));
-        assert_eq!("nest", interner.search(Keyword::Nest as usize));
-        assert_eq!("complex", interner.search(Keyword::Complex as usize));
-        assert_eq!("override", interner.search(Keyword::Override as usize));
-        // Other keywords
-        assert_eq!("as", interner.search(Keyword::As as usize));
-        // Predicates & Funcs
-        assert_eq!("true", interner.search(Keyword::True as usize));
-        assert_eq!("false", interner.search(Keyword::False as usize));
-        assert_eq!("IsEmpty", interner.search(Keyword::IsEmpty as usize));
+        assert_eq!(
+            "self",
+            interner.search(intern::INTERNED_SELF as usize),
+            "INTERNED_SELF (0) should be 'self'"
+        );
+        assert_eq!(
+            "struct",
+            interner.search(intern::INTERNED_STRUCT as usize),
+            "INTERNED_STRUCT (1) should be 'struct'"
+        );
+        assert_eq!(
+            "import",
+            interner.search(intern::INTERNED_IMPORT as usize),
+            "INTERNED_IMPORT (2) should be 'import'"
+        );
+        assert_eq!(
+            "export",
+            interner.search(intern::INTERNED_EXPORT as usize),
+            "INTERNED_EXPORT (3) should be 'export'"
+        );
+        assert_eq!(
+            "bind",
+            interner.search(intern::INTERNED_BIND as usize),
+            "INTERNED_BIND (4) should be 'bind'"
+        );
+        assert_eq!(
+            "alias",
+            interner.search(intern::INTERNED_ALIAS as usize),
+            "INTERNED_ALIAS (5) should be 'alias'"
+        );
+        assert_eq!(
+            "let",
+            interner.search(intern::INTERNED_LET as usize),
+            "INTERNED_LET (6) should be 'let'"
+        );
+        assert_eq!(
+            "change",
+            interner.search(intern::INTERNED_CHANGE as usize),
+            "INTERNED_CHANGE (7) should be 'change'"
+        );
+        assert_eq!(
+            "as",
+            interner.search(intern::INTERNED_AS as usize),
+            "INTERNED_AS (8) should be 'as'"
+        );
+        assert_eq!(
+            "var",
+            interner.search(intern::INTERNED_VAR as usize),
+            "INTERNED_VAR (9) should be 'var'"
+        );
+        assert_eq!(
+            "nest",
+            interner.search(intern::INTERNED_NEST as usize),
+            "INTERNED_NEST (10) should be 'nest'"
+        );
+        assert_eq!(
+            "complex",
+            interner.search(intern::INTERNED_COMPLEX as usize),
+            "INTERNED_COMPLEX (11) should be 'complex'"
+        );
+        assert_eq!(
+            "override",
+            interner.search(intern::INTERNED_OVERRIDE as usize),
+            "INTERNED_OVERRIDE (12) should be 'override'"
+        );
+        assert_eq!(
+            "true",
+            interner.search(intern::INTERNED_TRUE as usize),
+            "INTERNED_TRUE (13) should be 'true'"
+        );
+        assert_eq!(
+            "false",
+            interner.search(intern::INTERNED_FALSE as usize),
+            "INTERNED_FALSE (14) should be 'false'"
+        );
+        assert_eq!(
+            "IsEmpty",
+            interner.search(intern::INTERNED_IS_EMPTY as usize),
+            "INTERNED_IS_EMPTY (15) should be 'IsEmpty'"
+        );
         assert_eq!(
             "IsWhitespace",
-            interner.search(Keyword::IsWhitespace as usize)
+            interner.search(intern::INTERNED_IS_WHITESPACE as usize),
+            "INTERNED_IS_WHITESPACE (16) should be 'IsWhitespace'"
         );
-        assert_eq!("Range", interner.search(Keyword::Range as usize));
-        assert_eq!("StartsW", interner.search(Keyword::StartsW as usize));
-        assert_eq!("EndsW", interner.search(Keyword::EndsW as usize));
-        assert_eq!("Contains", interner.search(Keyword::Contains as usize));
-        // This COULD use self == thing theoretically but not sure right now
-        assert_eq!("Equals", interner.search(Keyword::Equals as usize));
-
-        // Index alignment test
-        for (i, kw_str) in keywords::KEYWORDS_ARRAY.iter().enumerate() {
-            let kw = Keyword::try_as_kw(i as u32).expect("Issue with Keyword enum numbering");
-            let interned_str = interner.search(kw as usize);
-
-            assert_eq!(
-                *kw_str, interned_str,
-                "Keyword at index {}: expected '{}', found '{}'",
-                i, kw_str, interned_str
-            );
-        }
-
-        assert_eq!(keywords::is_export(Keyword::Export as u32), true);
-
-        assert_eq!(keywords::SECT_START..=keywords::SECT_END, 35..=38);
-
-        // BigFloat is right before data structures, which can't be pre-loaded, so it is the test
-        // case that confirms the pre-loaded variables are not anything beyond basic primitives
         assert_eq!(
-            keywords::KEYWORDS_ARRAY[(keywords::TYPE_END - 5) as usize],
+            "Range",
+            interner.search(intern::INTERNED_RANGE as usize),
+            "INTERNED_RANGE (17) should be 'Range'"
+        );
+        assert_eq!(
+            "StartsW",
+            interner.search(intern::INTERNED_STARTSW as usize),
+            "INTERNED_STARTSW (18) should be 'StartsW'"
+        );
+        assert_eq!(
+            "EndsW",
+            interner.search(intern::INTERNED_ENDSW as usize),
+            "INTERNED_ENDSW (19) should be 'EndsW'"
+        );
+        assert_eq!(
+            "Contains",
+            interner.search(intern::INTERNED_CONTAINS as usize),
+            "INTERNED_CONTAINS (20) should be 'Contains'"
+        );
+        assert_eq!(
+            "Equals",
+            interner.search(intern::INTERNED_EQUALS as usize),
+            "INTERNED_EQUALS (21) should be 'Equals'"
+        );
+    }
+
+    #[test]
+    pub fn builtin_type_intern_alignment() {
+        let interner = Intern::init();
+
+        assert_eq!(
+            "i8",
+            interner.search(intern::INTERNED_I8 as usize),
+            "INTERNED_I8 (22) should be 'i8'"
+        );
+        assert_eq!(
+            "u8",
+            interner.search(intern::INTERNED_U8 as usize),
+            "INTERNED_U8 (23) should be 'u8'"
+        );
+        assert_eq!(
+            "i16",
+            interner.search(intern::INTERNED_I16 as usize),
+            "INTERNED_I16 (24) should be 'i16'"
+        );
+        assert_eq!(
+            "u16",
+            interner.search(intern::INTERNED_U16 as usize),
+            "INTERNED_U16 (25) should be 'u16'"
+        );
+        assert_eq!(
+            "i32",
+            interner.search(intern::INTERNED_I32 as usize),
+            "INTERNED_I32 (26) should be 'i32'"
+        );
+        assert_eq!(
+            "u32",
+            interner.search(intern::INTERNED_U32 as usize),
+            "INTERNED_U32 (27) should be 'u32'"
+        );
+        assert_eq!(
+            "f32",
+            interner.search(intern::INTERNED_F32 as usize),
+            "INTERNED_F32 (28) should be 'f32'"
+        );
+        assert_eq!(
+            "i64",
+            interner.search(intern::INTERNED_I64 as usize),
+            "INTERNED_I64 (29) should be 'i64'"
+        );
+        assert_eq!(
+            "u64",
+            interner.search(intern::INTERNED_U64 as usize),
+            "INTERNED_U64 (30) should be 'u64'"
+        );
+        assert_eq!(
+            "f64",
+            interner.search(intern::INTERNED_F64 as usize),
+            "INTERNED_F64 (31) should be 'f64'"
+        );
+        assert_eq!(
+            "i128",
+            interner.search(intern::INTERNED_I128 as usize),
+            "INTERNED_I128 (32) should be 'i128'"
+        );
+        assert_eq!(
+            "u128",
+            interner.search(intern::INTERNED_U128 as usize),
+            "INTERNED_U128 (33) should be 'u128'"
+        );
+        assert_eq!(
+            "f128",
+            interner.search(intern::INTERNED_F128 as usize),
+            "INTERNED_F128 (34) should be 'f128'"
+        );
+        assert_eq!(
+            "sized",
+            interner.search(intern::INTERNED_SIZED as usize),
+            "INTERNED_SIZED (35) should be 'sized'"
+        );
+        assert_eq!(
+            "unsized",
+            interner.search(intern::INTERNED_UNSIZED as usize),
+            "INTERNED_UNSIZED (36) should be 'unsized'"
+        );
+        assert_eq!(
+            "bool",
+            interner.search(intern::INTERNED_BOOL as usize),
+            "INTERNED_BOOL (37) should be 'bool'"
+        );
+        assert_eq!(
+            "nil",
+            interner.search(intern::INTERNED_NIL as usize),
+            "INTERNED_NIL (38) should be 'nil'"
+        );
+        assert_eq!(
+            "char",
+            interner.search(intern::INTERNED_CHAR as usize),
+            "INTERNED_CHAR (39) should be 'char'"
+        );
+        assert_eq!(
+            "str",
+            interner.search(intern::INTERNED_STR as usize),
+            "INTERNED_STR (40) should be 'str'"
+        );
+        assert_eq!(
+            "BigInt",
+            interner.search(intern::INTERNED_BIGINT as usize),
+            "INTERNED_BIGINT (41) should be 'BigInt'"
+        );
+        assert_eq!(
+            "BigFloat",
+            interner.search(intern::INTERNED_BIGFLOAT as usize),
+            "INTERNED_BIGFLOAT (42) should be 'BigFloat'"
+        );
+        assert_eq!(
+            "List",
+            interner.search(intern::INTERNED_LIST as usize),
+            "INTERNED_LIST (43) should be 'List'"
+        );
+        assert_eq!(
+            "Set",
+            interner.search(intern::INTERNED_SET as usize),
+            "INTERNED_SET (44) should be 'Set'"
+        );
+        assert_eq!(
+            "Map",
+            interner.search(intern::INTERNED_MAP as usize),
+            "INTERNED_MAP (45) should be 'Map'"
+        );
+        assert_eq!(
+            "Tuple",
+            interner.search(intern::INTERNED_TUPLE as usize),
+            "INTERNED_TUPLE (46) should be 'Tuple'"
+        );
+    }
+
+    #[test]
+    pub fn builtin_type_kind_alignment() {
+        let interner = Intern::init();
+
+        assert_eq!(interner.search(intern::INTERNED_I8 as usize), "i8");
+        assert_eq!(interner.search(intern::INTERNED_U8 as usize), "u8");
+        assert_eq!(interner.search(intern::INTERNED_I16 as usize), "i16");
+        assert_eq!(interner.search(intern::INTERNED_U16 as usize), "u16");
+        assert_eq!(interner.search(intern::INTERNED_I32 as usize), "i32");
+        assert_eq!(interner.search(intern::INTERNED_U32 as usize), "u32");
+        assert_eq!(interner.search(intern::INTERNED_F32 as usize), "f32");
+        assert_eq!(interner.search(intern::INTERNED_I64 as usize), "i64");
+        assert_eq!(interner.search(intern::INTERNED_U64 as usize), "u64");
+        assert_eq!(interner.search(intern::INTERNED_F64 as usize), "f64");
+        assert_eq!(interner.search(intern::INTERNED_I128 as usize), "i128");
+        assert_eq!(interner.search(intern::INTERNED_U128 as usize), "u128");
+        assert_eq!(interner.search(intern::INTERNED_F128 as usize), "f128");
+        assert_eq!(interner.search(intern::INTERNED_SIZED as usize), "sized");
+        assert_eq!(
+            interner.search(intern::INTERNED_UNSIZED as usize),
+            "unsized"
+        );
+        assert_eq!(interner.search(intern::INTERNED_BOOL as usize), "bool");
+        assert_eq!(interner.search(intern::INTERNED_NIL as usize), "nil");
+        assert_eq!(interner.search(intern::INTERNED_CHAR as usize), "char");
+        assert_eq!(interner.search(intern::INTERNED_STR as usize), "str");
+        assert_eq!(interner.search(intern::INTERNED_BIGINT as usize), "BigInt");
+        assert_eq!(
+            interner.search(intern::INTERNED_BIGFLOAT as usize),
             "BigFloat"
         );
+        assert_eq!(interner.search(intern::INTERNED_LIST as usize), "List");
+        assert_eq!(interner.search(intern::INTERNED_SET as usize), "Set");
+        assert_eq!(interner.search(intern::INTERNED_MAP as usize), "Map");
+    }
 
-        // This is to force me to check even if it was done correctly
-        assert_eq!(keywords::KEYWORDS_ARRAY.len(), 49);
+    #[test]
+    pub fn interned_preload_size_matches() {
+        assert_eq!(
+            intern::INTERNED_TUPLE + 1,
+            49,
+            "INTERNER_PRELOAD_SIZE should match number of preloaded interned strings"
+        );
     }
 }

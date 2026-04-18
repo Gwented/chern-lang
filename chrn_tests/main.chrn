@@ -7,11 +7,15 @@
 // The tilde has to be changed (passive)
 
 @def
-import "../chrn_tests/defs.chrn"
-import "../chrn_tests/CHERNGENTS.chrn"
+//import "../chrn_tests/defs.chrn"
+import "../chrn_tests/CHERNGENTS.chrn" as seller
 
-let token_seller = CHERNGENTS.STRONGEST_TOKENS
+let CONSTANT = 4
+
 @end
+
+// This breaks
+let token_seller = token_seller.STRONGEST_TOKENS
 
 //const HELLO = 4
 

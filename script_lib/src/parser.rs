@@ -13,7 +13,7 @@ use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::Context;
 use crate::parser::parser_state::ParserState;
 use crate::token::{SpannedToken, Token, TokenKind};
-use chern_core::id_types::NameId;
+use chern_core::id_types::InternedId;
 use chern_core::inner_args::{InnerArgs, SpannedInnerArgs};
 use chern_core::intern::Intern;
 use chern_core::keywords::{self, Keyword};
@@ -53,8 +53,8 @@ pub fn parse(
         let tok = ctx.peek_tok();
 
         match tok {
-            Token::Id(id) => match id {
-                id if id == Keyword::Bind as u32 => {
+            Token::Keyword(kw) => match kw {
+                Keyword::Bind => {
                     if !is_priv {
                         report_export(
                             &mut ctx,
@@ -80,7 +80,7 @@ pub fn parse(
 
                     _ = check_bind(&mut ctx, &interner);
                 }
-                id if id == Keyword::Alias as u32 => {
+                Keyword::Alias => {
                     ctx.advance_tok();
 
                     if state.has_alias() {
@@ -99,14 +99,14 @@ pub fn parse(
                         ast_info.items.push(Item::Alias(alias));
                     };
                 }
-                id if id == Keyword::Let as u32 => {
+                Keyword::Let => {
                     ctx.advance_tok();
 
-                    if let Ok(abs_var) = parse_const(&mut ctx, is_priv, interner) {
+                    if let Ok(abs_var) = parse_let(&mut ctx, is_priv, interner) {
                         ast_info.items.push(Item::VarDecl(abs_var));
                     }
                 }
-                id if id == Keyword::Import as u32 => {
+                Keyword::Import => {
                     if !is_priv {
                         report_export(
                             &mut ctx,
@@ -120,7 +120,7 @@ pub fn parse(
 
                     _ = check_import(&mut ctx, interner);
                 }
-                id if id == Keyword::Var as u32 => {
+                Keyword::Var => {
                     if !is_priv {
                         report_export(
                             &mut ctx,
@@ -155,10 +155,8 @@ pub fn parse(
                     );
 
                     while ctx.peek_kind() != TokenKind::EOF {
-                        if let Token::Id(plain_id) = ctx.peek_tok()
-                            && keywords::is_sect(plain_id)
-                                // Oh my
-                            && ctx.peek_ahead(1).tok.kind() == TokenKind::SlimArrow
+                        if let Token::Keyword(kw) = ctx.peek_tok()
+                            && kw.is_sect()
                         {
                             break;
                         }
@@ -168,7 +166,7 @@ pub fn parse(
                         }
                     }
                 }
-                id if id == Keyword::Nest as u32 => {
+                Keyword::Nest => {
                     if !is_priv {
                         report_export(
                             &mut ctx,
@@ -200,9 +198,8 @@ pub fn parse(
                     );
 
                     while ctx.peek_kind() != TokenKind::EOF {
-                        if let Token::Id(name_id) = ctx.peek_tok()
-                            && keywords::is_sect(name_id)
-                            && ctx.peek_ahead(1).tok.kind() == TokenKind::SlimArrow
+                        if let Token::Keyword(kw) = ctx.peek_tok()
+                            && kw.is_sect()
                         {
                             break;
                         }
@@ -217,7 +214,7 @@ pub fn parse(
                         }
                     }
                 }
-                id if id == Keyword::Complex as u32 => {
+                Keyword::Complex => {
                     if !is_priv {
                         report_export(&mut ctx, Formatted::SectNest, Branch::Searching, interner);
                     }
@@ -245,9 +242,8 @@ pub fn parse(
                     );
 
                     while ctx.peek_kind() != TokenKind::EOF {
-                        if let Token::Id(name_id) = ctx.peek_tok()
-                            && keywords::is_sect(name_id)
-                            && ctx.peek_ahead(1).tok.kind() == TokenKind::SlimArrow
+                        if let Token::Keyword(kw) = ctx.peek_tok()
+                            && kw.is_sect()
                         {
                             break;
                         }
@@ -255,7 +251,7 @@ pub fn parse(
                         _ = parse_complex_sect(&mut ctx, interner);
                     }
                 }
-                id if id == Keyword::Override as u32 => {
+                Keyword::Override => {
                     if !is_priv {
                         report_export(
                             &mut ctx,
@@ -290,9 +286,8 @@ pub fn parse(
 
                     while ctx.peek_kind() != TokenKind::EOF {
                         // This would look simpler with keywords
-                        if let Token::Id(name_id) = ctx.peek_tok()
-                            && keywords::is_sect(name_id)
-                            && ctx.peek_ahead(1).tok.kind() == TokenKind::SlimArrow
+                        if let Token::Keyword(kw) = ctx.peek_tok()
+                            && kw.is_sect()
                         {
                             break;
                         }
@@ -374,7 +369,7 @@ fn parse_alias_stmt(
         interner,
     )?;
 
-    let name_id = NameId::new(plain_id);
+    let name_id = InternedId::new(plain_id);
 
     let err_name = interner.search(plain_id as usize);
 
@@ -435,8 +430,8 @@ fn check_import(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
         interner,
     )?;
 
-    if let Token::Id(id) = ctx.peek_tok()
-        && id == Keyword::As as u32
+    if let Token::Keyword(kw) = ctx.peek_tok()
+        && kw == Keyword::As
     {
         ctx.advance_tok();
         ctx.expect_id_verbose(
@@ -462,7 +457,7 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
         interner,
     )?;
 
-    let name_id = NameId::new(plain_id);
+    let name_id = InternedId::new(plain_id);
 
     let err_name = interner.search(plain_id as usize);
 
@@ -505,24 +500,16 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
 
 fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Result<Item, Token> {
     // Wait what is this error?
-    let id = ctx.expect_id_verbose(
-        TokenKind::Id,
+    let kw = ctx.expect_kw_verbose(
         "Expected the keyword \"enum\" or \"struct\", found ",
         "",
         Branch::Section(SectionBranch::Nest),
         interner,
     )?;
 
-    let is_escaped = if ctx.peek_kind() == TokenKind::Tilde {
-        ctx.advance_tok();
-        true
-    } else {
-        false
-    };
-
     //TODO: Can likely be done simpler but keep for simplicity
-    let item = match id {
-        id if id == Keyword::Struct as u32 => {
+    let item = match kw {
+        Keyword::Struct => {
             let name_span = ctx.peek_span();
 
             let plain_id = ctx.expect_id_verbose(
@@ -535,19 +522,7 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
 
             let struct_name = interner.search(plain_id as usize);
 
-            if !is_escaped && keywords::is_type(plain_id) {
-                ctx.report_verbose(
-                    &format!(
-                        "To use known types as struct identifiers, prefix with \"~{struct_name}\" "
-                    ),
-                    Branch::Section(SectionBranch::Nest),
-                    interner,
-                );
-
-                return Err(Token::Poison);
-            }
-
-            let name_id = NameId::new(plain_id);
+            let name_id = InternedId::new(plain_id);
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
@@ -577,7 +552,7 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
             Item::Struct(structure)
         }
         //FIX: Make this normal
-        id if id == Keyword::Enum as u32 => {
+        Keyword::Enum => {
             let name_span = ctx.peek_span();
 
             let plain_id = ctx.expect_id_verbose(
@@ -590,16 +565,6 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
 
             let enum_name = interner.search(plain_id as usize);
 
-            if !is_escaped && keywords::is_type(plain_id) {
-                ctx.report_verbose(
-                    &format!("To use known types as enum identifiers, prefix with `~{enum_name}` "),
-                    Branch::Section(SectionBranch::Nest),
-                    interner,
-                );
-
-                return Err(Token::Poison);
-            }
-
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
                 &format!("Expected a '{{' to define enum `{enum_name}`, found"),
@@ -608,7 +573,7 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
                 interner,
             )?;
 
-            let name_id = NameId::new(plain_id);
+            let name_id = InternedId::new(plain_id);
 
             let variants = handle_enum_variants(ctx, enum_name, interner)?;
 
@@ -630,10 +595,10 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
             Item::Enum(enumeration)
         }
         _ => {
-            let name = interner.search(id as usize);
+            let name = interner.search(kw as usize);
 
             ctx.report_verbose(
-                &format!("Expected the keyword `enum` or `struct`, found identifier \"{name}\""),
+                &format!("Expected the keyword `enum` or `struct`, found keyword \"{name}\""),
                 Branch::Section(SectionBranch::Nest),
                 interner,
             );
@@ -655,14 +620,8 @@ fn parse_override_sect(ctx: &mut Context, interner: &Intern) -> Result<(), Token
     todo!()
 }
 
-fn parse_const(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Result<AbstractVar, Token> {
+fn parse_let(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Result<AbstractVar, Token> {
     let name_span = ctx.peek_span();
-
-    // Handle identifier method in case of a tilde?
-    // skip_escape?
-    if ctx.peek_tok() == Token::Tilde {
-        ctx.advance_tok();
-    }
 
     let plain_id = ctx.expect_id_verbose(
         TokenKind::Id,
@@ -672,7 +631,7 @@ fn parse_const(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Result<Ab
         interner,
     )?;
 
-    let name_id = NameId::new(plain_id);
+    let name_id = InternedId::new(plain_id);
 
     ctx.expect_verbose(
         TokenKind::Assign,
@@ -761,7 +720,7 @@ fn parse_expr(ctx: &mut Context, min_bp: u8, interner: &Intern) -> Result<Spanne
             lhs = SpannedExpr::new(
                 Expr::MemberAccess(AbstractMemberAccess::new(
                     Box::new(lhs),
-                    NameId::new(field_id),
+                    InternedId::new(field_id),
                 )),
                 span,
             );
@@ -791,7 +750,7 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
             Ok(expr)
         }
         Token::Id(id) if ctx.peek_ahead(1).tok == Token::Assign => {
-            let name_id = NameId::new(id);
+            let name_id = InternedId::new(id);
             let name_span = ctx.advance_span();
 
             ctx.advance_tok();
@@ -804,10 +763,14 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
 
             Ok(SpannedExpr::new(default, span))
         }
+        Token::BoolLiteral(boolean) => {
+            let span = ctx.advance_span();
+            Ok(SpannedExpr::new(Expr::Bool(boolean), span))
+        }
         Token::Id(id) => {
             let span = ctx.advance_span();
 
-            let name_id = NameId::new(id);
+            let name_id = InternedId::new(id);
 
             Ok(SpannedExpr::new(Expr::Var(name_id), span))
         }
@@ -823,7 +786,7 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
         }
         Token::Str(id) => {
             let span = ctx.advance_span();
-            let name_id = NameId::new(id);
+            let name_id = InternedId::new(id);
 
             Ok(SpannedExpr::new(Expr::Str(name_id), span))
         }
@@ -918,11 +881,12 @@ fn parse_unary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Toke
 // ENFORCE TYPE NAMING FOR GENERICS AT LEAST
 /// Recursive function for parsing all type expressions
 fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, Token> {
+    dbg!(ctx.peek_behind(1), ctx.peek_tok(), ctx.peek_ahead(1));
     match ctx.peek_tok() {
         Token::Id(id) if ctx.peek_ahead(1).tok.kind() == TokenKind::OAngleBracket => {
             let start = ctx.advance_span().start;
 
-            let name_id = NameId::new(id);
+            let name_id = InternedId::new(id);
 
             let args = parse_generic(ctx, interner)?;
             let generic = Generic::new(name_id, args);
@@ -942,27 +906,11 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
 
             Ok(SpannedTypeExpr::new(TypeExpr::Path(ty_path), span))
         }
-        Token::Tilde => {
-            let span = ctx.advance_span();
-
-            let plain_id = ctx.expect_id_verbose(
-                TokenKind::Id,
-                "Expected an identifier for an escaped type after '~', found ",
-                "",
-                Branch::Type,
-                interner,
-            )?;
-
-            let name_id = NameId::new(plain_id);
-            let ty_expr = TypeExpr::Escaped(name_id);
-
-            Ok(SpannedTypeExpr::new(ty_expr, span))
-        }
         // Token::OParen => parse_tuple(ctx, interner),
         Token::Id(id) => {
             let span = ctx.advance_span();
 
-            let name_id = NameId::new(id);
+            let name_id = InternedId::new(id);
             let ty_expr = TypeExpr::Var(name_id);
 
             Ok(SpannedTypeExpr::new(ty_expr, span))
@@ -990,6 +938,8 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
             Err(Token::EOF)
         }
         t => {
+            dbg!(t);
+            panic!("Hi");
             ctx.advance_tok();
 
             let fmt_tok = format!("'{}'", t.kind());
@@ -1022,7 +972,8 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
 
             ctx.advance_tok();
 
-            let spanned_ty_expr = SpannedTypeExpr::new(TypeExpr::Var(NameId::new(name_id)), span);
+            let spanned_ty_expr =
+                SpannedTypeExpr::new(TypeExpr::Var(InternedId::new(name_id)), span);
             ty_path.push(spanned_ty_expr);
         }
 
@@ -1030,24 +981,6 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
             break;
         }
     }
-
-    //FIX: Given
-    //```
-    //var->
-    //  user: person.name.
-    //nest->
-    //```
-    // 'nest' will be seen as the rest of the dot, as opposed to a
-    // keyword, now meaning the error message will be far more misleading than 'found keyword in
-    // dot mention'.
-
-    // NOTE: Handling the case where the user is referencing an escaped type name
-    let is_escaped = if ctx.peek_tok() == Token::Tilde {
-        ctx.advance_tok();
-        true
-    } else {
-        false
-    };
 
     let span = ctx.peek_span();
     let final_id = ctx.expect_id_verbose(
@@ -1058,11 +991,7 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
         interner,
     )?;
 
-    let ty_expr = if is_escaped {
-        TypeExpr::Escaped(NameId::new(final_id))
-    } else {
-        TypeExpr::Var(NameId::new(final_id))
-    };
+    let ty_expr = TypeExpr::Var(InternedId::new(final_id));
 
     let final_expr = SpannedTypeExpr::new(ty_expr, span);
     ty_path.push(final_expr);
@@ -1119,7 +1048,7 @@ fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedType
 //
 //     let mut tuple: Vec<TypeExpr> = Vec::new();
 //
-//     while ctx.peek_kind() == TokenKind::Id || ctx.peek_kind() == TokenKind::Tilde {
+//     while ctx.peek_kind() == TokenKind::Id {
 //         let ty = parse_type(ctx, interner)?;
 //         tuple.push(ty);
 //
@@ -1227,7 +1156,7 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
         interner,
     )?;
 
-    let name_id = NameId::new(plain_id);
+    let name_id = InternedId::new(plain_id);
 
     // TODO: Maybe this shouldn't look like a tuple by default since it's misleading
     let ty_opt: Option<SpannedTypeExpr> = if ctx.peek_kind() == TokenKind::Colon {
@@ -1317,7 +1246,7 @@ fn parse_func_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
         let expr = match ctx.peek_tok() {
             Token::Id(id) => {
                 let span = ctx.advance_span();
-                let ty_expr = TypeExpr::Var(NameId::new(id));
+                let ty_expr = TypeExpr::Var(InternedId::new(id));
 
                 SpannedTypeExpr::new(ty_expr, span)
             }
@@ -1423,8 +1352,8 @@ fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>
 fn parse_export(ctx: &mut Context, interner: &Intern) -> Result<bool, ()> {
     let mut is_priv = true;
 
-    while let Token::Id(id) = ctx.peek_tok()
-        && keywords::is_export(id)
+    while let Token::Keyword(kw) = ctx.peek_tok()
+        && kw == Keyword::Export
     {
         if !is_priv {
             ctx.advance_tok();

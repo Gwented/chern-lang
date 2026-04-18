@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use chern_core::{
-    builtins::BuiltinType,
-    id_types::{ModuleId, NameId, SymbolId, TypeId},
-    keywords,
+    builtins::{self, BuiltinType},
+    id_types::{InternedId, ModuleId, SymbolId, TypeId},
+    intern, keywords,
     values::Value,
 };
 
@@ -19,7 +19,7 @@ pub struct ScriptCompiler {
     /// Optional bind statement that is obtained from the main module
     pub bind: Option<Bind>,
     /// Module name to module id mapping to index module array. import `as` aliases are also stored here
-    pub mod_map: HashMap<NameId, ModuleId>,
+    pub mod_map: HashMap<InternedId, ModuleId>,
     /// All modules that were found by `module_finder`
     pub mods: Vec<Module>,
     pub types: Vec<TypeInfo>,
@@ -36,7 +36,7 @@ pub const VALUE_UNKNOWN_POS: usize = 2;
 impl ScriptCompiler {
     pub fn new(
         bind: Option<Bind>,
-        mod_map: HashMap<NameId, ModuleId>,
+        mod_map: HashMap<InternedId, ModuleId>,
         mods: Vec<Module>,
     ) -> ScriptCompiler {
         let mut types: Vec<TypeInfo> = Vec::new();
@@ -46,10 +46,89 @@ impl ScriptCompiler {
         //
         // This must be subtracted or else it will include builtin types that are data structures
         // which are of course not pre-loadable.
-        for i in 0..keywords::TYPE_END - 4 {
-            let ty = BuiltinType::try_from_id(i as u32).expect("Builtin type not updated");
-            types.push(TypeInfo::new(Type::BuiltinType(ty), None));
-        }
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_I8).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_U8).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_I16).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_U16).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_I32).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_U32).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_F32).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_I64).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_U64).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_F64).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_I128).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_U128).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_F128).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_SIZED).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty = BuiltinType::try_from_interned_id(intern::INTERNED_UNSIZED)
+            .expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_BOOL).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_NIL).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_CHAR).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_STR).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_BIGINT).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty = BuiltinType::try_from_interned_id(intern::INTERNED_BIGFLOAT)
+            .expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
 
         let mut values: Vec<Value> = Vec::new();
         values.push(Value::Bool(false));

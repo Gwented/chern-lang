@@ -93,6 +93,7 @@ impl<'a> Context<'a> {
 
                 Some(interner.search(id as usize).to_string())
             }
+            Token::Keyword(kw) => Some(kw.to_fmt().to_string()),
             Token::Illegal(id) => {
                 let illegal_msg = interner.search(id as usize);
                 let new_msg = format!("illegal {illegal_msg}");
@@ -116,6 +117,72 @@ impl<'a> Context<'a> {
 
         let msg = if let Some(name) = id_opt {
             let msg = format!("(in {branch})\n{bmsg}\"{name}\"{amsg}");
+
+            reporter::standardize_err(
+                &msg,
+                &ln_data,
+                &help,
+                interner.search_path(self.module.path_id.id as usize),
+                self.settings.can_color,
+            )
+        } else {
+            let msg = format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind());
+
+            reporter::standardize_err(
+                &msg,
+                &ln_data,
+                &help,
+                interner.search_path(self.module.path_id.id as usize),
+                self.settings.can_color,
+            )
+        };
+
+        self.err_vec.push(Diagnostic::new(msg, Area::Script));
+
+        self.recover(branch);
+
+        Err(found.tok)
+    }
+
+    /// Returns an interned name id on success and the failed token on error.
+    pub(super) fn expect_kw_verbose(
+        &mut self,
+        bmsg: &str,
+        amsg: &str,
+        branch: Branch,
+        interner: &Intern,
+    ) -> Result<Keyword, Token> {
+        // WARN: IF ANYTHING GOES WRONG ADD THE IF STATEMENTS BACK FOR EOF
+        let found = self.advance();
+
+        let kw_opt = match found.tok {
+            Token::Keyword(kw) => return Ok(kw),
+            Token::Id(id) | Token::Str(id) | Token::Integer(id, _) | Token::Float(id, _) => {
+                Some(interner.search(id as usize).to_string())
+            }
+            Token::Illegal(id) => {
+                let illegal_msg = interner.search(id as usize);
+                let new_msg = format!("illegal {illegal_msg}");
+                Some(new_msg)
+            }
+            Token::Char(ch) => Some(ch.to_string()),
+            _ => None,
+        };
+
+        let help = self
+            .try_help(TokenKind::Keyword, &found, branch, interner)
+            .unwrap_or_default();
+
+        let span = self.safely_handle_span(&found);
+
+        let ln_data = reporter::form_err_diag(
+            &self.module.metadata.src_bytes,
+            &span,
+            self.settings.can_color,
+        );
+
+        let msg = if let Some(ident) = kw_opt {
+            let msg = format!("(in {branch})\n{bmsg}\"{ident}\"{amsg}");
 
             reporter::standardize_err(
                 &msg,
@@ -417,7 +484,7 @@ impl<'a> Context<'a> {
                             return None;
                         };
 
-                        let kw = Keyword::try_as_kw(possible_kw_id)?;
+                        let kw = Keyword::try_from_interned_id(possible_kw_id)?;
 
                         let msg = format!(
                             "If this was meant to use the statement `{}`, place this within `neutral`, which is the area before any section was used.",
@@ -462,7 +529,7 @@ impl<'a> Context<'a> {
                             return None;
                         };
 
-                        let kw = Keyword::try_as_kw(possible_kw_id)?;
+                        let kw = Keyword::try_from_interned_id(possible_kw_id)?;
 
                         let msg = format!(
                             "If this was meant to use the statement `{}`, place this within `neutral`, which is the area before any section was used.",

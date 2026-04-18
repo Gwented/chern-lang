@@ -1,11 +1,11 @@
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NameId {
+pub struct InternedId {
     pub id: u32,
 }
 
-impl NameId {
-    pub fn new(id: u32) -> NameId {
-        NameId { id }
+impl InternedId {
+    pub fn new(id: u32) -> InternedId {
+        InternedId { id }
     }
 }
 

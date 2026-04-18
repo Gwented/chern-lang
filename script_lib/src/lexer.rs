@@ -1,6 +1,9 @@
 //TODO: Path ids
 
-use chern_core::{intern::Intern, keywords};
+use chern_core::{
+    intern::{self, Intern},
+    keywords::{self, Keyword},
+};
 use common::span::Span;
 
 use crate::token::{Notation, SpannedToken, Token};
@@ -53,10 +56,6 @@ impl Lexer<'_> {
             let ch = self.peek_char();
 
             match ch {
-                // TEST: Whitespace is skipped beforehand meaning if it's not ascii it actually has
-                // to be a character anyways, I think.
-
-                // I don't know why this double check is here may remove this
                 c if c.is_alphabetic() || c == '_' => {
                     toks.push(self.read_id(interner));
                 }
@@ -99,7 +98,6 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '<' => {
-                    //WARN: Not confident
                     let (start, mut end) = (self.pos, self.pos);
 
                     let tok = if self.peek_ahead(1) == b'=' {
@@ -404,6 +402,14 @@ impl Lexer<'_> {
     fn read_id(&mut self, interner: &mut Intern) -> SpannedToken {
         let start = self.pos;
 
+        // So e# for escape
+        let is_escaped = if self.peek() == b'e' && self.peek_ahead(1) == b'#' {
+            self.skip(2);
+            true
+        } else {
+            false
+        };
+
         while self.pos < self.src_bytes.len() && self.peek_char().is_alphanumeric()
             || self.peek() == b'_'
         {
@@ -418,11 +424,35 @@ impl Lexer<'_> {
             .expect("Cannot fail due to loop only accepting valid UTF-8 characters.");
 
         let id = interner.intern(&id_str);
+        dbg!(id, interner.search(id as usize));
 
-        SpannedToken {
-            tok: Token::Id(id),
-            // Offset due to advance being done before leaving the loop.
-            span: Span::new(start, end - 1),
+        // Offset due to advance being done before leaving the loop.
+        let span = Span::new(start, end - 1);
+
+        if id == intern::INTERNED_TRUE {
+            return SpannedToken {
+                tok: Token::BoolLiteral(true),
+                span,
+            };
+        } else if id == intern::INTERNED_FALSE {
+            return SpannedToken {
+                tok: Token::BoolLiteral(true),
+                span,
+            };
+        }
+
+        match Keyword::try_from_interned_id(id) {
+            Some(kw) if !is_escaped => SpannedToken {
+                tok: Token::Keyword(kw),
+                span,
+            },
+            _ => {
+                SpannedToken {
+                    tok: Token::Id(id),
+                    // Offset due to advance being done before leaving the loop.
+                    span,
+                }
+            }
         }
     }
 

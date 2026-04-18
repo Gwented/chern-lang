@@ -1,7 +1,7 @@
 use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::PathBuf};
 
 use chern_core::{
-    id_types::{NameId, PathId},
+    id_types::{InternedId, PathId},
     intern::Intern,
 };
 use common::span::Span;
@@ -118,11 +118,11 @@ impl ModuleFinder<'_> {
             e => panic!("{:?}", e),
         };
 
-        let name_id = NameId::new(interner.intern(&file_name));
+        let name_id = InternedId::new(interner.intern(&file_name));
         let path_id = PathId::new(interner.intern_path(&import_path));
         let path_span = Span::new(start - 1, end);
 
-        let alias_id: Option<NameId> = if self.is_as() {
+        let alias_id: Option<InternedId> = if self.is_as() {
             self.skip_whitespace();
             Some(self.read_id(interner))
         } else {
@@ -162,7 +162,7 @@ impl ModuleFinder<'_> {
         Bind::new(path_id, path_span)
     }
 
-    fn read_id(&mut self, interner: &mut Intern) -> NameId {
+    fn read_id(&mut self, interner: &mut Intern) -> InternedId {
         let start = self.pos;
 
         while self.pos < self.src_bytes.len() && self.peek_char().is_alphanumeric()
@@ -180,7 +180,7 @@ impl ModuleFinder<'_> {
 
         let id = interner.intern(&id_str);
 
-        NameId::new(id)
+        InternedId::new(id)
     }
 
     fn skip_quotes(&mut self) {

@@ -2,6 +2,8 @@ use std::ops::RangeInclusive;
 
 use common::fmter::{Formattable, Formatted};
 
+use crate::intern;
+
 /// Known size in bytes for `@def` and `@end`
 pub const DEFINITION_SIZE: usize = 4;
 //WARN: WAY TOO MANY MICRO-DEPENDENCIES
@@ -12,35 +14,9 @@ pub const DEFINITION_SIZE: usize = 4;
 // Ensure ranges and all keyword functions are adjusted
 // Ensure tests are aligned
 
-pub static KEYWORDS_ARRAY: [&str; 49] = [
-    // types
-    "i8", // 0
-    "u8",
-    "i16",
-    "u16",
-    "f16", // 4
-    "i32",
-    "u32", // 6
-    "f32",
-    "i64", // 8
-    "u64",
-    "f64", // 10
-    "i128",
-    "u128", // 12
-    "f128",
-    "sized", // 14
-    "unsized",
-    "char", // 16
-    "str",
-    "bool", // 18
-    "nil",
-    "BigInt", // 20
-    "BigFloat",
-    "List", // 22
-    "Map",
-    "Set", // 24
-    "Tuple",
-    "self", // 26
+pub static KEYWORDS_ARRAY: [&str; 21] = [
+    // Special keyword i guess I don't know WHAT this is
+    "self", // 0
     // "Integer"
     // "Rational" (Rat)
     // "Nat",
@@ -48,32 +24,30 @@ pub static KEYWORDS_ARRAY: [&str; 49] = [
     // "Prime"
     // structures
     "struct",
-    "enum", // 28
+    "enum", // 2
     // Statements
     "import",
-    "export", // 30
+    "export", // 4
     "bind",
-    "alias", // 32
+    "alias", // 6
     "let",
-    "change", // 34
-    // Section names
-    "var",
-    "nest", // 36
-    "complex",
-    "override", // 38
-    // Special kiwis
+    "change", // 8
     "as",
+    // Section names
+    "var", // 10
+    "nest",
+    "complex", // 12
+    "override",
+    // Special kiwis
     // Predicate keywords
-    "true", // 40
-    "false",
-    "IsEmpty", // 42
+    "IsEmpty", // 16
     "IsWhitespace",
     // Functions
-    "Range", // 44
+    "Range", // 18
     "StartsW",
-    "EndsW", // 46
+    "EndsW", // 20
     "Contains",
-    "Equals", // 48
+    "Equals", // 22
 ];
 // "Nat" // 37
 // "Real" // 38
@@ -82,89 +56,35 @@ pub static KEYWORDS_ARRAY: [&str; 49] = [
 
 // Keep a compact enum for code that prefers typed keyword identifiers.
 // I think I don't know I am new to thinking does anyone have beginner thoughts?
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(u32)]
 pub enum Keyword {
-    I8 = 0,
-    U8 = 1,
-    I16 = 2,
-    U16 = 3,
-    F16 = 4,
-    I32 = 5,
-    U32 = 6,
-    F32 = 7,
-    I64 = 8,
-    U64 = 9,
-    F64 = 10,
-    I128 = 11,
-    U128 = 12,
-    F128 = 13,
-    Sized = 14,
-    Unsized = 15,
-    Char = 16,
-    Str = 17,
-    Bool = 18,
-    Nil = 19,
-    BigInt = 20,
-    BigFloat = 21,
-    List = 22,
-    Map = 23,
-    Set = 24,
-    Tuple = 25,
-    Self_ = 26,
-    Struct = 27,
-    Enum = 28,
-    Import = 29,
-    Export = 30,
-    Bind = 31,
-    Alias = 32,
-    Let = 33,
-    Change = 34,
-    Var = 35,
-    Nest = 36,
-    Complex = 37,
-    Override = 38,
-    As = 39,
-    True = 40,
-    False = 41,
-    IsEmpty = 42,
-    IsWhitespace = 43,
-    Range = 44,
-    StartsW = 45,
-    EndsW = 46,
-    Contains = 47,
-    Equals = 48,
+    Self_ = 0,
+    Struct = 1,
+    Enum = 2,
+    Import = 3,
+    Export = 4,
+    Bind = 5,
+    Alias = 6,
+    Let = 7,
+    Change = 8,
+    As = 9,
+    Var = 10,
+    Nest = 11,
+    Complex = 12,
+    Override = 13,
+    IsEmpty = 14,
+    IsWhitespace = 15,
+    Range = 16,
+    StartsW = 17,
+    EndsW = 18,
+    Contains = 19,
+    Equals = 20,
 }
 
 impl Formattable for Keyword {
     fn to_fmt(&self) -> common::fmter::Formatted {
         match self {
-            Keyword::I8 => Formatted::I8,
-            Keyword::U8 => Formatted::U8,
-            Keyword::I16 => Formatted::I16,
-            Keyword::U16 => Formatted::U16,
-            Keyword::F16 => Formatted::F16,
-            Keyword::I32 => Formatted::I32,
-            Keyword::U32 => Formatted::U32,
-            Keyword::F32 => Formatted::F32,
-            Keyword::I64 => Formatted::I64,
-            Keyword::U64 => Formatted::U64,
-            Keyword::F64 => Formatted::F64,
-            Keyword::I128 => Formatted::I128,
-            Keyword::U128 => Formatted::U128,
-            Keyword::F128 => Formatted::F128,
-            Keyword::Sized => Formatted::Sized,
-            Keyword::Unsized => Formatted::Unsized,
-            Keyword::Char => Formatted::Char,
-            Keyword::Str => Formatted::Str,
-            Keyword::Bool => Formatted::Bool,
-            Keyword::Nil => Formatted::Nil,
-            Keyword::BigInt => Formatted::BigInt,
-            Keyword::BigFloat => Formatted::BigFloat,
-            Keyword::List => Formatted::List,
-            Keyword::Map => Formatted::Map,
-            Keyword::Set => Formatted::Set,
-            Keyword::Tuple => Formatted::Tuple,
             Keyword::Self_ => Formatted::Self_,
             Keyword::Struct => Formatted::Struct,
             Keyword::Enum => Formatted::Enum,
@@ -178,8 +98,6 @@ impl Formattable for Keyword {
             Keyword::Nest => Formatted::SectNest,
             Keyword::Complex => Formatted::SectComplex,
             Keyword::Override => Formatted::SectOverride,
-            Keyword::True => Formatted::True,
-            Keyword::False => Formatted::False,
             Keyword::IsEmpty => Formatted::IsEmpty,
             Keyword::IsWhitespace => Formatted::IsWhitespace,
             Keyword::Range => Formatted::FuncRange,
@@ -193,59 +111,39 @@ impl Formattable for Keyword {
 }
 
 impl Keyword {
+    pub fn is_sect(&self) -> bool {
+        match self {
+            Keyword::Var | Keyword::Nest | Keyword::Complex | Keyword::Override => true,
+            _ => false,
+        }
+    }
+
+    // No. No this will not stay.
     /// Returns Some keyword that matches the given id or None
-    pub fn try_as_kw(id: u32) -> Option<Keyword> {
+    pub fn try_from_interned_id(id: u32) -> Option<Keyword> {
         match id {
             // Using literal because scared of if
-            0 => Some(Keyword::I8),
-            1 => Some(Keyword::U8),
-            2 => Some(Keyword::I16),
-            3 => Some(Keyword::U16),
-            4 => Some(Keyword::F16),
-            5 => Some(Keyword::I32),
-            6 => Some(Keyword::U32),
-            7 => Some(Keyword::F32),
-            8 => Some(Keyword::I64),
-            9 => Some(Keyword::U64),
-            10 => Some(Keyword::F64),
-            11 => Some(Keyword::I128),
-            12 => Some(Keyword::U128),
-            13 => Some(Keyword::F128),
-            14 => Some(Keyword::Sized),
-            15 => Some(Keyword::Unsized),
-            16 => Some(Keyword::Char),
-            17 => Some(Keyword::Str),
-            18 => Some(Keyword::Bool),
-            19 => Some(Keyword::Nil),
-            20 => Some(Keyword::BigInt),
-            21 => Some(Keyword::BigFloat),
-            22 => Some(Keyword::List),
-            23 => Some(Keyword::Map),
-            24 => Some(Keyword::Set),
-            25 => Some(Keyword::Tuple),
-            26 => Some(Keyword::Self_),
-            27 => Some(Keyword::Struct),
-            28 => Some(Keyword::Enum),
-            29 => Some(Keyword::Import),
-            30 => Some(Keyword::Export),
-            31 => Some(Keyword::Bind),
-            32 => Some(Keyword::Alias),
-            33 => Some(Keyword::Let),
-            34 => Some(Keyword::Change),
-            35 => Some(Keyword::Var),
-            36 => Some(Keyword::Nest),
-            37 => Some(Keyword::Complex),
-            38 => Some(Keyword::Override),
-            39 => Some(Keyword::As),
-            40 => Some(Keyword::True),
-            41 => Some(Keyword::False),
-            42 => Some(Keyword::IsEmpty),
-            43 => Some(Keyword::IsWhitespace),
-            44 => Some(Keyword::Range),
-            45 => Some(Keyword::StartsW),
-            46 => Some(Keyword::EndsW),
-            47 => Some(Keyword::Contains),
-            48 => Some(Keyword::Equals),
+            intern::INTERNED_SELF => Some(Keyword::Self_),
+            intern::INTERNED_STRUCT => Some(Keyword::Struct),
+            intern::INTERNED_ENUM => Some(Keyword::Enum),
+            intern::INTERNED_IMPORT => Some(Keyword::Import),
+            intern::INTERNED_EXPORT => Some(Keyword::Export),
+            intern::INTERNED_BIND => Some(Keyword::Bind),
+            intern::INTERNED_ALIAS => Some(Keyword::Alias),
+            intern::INTERNED_LET => Some(Keyword::Let),
+            intern::INTERNED_CHANGE => Some(Keyword::Change),
+            intern::INTERNED_AS => Some(Keyword::As),
+            intern::INTERNED_VAR => Some(Keyword::Var),
+            intern::INTERNED_NEST => Some(Keyword::Nest),
+            intern::INTERNED_COMPLEX => Some(Keyword::Complex),
+            intern::INTERNED_OVERRIDE => Some(Keyword::Override),
+            intern::INTERNED_IS_EMPTY => Some(Keyword::IsEmpty),
+            intern::INTERNED_IS_WHITESPACE => Some(Keyword::IsWhitespace),
+            intern::INTERNED_RANGE => Some(Keyword::Range),
+            intern::INTERNED_STARTSW => Some(Keyword::StartsW),
+            intern::INTERNED_ENDSW => Some(Keyword::EndsW),
+            intern::INTERNED_CONTAINS => Some(Keyword::Contains),
+            intern::INTERNED_EQUALS => Some(Keyword::Equals),
             _ => None,
         }
     }
@@ -256,40 +154,34 @@ impl Keyword {
             return None;
         }
 
-        Keyword::try_as_kw(id)
+        Keyword::try_from_interned_id(id)
     }
 }
 
 //WARN: Not sure about the amount of casting everywhere
-const TYPE_START: u32 = 0;
-pub const TYPE_END: u32 = 26;
 
-const STMT_START: u32 = 29;
-const STMT_END: u32 = 34;
+const STMT_START: u32 = 4;
+const STMT_END: u32 = 8;
 
-pub const SECT_START: u32 = 35;
-pub const SECT_END: u32 = 38;
+pub const SECT_START: u32 = 9;
+pub const SECT_END: u32 = 12;
 
 //TODO: Suspicious classification
-const PREDICATE_START: u32 = 40;
-const PREDICATE_END: u32 = 48;
+const PREDICATE_START: u32 = 16;
+const PREDICATE_END: u32 = 22;
 
 //WARN: The amount of casting here is painful. SEVERELY painful.
-pub fn is_type(id: u32) -> bool {
-    id <= TYPE_END
+pub fn is_kw(id: u32) -> bool {
+    id < KEYWORDS_ARRAY.len() as u32
 }
 
 /// Ensure this aligns with the actual id of export
 pub fn is_export(id: u32) -> bool {
-    id == 30
+    id == 4
 }
 
 pub fn is_sect(id: u32) -> bool {
     (SECT_START..=SECT_END).contains(&id)
-}
-
-pub fn type_range() -> RangeInclusive<usize> {
-    (TYPE_START as usize)..=(TYPE_END as usize)
 }
 
 pub fn stmt_range() -> RangeInclusive<usize> {

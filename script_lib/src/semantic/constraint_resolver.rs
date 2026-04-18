@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 
 use chern_core::{
     builtins::BuiltinType,
-    id_types::{AstId, ModuleId, NameId, SymbolId, TypeId, ValueId},
+    id_types::{AstId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
     inner_args::{InnerArgs, SpannedInnerArgs},
     intern::Intern,
     keywords::Keyword,
@@ -104,6 +104,7 @@ impl<'a> ConstraintResolver<'a> {
                 }
             };
         }
+        dbg!(&self.compiler.values);
 
         if !self.reporter.err_vec.is_empty() {
             let mut diags = Vec::new();
@@ -251,7 +252,10 @@ impl<'a> ConstraintResolver<'a> {
 
         // Second borrow
         let module = &self.compiler.mods[self.current_mod.id];
-        let ty = &self.compiler.types[self.compiler.get_typedef(sym_id).type_id.id as usize].ty;
+        let type_id = self.compiler.get_typedef(sym_id).type_id;
+        dbg!(type_id);
+        dbg!(&self.compiler.types);
+        let ty = &self.compiler.types[type_id.id as usize].ty;
 
         // Checking if condition is valid for the given type
         // Using the Ast node's condition so that the span information is not lost
@@ -500,7 +504,7 @@ impl<'a> ConstraintResolver<'a> {
                 let type_id = TypeId::new(self.compiler.types.len() as u32);
 
                 //TODO: Maybe handle this elsewhere
-                let (constraints, kind) = match Keyword::try_as_kw(name_id) {
+                let (constraints, kind) = match Keyword::try_from_interned_id(name_id) {
                     Some(kw) => match kw {
                         Keyword::Range => (
                             ArgConstraint::from_builtin(FuncKind::Range),
@@ -533,7 +537,7 @@ impl<'a> ConstraintResolver<'a> {
                 };
 
                 let func = FuncRepre::new(
-                    NameId::new(name_id),
+                    InternedId::new(name_id),
                     type_id,
                     spanned_expr.span.clone(),
                     kind,
@@ -583,7 +587,6 @@ impl<'a> ConstraintResolver<'a> {
 
                 Err(())
             }
-            // Parsing-wise this is not possible. Maybe I don't know.
             Expr::MemberAccess(member_access) => {
                 //TODO: Is this worth evaluating as an expression just to get the name?
                 // Sure
@@ -602,6 +605,7 @@ impl<'a> ConstraintResolver<'a> {
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),
             Expr::Char(_) => todo!(),
             Expr::Default(_, expr) => todo!(),
+            Expr::Bool(_) => todo!(),
         }
     }
 
@@ -821,12 +825,6 @@ impl<'a> ConstraintResolver<'a> {
     ) -> Result<ValueResult, SemanticError> {
         match &spanned_expr.expr {
             Expr::Var(name_id) => {
-                if name_id.id == Keyword::True as u32 {
-                    return Ok(ValueResult::Resolved(ValueId::new(VALUE_TRUE_POS)));
-                } else if name_id.id == Keyword::False as u32 {
-                    return Ok(ValueResult::Resolved(ValueId::new(VALUE_FALSE_POS)));
-                }
-
                 let module = &self.compiler.mods[self.current_mod.id];
 
                 if let Some(sym_id) = module.get_sym_id(*name_id, scope_type) {
@@ -931,7 +929,7 @@ impl<'a> ConstraintResolver<'a> {
             }
             Expr::Str(name_id) => {
                 let val_id = ValueId::new(self.compiler.values.len());
-                self.compiler.values.push(Value::CompileStr(*name_id));
+                self.compiler.values.push(Value::InternedStr(*name_id));
 
                 Ok(ValueResult::Resolved(val_id))
             }
@@ -998,6 +996,15 @@ impl<'a> ConstraintResolver<'a> {
                 self.compiler.values.push(val);
 
                 Ok(ValueResult::Resolved(val_id))
+            }
+            Expr::Bool(boolean) => {
+                //FIX:
+                if *boolean == true {
+                    return Ok(ValueResult::Resolved(ValueId::new(VALUE_TRUE_POS)));
+                } else {
+                    return Ok(ValueResult::Resolved(ValueId::new(VALUE_FALSE_POS)));
+                }
+                todo!();
             }
         }
     }

@@ -1,8 +1,19 @@
-use std::fmt::Display;
+use std::{fmt::Display, ops::Range};
 
 use common::fmter::{Formattable, Formatted};
 
-use crate::{id_types::TypeId, keywords::Keyword};
+use crate::{
+    id_types::TypeId,
+    intern,
+    keywords::{self},
+};
+
+// Oi, hugie..
+pub static BUILTIN_TYPE_ARRAY: [&str; 26] = [
+    "i8", "u8", "i16", "u16", "f16", "i32", "u32", "f32", "i64", "u64", "f64", "i128", "u128",
+    "f128", "sized", "unsized", "char", "str", "bool", "nil", "BigInt", "BigFloat", "List", "Map",
+    "Set", "Tuple",
+];
 
 //TEST: Serial and script interact with this directly so
 #[derive(Debug)]
@@ -32,10 +43,41 @@ pub enum BuiltinType {
     List(TypeId),
     Set(TypeId),
     Map(TypeId, TypeId),
+    Tuple(Vec<TypeId>),
     Any(Option<TypeId>),
 }
 
 impl BuiltinType {
+    /// Returns the corresponding builtin type from a pre-determined interned id (Excluding data
+    /// structures)
+    pub fn try_from_interned_id(id: u32) -> Option<BuiltinType> {
+        match id {
+            intern::INTERNED_I8 => Some(BuiltinType::I8),
+            intern::INTERNED_U8 => Some(BuiltinType::U8),
+            intern::INTERNED_I16 => Some(BuiltinType::I16),
+            intern::INTERNED_U16 => Some(BuiltinType::U16),
+            intern::INTERNED_F16 => Some(BuiltinType::F16),
+            intern::INTERNED_I32 => Some(BuiltinType::I32),
+            intern::INTERNED_U32 => Some(BuiltinType::U32),
+            intern::INTERNED_F32 => Some(BuiltinType::F32),
+            intern::INTERNED_I64 => Some(BuiltinType::I64),
+            intern::INTERNED_U64 => Some(BuiltinType::U64),
+            intern::INTERNED_F64 => Some(BuiltinType::F64),
+            intern::INTERNED_I128 => Some(BuiltinType::I128),
+            intern::INTERNED_U128 => Some(BuiltinType::U128),
+            intern::INTERNED_F128 => Some(BuiltinType::F128),
+            intern::INTERNED_SIZED => Some(BuiltinType::Sized),
+            intern::INTERNED_UNSIZED => Some(BuiltinType::Unsized),
+            intern::INTERNED_BOOL => Some(BuiltinType::Bool),
+            intern::INTERNED_NIL => Some(BuiltinType::Nil),
+            intern::INTERNED_CHAR => Some(BuiltinType::Char),
+            intern::INTERNED_STR => Some(BuiltinType::BigFloat),
+            intern::INTERNED_BIGINT => Some(BuiltinType::BigInt),
+            intern::INTERNED_BIGFLOAT => Some(BuiltinType::BigFloat),
+            _ => None,
+        }
+    }
+
     pub fn kind(&self) -> BuiltinTypeKind {
         match self {
             BuiltinType::I8 => BuiltinTypeKind::I8,
@@ -64,11 +106,13 @@ impl BuiltinType {
             BuiltinType::Set(_) => BuiltinTypeKind::Set,
             BuiltinType::Map(_, _) => BuiltinTypeKind::Map,
             BuiltinType::Any(_) => BuiltinTypeKind::Any,
+            BuiltinType::Tuple(_) => BuiltinTypeKind::Tuple,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
 pub enum BuiltinTypeKind {
     I8,
     U8,
@@ -96,6 +140,41 @@ pub enum BuiltinTypeKind {
     Set,
     Map,
     Any,
+    Tuple,
+}
+
+impl BuiltinTypeKind {
+    pub fn try_from_interned_id(id: u32) -> Option<BuiltinTypeKind> {
+        match id {
+            intern::INTERNED_I8 => Some(BuiltinTypeKind::I8),
+            intern::INTERNED_U8 => Some(BuiltinTypeKind::U8),
+            intern::INTERNED_I16 => Some(BuiltinTypeKind::I16),
+            intern::INTERNED_U16 => Some(BuiltinTypeKind::U16),
+            intern::INTERNED_F16 => Some(BuiltinTypeKind::F16),
+            intern::INTERNED_I32 => Some(BuiltinTypeKind::I32),
+            intern::INTERNED_U32 => Some(BuiltinTypeKind::U32),
+            intern::INTERNED_F32 => Some(BuiltinTypeKind::F32),
+            intern::INTERNED_I64 => Some(BuiltinTypeKind::I64),
+            intern::INTERNED_U64 => Some(BuiltinTypeKind::U64),
+            intern::INTERNED_F64 => Some(BuiltinTypeKind::F64),
+            intern::INTERNED_I128 => Some(BuiltinTypeKind::I128),
+            intern::INTERNED_U128 => Some(BuiltinTypeKind::U128),
+            intern::INTERNED_F128 => Some(BuiltinTypeKind::F128),
+            intern::INTERNED_SIZED => Some(BuiltinTypeKind::Sized),
+            intern::INTERNED_UNSIZED => Some(BuiltinTypeKind::Unsized),
+            intern::INTERNED_BOOL => Some(BuiltinTypeKind::Bool),
+            intern::INTERNED_NIL => Some(BuiltinTypeKind::Nil),
+            intern::INTERNED_CHAR => Some(BuiltinTypeKind::Char),
+            intern::INTERNED_STR => Some(BuiltinTypeKind::BigFloat),
+            intern::INTERNED_BIGINT => Some(BuiltinTypeKind::BigInt),
+            intern::INTERNED_BIGFLOAT => Some(BuiltinTypeKind::BigFloat),
+            intern::INTERNED_LIST => Some(BuiltinTypeKind::List),
+            intern::INTERNED_MAP => Some(BuiltinTypeKind::Map),
+            intern::INTERNED_SET => Some(BuiltinTypeKind::Set),
+            intern::INTERNED_TUPLE => Some(BuiltinTypeKind::Tuple),
+            _ => None,
+        }
+    }
 }
 
 impl Formattable for BuiltinTypeKind {
@@ -127,75 +206,12 @@ impl Formattable for BuiltinTypeKind {
             BuiltinTypeKind::Set => Formatted::Set,
             BuiltinTypeKind::Map => Formatted::Map,
             BuiltinTypeKind::Any => Formatted::Any,
+            BuiltinTypeKind::Tuple => Formatted::Tuple,
         }
     }
 }
 
 // SHOULD THIS ERR?
-impl BuiltinType {
-    /// Uses `Keyword` to map directly to a `BuiltinType` excluding data structures.
-    pub fn try_from_kw(kw: Keyword) -> Option<BuiltinType> {
-        match kw {
-            Keyword::I8 => Some(BuiltinType::I8),
-            Keyword::U8 => Some(BuiltinType::U8),
-            Keyword::I16 => Some(BuiltinType::I16),
-            Keyword::U16 => Some(BuiltinType::U16),
-            Keyword::F16 => Some(BuiltinType::F16),
-            Keyword::I32 => Some(BuiltinType::I32),
-            Keyword::U32 => Some(BuiltinType::U32),
-            Keyword::F32 => Some(BuiltinType::F32),
-            Keyword::I64 => Some(BuiltinType::I64),
-            Keyword::U64 => Some(BuiltinType::U64),
-            Keyword::F64 => Some(BuiltinType::F64),
-            Keyword::I128 => Some(BuiltinType::I128),
-            Keyword::U128 => Some(BuiltinType::U128),
-            Keyword::F128 => Some(BuiltinType::F128),
-            Keyword::Sized => Some(BuiltinType::Sized),
-            Keyword::Unsized => Some(BuiltinType::Unsized),
-            Keyword::Char => Some(BuiltinType::Char),
-            Keyword::Str => Some(BuiltinType::Str),
-            Keyword::Bool => Some(BuiltinType::Bool),
-            Keyword::Nil => Some(BuiltinType::Nil),
-            Keyword::BigInt => Some(BuiltinType::BigInt),
-            Keyword::BigFloat => Some(BuiltinType::BigFloat),
-            _ => None,
-        }
-    }
-
-    //NOTE: This may still be replaced by a `BuiltinType` TypeExpr but seems fine
-    /// Uses `Keyword` to map directly to a `BuiltinType` excluding data structures.
-    pub fn try_from_id(id: u32) -> Option<BuiltinType> {
-        match Keyword::try_as_kw(id) {
-            Some(kw) => match kw {
-                Keyword::I8 => Some(BuiltinType::I8),
-                Keyword::U8 => Some(BuiltinType::U8),
-                Keyword::I16 => Some(BuiltinType::I16),
-                Keyword::U16 => Some(BuiltinType::U16),
-                Keyword::F16 => Some(BuiltinType::F16),
-                Keyword::I32 => Some(BuiltinType::I32),
-                Keyword::U32 => Some(BuiltinType::U32),
-                Keyword::F32 => Some(BuiltinType::F32),
-                Keyword::I64 => Some(BuiltinType::I64),
-                Keyword::U64 => Some(BuiltinType::U64),
-                Keyword::F64 => Some(BuiltinType::F64),
-                Keyword::I128 => Some(BuiltinType::I128),
-                Keyword::U128 => Some(BuiltinType::U128),
-                Keyword::F128 => Some(BuiltinType::F128),
-                Keyword::Sized => Some(BuiltinType::Sized),
-                Keyword::Unsized => Some(BuiltinType::Unsized),
-                Keyword::Char => Some(BuiltinType::Char),
-                Keyword::Str => Some(BuiltinType::Str),
-                Keyword::Bool => Some(BuiltinType::Bool),
-                Keyword::Nil => Some(BuiltinType::Nil),
-                Keyword::BigInt => Some(BuiltinType::BigInt),
-                Keyword::BigFloat => Some(BuiltinType::BigFloat),
-                _ => None,
-            },
-            None => None,
-        }
-    }
-}
-
 impl BuiltinTypeKind {
     pub fn is_numeric(&self) -> bool {
         match self {
@@ -217,7 +233,6 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::Unsized
             | BuiltinTypeKind::BigInt
             | BuiltinTypeKind::BigFloat => true,
-            // Non-Numbers
             BuiltinTypeKind::Bool
             | BuiltinTypeKind::Nil
             | BuiltinTypeKind::Char
@@ -225,6 +240,7 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::List
             | BuiltinTypeKind::Set
             | BuiltinTypeKind::Map
+            | BuiltinTypeKind::Tuple
             | BuiltinTypeKind::Any => false,
         }
     }
@@ -260,6 +276,7 @@ impl Display for BuiltinTypeKind {
             BuiltinTypeKind::Set => write!(f, "Set"),
             BuiltinTypeKind::Map => write!(f, "Map"),
             BuiltinTypeKind::Any => write!(f, "Any"),
+            BuiltinTypeKind::Tuple => write!(f, "Tuple"),
         }
     }
 }

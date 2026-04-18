@@ -7,7 +7,7 @@ use std::{
 pub mod mod_finder;
 
 use chern_core::{
-    id_types::{AstId, ModuleId, NameId, PathId, ScopeId, SymbolId},
+    id_types::{AstId, InternedId, ModuleId, PathId, ScopeId, SymbolId},
     intern::Intern,
 };
 use common::{chern_settings::ChernSettings, core_error::ConfigLoadError, reporter, span::Span};
@@ -25,18 +25,18 @@ use crate::{
 //TEST: Relocate reollacl rreellocrelac
 #[derive(Debug)]
 pub struct Import {
-    pub(crate) name_id: NameId,
+    pub(crate) name_id: InternedId,
     pub(crate) path_id: PathId,
     pub(crate) path_span: Span,
-    pub(crate) alias_id: Option<NameId>,
+    pub(crate) alias_id: Option<InternedId>,
 }
 
 impl Import {
     pub(crate) fn new(
-        name_id: NameId,
+        name_id: InternedId,
         path_id: PathId,
         path_span: Span,
-        alias_id: Option<NameId>,
+        alias_id: Option<InternedId>,
         // Maybe "import as" eventually
     ) -> Import {
         Import {
@@ -66,7 +66,7 @@ impl Bind {
 #[derive(Debug)]
 pub struct Module {
     /// File name that will be used internally
-    pub name_id: NameId,
+    pub name_id: InternedId,
     /// Actual path used to find the file itself
     pub path_id: PathId,
     /// It's own module id position
@@ -79,7 +79,7 @@ pub struct Module {
 
 impl Module {
     pub fn new(
-        name_id: NameId,
+        name_id: InternedId,
         path_id: PathId,
         mod_id: ModuleId,
         imports: Vec<Import>,
@@ -140,7 +140,11 @@ impl Module {
     /// Checks if the name id corresponds to a `SymbolId` within the given `ScopeType`.
     /// Returns a tuple of the `AstId` and `ScopeType` the `NameId` was found in. Returns None if
     /// no accessible scopes contain the given `NameId`.
-    pub(crate) fn get_sym_id(&self, name_id: NameId, scope_type: ScopeType) -> Option<SymbolId> {
+    pub(crate) fn get_sym_id(
+        &self,
+        name_id: InternedId,
+        scope_type: ScopeType,
+    ) -> Option<SymbolId> {
         // I don't think this can fail. Should maybe expect for clarity.
         let allowed_scope_types = scope_type.accessible_scopes();
 
@@ -214,20 +218,17 @@ pub fn extract_modules(
     interner: &mut Intern,
 ) -> Result<ScriptCompiler, ConfigLoadError> {
     // This MUST be explicitly
-    let path = match path.canonicalize() {
-        Ok(p) => p,
-        Err(e) => todo!(),
-    };
 
     let src = match file_ops::fopen(&path) {
         Ok(f) => f,
         Err(e) => return Err(ConfigLoadError::Module(e)),
     };
 
+    let path = path.canonicalize()?;
+
     let main_metadata = ChernConfigLoader::new(&path, src, settings).load_config()?;
 
-    // Get's actual file name so that any reference such as, "global.CONSTANT_VALUE" can be
-    // accessed by using the file's name, which has to be valid UTF-8 unlike it's path.
+    // FIX: Aliasing?
     let file_name = match path.file_prefix().map(|n| n.to_str()) {
         Some(Some(p)) => p,
         _ => {
@@ -240,7 +241,7 @@ pub fn extract_modules(
         }
     };
 
-    let name_id = NameId::new(interner.intern(&file_name));
+    let name_id = InternedId::new(interner.intern(&file_name));
     let path_id = PathId::new(interner.intern_path(&path));
 
     let (bind, main_imports) = ModuleFinder::new(
@@ -253,7 +254,7 @@ pub fn extract_modules(
     let mod_id = ModuleId::new(0);
     let main_mod = Module::new(name_id, path_id, mod_id, main_imports, main_metadata);
 
-    let mut mod_map: HashMap<NameId, ModuleId> = HashMap::new();
+    let mut mod_map: HashMap<InternedId, ModuleId> = HashMap::new();
     mod_map.insert(main_mod.name_id, mod_id);
 
     let mut seen: HashSet<PathId> = HashSet::new();
@@ -277,18 +278,17 @@ pub fn extract_modules(
     all_mods.push(main_mod);
     all_mods.append(&mut other_mods);
 
-    all_mods.iter().for_each(|m| {
-        println!(
-            "Module \"{}\" nid = {}\nPath: \"{}\" | ModuleId = {:?}\n{:#?}",
-            interner.search(m.name_id.id as usize),
-            m.name_id.id,
-            interner.search_path(m.path_id.id as usize).display(),
-            m.mod_id.id,
-            m.imports
-        );
-    });
+    // all_mods.iter().for_each(|m| {
+    //     println!(
+    //         "Module \"{}\" nid = {}\nPath: \"{}\" | ModuleId = {:?}\n{:#?}",
+    //         interner.search(m.name_id.id as usize),
+    //         m.name_id.id,
+    //         interner.search_path(m.path_id.id as usize).display(),
+    //         m.mod_id.id,
+    //         m.imports
+    //     );
+    // });
 
-    // Module viewing command
     // Module hierarchy command, dependencies, extended classes, Springboot support
     // for module in &all_mods {
     //     println!(
@@ -317,7 +317,7 @@ fn resolve_modules(
     seen: &mut HashSet<PathId>,
     modules: &mut Vec<Module>,
     prev_mod: &Module,
-    mod_map: &mut HashMap<NameId, ModuleId>,
+    mod_map: &mut HashMap<InternedId, ModuleId>,
     settings: &ChernSettings,
     interner: &mut Intern,
 ) -> Result<(), ConfigLoadError> {
@@ -393,7 +393,7 @@ fn resolve_modules(
             }
         };
 
-        let name_id = NameId::new(interner.intern(&file_name));
+        let name_id = InternedId::new(interner.intern(&file_name));
 
         let (_, sub_imports) = ModuleFinder::new(
             &mod_metadata.src_bytes,

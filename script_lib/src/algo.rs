@@ -1,9 +1,10 @@
 use std::cmp;
 
-use chern_core::keywords;
+use chern_core::{builtins, keywords};
 
 pub(crate) enum FuzzyMatch {
     KW,
+    Type,
     Sect,
     Stmt,
     Arg,
@@ -12,18 +13,14 @@ pub(crate) enum FuzzyMatch {
 pub fn fuzzy_match(given: &[u8], target: FuzzyMatch) -> Option<&str> {
     match target {
         FuzzyMatch::KW => fuzzy_match_inner(given, &keywords::KEYWORDS_ARRAY),
+        FuzzyMatch::Type => fuzzy_match_inner(given, &builtins::BUILTIN_TYPE_ARRAY),
         FuzzyMatch::Stmt => {
             fuzzy_match_inner(given, &keywords::KEYWORDS_ARRAY[keywords::stmt_range()])
         }
         FuzzyMatch::Sect => {
             fuzzy_match_inner(given, &keywords::KEYWORDS_ARRAY[keywords::sect_range()])
         }
-        FuzzyMatch::Arg => fuzzy_match_inner(
-            given,
-            // TODO: Please rename this
-            // Please
-            &chern_core::inner_args::ARGS_ARRAY,
-        ),
+        FuzzyMatch::Arg => fuzzy_match_inner(given, &chern_core::inner_args::ARGS_ARRAY),
     }
 }
 

@@ -1,4 +1,5 @@
-use chern_core::id_types::{AstId, ModuleId, NameId, TypeId};
+use chern_core::builtins::BuiltinTypeKind;
+use chern_core::id_types::{AstId, InternedId, ModuleId, TypeId};
 use chern_core::{builtins::BuiltinType, intern::Intern, keywords::Keyword};
 use common::chern_settings::ChernSettings;
 use common::{reporter::diagnostic::Diagnostic, span::Span};
@@ -92,7 +93,7 @@ impl TypeResolver<'_> {
 
     fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
         let mut fields: Vec<FieldRepre> = Vec::new();
-        let mut seen: Vec<(usize, NameId)> = Vec::new();
+        let mut seen: Vec<(usize, InternedId)> = Vec::new();
 
         // Checking if there are duplicate name ids within the same struct along with resolution
         for (i, type_def) in abs_struct.fields.iter().enumerate() {
@@ -141,7 +142,7 @@ impl TypeResolver<'_> {
         let mut variants: Vec<VariantRepre> = Vec::new();
 
         // (ast_id, name_id)
-        let mut seen: Vec<(usize, NameId)> = Vec::new();
+        let mut seen: Vec<(usize, InternedId)> = Vec::new();
         //Maybe just compute this once after along with struct fields
 
         // Checking if there are duplicate name ids within the same enum
@@ -209,8 +210,8 @@ impl TypeResolver<'_> {
         match &spanned_ty_expr.ty_expr {
             TypeExpr::Var(name_id) => {
                 // Returns the name's id since it is a valid non-data structure intrinsic type
-                if let Some(_) = BuiltinType::try_from_id(name_id.id) {
-                    return Ok(TypeId::new(name_id.id));
+                if let Some(_) = BuiltinType::try_from_interned_id(name_id.id) {
+                    return Ok(TypeId::new(todo!()));
                 }
 
                 let module = &self.compiler.mods[self.current_mod.id];
@@ -274,11 +275,11 @@ impl TypeResolver<'_> {
                 return Err(());
             }
             TypeExpr::Generic(generic) => {
-                match Keyword::try_as_kw(generic.base.id) {
+                match BuiltinTypeKind::try_from_interned_id(generic.base.id) {
                     // Self referential type ids used here
                     Some(kw) => match kw {
                         //TODO: Should maybe put List | Set
-                        Keyword::List => {
+                        BuiltinTypeKind::List => {
                             if generic.args.len() != 1 {
                                 let msg = format!(
                                     "Expected 1 type within `List`, found {}",
@@ -306,7 +307,7 @@ impl TypeResolver<'_> {
 
                             return Ok(list_id);
                         }
-                        Keyword::Tuple => {
+                        BuiltinTypeKind::Tuple => {
                             let mut elements: Vec<TypeId> = Vec::new();
 
                             for arg in &generic.args {
@@ -321,7 +322,7 @@ impl TypeResolver<'_> {
 
                             Ok(type_id)
                         }
-                        Keyword::Map => {
+                        BuiltinTypeKind::Map => {
                             if generic.args.len() != 2 {
                                 let msg = format!(
                                     "Expected 2 types within `Map`, found {}",
@@ -352,7 +353,7 @@ impl TypeResolver<'_> {
                             Ok(TypeId::new(map_id))
                         }
                         // Should probably just put this with list
-                        Keyword::Set => {
+                        BuiltinTypeKind::Set => {
                             if generic.args.len() != 1 {
                                 let msg = format!(
                                     "Expected 1 type within `Set`, found {}",

@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display};
 
 use chern_core::{
     builtins::{BuiltinType, BuiltinTypeKind},
-    id_types::{AstId, ModuleId, NameId, SymbolId, TypeId, ValueId},
+    id_types::{AstId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
     inner_args::InnerArgs,
 };
 use common::{
@@ -70,7 +70,7 @@ pub(crate) enum Symbol {
 }
 
 impl Symbol {
-    pub(crate) fn name_id(&self) -> NameId {
+    pub(crate) fn name_id(&self) -> InternedId {
         match self {
             Symbol::TypeDef(type_def_repre) => type_def_repre.name_id,
             Symbol::Struct(struct_repre) => struct_repre.name_id,
@@ -96,7 +96,7 @@ impl Symbol {
 #[derive(Debug)]
 pub struct Table {
     // Type specific tables
-    pub(crate) name_ids: HashMap<AstId, NameId>,
+    pub(crate) name_ids: HashMap<AstId, InternedId>,
     // Can still change some to vec maybe
     pub(crate) sym_ids: HashMap<AstId, SymbolId>,
 }
@@ -114,7 +114,7 @@ pub(crate) enum ResolvedExpr {}
 
 #[derive(Debug)]
 pub(crate) struct VarRepre {
-    pub(crate) name_id: NameId,
+    pub(crate) name_id: InternedId,
     pub(crate) sym_id: SymbolId,
     pub(crate) ast_id: AstId,
     // It's position in the Type array
@@ -124,7 +124,7 @@ pub(crate) struct VarRepre {
 
 impl VarRepre {
     pub fn new(
-        name_id: NameId,
+        name_id: InternedId,
         sym_id: SymbolId,
         type_id: TypeId,
         ast_id: AstId,
@@ -142,7 +142,7 @@ impl VarRepre {
 
 #[derive(Debug)]
 pub(crate) struct StructRepre {
-    pub(crate) name_id: NameId,
+    pub(crate) name_id: InternedId,
     pub(crate) sym_id: SymbolId,
     pub(crate) ast_id: AstId,
     // It's position in the Type array
@@ -154,7 +154,7 @@ pub(crate) struct StructRepre {
 
 impl StructRepre {
     pub(crate) fn new(
-        name_id: NameId,
+        name_id: InternedId,
         sym_id: SymbolId,
         ast_id: AstId,
         type_id: TypeId,
@@ -174,7 +174,7 @@ impl StructRepre {
 
 #[derive(Debug)]
 pub(crate) struct EnumRepre {
-    pub(crate) name_id: NameId,
+    pub(crate) name_id: InternedId,
     // Unsure about this positioning, I am hallucinating.
     pub(crate) sym_id: SymbolId,
     pub(crate) ast_id: AstId,
@@ -186,7 +186,7 @@ pub(crate) struct EnumRepre {
 
 impl EnumRepre {
     pub fn new(
-        name_id: NameId,
+        name_id: InternedId,
         sym_id: SymbolId,
         ast_id: AstId,
         type_id: TypeId,
@@ -206,7 +206,7 @@ impl EnumRepre {
 
 #[derive(Debug)]
 pub struct VariantRepre {
-    pub(crate) name_id: NameId,
+    pub(crate) name_id: InternedId,
     // Because enum types are nullable
     pub(crate) type_id: Option<TypeId>,
     // Possible tuple
@@ -217,7 +217,7 @@ pub struct VariantRepre {
 }
 
 impl VariantRepre {
-    pub fn new(name_id: NameId, type_id: Option<TypeId>, ast_id: AstId) -> VariantRepre {
+    pub fn new(name_id: InternedId, type_id: Option<TypeId>, ast_id: AstId) -> VariantRepre {
         VariantRepre {
             name_id,
             type_id,
@@ -230,7 +230,7 @@ impl VariantRepre {
 
 #[derive(Debug)]
 pub(crate) struct TypeDefRepre {
-    pub(crate) name_id: NameId,
+    pub(crate) name_id: InternedId,
     pub(crate) sym_id: SymbolId,
     pub(crate) ast_id: AstId,
     pub(crate) type_id: TypeId,
@@ -239,7 +239,12 @@ pub(crate) struct TypeDefRepre {
 }
 
 impl TypeDefRepre {
-    pub fn new(name_id: NameId, type_id: TypeId, sym_id: SymbolId, ast_id: AstId) -> TypeDefRepre {
+    pub fn new(
+        name_id: InternedId,
+        type_id: TypeId,
+        sym_id: SymbolId,
+        ast_id: AstId,
+    ) -> TypeDefRepre {
         TypeDefRepre {
             name_id,
             sym_id,
@@ -253,7 +258,7 @@ impl TypeDefRepre {
 
 #[derive(Debug)]
 pub(crate) struct FuncRepre {
-    pub(crate) name_id: NameId,
+    pub(crate) name_id: InternedId,
     // Type reference to it's own position in the `Type` array
     pub(crate) type_id: TypeId,
     pub(crate) call_span: Span,
@@ -264,7 +269,7 @@ pub(crate) struct FuncRepre {
 
 impl FuncRepre {
     pub(crate) fn new(
-        name_id: NameId,
+        name_id: InternedId,
         type_id: TypeId,
         call_span: Span,
         kind: FuncKind,
@@ -291,7 +296,7 @@ pub(crate) enum FuncArgsRepre {
     //TEST:
     Var(TypeId, BuiltinTypeKind),
     Default(TypeId, BuiltinTypeKind, ValueId),
-    Str(NameId),
+    Str(InternedId),
 }
 
 impl FuncArgsRepre {
@@ -380,14 +385,14 @@ pub(crate) enum FuncArgsKind {
 
 #[derive(Debug)]
 pub(crate) struct FieldRepre {
-    pub(crate) name_id: NameId,
+    pub(crate) name_id: InternedId,
     pub(crate) type_id: TypeId,
     // Ast contained field id, maybe this should just be AstId
     pub(crate) ast_id: AstId,
 }
 
 impl FieldRepre {
-    pub(crate) fn new(name_id: NameId, type_id: TypeId, ast_id: AstId) -> FieldRepre {
+    pub(crate) fn new(name_id: InternedId, type_id: TypeId, ast_id: AstId) -> FieldRepre {
         FieldRepre {
             name_id,
             type_id,
@@ -398,7 +403,7 @@ impl FieldRepre {
 
 #[derive(Debug)]
 pub(crate) struct AliasRepre {
-    pub(crate) name_id: NameId,
+    pub(crate) name_id: InternedId,
     pub(crate) sym_id: SymbolId,
     pub(crate) ast_id: AstId,
     // Refers to self's type id position
@@ -411,7 +416,7 @@ pub(crate) struct AliasRepre {
 
 impl AliasRepre {
     pub fn new(
-        name_id: NameId,
+        name_id: InternedId,
         sym_id: SymbolId,
         ast_id: AstId,
         type_id: TypeId,

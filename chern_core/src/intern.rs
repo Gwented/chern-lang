@@ -3,7 +3,56 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::keywords;
+// Um
+pub const INTERNED_SELF: u32 = 0;
+pub const INTERNED_STRUCT: u32 = 1;
+pub const INTERNED_ENUM: u32 = 2;
+pub const INTERNED_IMPORT: u32 = 3;
+pub const INTERNED_EXPORT: u32 = 4;
+pub const INTERNED_BIND: u32 = 5;
+pub const INTERNED_ALIAS: u32 = 6;
+pub const INTERNED_LET: u32 = 7;
+pub const INTERNED_CHANGE: u32 = 8;
+pub const INTERNED_AS: u32 = 9;
+pub const INTERNED_VAR: u32 = 10;
+pub const INTERNED_NEST: u32 = 11;
+pub const INTERNED_COMPLEX: u32 = 12;
+pub const INTERNED_OVERRIDE: u32 = 13;
+pub const INTERNED_TRUE: u32 = 14;
+pub const INTERNED_FALSE: u32 = 15;
+pub const INTERNED_IS_EMPTY: u32 = 16;
+pub const INTERNED_IS_WHITESPACE: u32 = 17;
+pub const INTERNED_RANGE: u32 = 18;
+pub const INTERNED_STARTSW: u32 = 19;
+pub const INTERNED_ENDSW: u32 = 20;
+pub const INTERNED_CONTAINS: u32 = 21;
+pub const INTERNED_EQUALS: u32 = 22;
+pub const INTERNED_I8: u32 = 23;
+pub const INTERNED_U8: u32 = 24;
+pub const INTERNED_I16: u32 = 25;
+pub const INTERNED_U16: u32 = 26;
+pub const INTERNED_F16: u32 = 27;
+pub const INTERNED_I32: u32 = 28;
+pub const INTERNED_U32: u32 = 29;
+pub const INTERNED_F32: u32 = 30;
+pub const INTERNED_I64: u32 = 31;
+pub const INTERNED_U64: u32 = 32;
+pub const INTERNED_F64: u32 = 33;
+pub const INTERNED_I128: u32 = 34;
+pub const INTERNED_U128: u32 = 35;
+pub const INTERNED_F128: u32 = 36;
+pub const INTERNED_SIZED: u32 = 37;
+pub const INTERNED_UNSIZED: u32 = 38;
+pub const INTERNED_BOOL: u32 = 39;
+pub const INTERNED_NIL: u32 = 40;
+pub const INTERNED_CHAR: u32 = 41;
+pub const INTERNED_STR: u32 = 42;
+pub const INTERNED_BIGINT: u32 = 43;
+pub const INTERNED_BIGFLOAT: u32 = 44;
+pub const INTERNED_LIST: u32 = 45;
+pub const INTERNED_SET: u32 = 46;
+pub const INTERNED_MAP: u32 = 47;
+pub const INTERNED_TUPLE: u32 = 48;
 
 // MAKE THE MACRO PLEASE
 // What macro. What is a macro? What is hygiene?
@@ -19,20 +68,150 @@ pub struct Intern {
     pos: usize,
 }
 
+pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_TUPLE + 1) as usize;
+
 impl Intern {
+    /// Creates interner that pre-loads itself with all defined interned string literals.
     pub fn init() -> Intern {
         let mut interner = Intern {
-            id_map: HashMap::with_capacity(keywords::KEYWORDS_ARRAY.len()),
-            stored_strs: Vec::with_capacity(keywords::KEYWORDS_ARRAY.len()),
+            id_map: HashMap::with_capacity(INTERNER_PRELOAD_SIZE),
+            stored_strs: Vec::with_capacity(INTERNER_PRELOAD_SIZE),
             path_map: HashMap::new(),
             stored_paths: Vec::new(),
-            pos: keywords::KEYWORDS_ARRAY.len(),
+            pos: 0,
         };
 
-        for (id, keyword) in keywords::KEYWORDS_ARRAY.iter().enumerate() {
-            interner.id_map.insert(keyword.to_string(), id as u32);
-            interner.stored_strs.push(keyword.to_string());
-        }
+        // Pre-loading every language special string literals which includes keywords and types.
+        interner.id_map.insert("self".to_string(), INTERNED_SELF);
+        interner.stored_strs.push("self".to_string());
+        interner
+            .id_map
+            .insert("struct".to_string(), INTERNED_STRUCT);
+        interner.stored_strs.push("struct".to_string());
+        interner.id_map.insert("enum".to_string(), INTERNED_STRUCT);
+        interner.stored_strs.push("enum".to_string());
+        interner
+            .id_map
+            .insert("import".to_string(), INTERNED_IMPORT);
+        interner.stored_strs.push("import".to_string());
+        interner
+            .id_map
+            .insert("export".to_string(), INTERNED_EXPORT);
+        interner.stored_strs.push("export".to_string());
+        interner.id_map.insert("bind".to_string(), INTERNED_BIND);
+        interner.stored_strs.push("bind".to_string());
+        interner.id_map.insert("alias".to_string(), INTERNED_ALIAS);
+        interner.stored_strs.push("alias".to_string());
+        interner.id_map.insert("let".to_string(), INTERNED_LET);
+        interner.stored_strs.push("let".to_string());
+        interner
+            .id_map
+            .insert("change".to_string(), INTERNED_CHANGE);
+        interner.stored_strs.push("change".to_string());
+        interner.id_map.insert("as".to_string(), INTERNED_AS);
+        interner.stored_strs.push("as".to_string());
+        interner.id_map.insert("var".to_string(), INTERNED_VAR);
+        interner.stored_strs.push("var".to_string());
+        interner.id_map.insert("nest".to_string(), INTERNED_NEST);
+        interner.stored_strs.push("nest".to_string());
+        interner
+            .id_map
+            .insert("complex".to_string(), INTERNED_COMPLEX);
+        interner.stored_strs.push("complex".to_string());
+        interner
+            .id_map
+            .insert("override".to_string(), INTERNED_OVERRIDE);
+        interner.stored_strs.push("override".to_string());
+        interner.id_map.insert("true".to_string(), INTERNED_TRUE);
+        interner.stored_strs.push("true".to_string());
+        interner.id_map.insert("false".to_string(), INTERNED_FALSE);
+        interner.stored_strs.push("false".to_string());
+        interner
+            .id_map
+            .insert("IsEmpty".to_string(), INTERNED_IS_EMPTY);
+        interner.stored_strs.push("IsEmpty".to_string());
+        interner
+            .id_map
+            .insert("IsWhitespace".to_string(), INTERNED_IS_WHITESPACE);
+        interner.stored_strs.push("IsWhitespace".to_string());
+        interner.id_map.insert("Range".to_string(), INTERNED_RANGE);
+        interner.stored_strs.push("Range".to_string());
+        interner
+            .id_map
+            .insert("StartsW".to_string(), INTERNED_STARTSW);
+        interner.stored_strs.push("StartsW".to_string());
+        interner.id_map.insert("EndsW".to_string(), INTERNED_ENDSW);
+        interner.stored_strs.push("EndsW".to_string());
+        interner
+            .id_map
+            .insert("Contains".to_string(), INTERNED_CONTAINS);
+        interner.stored_strs.push("Contains".to_string());
+        interner
+            .id_map
+            .insert("Equals".to_string(), INTERNED_EQUALS);
+        interner.stored_strs.push("Equals".to_string());
+        interner.id_map.insert("i8".to_string(), INTERNED_I8);
+        interner.stored_strs.push("i8".to_string());
+        interner.id_map.insert("u8".to_string(), INTERNED_U8);
+        interner.stored_strs.push("u8".to_string());
+        interner.id_map.insert("i16".to_string(), INTERNED_I16);
+        interner.stored_strs.push("i16".to_string());
+        interner.id_map.insert("u16".to_string(), INTERNED_U16);
+        interner.stored_strs.push("u16".to_string());
+
+        interner.id_map.insert("f16".to_string(), INTERNED_F16);
+        interner.stored_strs.push("f16".to_string());
+
+        interner.id_map.insert("i32".to_string(), INTERNED_I32);
+        interner.stored_strs.push("i32".to_string());
+        interner.id_map.insert("u32".to_string(), INTERNED_U32);
+        interner.stored_strs.push("u32".to_string());
+        interner.id_map.insert("f32".to_string(), INTERNED_F32);
+        interner.stored_strs.push("f32".to_string());
+        interner.id_map.insert("i64".to_string(), INTERNED_I64);
+        interner.stored_strs.push("i64".to_string());
+        interner.id_map.insert("u64".to_string(), INTERNED_U64);
+        interner.stored_strs.push("u64".to_string());
+        interner.id_map.insert("f64".to_string(), INTERNED_F64);
+        interner.stored_strs.push("f64".to_string());
+        interner.id_map.insert("i128".to_string(), INTERNED_I128);
+        interner.stored_strs.push("i128".to_string());
+        interner.id_map.insert("u128".to_string(), INTERNED_U128);
+        interner.stored_strs.push("u128".to_string());
+        interner.id_map.insert("f128".to_string(), INTERNED_F128);
+        interner.stored_strs.push("f128".to_string());
+        interner.id_map.insert("sized".to_string(), INTERNED_SIZED);
+        interner.stored_strs.push("sized".to_string());
+        interner
+            .id_map
+            .insert("unsized".to_string(), INTERNED_UNSIZED);
+        interner.stored_strs.push("unsized".to_string());
+        interner.id_map.insert("bool".to_string(), INTERNED_BOOL);
+        interner.stored_strs.push("bool".to_string());
+        interner.id_map.insert("nil".to_string(), INTERNED_NIL);
+        interner.stored_strs.push("nil".to_string());
+        interner.id_map.insert("char".to_string(), INTERNED_CHAR);
+        interner.stored_strs.push("char".to_string());
+        interner.id_map.insert("str".to_string(), INTERNED_STR);
+        interner.stored_strs.push("str".to_string());
+        interner
+            .id_map
+            .insert("BigInt".to_string(), INTERNED_BIGINT);
+        interner.stored_strs.push("BigInt".to_string());
+        interner
+            .id_map
+            .insert("BigFloat".to_string(), INTERNED_BIGFLOAT);
+        interner.stored_strs.push("BigFloat".to_string());
+        interner.id_map.insert("List".to_string(), INTERNED_LIST);
+        interner.stored_strs.push("List".to_string());
+        interner.id_map.insert("Set".to_string(), INTERNED_SET);
+        interner.stored_strs.push("Set".to_string());
+        interner.id_map.insert("Map".to_string(), INTERNED_MAP);
+        interner.stored_strs.push("Map".to_string());
+        interner.id_map.insert("Tuple".to_string(), INTERNED_TUPLE);
+        interner.stored_strs.push("Tuple".to_string());
+
+        interner.pos = interner.stored_strs.len();
 
         interner
     }
