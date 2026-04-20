@@ -7,6 +7,7 @@ use crate::{
 };
 
 //TODO: Change this majorly. Make many mistakes. Hallucinate.
+#[derive(Debug)]
 pub(super) enum SemanticError {
     /// msg, spans
     General(String, Vec<Span>),
@@ -34,6 +35,7 @@ pub(super) enum SemanticError {
     Math(MathError),
 }
 
+#[derive(Debug)]
 pub(super) enum MathError {
     /// Lhs, rhs, Op, spans
     BinaryOpMismatch(Formatted, Formatted, Formatted, Vec<Span>),

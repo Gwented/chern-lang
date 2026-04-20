@@ -81,7 +81,7 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
     // This is not a value resolver
     let mut val_ctx = ValueContext::new();
 
-    // Not my best work
+    todo!("Not at constraints");
     for i in 0..script_compiler.mods.len() {
         let mod_id = ModuleId::new(i);
         match ConstraintResolver::new(

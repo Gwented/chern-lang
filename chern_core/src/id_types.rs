@@ -88,11 +88,11 @@ impl ExprId {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct ValueId {
-    pub id: usize,
+    pub id: u32,
 }
 
 impl ValueId {
-    pub fn new(id: usize) -> ValueId {
+    pub fn new(id: u32) -> ValueId {
         ValueId { id }
     }
 }

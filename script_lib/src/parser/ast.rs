@@ -123,6 +123,7 @@ pub(crate) enum Expr {
     Float(u32, Notation),
     Str(InternedId),
     Char(char),
+    /// Caller, Args
     Call(Box<SpannedExpr>, Vec<SpannedExpr>),
     MemberAccess(AbstractMemberAccess),
     Unary(Unary),
@@ -538,11 +539,8 @@ pub(crate) struct Unary {
 }
 
 impl Unary {
-    pub(crate) fn new(op: UnaryOp, expr: Box<SpannedExpr>) -> Unary {
-        Unary {
-            op,
-            spanned_expr: expr,
-        }
+    pub(crate) fn new(op: UnaryOp, spanned_expr: Box<SpannedExpr>) -> Unary {
+        Unary { op, spanned_expr }
     }
 }
 

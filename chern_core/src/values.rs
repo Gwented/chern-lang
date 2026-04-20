@@ -1,9 +1,27 @@
 use common::fmter::{Formattable, Formatted};
 
-use crate::id_types::{InternedId, ValueId};
+use crate::id_types::{ExprId, InternedId, TypeId, ValueId};
 
 // The value system of script would be simple but the serial does need this too so maybe re-use
 // it?
+
+#[derive(Debug)]
+pub struct ValueInfo {
+    pub type_id: TypeId,
+    pub expr_id: ExprId,
+    pub const_val: Option<Value>,
+}
+
+impl ValueInfo {
+    pub fn new(type_id: TypeId, expr_id: ExprId, const_val: Option<Value>) -> ValueInfo {
+        ValueInfo {
+            type_id,
+            expr_id,
+            const_val,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum Value {
     // For > i128

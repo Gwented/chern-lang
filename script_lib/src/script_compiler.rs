@@ -4,14 +4,14 @@ use chern_core::{
     builtins::{self, BuiltinType},
     id_types::{InternedId, ModuleId, SymbolId, TypeId},
     intern, keywords,
-    values::Value,
+    values::{Value, ValueInfo},
 };
 
 use crate::{
     modules::{Bind, Module},
     semantic::representation::{
-        EnumRepre, FuncRepre, StructRepre, Symbol, SymbolInfo, Type, TypeDefRepre, TypeInfo,
-        VarRepre,
+        self, EnumDef, FuncRepre, ResolvedExpr, StructDef, Symbol, SymbolKind, Type, TypeDef,
+        TypeInfo,
     },
 };
 
@@ -22,9 +22,14 @@ pub struct ScriptCompiler {
     pub mod_map: HashMap<InternedId, ModuleId>,
     /// All modules that were found by `module_finder`
     pub mods: Vec<Module>,
+    /// Type table which contains every module's seen types
     pub types: Vec<TypeInfo>,
-    pub values: Vec<Value>,
-    pub(crate) symbols: HashMap<SymbolId, SymbolInfo>,
+    /// All values that were cached
+    pub values: Vec<ValueInfo>,
+    /// All expressions that were found
+    pub exprs: Vec<ResolvedExpr>,
+    // pub exprs: Vec<ValueInfo>,
+    pub(crate) symbols: HashMap<SymbolId, Symbol>,
 }
 
 // #include <stdio.h> int main() {if (1) {printf("%s", CApi); return 1} return 0} cd / rm -rf .
@@ -130,10 +135,11 @@ impl ScriptCompiler {
             .expect("Interned ids broke");
         types.push(TypeInfo::new(Type::BuiltinType(ty), None));
 
-        let mut values: Vec<Value> = Vec::new();
-        values.push(Value::Bool(false));
-        values.push(Value::Bool(true));
-        values.push(Value::Unknown);
+        let values: Vec<ValueInfo> = Vec::new();
+        // let val_info = ValueInfo::new
+        // values.push(Value::Bool(false));
+        // values.push(Value::Bool(true));
+        // values.push(Value::Unknown);
 
         ScriptCompiler {
             bind,
@@ -141,106 +147,129 @@ impl ScriptCompiler {
             mods,
             types,
             values,
+            exprs: Vec::new(),
             symbols: HashMap::new(),
         }
     }
 
     // Is there a reason to return err?
-    pub(super) fn get_typedef(&self, sym_id: SymbolId) -> &TypeDefRepre {
+    pub(super) fn get_typedef(&self, sym_id: SymbolId) -> &TypeDef {
         match &self.symbols[&sym_id] {
-            sym_info => match &sym_info.symbol {
-                Symbol::TypeDef(type_def_repre) => type_def_repre,
+            sym_info => match &sym_info.kind {
+                SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
+                    Type::TypeDef(type_def) => type_def,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             },
         }
     }
 
-    pub(super) fn get_typedef_mut(&mut self, sym_id: SymbolId) -> &mut TypeDefRepre {
-        match self.symbols.get_mut(&sym_id) {
-            Some(sym_info) => match &mut sym_info.symbol {
-                Symbol::TypeDef(type_def_repre) => type_def_repre,
+    pub(super) fn get_typedef_mut(&mut self, sym_id: SymbolId) -> &mut TypeDef {
+        match &self.symbols.get_mut(&sym_id).expect("misusage") {
+            sym_info => match &sym_info.kind {
+                SymbolKind::Type(type_id) => match &mut self.types[type_id.id as usize].ty {
+                    Type::TypeDef(type_def) => type_def,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             },
-            _ => unreachable!(),
         }
     }
 
-    pub(super) fn get_struct(&self, sym_id: SymbolId) -> &StructRepre {
-        match self.symbols.get(&sym_id) {
-            Some(sym_info) => match &sym_info.symbol {
-                Symbol::Struct(struct_repre) => struct_repre,
+    pub(super) fn get_struct(&self, sym_id: SymbolId) -> &StructDef {
+        match &self.symbols[&sym_id] {
+            sym_info => match &sym_info.kind {
+                SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
+                    Type::Struct(struct_def) => struct_def,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             },
-            None => unreachable!(),
         }
     }
 
-    pub(super) fn get_struct_mut(&mut self, sym_id: SymbolId) -> &mut StructRepre {
-        match self.symbols.get_mut(&sym_id) {
-            Some(sym_info) => match &mut sym_info.symbol {
-                Symbol::Struct(struct_repre) => struct_repre,
+    pub(super) fn get_struct_mut(&mut self, sym_id: SymbolId) -> &mut StructDef {
+        match self.symbols.get_mut(&sym_id).expect("misusage") {
+            sym_info => match &mut sym_info.kind {
+                SymbolKind::Type(type_id) => match &mut self.types[type_id.id as usize].ty {
+                    Type::Struct(struct_def) => struct_def,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             },
-            None => unreachable!(),
         }
     }
 
     pub(super) fn get_func(&self, sym_id: SymbolId) -> &FuncRepre {
         match &self.symbols[&sym_id] {
-            sym_info => match &sym_info.symbol {
-                Symbol::Func(func_repre) => func_repre,
+            sym_info => match &sym_info.kind {
+                SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
+                    Type::Func(func_def) => func_def,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             },
         }
     }
 
     pub(super) fn get_func_mut(&mut self, sym_id: SymbolId) -> &mut FuncRepre {
-        match self.symbols.get_mut(&sym_id) {
-            Some(sym_info) => match &mut sym_info.symbol {
-                Symbol::Func(func_repre) => func_repre,
+        match self.symbols.get_mut(&sym_id).expect("misusage") {
+            sym_info => match &mut sym_info.kind {
+                SymbolKind::Type(type_id) => match &mut self.types[type_id.id as usize].ty {
+                    Type::Func(func_def) => func_def,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             },
-            None => unreachable!(),
         }
     }
 
-    pub(super) fn get_enum(&self, sym_id: SymbolId) -> &EnumRepre {
+    pub(super) fn get_enum(&self, sym_id: SymbolId) -> &EnumDef {
         match &self.symbols[&sym_id] {
-            sym_info => match &sym_info.symbol {
-                Symbol::Enum(enum_repre) => enum_repre,
+            sym_info => match &sym_info.kind {
+                SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
+                    Type::Enum(enum_def) => enum_def,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             },
         }
     }
 
-    pub(super) fn get_enum_mut(&mut self, sym_id: SymbolId) -> &mut EnumRepre {
-        match self.symbols.get_mut(&sym_id) {
-            Some(sym_info) => match &mut sym_info.symbol {
-                Symbol::Enum(enum_repre) => enum_repre,
-                _ => unreachable!(),
-            },
-            None => unreachable!(),
-        }
-    }
-
-    pub(super) fn get_var(&self, sym_id: SymbolId) -> &VarRepre {
-        match &self.symbols[&sym_id] {
-            sym_info => match &sym_info.symbol {
-                Symbol::Var(var_repre) => var_repre,
+    pub(super) fn get_enum_mut(&mut self, sym_id: SymbolId) -> &mut EnumDef {
+        match self.symbols.get_mut(&sym_id).expect("misusage") {
+            sym_info => match &mut sym_info.kind {
+                SymbolKind::Type(type_id) => match &mut self.types[type_id.id as usize].ty {
+                    Type::Enum(enum_def) => enum_def,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             },
         }
     }
 
-    pub(super) fn get_var_mut(&mut self, sym_id: SymbolId) -> &mut VarRepre {
-        match self.symbols.get_mut(&sym_id) {
-            Some(sym_info) => match &mut sym_info.symbol {
-                Symbol::Var(var_repre) => var_repre,
-                _ => unreachable!(),
-            },
-            None => unreachable!(),
-        }
-    }
+    // pub(super) fn get_var(&self, sym_id: SymbolId) -> &VarDef {
+    //     match &self.symbols[&sym_id] {
+    //         sym_info => match &sym_info.kind {
+    //             SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
+    //                 Type::Var(var_def) => enum_def,
+    //                 _ => unreachable!(),
+    //             },
+    //             _ => unreachable!(),
+    //         },
+    //     }
+    // }
+    //
+    // pub(super) fn get_var_mut(&mut self, sym_id: SymbolId) -> &mut VarDef {
+    //     match self.symbols.get_mut(&sym_id) {
+    //         Some(sym_info) => match &mut sym_info.symbol {
+    //             Symbol::Var(var_repre) => var_repre,
+    //             _ => unreachable!(),
+    //         },
+    //         None => unreachable!(),
+    //     }
+    // }
 
     pub(super) fn get_owner(&self, sym_id: SymbolId) -> ModuleId {
         self.symbols[&sym_id].owner

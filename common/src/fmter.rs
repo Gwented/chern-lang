@@ -11,6 +11,7 @@ pub trait Formattable {
 }
 
 //TEST: May change in form but a general print format is needed
+#[derive(Debug)]
 pub enum Formatted {
     I8,
     U8,

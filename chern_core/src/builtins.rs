@@ -1,12 +1,8 @@
-use std::{fmt::Display, ops::Range};
+use std::fmt::Display;
 
 use common::fmter::{Formattable, Formatted};
 
-use crate::{
-    id_types::TypeId,
-    intern,
-    keywords::{self},
-};
+use crate::{id_types::TypeId, intern};
 
 // Oi, hugie..
 pub static BUILTIN_TYPE_ARRAY: [&str; 26] = [
@@ -71,7 +67,7 @@ impl BuiltinType {
             intern::INTERNED_BOOL => Some(BuiltinType::Bool),
             intern::INTERNED_NIL => Some(BuiltinType::Nil),
             intern::INTERNED_CHAR => Some(BuiltinType::Char),
-            intern::INTERNED_STR => Some(BuiltinType::BigFloat),
+            intern::INTERNED_STR => Some(BuiltinType::Str),
             intern::INTERNED_BIGINT => Some(BuiltinType::BigInt),
             intern::INTERNED_BIGFLOAT => Some(BuiltinType::BigFloat),
             _ => None,
@@ -165,7 +161,7 @@ impl BuiltinTypeKind {
             intern::INTERNED_BOOL => Some(BuiltinTypeKind::Bool),
             intern::INTERNED_NIL => Some(BuiltinTypeKind::Nil),
             intern::INTERNED_CHAR => Some(BuiltinTypeKind::Char),
-            intern::INTERNED_STR => Some(BuiltinTypeKind::BigFloat),
+            intern::INTERNED_STR => Some(BuiltinTypeKind::Str),
             intern::INTERNED_BIGINT => Some(BuiltinTypeKind::BigInt),
             intern::INTERNED_BIGFLOAT => Some(BuiltinTypeKind::BigFloat),
             intern::INTERNED_LIST => Some(BuiltinTypeKind::List),

@@ -8,7 +8,7 @@
 
 @def
 //import "../chrn_tests/defs.chrn"
-import "../chrn_tests/CHERNGENTS.chrn" as seller
+// import "../chrn_tests/CHERNGENTS.chrn" as seller
 
 let CONSTANT = 4
 

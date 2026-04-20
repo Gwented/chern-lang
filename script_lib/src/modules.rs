@@ -105,7 +105,7 @@ impl Module {
 
     /// Get's the `ScopeId` assuming that the scope already exists. Panics otherwise.
     ///
-    /// This exists because if the current module has something like a typdef in the semantic stage,
+    /// This exists because if the current module has something like a typedef in the semantic stage,
     /// that means the parser itself already checked if it was legal grammar-wise.
     pub(crate) fn extract_scope_id(&self, scope_type: ScopeType) -> ScopeId {
         self.find_scope(scope_type)

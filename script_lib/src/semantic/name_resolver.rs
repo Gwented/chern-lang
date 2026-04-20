@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use chern_core::{
-    id_types::{AstId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
+    id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
     intern::Intern,
+    values::ValueInfo,
 };
 use common::{chern_settings::ChernSettings, reporter::diagnostic::Diagnostic};
 
@@ -10,11 +11,10 @@ use crate::{
     parser::ast::{
         AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Item,
     },
-    script_compiler::ScriptCompiler,
+    script_compiler::{self, ScriptCompiler},
     semantic::{
         representation::{
-            AliasRepre, EnumRepre, StructRepre, Symbol, SymbolInfo, Type, TypeDefRepre, TypeInfo,
-            VarRepre,
+            AliasDef, EnumDef, StructDef, Symbol, SymbolKind, Type, TypeDef, TypeInfo,
         },
         semantic_reporter::SemanticReporter,
     },
@@ -95,13 +95,23 @@ impl NamespaceResolver<'_> {
 
         // Promising a type will exist in the given index
         let type_id = TypeId::new(self.compiler.types.len() as u32);
-        let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
+
+        //WARN: Alan wake
+        let type_def_repre = TypeDef::new(sym_id, type_id);
+
+        let symbol = Symbol::new(
+            abs_typedef.name_id,
+            sym_id,
+            ast_id,
+            self.current_mod,
+            true,
+            SymbolKind::Type(type_id),
+        );
+
+        self.compiler.symbols.insert(sym_id, symbol);
+
+        let ty_info = TypeInfo::new(Type::TypeDef(type_def_repre), Some(self.current_mod));
         self.compiler.types.push(ty_info);
-
-        let type_def_repre = TypeDefRepre::new(abs_typedef.name_id, type_id, sym_id, ast_id);
-
-        let sym_info = SymbolInfo::new(Symbol::TypeDef(type_def_repre), true, self.current_mod);
-        self.compiler.symbols.insert(sym_id, sym_info);
     }
 
     fn register_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) {
@@ -116,18 +126,20 @@ impl NamespaceResolver<'_> {
 
         let type_id = TypeId::new(self.compiler.types.len() as u32);
 
-        let struct_repre =
-            StructRepre::new(abs_struct.name_id, sym_id, ast_id, type_id, Vec::new());
+        let struct_def = StructDef::new(sym_id, Vec::new());
 
-        let sym_info = SymbolInfo::new(
-            Symbol::Struct(struct_repre),
-            abs_struct.is_priv,
+        let symbol = Symbol::new(
+            abs_struct.name_id,
+            sym_id,
+            ast_id,
             self.current_mod,
+            abs_struct.is_priv,
+            SymbolKind::Type(type_id),
         );
 
-        self.compiler.symbols.insert(sym_id, sym_info);
+        self.compiler.symbols.insert(sym_id, symbol);
 
-        let ty_info = TypeInfo::new(Type::Struct(sym_id), Some(self.current_mod));
+        let ty_info = TypeInfo::new(Type::Struct(struct_def), Some(self.current_mod));
         self.compiler.types.push(ty_info);
     }
 
@@ -143,13 +155,20 @@ impl NamespaceResolver<'_> {
 
         table.sym_ids.insert(ast_id, sym_id);
 
-        let enum_repre = EnumRepre::new(abs_enum.name_id, sym_id, ast_id, type_id, Vec::new());
+        let enum_def = EnumDef::new(sym_id, Vec::new());
 
-        let sym_info =
-            SymbolInfo::new(Symbol::Enum(enum_repre), abs_enum.is_priv, self.current_mod);
-        self.compiler.symbols.insert(sym_id, sym_info);
+        let symbol = Symbol::new(
+            abs_enum.name_id,
+            sym_id,
+            ast_id,
+            self.current_mod,
+            abs_enum.is_priv,
+            SymbolKind::Type(type_id),
+        );
 
-        let ty_info = TypeInfo::new(Type::Enum(sym_id), Some(self.current_mod));
+        self.compiler.symbols.insert(sym_id, symbol);
+
+        let ty_info = TypeInfo::new(Type::Enum(enum_def), Some(self.current_mod));
         self.compiler.types.push(ty_info);
     }
 
@@ -164,28 +183,21 @@ impl NamespaceResolver<'_> {
         table.sym_ids.insert(ast_id, sym_id);
 
         let type_id = TypeId::new(self.compiler.types.len() as u32);
-        let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
-        self.compiler.types.push(ty_info);
 
-        let alias_repre = AliasRepre::new(
+        let alias_def = AliasDef::new(sym_id, Vec::new(), Vec::new(), Vec::new());
+
+        let symbol = Symbol::new(
             abs_alias.name_id,
             sym_id,
             ast_id,
-            type_id,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        );
-
-        let sym_info = SymbolInfo::new(
-            Symbol::Alias(alias_repre),
-            abs_alias.is_priv,
             self.current_mod,
+            abs_alias.is_priv,
+            SymbolKind::Type(type_id),
         );
 
-        self.compiler.symbols.insert(sym_id, sym_info);
+        self.compiler.symbols.insert(sym_id, symbol);
 
-        let ty_info = TypeInfo::new(Type::Alias(sym_id), Some(self.current_mod));
+        let ty_info = TypeInfo::new(Type::Alias(alias_def), Some(self.current_mod));
         self.compiler.types.push(ty_info);
     }
 
@@ -203,21 +215,25 @@ impl NamespaceResolver<'_> {
 
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
         table.sym_ids.insert(ast_id, sym_id);
-
-        let type_id = TypeId::new(self.compiler.types.len() as u32);
+        // let type_id = TypeId::new(self.compiler.types.len() as u32);
         // This is pushed instead of just set just in case index level mutation as opposed to a new
         // id entirely would like to be used.
-        let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
-        self.compiler.types.push(ty_info);
+        // let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
+        // self.compiler.types.push(ty_info);
 
-        let const_repre = VarRepre::new(abs_var.name_id, sym_id, type_id, ast_id, None);
+        //TODO: PLACEHOLDER USED EXPR ID DOESNT EXIST YET
 
-        let sym_info = SymbolInfo::new(Symbol::Var(const_repre), abs_var.is_priv, self.current_mod);
+        // No information that this is a variable other than the fact that AstId -> SymbolId
+        let symbol = Symbol::new(
+            abs_var.name_id,
+            sym_id,
+            ast_id,
+            self.current_mod,
+            true,
+            SymbolKind::Unknown,
+        );
 
-        self.compiler.symbols.insert(sym_id, sym_info);
-
-        let ty_info = TypeInfo::new(Type::Var(sym_id), Some(self.current_mod));
-        self.compiler.types.push(ty_info);
+        self.compiler.symbols.insert(sym_id, symbol);
     }
 
     // Cannot check for this since the type is not known

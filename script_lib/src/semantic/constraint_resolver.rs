@@ -2,12 +2,12 @@ pub mod value_context;
 use std::collections::VecDeque;
 
 use chern_core::{
-    builtins::BuiltinType,
-    id_types::{AstId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
+    builtins::{BuiltinType, BuiltinTypeKind},
+    id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
     inner_args::{InnerArgs, SpannedInnerArgs},
     intern::Intern,
     keywords::Keyword,
-    values::{Value, ValueResult},
+    values::{Value, ValueInfo, ValueResult},
 };
 use common::{
     chern_settings::ChernSettings,
@@ -30,7 +30,8 @@ use crate::{
         error::{MathError, SemanticError},
         evaluator,
         representation::{
-            FuncArgsRepre, FuncKind, FuncRepre, PossibleMember, Symbol, SymbolInfo, Type,
+            ExprHir, FuncArgsRepre, FuncKind, FuncRepre, PossibleMember, ResolvedExpr, Symbol,
+            SymbolKind, Type,
         },
         scopes::ScopeType,
         semantic_reporter::SemanticReporter,
@@ -48,7 +49,6 @@ pub struct ConstraintResolver<'a> {
     reporter: SemanticReporter<'a>,
 }
 
-// Maybe just give module control flow to the resolver
 impl<'a> ConstraintResolver<'a> {
     pub fn new(
         settings: &'a ChernSettings,
@@ -84,7 +84,7 @@ impl<'a> ConstraintResolver<'a> {
                 }
                 Item::Alias(abs_alias) => todo!(),
                 Item::VarDecl(abs_var) => {
-                    _ = self.resolve_let(abs_var, ast_id);
+                    _ = self.resolve_var(abs_var, ast_id);
                 }
             }
         }
@@ -92,19 +92,19 @@ impl<'a> ConstraintResolver<'a> {
         //NOTE: Subject to change
 
         // Starts jobs upon resolving everything from all modules
-        if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 1].mod_id {
-            match self.resolve_leftover_jobs() {
-                Ok(_) => (),
-                Err(_) => {
-                    let mut jobs: VecDeque<Job> = VecDeque::new();
-                    jobs.append(&mut self.val_ctx.jobs);
-                    for job in jobs {
-                        self.report_job(job);
-                    }
-                }
-            };
-        }
-        dbg!(&self.compiler.values);
+        // if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 1].mod_id {
+        //     match self.resolve_leftover_jobs() {
+        //         Ok(_) => (),
+        //         Err(_) => {
+        //             let mut jobs: VecDeque<Job> = VecDeque::new();
+        //             jobs.append(&mut self.val_ctx.jobs);
+        //             for job in jobs {
+        //                 self.report_job(job);
+        //             }
+        //         }
+        //     };
+        // }
+        // dbg!(&self.compiler.values);
 
         if !self.reporter.err_vec.is_empty() {
             let mut diags = Vec::new();
@@ -115,87 +115,83 @@ impl<'a> ConstraintResolver<'a> {
 
         Ok(())
     }
+    //
+    // fn report_job(&mut self, job: Job) {
+    //     let symbol = &self.compiler.symbols[&job.sym_id];
+    //     match &symbol.sym_kind {
+    //         SymbolKind::Val(val_id) => {
+    //             let val_info = &self.compiler.values[val_id.id as usize];
+    //             let msg = format!("Could not evaluate variable");
+    //             self.reporter.report_spanned(
+    //                 &msg,
+    //                 None,
+    //                 &[job.span],
+    //                 &self.compiler.mods[self.current_mod.id],
+    //             );
+    //         }
+    //         SymbolKind::Type(type_id) => todo!(),
+    //         SymbolKind::Unknown => todo!(),
+    //     }
+    // }
+    //
+    // fn resolve_leftover_jobs(&mut self) -> Result<(), ()> {
+    //     // Tracking if a full cycle was reached given the amount of jobs which should be
+    //     // deterministic (Assuming it's right)
+    //     let mut full_cycle = self.val_ctx.jobs.len();
+    //     let mut cycle = 0;
+    //
+    //     while let Some(job) = self.val_ctx.jobs.pop_front() {
+    //         self.current_mod = job.mod_id;
+    //         let val_res = match &self.ast_info[job.mod_id.id].items[job.ast_id.id as usize] {
+    //             Item::VarDecl(abs_var) => {
+    //                 match self.resolve_expr(&abs_var.spanned_expr, job.scope_type) {
+    //                     Ok(res) => res,
+    //                     Err(sem_err) => {
+    //                         self.reporter
+    //                             .report_semantic(sem_err, &self.compiler.mods[job.mod_id.id]);
+    //
+    //                         return Err(());
+    //                     }
+    //                 }
+    //             }
+    //             // Item::Var(abs_typedef) => resolve_typedef(abs_typedef, job.ast_id),
+    //             // Item::Struct(abs_struct) => self.resolve_struct(abs_struct, job.ast_id),
+    //             // Item::Enum(abs_enum) => self.resolve_enum(abs_enum, job.ast_id),
+    //             // Item::Alias(abs_alias) => todo!(),
+    //             _ => todo!(),
+    //         };
+    //
+    //         match val_res {
+    //             ValueResult::Resolved(val_id) => {
+    //                 // I can't
+    //                 cycle = 0;
+    //                 full_cycle -= 1;
+    //                 let symbol = self.compiler.symbols.get_mut(&job.sym_id).expect("Exists");
+    //
+    //                 match &mut symbol.sym_kind {
+    //                     SymbolKind::Val(val_id) => {
+    //                         let val_info = &self.compiler.values[val_id.id as usize];
+    //                         todo!();
+    //                     }
+    //                     SymbolKind::Type(type_id) => todo!(),
+    //                     SymbolKind::Unknown => todo!(),
+    //                 }
+    //             }
+    //             ValueResult::Unresolved => {
+    //                 cycle += 1;
+    //                 self.val_ctx.jobs.push_back(job);
+    //
+    //                 if cycle > full_cycle {
+    //                     return Err(());
+    //                 }
+    //             }
+    //         }
+    //     }
+    //
+    //     Ok(())
+    // }
 
-    fn report_job(&mut self, job: Job) {
-        let sym_info = &self.compiler.symbols[&job.sym_id];
-        match &sym_info.symbol {
-            Symbol::Var(_) => {
-                let msg = format!("Could not evaluate");
-                self.reporter.report_spanned(
-                    &msg,
-                    None,
-                    &[job.span],
-                    &self.compiler.mods[self.current_mod.id],
-                );
-            }
-            Symbol::TypeDef(type_def_repre) => todo!(),
-            Symbol::Struct(struct_repre) => todo!(),
-            Symbol::Func(func_repre) => todo!(),
-            Symbol::Enum(enum_repre) => todo!(),
-            Symbol::Alias(alias_repre) => todo!(),
-        }
-    }
-
-    fn resolve_leftover_jobs(&mut self) -> Result<(), ()> {
-        // Tracking if a full cycle was reached given the amount of jobs which should be
-        // deterministic (Assuming it's right)
-        let mut full_cycle = self.val_ctx.jobs.len();
-        let mut cycle = 0;
-
-        while let Some(job) = self.val_ctx.jobs.pop_front() {
-            self.current_mod = job.mod_id;
-            let val_res = match &self.ast_info[job.mod_id.id].items[job.ast_id.id as usize] {
-                Item::VarDecl(abs_var) => {
-                    match self.resolve_expr(&abs_var.spanned_expr, job.scope_type) {
-                        Ok(res) => res,
-                        Err(sem_err) => {
-                            self.reporter
-                                .report_semantic(sem_err, &self.compiler.mods[job.mod_id.id]);
-
-                            return Err(());
-                        }
-                    }
-                }
-                // Item::Var(abs_typedef) => resolve_typedef(abs_typedef, job.ast_id),
-                // Item::Struct(abs_struct) => self.resolve_struct(abs_struct, job.ast_id),
-                // Item::Enum(abs_enum) => self.resolve_enum(abs_enum, job.ast_id),
-                // Item::Alias(abs_alias) => todo!(),
-                _ => todo!(),
-            };
-
-            match val_res {
-                ValueResult::Resolved(val_id) => {
-                    // I can't
-                    cycle = 0;
-                    full_cycle -= 1;
-                    let sym_info = self.compiler.symbols.get_mut(&job.sym_id).expect("Exists");
-
-                    match &mut sym_info.symbol {
-                        Symbol::Var(var_repre) => {
-                            var_repre.const_val = Some(val_id);
-                        }
-                        Symbol::TypeDef(type_def_repre) => todo!(),
-                        Symbol::Struct(struct_repre) => todo!(),
-                        Symbol::Func(func_repre) => todo!(),
-                        Symbol::Enum(enum_repre) => todo!(),
-                        Symbol::Alias(alias_repre) => todo!(),
-                    }
-                }
-                ValueResult::Unresolved => {
-                    cycle += 1;
-                    self.val_ctx.jobs.push_back(job);
-
-                    if cycle > full_cycle {
-                        return Err(());
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn resolve_let(&mut self, abs_var: &AbstractVar, ast_id: AstId) -> Result<(), ()> {
+    fn resolve_var(&mut self, abs_var: &AbstractVar, ast_id: AstId) -> Result<(), ()> {
         let module = &self.compiler.mods[self.current_mod.id];
         let scope_id = module.extract_scope_id(ScopeType::Neutral);
         let table = &module.get_scope(scope_id).table;
@@ -203,6 +199,7 @@ impl<'a> ConstraintResolver<'a> {
         let sym_id = table.sym_ids[&ast_id];
 
         //TEST:
+        todo!();
         let val_id = match self.resolve_expr(&abs_var.spanned_expr, ScopeType::Neutral) {
             Ok(v) => match v {
                 ValueResult::Resolved(v_inner) => v_inner,
@@ -228,11 +225,18 @@ impl<'a> ConstraintResolver<'a> {
             }
         };
 
-        // Setting const from an `Unknown` value to whatever was found
-        let var_repre = self.compiler.get_var_mut(sym_id);
-        var_repre.const_val = Some(val_id);
+        // Setting var from an `Unknown` value to whatever was found
+        let symbol = self.compiler.symbols.get_mut(&sym_id).expect("Must exist");
+        symbol.kind = SymbolKind::Val(val_id);
 
         Ok(())
+    }
+    fn resolve_expr(
+        &mut self,
+        spanned_expr: &SpannedExpr,
+        scope_type: ScopeType,
+    ) -> Result<ValueResult, SemanticError> {
+        todo!();
     }
 
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
@@ -242,7 +246,6 @@ impl<'a> ConstraintResolver<'a> {
         let table = &module.get_scope(scope_id).table;
 
         let sym_id = table.sym_ids[&ast_id];
-        let type_id = self.compiler.get_typedef(sym_id).type_id;
 
         let mut conds = Vec::new();
 
@@ -253,8 +256,7 @@ impl<'a> ConstraintResolver<'a> {
         // Second borrow
         let module = &self.compiler.mods[self.current_mod.id];
         let type_id = self.compiler.get_typedef(sym_id).type_id;
-        dbg!(type_id);
-        dbg!(&self.compiler.types);
+
         let ty = &self.compiler.types[type_id.id as usize].ty;
 
         // Checking if condition is valid for the given type
@@ -536,14 +538,7 @@ impl<'a> ConstraintResolver<'a> {
                     }
                 };
 
-                let func = FuncRepre::new(
-                    InternedId::new(name_id),
-                    type_id,
-                    spanned_expr.span.clone(),
-                    kind,
-                    constraints,
-                    func_args,
-                );
+                let func = FuncRepre::new(spanned_expr.span.clone(), kind, constraints, func_args);
 
                 // Needs the type to check all constraints. Must put this elsewhere
                 match self.check_func_constraints(&func) {
@@ -554,13 +549,20 @@ impl<'a> ConstraintResolver<'a> {
                     }
                 };
 
-                let func_kind = func.kind;
-
                 // Conditions are private by default
-                let sym_info = SymbolInfo::new(Symbol::Func(func), true, self.current_mod);
-                self.compiler.symbols.insert(sym_id, sym_info);
+                //WARN: Visibility is_priv by default
+                let symbol = Symbol::new(
+                    InternedId::new(name_id),
+                    sym_id,
+                    ast_id,
+                    self.current_mod,
+                    true,
+                    SymbolKind::Type(type_id),
+                );
+                self.compiler.symbols.insert(sym_id, symbol);
+                todo!("Functions not done");
 
-                Ok(Cond::Func(sym_id, func_kind))
+                Ok(Cond::Func(sym_id, todo!()))
             }
             Expr::Str(name_id) => {
                 let err_name = self.interner.search(name_id.id as usize);
@@ -618,11 +620,11 @@ impl<'a> ConstraintResolver<'a> {
         visited: &mut Vec<TypeId>,
     ) -> Result<(), SemanticError> {
         match &self.compiler.types[type_id.id as usize].ty {
-            Type::Struct(sym_id) => {
-                let structure = self.compiler.get_struct(*sym_id);
-                visited.push(structure.type_id);
+            Type::Struct(struct_def) => {
+                let symbol = &self.compiler.symbols[&struct_def.sym_id];
+                visited.push(type_id);
 
-                for field in &structure.fields {
+                for field in &struct_def.fields {
                     // Checking if one of it's variants are self referencing, or if the type from
                     // the last call stack, possibly a tuple, is self referencing the current
                     // struct.
@@ -631,7 +633,7 @@ impl<'a> ConstraintResolver<'a> {
                         //COPY
                         if !spanned_arg.arg.is_basic() {
                             let field_span = match &self.ast_info[self.current_mod.id].items
-                                [structure.ast_id.id as usize]
+                                [symbol.ast_id.id as usize]
                             {
                                 // Weird looking hack
                                 Item::Struct(abs_struct) => {
@@ -663,7 +665,7 @@ impl<'a> ConstraintResolver<'a> {
                     if let Err(SemanticError::UnsupportedArg(arg, kind, _)) = arg_res {
                         //COPY
                         let abs_struct =
-                            self.ast_info[self.current_mod.id].get_struct(structure.ast_id);
+                            self.ast_info[self.current_mod.id].get_struct(symbol.ast_id);
                         let field_span = abs_struct.fields[field.ast_id.id as usize]
                             .spanned_ty_expr
                             .span;
@@ -684,11 +686,11 @@ impl<'a> ConstraintResolver<'a> {
 
                 Ok(())
             }
-            Type::Enum(sym_id) => {
-                let enumeration = self.compiler.get_enum(*sym_id);
-                visited.push(enumeration.type_id);
+            Type::Enum(enum_def) => {
+                let symbol = &self.compiler.symbols[&enum_def.sym_id];
+                visited.push(type_id);
 
-                for variant in &enumeration.variants {
+                for variant in &enum_def.variants {
                     if let Some(ty) = variant.type_id {
                         visited.push(ty);
                         //FIXME:
@@ -697,10 +699,12 @@ impl<'a> ConstraintResolver<'a> {
                         // Checking if one of it's variants are self referencing, or if the type we
                         // just came from, possibly a tuple, is referring to itself from a
                         // different context.
-                        if enumeration.type_id.id == ty.id || enumeration.type_id == type_id {
+                        //WARN: Changed so could be broken. Removed "enum_def.type_id == type_id"
+                        if type_id.id == ty.id {
                             if !spanned_arg.arg.is_basic() {
+                                //FIX: Not field's span, just the symbol's.
                                 if let Item::Enum(abs_enum) = &self.ast_info[self.current_mod.id]
-                                    .items[enumeration.ast_id.id as usize]
+                                    .items[symbol.ast_id.id as usize]
                                 {
                                     // or field span
                                     let ast_span = abs_enum.variants[variant.ast_id.id as usize]
@@ -729,7 +733,7 @@ impl<'a> ConstraintResolver<'a> {
 
                         if let Err(SemanticError::UnsupportedArg(arg, fmted, _)) = arg_res {
                             let abs_enum =
-                                &self.ast_info[self.current_mod.id].get_enum(enumeration.ast_id);
+                                &self.ast_info[self.current_mod.id].get_enum(symbol.ast_id);
                             let variant_span = abs_enum.variants[variant.ast_id.id as usize]
                                 .ty_expr
                                 .as_ref()
@@ -783,7 +787,7 @@ impl<'a> ConstraintResolver<'a> {
                 }
             }
             Type::Tuple(tuple) => {
-                visited.push(tuple.type_id);
+                visited.push(type_id);
 
                 for element in &tuple.elements {
                     if visited.contains(&*element) {
@@ -807,7 +811,7 @@ impl<'a> ConstraintResolver<'a> {
             Type::Alias(_) | Type::Unknown => {
                 unreachable!("Parser and semantic cannot produce these variants. I think.")
             }
-            Type::Var(symbol_id) => todo!(),
+            Type::TypeDef(type_def) => todo!(),
         }
     }
 
@@ -817,197 +821,194 @@ impl<'a> ConstraintResolver<'a> {
         todo!();
     }
 
-    fn resolve_expr(
-        &mut self,
-        spanned_expr: &SpannedExpr,
-        scope_type: ScopeType,
-        // This assists for lazily evaluating expressions.
-    ) -> Result<ValueResult, SemanticError> {
-        match &spanned_expr.expr {
-            Expr::Var(name_id) => {
-                let module = &self.compiler.mods[self.current_mod.id];
-
-                if let Some(sym_id) = module.get_sym_id(*name_id, scope_type) {
-                    let symbol = &self.compiler.symbols[&sym_id].symbol;
-                    match symbol {
-                        Symbol::Var(var_repre) => {
-                            if let Some(val_id) = var_repre.const_val {
-                                return Ok(ValueResult::Resolved(val_id));
-                            }
-
-                            Ok(ValueResult::Unresolved)
-                        }
-                        // I don't think most of these are possible
-                        Symbol::Struct(struct_repre) => todo!(),
-                        Symbol::Func(func_repre) => todo!(),
-                        Symbol::Enum(enum_repre) => todo!(),
-                        Symbol::Alias(alias_repre) => todo!(),
-                        // Scoping disallows this entirely
-                        Symbol::TypeDef(type_def_repre) => unreachable!(),
-                    }
-                } else {
-                    // SemanticError needs centralization
-                    let name = self.interner.search(name_id.id as usize);
-                    let mod_name = self.interner.search(module.name_id.id as usize);
-                    let msg =
-                        format!("The variable `{name}` was not found in the module `{mod_name}`");
-
-                    Err(SemanticError::General(msg, vec![spanned_expr.span]))
-                }
-            }
-            Expr::Integer(id, _) => {
-                if let Ok(num) = self.interner.search(*id as usize).parse::<i128>() {
-                    let value_id = ValueId::new(self.compiler.values.len());
-                    self.compiler.values.push(Value::I128(num));
-
-                    Ok(ValueResult::Resolved(value_id))
-                } else {
-                    Err(SemanticError::NumericOverflow(
-                        *id,
-                        Formatted::Integer,
-                        vec![spanned_expr.span],
-                    ))
-                }
-            }
-            Expr::Float(id, _) => {
-                // No BigFloat yet
-                if let Ok(num) = self.interner.search(*id as usize).parse::<f64>() {
-                    let value_id = ValueId::new(self.compiler.values.len());
-                    self.compiler.values.push(Value::F64(num));
-
-                    Ok(ValueResult::Resolved(value_id))
-                } else {
-                    Err(SemanticError::NumericOverflow(
-                        *id,
-                        Formatted::Float,
-                        vec![spanned_expr.span],
-                    ))
-                }
-            }
-            Expr::BinaryExpr { lhs, op, rhs } => {
-                let lhs_id = match self.resolve_expr(&*lhs, scope_type)? {
-                    ValueResult::Resolved(inner) => inner,
-                    ValueResult::Unresolved => return Ok(ValueResult::Unresolved),
-                };
-
-                let rhs_id = match self.resolve_expr(&*rhs, scope_type)? {
-                    ValueResult::Resolved(inner) => inner,
-                    ValueResult::Unresolved => return Ok(ValueResult::Unresolved),
-                };
-
-                let lhs_val = &self.compiler.values[lhs_id.id];
-                let rhs_val = &self.compiler.values[rhs_id.id];
-
-                if !evaluator::is_compatible_binary(&lhs_val, *op, &rhs_val) {
-                    let full_span = lhs.span.merge(rhs.span);
-
-                    return Err(MathError::BinaryOpMismatch(
-                        lhs_val.kind().to_fmt(),
-                        rhs_val.kind().to_fmt(),
-                        op.to_fmt(),
-                        vec![full_span],
-                    ))?;
-                }
-
-                let val_id = ValueId::new(self.compiler.values.len());
-                let val = evaluator::apply_binary_op(&lhs_val, *op, &rhs_val)?;
-                self.compiler.values.push(val);
-
-                Ok(ValueResult::Resolved(val_id))
-            }
-            Expr::Char(c) => {
-                let val_id = ValueId::new(self.compiler.values.len());
-                self.compiler.values.push(Value::Char(*c));
-
-                Ok(ValueResult::Resolved(val_id))
-            }
-            Expr::Default(name_id, spanned_expr) => {
-                // DO NOT QUESTION THIS
-                if self.interner.search(name_id.id as usize) == "_" {}
-
-                todo!();
-            }
-            Expr::Str(name_id) => {
-                let val_id = ValueId::new(self.compiler.values.len());
-                self.compiler.values.push(Value::InternedStr(*name_id));
-
-                Ok(ValueResult::Resolved(val_id))
-            }
-            Expr::Call(caller, spanned_exprs) => {
-                todo!();
-            }
-            Expr::MemberAccess(abs_member_access) => {
-                match self.resolve_member(&abs_member_access.base, scope_type)? {
-                    PossibleMember::Module(mod_id) => {
-                        let extern_mod = &mut self.compiler.mods[mod_id.id];
-                        if let Some(sym_id) =
-                            extern_mod.get_sym_id(abs_member_access.field, scope_type)
-                        {
-                            let symbol = &self.compiler.symbols[&sym_id].symbol;
-                            match symbol {
-                                Symbol::Var(var_repre) => {
-                                    if let Some(val_id) = var_repre.const_val {
-                                        return Ok(ValueResult::Resolved(val_id));
-                                    }
-
-                                    Ok(ValueResult::Unresolved)
-                                }
-                                // I don't think most of these are possible
-                                Symbol::Struct(struct_repre) => todo!(),
-                                Symbol::Func(func_repre) => todo!(),
-                                Symbol::Enum(enum_repre) => todo!(),
-                                Symbol::Alias(alias_repre) => todo!(),
-                                // Scoping disallows this entirely
-                                Symbol::TypeDef(type_def_repre) => unreachable!(),
-                            }
-                        } else {
-                            Ok(ValueResult::Unresolved)
-                        }
-                    }
-                    PossibleMember::Type(type_id) => {
-                        todo!("Type id");
-                    }
-                    PossibleMember::Var(val_id) => {
-                        ValueResult::Resolved(val_id);
-                        unimplemented!("Nothing matches this case yet");
-                    }
-                    PossibleMember::Nothing => Ok(ValueResult::Unresolved),
-                }
-            }
-            Expr::Unary(unary) => {
-                let operand_id = match self.resolve_expr(&unary.spanned_expr, scope_type)? {
-                    ValueResult::Resolved(id) => id,
-                    ValueResult::Unresolved => return Ok(ValueResult::Unresolved),
-                };
-
-                let operand = &self.compiler.values[operand_id.id];
-
-                if !evaluator::is_compatible_unary(unary.op, operand) {
-                    return Err(MathError::UnaryOpMismatch(
-                        operand.kind().to_fmt(),
-                        unary.op.to_fmt(),
-                        vec![spanned_expr.span],
-                    ))?;
-                }
-
-                let val = evaluator::apply_unary_op(unary.op, operand)?;
-                let val_id = ValueId::new(self.compiler.values.len());
-
-                self.compiler.values.push(val);
-
-                Ok(ValueResult::Resolved(val_id))
-            }
-            Expr::Bool(boolean) => {
-                //FIX:
-                if *boolean == true {
-                    return Ok(ValueResult::Resolved(ValueId::new(VALUE_TRUE_POS)));
-                } else {
-                    return Ok(ValueResult::Resolved(ValueId::new(VALUE_FALSE_POS)));
-                }
-                todo!();
-            }
-        }
-    }
+    // fn resolve_expr(
+    //     &mut self,
+    //     spanned_expr: &SpannedExpr,
+    //     scope_type: ScopeType,
+    //     // This assists for lazily evaluating expressions.
+    // ) -> Result<ValueResult, SemanticError> {
+    //     match &spanned_expr.expr {
+    //         Expr::Var(name_id) => {
+    //             let module = &self.compiler.mods[self.current_mod.id];
+    //
+    //             if let Some(sym_id) = module.get_sym_id(*name_id, scope_type) {
+    //                 let symbol = &self.compiler.symbols[&sym_id];
+    //                 match symbol.sym_kind {
+    //                     SymbolKind::Type(type_id) => todo!(),
+    //                     SymbolKind::Val(val_id) => {
+    //                         let val_info = self.compiler.values[val_id.id as usize];
+    //                         if let Some(val) = val_info.const_val {
+    //                             return Ok(ValueResult::Resolved(val_id));
+    //                         }
+    //
+    //                         Ok(ValueResult::Unresolved)
+    //                     }
+    //                     SymbolKind::Unknown => todo!("Unkown"),
+    //                 }
+    //             } else {
+    //                 // SemanticError needs centralization
+    //                 let name = self.interner.search(name_id.id as usize);
+    //                 let mod_name = self.interner.search(module.name_id.id as usize);
+    //                 let msg =
+    //                     format!("The variable `{name}` was not found in the module `{mod_name}`");
+    //
+    //                 Err(SemanticError::General(msg, vec![spanned_expr.span]))
+    //             }
+    //         }
+    //         Expr::Integer(id, _) => {
+    //             if let Ok(num) = self.interner.search(*id as usize).parse::<i128>() {
+    //                 let val_id = ValueId::new(self.compiler.values.len());
+    //                 let val_info = ValueInfo::new(type_id, expr_id, Some(val_id));
+    //                 self.compiler.values.push(Value::I128(num));
+    //
+    //                 Ok(ValueResult::Resolved(val_id))
+    //             } else {
+    //                 Err(SemanticError::NumericOverflow(
+    //                     *id,
+    //                     Formatted::Integer,
+    //                     vec![spanned_expr.span],
+    //                 ))
+    //             }
+    //         }
+    //         Expr::Float(id, _) => {
+    //             // No BigFloat yet
+    //             if let Ok(num) = self.interner.search(*id as usize).parse::<f64>() {
+    //                 let value_id = ValueId::new(self.compiler.values.len());
+    //                 self.compiler.values.push(Value::F64(num));
+    //
+    //                 Ok(ValueResult::Resolved(value_id))
+    //             } else {
+    //                 Err(SemanticError::NumericOverflow(
+    //                     *id,
+    //                     Formatted::Float,
+    //                     vec![spanned_expr.span],
+    //                 ))
+    //             }
+    //         }
+    //         Expr::BinaryExpr { lhs, op, rhs } => {
+    //             let lhs_id = match self.resolve_expr(&*lhs, scope_type)? {
+    //                 ValueResult::Resolved(inner) => inner,
+    //                 ValueResult::Unresolved => return Ok(ValueResult::Unresolved),
+    //             };
+    //
+    //             let rhs_id = match self.resolve_expr(&*rhs, scope_type)? {
+    //                 ValueResult::Resolved(inner) => inner,
+    //                 ValueResult::Unresolved => return Ok(ValueResult::Unresolved),
+    //             };
+    //
+    //             let lhs_val = &self.compiler.values[lhs_id.id];
+    //             let rhs_val = &self.compiler.values[rhs_id.id];
+    //
+    //             if !evaluator::is_compatible_binary(&lhs_val, *op, &rhs_val) {
+    //                 let full_span = lhs.span.merge(rhs.span);
+    //
+    //                 return Err(MathError::BinaryOpMismatch(
+    //                     lhs_val.kind().to_fmt(),
+    //                     rhs_val.kind().to_fmt(),
+    //                     op.to_fmt(),
+    //                     vec![full_span],
+    //                 ))?;
+    //             }
+    //
+    //             let val_id = ValueId::new(self.compiler.values.len());
+    //             let val = evaluator::apply_binary_op(&lhs_val, *op, &rhs_val)?;
+    //             self.compiler.values.push(val);
+    //
+    //             Ok(ValueResult::Resolved(val_id))
+    //         }
+    //         Expr::Char(c) => {
+    //             let val_id = ValueId::new(self.compiler.values.len());
+    //             self.compiler.values.push(Value::Char(*c));
+    //
+    //             Ok(ValueResult::Resolved(val_id))
+    //         }
+    //         Expr::Default(name_id, spanned_expr) => {
+    //             // DO NOT QUESTION THIS
+    //             if self.interner.search(name_id.id as usize) == "_" {}
+    //
+    //             todo!();
+    //         }
+    //         Expr::Str(name_id) => {
+    //             let val_id = ValueId::new(self.compiler.values.len());
+    //             self.compiler.values.push(Value::InternedStr(*name_id));
+    //
+    //             Ok(ValueResult::Resolved(val_id))
+    //         }
+    //         Expr::Call(caller, spanned_exprs) => {
+    //             todo!();
+    //         }
+    //         Expr::MemberAccess(abs_member_access) => {
+    //             match self.resolve_member(&abs_member_access.base, scope_type)? {
+    //                 PossibleMember::Module(mod_id) => {
+    //                     let extern_mod = &mut self.compiler.mods[mod_id.id];
+    //                     if let Some(sym_id) =
+    //                         extern_mod.get_sym_id(abs_member_access.field, scope_type)
+    //                     {
+    //                         let symbol = &self.compiler.symbols[&sym_id].symbol;
+    //                         match symbol {
+    //                             Symbol::Var(var_repre) => {
+    //                                 if let Some(val_id) = var_repre.const_val {
+    //                                     return Ok(ValueResult::Resolved(val_id));
+    //                                 }
+    //
+    //                                 Ok(ValueResult::Unresolved)
+    //                             }
+    //                             // I don't think most of these are possible
+    //                             Symbol::Struct(struct_def) => todo!(),
+    //                             Symbol::Func(func_repre) => todo!(),
+    //                             Symbol::Enum(enum_def) => todo!(),
+    //                             Symbol::Alias(alias_def) => todo!(),
+    //                             // Scoping disallows this entirely
+    //                             Symbol::TypeDef(type_def_repre) => unreachable!(),
+    //                         }
+    //                     } else {
+    //                         Ok(ValueResult::Unresolved)
+    //                     }
+    //                 }
+    //                 PossibleMember::Type(type_id) => {
+    //                     todo!("Type id");
+    //                 }
+    //                 PossibleMember::Var(val_id) => {
+    //                     ValueResult::Resolved(val_id);
+    //                     unimplemented!("Nothing matches this case yet");
+    //                 }
+    //                 PossibleMember::Nothing => Ok(ValueResult::Unresolved),
+    //             }
+    //         }
+    //         Expr::Unary(unary) => {
+    //             let operand_id = match self.resolve_expr(&unary.spanned_expr, scope_type)? {
+    //                 ValueResult::Resolved(id) => id,
+    //                 ValueResult::Unresolved => return Ok(ValueResult::Unresolved),
+    //             };
+    //
+    //             let operand = &self.compiler.values[operand_id.id];
+    //
+    //             if !evaluator::is_compatible_unary(unary.op, operand) {
+    //                 return Err(MathError::UnaryOpMismatch(
+    //                     operand.kind().to_fmt(),
+    //                     unary.op.to_fmt(),
+    //                     vec![spanned_expr.span],
+    //                 ))?;
+    //             }
+    //
+    //             let val = evaluator::apply_unary_op(unary.op, operand)?;
+    //             let val_id = ValueId::new(self.compiler.values.len());
+    //
+    //             self.compiler.values.push(val);
+    //
+    //             Ok(ValueResult::Resolved(val_id))
+    //         }
+    //         Expr::Bool(boolean) => {
+    //             //FIX:
+    //             if *boolean == true {
+    //                 return Ok(ValueResult::Resolved(ValueId::new(VALUE_TRUE_POS)));
+    //             } else {
+    //                 return Ok(ValueResult::Resolved(ValueId::new(VALUE_FALSE_POS)));
+    //             }
+    //             todo!();
+    //         }
+    //     }
+    // }
 
     fn resolve_member(
         &mut self,
@@ -1028,8 +1029,9 @@ impl<'a> ConstraintResolver<'a> {
 
             let module = &self.compiler.mods[self.current_mod.id];
             if let Some(sym_id) = module.get_sym_id(name_id, scope_type) {
-                let type_id = self.compiler.symbols[&sym_id].symbol.type_id();
-                return Ok(PossibleMember::Type(type_id));
+                todo!();
+                // let type_id = self.compiler.symbols[&sym_id];
+                // return Ok(PossibleMember::Type(type_id));
             } else {
                 if name_id.id == Keyword::Self_ as u32 {
                     panic!();
@@ -1080,17 +1082,18 @@ impl<'a> ConstraintResolver<'a> {
                 // lazily resolved. Exclamation point!
                 Cond::Func(sym_id, func_kind) => Ok(()),
             },
-            Type::Struct(sym_id) => {
-                let structure = self.compiler.get_struct(*sym_id);
+            Type::Struct(struct_def) => {
+                let symbol = &self.compiler.symbols[&struct_def.sym_id];
+                visited.push(type_id);
 
-                for (i, field) in structure.fields.iter().enumerate() {
+                for (i, field) in struct_def.fields.iter().enumerate() {
                     //BUG: The structure.type_id == type_id does check if the last type it saw is
                     //itself, but that could also just mean the last type was a structure that just
                     //so happened to have the same type id
                     //
-                    if structure.type_id == field.type_id || structure.type_id == type_id {
+                    if type_id == field.type_id {
                         let abs_struct =
-                            &self.ast_info[self.current_mod.id].get_struct(structure.ast_id);
+                            &self.ast_info[self.current_mod.id].get_struct(symbol.ast_id);
                         let field_span = abs_struct.fields[i].spanned_ty_expr.span;
 
                         return Err(SemanticError::CircularCond(
@@ -1106,7 +1109,7 @@ impl<'a> ConstraintResolver<'a> {
                     if let Err(SemanticError::UnsupportedCond(cond, fmted_ty, mut spans)) = cond_res
                     {
                         let abs_struct =
-                            &self.ast_info[self.current_mod.id].get_struct(structure.ast_id);
+                            &self.ast_info[self.current_mod.id].get_struct(symbol.ast_id);
                         let field_span = abs_struct.fields[i].spanned_ty_expr.span;
                         spans.push(field_span);
 
@@ -1120,16 +1123,15 @@ impl<'a> ConstraintResolver<'a> {
 
                 Ok(())
             }
-            Type::Enum(sym_id) => {
-                let enumeration = self.compiler.get_enum(*sym_id);
-                visited.push(enumeration.type_id);
+            Type::Enum(enum_def) => {
+                let symbol = &self.compiler.symbols[&enum_def.sym_id];
 
-                for (i, variant) in enumeration.variants.iter().enumerate() {
+                for (i, variant) in enum_def.variants.iter().enumerate() {
                     if let Some(ty) = variant.type_id {
                         // Circular ref checking
                         if visited.contains(&ty) {
                             let abs_variant = &self.ast_info[self.current_mod.id]
-                                .get_enum(enumeration.ast_id)
+                                .get_enum(symbol.ast_id)
                                 .variants[i];
 
                             let variant_span =
@@ -1150,7 +1152,7 @@ impl<'a> ConstraintResolver<'a> {
                             cond_res
                         {
                             let abs_struct =
-                                &self.ast_info[self.current_mod.id].get_enum(enumeration.ast_id);
+                                &self.ast_info[self.current_mod.id].get_enum(symbol.ast_id);
                             let field_span = abs_struct.variants[i]
                                 .ty_expr
                                 .as_ref()
@@ -1171,7 +1173,7 @@ impl<'a> ConstraintResolver<'a> {
                 Ok(())
             }
             Type::Tuple(tuple) => {
-                visited.push(tuple.type_id);
+                visited.push(type_id);
 
                 for element in &tuple.elements {
                     if visited.contains(&element) {
@@ -1191,7 +1193,7 @@ impl<'a> ConstraintResolver<'a> {
             Type::Unknown | Type::Func(_) => {
                 unreachable!("Parser and semantic cannot produce these variants")
             }
-            Type::Var(symbol_id) => todo!(),
+            Type::TypeDef(type_def) => todo!(),
         }
     }
 

@@ -1402,7 +1402,11 @@ mod tests {
 
         assert_eq!(compiler.symbols.len(), 1);
         assert_eq!(compiler.values.len() - pre_loaded_values, 1);
-        match &compiler.values[compiler.values.len() - 1] {
+        match &compiler.values[compiler.values.len() - 1]
+            .const_val
+            .as_ref()
+            .unwrap()
+        {
             Value::I128(_) => (),
             _ => panic!("Value mistmatch"),
         };
@@ -1455,7 +1459,11 @@ mod tests {
 
         assert_eq!(compiler.symbols.len(), 1);
         assert_eq!(compiler.values.len() - pre_loaded_values, 1);
-        match &compiler.values[compiler.values.len() - 1] {
+        match &compiler.values[compiler.values.len() - 1]
+            .const_val
+            .as_ref()
+            .unwrap()
+        {
             Value::InternedStr(_) => (),
             _ => panic!("Value mistmatch"),
         };
@@ -1508,7 +1516,11 @@ mod tests {
 
         assert_eq!(compiler.symbols.len(), 1);
         assert_eq!(compiler.values.len() - pre_loaded_values, 1);
-        match &compiler.values[compiler.values.len() - 1] {
+        match &compiler.values[compiler.values.len() - 1]
+            .const_val
+            .as_ref()
+            .unwrap()
+        {
             Value::F64(_) => (),
             _ => panic!("Value mistmatch"),
         };
@@ -1559,7 +1571,7 @@ mod tests {
 
         assert_eq!(compiler.symbols.len(), 1);
         assert_eq!(VALUE_TRUE_POS, 1);
-        match &compiler.values[VALUE_TRUE_POS] {
+        match &compiler.values[VALUE_TRUE_POS].const_val.as_ref().unwrap() {
             Value::Bool(true) => (),
             _ => panic!("Value mistmatch"),
         };
@@ -1610,7 +1622,7 @@ mod tests {
 
         assert_eq!(compiler.symbols.len(), 1);
         assert_eq!(VALUE_FALSE_POS, 0);
-        match &compiler.values[VALUE_FALSE_POS] {
+        match &compiler.values[VALUE_FALSE_POS].const_val.as_ref().unwrap() {
             Value::Bool(false) => (),
             _ => panic!("Value mistmatch"),
         };

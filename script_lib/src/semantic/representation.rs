@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display};
 
 use chern_core::{
     builtins::{BuiltinType, BuiltinTypeKind},
-    id_types::{AstId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
+    id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
     inner_args::InnerArgs,
 };
 use common::{
@@ -11,7 +11,11 @@ use common::{
     span::Span,
 };
 
-use crate::{conditions::Cond, semantic::constraints::ArgConstraint};
+use crate::{
+    conditions::Cond,
+    parser::ast::{BinaryOp, UnaryOp},
+    semantic::constraints::ArgConstraint,
+};
 
 // What is a drop? I am new to thinking i have never thought before what is RAII
 // is that a gui framework
@@ -28,70 +32,155 @@ impl TypeInfo {
         TypeInfo { ty, owner }
     }
 }
-
-#[derive(Debug)]
-pub struct SymbolInfo {
-    pub symbol: Symbol,
-    pub owner: ModuleId,
-    pub is_priv: bool,
-}
-
-impl SymbolInfo {
-    pub fn new(symbol: Symbol, is_priv: bool, owner: ModuleId) -> SymbolInfo {
-        SymbolInfo {
-            symbol,
-            is_priv,
-            owner,
-        }
-    }
-}
+//
+// #[derive(Debug)]
+// pub struct SymbolInfo {
+//     pub symbol: Symbol,
+//     pub owner: ModuleId,
+//     pub is_priv: bool,
+// }
+//
+// impl SymbolInfo {
+//     pub fn new(symbol: Symbol, is_priv: bool, owner: ModuleId) -> SymbolInfo {
+//         SymbolInfo {
+//             symbol,
+//             is_priv,
+//             owner,
+//         }
+//     }
+// }
 
 //NOTE: Should be in chern_core?
 #[derive(Debug)]
 pub enum Type {
     BuiltinType(BuiltinType),
-    Struct(SymbolId),
-    Enum(SymbolId),
-    Func(SymbolId),
-    Alias(SymbolId),
-    Var(SymbolId),
+    Struct(StructDef),
+    Enum(EnumDef),
+    Func(FuncRepre),
+    Alias(AliasDef),
+    TypeDef(TypeDef),
+    // Var(VarDef),
     Tuple(Tuple),
     Unknown,
 }
 
 #[derive(Debug)]
-pub(crate) enum Symbol {
-    TypeDef(TypeDefRepre),
-    Struct(StructRepre),
-    Func(FuncRepre),
-    Enum(EnumRepre),
-    Alias(AliasRepre),
-    Var(VarRepre),
+pub struct Symbol {
+    pub(crate) name_id: InternedId,
+    pub(crate) sym_id: SymbolId,
+    //dbg purposes
+    pub(crate) ast_id: AstId,
+    //dbgr
+    pub(crate) kind: SymbolKind,
+    pub(crate) owner: ModuleId,
+    pub(crate) is_priv: bool,
 }
 
 impl Symbol {
-    pub(crate) fn name_id(&self) -> InternedId {
-        match self {
-            Symbol::TypeDef(type_def_repre) => type_def_repre.name_id,
-            Symbol::Struct(struct_repre) => struct_repre.name_id,
-            Symbol::Func(func_repre) => func_repre.name_id,
-            Symbol::Enum(enum_repre) => enum_repre.name_id,
-            Symbol::Alias(alias_repre) => alias_repre.name_id,
-            Symbol::Var(var_repre) => var_repre.name_id,
-        }
-    }
-
-    pub(crate) fn type_id(&self) -> TypeId {
-        match self {
-            Symbol::TypeDef(type_def_repre) => type_def_repre.type_id,
-            Symbol::Struct(struct_repre) => struct_repre.type_id,
-            Symbol::Func(func_repre) => func_repre.type_id,
-            Symbol::Enum(enum_repre) => enum_repre.type_id,
-            Symbol::Alias(alias_repre) => alias_repre.type_id,
-            Symbol::Var(var_repre) => var_repre.type_id,
+    pub fn new(
+        // May couple dbg info but fine for now
+        name_id: InternedId,
+        sym_id: SymbolId,
+        //dbgr
+        ast_id: AstId,
+        owner: ModuleId,
+        is_priv: bool,
+        sym_kind: SymbolKind,
+    ) -> Symbol {
+        Symbol {
+            name_id,
+            sym_id,
+            ast_id,
+            kind: sym_kind,
+            owner,
+            is_priv,
         }
     }
 }
+
+// May call this id kind..
+/// Maps to a `TypeId` or `ValueId`
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum SymbolKind {
+    Type(TypeId),
+    Val(ValueId),
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ResolvedExpr {
+    pub(crate) type_id: TypeId,
+    pub(crate) expr_hir: ExprHir,
+    pub(crate) const_val: Option<ValueId>,
+}
+
+impl ResolvedExpr {
+    pub fn new(type_id: TypeId, expr_hir: ExprHir, const_val: Option<ValueId>) -> ResolvedExpr {
+        ResolvedExpr {
+            type_id,
+            expr_hir,
+            const_val,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ExprHir {
+    Val(ValueId),
+    Var(SymbolId),
+    Bool(bool),
+    Default(SymbolId, ExprId),
+    Integer(ValueId),
+    Float(ValueId),
+    Str(ValueId),
+    Char(char),
+    // Um
+    // Call(Box<SpannedExpr>, Vec<SpannedExpr>),
+    // MemberAccess(AbstractMemberAccess),
+    Unary {
+        op: UnaryOp,
+        operand: ExprId,
+    },
+    BinaryExpr {
+        lhs: ExprId,
+        op: BinaryOp,
+        rhs: ExprId,
+    },
+}
+
+// #[derive(Debug)]
+// pub(crate) enum Symbol {
+//     TypeDef(TypeDefRepre),
+//     Struct(StructRepre),
+//     Func(FuncRepre),
+//     Enum(EnumRepre),
+//     Alias(AliasRepre),
+//     Var(VarRepre),
+// }
+
+// impl Symbol {
+//     pub(crate) fn name_id(&self) -> InternedId {
+//         match self {
+//             Symbol::TypeDef(type_def_repre) => type_def_repre.name_id,
+//             Symbol::Struct(struct_def) => struct_def.name_id,
+//             Symbol::Func(func_repre) => func_repre.name_id,
+//             Symbol::Enum(enum_def) => enum_def.name_id,
+//             Symbol::Alias(alias_def) => alias_def.name_id,
+//             Symbol::Var(var_repre) => var_repre.name_id,
+//         }
+//     }
+//
+//     pub(crate) fn type_id(&self) -> TypeId {
+//         match self {
+//             Symbol::TypeDef(type_def_repre) => type_def_repre.type_id,
+//             Symbol::Struct(struct_def) => struct_def.type_id,
+//             Symbol::Func(func_repre) => func_repre.type_id,
+//             Symbol::Enum(enum_def) => enum_def.type_id,
+//             Symbol::Alias(alias_def) => alias_def.type_id,
+//             Symbol::Var(var_repre) => var_repre.type_id,
+//         }
+//     }
+// }
 
 #[derive(Debug)]
 pub struct Table {
@@ -110,61 +199,35 @@ impl Table {
     }
 }
 
-pub(crate) enum ResolvedExpr {}
+// #[derive(Debug)]
+// pub(crate) struct VarDef {
+//     pub(crate) type_id: TypeId,
+//     pub(crate) expr_id: ExprId,
+//     pub(crate) const_val: Option<ValueId>,
+// }
+//
+// impl VarDef {
+//     pub fn new(type_id: TypeId, expr_id: ExprId, const_val: Option<ValueId>) -> VarDef {
+//         VarDef {
+//             type_id,
+//             expr_id,
+//             const_val,
+//         }
+//     }
+// }
 
 #[derive(Debug)]
-pub(crate) struct VarRepre {
-    pub(crate) name_id: InternedId,
+pub(crate) struct StructDef {
     pub(crate) sym_id: SymbolId,
-    pub(crate) ast_id: AstId,
-    // It's position in the Type array
-    pub(crate) type_id: TypeId,
-    pub(crate) const_val: Option<ValueId>,
-}
-
-impl VarRepre {
-    pub fn new(
-        name_id: InternedId,
-        sym_id: SymbolId,
-        type_id: TypeId,
-        ast_id: AstId,
-        val_id: Option<ValueId>,
-    ) -> VarRepre {
-        VarRepre {
-            name_id,
-            sym_id,
-            type_id,
-            ast_id,
-            const_val: val_id,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct StructRepre {
-    pub(crate) name_id: InternedId,
-    pub(crate) sym_id: SymbolId,
-    pub(crate) ast_id: AstId,
-    // It's position in the Type array
-    pub(crate) type_id: TypeId,
     pub(crate) fields: Vec<FieldRepre>,
     pub(crate) args: Vec<InnerArgs>,
     pub(crate) conds: Vec<Cond>,
 }
 
-impl StructRepre {
-    pub(crate) fn new(
-        name_id: InternedId,
-        sym_id: SymbolId,
-        ast_id: AstId,
-        type_id: TypeId,
-        fields: Vec<FieldRepre>,
-    ) -> StructRepre {
-        StructRepre {
-            name_id,
+impl StructDef {
+    pub(crate) fn new(sym_id: SymbolId, fields: Vec<FieldRepre>) -> StructDef {
+        StructDef {
             sym_id,
-            ast_id,
-            type_id,
             fields,
             args: Vec::new(),
             conds: Vec::new(),
@@ -173,30 +236,21 @@ impl StructRepre {
 }
 
 #[derive(Debug)]
-pub(crate) struct EnumRepre {
-    pub(crate) name_id: InternedId,
-    // Unsure about this positioning, I am hallucinating.
+pub(crate) struct EnumDef {
+    // pub(crate) name_id: InternedId,
+    // // Unsure about this positioning, I am hallucinating.
+    // pub(crate) ast_id: AstId,
+    // pub(crate) type_id: TypeId,
     pub(crate) sym_id: SymbolId,
-    pub(crate) ast_id: AstId,
-    pub(crate) type_id: TypeId,
     pub(crate) variants: Vec<VariantRepre>,
     pub(crate) args: Vec<InnerArgs>,
     pub(crate) conds: Vec<Cond>,
 }
 
-impl EnumRepre {
-    pub fn new(
-        name_id: InternedId,
-        sym_id: SymbolId,
-        ast_id: AstId,
-        type_id: TypeId,
-        variants: Vec<VariantRepre>,
-    ) -> EnumRepre {
-        EnumRepre {
-            name_id,
+impl EnumDef {
+    pub fn new(sym_id: SymbolId, variants: Vec<VariantRepre>) -> EnumDef {
+        EnumDef {
             sym_id,
-            ast_id,
-            type_id,
             variants,
             args: Vec::new(),
             conds: Vec::new(),
@@ -229,26 +283,18 @@ impl VariantRepre {
 }
 
 #[derive(Debug)]
-pub(crate) struct TypeDefRepre {
-    pub(crate) name_id: InternedId,
+pub(crate) struct TypeDef {
+    // Typedefs are: "var-> name: str" meaning the typedef type has types so it has a type id
     pub(crate) sym_id: SymbolId,
-    pub(crate) ast_id: AstId,
     pub(crate) type_id: TypeId,
     pub(crate) conds: Vec<Cond>,
     pub(crate) args: Vec<InnerArgs>,
 }
 
-impl TypeDefRepre {
-    pub fn new(
-        name_id: InternedId,
-        type_id: TypeId,
-        sym_id: SymbolId,
-        ast_id: AstId,
-    ) -> TypeDefRepre {
-        TypeDefRepre {
-            name_id,
+impl TypeDef {
+    pub fn new(sym_id: SymbolId, type_id: TypeId) -> TypeDef {
+        TypeDef {
             sym_id,
-            ast_id,
             type_id,
             conds: Vec::new(),
             args: Vec::new(),
@@ -258,9 +304,6 @@ impl TypeDefRepre {
 
 #[derive(Debug)]
 pub(crate) struct FuncRepre {
-    pub(crate) name_id: InternedId,
-    // Type reference to it's own position in the `Type` array
-    pub(crate) type_id: TypeId,
     pub(crate) call_span: Span,
     pub(crate) kind: FuncKind,
     pub(crate) constraints: Vec<ArgConstraint>,
@@ -269,16 +312,12 @@ pub(crate) struct FuncRepre {
 
 impl FuncRepre {
     pub(crate) fn new(
-        name_id: InternedId,
-        type_id: TypeId,
         call_span: Span,
         kind: FuncKind,
         constraints: Vec<ArgConstraint>,
         args: Vec<FuncArgsRepre>,
     ) -> FuncRepre {
         FuncRepre {
-            name_id,
-            type_id,
             kind,
             call_span,
             constraints,
@@ -288,6 +327,8 @@ impl FuncRepre {
 }
 
 // I'm scared of this
+// This should be removed
+// TODO:
 #[derive(Debug)]
 pub(crate) enum FuncArgsRepre {
     Integer(ValueId),
@@ -402,33 +443,22 @@ impl FieldRepre {
 }
 
 #[derive(Debug)]
-pub(crate) struct AliasRepre {
-    pub(crate) name_id: InternedId,
+pub(crate) struct AliasDef {
     pub(crate) sym_id: SymbolId,
-    pub(crate) ast_id: AstId,
-    // Refers to self's type id position
-    // Maybe call this type_addr?
-    pub(crate) type_id: TypeId,
     pub(crate) params: Vec<TypeId>,
     pub(crate) conds: Vec<Cond>,
     pub(crate) args: Vec<InnerArgs>,
 }
 
-impl AliasRepre {
+impl AliasDef {
     pub fn new(
-        name_id: InternedId,
         sym_id: SymbolId,
-        ast_id: AstId,
-        type_id: TypeId,
         params: Vec<TypeId>,
         conds: Vec<Cond>,
         args: Vec<InnerArgs>,
-    ) -> AliasRepre {
-        AliasRepre {
-            name_id,
+    ) -> AliasDef {
+        AliasDef {
             sym_id,
-            ast_id,
-            type_id,
             params,
             conds,
             args,
@@ -439,12 +469,11 @@ impl AliasRepre {
 #[derive(Debug)]
 pub struct Tuple {
     pub(crate) elements: Vec<TypeId>,
-    pub(crate) type_id: TypeId,
 }
 
 impl Tuple {
-    pub fn new(elements: Vec<TypeId>, type_id: TypeId) -> Tuple {
-        Tuple { elements, type_id }
+    pub fn new(elements: Vec<TypeId>) -> Tuple {
+        Tuple { elements }
     }
 }
 

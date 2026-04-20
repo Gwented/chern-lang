@@ -16,7 +16,7 @@ use crate::token::{SpannedToken, Token, TokenKind};
 use chern_core::id_types::InternedId;
 use chern_core::inner_args::{InnerArgs, SpannedInnerArgs};
 use chern_core::intern::Intern;
-use chern_core::keywords::{self, Keyword};
+use chern_core::keywords::Keyword;
 use common::chern_settings::ChernSettings;
 use common::core_error::ScriptError;
 use common::fmter::Formatted;
@@ -910,6 +910,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
         Token::Id(id) => {
             let span = ctx.advance_span();
 
+            //FIX: How is this going to be escaped.
             let name_id = InternedId::new(id);
             let ty_expr = TypeExpr::Var(name_id);
 

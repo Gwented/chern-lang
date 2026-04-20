@@ -1,10 +1,16 @@
 use chern_core::builtins::BuiltinTypeKind;
-use chern_core::id_types::{AstId, InternedId, ModuleId, TypeId};
+use chern_core::id_types::{AstId, ExprId, InternedId, ModuleId, TypeId, ValueId};
+use chern_core::values::{Value, ValueInfo, ValueResult};
 use chern_core::{builtins::BuiltinType, intern::Intern, keywords::Keyword};
 use common::chern_settings::ChernSettings;
+use common::fmter::Formatted;
 use common::{reporter::diagnostic::Diagnostic, span::Span};
 
+use crate::parser::ast::{AbstractVar, Expr, SpannedExpr};
 use crate::script_compiler::ScriptCompiler;
+use crate::semantic::error::{MathError, SemanticError};
+use crate::semantic::evaluator;
+use crate::semantic::representation::{ExprHir, PossibleMember, ResolvedExpr, SymbolKind};
 use crate::semantic::scopes::ScopeType;
 use crate::{
     parser::ast::{
@@ -12,7 +18,7 @@ use crate::{
         SpannedTypeExpr, TypeExpr,
     },
     semantic::{
-        representation::{FieldRepre, Symbol, Tuple, Type, TypeInfo, VariantRepre},
+        representation::{FieldRepre, Tuple, Type, TypeInfo, VariantRepre},
         semantic_reporter::SemanticReporter,
     },
 };
@@ -59,8 +65,8 @@ impl TypeResolver<'_> {
                 Item::Struct(abs_struct) => _ = self.resolve_struct(abs_struct, ast_id),
                 Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum, ast_id),
                 Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias, ast_id),
-                // Const values are inferred
-                Item::VarDecl(_) => (),
+                // Type inference is required
+                Item::VarDecl(abs_var) => _ = self.resolve_var(abs_var, ast_id),
             }
         }
 
@@ -72,6 +78,285 @@ impl TypeResolver<'_> {
         }
 
         Ok(())
+    }
+
+    fn resolve_var(&mut self, abs_var: &AbstractVar, ast_id: AstId) -> Result<(), ()> {
+        let expr_id = self
+            .register_expr(&abs_var.spanned_expr, ScopeType::Neutral)
+            .unwrap();
+        let resolved_expr = self.compiler.exprs[expr_id.id as usize];
+        dbg!(
+            &self.compiler.types[resolved_expr.type_id.id as usize],
+            &resolved_expr.expr_hir,
+            &self.compiler.values[resolved_expr.const_val.unwrap().id as usize]
+        );
+
+        todo!();
+    }
+
+    fn register_expr(
+        &mut self,
+        spanned_expr: &SpannedExpr,
+        scope_type: ScopeType,
+        // This assists for lazily evaluating expressions.
+    ) -> Result<ExprId, SemanticError> {
+        match &spanned_expr.expr {
+            Expr::Var(name_id) => {
+                let module = &self.compiler.mods[self.current_mod.id];
+
+                if let Some(sym_id) = module.get_sym_id(*name_id, scope_type) {
+                    let symbol = &self.compiler.symbols[&sym_id];
+                    let type_id = match symbol.kind {
+                        SymbolKind::Type(type_id) => type_id,
+                        SymbolKind::Val(val_id) => self.compiler.values[val_id.id as usize].type_id,
+                        SymbolKind::Unknown => todo!("Unknown not covered"),
+                    };
+
+                    let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+                    let expr_hir = ExprHir::Var(sym_id);
+
+                    let resolved_expr = ResolvedExpr::new(type_id, expr_hir, None);
+                    self.compiler.exprs.push(resolved_expr);
+
+                    Ok(expr_id)
+                } else {
+                    // SemanticError needs centralization
+                    let name = self.interner.search(name_id.id as usize);
+                    let mod_name = self.interner.search(module.name_id.id as usize);
+                    let msg =
+                        format!("The variable `{name}` was not found in the module `{mod_name}`");
+
+                    Err(SemanticError::General(msg, vec![spanned_expr.span]))
+                }
+            }
+            Expr::Integer(id, _) => {
+                if let Ok(num) = self.interner.search(*id as usize).parse::<i128>() {
+                    let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+                    let val_id = ValueId::new(self.compiler.values.len() as u32);
+
+                    let expr_hir = ExprHir::Val(val_id);
+                    let type_id = TypeId::new(BuiltinTypeKind::I128 as u32);
+                    dbg!(BuiltinTypeKind::I128 as u32);
+                    panic!();
+                    let expr = ResolvedExpr::new(type_id, expr_hir, Some(val_id));
+
+                    let val = Value::I128(num);
+                    let val_info = ValueInfo::new(type_id, expr_id, Some(val));
+
+                    self.compiler.values.push(val_info);
+                    self.compiler.exprs.push(expr);
+
+                    Ok(expr_id)
+                } else {
+                    Err(SemanticError::NumericOverflow(
+                        *id,
+                        Formatted::Integer,
+                        vec![spanned_expr.span],
+                    ))
+                }
+            }
+            Expr::Float(id, _) => {
+                // No BigFloat yet
+                if let Ok(num) = self.interner.search(*id as usize).parse::<f64>() {
+                    let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+                    let val_id = ValueId::new(self.compiler.values.len() as u32);
+
+                    let expr_hir = ExprHir::Val(val_id);
+                    let type_id = TypeId::new(BuiltinTypeKind::F64 as u32);
+                    let expr = ResolvedExpr::new(type_id, expr_hir, Some(val_id));
+
+                    let val = Value::F64(num);
+                    let val_info = ValueInfo::new(type_id, expr_id, Some(val));
+
+                    self.compiler.values.push(val_info);
+                    self.compiler.exprs.push(expr);
+
+                    Ok(expr_id)
+                } else {
+                    Err(SemanticError::NumericOverflow(
+                        *id,
+                        Formatted::Float,
+                        vec![spanned_expr.span],
+                    ))
+                }
+            }
+            Expr::BinaryExpr { lhs, op, rhs } => {
+                let lhs_id = self.register_expr(&*lhs, scope_type)?;
+                let rhs_id = self.register_expr(&*rhs, scope_type)?;
+
+                let lhs_val = &self.compiler.values[lhs_id.id as usize];
+                let rhs_val = &self.compiler.values[rhs_id.id as usize];
+
+                if lhs_val.type_id != rhs_val.type_id {
+                    panic!("Something mismatch");
+                    let full_span = lhs.span.merge(rhs.span);
+
+                    todo!();
+                    // return Err(MathError::BinaryOpMismatch(
+                    //     lhs_val.kind().to_fmt(),
+                    //     rhs_val.kind().to_fmt(),
+                    //     op.to_fmt(),
+                    //     vec![full_span],
+                    // ))?;
+                }
+
+                let val_id = ValueId::new(self.compiler.values.len() as u32);
+                // let val = evaluator::apply_binary_op(&lhs_val, *op, &rhs_val)?;
+                // self.compiler.values.push(val);
+
+                let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+                let expr_hir = ExprHir::BinaryExpr {
+                    lhs: lhs_id,
+                    op: *op,
+                    rhs: rhs_id,
+                };
+
+                //TODO:
+                let expr = ResolvedExpr::new(lhs_val.type_id, expr_hir, None);
+
+                self.compiler.exprs.push(expr);
+
+                Ok(expr_id)
+            }
+            // Um...Maybe this is a little much?
+            Expr::Char(c) => {
+                let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+                let val_id = ValueId::new(self.compiler.values.len() as u32);
+
+                let type_id = TypeId::new(BuiltinTypeKind::Char as u32);
+
+                let val = Value::Char(*c);
+                let val_info = ValueInfo::new(type_id, expr_id, Some(val));
+                self.compiler.values.push(val_info);
+
+                let expr_hir = ExprHir::Val(val_id);
+                let resolved_expr = ResolvedExpr::new(type_id, expr_hir, Some(val_id));
+                self.compiler.exprs.push(resolved_expr);
+
+                Ok(expr_id)
+            }
+            Expr::Default(name_id, spanned_expr) => {
+                // DO NOT QUESTION THIS
+                if self.interner.search(name_id.id as usize) == "_" {}
+
+                todo!();
+            }
+            Expr::Str(name_id) => {
+                let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+                let val_id = ValueId::new(self.compiler.values.len() as u32);
+
+                let type_id = TypeId::new(BuiltinTypeKind::Str as u32);
+
+                let val = Value::InternedStr(*name_id);
+                let val_info = ValueInfo::new(type_id, expr_id, Some(val));
+                self.compiler.values.push(val_info);
+
+                let expr_hir = ExprHir::Val(val_id);
+                let resolved_expr = ResolvedExpr::new(type_id, expr_hir, Some(val_id));
+                self.compiler.exprs.push(resolved_expr);
+
+                Ok(expr_id)
+            }
+            Expr::Call(caller, spanned_exprs) => {
+                todo!();
+            }
+            Expr::MemberAccess(abs_member_access) => {
+                match self.resolve_member(&abs_member_access.base, scope_type)? {
+                    PossibleMember::Module(mod_id) => {
+                        let extern_mod = &mut self.compiler.mods[mod_id.id];
+                        if let Some(sym_id) =
+                            extern_mod.get_sym_id(abs_member_access.field, scope_type)
+                        {
+                            let symbol = &self.compiler.symbols[&sym_id];
+                            match symbol.kind {
+                                SymbolKind::Type(type_id) => todo!(),
+                                SymbolKind::Val(value_id) => todo!(),
+                                SymbolKind::Unknown => todo!(),
+                            }
+                        } else {
+                            todo!("Unresolved");
+                        }
+                    }
+                    PossibleMember::Type(type_id) => {
+                        todo!("Type id");
+                    }
+                    PossibleMember::Var(val_id) => {
+                        ValueResult::Resolved(val_id);
+                        unimplemented!("Nothing matches this case yet");
+                    }
+                    PossibleMember::Nothing => todo!("Unresolved"),
+                }
+            }
+            Expr::Unary(unary) => {
+                let operand_id = self.register_expr(&unary.spanned_expr, scope_type)?;
+
+                let operand = &self.compiler.values[operand_id.id as usize];
+
+                todo!("Operand no operating");
+                // if !evaluator::is_compatible_unary(unary.op, operand) {
+                //     return Err(MathError::UnaryOpMismatch(
+                //         operand.kind().to_fmt(),
+                //         unary.op.to_fmt(),
+                //         vec![spanned_expr.span],
+                //     ))?;
+                // }
+
+                // let val = evaluator::apply_unary_op(unary.op, operand)?;
+                let val_id = ValueId::new(self.compiler.values.len() as u32);
+
+                // self.compiler.values.push(val);
+
+                todo!();
+            }
+            Expr::Bool(boolean) => {
+                //FIX:
+                if *boolean == true {
+                    // return Ok(ValueResult::Resolved(ValueId::new(VALUE_TRUE_POS)));
+                } else {
+                    // return Ok(ValueResult::Resolved(ValueId::new(VALUE_FALSE_POS)));
+                }
+                todo!();
+            }
+        }
+    }
+
+    fn resolve_member(
+        &mut self,
+        member: &SpannedExpr,
+        scope_type: ScopeType,
+    ) -> Result<PossibleMember, SemanticError> {
+        if let Ok(expr_id) = self.register_expr(member, scope_type) {
+            let resolved_expr = &self.compiler.exprs[expr_id.id as usize];
+            todo!();
+        }
+
+        if let Expr::Var(name_id) = member.expr {
+            if let Some(mod_id) = self.compiler.mod_map.get(&name_id) {
+                return Ok(PossibleMember::Module(*mod_id));
+            }
+
+            let module = &self.compiler.mods[self.current_mod.id];
+            if let Some(sym_id) = module.get_sym_id(name_id, scope_type) {
+                todo!();
+                // let type_id = self.compiler.symbols[&sym_id];
+                // return Ok(PossibleMember::Type(type_id));
+            } else {
+                if name_id.id == Keyword::Self_ as u32 {
+                    panic!();
+                }
+                // What if this was in order of priority
+                // No
+                // Dot reference sounds better
+                let msg = format!(
+                    "Could not find the symbol `{}` as a module, type, or value",
+                    self.interner.search(name_id.id as usize)
+                );
+
+                return Err(SemanticError::General(msg, vec![member.span]));
+            }
+        }
+
+        Err(SemanticError::UndefinedMember(member.span))
     }
 
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
@@ -132,8 +417,8 @@ impl TypeResolver<'_> {
 
         let sym_id = table.sym_ids[&ast_id];
 
-        let struct_repre = self.compiler.get_struct_mut(sym_id);
-        struct_repre.fields.append(&mut fields);
+        let struct_def = self.compiler.get_struct_mut(sym_id);
+        struct_def.fields.append(&mut fields);
 
         Ok(())
     }
@@ -183,9 +468,9 @@ impl TypeResolver<'_> {
         let table = &module.get_scope_mut(scope_id).table;
 
         let sym_id = table.sym_ids[&ast_id];
-        let enum_repre = self.compiler.get_enum_mut(sym_id);
+        let enum_def = self.compiler.get_enum_mut(sym_id);
 
-        enum_repre.variants.append(&mut variants);
+        enum_def.variants.append(&mut variants);
 
         Ok(())
     }
@@ -210,8 +495,10 @@ impl TypeResolver<'_> {
         match &spanned_ty_expr.ty_expr {
             TypeExpr::Var(name_id) => {
                 // Returns the name's id since it is a valid non-data structure intrinsic type
-                if let Some(_) = BuiltinType::try_from_interned_id(name_id.id) {
-                    return Ok(TypeId::new(todo!()));
+                if let Some(ty) = BuiltinType::try_from_interned_id(name_id.id) {
+                    // This technically relies on the original pushing of values being in order so
+                    // may also be changed to a const idx but fine for iteration purposes
+                    return Ok(TypeId::new(ty.kind() as u32));
                 }
 
                 let module = &self.compiler.mods[self.current_mod.id];
@@ -221,15 +508,10 @@ impl TypeResolver<'_> {
                 // as the type to be referenced
                 //WARN:
                 if let Some(sym_id) = module.get_sym_id(*name_id, scope_type) {
-                    let type_id = match &self.compiler.symbols[&sym_id].symbol {
-                        Symbol::Struct(struct_repre) => struct_repre.type_id,
-                        Symbol::Func(func_repre) => func_repre.type_id,
-                        Symbol::Enum(enum_repre) => enum_repre.type_id,
-                        Symbol::Alias(alias_repre) => alias_repre.type_id,
-                        // Const variables have strictly inferred types
-                        Symbol::Var(_) | Symbol::TypeDef(_) => {
-                            unreachable!("Typed as `Unknown` by default")
-                        }
+                    let type_id = match self.compiler.symbols[&sym_id].kind {
+                        SymbolKind::Type(type_id) => type_id,
+                        SymbolKind::Unknown => unreachable!("Not possible yet. Yet."),
+                        SymbolKind::Val(val_id) => unreachable!("Values are not resolved yet"),
                     };
 
                     return Ok(type_id);
@@ -252,14 +534,10 @@ impl TypeResolver<'_> {
                 let module = &self.compiler.mods[self.current_mod.id];
 
                 if let Some(sym_id) = module.get_sym_id(*name_id, scope_type) {
-                    let type_id = match &self.compiler.symbols[&sym_id].symbol {
-                        Symbol::Struct(struct_repre) => struct_repre.type_id,
-                        Symbol::Func(func_repre) => func_repre.type_id,
-                        Symbol::Enum(enum_repre) => enum_repre.type_id,
-                        Symbol::Alias(alias_repre) => alias_repre.type_id,
-                        Symbol::Var(_) | Symbol::TypeDef(_) => {
-                            unreachable!("Typed as `Unknown` by default")
-                        }
+                    let type_id = match self.compiler.symbols[&sym_id].kind {
+                        SymbolKind::Type(type_id) => type_id,
+                        SymbolKind::Unknown => unreachable!("Not possible yet. Yet."),
+                        SymbolKind::Val(val_id) => unreachable!("Values are not resolved yet"),
                     };
 
                     return Ok(type_id);
@@ -310,12 +588,13 @@ impl TypeResolver<'_> {
                         BuiltinTypeKind::Tuple => {
                             let mut elements: Vec<TypeId> = Vec::new();
 
+                            panic!("Which tuple");
                             for arg in &generic.args {
                                 elements.push(self.resolve_type_expr(arg, scope_type, ast_id)?);
                             }
 
                             let type_id = TypeId::new(self.compiler.types.len() as u32);
-                            let tuple = Type::Tuple(Tuple::new(elements, type_id));
+                            let tuple = Type::Tuple(Tuple::new(elements));
 
                             let ty_info = TypeInfo::new(tuple, Some(self.current_mod));
                             self.compiler.types.push(ty_info);
@@ -440,7 +719,8 @@ impl TypeResolver<'_> {
                 }
 
                 let tuple_id = TypeId::new(self.compiler.types.len() as u32);
-                let tuple = Type::Tuple(Tuple::new(elements, tuple_id));
+                let tuple = Type::Tuple(Tuple::new(elements));
+                panic!("Intrinsic stuff");
 
                 let ty_info = TypeInfo::new(tuple, Some(self.current_mod));
                 self.compiler.types.push(ty_info);
@@ -502,10 +782,8 @@ impl TypeResolver<'_> {
 
                     //WARN: Only scoping issue left is alias and const collision and maybe some
                     //others
-                    let type_id = match &sym_info.symbol {
-                        Symbol::Struct(struct_repre) => struct_repre.type_id,
-                        Symbol::Enum(enum_repre) => enum_repre.type_id,
-                        // There is no reason to disallow typedefs other than, because.
+                    let type_id = match sym_info.kind {
+                        SymbolKind::Type(type_id) => type_id,
                         _ => {
                             // Suspicious error message
                             let msg = format!(
