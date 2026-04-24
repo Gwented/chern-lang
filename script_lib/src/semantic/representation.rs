@@ -128,12 +128,7 @@ impl ResolvedExpr {
 pub(crate) enum ExprHir {
     Val(ValueId),
     Var(SymbolId),
-    Bool(bool),
     Default(SymbolId, ExprId),
-    Integer(ValueId),
-    Float(ValueId),
-    Str(ValueId),
-    Char(char),
     // Um
     // Call(Box<SpannedExpr>, Vec<SpannedExpr>),
     // MemberAccess(AbstractMemberAccess),

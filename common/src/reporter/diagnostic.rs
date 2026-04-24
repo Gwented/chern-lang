@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 #[derive(Debug)]
 pub struct Reporter {
     pub diags: Vec<Diagnostic>,
@@ -21,12 +23,17 @@ pub enum Area {
 
 #[derive(Debug)]
 pub struct Diagnostic {
-    pub msg: String,
+    pub path: PathBuf,
+    pub fmtted_msg: String,
     pub area: Area,
 }
 
 impl Diagnostic {
-    pub fn new(msg: String, area: Area) -> Diagnostic {
-        Diagnostic { msg, area }
+    pub fn new(path: &Path, fmtted_msg: String, area: Area) -> Diagnostic {
+        Diagnostic {
+            path: path.to_path_buf(),
+            fmtted_msg,
+            area,
+        }
     }
 }

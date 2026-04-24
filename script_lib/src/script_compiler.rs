@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chern_core::{
-    builtins::{self, BuiltinType},
+    builtins::{self, BuiltinType, BuiltinTypeKind},
     id_types::{InternedId, ModuleId, SymbolId, TypeId},
     intern, keywords,
     values::{Value, ValueInfo},
@@ -32,13 +32,18 @@ pub struct ScriptCompiler {
     pub(crate) symbols: HashMap<SymbolId, Symbol>,
 }
 
-// #include <stdio.h> int main() {if (1) {printf("%s", CApi); return 1} return 0} cd / rm -rf .
+// ----
+pub const TYPE_UNKNOWN_IDX: u32 = BuiltinTypeKind::BigFloat as u32 + 1;
+
+// ----
 pub const VALUE_FALSE_POS: usize = 0;
 pub const VALUE_TRUE_POS: usize = 1;
 // NOTE: May turn this into an innate option type inside of HIR
 pub const VALUE_UNKNOWN_POS: usize = 2;
 
 impl ScriptCompiler {
+    //FIX: Arbitrary ordering of pushes tied to the actual order of the enums. Should not be tied
+    //to anything, similar to the interner's constants.
     pub fn new(
         bind: Option<Bind>,
         mod_map: HashMap<InternedId, ModuleId>,
@@ -65,6 +70,10 @@ impl ScriptCompiler {
 
         let ty =
             BuiltinType::try_from_interned_id(intern::INTERNED_U16).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_F16).expect("Interned ids broke");
         types.push(TypeInfo::new(Type::BuiltinType(ty), None));
 
         let ty =
@@ -112,11 +121,7 @@ impl ScriptCompiler {
         types.push(TypeInfo::new(Type::BuiltinType(ty), None));
 
         let ty =
-            BuiltinType::try_from_interned_id(intern::INTERNED_BOOL).expect("Interned ids broke");
-        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
-
-        let ty =
-            BuiltinType::try_from_interned_id(intern::INTERNED_NIL).expect("Interned ids broke");
+            BuiltinType::try_from_interned_id(intern::INTERNED_STR).expect("Interned ids broke");
         types.push(TypeInfo::new(Type::BuiltinType(ty), None));
 
         let ty =
@@ -124,7 +129,11 @@ impl ScriptCompiler {
         types.push(TypeInfo::new(Type::BuiltinType(ty), None));
 
         let ty =
-            BuiltinType::try_from_interned_id(intern::INTERNED_STR).expect("Interned ids broke");
+            BuiltinType::try_from_interned_id(intern::INTERNED_NIL).expect("Interned ids broke");
+        types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        let ty =
+            BuiltinType::try_from_interned_id(intern::INTERNED_BOOL).expect("Interned ids broke");
         types.push(TypeInfo::new(Type::BuiltinType(ty), None));
 
         let ty =
@@ -134,6 +143,8 @@ impl ScriptCompiler {
         let ty = BuiltinType::try_from_interned_id(intern::INTERNED_BIGFLOAT)
             .expect("Interned ids broke");
         types.push(TypeInfo::new(Type::BuiltinType(ty), None));
+
+        types.push(TypeInfo::new(Type::Unknown, None));
 
         let values: Vec<ValueInfo> = Vec::new();
         // let val_info = ValueInfo::new

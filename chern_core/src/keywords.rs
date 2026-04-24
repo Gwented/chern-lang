@@ -14,7 +14,7 @@ pub const DEFINITION_SIZE: usize = 4;
 // Ensure ranges and all keyword functions are adjusted
 // Ensure tests are aligned
 
-pub static KEYWORDS_ARRAY: [&str; 21] = [
+pub static KEYWORDS_ARRAY: [&str; 16] = [
     // Special keyword i guess I don't know WHAT this is
     "self", // 0
     // "Integer"
@@ -43,11 +43,11 @@ pub static KEYWORDS_ARRAY: [&str; 21] = [
     "IsEmpty", // 16
     "IsWhitespace",
     // Functions
-    "Range", // 18
-    "StartsW",
-    "EndsW", // 20
-    "Contains",
-    "Equals", // 22
+    // "Range", // 18
+    // "StartsW",
+    // "EndsW", // 20
+    // "Contains",
+    // "Equals", // 22
 ];
 // "Nat" // 37
 // "Real" // 38
@@ -74,12 +74,6 @@ pub enum Keyword {
     Complex = 12,
     Override = 13,
     IsEmpty = 14,
-    IsWhitespace = 15,
-    Range = 16,
-    StartsW = 17,
-    EndsW = 18,
-    Contains = 19,
-    Equals = 20,
 }
 
 impl Formattable for Keyword {
@@ -99,12 +93,6 @@ impl Formattable for Keyword {
             Keyword::Complex => Formatted::SectComplex,
             Keyword::Override => Formatted::SectOverride,
             Keyword::IsEmpty => Formatted::IsEmpty,
-            Keyword::IsWhitespace => Formatted::IsWhitespace,
-            Keyword::Range => Formatted::FuncRange,
-            Keyword::StartsW => Formatted::FuncStartsW,
-            Keyword::EndsW => Formatted::FuncEndsW,
-            Keyword::Contains => Formatted::FuncContains,
-            Keyword::Equals => Formatted::FuncEquals,
             Keyword::As => Formatted::As,
         }
     }
@@ -138,12 +126,6 @@ impl Keyword {
             intern::INTERNED_COMPLEX => Some(Keyword::Complex),
             intern::INTERNED_OVERRIDE => Some(Keyword::Override),
             intern::INTERNED_IS_EMPTY => Some(Keyword::IsEmpty),
-            intern::INTERNED_IS_WHITESPACE => Some(Keyword::IsWhitespace),
-            intern::INTERNED_RANGE => Some(Keyword::Range),
-            intern::INTERNED_STARTSW => Some(Keyword::StartsW),
-            intern::INTERNED_ENDSW => Some(Keyword::EndsW),
-            intern::INTERNED_CONTAINS => Some(Keyword::Contains),
-            intern::INTERNED_EQUALS => Some(Keyword::Equals),
             _ => None,
         }
     }

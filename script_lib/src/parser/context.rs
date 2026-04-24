@@ -25,7 +25,7 @@ use crate::{
 // TODO:  Readjust Sets for new behavior
 
 //NOTE: The basic exit sets should ONLY have tokens that will ALWAYS be stopped on.
-const C_BASE_EXIT_SET: u64 = token::EOF | token::ILLEGAL;
+const C_BASE_EXIT_SET: u64 = token::EOF | token::ILLEGAL | token::KEYWORD;
 const A_BASE_EXIT_SET: u64 = token::SLIM_ARROW;
 
 const C_STMT_NEUTRAL_SET: u64 = C_BASE_EXIT_SET /*| token::Keyword*/ ;
@@ -115,16 +115,12 @@ impl<'a> Context<'a> {
             self.settings.can_color,
         );
 
-        let msg = if let Some(name) = id_opt {
+        let path = interner.search_path(self.module.path_id.id as usize);
+
+        let fmtted_msg = if let Some(name) = id_opt {
             let msg = format!("(in {branch})\n{bmsg}\"{name}\"{amsg}");
 
-            reporter::standardize_err(
-                &msg,
-                &ln_data,
-                &help,
-                interner.search_path(self.module.path_id.id as usize),
-                self.settings.can_color,
-            )
+            reporter::standardize_err(&msg, &ln_data, &help, &path, self.settings.can_color)
         } else {
             let msg = format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind());
 
@@ -137,7 +133,8 @@ impl<'a> Context<'a> {
             )
         };
 
-        self.err_vec.push(Diagnostic::new(msg, Area::Script));
+        self.err_vec
+            .push(Diagnostic::new(path, fmtted_msg, Area::Script));
 
         self.recover(branch);
 
@@ -181,7 +178,9 @@ impl<'a> Context<'a> {
             self.settings.can_color,
         );
 
-        let msg = if let Some(ident) = kw_opt {
+        let path = interner.search_path(self.module.path_id.id as usize);
+
+        let fmtted_msg = if let Some(ident) = kw_opt {
             let msg = format!("(in {branch})\n{bmsg}\"{ident}\"{amsg}");
 
             reporter::standardize_err(
@@ -203,7 +202,8 @@ impl<'a> Context<'a> {
             )
         };
 
-        self.err_vec.push(Diagnostic::new(msg, Area::Script));
+        self.err_vec
+            .push(Diagnostic::new(path, fmtted_msg, Area::Script));
 
         self.recover(branch);
 
@@ -231,7 +231,9 @@ impl<'a> Context<'a> {
 
         let base_msg = format!("(in {branch})\n{msg}");
 
-        let msg = reporter::standardize_err(
+        let path = interner.search_path(self.module.path_id.id as usize);
+
+        let fmtted_msg = reporter::standardize_err(
             &base_msg,
             &ln_data,
             &help,
@@ -241,7 +243,7 @@ impl<'a> Context<'a> {
 
         self.recover(branch);
 
-        let diag = Diagnostic::new(msg, Area::Script);
+        let diag = Diagnostic::new(path, fmtted_msg, Area::Script);
 
         self.err_vec.push(diag);
     }
@@ -288,7 +290,9 @@ impl<'a> Context<'a> {
                 .try_help(expected, &found, branch, interner)
                 .unwrap_or_default();
 
-            let msg = if let Some(id_str) = id_str_opt {
+            let path = interner.search_path(self.module.path_id.id as usize);
+
+            let fmtted_msg = if let Some(id_str) = id_str_opt {
                 let base_msg = format!(
                     "(in {branch})\n{bmsg}{} \"{id_str}\"{amsg}",
                     found.tok.kind()
@@ -313,7 +317,8 @@ impl<'a> Context<'a> {
                 )
             };
 
-            self.err_vec.push(Diagnostic::new(msg, Area::Script));
+            self.err_vec
+                .push(Diagnostic::new(path, fmtted_msg, Area::Script));
 
             self.recover(branch);
 
@@ -349,7 +354,9 @@ impl<'a> Context<'a> {
 
         let base_msg = format!("(in {branch})\nExpected {emsg}, found {fmsg}");
 
-        let msg = reporter::standardize_err(
+        let path = interner.search_path(self.module.path_id.id as usize);
+
+        let fmtted_msg = reporter::standardize_err(
             &base_msg,
             &ln_data,
             &help,
@@ -359,7 +366,7 @@ impl<'a> Context<'a> {
 
         self.recover(branch);
 
-        let diag = Diagnostic::new(msg, Area::Script);
+        let diag = Diagnostic::new(path, fmtted_msg, Area::Script);
 
         self.err_vec.push(diag);
     }

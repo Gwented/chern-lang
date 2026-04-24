@@ -1,0 +1,11 @@
+bind "serialized_data.chrn"
+
+var->
+    ptr: u8
+    capacity: unsized
+    len: unsized
+/* Could also just be
+   ptr: ?
+   capacity: ?
+   len: ?
+*/

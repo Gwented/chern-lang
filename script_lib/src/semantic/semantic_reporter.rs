@@ -132,7 +132,9 @@ impl<'a> SemanticReporter<'a> {
             self.settings.can_color,
         );
 
-        let diag = Diagnostic::new(fmt_msg, Area::Script);
+        let path = self.interner.search_path(module.path_id.id as usize);
+
+        let diag = Diagnostic::new(path, fmt_msg, Area::Script);
         self.err_vec.push(diag);
     }
 
@@ -163,7 +165,8 @@ impl<'a> SemanticReporter<'a> {
             self.settings.can_color,
         );
 
-        let diag = Diagnostic::new(msg, Area::Script);
+        let path = self.interner.search_path(module.path_id.id as usize);
+        let diag = Diagnostic::new(path, msg, Area::Script);
 
         self.err_vec.push(diag);
     }

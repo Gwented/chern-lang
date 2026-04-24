@@ -4,7 +4,6 @@ use common::fmter::{Formattable, Formatted};
 
 use crate::{id_types::TypeId, intern};
 
-// Oi, hugie..
 pub static BUILTIN_TYPE_ARRAY: [&str; 26] = [
     "i8", "u8", "i16", "u16", "f16", "i32", "u32", "f32", "i64", "u64", "f64", "i128", "u128",
     "f128", "sized", "unsized", "char", "str", "bool", "nil", "BigInt", "BigFloat", "List", "Map",
@@ -107,11 +106,12 @@ impl BuiltinType {
     }
 }
 
+// TODO: Something.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum BuiltinTypeKind {
-    I8,
-    U8,
+    I8 = 0,
+    U8 = 1,
     I16,
     U16,
     F16,

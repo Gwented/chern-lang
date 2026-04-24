@@ -1,18 +1,18 @@
 // LSP in Go
 
-## Goal
-- To allow for instructions that state how to serialize data without something like macros or annotations. All features outside of this are entirely negligible.
+## Language intent
+- This is a scripting language with a markdown language paired with it that allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required in-line in a language. The scripting language can either use the keyword `bind` to tell it where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
+
+- Features such as conditions, arguments, and anything that is beyond just setting serialized data details or serialized data specific settings are not intended to be heavily used.
 
 # SCRIPT
 
 ## BEHAVIOR
-- Ends program by default when type information is incorrect unless `#warn` is used.
-
-- Binary representation
+- Ends program by default when type information is incorrect unless `#warn` or `#ignore` is used.
 
 - `@def` and `@end` syntax is intended to lock script behavior into one block so that the language constraints can be applied without needing a dedicated outer file that uses `bind`. Everything after `@end` will be considered the serialized file.
 
-It is not recommended to type above `@def` without comments due to the initial scan needed to make this work needing to avoid reading past `@end` while also skipping comments and quotes that could also have it's keywords inside but are unintended for it to read.
+- It is not recommended to type above `@def` without comments due to the initial scan needed to make this work needing to avoid reading past `@end` while also skipping comments and quotes that could also have it's keywords inside but are unintended for it to read.
 
 ## Types
 i8, u8, i16, u16, i32, u32, i64, u64,
@@ -22,6 +22,10 @@ char, bool, str, struct, enum, nil, BigInt, BigFloat, List, Map, Set, Tuple
 `struct`: For defining a structure of data.
 `enum`: For defining an enum type which can also hold enumerations with types.
 `Tuple`: Holds any amount of types within generic parameters.
+`List`: Holds a single generic parameter.
+`Set`: Holds a single generic parameter and enforces when checking serialized data that it is in fact a valid set with only one of each value.
+
+`?`: Infers type and expects type consistency throughout entire given serialized data file type.
 
 ## Prefix/Unary Operations
 `!`: NOT
@@ -53,10 +57,7 @@ var->
     stirring: str [gopher(2.0, 5.0)] // Works as normal
 ```
 
-`?`: Infers type and expects type consistency throughout entire given serialized data file type.
-Maybe this should just mean it's original intent of, ignore the type.
-
-`~`: Name bypass operator for when defined types have the same identifier as language builtin types.
+`e#`: Name bypass for treating a keyword as an identifier.
 
 Example:
 ```chrn
@@ -73,36 +74,39 @@ nest->
 ### DOES NOT EXIST YET
 `(range)`: Explicit range syntax. The '=' is required. `0..=5`
 
-## [Predicates]
+## Predicate Keywords
 `IsEmpty`: Checks if the given array or string has a length of 0.
 
-`IsWhitespace`: Checks if a string is only whitespace within UTF-8 standards, or is empty.
+`IsWhitespace`: Checks if a string is only whitespace within UTF-8 standards
 
 ## Functions
 
 `Equals(Variadic)`: Checks serialized value for equality against given argument
 
+
 `Range(inclusive, inclusive)`: Checks if the data being viewed matches the range given. For arrays and strings, this checks the length. For numbers, this checks the numeric value.
 
-`Contains(DynType)`: Checks if the data being viewed contains the given literal.
+`Contains(DynType)`: Checks if the data being viewed contains the given literal or numeric.
+// Would need to retain notation if this would need to be done
+Contains("chern") | Contains(1xF)
 
-`StartsW(DynType)`: Checks if the data being viewed starts with the given literal.
+`StartsW(DynType)`: Checks if the data being viewed starts with the given literal or numeric.
 
-`EndsW(DynType)`:
+`EndsW(DynType)`: Checks if the data being viewed ends with the given literal or numeric.
 
 // Does not exist yet
 `Regex("0-9a-zA-Z*")`
 
 ## Statements
 
-`const`: Allows the declaration of variables under a constant variable rather than only literals. The type is always inferred to be the lowest possible data type given the context it's used in.
+`let`: Allows the declaration of values under a re-usable variable instead of just literals. The type is more so a generic "number", "float" or "string" type as opposed to being something one would define.
 
 `export`: Allows for the exported value to be used externally when imported.
-This can be applied to `struct`, `enum`, `const`, and `alias`.
+This can be applied to `struct`, `enum`, `let`, and `alias`.
 
 `import`: Imports `.chrn` file which allows for anything exported within the imported file to be used.
 
-`alias`: Allows for predicates and arguments to be stored within a single function call for convenience.
+`alias`: Allows for predicates and arguments to be stored within a single function call.
 
 ```chrn
 alias ShortDefault() = [IsWhitespace]
@@ -155,9 +159,11 @@ nest->
 ```
 
 # DOES NOT EXIST YET
-`override->`: What to default to when a language doesn't contain a particular type. Language defaults exist but this can change any if needed.
+`override`: What to default to when a language doesn't contain a particular type. Language defaults exist but this can change any if needed.
 
-`complex->`: Define complex rules
+`complex`: Define complex rules
+
+-------------------------------
 
 ## Arguments
 `#warn`: Would warn instead of terminating upon seeing a wrongful constraint of any kind.
@@ -167,7 +173,7 @@ nest->
 `#scient`, `#hex`, `#bin`, `#octo`: Numeric notations to output in serialized file.
 
 // DOES NOT EXIST
-`#unicode`
+`#unicode`:
 `#ignore_rm`: (Would remove anything that didn't align under condition rather than crash or warn.)
 //DOES NOT EXIST
 
@@ -197,20 +203,26 @@ nest->
 import "definitions.chrn" as defs
 import "invalid_utf8_name.chrn" as valid_name
 
-const VALUE = defs.MAGIC_NUMBER + valid_name.OTHER_MAGICAL_NUMBER
+export let VALUE = defs.MAGIC_NUMBER + valid_name.OTHER_MAGICAL_NUMBER
 ```
 
 #### Full example of language
 
 ```chrn
 @def
+    import "chern.chrn" as cherning
+    import "definitions.chrn"
+
+    let stuff = cherning.MAGIC_NUMBER * 2
+
     var->
         name: str
         age: u8 #warn #bin
         pets: List<Pet> [!IsEmpty, Range(5, 15)]
+        opinionated_c: definitions.e#i32
     nest->
         struct Pet {
-            name: str [!IsWhitespace] // Actions would allow for "If WS then Concat("...")"
+            name: str [!IsWhitespace]
             color: Color
         }
 
@@ -218,12 +230,22 @@ const VALUE = defs.MAGIC_NUMBER + valid_name.OTHER_MAGICAL_NUMBER
 @end
 ```
 
+#### Simple example of language
+
+```chrn
+bind "serialized_data.chrn"
+
+var-> // #ignore <---- Maybe allow for this to be global
+    ptr: ? #ignore
+    capacity: ? #ignore
+    len: ? #ignore
+```
 
 ## FORGOT ABOUT UNICODE
 
 ## POSSIBLE FEATURES
 
-(CLI related) Utilities to alter actual main file, such as trimming all strings.
+(CLI related) Utilities to alter actual main file, such as trimming all strings. No.
 
 Matrix declarations.
 Tensor(N-dim)<f32> more so a convenience wrapper over `List<List<f32>>` (Although tensors are usually in binary) WHICH IS WHY THIS NEEDS A BINARY REPRESENTATION <-----
@@ -231,6 +253,6 @@ Tensor(N-dim)<f32> more so a convenience wrapper over `List<List<f32>>` (Althoug
 matrix: Tensor2<f32>
 
 Unified serialization rules for any md file.
-Yaml, XML(Forgot this existed), Json, BINARY(I don't know) BINARY, BINARY
+Yaml, XML(Forgot this existed), Json, BINARY(I don't know) BINARY, BINARY, BINARY
 
 # SERIAL

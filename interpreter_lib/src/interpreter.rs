@@ -12,7 +12,7 @@ use script_lib::{
     semantic::{
         constraint_resolver::{ConstraintResolver, value_context::ValueContext},
         name_resolver::NamespaceResolver,
-        type_resolver::TypeResolver,
+        type_resolver::{TypeResolver, type_context::TypeContext},
     },
 };
 
@@ -67,10 +67,18 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
         return Err(ScriptError::Semantic(reporter.diags).into());
     }
 
+    let mut ty_ctx = TypeContext::new();
     for i in 0..script_compiler.mods.len() {
         let mod_id = ModuleId::new(i);
-        match TypeResolver::new(settings, &asts[i], mod_id, &interner, &mut script_compiler)
-            .resolve()
+        match TypeResolver::new(
+            settings,
+            &asts[i],
+            mod_id,
+            &mut ty_ctx,
+            &interner,
+            &mut script_compiler,
+        )
+        .resolve()
         {
             Ok(_) => (),
             Err(mut diags) => reporter.diags.append(&mut diags),

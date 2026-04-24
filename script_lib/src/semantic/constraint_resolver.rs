@@ -508,27 +508,27 @@ impl<'a> ConstraintResolver<'a> {
                 //TODO: Maybe handle this elsewhere
                 let (constraints, kind) = match Keyword::try_from_interned_id(name_id) {
                     Some(kw) => match kw {
-                        Keyword::Range => (
-                            ArgConstraint::from_builtin(FuncKind::Range),
-                            FuncKind::Range,
-                        ),
-                        Keyword::StartsW => (
-                            ArgConstraint::from_builtin(FuncKind::StartsW),
-                            FuncKind::StartsW,
-                        ),
-                        Keyword::EndsW => (
-                            ArgConstraint::from_builtin(FuncKind::EndsW),
-                            FuncKind::EndsW,
-                        ),
-                        Keyword::Contains => (
-                            ArgConstraint::from_builtin(FuncKind::Contains),
-                            FuncKind::Contains,
-                        ),
-                        Keyword::Equals => (
-                            ArgConstraint::from_builtin(FuncKind::Equals),
-                            FuncKind::Equals,
-                        ),
-                        // Will this account for aliases?
+                        //     Keyword::Range => (
+                        //         ArgConstraint::from_builtin(FuncKind::Range),
+                        //         FuncKind::Range,
+                        //     ),
+                        //     Keyword::StartsW => (
+                        //         ArgConstraint::from_builtin(FuncKind::StartsW),
+                        //         FuncKind::StartsW,
+                        //     ),
+                        //     Keyword::EndsW => (
+                        //         ArgConstraint::from_builtin(FuncKind::EndsW),
+                        //         FuncKind::EndsW,
+                        //     ),
+                        //     Keyword::Contains => (
+                        //         ArgConstraint::from_builtin(FuncKind::Contains),
+                        //         FuncKind::Contains,
+                        //     ),
+                        //     Keyword::Equals => (
+                        //         ArgConstraint::from_builtin(FuncKind::Equals),
+                        //         FuncKind::Equals,
+                        //     ),
+                        //     // Will this account for aliases?
                         _ => {
                             todo!("User defined");
                         }

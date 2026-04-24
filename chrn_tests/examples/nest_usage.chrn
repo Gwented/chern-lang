@@ -1,0 +1,21 @@
+var->
+    author: Author
+    book: Book
+nest->
+    struct Author {
+        name: str
+        age: u8
+        popularity: Popularity
+    }
+
+    struct Book {
+        title: str
+        pages: u32
+        popularity: Popularity
+    }
+
+    enum Popularity {
+        High
+        Medium
+        Low
+    }

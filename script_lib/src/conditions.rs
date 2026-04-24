@@ -1,4 +1,4 @@
-use chern_core::{builtins::BuiltinTypeKind, id_types::SymbolId, keywords::Keyword};
+use chern_core::{builtins::BuiltinTypeKind, id_types::SymbolId, intern, keywords::Keyword};
 use common::fmter::{Formattable, Formatted};
 
 use crate::semantic::representation::FuncKind;
@@ -31,20 +31,9 @@ impl Cond {
     /// conditions.
     // This is really really really really smelly
     pub fn try_from_id(id: u32) -> Option<Cond> {
-        match Keyword::try_from_interned_id(id) {
-            Some(kw) => match kw {
-                Keyword::IsEmpty => Some(Cond::IsEmpty),
-                Keyword::IsWhitespace => Some(Cond::IsWhitespace),
-                _ => None,
-            },
-            None => None,
-        }
-    }
-
-    pub fn try_from_kw(kw: Keyword) -> Option<Cond> {
-        match kw {
-            Keyword::IsEmpty => Some(Cond::IsEmpty),
-            Keyword::IsWhitespace => Some(Cond::IsWhitespace),
+        match id {
+            id if id == intern::INTERNED_IS_EMPTY => Some(Cond::IsEmpty),
+            id if id == intern::INTERNED_IS_WHITESPACE => Some(Cond::IsWhitespace),
             _ => None,
         }
     }
