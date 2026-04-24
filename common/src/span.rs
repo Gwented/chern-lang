@@ -22,3 +22,15 @@ impl Span {
         Span::new(start, end)
     }
 }
+
+pub fn merge_spans(spans: &[Span]) -> Span {
+    let mut full_span = *spans
+        .get(0)
+        .expect("Call to merge_spans with span length < 0");
+
+    for span in spans.iter().skip(1).copied() {
+        full_span = full_span.merge(span);
+    }
+
+    full_span
+}

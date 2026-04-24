@@ -43,7 +43,7 @@ impl Display for Branch {
                 NeutralBranch::Searching => write!(f, "searching [neutral]"),
                 NeutralBranch::Alias => write!(f, "alias"),
                 NeutralBranch::Bind => write!(f, "bind"),
-                NeutralBranch::Let => write!(f, "const"),
+                NeutralBranch::Let => write!(f, "let"),
                 NeutralBranch::Import => write!(f, "import"),
             },
             Branch::Section(sect_branch) => match sect_branch {

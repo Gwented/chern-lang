@@ -2,6 +2,7 @@ use chern_core::{
     intern::Intern,
     keywords::{self, Keyword},
 };
+
 use common::{
     chern_settings::ChernSettings,
     fmter::Formattable,
@@ -107,34 +108,37 @@ impl<'a> Context<'a> {
             .try_help(expected, &found, branch, interner)
             .unwrap_or_default();
 
-        let span = self.safely_handle_span(&found);
+        let spans = self.safely_handle_span(&found);
 
         let ln_data = reporter::form_err_diag(
             &self.module.metadata.src_bytes,
-            &span,
+            &spans,
             self.settings.can_color,
         );
 
         let path = interner.search_path(self.module.path_id.id as usize);
 
-        let fmtted_msg = if let Some(name) = id_opt {
-            let msg = format!("(in {branch})\n{bmsg}\"{name}\"{amsg}");
-
-            reporter::standardize_err(&msg, &ln_data, &help, &path, self.settings.can_color)
+        let core_msg = if let Some(name) = id_opt {
+            format!("(in {branch})\n{bmsg}\"{name}\"{amsg}")
         } else {
-            let msg = format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind());
-
-            reporter::standardize_err(
-                &msg,
-                &ln_data,
-                &help,
-                interner.search_path(self.module.path_id.id as usize),
-                self.settings.can_color,
-            )
+            format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind())
         };
 
-        self.err_vec
-            .push(Diagnostic::new(path, fmtted_msg, Area::Script));
+        let fmtted_diag = reporter::standardize_err(
+            &core_msg,
+            &ln_data,
+            &help,
+            interner.search_path(self.module.path_id.id as usize),
+            self.settings.can_color,
+        );
+
+        self.err_vec.push(Diagnostic::new(
+            path,
+            Some(common::span::merge_spans(&spans)),
+            core_msg,
+            fmtted_diag,
+            Area::Script,
+        ));
 
         self.recover(branch);
 
@@ -170,40 +174,37 @@ impl<'a> Context<'a> {
             .try_help(TokenKind::Keyword, &found, branch, interner)
             .unwrap_or_default();
 
-        let span = self.safely_handle_span(&found);
+        let spans = self.safely_handle_span(&found);
 
         let ln_data = reporter::form_err_diag(
             &self.module.metadata.src_bytes,
-            &span,
+            &spans,
             self.settings.can_color,
         );
 
         let path = interner.search_path(self.module.path_id.id as usize);
 
-        let fmtted_msg = if let Some(ident) = kw_opt {
-            let msg = format!("(in {branch})\n{bmsg}\"{ident}\"{amsg}");
-
-            reporter::standardize_err(
-                &msg,
-                &ln_data,
-                &help,
-                interner.search_path(self.module.path_id.id as usize),
-                self.settings.can_color,
-            )
+        let core_msg = if let Some(ident) = kw_opt {
+            format!("(in {branch})\n{bmsg}\"{ident}\"{amsg}")
         } else {
-            let msg = format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind());
-
-            reporter::standardize_err(
-                &msg,
-                &ln_data,
-                &help,
-                interner.search_path(self.module.path_id.id as usize),
-                self.settings.can_color,
-            )
+            format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind())
         };
 
-        self.err_vec
-            .push(Diagnostic::new(path, fmtted_msg, Area::Script));
+        let fmtted_diag = reporter::standardize_err(
+            &core_msg,
+            &ln_data,
+            &help,
+            interner.search_path(self.module.path_id.id as usize),
+            self.settings.can_color,
+        );
+
+        self.err_vec.push(Diagnostic::new(
+            path,
+            Some(common::span::merge_spans(&spans)),
+            core_msg,
+            fmtted_diag,
+            Area::Script,
+        ));
 
         self.recover(branch);
 
@@ -221,20 +222,20 @@ impl<'a> Context<'a> {
             .try_help(TokenKind::Poison, &found, branch, interner)
             .unwrap_or_default();
 
-        let span = self.safely_handle_span(found);
+        let spans = self.safely_handle_span(found);
 
         let ln_data = reporter::form_err_diag(
             &self.module.metadata.src_bytes,
-            &span,
+            &spans,
             self.settings.can_color,
         );
 
-        let base_msg = format!("(in {branch})\n{msg}");
+        let core_msg = format!("(in {branch})\n{msg}");
 
         let path = interner.search_path(self.module.path_id.id as usize);
 
         let fmtted_msg = reporter::standardize_err(
-            &base_msg,
+            &core_msg,
             &ln_data,
             &help,
             interner.search_path(self.module.path_id.id as usize),
@@ -243,7 +244,13 @@ impl<'a> Context<'a> {
 
         self.recover(branch);
 
-        let diag = Diagnostic::new(path, fmtted_msg, Area::Script);
+        let diag = Diagnostic::new(
+            path,
+            Some(common::span::merge_spans(&spans)),
+            core_msg,
+            fmtted_msg,
+            Area::Script,
+        );
 
         self.err_vec.push(diag);
     }
@@ -278,11 +285,11 @@ impl<'a> Context<'a> {
                 _ => None,
             };
 
-            let span = self.safely_handle_span(found);
+            let spans = self.safely_handle_span(found);
 
             let ln_data = reporter::form_err_diag(
                 &self.module.metadata.src_bytes,
-                &span,
+                &spans,
                 self.settings.can_color,
             );
 
@@ -292,33 +299,30 @@ impl<'a> Context<'a> {
 
             let path = interner.search_path(self.module.path_id.id as usize);
 
-            let fmtted_msg = if let Some(id_str) = id_str_opt {
-                let base_msg = format!(
+            let core_msg = if let Some(id_str) = id_str_opt {
+                format!(
                     "(in {branch})\n{bmsg}{} \"{id_str}\"{amsg}",
                     found.tok.kind()
-                );
-
-                reporter::standardize_err(
-                    &base_msg,
-                    &ln_data,
-                    &help,
-                    interner.search_path(self.module.path_id.id as usize),
-                    self.settings.can_color,
                 )
             } else {
-                let base_msg = format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind());
-
-                reporter::standardize_err(
-                    &base_msg,
-                    &ln_data,
-                    &help,
-                    interner.search_path(self.module.path_id.id as usize),
-                    self.settings.can_color,
-                )
+                format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind())
             };
 
-            self.err_vec
-                .push(Diagnostic::new(path, fmtted_msg, Area::Script));
+            let fmtted_msg = reporter::standardize_err(
+                &core_msg,
+                &ln_data,
+                &help,
+                interner.search_path(self.module.path_id.id as usize),
+                self.settings.can_color,
+            );
+
+            self.err_vec.push(Diagnostic::new(
+                path,
+                Some(common::span::merge_spans(&spans)),
+                core_msg,
+                fmtted_msg,
+                Area::Script,
+            ));
 
             self.recover(branch);
 
@@ -344,20 +348,20 @@ impl<'a> Context<'a> {
             .try_help(TokenKind::Poison, &found, branch, interner)
             .unwrap_or_default();
 
-        let span = self.safely_handle_span(found);
+        let spans = self.safely_handle_span(found);
 
         let ln_data = reporter::form_err_diag(
             &self.module.metadata.src_bytes,
-            &span,
+            &spans,
             self.settings.can_color,
         );
 
-        let base_msg = format!("(in {branch})\nExpected {emsg}, found {fmsg}");
+        let core_msg = format!("(in {branch})\nExpected {emsg}, found {fmsg}");
 
         let path = interner.search_path(self.module.path_id.id as usize);
 
-        let fmtted_msg = reporter::standardize_err(
-            &base_msg,
+        let fmtted_diag = reporter::standardize_err(
+            &core_msg,
             &ln_data,
             &help,
             interner.search_path(self.module.path_id.id as usize),
@@ -366,7 +370,13 @@ impl<'a> Context<'a> {
 
         self.recover(branch);
 
-        let diag = Diagnostic::new(path, fmtted_msg, Area::Script);
+        let diag = Diagnostic::new(
+            path,
+            Some(common::span::merge_spans(&spans)),
+            core_msg,
+            fmtted_diag,
+            Area::Script,
+        );
 
         self.err_vec.push(diag);
     }

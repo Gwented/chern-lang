@@ -29,8 +29,8 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
         }
         Err(core_err) => match core_err {
             CoreError::Config(cfg_load_err) => match cfg_load_err {
-                ConfigLoadError::Unclosed(msg) | ConfigLoadError::Module(msg) => {
-                    eprintln!("{msg}");
+                ConfigLoadError::Unclosed(diag) | ConfigLoadError::Module(diag) => {
+                    eprintln!("{}", diag.fmtted_diag);
                     return Err("Failed to parse configuration file".to_string());
                 }
                 ConfigLoadError::IO(e) => match e.kind() {
@@ -44,7 +44,7 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
                 ScriptError::Parser(diags) | ScriptError::Semantic(diags) => {
                     for diag in &diags {
                         eprint!("From path => {}", diag.path.display());
-                        eprintln!("{}", diag.fmtted_msg);
+                        eprintln!("{}", diag.fmtted_diag);
                     }
 
                     eprintln!("Reported {} error(s)", diags.len());

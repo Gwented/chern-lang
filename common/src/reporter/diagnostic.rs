@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use crate::span::Span;
+
 #[derive(Debug)]
 pub struct Reporter {
     pub diags: Vec<Diagnostic>,
@@ -24,15 +26,26 @@ pub enum Area {
 #[derive(Debug)]
 pub struct Diagnostic {
     pub path: PathBuf,
-    pub fmtted_msg: String,
+    pub core_msg: String,
+    pub span: Option<Span>,
+    pub fmtted_diag: String,
     pub area: Area,
 }
 
 impl Diagnostic {
-    pub fn new(path: &Path, fmtted_msg: String, area: Area) -> Diagnostic {
+    // Maybe just req PathBuf
+    pub fn new(
+        path: &Path,
+        span: Option<Span>,
+        core_msg: String,
+        fmtted_diag: String,
+        area: Area,
+    ) -> Diagnostic {
         Diagnostic {
             path: path.to_path_buf(),
-            fmtted_msg,
+            span,
+            core_msg,
+            fmtted_diag,
             area,
         }
     }

@@ -5,7 +5,15 @@ use std::{
 };
 
 use chern_core::{keywords::DEFINITION_SIZE, quote_model};
-use common::{chern_settings::ChernSettings, core_error::ConfigLoadError, reporter, span::Span};
+use common::{
+    chern_settings::ChernSettings,
+    core_error::ConfigLoadError,
+    reporter::{
+        self,
+        diagnostic::{Area, Diagnostic},
+    },
+    span::Span,
+};
 
 use crate::modules::ModuleMetadata;
 
@@ -18,12 +26,12 @@ pub struct ChernConfigLoader<'a, R: Read> {
     handle: BufReader<R>,
     settings: &'a ChernSettings,
     pos: usize,
-    lines_read: usize,
 }
 
 //NOTE: This forces paths to be given, but if the chern file itself doesn't have a path given
 //then the language doesn't work anyways. May leave as is.
 impl<R: Read> ChernConfigLoader<'_, R> {
+    // FIX: Rename to "with_path" after un-commenting the wall of tests
     pub fn new<'a>(
         path: &'a Path,
         handle: R,
@@ -34,7 +42,6 @@ impl<R: Read> ChernConfigLoader<'_, R> {
             settings,
             handle: BufReader::new(handle),
             pos: 0,
-            lines_read: 1,
         }
     }
 
@@ -90,7 +97,7 @@ impl<R: Read> ChernConfigLoader<'_, R> {
                             ""
                         };
 
-                        let msg = format!("Found unclosed quotes which reached <eof>{}", note);
+                        let core_msg = format!("Found unclosed quotes which reached <eof>{}", note);
 
                         let spans = if double_quotes_seen > 1 {
                             let start = first_double_quote.expect("Proven to be > 1");
@@ -118,15 +125,23 @@ impl<R: Read> ChernConfigLoader<'_, R> {
                             self.settings.can_color,
                         );
 
-                        let err_msg = reporter::standardize_err(
-                            &msg,
+                        let fmtted_diag = reporter::standardize_err(
+                            &core_msg,
                             &ln_data,
                             "",
                             self.path,
                             self.settings.can_color,
                         );
 
-                        return Err(ConfigLoadError::Unclosed(err_msg));
+                        let diag = Diagnostic::new(
+                            self.path,
+                            Some(common::span::merge_spans(&spans)),
+                            core_msg,
+                            fmtted_diag,
+                            Area::ConfigLoad,
+                        );
+
+                        return Err(ConfigLoadError::Unclosed(diag));
                     }
 
                     if double_quotes_seen == 1 {
@@ -148,7 +163,7 @@ impl<R: Read> ChernConfigLoader<'_, R> {
                             ""
                         };
 
-                        let msg = format!("Found unclosed quotes which reached <eof>{}", note);
+                        let core_msg = format!("Found unclosed quotes which reached <eof>{}", note);
 
                         let spans = if single_quotes_seen > 1 {
                             let start = first_single_quote.expect("Proven to be > 1");
@@ -176,15 +191,23 @@ impl<R: Read> ChernConfigLoader<'_, R> {
                             self.settings.can_color,
                         );
 
-                        let err_msg = reporter::standardize_err(
-                            &msg,
+                        let fmtted_diag = reporter::standardize_err(
+                            &core_msg,
                             &ln_data,
                             "",
                             self.path,
                             self.settings.can_color,
                         );
 
-                        return Err(ConfigLoadError::Unclosed(err_msg));
+                        let diag = Diagnostic::new(
+                            self.path,
+                            Some(common::span::merge_spans(&spans)),
+                            core_msg,
+                            fmtted_diag,
+                            Area::ConfigLoad,
+                        );
+
+                        return Err(ConfigLoadError::Unclosed(diag));
                     }
 
                     if single_quotes_seen == 1 {
@@ -260,7 +283,7 @@ impl<R: Read> ChernConfigLoader<'_, R> {
                 None,
             ))
         } else {
-            let msg = format!("Could not find `@end` after `@def`");
+            let core_msg = format!("Could not find `@end` after `@def`");
 
             let def_span = def_span.expect("@def must exist for this branch to be seen");
             // Explicitly declaring this so the end of the file can be pointed at too
@@ -280,10 +303,23 @@ impl<R: Read> ChernConfigLoader<'_, R> {
                 self.settings.can_color,
             );
 
-            let err_msg =
-                reporter::standardize_err(&msg, &ln_data, "", self.path, self.settings.can_color);
+            let fmtted_diag = reporter::standardize_err(
+                &core_msg,
+                &ln_data,
+                "",
+                self.path,
+                self.settings.can_color,
+            );
 
-            Err(ConfigLoadError::Unclosed(err_msg))
+            let diag = Diagnostic::new(
+                self.path,
+                Some(def_span.merge(eof_span)),
+                core_msg,
+                fmtted_diag,
+                Area::ConfigLoad,
+            );
+
+            Err(ConfigLoadError::Unclosed(diag))
         }
     }
 
@@ -345,7 +381,7 @@ impl<R: Read> ChernConfigLoader<'_, R> {
         }
 
         if depth > 0 {
-            let msg = format!("Found unclosed multi-line comment in configuration file");
+            let core_msg = format!("Found unclosed multi-line comment in configuration file");
 
             // To include full multi-line syntax. / + 1 = /*
             let comment_span = Span::new(comment_start, comment_start + 1);
@@ -358,10 +394,23 @@ impl<R: Read> ChernConfigLoader<'_, R> {
                 self.settings.can_color,
             );
 
-            let err_msg =
-                reporter::standardize_err(&msg, &ln_data, "", self.path, self.settings.can_color);
+            let fmtted_diag = reporter::standardize_err(
+                &core_msg,
+                &ln_data,
+                "",
+                self.path,
+                self.settings.can_color,
+            );
 
-            return Err(ConfigLoadError::Unclosed(err_msg));
+            let diag = Diagnostic::new(
+                self.path,
+                Some(comment_span.merge(eof_span)),
+                core_msg,
+                fmtted_diag,
+                Area::ConfigLoad,
+            );
+
+            return Err(ConfigLoadError::Unclosed(diag));
         }
 
         Ok(())
@@ -374,9 +423,6 @@ impl<R: Read> ChernConfigLoader<'_, R> {
     fn advance(&mut self) -> Option<u8> {
         let b = self.peek();
 
-        if b == Some(b'\n') {
-            self.lines_read += 1;
-        }
         self.pos += 1;
 
         b

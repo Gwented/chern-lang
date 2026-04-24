@@ -10,7 +10,15 @@ use chern_core::{
     id_types::{AstId, InternedId, ModuleId, PathId, ScopeId, SymbolId},
     intern::Intern,
 };
-use common::{chern_settings::ChernSettings, core_error::ConfigLoadError, reporter, span::Span};
+use common::{
+    chern_settings::ChernSettings,
+    core_error::ConfigLoadError,
+    reporter::{
+        self,
+        diagnostic::{Area, Diagnostic},
+    },
+    span::Span,
+};
 
 use crate::{
     config_loader::ChernConfigLoader,
@@ -221,7 +229,11 @@ pub fn extract_modules(
 
     let src = match file_ops::fopen(&path) {
         Ok(f) => f,
-        Err(e) => return Err(ConfigLoadError::Module(e)),
+        Err(err_msg) => {
+            // This is the sole reason the span is an option
+            let diag = Diagnostic::new(path, None, err_msg.clone(), err_msg, Area::ConfigLoad);
+            return Err(ConfigLoadError::Module(diag));
+        }
     };
 
     let path = path.canonicalize()?;
@@ -232,12 +244,14 @@ pub fn extract_modules(
     let file_name = match path.file_prefix().map(|n| n.to_str()) {
         Some(Some(p)) => p,
         _ => {
-            let msg = format!(
+            let core_msg = format!(
                 "The path \"{}\" does not have a valid UTF-8 file name usable within the program",
                 path.display()
             );
 
-            return Err(ConfigLoadError::Module(msg));
+            let diag = Diagnostic::new(&path, None, core_msg.clone(), core_msg, Area::ConfigLoad);
+
+            return Err(ConfigLoadError::Module(diag));
         }
     };
 
@@ -334,7 +348,7 @@ fn resolve_modules(
         let src = match fs::File::open(path) {
             // Why.
             Ok(_) if path.is_dir() => {
-                let msg = format!("The path \"{}\" is a directory", path.display());
+                let core_msg = format!("The path \"{}\" is a directory", path.display());
 
                 let ln_data = reporter::form_err_diag(
                     &prev_mod.metadata.src_bytes,
@@ -342,14 +356,27 @@ fn resolve_modules(
                     settings.can_color,
                 );
                 let prev_path = interner.search_path(prev_mod.path_id.id as usize);
-                let full_msg =
-                    reporter::standardize_err(&msg, &ln_data, "", prev_path, settings.can_color);
+                let fmtted_diag = reporter::standardize_err(
+                    &core_msg,
+                    &ln_data,
+                    "",
+                    prev_path,
+                    settings.can_color,
+                );
 
-                return Err(ConfigLoadError::Module(full_msg));
+                let diag = Diagnostic::new(
+                    path,
+                    Some(import.path_span),
+                    core_msg,
+                    fmtted_diag,
+                    Area::ConfigLoad,
+                );
+
+                return Err(ConfigLoadError::Module(diag));
             }
             Ok(f) => f,
             Err(e) => {
-                let msg = match e.kind() {
+                let core_msg = match e.kind() {
                     std::io::ErrorKind::NotFound => {
                         format!("Could not find the file \"{}\"", path.display())
                     }
@@ -368,10 +395,23 @@ fn resolve_modules(
                     settings.can_color,
                 );
                 let prev_path = interner.search_path(prev_mod.path_id.id as usize);
-                let full_msg =
-                    reporter::standardize_err(&msg, &ln_data, "", prev_path, settings.can_color);
+                let fmtted_diag = reporter::standardize_err(
+                    &core_msg,
+                    &ln_data,
+                    "",
+                    prev_path,
+                    settings.can_color,
+                );
 
-                return Err(ConfigLoadError::Module(full_msg));
+                let diag = Diagnostic::new(
+                    path,
+                    Some(import.path_span),
+                    core_msg,
+                    fmtted_diag,
+                    Area::ConfigLoad,
+                );
+
+                return Err(ConfigLoadError::Module(diag));
             }
         };
 
@@ -384,11 +424,15 @@ fn resolve_modules(
                 if let Some(name_id) = import.alias_id {
                     interner.search(name_id.id as usize).to_string()
                 } else {
-                    let msg = format!(
+                    let core_msg = format!(
                         "The path \"{}\" does not have a valid UTF-8 file name usable within the program. Consider using 'as' to give it an alias if a file name change is not possible.",
                         path.display()
                     );
-                    return Err(ConfigLoadError::Module(msg));
+
+                    let diag =
+                        Diagnostic::new(path, None, core_msg.clone(), core_msg, Area::ConfigLoad);
+
+                    return Err(ConfigLoadError::Module(diag));
                 }
             }
         };

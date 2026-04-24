@@ -129,7 +129,7 @@ impl Display for Formatted {
             Formatted::Export => write!(f, "export"),
             Formatted::Bind => write!(f, "bind"),
             Formatted::Alias => write!(f, "alias"),
-            Formatted::Let => write!(f, "const"),
+            Formatted::Let => write!(f, "let"),
             Formatted::Change => write!(f, "change"),
             Formatted::SectVar => write!(f, "variable"),
             Formatted::SectNest => write!(f, "nest"),

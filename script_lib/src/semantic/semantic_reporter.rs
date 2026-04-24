@@ -31,7 +31,7 @@ impl<'a> SemanticReporter<'a> {
 
     //WARN: Could be better looking
     pub(super) fn report_semantic(&mut self, sem_err: SemanticError, module: &Module) {
-        let (msg, spans) = match sem_err {
+        let (core_msg, spans) = match sem_err {
             SemanticError::UnsupportedArg(arg, type_kind, spans) => {
                 let msg = format!(
                     "The argument \"#{}\" is not supported for the type `{}`",
@@ -125,7 +125,7 @@ impl<'a> SemanticReporter<'a> {
             reporter::form_err_diag(&module.metadata.src_bytes, &spans, self.settings.can_color);
 
         let fmt_msg = reporter::standardize_err(
-            &msg,
+            &core_msg,
             &ln_data,
             "",
             &self.interner.search_path(module.path_id.id as usize),
@@ -134,7 +134,13 @@ impl<'a> SemanticReporter<'a> {
 
         let path = self.interner.search_path(module.path_id.id as usize);
 
-        let diag = Diagnostic::new(path, fmt_msg, Area::Script);
+        let diag = Diagnostic::new(
+            path,
+            Some(common::span::merge_spans(&spans)),
+            core_msg.to_string(),
+            fmt_msg,
+            Area::Script,
+        );
         self.err_vec.push(diag);
     }
 
@@ -157,7 +163,7 @@ impl<'a> SemanticReporter<'a> {
         };
 
         // diag_msg?
-        let msg = reporter::standardize_err(
+        let fmtted_diag = reporter::standardize_err(
             msg,
             &line_data,
             &help,
@@ -166,7 +172,13 @@ impl<'a> SemanticReporter<'a> {
         );
 
         let path = self.interner.search_path(module.path_id.id as usize);
-        let diag = Diagnostic::new(path, msg, Area::Script);
+        let diag = Diagnostic::new(
+            path,
+            Some(common::span::merge_spans(&spans)),
+            msg.to_string(),
+            fmtted_diag,
+            Area::Script,
+        );
 
         self.err_vec.push(diag);
     }

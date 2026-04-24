@@ -9,7 +9,7 @@ use crate::parser::ast::BinaryOp;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // This exists so that the interned value can be kept and displayed. It's also so a notation can be
 // read within the lexer and stored without losing accuracy by setting it to something like i64
-pub(crate) enum Notation {
+pub enum Notation {
     Bin = 2,
     Decimal = 10,
     Octal = 8,
@@ -18,13 +18,13 @@ pub(crate) enum Notation {
 
 #[derive(Debug, Clone)]
 pub struct SpannedToken {
-    pub(crate) tok: Token,
+    pub tok: Token,
     pub span: Span,
 }
 
 // WHAT
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum Token {
+pub enum Token {
     // To help with error messages
     Keyword(Keyword),
     BoolLiteral(bool),

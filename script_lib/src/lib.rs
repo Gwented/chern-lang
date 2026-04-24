@@ -10,7 +10,7 @@ pub mod modules;
 pub mod parser;
 pub mod script_compiler;
 pub mod semantic;
-mod token;
+pub mod token;
 
 // #[cfg(test)]
 // mod tests {
