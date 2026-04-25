@@ -5,5 +5,5 @@ edition.workspace = true
 
 [dependencies]
 common = { path = "../common/" }
-chern_core = { path = "../chern_core/" }
+chrn_core = { path = "../chrn_core/" }
 unicode-width = "0.2.2"

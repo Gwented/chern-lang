@@ -1,4 +1,4 @@
-use chern_core::{
+use chrn_core::{
     intern::Intern,
     keywords::{self, Keyword},
 };
@@ -97,7 +97,7 @@ impl<'a> Context<'a> {
             Token::Keyword(kw) => Some(kw.to_fmt().to_string()),
             Token::Illegal(id) => {
                 let illegal_msg = interner.search(id as usize);
-                let new_msg = format!("illegal {illegal_msg}");
+                let new_msg = format!("{illegal_msg}");
                 Some(new_msg)
             }
             Token::Char(ch) => Some(ch.to_string()),
@@ -163,7 +163,7 @@ impl<'a> Context<'a> {
             }
             Token::Illegal(id) => {
                 let illegal_msg = interner.search(id as usize);
-                let new_msg = format!("illegal {illegal_msg}");
+                let new_msg = format!("{illegal_msg}");
                 Some(new_msg)
             }
             Token::Char(ch) => Some(ch.to_string()),

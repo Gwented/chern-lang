@@ -1,7 +1,7 @@
 pub mod value_context;
 use std::collections::VecDeque;
 
-use chern_core::{
+use chrn_core::{
     builtins::{BuiltinType, BuiltinTypeKind},
     id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
     inner_args::{InnerArgs, SpannedInnerArgs},

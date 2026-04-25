@@ -1,5 +1,5 @@
 [package]
-name = "chern_core"
+name = "chrn_core"
 version.workspace = true
 edition.workspace = true
 

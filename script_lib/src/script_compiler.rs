@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chern_core::{
+use chrn_core::{
     builtins::{self, BuiltinType, BuiltinTypeKind},
     id_types::{InternedId, ModuleId, SymbolId, TypeId},
     intern, keywords,

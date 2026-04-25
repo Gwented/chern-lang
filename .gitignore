@@ -1,4 +1,4 @@
 /target
 /chrn_tests/gwop
 /Cargo.lock
-/lsp
+/chrn_lsp

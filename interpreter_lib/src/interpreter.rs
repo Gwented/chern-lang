@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chern_core::{id_types::ModuleId, intern::Intern};
+use chrn_core::{id_types::ModuleId, intern::Intern};
 use common::{
     chern_settings::ChernSettings,
     core_error::{CoreError, ScriptError},

@@ -13,10 +13,10 @@ use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::Context;
 use crate::parser::parser_state::ParserState;
 use crate::token::{SpannedToken, Token, TokenKind};
-use chern_core::id_types::InternedId;
-use chern_core::inner_args::{InnerArgs, SpannedInnerArgs};
-use chern_core::intern::Intern;
-use chern_core::keywords::Keyword;
+use chrn_core::id_types::InternedId;
+use chrn_core::inner_args::{InnerArgs, SpannedInnerArgs};
+use chrn_core::intern::Intern;
+use chrn_core::keywords::Keyword;
 use common::chern_settings::ChernSettings;
 use common::core_error::ScriptError;
 use common::fmter::Formatted;
@@ -299,7 +299,7 @@ pub fn parse(
                     ctx.advance_tok();
 
                     let name = interner.search(id as usize);
-                    let fmsg = format!("identifier \"{name}\"");
+                    let fmsg = format!("keyword \"{name}\"");
 
                     if state.is_neutral() {
                         ctx.report_template(
@@ -328,6 +328,7 @@ pub fn parse(
                 ctx.report_verbose(&msg, Branch::Broken, interner);
             }
             Token::EOF => break,
+            //TODO: Neutral routing
             t => match t {
                 Token::Id(id) | Token::Str(id) | Token::Integer(id, _) | Token::Float(id, _) => {
                     ctx.advance_tok();
@@ -635,7 +636,7 @@ fn parse_let(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Result<Abst
 
     ctx.expect_verbose(
         TokenKind::Assign,
-        "Expected '=' to declare const value, found ",
+        "Expected '=' to declare value, found ",
         "",
         Branch::Neutral(NeutralBranch::Let),
         interner,
@@ -939,8 +940,6 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
             Err(Token::EOF)
         }
         t => {
-            dbg!(t);
-            panic!("Hi");
             ctx.advance_tok();
 
             let fmt_tok = format!("'{}'", t.kind());

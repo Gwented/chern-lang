@@ -1,6 +1,6 @@
 use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::PathBuf};
 
-use chern_core::{
+use chrn_core::{
     id_types::{InternedId, PathId},
     intern::Intern,
 };

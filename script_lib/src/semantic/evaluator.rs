@@ -1,4 +1,4 @@
-use chern_core::{keywords::Keyword, values::Value};
+use chrn_core::{keywords::Keyword, values::Value};
 
 use crate::{
     parser::ast::{BinaryOp, UnaryOp},

@@ -1,9 +1,9 @@
 pub mod type_context;
 
-use chern_core::builtins::BuiltinTypeKind;
-use chern_core::id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId};
-use chern_core::values::{Value, ValueInfo, ValueResult};
-use chern_core::{builtins::BuiltinType, intern::Intern, keywords::Keyword};
+use chrn_core::builtins::BuiltinTypeKind;
+use chrn_core::id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId};
+use chrn_core::values::{Value, ValueInfo, ValueResult};
+use chrn_core::{builtins::BuiltinType, intern::Intern, keywords::Keyword};
 use common::chern_settings::ChernSettings;
 use common::fmter::Formatted;
 use common::{reporter::diagnostic::Diagnostic, span::Span};
@@ -13,9 +13,7 @@ use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::error::SemanticError;
 use crate::semantic::representation::{ExprHir, PossibleMember, ResolvedExpr, SymbolKind};
 use crate::semantic::scopes::ScopeType;
-use crate::semantic::type_resolver::type_context::{
-    ExprResult, PendingExpr, PendingUser, TypeContext,
-};
+use crate::semantic::type_resolver::type_context::{PendingExpr, PendingUser, TypeContext};
 use crate::{
     parser::ast::{
         AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Item,
@@ -100,32 +98,40 @@ impl TypeResolver<'_> {
 
         let sym_id = table.sym_ids[&ast_id];
 
+        //TODO: Create pipeline where expressions are always returned, just that some may have
+        //unresolved parts, which are put into the queue, not the variable itself.
         let expr_id = match self.try_register_expr(&abs_var.spanned_expr, ScopeType::Neutral) {
-            Ok(expr_res) => match expr_res {
-                ExprResult::Resolved(expr_id) => expr_id,
-                ExprResult::Unresolved(pending_sym_id) => {
-                    let pending_expr = self
-                        .ty_ctx
-                        .expr_queue
-                        .get_mut(&pending_sym_id)
-                        .expect("Exists");
+            Ok(expr_id) => expr_id,
 
-                    pending_expr.users.push(sym_id);
-
-                    let pending_user = PendingUser::new(sym_id, vec![pending_sym_id]);
-                    // Queue to allow for actively keeping note of what references are
-                    // still not referenced, so basically a cached way of checking if there are any
-                    // symbols left unresolved without checking users directly
-                    self.ty_ctx.user_queue.push_back(pending_user);
-                    return Ok(());
-                }
-            },
+            //     ExprResult::Resolved(expr_id) => expr_id,
+            //     ExprResult::Unresolved(pending_sym_id) => {
+            //         let pending_expr = self
+            //             .ty_ctx
+            //             .expr_queue
+            //             .get_mut(&pending_sym_id)
+            //             .expect("Exists");
+            //
+            //         pending_expr.users.push(sym_id);
+            //
+            //         let pending_user = PendingUser::new(sym_id, vec![pending_sym_id]);
+            //         // Queue to allow for actively keeping note of what references are
+            //         // still not referenced, so basically a cached way of checking if there are any
+            //         // symbols left unresolved without checking users directly
+            //         self.ty_ctx.user_queue.push_back(pending_user);
+            //         return Ok(());
+            //     }
             Err(sem_err) => {
                 self.reporter
                     .report_semantic(sem_err, &self.compiler.mods[self.current_mod.id]);
                 return Err(());
             }
         };
+        let symbol = &self.compiler.symbols[&sym_id];
+        let name = self.interner.search((symbol.name_id.id as usize));
+        let expr = &self.compiler.exprs[expr_id.id as usize];
+        dbg!(&expr, name);
+        dbg!(&self.compiler.symbols[&SymbolId::new(1)]);
+        panic!("I am outside");
 
         let resolved_expr = &self.compiler.exprs[expr_id.id as usize];
         let inferred_type_id = match self.type_check_and_infer(&resolved_expr.expr_hir) {
@@ -218,17 +224,28 @@ impl TypeResolver<'_> {
         &mut self,
         spanned_expr: &SpannedExpr,
         scope_type: ScopeType,
-        // This assists for lazily evaluating expressions.
-    ) -> Result<ExprResult, SemanticError> {
+    ) -> Result<ExprId, SemanticError> {
         match &spanned_expr.expr {
             Expr::Var(name_id) => {
                 let module = &self.compiler.mods[self.current_mod.id];
 
                 if let Some(sym_id) = module.get_sym_id(*name_id, scope_type) {
                     let symbol = &self.compiler.symbols[&sym_id];
-                    let type_id = match symbol.kind {
-                        SymbolKind::Type(type_id) => type_id,
-                        SymbolKind::Val(val_id) => self.compiler.values[val_id.id as usize].type_id,
+
+                    let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+
+                    let resolved_expr = match symbol.kind {
+                        SymbolKind::Type(type_id) => {
+                            let ty_info = &self.compiler.types[type_id.id as usize];
+                            todo!()
+                        }
+                        SymbolKind::Val(val_id) => {
+                            let val_info = &self.compiler.values[val_id.id as usize];
+                            // Dirty
+                            let expr_hir = ExprHir::Var(sym_id);
+
+                            ResolvedExpr::new(val_info.type_id, expr_hir, Some(val_id))
+                        }
                         SymbolKind::Unknown => {
                             if let Some(pending_expr) = self.ty_ctx.expr_queue.get_mut(&sym_id) {
                                 // pending_sym.users.push(value);
@@ -244,21 +261,14 @@ impl TypeResolver<'_> {
                             let pending_expr = PendingExpr::new(expr_id, false, Vec::new());
 
                             self.ty_ctx.expr_queue.insert(sym_id, pending_expr);
-                            let resolved_expr = ResolvedExpr::new(type_id, expr_hir, None);
 
-                            self.compiler.exprs.push(resolved_expr);
-
-                            return Ok(ExprResult::Unresolved(sym_id));
+                            ResolvedExpr::new(type_id, expr_hir, None)
                         }
                     };
 
-                    let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
-                    let expr_hir = ExprHir::Var(sym_id);
-
-                    let resolved_expr = ResolvedExpr::new(type_id, expr_hir, None);
                     self.compiler.exprs.push(resolved_expr);
 
-                    Ok(ExprResult::Resolved(expr_id))
+                    Ok(expr_id)
                 } else {
                     // SemanticError needs centralization
                     let name = self.interner.search(name_id.id as usize);
@@ -284,7 +294,7 @@ impl TypeResolver<'_> {
                     self.compiler.values.push(val_info);
                     self.compiler.exprs.push(expr);
 
-                    Ok(ExprResult::Resolved(expr_id))
+                    Ok(expr_id)
                 } else {
                     Err(SemanticError::NumericOverflow(
                         *id,
@@ -309,7 +319,7 @@ impl TypeResolver<'_> {
                     self.compiler.values.push(val_info);
                     self.compiler.exprs.push(expr);
 
-                    Ok(ExprResult::Resolved(expr_id))
+                    Ok(expr_id)
                 } else {
                     Err(SemanticError::NumericOverflow(
                         *id,
@@ -319,15 +329,8 @@ impl TypeResolver<'_> {
                 }
             }
             Expr::BinaryExpr { lhs, op, rhs } => {
-                let lhs_id = match self.try_register_expr(&*lhs, scope_type)? {
-                    ExprResult::Resolved(expr_id) => expr_id,
-                    // This syntax....
-                    res @ ExprResult::Unresolved(_) => return Ok(res),
-                };
-                let rhs_id = match self.try_register_expr(&*rhs, scope_type)? {
-                    ExprResult::Resolved(expr_id) => expr_id,
-                    res @ ExprResult::Unresolved(_) => return Ok(res),
-                };
+                let lhs_id = self.try_register_expr(&*lhs, scope_type)?;
+                let rhs_id = self.try_register_expr(&*rhs, scope_type)?;
 
                 let lhs_val = &self.compiler.values[lhs_id.id as usize];
                 let rhs_val = &self.compiler.values[rhs_id.id as usize];
@@ -387,7 +390,7 @@ impl TypeResolver<'_> {
                 let resolved_expr = ResolvedExpr::new(type_id, expr_hir, Some(val_id));
                 self.compiler.exprs.push(resolved_expr);
 
-                Ok(ExprResult::Resolved(expr_id))
+                Ok(expr_id)
             }
             Expr::Default(name_id, spanned_expr) => {
                 // DO NOT QUESTION THIS
@@ -409,7 +412,7 @@ impl TypeResolver<'_> {
                 let resolved_expr = ResolvedExpr::new(type_id, expr_hir, Some(val_id));
                 self.compiler.exprs.push(resolved_expr);
 
-                Ok(ExprResult::Resolved(expr_id))
+                Ok(expr_id)
             }
             Expr::Call(caller, spanned_exprs) => {
                 todo!();
@@ -442,10 +445,7 @@ impl TypeResolver<'_> {
                 }
             }
             Expr::Unary(unary) => {
-                let operand_id = match self.try_register_expr(&unary.spanned_expr, scope_type)? {
-                    ExprResult::Resolved(expr_id) => expr_id,
-                    res @ ExprResult::Unresolved(symbol_id) => return Ok(res),
-                };
+                let operand_id = self.try_register_expr(&unary.spanned_expr, scope_type)?;
 
                 let operand = &self.compiler.values[operand_id.id as usize];
 
@@ -482,13 +482,7 @@ impl TypeResolver<'_> {
         member: &SpannedExpr,
         scope_type: ScopeType,
     ) -> Result<PossibleMember, SemanticError> {
-        if let Ok(expr_res) = self.try_register_expr(member, scope_type) {
-            let expr_id = match expr_res {
-                ExprResult::Resolved(expr_id) => expr_id,
-                //TODO:
-                res @ ExprResult::Unresolved(symbol_id) => return Ok(PossibleMember::Nothing),
-            };
-
+        if let Ok(expr_id) = self.try_register_expr(member, scope_type) {
             let resolved_expr = &self.compiler.exprs[expr_id.id as usize];
 
             todo!();

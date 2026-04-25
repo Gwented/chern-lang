@@ -1,6 +1,6 @@
 use std::cmp;
 
-use chern_core::{builtins, keywords};
+use chrn_core::{builtins, keywords};
 
 pub(crate) enum FuzzyMatch {
     KW,
@@ -20,7 +20,7 @@ pub fn fuzzy_match(given: &[u8], target: FuzzyMatch) -> Option<&str> {
         FuzzyMatch::Sect => {
             fuzzy_match_inner(given, &keywords::KEYWORDS_ARRAY[keywords::sect_range()])
         }
-        FuzzyMatch::Arg => fuzzy_match_inner(given, &chern_core::inner_args::ARGS_ARRAY),
+        FuzzyMatch::Arg => fuzzy_match_inner(given, &chrn_core::inner_args::ARGS_ARRAY),
     }
 }
 

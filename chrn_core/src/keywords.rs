@@ -40,14 +40,14 @@ pub static KEYWORDS_ARRAY: [&str; 16] = [
     "override",
     // Special kiwis
     // Predicate keywords
-    "IsEmpty", // 16
-    "IsWhitespace",
-    // Functions
-    // "Range", // 18
-    // "StartsW",
-    // "EndsW", // 20
-    // "Contains",
-    // "Equals", // 22
+    "IsEmpty", // 14
+    "IsWhitespace", // 15
+               // Functions
+               // "Range",
+               // "StartsW",
+               // "EndsW",
+               // "Contains",
+               // "Equals",
 ];
 // "Nat" // 37
 // "Real" // 38
@@ -74,6 +74,7 @@ pub enum Keyword {
     Complex = 12,
     Override = 13,
     IsEmpty = 14,
+    IsWhitespace = 15,
 }
 
 impl Formattable for Keyword {
@@ -93,6 +94,7 @@ impl Formattable for Keyword {
             Keyword::Complex => Formatted::SectComplex,
             Keyword::Override => Formatted::SectOverride,
             Keyword::IsEmpty => Formatted::IsEmpty,
+            Keyword::IsWhitespace => Formatted::IsWhitespace,
             Keyword::As => Formatted::As,
         }
     }
@@ -110,8 +112,8 @@ impl Keyword {
     /// Returns Some keyword that matches the given id or None
     pub fn try_from_interned_id(id: u32) -> Option<Keyword> {
         match id {
-            // Using literal because scared of if
             intern::INTERNED_SELF => Some(Keyword::Self_),
+            // Using literal because scared of if
             intern::INTERNED_STRUCT => Some(Keyword::Struct),
             intern::INTERNED_ENUM => Some(Keyword::Enum),
             intern::INTERNED_IMPORT => Some(Keyword::Import),
@@ -126,6 +128,7 @@ impl Keyword {
             intern::INTERNED_COMPLEX => Some(Keyword::Complex),
             intern::INTERNED_OVERRIDE => Some(Keyword::Override),
             intern::INTERNED_IS_EMPTY => Some(Keyword::IsEmpty),
+            intern::INTERNED_IS_WHITESPACE => Some(Keyword::IsWhitespace),
             _ => None,
         }
     }
@@ -142,15 +145,15 @@ impl Keyword {
 
 //WARN: Not sure about the amount of casting everywhere
 
-const STMT_START: u32 = 4;
-const STMT_END: u32 = 8;
+const STMT_START: u32 = 3;
+const STMT_END: u32 = 9;
 
 pub const SECT_START: u32 = 9;
-pub const SECT_END: u32 = 12;
+pub const SECT_END: u32 = 13;
 
 //TODO: Suspicious classification
-const PREDICATE_START: u32 = 16;
-const PREDICATE_END: u32 = 22;
+const PREDICATE_START: u32 = 14;
+const PREDICATE_END: u32 = 15;
 
 //WARN: The amount of casting here is painful. SEVERELY painful.
 pub fn is_kw(id: u32) -> bool {

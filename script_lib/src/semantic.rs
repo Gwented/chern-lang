@@ -7,3 +7,4 @@ pub(crate) mod representation;
 pub(crate) mod scopes;
 mod semantic_reporter;
 pub mod type_resolver;
+pub mod value_resolver;

@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use chern_core::{keywords::DEFINITION_SIZE, quote_model};
+use chrn_core::{keywords::DEFINITION_SIZE, quote_model};
 use common::{
     chern_settings::ChernSettings,
     core_error::ConfigLoadError,

@@ -116,13 +116,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "chern_core"
-version = "0.1.0"
-dependencies = [
- "common",
-]
-
-[[package]]
 name = "chrn"
 version = "0.1.0"
 dependencies = [
@@ -130,6 +123,27 @@ dependencies = [
  "clap_derive",
  "common",
  "interpreter_lib",
+]
+
+[[package]]
+name = "chrn_core"
+version = "0.1.0"
+dependencies = [
+ "common",
+]
+
+[[package]]
+name = "chrn_lsp"
+version = "0.1.0"
+dependencies = [
+ "chrn_core",
+ "common",
+ "parking_lot",
+ "script_lib",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-lsp",
 ]
 
 [[package]]
@@ -497,7 +511,7 @@ dependencies = [
 name = "interpreter_lib"
 version = "0.1.0"
 dependencies = [
- "chern_core",
+ "chrn_core",
  "common",
  "script_lib",
  "serial_lib",
@@ -547,19 +561,6 @@ name = "log"
 version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
-
-[[package]]
-name = "lsp"
-version = "0.1.0"
-dependencies = [
- "chern_core",
- "common",
- "parking_lot",
- "script_lib",
- "serde",
- "tokio",
- "tower-lsp",
-]
 
 [[package]]
 name = "lsp-types"
@@ -737,7 +738,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 name = "script_lib"
 version = "0.1.0"
 dependencies = [
- "chern_core",
+ "chrn_core",
  "common",
  "unicode-width",
 ]
@@ -806,7 +807,7 @@ dependencies = [
 name = "serial_lib"
 version = "0.1.0"
 dependencies = [
- "chern_core",
+ "chrn_core",
  "common",
  "script_lib",
 ]

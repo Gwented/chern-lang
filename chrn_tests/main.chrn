@@ -7,11 +7,11 @@
 // The tilde has to be changed (passive)
 
 @def
-//import "../chrn_tests/defs.chrn"
+// import "../chrn_tests/defs.chrn"
 // import "../chrn_tests/CHERNGENTS.chrn" as seller
 
-let CONSTANT = x
 let x = 4
+let CONSTANT = x
 
 @end
 

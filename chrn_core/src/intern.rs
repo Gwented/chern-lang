@@ -88,7 +88,7 @@ impl Intern {
             .id_map
             .insert("struct".to_string(), INTERNED_STRUCT);
         interner.stored_strs.push("struct".to_string());
-        interner.id_map.insert("enum".to_string(), INTERNED_STRUCT);
+        interner.id_map.insert("enum".to_string(), INTERNED_ENUM);
         interner.stored_strs.push("enum".to_string());
         interner
             .id_map

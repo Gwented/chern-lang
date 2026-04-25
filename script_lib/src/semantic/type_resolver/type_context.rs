@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
-use chern_core::id_types::{ExprId, SymbolId};
+use chrn_core::id_types::{ExprId, SymbolId};
 
 // May turn this from expression that depends on a symbol that has users, to a symbol that depends
 // on a symbol for simplicity.
@@ -70,11 +70,11 @@ impl PendingExpr {
     }
 }
 
-#[derive(Debug)]
-pub(super) enum ExprResult {
-    Resolved(ExprId),
-    // May change to just outright give the caller.
-    /// SymbolId of the expression that was not reolved. Given, "let y = x + 2", x would be
-    /// unresolved so x is returned so the caller, y, can store itself as a user of x.
-    Unresolved(SymbolId),
-}
+// #[derive(Debug)]
+// pub(super) enum ExprResult {
+//     Resolved(ExprId),
+//     // May change to just outright give the caller.
+//     /// SymbolId of the expression that was not reolved. Given, "let y = x + 2", x would be
+//     /// unresolved so x is returned so the caller, y, can store itself as a user of x.
+//     Unresolved(SymbolId),
+// }

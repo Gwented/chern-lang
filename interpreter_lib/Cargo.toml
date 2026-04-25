@@ -6,5 +6,5 @@ edition.workspace = true
 [dependencies]
 script_lib = { path = "../script_lib/" }
 serial_lib = { path = "../serial_lib/" }
-chern_core = { path = "../chern_core/" }
+chrn_core = { path = "../chrn_core/" }
 common = { path = "../common/" }

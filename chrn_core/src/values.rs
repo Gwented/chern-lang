@@ -5,7 +5,7 @@ use crate::id_types::{ExprId, InternedId, TypeId, ValueId};
 // The value system of script would be simple but the serial does need this too so maybe re-use
 // it?
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ValueInfo {
     pub type_id: TypeId,
     pub expr_id: ExprId,
@@ -22,7 +22,7 @@ impl ValueInfo {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
     // For > i128
     // BigInt(NameId),

@@ -1,6 +1,4 @@
-//TODO: Path ids
-
-use chern_core::{
+use chrn_core::{
     intern::{self, Intern},
     keywords::{self, Keyword},
 };
@@ -400,11 +398,12 @@ impl Lexer<'_> {
     }
 
     fn read_id(&mut self, interner: &mut Intern) -> SpannedToken {
-        let start = self.pos;
+        let mut start = self.pos;
 
         // So e# for escape
         let is_escaped = if self.peek() == b'e' && self.peek_ahead(1) == b'#' {
             self.skip(2);
+            start = self.pos;
             true
         } else {
             false
@@ -429,12 +428,12 @@ impl Lexer<'_> {
         // Offset due to advance being done before leaving the loop.
         let span = Span::new(start, end - 1);
 
-        if id == intern::INTERNED_TRUE {
+        if id == intern::INTERNED_TRUE && !is_escaped {
             return SpannedToken {
                 tok: Token::BoolLiteral(true),
                 span,
             };
-        } else if id == intern::INTERNED_FALSE {
+        } else if id == intern::INTERNED_FALSE && !is_escaped {
             return SpannedToken {
                 tok: Token::BoolLiteral(true),
                 span,
@@ -446,13 +445,10 @@ impl Lexer<'_> {
                 tok: Token::Keyword(kw),
                 span,
             },
-            _ => {
-                SpannedToken {
-                    tok: Token::Id(id),
-                    // Offset due to advance being done before leaving the loop.
-                    span,
-                }
-            }
+            _ => SpannedToken {
+                tok: Token::Id(id),
+                span,
+            },
         }
     }
 

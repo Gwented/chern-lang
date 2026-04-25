@@ -1,7 +1,7 @@
 // TypeId is the index of the type itself, OR the type it's pointing to
 use std::{collections::HashMap, fmt::Display};
 
-use chern_core::{
+use chrn_core::{
     builtins::{BuiltinType, BuiltinTypeKind},
     id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
     inner_args::InnerArgs,
@@ -50,7 +50,7 @@ impl TypeInfo {
 //     }
 // }
 
-//NOTE: Should be in chern_core?
+//NOTE: Should be in chrn_core?
 #[derive(Debug)]
 pub enum Type {
     BuiltinType(BuiltinType),
