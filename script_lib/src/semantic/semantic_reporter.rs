@@ -1,6 +1,6 @@
 use chrn_core::intern::Intern;
 use common::{
-    chern_settings::ChernSettings,
+    chrn_settings::ChernSettings,
     fmter::Formattable,
     reporter::{
         self,

@@ -10,7 +10,7 @@ use chrn_core::{
     values::{Value, ValueInfo, ValueResult},
 };
 use common::{
-    chern_settings::ChernSettings,
+    chrn_settings::ChernSettings,
     fmter::{Formattable, Formatted},
     reporter::diagnostic::Diagnostic,
     span::Span,

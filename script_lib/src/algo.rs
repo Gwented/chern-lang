@@ -25,15 +25,14 @@ pub fn fuzzy_match(given: &[u8], target: FuzzyMatch) -> Option<&str> {
 }
 
 /// `given` represents the given bytes that are to be compared to the elements of `arr`.
-/// `largest` represents the largest element of `arr` so that an early return is possible.
 // Returns option string instead of index because not all arrays are loaded at startup
 fn fuzzy_match_inner<'a, 'b>(given: &'a [u8], arr: &'b [&str]) -> Option<&'b str> {
     // Calculating this in-line instead of constants due to it being prone to bugs
     let mut max_len = 0;
 
-    for var in arr {
-        if var.len() > max_len {
-            max_len = var.len();
+    for s in arr {
+        if s.len() > max_len {
+            max_len = s.len();
         }
     }
 
@@ -68,11 +67,10 @@ fn fuzzy_match_inner<'a, 'b>(given: &'a [u8], arr: &'b [&str]) -> Option<&'b str
         }
 
         if matched > 3 || (matched >= 2 && matched + 1 >= var_bytes.len()) {
-            // The purpose of this function is to fuzzily match, not find direct matches, so this
-            // might be ok.
-            if given == var_bytes {
-                return None;
-            }
+            // Since keywords exist now this may not be needed
+            // if given == var_bytes {
+            //     return None;
+            // }
 
             // Similar
             return Some(arr[i]);

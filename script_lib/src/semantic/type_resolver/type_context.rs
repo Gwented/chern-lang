@@ -2,20 +2,24 @@ use std::collections::{HashMap, VecDeque};
 
 use chrn_core::id_types::{ExprId, SymbolId};
 
-// May turn this from expression that depends on a symbol that has users, to a symbol that depends
-// on a symbol for simplicity.
+// May turn this from expression that depends on a symbol, to a symbol that depends
+// on a symbol.
 #[derive(Debug)]
 pub struct TypeContext {
     /// Queue of symbols that another symbol depends on which has not been resolved yet.
     /// Example: If we have, "let y = x + 2" we do not know the value of x yet, so x is stored as a
     /// symbol that is unresolved, y is pushed as a symbol that will be resolved later within the
     /// user_queue.
-    pub(super) expr_queue: HashMap<SymbolId, PendingExpr>,
+    // Repair?
+    pub(super) expr_queue: HashMap<SymbolId, Vec<PendingExpr>>,
     /// Queue to allow for actively keeping note of what references are
     /// still not referenced. This is a cached way of checking if there are any
     /// symbols left unresolved without checking users directly.
     // Maybe just use a hashy
+    // HashMap seems like a lot here but needs O(1) remove and insertion so a quick !is_empty can
+    // be done without spending time re-ordering an array while resolving pending users
     pub(super) user_queue: VecDeque<PendingUser>,
+    // Symbol id of a symbol that is unresolved, and what other symbols it depends on
 }
 
 impl TypeContext {
@@ -47,25 +51,20 @@ impl PendingUser {
 }
 
 #[derive(Debug)]
-/// Struct to represent a symbol that any amount of other symbols are waiting for so that they can
+/// Struct to represent an expr that any amount of other expression are waiting for so that they can
 /// be resolved.
 pub(super) struct PendingExpr {
-    //
     pub(super) pending_expr_id: ExprId,
     pub(super) is_resolved: bool,
-    pub(super) users: Vec<SymbolId>,
+    pub(super) parent: SymbolId,
 }
 
 impl PendingExpr {
-    pub(super) fn new(
-        pending_expr_id: ExprId,
-        is_resolved: bool,
-        users: Vec<SymbolId>,
-    ) -> PendingExpr {
+    pub(super) fn new(pending_expr_id: ExprId, is_resolved: bool, parent: SymbolId) -> PendingExpr {
         PendingExpr {
             pending_expr_id,
             is_resolved,
-            users,
+            parent,
         }
     }
 }

@@ -6,7 +6,7 @@ use std::{
 
 use chrn_core::{keywords::DEFINITION_SIZE, quote_model};
 use common::{
-    chern_settings::ChernSettings,
+    chrn_settings::ChernSettings,
     core_error::ConfigLoadError,
     reporter::{
         self,

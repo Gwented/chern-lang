@@ -4,7 +4,7 @@ use chrn_core::{
 };
 
 use common::{
-    chern_settings::ChernSettings,
+    chrn_settings::ChernSettings,
     fmter::Formattable,
     reporter::{
         self,
@@ -446,8 +446,16 @@ impl<'a> Context<'a> {
 
         match branch {
             Branch::Neutral(neutral_branch) => match neutral_branch {
-                // WHAT IF the MODEL predicted if it should ALLOW for something to be parsed AS
-                // A SECTION if it LOOKS like one?
+                NeutralBranch::Let => match found.tok {
+                    Token::Keyword(kw) if expected == TokenKind::Id => {
+                        let msg =
+                            format!("Was this meant to be escaped with \"e#{}\" ?", kw.to_fmt());
+                        let help = reporter::standardize_help(&msg, self.settings.can_color);
+
+                        Some(help)
+                    }
+                    _ => None,
+                },
                 NeutralBranch::Searching => match found.tok {
                     // Found stray unrecognizable identifier in neutral
                     Token::Id(id) | Token::Illegal(id) => {
@@ -494,6 +502,15 @@ impl<'a> Context<'a> {
             },
             Branch::Section(sect_branch) => match sect_branch {
                 SectionBranch::Var => match found.tok {
+                    Token::Keyword(kw)
+                        if expected == TokenKind::Id && next_kind == TokenKind::Colon =>
+                    {
+                        let msg =
+                            format!("Was this meant to be escaped with \"e#{}\"?", kw.to_fmt());
+                        let help = reporter::standardize_help(&msg, self.settings.can_color);
+
+                        Some(help)
+                    }
                     Token::Str(id)
                         if expected == TokenKind::Colon && prev_kind == TokenKind::Id =>
                     {

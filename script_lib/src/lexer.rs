@@ -423,7 +423,6 @@ impl Lexer<'_> {
             .expect("Cannot fail due to loop only accepting valid UTF-8 characters.");
 
         let id = interner.intern(&id_str);
-        dbg!(id, interner.search(id as usize));
 
         // Offset due to advance being done before leaving the loop.
         let span = Span::new(start, end - 1);
@@ -435,7 +434,7 @@ impl Lexer<'_> {
             };
         } else if id == intern::INTERNED_FALSE && !is_escaped {
             return SpannedToken {
-                tok: Token::BoolLiteral(true),
+                tok: Token::BoolLiteral(false),
                 span,
             };
         }

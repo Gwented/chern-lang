@@ -42,9 +42,6 @@ char, bool, str, struct, enum, nil, BigInt, BigFloat, List, Map, Set, Tuple
 ## Workspace
 - NOT FOR COMPLEXITY, JUST FOR AN ENFORCED CONVENTION. I WANT BINARY. Make binary
 
-## Actions (Ignore this. Entirely ignore this)
-extract env vars
-
 ### DOES NOT EXIST YET
 `_`: Match all for ignoring parameters
 
@@ -62,9 +59,9 @@ var->
 Example:
 ```chrn
 var->
-    x: ~str
+    x: e#str
 nest->
-    struct ~str {
+    struct e#str {
         ptr: u8
         len: unsized
         capacity: unsized
@@ -88,7 +85,7 @@ nest->
 
 `Contains(DynType)`: Checks if the data being viewed contains the given literal or numeric.
 // Would need to retain notation if this would need to be done
-Contains("chern") | Contains(1xF)
+Contains("chrn") | Contains(1xF)
 
 `StartsW(DynType)`: Checks if the data being viewed starts with the given literal or numeric.
 
@@ -159,9 +156,10 @@ nest->
 ```
 
 # DOES NOT EXIST YET
-`override`: What to default to when a language doesn't contain a particular type. Language defaults exist but this can change any if needed.
+`override`: Most important part of the language which controls things such as possible namespace casing to also look for and setting language type defaults. Language defaults exist but this can change any if needed.
 
 `complex`: Define complex rules
+Very descriptive!
 
 -------------------------------
 
@@ -186,7 +184,7 @@ nest->
     nest->
         // Any failed constraints will be completely ignored
         struct Pet {
-            name: str [!IsWhitespace] // (Ignore this) Actions would allow for "If WS then Concat("...")"
+            name: str [!IsWhitespace] / (Ignore this)
             color: Color
         } #ignore
 
@@ -210,7 +208,7 @@ export let VALUE = defs.MAGIC_NUMBER + valid_name.OTHER_MAGICAL_NUMBER
 
 ```chrn
 @def
-    import "chern.chrn" as cherning
+    import "chrn.chrn" as cherning
     import "definitions.chrn"
 
     let stuff = cherning.MAGIC_NUMBER * 2

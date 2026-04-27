@@ -545,7 +545,7 @@ impl Unary {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub(crate) enum UnaryOp {
+pub enum UnaryOp {
     Not,
     Negate,
 }

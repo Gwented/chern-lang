@@ -1,5 +1,5 @@
 use common::{
-    chern_settings::ChernSettings,
+    chrn_settings::ChernSettings,
     core_error::{ConfigLoadError, CoreError, ScriptError},
 };
 use interpreter_lib::interpreter;
@@ -22,7 +22,7 @@ pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
 fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, String> {
     let settings = ChernSettings::new(cli_cfg.can_color);
 
-    match interpreter::interpret_chern_cfg(&check_cmd.path, &settings) {
+    match interpreter::interpret_chrn_cfg(&check_cmd.path, &settings) {
         Ok(_) => {
             let msg = format!("No errors found within file");
             Ok(msg)

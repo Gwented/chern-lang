@@ -10,10 +10,14 @@
 // import "../chrn_tests/defs.chrn"
 // import "../chrn_tests/CHERNGENTS.chrn" as seller
 
-let x = 4
+let x = 2 + x
 let CONSTANT = x
 
+var->
+
+
 @end
+let
 
 // This breaks
 let token_seller = token_seller.STRONGEST_TOKENS

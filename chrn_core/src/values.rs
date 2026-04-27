@@ -5,6 +5,8 @@ use crate::id_types::{ExprId, InternedId, TypeId, ValueId};
 // The value system of script would be simple but the serial does need this too so maybe re-use
 // it?
 
+// This is supposed to represent something like, let x = 4, where 4 may or may not have a constant
+// value, 4 is the expression, and it's type is whatever is inferred
 #[derive(Debug, Clone)]
 pub struct ValueInfo {
     pub type_id: TypeId,

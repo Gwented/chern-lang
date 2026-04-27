@@ -11,7 +11,7 @@ use chrn_core::{
     intern::Intern,
 };
 use common::{
-    chern_settings::ChernSettings,
+    chrn_settings::ChernSettings,
     core_error::ConfigLoadError,
     reporter::{
         self,
@@ -190,7 +190,7 @@ impl Module {
 
 #[derive(Debug)]
 pub struct ModuleMetadata {
-    /// Bytes from chern config file
+    /// Bytes from chrn config file
     pub src_bytes: Vec<u8>,
     // / Amount of \n within config file so binary search can be done by error reporter
     // pub new_lines: Vec<usize>,
@@ -217,7 +217,7 @@ impl ModuleMetadata {
 }
 
 //TEST: Lets depending on self recursively as a module happen for now
-/// Takes in a path to a `chern` config file, then recursively resolved all imports associated with
+/// Takes in a path to a `chrn` config file, then recursively resolved all imports associated with
 /// the path given in separate modules.
 pub fn extract_modules(
     // Does this get canonicalized here or earlier..

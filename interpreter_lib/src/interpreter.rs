@@ -2,7 +2,7 @@ use std::path::Path;
 
 use chrn_core::{id_types::ModuleId, intern::Intern};
 use common::{
-    chern_settings::ChernSettings,
+    chrn_settings::ChernSettings,
     core_error::{CoreError, ScriptError},
     reporter::diagnostic::Reporter,
 };
@@ -17,7 +17,7 @@ use script_lib::{
 };
 
 // Maybe this shouldn't take metadata externally
-pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), CoreError> {
+pub fn interpret_chrn_cfg(path: &Path, settings: &ChernSettings) -> Result<(), CoreError> {
     let mut interner = Intern::init();
 
     // Doing this first since if modules were identified during the parsing stage any
@@ -47,7 +47,7 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
             },
         };
 
-        match NamespaceResolver::new(
+        NamespaceResolver::new(
             settings,
             &ast_info,
             &interner,
@@ -55,10 +55,7 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
             &mut script_compiler,
         )
         .resolve()
-        {
-            Ok(_) => (),
-            Err(mut diags) => reporter.diags.append(&mut diags),
-        }
+        .unwrap_or_else(|mut diags| reporter.diags.append(&mut diags));
 
         asts.push(ast_info);
     }
@@ -70,7 +67,7 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
     let mut ty_ctx = TypeContext::new();
     for i in 0..script_compiler.mods.len() {
         let mod_id = ModuleId::new(i);
-        match TypeResolver::new(
+        TypeResolver::new(
             settings,
             &asts[i],
             mod_id,
@@ -79,10 +76,7 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
             &mut script_compiler,
         )
         .resolve()
-        {
-            Ok(_) => (),
-            Err(mut diags) => reporter.diags.append(&mut diags),
-        };
+        .unwrap_or_else(|mut diags| reporter.diags.append(&mut diags));
     }
 
     // For ensuring a stateful piece of context is retained for resolving all module variables.
@@ -92,7 +86,7 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
     todo!("Not at constraints");
     for i in 0..script_compiler.mods.len() {
         let mod_id = ModuleId::new(i);
-        match ConstraintResolver::new(
+        ConstraintResolver::new(
             settings,
             &asts,
             &interner,
@@ -101,10 +95,7 @@ pub fn interpret_chern_cfg(path: &Path, settings: &ChernSettings) -> Result<(), 
             &mut script_compiler,
         )
         .resolve()
-        {
-            Ok(_) => (),
-            Err(mut diags) => reporter.diags.append(&mut diags),
-        };
+        .unwrap_or_else(|mut diags| reporter.diags.append(&mut diags));
     }
 
     if !reporter.diags.is_empty() {

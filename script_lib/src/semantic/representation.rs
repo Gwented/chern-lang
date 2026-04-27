@@ -108,24 +108,28 @@ pub(crate) enum SymbolKind {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct ResolvedExpr {
+pub struct ResolvedExpr {
+    // NOTE: Considering making a typesafe wrapper to unknown check explicitly
     pub(crate) type_id: TypeId,
     pub(crate) expr_hir: ExprHir,
-    pub(crate) const_val: Option<ValueId>,
+    // This is not an option type even though `Value` as an `Option<Value>` because symbols are
+    // already represented as unknown from `SymbolKind` and `Value` types already have the metadata
+    // of their type and if they have a const value inside.
+    pub(crate) val_id: ValueId,
 }
 
 impl ResolvedExpr {
-    pub fn new(type_id: TypeId, expr_hir: ExprHir, const_val: Option<ValueId>) -> ResolvedExpr {
+    pub fn new(type_id: TypeId, expr_hir: ExprHir, const_val: ValueId) -> ResolvedExpr {
         ResolvedExpr {
             type_id,
             expr_hir,
-            const_val,
+            val_id: const_val,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum ExprHir {
+pub enum ExprHir {
     Val(ValueId),
     Var(SymbolId),
     Default(SymbolId, ExprId),

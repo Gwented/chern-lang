@@ -1,4 +1,4 @@
-pub mod chern_settings;
+pub mod chrn_settings;
 pub mod color;
 pub mod core_error;
 pub mod fmter;

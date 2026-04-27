@@ -17,7 +17,7 @@ use chrn_core::id_types::InternedId;
 use chrn_core::inner_args::{InnerArgs, SpannedInnerArgs};
 use chrn_core::intern::Intern;
 use chrn_core::keywords::Keyword;
-use common::chern_settings::ChernSettings;
+use common::chrn_settings::ChernSettings;
 use common::core_error::ScriptError;
 use common::fmter::Formatted;
 use common::span::Span;
@@ -626,7 +626,7 @@ fn parse_let(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Result<Abst
 
     let plain_id = ctx.expect_id_verbose(
         TokenKind::Id,
-        "Expected an identifier after `const`, found ",
+        "Expected an identifier after `let`, found ",
         "",
         Branch::Neutral(NeutralBranch::Let),
         interner,

@@ -29,6 +29,7 @@ pub struct Diagnostic {
     pub core_msg: String,
     pub span: Option<Span>,
     pub fmtted_diag: String,
+    // pub help: Option<String>,
     pub area: Area,
 }
 
@@ -39,6 +40,7 @@ impl Diagnostic {
         span: Option<Span>,
         core_msg: String,
         fmtted_diag: String,
+        // help: Option<String>,
         area: Area,
     ) -> Diagnostic {
         Diagnostic {
@@ -46,6 +48,7 @@ impl Diagnostic {
             span,
             core_msg,
             fmtted_diag,
+            // help,
             area,
         }
     }

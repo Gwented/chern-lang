@@ -5,7 +5,7 @@ use chrn_core::{
     intern::Intern,
     values::ValueInfo,
 };
-use common::{chern_settings::ChernSettings, reporter::diagnostic::Diagnostic};
+use common::{chrn_settings::ChernSettings, reporter::diagnostic::Diagnostic};
 
 use crate::{
     parser::ast::{
