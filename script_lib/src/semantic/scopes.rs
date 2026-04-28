@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use chrn_core::id_types::ScopeId;
+use chrn_utils::id_types::ScopeId;
 
 use crate::semantic::representation::Table;
 

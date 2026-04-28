@@ -13,10 +13,10 @@ use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::Context;
 use crate::parser::parser_state::ParserState;
 use crate::token::{SpannedToken, Token, TokenKind};
-use chrn_core::id_types::InternedId;
-use chrn_core::inner_args::{InnerArgs, SpannedInnerArgs};
-use chrn_core::intern::Intern;
-use chrn_core::keywords::Keyword;
+use chrn_utils::id_types::InternedId;
+use chrn_utils::inner_args::{InnerArgs, SpannedInnerArgs};
+use chrn_utils::intern::Intern;
+use chrn_utils::keywords::Keyword;
 use common::chrn_settings::ChernSettings;
 use common::core_error::ScriptError;
 use common::fmter::Formatted;
@@ -39,9 +39,10 @@ pub fn parse(
 
     // WARN: THIS WAS CHANGED
     while ctx.peek_tok() != Token::EOF {
-        if ctx.err_vec.len() > 10 {
-            break;
-        }
+        //TEST:
+        // if ctx.err_vec.len() > 10 {
+        //     break;
+        // }
 
         // Checks if there is an export which is only a boolean due to there only being private and
         // public
@@ -83,15 +84,8 @@ pub fn parse(
                 Keyword::Alias => {
                     ctx.advance_tok();
 
-                    if state.has_alias() {
-                        ctx.report_verbose(
-                            "Found a `bind` statement more than once",
-                            Branch::Neutral(NeutralBranch::Searching),
-                            interner,
-                        );
-
-                        continue;
-                    } else {
+                    // Maybe remove
+                    if !state.has_alias() {
                         state.flip_alias();
                     }
 
@@ -329,21 +323,28 @@ pub fn parse(
             }
             Token::EOF => break,
             //TODO: Neutral routing
-            t => match t {
-                Token::Id(id) | Token::Str(id) | Token::Integer(id, _) | Token::Float(id, _) => {
-                    ctx.advance_tok();
+            t => {
+                // Interesting name..
+                let allowed_msg = if state.is_neutral() {
+                    "a statement or section"
+                } else {
+                    "a section"
+                };
 
-                    let name = interner.search(id as usize);
-                    let fmsg = format!("{} \"{}\"", t.kind(), name);
+                let fmsg = match t {
+                    Token::Id(id)
+                    | Token::Str(id)
+                    | Token::Integer(id, _)
+                    | Token::Float(id, _) => {
+                        let name = interner.search(id as usize);
+                        format!("{} \"{}\"", t.kind(), name)
+                    }
+                    _ => "".into(),
+                };
 
-                    ctx.report_template("a section", &fmsg, Branch::Searching, interner);
-                }
-                _ => {
-                    ctx.advance_tok();
-                    let fmsg = format!("'{}'", t.kind());
-                    ctx.report_template("a section", &fmsg, Branch::Searching, interner);
-                }
-            },
+                ctx.advance_tok();
+                ctx.report_template(allowed_msg, &fmsg, Branch::Searching, interner);
+            }
         }
     }
 
@@ -404,6 +405,12 @@ fn parse_alias_stmt(
         Vec::new()
     };
 
+    // TODO: The case of "alias x() = " should maybe be an error..?
+    // Probably not since that would be a useless Go-level error
+    // if conds.is_empty() && args.is_empty() {
+    //     ctx.report_verbose("", Branch::Neutral(NeutralBranch::Alias), interner);
+    // }
+
     let alias = AbstractAlias::new(name_id, name_span, params, conds, args, is_priv);
 
     Ok(alias)
@@ -452,7 +459,7 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
 
     let plain_id = ctx.expect_id_verbose(
         TokenKind::Id,
-        "Expected an identifier to declare a type, found ",
+        "Expected an identifier to define a type, found ",
         "",
         Branch::Section(SectionBranch::Var),
         interner,
@@ -464,7 +471,7 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
 
     ctx.expect_verbose(
         TokenKind::Colon,
-        &format!("Expected a ':' after identifier \"{err_name}\" to declare a type, found "),
+        &format!("Expected a ':' after \"{err_name}\" to declare a type, found "),
         "",
         Branch::Section(SectionBranch::Var),
         interner,
@@ -515,7 +522,7 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
 
             let plain_id = ctx.expect_id_verbose(
                 TokenKind::Id,
-                "Expected an identifier for the given structure. found ",
+                "Expected an identifier for the given struct, found ",
                 "",
                 Branch::Section(SectionBranch::Nest),
                 interner,
@@ -558,7 +565,7 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
 
             let plain_id = ctx.expect_id_verbose(
                 TokenKind::Id,
-                "Expected an identifier for the given enum variant, found ",
+                "Expected an identifier for the given enum, found ",
                 "",
                 Branch::Section(SectionBranch::Nest),
                 interner,
@@ -568,7 +575,7 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
-                &format!("Expected a '{{' to define enum `{enum_name}`, found"),
+                &format!("Expected a '{{' block to define enum `{enum_name}`, found"),
                 "",
                 Branch::Section(SectionBranch::Nest),
                 interner,
@@ -1135,7 +1142,7 @@ fn handle_enum_variants(
 
     ctx.expect_verbose(
         TokenKind::CCurlyBracket,
-        &format!("Expected a '}}' to close enum \"{enum_name}\", found "),
+        &format!("Expected a variant or '}}' to close enum \"{enum_name}\", found "),
         "",
         Branch::Section(SectionBranch::NestEnum),
         interner,

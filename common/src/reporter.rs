@@ -103,8 +103,8 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
             curated_spans.push(curate_span(&ln, span));
         }
     }
-    dbg!(curated_spans, spans);
-    panic!();
+    // dbg!(curated_spans, spans);
+    // panic!();
 
     // --THIRD--
     // Putting all spans into a key-value pair so that they can have their errors reported in

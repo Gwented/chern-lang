@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chrn_core::{id_types::ModuleId, intern::Intern};
+use chrn_utils::{id_types::ModuleId, intern::Intern};
 use common::{
     chrn_settings::ChernSettings,
     core_error::{CoreError, ScriptError},
@@ -43,6 +43,7 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChernSettings) -> Result<(), C
                     reporter.diags.append(&mut diags);
                     continue;
                 }
+                // Maybe this shouldn't be so terminal?
                 e => return Err(e.into()),
             },
         };
@@ -77,6 +78,10 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChernSettings) -> Result<(), C
         )
         .resolve()
         .unwrap_or_else(|mut diags| reporter.diags.append(&mut diags));
+    }
+
+    if !reporter.diags.is_empty() {
+        return Err(ScriptError::Semantic(reporter.diags).into());
     }
 
     // For ensuring a stateful piece of context is retained for resolving all module variables.

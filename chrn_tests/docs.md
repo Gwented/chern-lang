@@ -1,4 +1,4 @@
-// LSP in Go
+// I don't think it's in Go
 
 ## Language intent
 - This is a scripting language with a markdown language paired with it that allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required in-line in a language. The scripting language can either use the keyword `bind` to tell it where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
@@ -46,7 +46,7 @@ char, bool, str, struct, enum, nil, BigInt, BigFloat, List, Map, Set, Tuple
 `_`: Match all for ignoring parameters
 
 ```chrn
-alias gopher(x, y) = [!IsEmpty, Range(x = 0.0, y = 5.2), StartsW("ch") EndsW("ern") Contains("chern")]
+alias gopher(x, y) = [!IsEmpty, Range(x = 0.0, y = 5.2), StartsW("ch") EndsW("ern") Contains("chrn")]
 
 var->
     special_stir: str [gopher(0.5, _)] // defaults to (0.5, 5.2) 
@@ -71,15 +71,18 @@ nest->
 ### DOES NOT EXIST YET
 `(range)`: Explicit range syntax. The '=' is required. `0..=5`
 
-## Predicate Keywords
+## Built-in Predicate Keywords
 `IsEmpty`: Checks if the given array or string has a length of 0.
 
-`IsWhitespace`: Checks if a string is only whitespace within UTF-8 standards
+`IsWhitespace`: Checks if a string is only white-space within UTF-8 standards
 
 ## Functions
 
-`Equals(Variadic)`: Checks serialized value for equality against given argument
+- Functions cannot be defined beyond the built-in ones provided, but they can be used more extensively within an `alias` statement.
 
+# Does not exist yet
+
+`Equals(Variadic)`: Checks serialized value for equality against given argument
 
 `Range(inclusive, inclusive)`: Checks if the data being viewed matches the range given. For arrays and strings, this checks the length. For numbers, this checks the numeric value.
 
@@ -91,8 +94,9 @@ Contains("chrn") | Contains(1xF)
 
 `EndsW(DynType)`: Checks if the data being viewed ends with the given literal or numeric.
 
-// Does not exist yet
 `Regex("0-9a-zA-Z*")`
+
+# Does not exist yet
 
 ## Statements
 
@@ -108,7 +112,7 @@ This can be applied to `struct`, `enum`, `let`, and `alias`.
 ```chrn
 alias ShortDefault() = [IsWhitespace]
 
-alias LongDefault(x, y) = [!IsEmpty, Range(x, y), StartsW("ch") EndsW("ern") Contains("chern")]
+alias LongDefault(x, y) = [!IsEmpty, Range(x, y), StartsW("ch") EndsW("ern") Contains("chrn")] #warn
 
 var->
     special_string: str [LongDefault(0, 5)]
@@ -161,6 +165,7 @@ nest->
 `complex`: Define complex rules
 Very descriptive!
 
+# DOES NOT EXIST YET
 -------------------------------
 
 ## Arguments
@@ -170,28 +175,27 @@ Very descriptive!
 
 `#scient`, `#hex`, `#bin`, `#octo`: Numeric notations to output in serialized file.
 
-// DOES NOT EXIST
+# DOES NOT EXIST
 `#unicode`:
 `#ignore_rm`: (Would remove anything that didn't align under condition rather than crash or warn.)
-//DOES NOT EXIST
+# DOES NOT EXIST
 
-- Arguments can be applied to all types within a `struct` or `enum` if put directly after declaration
+- Arguments can be applied to all types within a `struct` or `enum` if put directly after declaration within a nest.
+
 ```
     var->
         name: str #warn
         age: u8
         pets: List<Pet> [!IsEmpty, Range(5, 15)] #warn // This warn only applied to this specific field
     nest->
-        // Any failed constraints will be completely ignored
         struct Pet {
             name: str [!IsWhitespace] / (Ignore this)
             color: Color
         } #ignore
+        // #ignore is applied to everything in this struct innately
 
         // Enforces that all types within `Color` will be serialized in hex form
         enum Color {Red: Tuple<u8> Blue: Tuple<u8> Green: Tuple<u8> } #hex
-```
-```
 ```
 
 ## Other keywords
@@ -251,6 +255,6 @@ Tensor(N-dim)<f32> more so a convenience wrapper over `List<List<f32>>` (Althoug
 matrix: Tensor2<f32>
 
 Unified serialization rules for any md file.
-Yaml, XML(Forgot this existed), Json, BINARY(I don't know) BINARY, BINARY, BINARY
+Yaml, XML(Forgot this existed), Json, BINARY(I don't know) BINARY, BINARY, BINARY, BINARY
 
 # SERIAL

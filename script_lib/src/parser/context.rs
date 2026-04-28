@@ -1,4 +1,4 @@
-use chrn_core::{
+use chrn_utils::{
     intern::Intern,
     keywords::{self, Keyword},
 };
@@ -24,6 +24,8 @@ use crate::{
 
 // ALL SET LOGIC AND PARSE LOGIC NEED TO WORK WITH EACH OTHER
 // TODO:  Readjust Sets for new behavior
+
+//FIX: Find out what to do with this
 
 //NOTE: The basic exit sets should ONLY have tokens that will ALWAYS be stopped on.
 const C_BASE_EXIT_SET: u64 = token::EOF | token::ILLEGAL | token::KEYWORD;
@@ -213,8 +215,8 @@ impl<'a> Context<'a> {
 
     // BOF
     /// Intended for basic errors that need little context after
-    /// ALWAYS advance before using this or ensure an advance happened before.
-    // Need Keyword token to actually help more
+    /// This must ALWAYS be advanced before usage due to the found token always being assumed to be
+    /// the previous token.
     pub(super) fn report_verbose(&mut self, msg: &str, branch: Branch, interner: &Intern) {
         let found = &self.toks[self.pos - 1];
 
@@ -333,7 +335,8 @@ impl<'a> Context<'a> {
     }
 
     /// More composable "Expected but found" error.
-    /// ALWAYS advance before using this
+    /// This must ALWAYS be advanced before usage due to the found token always being assumed to be
+    /// the previous token.
     /// Expected [emsg], found [fmsg]
     pub(super) fn report_template(
         &mut self,
@@ -449,7 +452,7 @@ impl<'a> Context<'a> {
                 NeutralBranch::Let => match found.tok {
                     Token::Keyword(kw) if expected == TokenKind::Id => {
                         let msg =
-                            format!("Was this meant to be escaped with \"e#{}\" ?", kw.to_fmt());
+                            format!("Was this meant to be escaped with \"e#{}\"?", kw.to_fmt());
                         let help = reporter::standardize_help(&msg, self.settings.can_color);
 
                         Some(help)

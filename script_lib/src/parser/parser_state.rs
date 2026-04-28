@@ -1,4 +1,4 @@
-// Statements
+// Neutral states
 const DEFAULT_FLAG: u16 = 1 << 0;
 const BIND_FLAG: u16 = 1 << 1;
 const ALIAS_FLAG: u16 = 1 << 2;
@@ -38,6 +38,7 @@ impl ParserState {
         (self.flag & BIND_FLAG) != 0
     }
 
+    //TODO: Maybe remove
     pub(super) fn flip_alias(&mut self) {
         self.flag |= ALIAS_FLAG;
     }

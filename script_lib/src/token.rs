@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use chrn_core::keywords::Keyword;
+use chrn_utils::keywords::Keyword;
 use common::span::Span;
 
 use crate::parser::ast::BinaryOp;

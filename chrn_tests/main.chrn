@@ -1,19 +1,19 @@
 // Need to re-route errors so they don't immediately form basic arrows to one so help messages
 // aren't just requirements because the err msgs themselves are misleading or bad
-// Enforce keywords
+// Multipe @def should be caught when @def and @end are tokens
 
 // I am messed up"
 // "I am not even supposed to be included"
-// The tilde has to be changed (passive)
+// The tilde has been changed (neutral)
 
 @def
 // import "../chrn_tests/defs.chrn"
 // import "../chrn_tests/CHERNGENTS.chrn" as seller
 
-let x = 2 + x
-let CONSTANT = x
+// alias x() = []
 
-var->
+let z = x
+let y = x
 
 
 @end

@@ -2,7 +2,7 @@
 
 use std::collections::VecDeque;
 
-use chrn_core::id_types::{AstId, ModuleId, ScopeId, SymbolId};
+use chrn_utils::id_types::{AstId, ModuleId, ScopeId, SymbolId};
 use common::span::Span;
 
 use crate::semantic::scopes::ScopeType;

@@ -1,4 +1,4 @@
-use chrn_core::{id_types::InternedId, inner_args::InnerArgs};
+use chrn_utils::{id_types::InternedId, inner_args::InnerArgs};
 use common::{fmter::Formatted, span::Span};
 
 use crate::{

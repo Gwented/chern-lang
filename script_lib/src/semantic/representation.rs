@@ -1,7 +1,7 @@
 // TypeId is the index of the type itself, OR the type it's pointing to
 use std::{collections::HashMap, fmt::Display};
 
-use chrn_core::{
+use chrn_utils::{
     builtins::{BuiltinType, BuiltinTypeKind},
     id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
     inner_args::InnerArgs,
@@ -50,7 +50,7 @@ impl TypeInfo {
 //     }
 // }
 
-//NOTE: Should be in chrn_core?
+//NOTE: Should be in chrn_utils?
 #[derive(Debug)]
 pub enum Type {
     BuiltinType(BuiltinType),
@@ -85,13 +85,13 @@ impl Symbol {
         ast_id: AstId,
         owner: ModuleId,
         is_priv: bool,
-        sym_kind: SymbolKind,
+        kind: SymbolKind,
     ) -> Symbol {
         Symbol {
             name_id,
             sym_id,
             ast_id,
-            kind: sym_kind,
+            kind,
             owner,
             is_priv,
         }
@@ -107,11 +107,14 @@ pub(crate) enum SymbolKind {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct ResolvedExpr {
     // NOTE: Considering making a typesafe wrapper to unknown check explicitly
     pub(crate) type_id: TypeId,
     pub(crate) expr_hir: ExprHir,
+    // May store these elsewhere depending on um...uh..unreachable!()
+    pub(crate) inputs: Vec<ExprId>,
+    pub(crate) users: Vec<ExprId>,
     // This is not an option type even though `Value` as an `Option<Value>` because symbols are
     // already represented as unknown from `SymbolKind` and `Value` types already have the metadata
     // of their type and if they have a const value inside.
@@ -119,11 +122,18 @@ pub struct ResolvedExpr {
 }
 
 impl ResolvedExpr {
-    pub fn new(type_id: TypeId, expr_hir: ExprHir, const_val: ValueId) -> ResolvedExpr {
+    pub fn new(
+        type_id: TypeId,
+        expr_hir: ExprHir,
+        val_id: ValueId,
+        inputs: Vec<ExprId>,
+    ) -> ResolvedExpr {
         ResolvedExpr {
             type_id,
             expr_hir,
-            val_id: const_val,
+            inputs,
+            users: Vec::new(),
+            val_id,
         }
     }
 }

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrn_core::{
+use chrn_utils::{
     builtins::{self, BuiltinType, BuiltinTypeKind},
     id_types::{InternedId, ModuleId, SymbolId, TypeId},
     intern, keywords,
@@ -10,8 +10,7 @@ use chrn_core::{
 use crate::{
     modules::{Bind, Module},
     semantic::representation::{
-        self, EnumDef, FuncRepre, ResolvedExpr, StructDef, Symbol, SymbolKind, Type, TypeDef,
-        TypeInfo,
+        EnumDef, FuncRepre, ResolvedExpr, StructDef, Symbol, SymbolKind, Type, TypeDef, TypeInfo,
     },
 };
 
@@ -32,7 +31,7 @@ pub struct ScriptCompiler {
     pub(crate) symbols: HashMap<SymbolId, Symbol>,
 }
 
-// ----
+// Called idx but is u32...
 pub const TYPE_UNKNOWN_IDX: u32 = BuiltinTypeKind::BigFloat as u32 + 1;
 
 // ----

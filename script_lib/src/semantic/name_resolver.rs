@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrn_core::{
+use chrn_utils::{
     id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
     intern::Intern,
     values::ValueInfo,

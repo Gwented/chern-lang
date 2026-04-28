@@ -33,7 +33,7 @@ pub struct CheckCmd {
 
 #[derive(Args)]
 pub struct GenCmd {
-    /// Generates `chrn` config file
+    /// Generates `chrn` script file
     pub(crate) path: PathBuf,
     /// Name of what to data to generate
     pub(crate) type_name: String,
@@ -41,7 +41,7 @@ pub struct GenCmd {
 
 #[derive(Args)]
 pub struct FMTCmd {
-    /// Path of `.chrn` config file to format
+    /// Path of `.chrn` file to format
     pub(crate) path: PathBuf,
 }
 

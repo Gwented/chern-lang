@@ -28,7 +28,7 @@ impl ValueInfo {
 pub enum Value {
     // For > i128
     // BigInt(NameId),
-    I128(i128),
+    I64(i64),
     F64(f64),
     Bool(bool),
     Char(char),
@@ -41,7 +41,7 @@ pub enum Value {
 impl Value {
     pub fn kind(&self) -> ValueKind {
         match self {
-            Value::I128(_) => ValueKind::I128,
+            Value::I64(_) => ValueKind::I64,
             Value::F64(_) => ValueKind::F64,
             Value::Bool(_) => ValueKind::Bool,
             Value::Char(_) => ValueKind::Char,
@@ -64,7 +64,7 @@ impl Value {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ValueKind {
     // BigInt,
-    I128,
+    I64,
     F64,
     Char,
     Bool,
@@ -77,7 +77,7 @@ pub enum ValueKind {
 impl Formattable for ValueKind {
     fn to_fmt(&self) -> common::fmter::Formatted {
         match self {
-            ValueKind::I128 => Formatted::I128,
+            ValueKind::I64 => Formatted::I128,
             ValueKind::F64 => Formatted::F64,
             ValueKind::Char => Formatted::Char,
             ValueKind::Tuple => Formatted::Tuple,

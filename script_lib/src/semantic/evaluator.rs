@@ -1,4 +1,4 @@
-use chrn_core::{keywords::Keyword, values::Value};
+use chrn_utils::{keywords::Keyword, values::Value};
 
 use crate::{
     parser::ast::{BinaryOp, UnaryOp},
@@ -9,7 +9,7 @@ pub fn is_compatible_unary(op: UnaryOp, operand: &Value) -> bool {
     match op {
         UnaryOp::Not => match operand {
             Value::Bool(_) => true,
-            Value::I128(_)
+            Value::I64(_)
             | Value::F64(_)
             | Value::Char(_)
             | Value::Tuple(_)
@@ -18,7 +18,7 @@ pub fn is_compatible_unary(op: UnaryOp, operand: &Value) -> bool {
             | Value::Unknown => false,
         },
         UnaryOp::Negate => match operand {
-            Value::I128(_) | Value::F64(_) => true,
+            Value::I64(_) | Value::F64(_) => true,
             _ => false,
         },
     }
@@ -26,7 +26,7 @@ pub fn is_compatible_unary(op: UnaryOp, operand: &Value) -> bool {
 
 pub fn is_compatible_binary(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
     match lhs {
-        Value::I128(_) => match op {
+        Value::I64(_) => match op {
             BinaryOp::Add
             | BinaryOp::Sub
             | BinaryOp::Mult
@@ -44,7 +44,7 @@ pub fn is_compatible_binary(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
             | BinaryOp::BitLeftShift
             | BinaryOp::BitXor
             | BinaryOp::NotEq => match rhs {
-                Value::I128(_) => true,
+                Value::I64(_) => true,
                 _ => false,
             },
             BinaryOp::And | BinaryOp::Or => false,
@@ -104,7 +104,7 @@ pub fn apply_unary_op(op: UnaryOp, operand: &Value) -> Result<Value, SemanticErr
         UnaryOp::Not => match operand {
             Value::Bool(v) => Ok(Value::Bool(!v)),
             Value::F64(_)
-            | Value::I128(_)
+            | Value::I64(_)
             | Value::Char(_)
             | Value::Tuple(_)
             | Value::InternedStr(_)
@@ -112,7 +112,7 @@ pub fn apply_unary_op(op: UnaryOp, operand: &Value) -> Result<Value, SemanticErr
             | Value::Unknown => unreachable!(),
         },
         UnaryOp::Negate => match operand {
-            Value::I128(v) => Ok(Value::I128(-v)),
+            Value::I64(v) => Ok(Value::I64(-v)),
             Value::F64(v) => Ok(Value::F64(-v)),
             _ => unreachable!(),
         },
@@ -126,8 +126,8 @@ pub fn apply_unary_op(op: UnaryOp, operand: &Value) -> Result<Value, SemanticErr
 pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, SemanticError> {
     match op {
         BinaryOp::Add => match lhs {
-            Value::I128(lhs_inner) => match rhs {
-                Value::I128(rhs_inner) => Ok(Value::I128(lhs_inner + rhs_inner)),
+            Value::I64(lhs_inner) => match rhs {
+                Value::I64(rhs_inner) => Ok(Value::I64(lhs_inner + rhs_inner)),
                 _ => unreachable!(),
             },
             Value::F64(lhs_inner) => match rhs {
@@ -143,8 +143,8 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
             | Value::Unknown => unreachable!(),
         },
         BinaryOp::Sub => match lhs {
-            Value::I128(lhs_inner) => match rhs {
-                Value::I128(rhs_inner) => Ok(Value::I128(lhs_inner - rhs_inner)),
+            Value::I64(lhs_inner) => match rhs {
+                Value::I64(rhs_inner) => Ok(Value::I64(lhs_inner - rhs_inner)),
                 _ => unreachable!(),
             },
             Value::F64(lhs_inner) => match rhs {
@@ -154,8 +154,8 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
             _ => unreachable!(),
         },
         BinaryOp::Mult => match lhs {
-            Value::I128(lhs_inner) => match rhs {
-                Value::I128(rhs_inner) => Ok(Value::I128(lhs_inner * rhs_inner)),
+            Value::I64(lhs_inner) => match rhs {
+                Value::I64(rhs_inner) => Ok(Value::I64(lhs_inner * rhs_inner)),
                 _ => unreachable!(),
             },
             Value::F64(lhs_inner) => match rhs {
@@ -165,13 +165,13 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
             _ => unreachable!(),
         },
         BinaryOp::Div => match lhs {
-            Value::I128(lhs_inner) => match rhs {
-                Value::I128(rhs_inner) => {
+            Value::I64(lhs_inner) => match rhs {
+                Value::I64(rhs_inner) => {
                     if *rhs_inner == 0 {
                         todo!("Center a div");
                     }
 
-                    Ok(Value::I128(lhs_inner / rhs_inner))
+                    Ok(Value::I64(lhs_inner / rhs_inner))
                 }
                 _ => unreachable!(),
             },
@@ -188,8 +188,8 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
             _ => unreachable!(),
         },
         BinaryOp::Greater => match lhs {
-            Value::I128(lhs_inner) => match rhs {
-                Value::I128(rhs_inner) => Ok(Value::Bool(lhs_inner > rhs_inner)),
+            Value::I64(lhs_inner) => match rhs {
+                Value::I64(rhs_inner) => Ok(Value::Bool(lhs_inner > rhs_inner)),
                 _ => unreachable!(),
             },
             Value::F64(lhs_inner) => match rhs {
@@ -205,8 +205,8 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
             _ => unreachable!(),
         },
         BinaryOp::Less => match lhs {
-            Value::I128(lhs_inner) => match rhs {
-                Value::I128(rhs_inner) => Ok(Value::Bool(lhs_inner < rhs_inner)),
+            Value::I64(lhs_inner) => match rhs {
+                Value::I64(rhs_inner) => Ok(Value::Bool(lhs_inner < rhs_inner)),
                 _ => unreachable!(),
             },
             Value::F64(lhs_inner) => match rhs {
@@ -220,8 +220,8 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
             _ => unreachable!(),
         },
         BinaryOp::GreaterOrEq => match lhs {
-            Value::I128(lhs_inner) => match rhs {
-                Value::I128(rhs_inner) => Ok(Value::Bool(lhs_inner >= rhs_inner)),
+            Value::I64(lhs_inner) => match rhs {
+                Value::I64(rhs_inner) => Ok(Value::Bool(lhs_inner >= rhs_inner)),
                 _ => unreachable!(),
             },
             Value::F64(lhs_inner) => match rhs {
@@ -235,8 +235,8 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
             _ => unreachable!(),
         },
         BinaryOp::LessOrEq => match lhs {
-            Value::I128(lhs_inner) => match rhs {
-                Value::I128(rhs_inner) => Ok(Value::Bool(lhs_inner <= rhs_inner)),
+            Value::I64(lhs_inner) => match rhs {
+                Value::I64(rhs_inner) => Ok(Value::Bool(lhs_inner <= rhs_inner)),
                 _ => unreachable!(),
             },
             Value::F64(lhs_inner) => match rhs {
@@ -250,8 +250,8 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
             _ => unreachable!(),
         },
         BinaryOp::Mod => match lhs {
-            Value::I128(lhs_inner) => match rhs {
-                Value::I128(rhs_inner) => Ok(Value::I128(lhs_inner % rhs_inner)),
+            Value::I64(lhs_inner) => match rhs {
+                Value::I64(rhs_inner) => Ok(Value::I64(lhs_inner % rhs_inner)),
                 _ => unreachable!(),
             },
             Value::F64(lhs_inner) => match rhs {
@@ -275,8 +275,8 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
             _ => unreachable!(),
         },
         BinaryOp::EqTo => match lhs {
-            Value::I128(lhs_inner) => match rhs {
-                Value::I128(rhs_inner) => Ok(Value::Bool(lhs_inner == rhs_inner)),
+            Value::I64(lhs_inner) => match rhs {
+                Value::I64(rhs_inner) => Ok(Value::Bool(lhs_inner == rhs_inner)),
                 _ => unreachable!(),
             },
             Value::F64(lhs_inner) => match rhs {
@@ -316,8 +316,8 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
             _ => unreachable!(),
         },
         BinaryOp::NotEq => match lhs {
-            Value::I128(lhs_inner) => match rhs {
-                Value::I128(rhs_inner) => Ok(Value::Bool(lhs_inner != rhs_inner)),
+            Value::I64(lhs_inner) => match rhs {
+                Value::I64(rhs_inner) => Ok(Value::Bool(lhs_inner != rhs_inner)),
                 _ => unreachable!(),
             },
             Value::F64(lhs_inner) => match rhs {

@@ -119,7 +119,7 @@ pub mod token;
 //
 //     use std::{collections::HashMap, path::Path};
 //
-//     use chrn_core::{
+//     use chrn_utils::{
 //         id_types::{InternedId, ModuleId, PathId},
 //         intern::Intern,
 //         keywords,

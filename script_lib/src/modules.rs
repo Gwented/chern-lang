@@ -6,7 +6,7 @@ use std::{
 
 pub mod mod_finder;
 
-use chrn_core::{
+use chrn_utils::{
     id_types::{AstId, InternedId, ModuleId, PathId, ScopeId, SymbolId},
     intern::Intern,
 };

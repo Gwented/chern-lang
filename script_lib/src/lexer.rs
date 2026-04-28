@@ -1,4 +1,4 @@
-use chrn_core::{
+use chrn_utils::{
     intern::{self, Intern},
     keywords::{self, Keyword},
 };

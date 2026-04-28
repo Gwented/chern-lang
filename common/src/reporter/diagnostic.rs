@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 
 use crate::span::Span;
 
+/// This exists in case other methods or fields are considered, but is just a Vec<Diagnostic>
+/// wrapper as of right now
 #[derive(Debug)]
 pub struct Reporter {
     pub diags: Vec<Diagnostic>,
@@ -24,11 +26,21 @@ pub enum Area {
 }
 
 #[derive(Debug)]
+pub enum DiagnosticLevel {
+    Error,
+    Note,
+    Warn,
+}
+
+// Would 2 diagnostics need to be produced where one has error and otherh as help related to it?
+// Um.
+#[derive(Debug)]
 pub struct Diagnostic {
     pub path: PathBuf,
     pub core_msg: String,
     pub span: Option<Span>,
     pub fmtted_diag: String,
+    // level: DiagnosticLevel,
     // pub help: Option<String>,
     pub area: Area,
 }

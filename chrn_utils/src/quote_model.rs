@@ -1,7 +1,8 @@
 //TODO: Should be able to truncate current pos + 1 (cut) and reposition self given something like
 //@end twice, meaning it should probably go to the node at the first @end
 
-// None of this is supposed to be efficient since 1, this will rarely ever happen, and 2, learning.
+// NOTE: This will be removed entirely since there's an lsp that is being worked on
+// but this has inadvertently become a pivotal part of understanding models better so..
 mod lexer;
 mod token;
 
@@ -213,17 +214,17 @@ pub fn quote_start_probability(src: &[u8], q_type: char, search_range: Range<usi
 
     // What
     // 0 = Other, 1 = \n, 3 = alphanum
-    let embeddings = Tensor2::from(&vec![
-        // OBracket
-        vec![0.8, 0.3],
-        // CBracket
-        vec![0.25, 0.15],
-        //
-        // vec![0.9, 0.12],
-    ]);
+    // let embeddings = Tensor2::from(&vec![
+    //     // OBracket
+    //     vec![0.8, 0.3],
+    //     // CBracket
+    //     vec![0.25, 0.15],
+    //     //
+    //     // vec![0.9, 0.12],
+    // ]);
 
-    let weights = Tensor2::from(&vec![vec![0.8, 0.3], vec![0.25, 0.15]]);
-    let mut q_model = QuoteModel::with_presets(weights, embeddings);
+    // let weights = Tensor2::from(&vec![vec![0.8, 0.3], vec![0.25, 0.15]]);
+    // let mut q_model = QuoteModel::with_presets(weights, embeddings);
 
     // "[[]"
     let input: Vec<usize> = vec![0, 0, 1];
@@ -231,13 +232,13 @@ pub fn quote_start_probability(src: &[u8], q_type: char, search_range: Range<usi
     // Expected index guess for missing bracket
     let expected: usize = 1;
 
-    for i in 1..=500 {
-        let (loss, gradients) = train_model(&q_model, &input, expected, LR);
-
-        if i % 100 == 0 {
-            println!("step {i} | loss={loss}\n");
-        }
-    }
+    // for i in 1..=500 {
+    //     let (loss, gradients) = train_model(&q_model, &input, expected, LR);
+    //
+    //     if i % 100 == 0 {
+    //         println!("step {i} | loss={loss}\n");
+    //     }
+    // }
 
     let mut q_graph = QuoteGraph::init(&toks);
 
@@ -247,7 +248,7 @@ pub fn quote_start_probability(src: &[u8], q_type: char, search_range: Range<usi
     // q_graph.display_scores();
 
     let scores: Vec<f32> = q_graph.q_nodes.iter().map(|q| q.score).collect();
-    let highest_idx = algo::argmax(&scores).expect("temp");
+    let highest_idx = algo::argmax(&scores).expect("Should not be possible");
 
     let highest_q_node = &q_graph.q_nodes[highest_idx];
 

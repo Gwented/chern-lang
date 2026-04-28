@@ -43,7 +43,7 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
             CoreError::Script(script_err) => match script_err {
                 ScriptError::Parser(diags) | ScriptError::Semantic(diags) => {
                     for diag in &diags {
-                        eprint!("From path => {}", diag.path.display());
+                        // eprint!("From path => {}", diag.path.display());
                         eprintln!("{}", diag.fmtted_diag);
                     }
 

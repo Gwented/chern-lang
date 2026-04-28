@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+/// Branches that represent parsing stages so that more decriptive error messages and help messages
+/// can be given.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum Branch {
     Broken,
@@ -10,7 +12,7 @@ pub(super) enum Branch {
     Cond,
     Type,
     FuncArgs,
-    /// #warn, #scient, etc parsing
+    /// #warn, #scient, etc
     TypeArgs,
 }
 

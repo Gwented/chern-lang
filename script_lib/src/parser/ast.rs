@@ -1,4 +1,4 @@
-use chrn_core::{
+use chrn_utils::{
     id_types::{AstId, InternedId, PathId},
     inner_args::SpannedInnerArgs,
 };

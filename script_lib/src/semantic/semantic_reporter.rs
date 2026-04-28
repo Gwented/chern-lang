@@ -1,4 +1,4 @@
-use chrn_core::intern::Intern;
+use chrn_utils::intern::Intern;
 use common::{
     chrn_settings::ChernSettings,
     fmter::Formattable,
