@@ -88,22 +88,15 @@ impl<'a> Context<'a> {
         // WARN: IF ANYTHING GOES WRONG ADD THE IF STATEMENTS BACK FOR EOF
         let found = self.advance();
 
-        let id_opt = match found.tok {
+        let err_ident_opt = match found.tok {
             Token::Id(id) | Token::Str(id) | Token::Integer(id, _) | Token::Float(id, _) => {
                 if found.tok.kind() == expected {
                     return Ok(id);
+                } else {
+                    self.get_err_ident(found.tok, interner)
                 }
-
-                Some(interner.search(id as usize).to_string())
             }
-            Token::Keyword(kw) => Some(kw.to_fmt().to_string()),
-            Token::Illegal(id) => {
-                let illegal_msg = interner.search(id as usize);
-                let new_msg = format!("{illegal_msg}");
-                Some(new_msg)
-            }
-            Token::Char(ch) => Some(ch.to_string()),
-            _ => None,
+            t => self.get_err_ident(t, interner),
         };
 
         let help = self
@@ -120,8 +113,8 @@ impl<'a> Context<'a> {
 
         let path = interner.search_path(self.module.path_id.id as usize);
 
-        let core_msg = if let Some(name) = id_opt {
-            format!("(in {branch})\n{bmsg}\"{name}\"{amsg}")
+        let core_msg = if let Some(name) = err_ident_opt {
+            format!("(in {branch})\n{bmsg}{name}{amsg}")
         } else {
             format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind())
         };
@@ -158,19 +151,11 @@ impl<'a> Context<'a> {
         // WARN: IF ANYTHING GOES WRONG ADD THE IF STATEMENTS BACK FOR EOF
         let found = self.advance();
 
-        let kw_opt = match found.tok {
-            Token::Keyword(kw) => return Ok(kw),
-            Token::Id(id) | Token::Str(id) | Token::Integer(id, _) | Token::Float(id, _) => {
-                Some(interner.search(id as usize).to_string())
-            }
-            Token::Illegal(id) => {
-                let illegal_msg = interner.search(id as usize);
-                let new_msg = format!("{illegal_msg}");
-                Some(new_msg)
-            }
-            Token::Char(ch) => Some(ch.to_string()),
-            _ => None,
-        };
+        if let Token::Keyword(kw) = found.tok {
+            return Ok(kw);
+        }
+
+        let err_ident_opt = self.get_err_ident(found.tok, interner);
 
         let help = self
             .try_help(TokenKind::Keyword, &found, branch, interner)
@@ -186,8 +171,8 @@ impl<'a> Context<'a> {
 
         let path = interner.search_path(self.module.path_id.id as usize);
 
-        let core_msg = if let Some(ident) = kw_opt {
-            format!("(in {branch})\n{bmsg}\"{ident}\"{amsg}")
+        let core_msg = if let Some(ident) = err_ident_opt {
+            format!("(in {branch})\n{bmsg}{ident}{amsg}")
         } else {
             format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind())
         };
@@ -272,20 +257,7 @@ impl<'a> Context<'a> {
         self.pos += 1;
 
         if found.tok.kind() != expected {
-            let id_str_opt = match found.tok {
-                //TODO: Do something with illegal
-                Token::Id(id) | Token::Str(id) | Token::Integer(id, _) => {
-                    Some(interner.search(id as usize).to_string())
-                }
-                Token::Illegal(id) => {
-                    let illegal_msg = interner.search(id as usize);
-                    let new_msg = format!("illegal {illegal_msg}");
-
-                    Some(new_msg)
-                }
-                Token::Char(ch) => Some(ch.to_string()),
-                _ => None,
-            };
+            let err_ident_opt = self.get_err_ident(found.tok, interner);
 
             let spans = self.safely_handle_span(found);
 
@@ -301,7 +273,7 @@ impl<'a> Context<'a> {
 
             let path = interner.search_path(self.module.path_id.id as usize);
 
-            let core_msg = if let Some(id_str) = id_str_opt {
+            let core_msg = if let Some(id_str) = err_ident_opt {
                 format!(
                     "(in {branch})\n{bmsg}{} \"{id_str}\"{amsg}",
                     found.tok.kind()
@@ -645,6 +617,26 @@ impl<'a> Context<'a> {
                 }
                 _ => None,
             },
+            _ => None,
+        }
+    }
+
+    /// Helper to reduce boiler-plate of getting an identifier if possible from an error token
+    fn get_err_ident(&self, tok: Token, interner: &Intern) -> Option<String> {
+        match tok {
+            Token::Def => Some("`@def`".to_string()),
+            Token::End => Some("`@end`".to_string()),
+            Token::Id(id) | Token::Str(id) | Token::Integer(id, _) | Token::Float(id, _) => {
+                let ident = interner.search(id as usize);
+                Some(format!("\"{ident}\""))
+            }
+            Token::Keyword(kw) => Some(kw.to_fmt().to_string()),
+            Token::Illegal(id) => {
+                let illegal_msg = interner.search(id as usize);
+                let new_msg = format!("\"{illegal_msg}\"");
+                Some(new_msg)
+            }
+            Token::Char(ch) => Some(format!("'{ch}'")),
             _ => None,
         }
     }

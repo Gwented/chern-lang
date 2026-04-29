@@ -23,12 +23,6 @@ impl Scope {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct ScopeInfo {
-    scope_id: ScopeId,
-    scope_type: ScopeType,
-}
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) enum ScopeType {
     Neutral,

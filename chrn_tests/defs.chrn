@@ -2,16 +2,16 @@
 export let WRITE = 0b00000010
 // export let EXEC = 0b00000100
 
-import "../chrn_tests/main.chrn"
+// import "../chrn_tests/main.chrn"
 // alias VALID_PERMS() = [Equals(READ) || Equals(WRITE) || Equals(EDIT)]
 
 // alias Person() = [IsEmpty]
 
 //const true = defs.Constant
 
-var->
+// var->
     // var: Tuple<str, u8, str> [StartsW("Hello")]
-nest->
+// nest->
     /*export struct Person {
         name: str
         age: u8

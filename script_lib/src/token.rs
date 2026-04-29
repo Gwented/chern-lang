@@ -26,6 +26,10 @@ pub struct SpannedToken {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Token {
     // To help with error messages
+    /// Represents @def
+    Def,
+    /// Represents @end
+    End,
     Keyword(Keyword),
     BoolLiteral(bool),
     Id(u32),
@@ -119,6 +123,8 @@ impl Token {
             Token::Illegal(_) => TokenKind::Illegal,
             Token::Keyword(_) => TokenKind::Keyword,
             Token::BoolLiteral(_) => TokenKind::Bool,
+            Token::Def => TokenKind::Def,
+            Token::End => TokenKind::End,
             Token::EOF => TokenKind::EOF,
         }
     }
@@ -195,10 +201,22 @@ pub(crate) enum TokenKind {
     Bool,
     Illegal,
     Poison,
+    Def,
+    End,
     EOF,
 }
 
-//FIX: REMOVE
+impl TokenKind {
+    /// Wrapper for checking for `@end` and EOF since they are both valid end tokens
+    pub fn is_terminator(&self) -> bool {
+        match self {
+            TokenKind::End | TokenKind::EOF => true,
+            _ => false,
+        }
+    }
+}
+
+//FIX: REMOVE FOR FORMATTABLE
 impl Display for TokenKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -246,6 +264,8 @@ impl Display for TokenKind {
             TokenKind::Caret => write!(f, "^"),
             TokenKind::Bool => write!(f, "bool"),
             TokenKind::Keyword => write!(f, "keyword"),
+            TokenKind::Def => write!(f, "@def"),
+            TokenKind::End => write!(f, "@end"),
         }
     }
 }
@@ -296,7 +316,9 @@ pub(crate) const CARET: u64 = 39;
 pub(crate) const POISON: u64 = 1 << 40;
 pub(crate) const KEYWORD: u64 = 1 << 41;
 pub(crate) const BOOL: u64 = 1 << 42;
-pub(crate) const EOF: u64 = 1 << 43;
+pub(crate) const DEF: u64 = 1 << 43;
+pub(crate) const END: u64 = 1 << 44;
+pub(crate) const EOF: u64 = 1 << 45;
 
 //FIX: PLEASE ASSERT THIS THING
 impl TokenKind {
@@ -346,6 +368,8 @@ impl TokenKind {
             TokenKind::Ampersand => AMPERSAND,
             TokenKind::Keyword => KEYWORD,
             TokenKind::Bool => BOOL,
+            TokenKind::Def => DEF,
+            TokenKind::End => END,
             TokenKind::EOF => EOF,
         }
     }

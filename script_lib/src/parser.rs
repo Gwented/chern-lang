@@ -34,11 +34,14 @@ pub fn parse(
     let mut ast_info = AstInfo::new();
 
     let mut state = ParserState::new();
-
     let mut ctx = Context::new(settings, module, tokens);
 
-    // WARN: THIS WAS CHANGED
-    while ctx.peek_tok() != Token::EOF {
+    // Skipping @def since it is recognized as it's own token
+    if ctx.peek_tok() == Token::Def {
+        ctx.advance_tok();
+    }
+
+    while !ctx.peek_kind().is_terminator() {
         //TEST:
         // if ctx.err_vec.len() > 10 {
         //     break;
@@ -148,7 +151,7 @@ pub fn parse(
                         interner,
                     );
 
-                    while ctx.peek_kind() != TokenKind::EOF {
+                    while !ctx.peek_kind().is_terminator() {
                         if let Token::Keyword(kw) = ctx.peek_tok()
                             && kw.is_sect()
                         {
@@ -191,7 +194,7 @@ pub fn parse(
                         interner,
                     );
 
-                    while ctx.peek_kind() != TokenKind::EOF {
+                    while !ctx.peek_kind().is_terminator() {
                         if let Token::Keyword(kw) = ctx.peek_tok()
                             && kw.is_sect()
                         {
@@ -218,7 +221,7 @@ pub fn parse(
 
                     if state.has_complex() {
                         ctx.report_verbose(
-                            "Found \"complex\" section more than once",
+                            "Found `complex` section more than once",
                             Branch::Section(SectionBranch::Searching),
                             interner,
                         );
@@ -235,7 +238,7 @@ pub fn parse(
                         interner,
                     );
 
-                    while ctx.peek_kind() != TokenKind::EOF {
+                    while !ctx.peek_kind().is_terminator() {
                         if let Token::Keyword(kw) = ctx.peek_tok()
                             && kw.is_sect()
                         {
@@ -259,7 +262,7 @@ pub fn parse(
 
                     if state.has_override() {
                         ctx.report_verbose(
-                            "Found \"override\" section more than once",
+                            "Found `override` section more than once",
                             Branch::Section(SectionBranch::Searching),
                             interner,
                         );
@@ -278,7 +281,7 @@ pub fn parse(
                     // Please lint empty sections please emit 40000 warns for slightly misplaced
                     // spaces
 
-                    while ctx.peek_kind() != TokenKind::EOF {
+                    while !ctx.peek_kind().is_terminator() {
                         // This would look simpler with keywords
                         if let Token::Keyword(kw) = ctx.peek_tok()
                             && kw.is_sect()
@@ -293,7 +296,7 @@ pub fn parse(
                     ctx.advance_tok();
 
                     let name = interner.search(id as usize);
-                    let fmsg = format!("keyword \"{name}\"");
+                    let fmsg = format!("keyword `{name}`");
 
                     if state.is_neutral() {
                         ctx.report_template(
@@ -321,7 +324,7 @@ pub fn parse(
 
                 ctx.report_verbose(&msg, Branch::Broken, interner);
             }
-            Token::EOF => break,
+            Token::EOF | Token::End => break,
             //TODO: Neutral routing
             t => {
                 // Interesting name..
@@ -332,6 +335,7 @@ pub fn parse(
                 };
 
                 let fmsg = match t {
+                    Token::Def => "`@def`".to_string(),
                     Token::Id(id)
                     | Token::Str(id)
                     | Token::Integer(id, _)
@@ -339,7 +343,7 @@ pub fn parse(
                         let name = interner.search(id as usize);
                         format!("{} \"{}\"", t.kind(), name)
                     }
-                    _ => "".into(),
+                    t => t.kind().to_string(),
                 };
 
                 ctx.advance_tok();
@@ -365,7 +369,7 @@ fn parse_alias_stmt(
 
     let plain_id = ctx.expect_id_verbose(
         TokenKind::Id,
-        "Expected an identifier after \"alias\", found ",
+        "Expected an identifier after `alias`, found ",
         "",
         Branch::Neutral(NeutralBranch::Alias),
         interner,
@@ -461,6 +465,8 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
         TokenKind::Id,
         "Expected an identifier to define a type, found ",
         "",
+        // Not exactly true that var is being used, just that the type definition flow already
+        // exists, so...
         Branch::Section(SectionBranch::Var),
         interner,
     )?;
@@ -509,7 +515,7 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
 fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Result<Item, Token> {
     // Wait what is this error?
     let kw = ctx.expect_kw_verbose(
-        "Expected the keyword \"enum\" or \"struct\", found ",
+        "Expected the keyword `enum` or `struct`, found ",
         "",
         Branch::Section(SectionBranch::Nest),
         interner,
@@ -528,13 +534,17 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
                 interner,
             )?;
 
+            let name_id = InternedId::new(plain_id);
+
             let struct_name = interner.search(plain_id as usize);
 
-            let name_id = InternedId::new(plain_id);
+            //FIXME: THIS SHOULD WARN OR SOMETHING OF THAT SORT
+            //BUG:
+            //FIX:
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
-                &format!("Expected a '{{' to define struct \"{struct_name}\", found "),
+                &format!("Expected a '{{' to define struct `{struct_name}`, found "),
                 "",
                 Branch::Section(SectionBranch::Nest),
                 interner,
@@ -606,7 +616,7 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
             let name = interner.search(kw as usize);
 
             ctx.report_verbose(
-                &format!("Expected the keyword `enum` or `struct`, found keyword \"{name}\""),
+                &format!("Expected the keyword `enum` or `struct`, found keyword `{name}`"),
                 Branch::Section(SectionBranch::Nest),
                 interner,
             );
@@ -889,7 +899,6 @@ fn parse_unary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Toke
 // ENFORCE TYPE NAMING FOR GENERICS AT LEAST
 /// Recursive function for parsing all type expressions
 fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, Token> {
-    dbg!(ctx.peek_behind(1), ctx.peek_tok(), ctx.peek_ahead(1));
     match ctx.peek_tok() {
         Token::Id(id) if ctx.peek_ahead(1).tok.kind() == TokenKind::OAngleBracket => {
             let start = ctx.advance_span().start;
@@ -1109,7 +1118,7 @@ fn handle_struct_fields(
 
     ctx.expect_verbose(
         TokenKind::CCurlyBracket,
-        &format!("Expected a '}}' to close struct \"{struct_name}\", found "),
+        &format!("Expected a field or '}}' to close struct `{struct_name}`, found "),
         "",
         Branch::Section(SectionBranch::NestType),
         interner,
@@ -1142,7 +1151,7 @@ fn handle_enum_variants(
 
     ctx.expect_verbose(
         TokenKind::CCurlyBracket,
-        &format!("Expected a variant or '}}' to close enum \"{enum_name}\", found "),
+        &format!("Expected a variant or '}}' to close enum `{enum_name}`, found "),
         "",
         Branch::Section(SectionBranch::NestEnum),
         interner,
@@ -1236,8 +1245,8 @@ fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<SpannedInnerArgs, T
     )?;
 
     // FIX: Change from try_from to Some
-    let arg = InnerArgs::try_from(interner.search(id as usize)).or_else(|invalid_id| {
-        let msg = format!("The argument \"#{invalid_id}\" does not exist");
+    let arg = InnerArgs::try_from(interner.search(id as usize)).or_else(|invalid_arg| {
+        let msg = format!("The argument \"#{invalid_arg}\" does not exist");
         ctx.report_verbose(&msg, Branch::TypeArgs, interner);
 
         return Err(Token::Poison);

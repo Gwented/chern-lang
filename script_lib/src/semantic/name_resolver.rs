@@ -96,7 +96,7 @@ impl NamespaceResolver<'_> {
         // Promising a type will exist in the given index
         let type_id = TypeId::new(self.compiler.types.len() as u32);
 
-        //WARN: Alan wake
+        //WARN: Why was Alan Wake even here???
         let type_def_repre = TypeDef::new(sym_id, type_id);
 
         let symbol = Symbol::new(

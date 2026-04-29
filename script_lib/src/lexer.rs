@@ -179,13 +179,17 @@ impl Lexer<'_> {
                     // definition, but can stay like this for now.
                     if self.is_def_start() {
                         // in_def = true;
+                        toks.push(SpannedToken {
+                            tok: Token::Def,
+                            span: Span::new(self.pos, self.pos + keywords::DEFINITION_SIZE),
+                        });
+
                         self.skip(keywords::DEFINITION_SIZE);
-                        // Should probably just have a read limit
                     } else if self.is_def_end() {
                         // in_def = false;
 
                         toks.push(SpannedToken {
-                            tok: Token::EOF,
+                            tok: Token::End,
                             span: Span::new(self.pos, self.pos + keywords::DEFINITION_SIZE),
                         });
 

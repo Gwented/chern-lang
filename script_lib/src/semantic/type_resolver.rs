@@ -76,6 +76,7 @@ impl TypeResolver<'_> {
             }
         }
 
+        // Maybe shouldn't in-line this
         if self.ty_ctx.needs_check {
             // Clearing cache.
             self.ty_ctx.needs_check = false;
@@ -119,6 +120,23 @@ impl TypeResolver<'_> {
             }
         }
 
+        // let symbol = &self.compiler.symbols[&SymbolId::new(0)];
+        // match symbol.kind {
+        //     SymbolKind::Type(type_id) => {
+        //         let name = self.interner.search(symbol.name_id.id as usize);
+        //         let ty = &self.compiler.types[type_id.id as usize];
+        //         dbg!(name, &ty.ty);
+        //     }
+        //     SymbolKind::Val(value_id) => {
+        //         let name = self.interner.search(symbol.name_id.id as usize);
+        //         let val_info = &self.compiler.values[value_id.id as usize];
+        //         let ty_info = &self.compiler.types[val_info.type_id.id as usize];
+        //
+        //         dbg!(name, ty_info);
+        //     }
+        //     _ => todo!(),
+        // };
+        //
         // Resolution failed
         if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 1].mod_id {
             for val_info in &self.compiler.values {
@@ -158,7 +176,7 @@ impl TypeResolver<'_> {
             queue.push(pending_expr.pending_id);
         }
 
-        dbg!(&queue);
+        let expr = &self.compiler.exprs[queue[0].id as usize];
         // In the example:
         //
         // ```
@@ -179,12 +197,27 @@ impl TypeResolver<'_> {
                 SymbolKind::Type(type_id) => todo!("Hi types"),
                 SymbolKind::Val(val_id) => {
                     let val_info = &self.compiler.values[val_id.id as usize];
+                    dbg!(&val_info);
                     root_expr.type_id = val_info.type_id;
                     root_expr.val_id = val_id;
+                    let parent_sym_id = pending_sym.pending_exprs[0].parent_sym;
+                    let parent_sym = self
+                        .compiler
+                        .symbols
+                        .get_mut(&parent_sym_id)
+                        .expect("Exists");
+
+                    //WARN: QUESTIONABLE
+                    parent_sym.kind = SymbolKind::Val(val_id);
+
+                    // dbg!(name);
+                    // panic!();
                 }
                 SymbolKind::Unknown => todo!("Hi unknowns"),
             }
 
+            // If the root has no users, then that means its, let y = x where there is nothing else
+            // that needs resolution since the root is always a symbol.
             if root_expr.users.is_empty() {
                 can_remove = true;
                 break;
@@ -250,39 +283,8 @@ impl TypeResolver<'_> {
             .const_val
             .as_ref()
             .map(|v| v.clone());
-        // dbg!(
-        //     &expr, // &self.compiler.values[expr.const_val.unwrap().id as usize],
-        //     name
-        // );
-
-        // dbg!(
-        //     self.interner.search(
-        //         self.compiler
-        //             .symbols
-        //             .get(&SymbolId::new(1))
-        //             .unwrap()
-        //             .name_id
-        //             .id as usize
-        //     )
-        // );
-
-        // dbg!(&self.ty_ctx.sym_queue.get(&SymbolId::new(1)));
 
         let resolved_expr = &self.compiler.exprs[expr_id.id as usize];
-
-        // let symbol = self.compiler.symbols.get_mut(&sym_id).expect("Exists");
-        //
-        // if self.compiler.values[resolved_expr.val_id.id as usize]
-        //     .const_val
-        //     .is_some()
-        // {
-        //     symbol.kind = SymbolKind::Val(resolved_expr.val_id);
-        //     let val = &self.compiler.values[resolved_expr.val_id.id as usize];
-        //     dbg!(&self.compiler.types[val.type_id.id as usize]);
-        // }
-
-        // dbg!(&self.ty_ctx.sym_queue);
-        // dbg!(&self.compiler.exprs[2]);
         let inferred_type_id = match self.type_check_and_infer(&resolved_expr.expr_hir) {
             Ok(type_id) => type_id,
             Err(sem_err) => {
