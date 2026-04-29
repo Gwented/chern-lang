@@ -1,13 +1,12 @@
 pub mod value_context;
-use std::collections::VecDeque;
 
 use chrn_utils::{
-    builtins::{BuiltinType, BuiltinTypeKind},
-    id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
+    builtins::BuiltinType,
+    id_types::{AstId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
     inner_args::{InnerArgs, SpannedInnerArgs},
     intern::Intern,
     keywords::Keyword,
-    values::{Value, ValueInfo, ValueResult},
+    values::ValueResult,
 };
 use common::{
     chrn_settings::ChernSettings,
@@ -771,6 +770,26 @@ impl<'a> ConstraintResolver<'a> {
                         self.resolve_arg(*val_id, module, spanned_arg, visited)
                     }
                     BuiltinType::Any(_) => Ok(()),
+                    BuiltinType::Tuple(elements) => {
+                        visited.push(type_id);
+                        for element in elements {
+                            if visited.contains(&*element) {
+                                if !spanned_arg.arg.is_basic() {
+                                    return Err(SemanticError::CircularArg(
+                                        spanned_arg.arg,
+                                        Formatted::Tuple,
+                                        vec![spanned_arg.span.clone(), spanned_arg.span.clone()],
+                                    ));
+                                }
+                            }
+
+                            visited.push(*element);
+
+                            self.resolve_arg(*element, module, spanned_arg, visited)?;
+                        }
+
+                        Ok(())
+                    }
                     builtin_type => {
                         //BUG: Does reach this error correctly but doesn't send it back?
                         if !spanned_arg.arg.supports_builtin_type(&builtin_type) {
@@ -785,27 +804,6 @@ impl<'a> ConstraintResolver<'a> {
                         Ok(())
                     }
                 }
-            }
-            Type::Tuple(tuple) => {
-                visited.push(type_id);
-
-                for element in &tuple.elements {
-                    if visited.contains(&*element) {
-                        if !spanned_arg.arg.is_basic() {
-                            return Err(SemanticError::CircularArg(
-                                spanned_arg.arg,
-                                Formatted::Tuple,
-                                vec![spanned_arg.span.clone(), spanned_arg.span.clone()],
-                            ));
-                        }
-                    }
-
-                    visited.push(*element);
-
-                    self.resolve_arg(*element, module, spanned_arg, visited)?;
-                }
-
-                Ok(())
             }
             Type::Func(sym_id) => todo!("Func"),
             Type::Alias(_) | Type::Unknown => {
@@ -1168,23 +1166,6 @@ impl<'a> ConstraintResolver<'a> {
                             return cond_res;
                         }
                     }
-                }
-
-                Ok(())
-            }
-            Type::Tuple(tuple) => {
-                visited.push(type_id);
-
-                for element in &tuple.elements {
-                    if visited.contains(&element) {
-                        return Err(SemanticError::CircularCond(
-                            cond.clone(),
-                            Formatted::Tuple,
-                            vec![cond_span.clone()],
-                        ));
-                    }
-
-                    self.check_cond_constraints(element.clone(), cond_span, cond, visited)?;
                 }
 
                 Ok(())

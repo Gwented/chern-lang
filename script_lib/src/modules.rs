@@ -25,22 +25,19 @@ use crate::{
     iyo::file_ops,
     modules::mod_finder::ModuleFinder,
     script_compiler::ScriptCompiler,
-    semantic::{
-        representation::Table,
-        scopes::{Scope, ScopeType},
-    },
+    semantic::scopes::{Scope, ScopeType},
 };
 //TEST: Relocate reollacl rreellocrelac
 #[derive(Debug)]
 pub struct Import {
-    pub(crate) name_id: InternedId,
-    pub(crate) path_id: PathId,
-    pub(crate) path_span: Span,
-    pub(crate) alias_id: Option<InternedId>,
+    pub name_id: InternedId,
+    pub path_id: PathId,
+    pub path_span: Span,
+    pub alias_id: Option<InternedId>,
 }
 
 impl Import {
-    pub(crate) fn new(
+    pub fn new(
         name_id: InternedId,
         path_id: PathId,
         path_span: Span,
@@ -63,7 +60,7 @@ pub struct Bind {
 }
 
 impl Bind {
-    pub(crate) fn new(path_id: PathId, path_span: Span) -> Bind {
+    pub fn new(path_id: PathId, path_span: Span) -> Bind {
         Bind { path_id, path_span }
     }
 }
@@ -81,7 +78,7 @@ pub struct Module {
     pub mod_id: ModuleId,
     /// Imports found in the module
     pub imports: Vec<Import>,
-    pub(crate) scopes: Vec<Scope>,
+    pub scopes: Vec<Scope>,
     pub metadata: ModuleMetadata,
 }
 
@@ -107,7 +104,7 @@ impl Module {
     ///
     /// This method exists along with extract_scope_id due to cross module namespace checking not
     /// innately confirming whether or not it contains a particular `ScopeType`
-    pub(crate) fn get_scope_id(&self, scope_type: ScopeType) -> Option<ScopeId> {
+    pub fn get_scope_id(&self, scope_type: ScopeType) -> Option<ScopeId> {
         self.find_scope(scope_type).map(|s| s.scope_id)
     }
 
@@ -115,25 +112,25 @@ impl Module {
     ///
     /// This exists because if the current module has something like a typedef in the semantic stage,
     /// that means the parser itself already checked if it was legal grammar-wise.
-    pub(crate) fn extract_scope_id(&self, scope_type: ScopeType) -> ScopeId {
+    pub fn extract_scope_id(&self, scope_type: ScopeType) -> ScopeId {
         self.find_scope(scope_type)
             .expect("Either semantic broke, parser broke, or modules broke")
             .scope_id
     }
 
     /// Get's scope using a `ScopeId`
-    pub(crate) fn get_scope(&self, scope_id: ScopeId) -> &Scope {
+    pub fn get_scope(&self, scope_id: ScopeId) -> &Scope {
         &self.scopes[scope_id.id]
     }
 
     /// Get's mutably borrowed scope using a `ScopeId`
-    pub(crate) fn get_scope_mut(&mut self, scope_id: ScopeId) -> &mut Scope {
+    pub fn get_scope_mut(&mut self, scope_id: ScopeId) -> &mut Scope {
         &mut self.scopes[scope_id.id]
     }
 
     /// Pushes new scope with given scope type and returns the `ScopeId`. If the scope already
     /// exists then it returns the existent `ScopeId`.
-    pub(crate) fn push_scope(&mut self, scope_type: ScopeType) -> ScopeId {
+    pub fn push_scope(&mut self, scope_type: ScopeType) -> ScopeId {
         if let Some(scope) = self.find_scope(scope_type) {
             return scope.scope_id;
         }
@@ -148,11 +145,7 @@ impl Module {
     /// Checks if the name id corresponds to a `SymbolId` within the given `ScopeType`.
     /// Returns a tuple of the `AstId` and `ScopeType` the `NameId` was found in. Returns None if
     /// no accessible scopes contain the given `NameId`.
-    pub(crate) fn get_sym_id(
-        &self,
-        name_id: InternedId,
-        scope_type: ScopeType,
-    ) -> Option<SymbolId> {
+    pub fn get_sym_id(&self, name_id: InternedId, scope_type: ScopeType) -> Option<SymbolId> {
         // I don't think this can fail. Should maybe expect for clarity.
         let allowed_scope_types = scope_type.accessible_scopes();
 

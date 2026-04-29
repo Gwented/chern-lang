@@ -12,8 +12,7 @@
 
 // alias x() = []
 
-let z = x
-let y = x
+let x = x
 
 
 @end

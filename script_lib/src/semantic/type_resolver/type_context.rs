@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 
-use chrn_utils::id_types::{ExprId, SymbolId};
+use chrn_utils::id_types::{ExprId, ModuleId, SymbolId};
 
 // The idea here is to store a symbol that points to an expression at the bottom of a tree.
 // So, let y = x + 2 would store x in the symbol queue, and he expression id "x" within this
@@ -98,14 +98,14 @@ pub(super) enum PendingUserType {
 /// be resolved.
 pub(super) struct PendingExpr {
     pub(super) pending_id: ExprId,
-    pub(super) parent: SymbolId,
+    pub(super) parent_sym: SymbolId,
 }
 
 impl PendingExpr {
     pub(super) fn new(pending_expr_id: ExprId, parent: SymbolId) -> PendingExpr {
         PendingExpr {
             pending_id: pending_expr_id,
-            parent,
+            parent_sym: parent,
         }
     }
 }

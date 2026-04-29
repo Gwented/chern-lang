@@ -60,20 +60,20 @@ pub enum Type {
     Alias(AliasDef),
     TypeDef(TypeDef),
     // Var(VarDef),
-    Tuple(Tuple),
     Unknown,
 }
 
+// Iyad yourrg gieyetters iiyand sieyetters
 #[derive(Debug)]
 pub struct Symbol {
-    pub(crate) name_id: InternedId,
-    pub(crate) sym_id: SymbolId,
+    pub name_id: InternedId,
+    pub sym_id: SymbolId,
     //dbg purposes
-    pub(crate) ast_id: AstId,
+    pub ast_id: AstId,
     //dbgr
-    pub(crate) kind: SymbolKind,
-    pub(crate) owner: ModuleId,
-    pub(crate) is_priv: bool,
+    pub kind: SymbolKind,
+    pub owner: ModuleId,
+    pub is_priv: bool,
 }
 
 impl Symbol {
@@ -101,7 +101,7 @@ impl Symbol {
 // May call this id kind..
 /// Maps to a `TypeId` or `ValueId`
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum SymbolKind {
+pub enum SymbolKind {
     Type(TypeId),
     Val(ValueId),
     Unknown,
@@ -110,15 +110,15 @@ pub(crate) enum SymbolKind {
 #[derive(Debug, Clone)]
 pub struct ResolvedExpr {
     // NOTE: Considering making a typesafe wrapper to unknown check explicitly
-    pub(crate) type_id: TypeId,
-    pub(crate) expr_hir: ExprHir,
+    pub type_id: TypeId,
+    pub expr_hir: ExprHir,
     // May store these elsewhere depending on um...uh..unreachable!()
-    pub(crate) inputs: Vec<ExprId>,
-    pub(crate) users: Vec<ExprId>,
+    pub inputs: Vec<ExprId>,
+    pub users: Vec<ExprId>,
     // This is not an option type even though `Value` as an `Option<Value>` because symbols are
     // already represented as unknown from `SymbolKind` and `Value` types already have the metadata
     // of their type and if they have a const value inside.
-    pub(crate) val_id: ValueId,
+    pub val_id: ValueId,
 }
 
 impl ResolvedExpr {
@@ -226,15 +226,15 @@ impl Table {
 // }
 
 #[derive(Debug)]
-pub(crate) struct StructDef {
-    pub(crate) sym_id: SymbolId,
-    pub(crate) fields: Vec<FieldRepre>,
-    pub(crate) args: Vec<InnerArgs>,
-    pub(crate) conds: Vec<Cond>,
+pub struct StructDef {
+    pub sym_id: SymbolId,
+    pub fields: Vec<FieldRepre>,
+    pub args: Vec<InnerArgs>,
+    pub conds: Vec<Cond>,
 }
 
 impl StructDef {
-    pub(crate) fn new(sym_id: SymbolId, fields: Vec<FieldRepre>) -> StructDef {
+    pub fn new(sym_id: SymbolId, fields: Vec<FieldRepre>) -> StructDef {
         StructDef {
             sym_id,
             fields,
@@ -245,15 +245,15 @@ impl StructDef {
 }
 
 #[derive(Debug)]
-pub(crate) struct EnumDef {
+pub struct EnumDef {
     // pub(crate) name_id: InternedId,
     // // Unsure about this positioning, I am hallucinating.
     // pub(crate) ast_id: AstId,
     // pub(crate) type_id: TypeId,
-    pub(crate) sym_id: SymbolId,
-    pub(crate) variants: Vec<VariantRepre>,
-    pub(crate) args: Vec<InnerArgs>,
-    pub(crate) conds: Vec<Cond>,
+    pub sym_id: SymbolId,
+    pub variants: Vec<VariantRepre>,
+    pub args: Vec<InnerArgs>,
+    pub conds: Vec<Cond>,
 }
 
 impl EnumDef {
@@ -269,14 +269,14 @@ impl EnumDef {
 
 #[derive(Debug)]
 pub struct VariantRepre {
-    pub(crate) name_id: InternedId,
+    pub name_id: InternedId,
     // Because enum types are nullable
-    pub(crate) type_id: Option<TypeId>,
+    pub type_id: Option<TypeId>,
     // Possible tuple
     // Points to variant within original Ast enum
-    pub(crate) ast_id: AstId,
-    pub(crate) args: Vec<InnerArgs>,
-    pub(crate) conds: Vec<Cond>,
+    pub ast_id: AstId,
+    pub args: Vec<InnerArgs>,
+    pub conds: Vec<Cond>,
 }
 
 impl VariantRepre {
@@ -292,12 +292,12 @@ impl VariantRepre {
 }
 
 #[derive(Debug)]
-pub(crate) struct TypeDef {
+pub struct TypeDef {
     // Typedefs are: "var-> name: str" meaning the typedef type has types so it has a type id
-    pub(crate) sym_id: SymbolId,
-    pub(crate) type_id: TypeId,
-    pub(crate) conds: Vec<Cond>,
-    pub(crate) args: Vec<InnerArgs>,
+    pub sym_id: SymbolId,
+    pub type_id: TypeId,
+    pub conds: Vec<Cond>,
+    pub args: Vec<InnerArgs>,
 }
 
 impl TypeDef {
@@ -312,15 +312,15 @@ impl TypeDef {
 }
 
 #[derive(Debug)]
-pub(crate) struct FuncRepre {
-    pub(crate) call_span: Span,
-    pub(crate) kind: FuncKind,
-    pub(crate) constraints: Vec<ArgConstraint>,
-    pub(crate) args: Vec<FuncArgsRepre>,
+pub struct FuncRepre {
+    pub call_span: Span,
+    pub kind: FuncKind,
+    pub constraints: Vec<ArgConstraint>,
+    pub args: Vec<FuncArgsRepre>,
 }
 
 impl FuncRepre {
-    pub(crate) fn new(
+    pub fn new(
         call_span: Span,
         kind: FuncKind,
         constraints: Vec<ArgConstraint>,
@@ -339,7 +339,7 @@ impl FuncRepre {
 // This should be removed
 // TODO:
 #[derive(Debug)]
-pub(crate) enum FuncArgsRepre {
+pub enum FuncArgsRepre {
     Integer(ValueId),
     Float(ValueId),
     Char(char),
@@ -350,7 +350,7 @@ pub(crate) enum FuncArgsRepre {
 }
 
 impl FuncArgsRepre {
-    pub(crate) fn is_numeric(&self) -> bool {
+    pub fn is_numeric(&self) -> bool {
         match self {
             FuncArgsRepre::Integer(_) | FuncArgsRepre::Float(_) => true,
             FuncArgsRepre::Char(_) | FuncArgsRepre::Str(_) => false,
@@ -360,28 +360,28 @@ impl FuncArgsRepre {
 
     // TEST: Currently testing out a way of formatting that is more encapsulated so that the code
     // outside doesn't have to be repeated as intensely.
-    pub(crate) fn is_integer(&self) -> bool {
+    pub fn is_integer(&self) -> bool {
         match self.kind() {
             FuncArgsKind::Integer => true,
             _ => false,
         }
     }
 
-    pub(crate) fn is_float(&self) -> bool {
+    pub fn is_float(&self) -> bool {
         match self.kind() {
             FuncArgsKind::Float => true,
             _ => false,
         }
     }
 
-    pub(crate) fn is_char(&self) -> bool {
+    pub fn is_char(&self) -> bool {
         match self.kind() {
             FuncArgsKind::Char => true,
             _ => false,
         }
     }
 
-    pub(crate) fn is_str(&self) -> bool {
+    pub fn is_str(&self) -> bool {
         match self.kind() {
             FuncArgsKind::Str => true,
             _ => false,
@@ -389,7 +389,7 @@ impl FuncArgsRepre {
     }
 
     // to_builtin_type_kind is getting a little long for something so contextually obvious
-    pub(crate) fn to_builtin_kind(&self) -> BuiltinTypeKind {
+    pub fn to_builtin_kind(&self) -> BuiltinTypeKind {
         match self {
             FuncArgsRepre::Integer(_) => BuiltinTypeKind::I64,
             FuncArgsRepre::Float(_) => BuiltinTypeKind::F64,
@@ -399,7 +399,7 @@ impl FuncArgsRepre {
         }
     }
 
-    pub(crate) fn kind(&self) -> FuncArgsKind {
+    pub fn kind(&self) -> FuncArgsKind {
         match self {
             FuncArgsRepre::Integer(_) => FuncArgsKind::Integer,
             FuncArgsRepre::Float(_) => FuncArgsKind::Float,
@@ -424,7 +424,7 @@ impl Formattable for FuncArgsRepre {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FuncArgsKind {
+pub enum FuncArgsKind {
     Integer,
     Float,
     Char,
@@ -434,15 +434,15 @@ pub(crate) enum FuncArgsKind {
 }
 
 #[derive(Debug)]
-pub(crate) struct FieldRepre {
-    pub(crate) name_id: InternedId,
-    pub(crate) type_id: TypeId,
+pub struct FieldRepre {
+    pub name_id: InternedId,
+    pub type_id: TypeId,
     // Ast contained field id, maybe this should just be AstId
-    pub(crate) ast_id: AstId,
+    pub ast_id: AstId,
 }
 
 impl FieldRepre {
-    pub(crate) fn new(name_id: InternedId, type_id: TypeId, ast_id: AstId) -> FieldRepre {
+    pub fn new(name_id: InternedId, type_id: TypeId, ast_id: AstId) -> FieldRepre {
         FieldRepre {
             name_id,
             type_id,
@@ -452,11 +452,11 @@ impl FieldRepre {
 }
 
 #[derive(Debug)]
-pub(crate) struct AliasDef {
-    pub(crate) sym_id: SymbolId,
-    pub(crate) params: Vec<TypeId>,
-    pub(crate) conds: Vec<Cond>,
-    pub(crate) args: Vec<InnerArgs>,
+pub struct AliasDef {
+    pub sym_id: SymbolId,
+    pub params: Vec<TypeId>,
+    pub conds: Vec<Cond>,
+    pub args: Vec<InnerArgs>,
 }
 
 impl AliasDef {
@@ -472,17 +472,6 @@ impl AliasDef {
             conds,
             args,
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct Tuple {
-    pub(crate) elements: Vec<TypeId>,
-}
-
-impl Tuple {
-    pub fn new(elements: Vec<TypeId>) -> Tuple {
-        Tuple { elements }
     }
 }
 

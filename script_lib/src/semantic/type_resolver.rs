@@ -17,16 +17,18 @@ use crate::semantic::evaluator;
 use crate::semantic::representation::{ExprHir, PossibleMember, ResolvedExpr, SymbolKind};
 use crate::semantic::scopes::ScopeType;
 use crate::semantic::type_resolver::type_context::{PendingExpr, PendingSymbol, TypeContext};
+
 use crate::{
     parser::ast::{
         AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Item,
         SpannedTypeExpr, TypeExpr,
     },
     semantic::{
-        representation::{FieldRepre, Tuple, Type, TypeInfo, VariantRepre},
+        representation::{FieldRepre, Type, TypeInfo, VariantRepre},
         semantic_reporter::SemanticReporter,
     },
 };
+
 /// Resolves types and builds the rest of any structs or enums
 pub struct TypeResolver<'a> {
     ast_info: &'a AstInfo,
@@ -58,8 +60,6 @@ impl TypeResolver<'_> {
         }
     }
 
-    //FIXME: USE A SINGULAR VECTOR INDEXED BY NAMEID LATER OVER A HASHMAP NOT NOW PLEASE NOT NOW
-    // Ok. But when. I don't know.
     //TODO: Check structures of data for same name symbols
     pub fn resolve(&mut self) -> Result<(), Vec<Diagnostic>> {
         // This is resolving types but not resolving args or conditions.
@@ -76,19 +76,9 @@ impl TypeResolver<'_> {
             }
         }
 
-        if !self.reporter.err_vec.is_empty() {
-            let mut diags = Vec::new();
-            diags.append(&mut self.reporter.err_vec);
-
-            return Err(diags);
-        }
-
-        // Not my best work
         if self.ty_ctx.needs_check {
             // Clearing cache.
             self.ty_ctx.needs_check = false;
-
-            // Maybe Rust isn't a real language
 
             // Giving ownership to a variable since the traversal chosen needs mutation while
             // traversing
@@ -142,8 +132,6 @@ impl TypeResolver<'_> {
 
             return Err(diags);
         }
-
-        // If the final attempt to resolve everything failed and we are at the final module
 
         Ok(())
     }
@@ -204,13 +192,23 @@ impl TypeResolver<'_> {
 
             dbg!(root_expr);
             let start_expr = self.compiler.exprs[root_id.id as usize].users[0];
-            self.traverse_expr(start_expr).unwrap();
+            match self.traverse_expr(start_expr) {
+                Ok(_) => (),
+                Err(sem_err) => {
+                    // Extracting module of origin from the pending expression by using the symbol
+                    // attached to the expression upon it's creation
+                    let parent_sym_id = pending_sym.pending_exprs[0].parent_sym;
+                    let mod_id = &self.compiler.symbols[&parent_sym_id].owner;
+                    self.reporter
+                        .report_semantic(sem_err, &self.compiler.mods[mod_id.id as usize])
+                }
+            };
         }
 
         Ok(can_remove)
     }
 
-    fn traverse_expr(&mut self, expr_id: ExprId) -> Result<(), ()> {
+    fn traverse_expr(&mut self, expr_id: ExprId) -> Result<(), SemanticError> {
         let expr = &mut self.compiler.exprs[expr_id.id as usize];
 
         match expr.expr_hir {
@@ -218,7 +216,9 @@ impl TypeResolver<'_> {
             ExprHir::Var(sym_id) => todo!(),
             ExprHir::Default(sym_id, expr_id) => todo!(),
             ExprHir::Unary { op, operand } => todo!(),
-            ExprHir::BinaryExpr { lhs, op, rhs } => todo!(),
+            ExprHir::BinaryExpr { lhs, op, rhs } => {
+                todo!("HEAL");
+            }
         }
         todo!();
     }
@@ -331,7 +331,19 @@ impl TypeResolver<'_> {
                 SymbolKind::Unknown => Ok(TypeId::new(script_compiler::TYPE_UNKNOWN_IDX)),
             },
             ExprHir::Unary { op, operand } => todo!(),
-            ExprHir::BinaryExpr { lhs, op, rhs } => todo!(),
+            ExprHir::BinaryExpr { lhs, op, rhs } => {
+                let lhs_type_id = self.compiler.exprs[lhs.id as usize].type_id;
+                let rhs_type_id = self.compiler.exprs[rhs.id as usize].type_id;
+
+                if lhs_type_id.id != script_compiler::TYPE_UNKNOWN_IDX {
+                    Ok(lhs_type_id)
+                } else if lhs_type_id.id != script_compiler::TYPE_UNKNOWN_IDX {
+                    Ok(rhs_type_id)
+                } else {
+                    // Both are unknown so just giving it lhs's unknown
+                    Ok(lhs_type_id)
+                }
+            }
         }
     }
 
@@ -346,6 +358,21 @@ impl TypeResolver<'_> {
                 let module = &self.compiler.mods[self.current_mod.id];
 
                 if let Some(sym_id) = module.get_sym_id(*name_id, scope_type) {
+                    if sym_id == sym_parent {
+                        let name = self
+                            .interner
+                            .search(self.compiler.symbols[&sym_id].name_id.id as usize);
+                        let msg = format!("Cannot declare symbol `{name}` as itself");
+
+                        let parent_ast_id = self.compiler.symbols[&sym_parent].ast_id;
+                        let parent_span = self.ast_info.get_ast_span(parent_ast_id);
+
+                        return Err(SemanticError::General(
+                            msg,
+                            vec![parent_span, spanned_expr.span],
+                        ));
+                    }
+
                     let symbol = &self.compiler.symbols[&sym_id];
                     let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
 
@@ -723,7 +750,7 @@ impl TypeResolver<'_> {
                 let field_span = abs_struct.fields[i].name_span;
 
                 let msg = format!(
-                    "More than one field has the identifier \"{dup_name}\" within struct \"{struct_name}\""
+                    "More than one field has the identifier \"{dup_name}\" within struct `{struct_name}`"
                 );
 
                 self.reporter.report_spanned(
@@ -770,7 +797,7 @@ impl TypeResolver<'_> {
                 let variant_span = abs_enum.variants[i].name_span;
 
                 let msg = format!(
-                    "More than one variant has the identifier \"{dup_name}\" within enum \"{enum_name}\""
+                    "More than one variant has the identifier \"{dup_name}\" within enum `{enum_name}`"
                 );
 
                 self.reporter.report_spanned(
@@ -918,13 +945,12 @@ impl TypeResolver<'_> {
                         BuiltinTypeKind::Tuple => {
                             let mut elements: Vec<TypeId> = Vec::new();
 
-                            panic!("Which tuple");
                             for arg in &generic.args {
                                 elements.push(self.resolve_type_expr(arg, scope_type, ast_id)?);
                             }
 
                             let type_id = TypeId::new(self.compiler.types.len() as u32);
-                            let tuple = Type::Tuple(Tuple::new(elements));
+                            let tuple = Type::BuiltinType(BuiltinType::Tuple(elements));
 
                             let ty_info = TypeInfo::new(tuple, Some(self.current_mod));
                             self.compiler.types.push(ty_info);
@@ -1040,23 +1066,23 @@ impl TypeResolver<'_> {
 
                 Ok(TypeId::new(id))
             }
-            TypeExpr::Tuple(unres_tuple) => {
-                let mut elements: Vec<TypeId> = Vec::new();
-
-                for element in unres_tuple {
-                    let type_id = self.resolve_type_expr(element, scope_type, ast_id)?;
-                    elements.push(type_id);
-                }
-
-                let tuple_id = TypeId::new(self.compiler.types.len() as u32);
-                let tuple = Type::Tuple(Tuple::new(elements));
-                panic!("Intrinsic stuff");
-
-                let ty_info = TypeInfo::new(tuple, Some(self.current_mod));
-                self.compiler.types.push(ty_info);
-
-                Ok(tuple_id)
-            }
+            // TypeExpr::Tuple(unres_tuple) => {
+            //     let mut elements: Vec<TypeId> = Vec::new();
+            //
+            //     for element in unres_tuple {
+            //         let type_id = self.resolve_type_expr(element, scope_type, ast_id)?;
+            //         elements.push(type_id);
+            //     }
+            //
+            //     let tuple_id = TypeId::new(self.compiler.types.len() as u32);
+            //     let tuple = Type::Tuple(Tuple::new(elements));
+            //     panic!("Intrinsic stuff");
+            //
+            //     let ty_info = TypeInfo::new(tuple, Some(self.current_mod));
+            //     self.compiler.types.push(ty_info);
+            //
+            //     Ok(tuple_id)
+            // }
             //FIX: Need to make sure MAYBE that the type referenced isn't a builtin one
             TypeExpr::Path(spanned_ty_exprs) => {
                 // The parser disallows < 2 type pathing to actually exist so indexing should be
@@ -1165,6 +1191,9 @@ impl TypeResolver<'_> {
                 );
 
                 Err(())
+            }
+            TypeExpr::Tuple(_) => {
+                unimplemented!("Unused Tuple type expression")
             }
         }
     }

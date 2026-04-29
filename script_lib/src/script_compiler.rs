@@ -28,7 +28,7 @@ pub struct ScriptCompiler {
     /// All expressions that were found
     pub exprs: Vec<ResolvedExpr>,
     // pub exprs: Vec<ValueInfo>,
-    pub(crate) symbols: HashMap<SymbolId, Symbol>,
+    pub symbols: HashMap<SymbolId, Symbol>,
 }
 
 // Called idx but is u32...
@@ -259,27 +259,25 @@ impl ScriptCompiler {
         }
     }
 
-    // pub(super) fn get_var(&self, sym_id: SymbolId) -> &VarDef {
-    //     match &self.symbols[&sym_id] {
-    //         sym_info => match &sym_info.kind {
-    //             SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
-    //                 Type::Var(var_def) => enum_def,
-    //                 _ => unreachable!(),
-    //             },
-    //             _ => unreachable!(),
-    //         },
-    //     }
-    // }
-    //
-    // pub(super) fn get_var_mut(&mut self, sym_id: SymbolId) -> &mut VarDef {
-    //     match self.symbols.get_mut(&sym_id) {
-    //         Some(sym_info) => match &mut sym_info.symbol {
-    //             Symbol::Var(var_repre) => var_repre,
-    //             _ => unreachable!(),
-    //         },
-    //         None => unreachable!(),
-    //     }
-    // }
+    /// Assumes the symbol given is a variable, meaning a symbol with a value inside of it
+    pub(super) fn get_var(&self, sym_id: SymbolId) -> &ValueInfo {
+        match &self.symbols[&sym_id] {
+            sym_info => match &sym_info.kind {
+                SymbolKind::Val(val_id) => &self.values[val_id.id as usize],
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    /// Assumes the symbol given is a variable, meaning a symbol with a value inside of it
+    pub(super) fn get_var_mut(&mut self, sym_id: SymbolId) -> &mut ValueInfo {
+        match &self.symbols[&sym_id] {
+            sym_info => match &sym_info.kind {
+                SymbolKind::Val(val_id) => &mut self.values[val_id.id as usize],
+                _ => unreachable!(),
+            },
+        }
+    }
 
     pub(super) fn get_owner(&self, sym_id: SymbolId) -> ModuleId {
         self.symbols[&sym_id].owner
