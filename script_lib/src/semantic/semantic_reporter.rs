@@ -136,8 +136,8 @@ impl<'a> SemanticReporter<'a> {
 
         let diag = Diagnostic::new(
             path,
-            Some(common::span::merge_spans(&spans)),
             core_msg.to_string(),
+            Some(common::span::merge_spans(&spans)),
             fmt_msg,
             Area::Script,
         );
@@ -174,8 +174,8 @@ impl<'a> SemanticReporter<'a> {
         let path = self.interner.search_path(module.path_id.id as usize);
         let diag = Diagnostic::new(
             path,
-            Some(common::span::merge_spans(&spans)),
             msg.to_string(),
+            Some(common::span::merge_spans(&spans)),
             fmtted_diag,
             Area::Script,
         );

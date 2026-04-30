@@ -33,7 +33,7 @@ impl Lexer<'_> {
     pub fn tokenize(&mut self, interner: &mut Intern) -> Vec<SpannedToken> {
         let mut toks: Vec<SpannedToken> = Vec::new();
 
-        // For threshold of illegal tokens before just giving up. Likely 8 cap.
+        // For threshold of illegal tokens before just giving up
         let mut illegal_toks: u8 = 0;
 
         // Could be removed
@@ -404,7 +404,7 @@ impl Lexer<'_> {
     fn read_id(&mut self, interner: &mut Intern) -> SpannedToken {
         let mut start = self.pos;
 
-        // So e# for escape
+        // e# for escape
         let is_escaped = if self.peek() == b'e' && self.peek_ahead(1) == b'#' {
             self.skip(2);
             start = self.pos;
@@ -798,6 +798,7 @@ impl Lexer<'_> {
         }
     }
 
+    // Oversight due to only testing asain characters
     fn peek_char(&mut self) -> char {
         let b = self.peek();
 
@@ -805,10 +806,9 @@ impl Lexer<'_> {
             return b as char;
         }
 
-        let end = std::cmp::min(self.pos + 3, self.src_bytes.len());
+        let chunk = &self.src_bytes[self.pos..];
 
-        let chunk = &self.src_bytes[self.pos..end];
-
+        // Should be a test for this this is suspicious
         // Lazy evaluation to avoid utf-8 checking entire self.bytes
         std::str::from_utf8(chunk)
             .ok()

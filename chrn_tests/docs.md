@@ -10,20 +10,22 @@
 ## BEHAVIOR
 - Ends program by default when type information is incorrect unless `#warn` or `#ignore` is used.
 
-- `@def` and `@end` syntax is intended to lock script behavior into one block so that the language constraints can be applied without needing a dedicated outer file that uses `bind`. Everything after `@end` will be considered the serialized file.
+- `@def` and `@end` syntax is intended to lock script behavior into one block so that the language constraints can be applied without needing a dedicated outer file that uses `bind`. Everything after `@end` will be considered the serialized file. If the space above the script is not needed, `@end` alone can be used to define a script block (This was unintended behavior but may stay).
 
-- It is not recommended to type above `@def` without comments due to the initial scan needed to make this work needing to avoid reading past `@end` while also skipping comments and quotes that could also have it's keywords inside but are unintended for it to read.
+- It is not recommended to type above `@def` without comments due to the initial scan needed to make this work being sensitive to accidentally unclosed comments or quotes.
 
 ## Types
 i8, u8, i16, u16, i32, u32, i64, u64,
 i128, u128, f16, f32, f64, f128, sized, unsized,
 char, bool, str, struct, enum, nil, BigInt, BigFloat, List, Map, Set, Tuple
 
+`List<T>`: Holds a single generic parameter.
+`Set<T>`: Holds a single generic parameter and enforces when checking serialized data that it is in fact a valid set with only one of each value.
+`Map<K, V>`: Holds a two generic parameters.
+`Tuple<A, B, ..>`: Holds any amount of types within generic parameters.
+
 `struct`: For defining a structure of data.
 `enum`: For defining an enum type which can also hold enumerations with types.
-`Tuple`: Holds any amount of types within generic parameters.
-`List`: Holds a single generic parameter.
-`Set`: Holds a single generic parameter and enforces when checking serialized data that it is in fact a valid set with only one of each value.
 
 `?`: Infers type and expects type consistency throughout entire given serialized data file type.
 

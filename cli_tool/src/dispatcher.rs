@@ -51,11 +51,11 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
                     return Err("Failed to parse configuration file".to_string());
                 }
                 ScriptError::IO(e) => {
-                    let msg = format!("Process exited unsuccessfully. Reason: {e}");
+                    let msg = format!("Process exited unsuccessfully.\nReason: {e}");
                     return Err(msg);
                 }
             },
-            _ => unreachable!(),
+            _ => unreachable!("Serial isn't checked in this command"),
         },
     }
 }

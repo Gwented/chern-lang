@@ -176,7 +176,6 @@ impl TypeResolver<'_> {
             queue.push(pending_expr.pending_id);
         }
 
-        let expr = &self.compiler.exprs[queue[0].id as usize];
         // In the example:
         //
         // ```
@@ -184,12 +183,11 @@ impl TypeResolver<'_> {
         // let x = 2
         // ```
         //
-        // root_expr  = x
+        // root_expr = x
         // So, it needs to go x -> x + 2 -> y
         //
 
-        // Needs to first patch the root, go to x + 2, patch the add expression, repeat until no
-        // users
+        // Needs to first patch the root
         for root_id in queue.iter().copied() {
             // Still need to repair root expr
             let root_expr = &mut self.compiler.exprs[root_id.id as usize];
@@ -223,7 +221,6 @@ impl TypeResolver<'_> {
                 break;
             }
 
-            dbg!(root_expr);
             let start_expr = self.compiler.exprs[root_id.id as usize].users[0];
             match self.traverse_expr(start_expr) {
                 Ok(_) => (),
@@ -241,16 +238,99 @@ impl TypeResolver<'_> {
         Ok(can_remove)
     }
 
+    // This needs to go from x -> x + 2 -> y recursively however long needed
     fn traverse_expr(&mut self, expr_id: ExprId) -> Result<(), SemanticError> {
         let expr = &mut self.compiler.exprs[expr_id.id as usize];
 
         match expr.expr_hir {
-            ExprHir::Val(val_id) => todo!(),
+            ExprHir::Val(val_id) => {
+                let val_info = &self.compiler.values[val_id.id as usize];
+                expr.type_id = val_info.type_id;
+                expr.val_id = val_id;
+
+                //WARN: QUESTIONABLE
+                todo!()
+            }
             ExprHir::Var(sym_id) => todo!(),
             ExprHir::Default(sym_id, expr_id) => todo!(),
             ExprHir::Unary { op, operand } => todo!(),
             ExprHir::BinaryExpr { lhs, op, rhs } => {
-                todo!("HEAL");
+                //TODO: Considering a span vector so that they dont need to be duplicated or
+                //computed by going inside items anymore.
+
+                let lhs_expr = &self.compiler.exprs[lhs.id as usize];
+                let rhs_expr = &self.compiler.exprs[rhs.id as usize];
+
+                // Not sure if thisi s possible
+                let is_unknown = lhs_expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX
+                    || rhs_expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX;
+
+                // Composing this so it can be matched cleanly for if const eval can be performed
+                let lhs_val_opt = self.compiler.values[lhs_expr.val_id.id as usize]
+                    .const_val
+                    .as_ref();
+
+                let rhs_val_opt = self.compiler.values[rhs_expr.val_id.id as usize]
+                    .const_val
+                    .as_ref();
+
+                // Is this unreadable!()? <--- unreadable!
+                if is_unknown {
+                    unreachable!("Actually reachable");
+                    return Ok(());
+                }
+
+                // This just checks if both are const, not if they were comptaible in the first
+                // place. So, if it's not a comptaible binary, that could either mean 2 + "hi" or 2
+                // + x where we just don't know x yet
+                let const_val_opt: Option<Value> = match (lhs_val_opt, rhs_val_opt) {
+                    (Some(lhs_const), Some(rhs_const)) => {
+                        // If cannot perform operation and neither are unknown then there is actual
+                        // corruption, and not one part just being unresolved
+                        if !evaluator::is_compatible_binary(lhs_const, op, rhs_const) && !is_unknown
+                        {
+                            // let full_span = lhs.span.merge(rhs.span);
+                            //
+                            // return Err(MathError::BinaryOpMismatch(
+                            //     lhs_const.kind().to_fmt(),
+                            //     rhs_const.kind().to_fmt(),
+                            //     op.to_fmt(),
+                            //     vec![full_span],
+                            // ))?;
+                            todo!()
+                        } else {
+                            Some(evaluator::apply_binary_op(lhs_const, op, rhs_const)?)
+                        }
+                    }
+                    _ => None,
+                };
+
+                // let val_id = ValueId::new(self.compiler.values.len() as u32);
+                // let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+
+                //WARN: Assuming this means they're the same type, or at least, uh. Um. Yeah.
+                // let type_id = if const_val_opt.is_some() {
+                //     lhs_expr.type_id
+                // } else {
+                //     TypeId::new(script_compiler::TYPE_UNKNOWN_IDX)
+                // };
+
+                // Hm
+                // Expression points to the value so the expr_id is returned alone.
+
+                // let val_info = ValueInfo::new(type_id, expr_id, const_val_opt);
+
+                // dbg!(
+                //     self.compiler.exprs[lhs_id.id as usize],
+                //     self.compiler.exprs[rhs_id.id as usize],
+                //     resolved_expr,
+                //     val_info
+                // );
+
+                // self.compiler.exprs.push(resolved_expr);
+                // self.compiler.values.push(val_info);
+                dbg!(const_val_opt);
+                todo!("I did stuff")
             }
         }
         todo!();
@@ -1024,7 +1104,7 @@ impl TypeResolver<'_> {
                             //WARN: Questionablly phrased error message
                             //This COULD change so this will not be upheld at the parsing stage
                             let err_msg = format!(
-                                "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, `Tuple`, and `Map` are valid data structures"
+                                "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, `Map`, and `Tuple` are valid data structures"
                             );
 
                             self.reporter.report_spanned(
@@ -1042,7 +1122,7 @@ impl TypeResolver<'_> {
                         let err_name = self.interner.search(generic.base.id as usize);
 
                         let err_msg = format!(
-                            "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, `Tuple`, and `Map` are valid data structures"
+                            "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, `Map`, and `Tuple` are valid data structures"
                         );
 
                         self.reporter.report_spanned(

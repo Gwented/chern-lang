@@ -25,12 +25,14 @@ use common::span::Span;
 // May be lower
 const MAX_ERRORS: u8 = 3;
 
+/// Returns a completed `AstInfo` on `Ok`. Returns an unfinished `AstInfo` and `ScriptError` on
+/// `Err`
 pub fn parse(
     settings: &ChernSettings,
     module: &Module,
     tokens: &Vec<SpannedToken>,
     interner: &Intern,
-) -> Result<AstInfo, ScriptError> {
+) -> Result<AstInfo, (AstInfo, ScriptError)> {
     let mut ast_info = AstInfo::new();
 
     let mut state = ParserState::new();
@@ -353,7 +355,7 @@ pub fn parse(
     }
 
     if !ctx.err_vec.is_empty() {
-        return Err(ScriptError::Parser(ctx.err_vec));
+        return Err((ast_info, ScriptError::Parser(ctx.err_vec)));
     }
 
     Ok(ast_info)

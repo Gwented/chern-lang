@@ -143,6 +143,8 @@ pub enum ExprHir {
     Val(ValueId),
     Var(SymbolId),
     Default(SymbolId, ExprId),
+    // Call(),
+    // MemberAccess(),
     // Um
     // Call(Box<SpannedExpr>, Vec<SpannedExpr>),
     // MemberAccess(AbstractMemberAccess),

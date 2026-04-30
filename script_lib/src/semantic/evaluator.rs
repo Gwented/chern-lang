@@ -177,6 +177,7 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
             },
             Value::F64(lhs_inner) => match rhs {
                 Value::F64(rhs_inner) => {
+                    // No span
                     if *rhs_inner == 0.0 {
                         panic!("Center a div");
                     }

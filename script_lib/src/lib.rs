@@ -2,7 +2,6 @@
 mod algo;
 pub mod conditions;
 pub mod config_loader;
-pub mod hir;
 mod iyo;
 pub mod lexer;
 pub mod linter;

@@ -38,10 +38,10 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChernSettings) -> Result<(), C
 
         let ast_info = match script_lib::parser::parse(settings, &module, &toks, &mut interner) {
             Ok(info) => info,
-            Err(script_err) => match script_err {
+            Err((unfinished_ast, script_err)) => match script_err {
                 ScriptError::Parser(mut diags) | ScriptError::Semantic(mut diags) => {
                     reporter.diags.append(&mut diags);
-                    continue;
+                    unfinished_ast
                 }
                 // Maybe this shouldn't be so terminal?
                 e => return Err(e.into()),

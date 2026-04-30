@@ -129,8 +129,8 @@ impl<'a> Context<'a> {
 
         self.err_vec.push(Diagnostic::new(
             path,
-            Some(common::span::merge_spans(&spans)),
             core_msg,
+            Some(common::span::merge_spans(&spans)),
             fmtted_diag,
             Area::Script,
         ));
@@ -187,8 +187,8 @@ impl<'a> Context<'a> {
 
         self.err_vec.push(Diagnostic::new(
             path,
-            Some(common::span::merge_spans(&spans)),
             core_msg,
+            Some(common::span::merge_spans(&spans)),
             fmtted_diag,
             Area::Script,
         ));
@@ -233,8 +233,8 @@ impl<'a> Context<'a> {
 
         let diag = Diagnostic::new(
             path,
-            Some(common::span::merge_spans(&spans)),
             core_msg,
+            Some(common::span::merge_spans(&spans)),
             fmtted_msg,
             Area::Script,
         );
@@ -292,8 +292,8 @@ impl<'a> Context<'a> {
 
             self.err_vec.push(Diagnostic::new(
                 path,
-                Some(common::span::merge_spans(&spans)),
                 core_msg,
+                Some(common::span::merge_spans(&spans)),
                 fmtted_msg,
                 Area::Script,
             ));
@@ -347,8 +347,8 @@ impl<'a> Context<'a> {
 
         let diag = Diagnostic::new(
             path,
-            Some(common::span::merge_spans(&spans)),
             core_msg,
+            Some(common::span::merge_spans(&spans)),
             fmtted_diag,
             Area::Script,
         );
@@ -399,7 +399,6 @@ impl<'a> Context<'a> {
         }
     }
 
-    //TODO: Give help_model the ability to send help
     // TODO: Make a helper reporter so something like can_color doesn't need to be re-entered
     // everytime
     fn try_help(
@@ -555,14 +554,9 @@ impl<'a> Context<'a> {
                 // SectionBranch::NestEnum => todo!(),
                 // SectionBranch::Complex => todo!(),
                 // SectionBranch::Override => todo!(),
-                s => match found.tok {
+                _ => match found.tok {
                     Token::Id(id) | Token::Illegal(id) => {
                         let found_bytes = interner.search(id as usize).as_bytes();
-
-                        // If it's already a valid section name then it won't send false help
-                        if keywords::sect_range().contains(&(id as usize)) {
-                            return None;
-                        };
 
                         // Maybe this should return None if it directly IS a direct match since it is
                         // just a range check
@@ -630,7 +624,7 @@ impl<'a> Context<'a> {
                 let ident = interner.search(id as usize);
                 Some(format!("\"{ident}\""))
             }
-            Token::Keyword(kw) => Some(kw.to_fmt().to_string()),
+            Token::Keyword(kw) => Some(format!("`{}`", kw.to_fmt().to_string())),
             Token::Illegal(id) => {
                 let illegal_msg = interner.search(id as usize);
                 let new_msg = format!("\"{illegal_msg}\"");

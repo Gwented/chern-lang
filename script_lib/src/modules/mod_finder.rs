@@ -1,37 +1,56 @@
-use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::PathBuf};
+use std::{ffi::OsStr, path::PathBuf, str::FromStr};
 
 use chrn_utils::{
     id_types::{InternedId, PathId},
     intern::Intern,
 };
-use common::span::Span;
+use common::{
+    chrn_settings::ChernSettings,
+    core_error::{self, ConfigLoadError},
+    reporter::{
+        self,
+        diagnostic::{Area, Diagnostic},
+    },
+    span::Span,
+};
 
 use crate::modules::{Bind, Import};
 
+//WARN: There is no information given to the module finder for what path the imports are actually
+//being collected from.
 pub struct ModuleFinder<'a> {
     src_bytes: &'a [u8],
+    settings: &'a ChernSettings,
     pos: usize,
     end: usize,
 }
 
 impl ModuleFinder<'_> {
-    pub fn new(
-        src_bytes: &[u8],
+    pub fn new<'a>(
+        //TODO: Need to store beg
+        src_bytes: &'a [u8],
+        settings: &'a ChernSettings,
         script_start: usize,
         serial_start: Option<usize>,
-    ) -> ModuleFinder<'_> {
+    ) -> ModuleFinder<'a> {
         ModuleFinder {
             src_bytes,
+            settings,
             pos: script_start,
             end: serial_start.unwrap_or(src_bytes.len()),
         }
     }
 
-    pub(crate) fn collect_imports(&mut self, interner: &mut Intern) -> (Option<Bind>, Vec<Import>) {
+    /// Returns a tuple of `Bind` and any imports found on Success.
+    pub(crate) fn collect_imports(
+        &mut self,
+        interner: &mut Intern,
+    ) -> Result<(Option<Bind>, Vec<Import>), ConfigLoadError> {
         let mut imports: Vec<Import> = Vec::new();
         let mut bind: Option<Bind> = None;
 
         loop {
+            //FIX: Does not account for "e#" I think I don't know
             self.skip_until_important();
 
             if self.pos >= self.end && self.peek() == b'\0' {
@@ -41,18 +60,16 @@ impl ModuleFinder<'_> {
             let ch = self.peek();
 
             match ch {
-                // b'b' => if self.read_id(interner).is_some() {},
                 b'i' => {
                     if self.is_import() {
-                        let import = self.parse_import(interner);
+                        let import = self.parse_import(interner)?;
                         imports.push(import);
                     }
                 }
                 b'b' => {
                     if self.is_bind() {
-                        bind = Some(self.parse_bind(interner));
+                        bind = Some(self.parse_bind(interner)?);
                     }
-                    //
                     self.advance();
                 }
                 b'"' => {
@@ -75,17 +92,11 @@ impl ModuleFinder<'_> {
             }
         }
 
-        (bind, imports)
-    }
-
-    fn handle_comment(&mut self) {
-        while self.peek() != b'\n' {
-            self.advance();
-        }
+        Ok((bind, imports))
     }
 
     /// Assumes the starting point is at the start quote
-    fn parse_import(&mut self, interner: &mut Intern) -> Import {
+    fn parse_import(&mut self, interner: &mut Intern) -> Result<Import, ConfigLoadError> {
         self.advance();
         let start = self.pos;
 
@@ -101,26 +112,49 @@ impl ModuleFinder<'_> {
             }
         }
 
+        // - 1 to include quotes since that happens in the lexer. No other reason.
         let end = self.pos - 1;
 
-        // - 1 to include quotes since that happens in the lexer. No other reason.
+        let path_span = Span::new(start - 1, end);
+        let path_buf = self.create_pathbuf(&self.src_bytes[start..end])?;
 
-        //FIXME:
-        let os_str = OsStr::from_bytes(&self.src_bytes[start..end]);
-        let import_path = match PathBuf::from(os_str).canonicalize() {
+        let import_path = match path_buf.canonicalize() {
             Ok(p) => p,
-            Err(e) => panic!("{:?}", e),
+            Err(e) => {
+                let core_msg =
+                    core_error::form_string_from_io_err(&e, &path_buf).unwrap_or(e.to_string());
+
+                let ln_data =
+                    reporter::form_err_diag(self.src_bytes, &[path_span], self.settings.can_color);
+
+                let fmtted_diag = reporter::standardize_err(
+                    &core_msg,
+                    &ln_data,
+                    "",
+                    &path_buf,
+                    self.settings.can_color,
+                );
+
+                let diag = Diagnostic::new(
+                    &path_buf,
+                    core_msg,
+                    Some(path_span),
+                    fmtted_diag,
+                    Area::ConfigLoad,
+                );
+
+                return Err(ConfigLoadError::Module(diag));
+            }
         };
 
-        // No control flow
+        // We could check for an alias here too in case the file name is invalid and needs an alias
         let file_name = match import_path.file_prefix().map(|n| n.to_str()) {
             Some(Some(n)) => n,
-            e => panic!("{:?}", e),
+            e => todo!("{e:?}"),
         };
 
         let name_id = InternedId::new(interner.intern(&file_name));
         let path_id = PathId::new(interner.intern_path(&import_path));
-        let path_span = Span::new(start - 1, end);
 
         let alias_id: Option<InternedId> = if self.is_as() {
             self.skip_whitespace();
@@ -129,12 +163,43 @@ impl ModuleFinder<'_> {
             None
         };
 
-        self.skip_whitespace();
-
-        Import::new(name_id, path_id, path_span, alias_id)
+        Ok(Import::new(name_id, path_id, path_span, alias_id))
     }
 
-    fn parse_bind(&mut self, interner: &mut Intern) -> Bind {
+    //WARN: Will be placed in different module
+    fn create_pathbuf(&self, slice: &[u8]) -> Result<PathBuf, ConfigLoadError> {
+        if cfg!(unix) {
+            #[cfg(unix)]
+            {
+                use std::os::unix::ffi::OsStrExt;
+                let os_str = OsStr::from_bytes(slice);
+                return Ok(PathBuf::from(os_str));
+            }
+            // NOTE: This may be done differently but this remains a basic utf-8 check for now
+        } else if cfg!(windows) {
+            // #[cfg(windows)]
+            // {
+            //     use std::os::windows::ffi::OsStrExt;
+            //     let os_str = OsStr::from_wide(slice);
+            //
+            //     return Ok(PathBuf::from(slice));
+            // }
+            match str::from_utf8(slice) {
+                Ok(s) => return Ok(PathBuf::from_str(&s).expect("Uh")),
+                Err(_) => todo!(),
+            }
+        }
+
+        match str::from_utf8(slice) {
+            Ok(s) => Ok(PathBuf::from_str(&s).expect("Infailable")),
+            Err(_) => {
+                todo!()
+            }
+        }
+    }
+
+    fn parse_bind(&mut self, interner: &mut Intern) -> Result<Bind, ConfigLoadError> {
+        // skipping "
         self.advance();
         let start = self.pos;
 
@@ -152,14 +217,18 @@ impl ModuleFinder<'_> {
 
         let end = self.pos - 1;
 
-        let os_str = OsStr::from_bytes(&self.src_bytes[start..end]);
-        let bind_path = PathBuf::from(os_str);
-
-        // - 1 to include quotes since that happens in the lexer. No other reason.
-        let path_id = PathId::new(interner.intern_path(&bind_path));
+        // Um uh
+        let path_buf = self.create_pathbuf(&self.src_bytes[start..end]).unwrap();
         let path_span = Span::new(start - 1, end);
 
-        Bind::new(path_id, path_span)
+        let bind_path = match path_buf.canonicalize() {
+            Ok(p) => p,
+            Err(_) => todo!(),
+        };
+
+        let path_id = PathId::new(interner.intern_path(&bind_path));
+
+        Ok(Bind::new(path_id, path_span))
     }
 
     fn read_id(&mut self, interner: &mut Intern) -> InternedId {
@@ -325,6 +394,12 @@ impl ModuleFinder<'_> {
         true
     }
 
+    fn handle_comment(&mut self) {
+        while self.peek() != b'\n' {
+            self.advance();
+        }
+    }
+
     fn handle_multi_comment(&mut self) {
         let mut depth = 1;
 
@@ -360,10 +435,9 @@ impl ModuleFinder<'_> {
             return b as char;
         }
 
-        let end = std::cmp::min(self.pos + 3, self.src_bytes.len());
+        let chunk = &self.src_bytes[self.pos..];
 
-        let chunk = &self.src_bytes[self.pos..end];
-
+        // Should be a test for this this is suspicious
         // Lazy evaluation to avoid utf-8 checking entire self.bytes
         std::str::from_utf8(chunk)
             .ok()

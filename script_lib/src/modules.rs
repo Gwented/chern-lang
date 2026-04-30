@@ -7,12 +7,12 @@ use std::{
 pub mod mod_finder;
 
 use chrn_utils::{
-    id_types::{AstId, InternedId, ModuleId, PathId, ScopeId, SymbolId},
+    id_types::{InternedId, ModuleId, PathId, ScopeId, SymbolId},
     intern::Intern,
 };
 use common::{
     chrn_settings::ChernSettings,
-    core_error::ConfigLoadError,
+    core_error::{self, ConfigLoadError},
     reporter::{
         self,
         diagnostic::{Area, Diagnostic},
@@ -224,7 +224,7 @@ pub fn extract_modules(
         Ok(f) => f,
         Err(err_msg) => {
             // This is the sole reason the span is an option
-            let diag = Diagnostic::new(path, None, err_msg.clone(), err_msg, Area::ConfigLoad);
+            let diag = Diagnostic::new(path, err_msg.clone(), None, err_msg, Area::ConfigLoad);
             return Err(ConfigLoadError::Module(diag));
         }
     };
@@ -242,7 +242,7 @@ pub fn extract_modules(
                 path.display()
             );
 
-            let diag = Diagnostic::new(&path, None, core_msg.clone(), core_msg, Area::ConfigLoad);
+            let diag = Diagnostic::new(&path, core_msg.clone(), None, core_msg, Area::ConfigLoad);
 
             return Err(ConfigLoadError::Module(diag));
         }
@@ -251,12 +251,14 @@ pub fn extract_modules(
     let name_id = InternedId::new(interner.intern(&file_name));
     let path_id = PathId::new(interner.intern_path(&path));
 
+    // dbg!(str::from_utf8(&main_metadata.src_bytes[..]));
     let (bind, main_imports) = ModuleFinder::new(
         &main_metadata.src_bytes,
+        settings,
         main_metadata.script_start,
         main_metadata.serial_start,
     )
-    .collect_imports(interner);
+    .collect_imports(interner)?;
 
     let mod_id = ModuleId::new(0);
     let main_mod = Module::new(name_id, path_id, mod_id, main_imports, main_metadata);
@@ -320,6 +322,10 @@ pub fn extract_modules(
 
 /// This function recursively resolves each import after being given a root module with imports to go off of.
 // Maybe this has gone a little bit too far
+/// `seen`: All imports seen to perform DFS.
+/// `modules`: Modules to store during recursive process to return and append to main module.
+/// `prev_mod`: The last module so that it's spanning information can be tracked.
+/// `mod_map`: Module interned file name -> ModuleId.
 fn resolve_modules(
     seen: &mut HashSet<PathId>,
     modules: &mut Vec<Module>,
@@ -333,8 +339,9 @@ fn resolve_modules(
             continue;
         }
 
+        // Tracks the id of the current module by tracking however many imports were seen, which
+        // all represent one module
         let current_mod_id = seen.len();
-
         seen.insert(import.path_id);
 
         let path = interner.search_path(import.path_id.id as usize);
@@ -348,6 +355,7 @@ fn resolve_modules(
                     &[import.path_span],
                     settings.can_color,
                 );
+
                 let prev_path = interner.search_path(prev_mod.path_id.id as usize);
                 let fmtted_diag = reporter::standardize_err(
                     &core_msg,
@@ -359,8 +367,8 @@ fn resolve_modules(
 
                 let diag = Diagnostic::new(
                     path,
-                    Some(import.path_span),
                     core_msg,
+                    Some(import.path_span),
                     fmtted_diag,
                     Area::ConfigLoad,
                 );
@@ -369,24 +377,15 @@ fn resolve_modules(
             }
             Ok(f) => f,
             Err(e) => {
-                let core_msg = match e.kind() {
-                    std::io::ErrorKind::NotFound => {
-                        format!("Could not find the file \"{}\"", path.display())
-                    }
-                    std::io::ErrorKind::PermissionDenied => {
-                        format!("No permission to access file \"{}\"", path.display())
-                    }
-                    std::io::ErrorKind::IsADirectory => {
-                        format!("The path \"{}\" is a directory", path.display())
-                    }
-                    e => format!("{e}"),
-                };
+                let core_msg =
+                    core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
 
                 let ln_data = reporter::form_err_diag(
                     &prev_mod.metadata.src_bytes,
                     &[import.path_span],
                     settings.can_color,
                 );
+
                 let prev_path = interner.search_path(prev_mod.path_id.id as usize);
                 let fmtted_diag = reporter::standardize_err(
                     &core_msg,
@@ -398,8 +397,8 @@ fn resolve_modules(
 
                 let diag = Diagnostic::new(
                     path,
-                    Some(import.path_span),
                     core_msg,
+                    Some(import.path_span),
                     fmtted_diag,
                     Area::ConfigLoad,
                 );
@@ -423,7 +422,7 @@ fn resolve_modules(
                     );
 
                     let diag =
-                        Diagnostic::new(path, None, core_msg.clone(), core_msg, Area::ConfigLoad);
+                        Diagnostic::new(path, core_msg.clone(), None, core_msg, Area::ConfigLoad);
 
                     return Err(ConfigLoadError::Module(diag));
                 }
@@ -434,10 +433,11 @@ fn resolve_modules(
 
         let (_, sub_imports) = ModuleFinder::new(
             &mod_metadata.src_bytes,
+            settings,
             mod_metadata.script_start,
             mod_metadata.serial_start,
         )
-        .collect_imports(interner);
+        .collect_imports(interner)?;
 
         let sub_mod = Module::new(
             name_id,
@@ -452,10 +452,6 @@ fn resolve_modules(
         }
 
         resolve_modules(seen, modules, &sub_mod, mod_map, settings, interner)?;
-
-        // if sub_mod.name_id.id == 50 {
-        //     panic!("Hi");
-        // }
 
         modules.push(sub_mod);
         mod_map.insert(name_id, ModuleId::new(current_mod_id));

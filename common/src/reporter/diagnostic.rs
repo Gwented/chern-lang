@@ -49,8 +49,8 @@ impl Diagnostic {
     // Maybe just req PathBuf
     pub fn new(
         path: &Path,
-        span: Option<Span>,
         core_msg: String,
+        span: Option<Span>,
         fmtted_diag: String,
         // help: Option<String>,
         area: Area,

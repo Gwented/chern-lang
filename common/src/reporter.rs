@@ -13,9 +13,9 @@ const TOTAL_SEPARATORS: usize = 60;
 
 //TEST:
 pub struct LineData {
-    diag: String,
-    ln: usize,
-    col: usize,
+    pub diag: String,
+    pub ln: usize,
+    pub col: usize,
 }
 
 /// High level struct of all byte and line number data for each line inside of it

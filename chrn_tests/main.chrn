@@ -1,4 +1,84 @@
-@def
+// Need to re-route errors so they don't immediately form basic arrows to one so help messages
+// aren't just requirements because the err msgs themselves are misleading or bad
+// Multiple @def should be caught when @def and @end are tokens
 
-let
+// I am messed up"
+// "I am not even supposed to be included"
+// The tilde has been changed (neutral)
+
+// import "../chrn_tests/defs.chrn"
+// import "../chrn_tests/CHERNGENTS.chrn" as seller
+
+@def
+    //import "../chrn_tests/defs.chrn"
+    import "../chrn_tests/defs.chrn"
+    let ζζ = 3
+
 @end
+    let y = x + 2
+    let x = 5
+    let z = 5
+
+// alias x() = []
+    let x = z
+    let z = 2
+
+    var->
+        y: List<i32>,
+    nest->
+        struct Bist {
+            h: i32
+        }
+        // Maybe could have, if we end on a section keyword, then recover just returns normally?
+    //let x = z
+    //let z = 2
+
+
+@end
+let
+
+// This breaks
+let token_seller = token_seller.STRONGEST_TOKENS
+
+//const HELLO = 4
+
+
+// Require forward slashes
+
+var->
+    // Sure I guess
+    // defs.var
+    export: i32
+    // user: chern.Person
+    thing: BigFloat
+    var: Tuple<str, u8, str> // [StartsW(5)]
+
+    // parser needs this TypeExpr
+nest->
+    struct Data {}
+
+    enum State {
+        Ready: Tuple<Data, str, hallo>
+        InProgress
+        Failed
+    }
+@end
+
+// alias x() = [IsEmpty, defs.DEFAULT(x = "4", y)]
+
+// const X = 4
+@end
+    // Should generate help message or override original error message
+    user: defs.User.Generic<i32>
+
+"Really
+
+
+
+
+Long
+
+Convincing
+
+
+Quotes"

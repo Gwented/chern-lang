@@ -7,10 +7,10 @@ use crate::semantic::representation::Table;
 // Neutral, var, nest, and complex scopes can only access variables from neutral and nest.
 // Override is unsure
 #[derive(Debug)]
-pub(crate) struct Scope {
-    pub(crate) table: Table,
-    pub(crate) scope_id: ScopeId,
-    pub(crate) scope_type: ScopeType,
+pub struct Scope {
+    pub table: Table,
+    pub scope_id: ScopeId,
+    pub scope_type: ScopeType,
 }
 
 impl Scope {
@@ -24,7 +24,7 @@ impl Scope {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub(crate) enum ScopeType {
+pub enum ScopeType {
     Neutral,
     Var,
     Nest,

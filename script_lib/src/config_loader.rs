@@ -135,8 +135,8 @@ impl<R: Read> ChernConfigLoader<'_, R> {
 
                         let diag = Diagnostic::new(
                             self.path,
-                            Some(common::span::merge_spans(&spans)),
                             core_msg,
+                            Some(common::span::merge_spans(&spans)),
                             fmtted_diag,
                             Area::ConfigLoad,
                         );
@@ -201,8 +201,8 @@ impl<R: Read> ChernConfigLoader<'_, R> {
 
                         let diag = Diagnostic::new(
                             self.path,
-                            Some(common::span::merge_spans(&spans)),
                             core_msg,
+                            Some(common::span::merge_spans(&spans)),
                             fmtted_diag,
                             Area::ConfigLoad,
                         );
@@ -313,8 +313,8 @@ impl<R: Read> ChernConfigLoader<'_, R> {
 
             let diag = Diagnostic::new(
                 self.path,
-                Some(def_span.merge(eof_span)),
                 core_msg,
+                Some(def_span.merge(eof_span)),
                 fmtted_diag,
                 Area::ConfigLoad,
             );
@@ -404,8 +404,8 @@ impl<R: Read> ChernConfigLoader<'_, R> {
 
             let diag = Diagnostic::new(
                 self.path,
-                Some(comment_span.merge(eof_span)),
                 core_msg,
+                Some(comment_span.merge(eof_span)),
                 fmtted_diag,
                 Area::ConfigLoad,
             );
