@@ -78,6 +78,7 @@ pub struct Module {
     pub mod_id: ModuleId,
     /// Imports found in the module
     pub imports: Vec<Import>,
+    /// Represents the 4 existent scopes
     pub scopes: Vec<Scope>,
     pub metadata: ModuleMetadata,
 }
@@ -147,7 +148,7 @@ impl Module {
     /// no accessible scopes contain the given `NameId`.
     pub fn get_sym_id(&self, name_id: InternedId, scope_type: ScopeType) -> Option<SymbolId> {
         // I don't think this can fail. Should maybe expect for clarity.
-        let allowed_scope_types = scope_type.accessible_scopes();
+        let allowed_scope_types = scope_type.accessible_scopes(false);
 
         // Loops over all allowed scopes and checks their individual namespaces
         for allowed_scope_type in allowed_scope_types {

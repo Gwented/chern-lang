@@ -381,7 +381,7 @@ impl<R: Read> ChernConfigLoader<'_, R> {
         }
 
         if depth > 0 {
-            let core_msg = format!("Found unclosed multi-line comment in script file");
+            let core_msg = format!("Found unclosed multi-line comment in script");
 
             // To include full multi-line syntax. / + 1 = /*
             let comment_span = Span::new(comment_start, comment_start + 1);

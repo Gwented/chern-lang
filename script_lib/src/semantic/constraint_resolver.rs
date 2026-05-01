@@ -556,6 +556,7 @@ impl<'a> ConstraintResolver<'a> {
                     ast_id,
                     self.current_mod,
                     true,
+                    ScopeType::Neutral,
                     SymbolKind::Type(type_id),
                 );
                 self.compiler.symbols.insert(sym_id, symbol);

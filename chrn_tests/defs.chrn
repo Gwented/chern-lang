@@ -1,4 +1,5 @@
-let READ = 0b00000001
+// This should be pointed to
+export let READ = 0b00000001
 // export let WRITE = 0b00000010
 // export let EXEC = 0b00000100
 
@@ -11,8 +12,8 @@ let READ = 0b00000001
 
 // var->
     // var: Tuple<str, u8, str> [StartsW("Hello")]
-// nest->
-    /*export struct Person {
+nest->
+    struct erson {
         name: str
         age: u8
-    }*/
+    }

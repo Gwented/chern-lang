@@ -33,8 +33,23 @@ pub enum ScopeType {
 }
 
 impl ScopeType {
-    pub(crate) fn accessible_scopes(&self) -> Vec<ScopeType> {
+    /// Direct representation of how the language views scope accessibility.
+    /// `needs_global` purely exists for all scope accessibility reasons
+    pub(crate) fn accessible_scopes(&self, needs_global: bool) -> Vec<ScopeType> {
+        if needs_global {
+            return vec![
+                ScopeType::Neutral,
+                ScopeType::Var,
+                ScopeType::Nest,
+                ScopeType::Complex,
+                ScopeType::Override,
+            ];
+        }
+
         match self {
+            // Mainly for internal usage, not an actual program recognizable scope
+            // Neutral can only access neutral because this section is purely for declaring and
+            // using in other sections
             ScopeType::Neutral => vec![ScopeType::Neutral],
             ScopeType::Var | ScopeType::Nest | ScopeType::Complex => {
                 vec![ScopeType::Neutral, ScopeType::Nest]

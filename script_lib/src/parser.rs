@@ -1000,6 +1000,7 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
         }
     }
 
+    //TODO: More intuitive errors or help
     let span = ctx.peek_span();
     let final_id = ctx.expect_id_verbose(
         TokenKind::Id,

@@ -114,7 +114,7 @@ impl TypeResolver<'_> {
                 self.ty_ctx.sym_queue.remove(&sym_id);
             }
 
-            // Resolution failed at last module pass
+            // This means the resolution failed at last module pass
             if !self.ty_ctx.sym_queue.is_empty()
                 && self.current_mod == self.compiler.mods[self.compiler.mods.len() - 1].mod_id
             {
@@ -140,13 +140,18 @@ impl TypeResolver<'_> {
         //     _ => todo!(),
         // };
         //
+        // Dbg purposes
         if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 1].mod_id {
-            for expr_thing in &self.compiler.exprs {
-                dbg!(expr_thing);
+            for symbol in self.compiler.symbols.values() {
+                dbg!(symbol);
             }
 
-            for val_info in &self.compiler.values {
-                dbg!(&val_info.const_val);
+            for ty in &self.compiler.types {
+                dbg!(ty);
+            }
+
+            for expr_thing in &self.compiler.exprs {
+                dbg!(expr_thing);
             }
         }
 
@@ -735,6 +740,7 @@ impl TypeResolver<'_> {
             Expr::Call(caller, spanned_exprs) => {
                 todo!();
             }
+            // Maybe having "::" exist could help..
             Expr::MemberAccess(abs_member_access) => {
                 match self.resolve_member(sym_parent, &abs_member_access.base, scope_type)? {
                     PossibleMember::Module(mod_id) => {
@@ -743,6 +749,22 @@ impl TypeResolver<'_> {
                             extern_mod.get_sym_id(abs_member_access.field, scope_type)
                         {
                             let symbol = &self.compiler.symbols[&extern_sym_id];
+
+                            // symbol kind aware reporting.
+                            // In need of cross-module reporting of where the not exported symbol
+                            // is
+                            if symbol.is_priv && symbol.owner != self.current_mod {
+                                let name = self.interner.search(symbol.name_id.id as usize);
+                                let msg = format!("The symbol `{name}` is private");
+
+                                self.reporter.report_spanned(
+                                    &msg,
+                                    None,
+                                    &[spanned_expr.span],
+                                    &self.compiler.mods[self.current_mod.id],
+                                );
+                            }
+
                             match symbol.kind {
                                 SymbolKind::Type(type_id) => todo!(),
                                 SymbolKind::Val(val_id) => todo!(),
@@ -774,15 +796,32 @@ impl TypeResolver<'_> {
                                 }
                             }
                         } else {
-                            todo!("Unresolved");
+                            // TODO: Should also show what scopes were searched or just in some
+                            // form at all state why a symbol that exists wasn't seen
+                            // Find similar symbols
+                            let msg = format!(
+                                "Could not find the symbol `{}` inside module `{}` as a value or type",
+                                self.interner.search(abs_member_access.field.id as usize),
+                                self.interner.search(extern_mod.name_id.id as usize)
+                            );
+
+                            return Err(SemanticError::General(msg, vec![spanned_expr.span]));
                         }
                     }
+                    // Maybe this shouldn't be allowed here since parsing types is different from
+                    // parinsg expressions within this resolver, meaning this should be an error
+                    //
+                    // But also, this is literally impossible since only `nest` sections can
+                    // actually access types, but expressions use types to check for if a value is
+                    // searchable so is it still needed?
                     PossibleMember::Type(type_id) => {
                         todo!("Type id");
                     }
                     PossibleMember::Var(val_id) => {
                         ValueResult::Resolved(val_id);
-                        unimplemented!("Nothing matches this case yet");
+                        unimplemented!(
+                            "Nothing matches this case yet but \"self.\" mentions would"
+                        );
                     }
                     PossibleMember::Nothing => todo!("Unresolved"),
                 }
@@ -1278,11 +1317,11 @@ impl TypeResolver<'_> {
                 };
 
                 if let Some(sym_id) = extern_mod.get_sym_id(*name_id, scope_type) {
-                    let sym_info = &self.compiler.symbols[&sym_id];
+                    let symbol = &self.compiler.symbols[&sym_id];
 
                     //WARN: Only scoping issue left is alias and const collision and maybe some
                     //others
-                    let type_id = match sym_info.kind {
+                    let type_id = match symbol.kind {
                         SymbolKind::Type(type_id) => type_id,
                         _ => {
                             // Suspicious error message
@@ -1301,7 +1340,7 @@ impl TypeResolver<'_> {
                         }
                     };
 
-                    if sym_info.is_priv && sym_info.owner != self.current_mod {
+                    if symbol.is_priv && symbol.owner != self.current_mod {
                         let err_name = self.interner.search(name_id.id as usize);
                         let msg = format!("The type `{err_name}` is private",);
 

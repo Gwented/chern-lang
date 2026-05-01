@@ -14,7 +14,7 @@ use common::{
 use crate::{
     conditions::Cond,
     parser::ast::{BinaryOp, UnaryOp},
-    semantic::constraints::ArgConstraint,
+    semantic::{constraints::ArgConstraint, scopes::ScopeType},
 };
 
 // What is a drop? I am new to thinking i have never thought before what is RAII
@@ -68,11 +68,11 @@ pub enum Type {
 pub struct Symbol {
     pub name_id: InternedId,
     pub sym_id: SymbolId,
-    //dbg purposes
+    //err span purposes
     pub ast_id: AstId,
-    //dbgr
     pub kind: SymbolKind,
     pub owner: ModuleId,
+    pub scope_type: ScopeType,
     pub is_priv: bool,
 }
 
@@ -85,6 +85,7 @@ impl Symbol {
         ast_id: AstId,
         owner: ModuleId,
         is_priv: bool,
+        scope_type: ScopeType,
         kind: SymbolKind,
     ) -> Symbol {
         Symbol {
@@ -92,6 +93,7 @@ impl Symbol {
             sym_id,
             ast_id,
             kind,
+            scope_type,
             owner,
             is_priv,
         }
@@ -114,6 +116,7 @@ pub struct ResolvedExpr {
     pub expr_hir: ExprHir,
     // May store these elsewhere depending on um...uh..unreachable!()
     pub inputs: Vec<ExprId>,
+    // Should be one
     pub users: Vec<ExprId>,
     // This is not an option type even though `Value` as an `Option<Value>` because symbols are
     // already represented as unknown from `SymbolKind` and `Value` types already have the metadata
@@ -162,40 +165,6 @@ pub enum ExprHir {
         rhs: ExprId,
     },
 }
-
-// #[derive(Debug)]
-// pub(crate) enum Symbol {
-//     TypeDef(TypeDefRepre),
-//     Struct(StructRepre),
-//     Func(FuncRepre),
-//     Enum(EnumRepre),
-//     Alias(AliasRepre),
-//     Var(VarRepre),
-// }
-
-// impl Symbol {
-//     pub(crate) fn name_id(&self) -> InternedId {
-//         match self {
-//             Symbol::TypeDef(type_def_repre) => type_def_repre.name_id,
-//             Symbol::Struct(struct_def) => struct_def.name_id,
-//             Symbol::Func(func_repre) => func_repre.name_id,
-//             Symbol::Enum(enum_def) => enum_def.name_id,
-//             Symbol::Alias(alias_def) => alias_def.name_id,
-//             Symbol::Var(var_repre) => var_repre.name_id,
-//         }
-//     }
-//
-//     pub(crate) fn type_id(&self) -> TypeId {
-//         match self {
-//             Symbol::TypeDef(type_def_repre) => type_def_repre.type_id,
-//             Symbol::Struct(struct_def) => struct_def.type_id,
-//             Symbol::Func(func_repre) => func_repre.type_id,
-//             Symbol::Enum(enum_def) => enum_def.type_id,
-//             Symbol::Alias(alias_def) => alias_def.type_id,
-//             Symbol::Var(var_repre) => var_repre.type_id,
-//         }
-//     }
-// }
 
 #[derive(Debug)]
 pub struct Table {

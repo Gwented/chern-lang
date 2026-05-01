@@ -105,6 +105,7 @@ impl NamespaceResolver<'_> {
             ast_id,
             self.current_mod,
             true,
+            ScopeType::Var,
             SymbolKind::Type(type_id),
         );
 
@@ -134,6 +135,7 @@ impl NamespaceResolver<'_> {
             ast_id,
             self.current_mod,
             abs_struct.is_priv,
+            ScopeType::Nest,
             SymbolKind::Type(type_id),
         );
 
@@ -163,6 +165,7 @@ impl NamespaceResolver<'_> {
             ast_id,
             self.current_mod,
             abs_enum.is_priv,
+            ScopeType::Nest,
             SymbolKind::Type(type_id),
         );
 
@@ -192,6 +195,7 @@ impl NamespaceResolver<'_> {
             ast_id,
             self.current_mod,
             abs_alias.is_priv,
+            ScopeType::Neutral,
             SymbolKind::Type(type_id),
         );
 
@@ -201,7 +205,6 @@ impl NamespaceResolver<'_> {
         self.compiler.types.push(ty_info);
     }
 
-    //WARN: IS THIS RIGHT?
     fn register_var(&mut self, abs_var: &AbstractVar, ast_id: AstId) {
         let module = &mut self.compiler.mods[self.current_mod.id];
         let scope_id = module.push_scope(ScopeType::Neutral);
@@ -209,17 +212,8 @@ impl NamespaceResolver<'_> {
 
         table.name_ids.insert(ast_id, abs_var.name_id);
 
-        // let type_id = TypeId::new(self.program.types.len() as u32);
-        // let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
-        // self.program.types.push(ty_info);
-
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
         table.sym_ids.insert(ast_id, sym_id);
-        // let type_id = TypeId::new(self.compiler.types.len() as u32);
-        // This is pushed instead of just set just in case index level mutation as opposed to a new
-        // id entirely would like to be used.
-        // let ty_info = TypeInfo::new(Type::Unknown, Some(self.current_mod));
-        // self.compiler.types.push(ty_info);
 
         //TODO: PLACEHOLDER USED EXPR ID DOESNT EXIST YET
 
@@ -229,7 +223,8 @@ impl NamespaceResolver<'_> {
             sym_id,
             ast_id,
             self.current_mod,
-            true,
+            abs_var.is_priv,
+            ScopeType::Neutral,
             SymbolKind::Unknown,
         );
 
