@@ -38,7 +38,7 @@ pub fn parse(
     let mut state = ParserState::new();
     let mut ctx = Context::new(settings, module, tokens);
 
-    // Skipping @def since it is recognized as it's own token
+    // Skipping @def first since it is recognized as it's own token
     if ctx.peek_tok() == Token::Def {
         ctx.advance_tok();
     }
@@ -102,7 +102,7 @@ pub fn parse(
                     ctx.advance_tok();
 
                     if let Ok(abs_var) = parse_let(&mut ctx, is_priv, interner) {
-                        ast_info.items.push(Item::VarDecl(abs_var));
+                        ast_info.items.push(Item::Var(abs_var));
                     }
                 }
                 Keyword::Import => {

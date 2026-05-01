@@ -4,7 +4,7 @@ use chrn_utils::{
     builtins::BuiltinType,
     id_types::{AstId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
     inner_args::{InnerArgs, SpannedInnerArgs},
-    intern::Intern,
+    intern::{self, Intern},
     keywords::Keyword,
     values::ValueResult,
 };
@@ -82,7 +82,7 @@ impl<'a> ConstraintResolver<'a> {
                     _ = self.resolve_enum(abs_enum, ast_id);
                 }
                 Item::Alias(abs_alias) => todo!(),
-                Item::VarDecl(abs_var) => {
+                Item::Var(abs_var) => {
                     _ = self.resolve_var(abs_var, ast_id);
                 }
             }
@@ -1031,7 +1031,7 @@ impl<'a> ConstraintResolver<'a> {
                 // let type_id = self.compiler.symbols[&sym_id];
                 // return Ok(PossibleMember::Type(type_id));
             } else {
-                if name_id.id == Keyword::Self_ as u32 {
+                if name_id.id == intern::INTERNED_SELF as u32 {
                     panic!();
                 }
                 // What if this was in order of priority

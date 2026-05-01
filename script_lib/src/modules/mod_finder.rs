@@ -16,11 +16,13 @@ use common::{
 
 use crate::modules::{Bind, Import};
 
-//WARN: There is no information given to the module finder for what path the imports are actually
 //being collected from.
 pub struct ModuleFinder<'a> {
+    /// Module's stored bytes
     src_bytes: &'a [u8],
     settings: &'a ChernSettings,
+    /// Path origin so that errors can accurately report the path of the current module
+    path_origin: PathBuf,
     pos: usize,
     end: usize,
 }
@@ -30,12 +32,14 @@ impl ModuleFinder<'_> {
         //TODO: Need to store beg
         src_bytes: &'a [u8],
         settings: &'a ChernSettings,
+        mod_origin: PathBuf,
         script_start: usize,
         serial_start: Option<usize>,
     ) -> ModuleFinder<'a> {
         ModuleFinder {
             src_bytes,
             settings,
+            path_origin: mod_origin,
             pos: script_start,
             end: serial_start.unwrap_or(src_bytes.len()),
         }
@@ -99,12 +103,18 @@ impl ModuleFinder<'_> {
     fn parse_import(&mut self, interner: &mut Intern) -> Result<Import, ConfigLoadError> {
         self.advance();
         let start = self.pos;
+        // Boolean to track if a "\" was seen since only "/" can be used to separate
+        let mut saw_backslash = false;
 
         while self.pos < self.src_bytes.len() {
             match self.peek() {
                 b'"' => {
                     self.advance();
                     break;
+                }
+                b'\\' => {
+                    saw_backslash = true;
+                    self.advance();
                 }
                 _ => {
                     self.advance();
@@ -116,6 +126,34 @@ impl ModuleFinder<'_> {
         let end = self.pos - 1;
 
         let path_span = Span::new(start - 1, end);
+
+        if saw_backslash {
+            let core_msg = "Only '/' can be used as path separators.".to_string();
+
+            let ln_data =
+                reporter::form_err_diag(self.src_bytes, &[path_span], self.settings.can_color);
+
+            // Since we know it's invalid
+
+            let fmtted_diag = reporter::standardize_err(
+                &core_msg,
+                &ln_data,
+                "",
+                &self.path_origin,
+                self.settings.can_color,
+            );
+
+            let diag = Diagnostic::new(
+                &self.path_origin,
+                core_msg,
+                Some(path_span),
+                fmtted_diag,
+                Area::ConfigLoad,
+            );
+
+            return Err(ConfigLoadError::Module(diag));
+        }
+
         let path_buf = self.create_pathbuf(&self.src_bytes[start..end])?;
 
         let import_path = match path_buf.canonicalize() {
@@ -131,7 +169,7 @@ impl ModuleFinder<'_> {
                     &core_msg,
                     &ln_data,
                     "",
-                    &path_buf,
+                    &self.path_origin,
                     self.settings.can_color,
                 );
 
@@ -186,7 +224,9 @@ impl ModuleFinder<'_> {
             // }
             match str::from_utf8(slice) {
                 Ok(s) => return Ok(PathBuf::from_str(&s).expect("Uh")),
-                Err(_) => todo!(),
+                Err(_) => {
+                    todo!()
+                }
             }
         }
 
@@ -203,11 +243,17 @@ impl ModuleFinder<'_> {
         self.advance();
         let start = self.pos;
 
+        let mut saw_backslash = false;
+
         while self.pos < self.src_bytes.len() {
             match self.peek() {
                 b'"' => {
                     self.advance();
                     break;
+                }
+                b'\\' => {
+                    saw_backslash = true;
+                    self.advance();
                 }
                 _ => {
                     self.advance();
@@ -216,14 +262,66 @@ impl ModuleFinder<'_> {
         }
 
         let end = self.pos - 1;
+        let path_span = Span::new(start - 1, end);
+
+        if saw_backslash {
+            let core_msg = "Only '/' can be used as path separators.".to_string();
+
+            let ln_data =
+                reporter::form_err_diag(self.src_bytes, &[path_span], self.settings.can_color);
+
+            // Since we know it's invalid
+
+            let fmtted_diag = reporter::standardize_err(
+                &core_msg,
+                &ln_data,
+                "",
+                &self.path_origin,
+                self.settings.can_color,
+            );
+
+            let diag = Diagnostic::new(
+                &self.path_origin,
+                core_msg,
+                None,
+                fmtted_diag,
+                Area::ConfigLoad,
+            );
+
+            return Err(ConfigLoadError::Module(diag));
+        }
 
         // Um uh
         let path_buf = self.create_pathbuf(&self.src_bytes[start..end]).unwrap();
-        let path_span = Span::new(start - 1, end);
 
+        //WARN: WRONG PATH NAME
         let bind_path = match path_buf.canonicalize() {
             Ok(p) => p,
-            Err(_) => todo!(),
+            Err(e) => {
+                let core_msg =
+                    core_error::form_string_from_io_err(&e, &path_buf).unwrap_or(e.to_string());
+
+                let ln_data =
+                    reporter::form_err_diag(self.src_bytes, &[path_span], self.settings.can_color);
+
+                let fmtted_diag = reporter::standardize_err(
+                    &core_msg,
+                    &ln_data,
+                    "",
+                    &self.path_origin,
+                    self.settings.can_color,
+                );
+
+                let diag = Diagnostic::new(
+                    &self.path_origin,
+                    core_msg,
+                    Some(path_span),
+                    fmtted_diag,
+                    Area::ConfigLoad,
+                );
+
+                return Err(ConfigLoadError::Module(diag));
+            }
         };
 
         let path_id = PathId::new(interner.intern_path(&bind_path));

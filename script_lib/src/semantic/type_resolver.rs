@@ -1,9 +1,10 @@
 pub mod type_context;
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 
 use chrn_utils::builtins::BuiltinTypeKind;
 use chrn_utils::id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId};
+use chrn_utils::intern;
 use chrn_utils::values::{Value, ValueInfo, ValueResult};
 use chrn_utils::{builtins::BuiltinType, intern::Intern, keywords::Keyword};
 use common::chrn_settings::ChernSettings;
@@ -72,7 +73,7 @@ impl TypeResolver<'_> {
                 Item::Struct(abs_struct) => _ = self.resolve_struct(abs_struct, ast_id),
                 Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum, ast_id),
                 Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias, ast_id),
-                Item::VarDecl(abs_var) => _ = self.resolve_var(abs_var, ast_id),
+                Item::Var(abs_var) => _ = self.resolve_var(abs_var, ast_id),
             }
         }
 
@@ -93,6 +94,7 @@ impl TypeResolver<'_> {
                     continue;
                 }
 
+                //TODO: ENSURE THE CAN_REMOVE LOGIC IS ACTUALLY RIGHT
                 match self.try_resolve_pending(*sym_id, pending_sym) {
                     Ok(can_remove) => {
                         if can_remove {
@@ -107,15 +109,16 @@ impl TypeResolver<'_> {
 
             self.ty_ctx.sym_queue.extend(pending_syms);
 
+            //TEMP
             for sym_id in removable_syms {
                 self.ty_ctx.sym_queue.remove(&sym_id);
             }
 
-            dbg!(&self.ty_ctx);
-
+            // Resolution failed at last module pass
             if !self.ty_ctx.sym_queue.is_empty()
                 && self.current_mod == self.compiler.mods[self.compiler.mods.len() - 1].mod_id
             {
+                dbg!(&self.ty_ctx);
                 panic!("I'm not ok");
             }
         }
@@ -137,8 +140,11 @@ impl TypeResolver<'_> {
         //     _ => todo!(),
         // };
         //
-        // Resolution failed
         if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 1].mod_id {
+            for expr_thing in &self.compiler.exprs {
+                dbg!(expr_thing);
+            }
+
             for val_info in &self.compiler.values {
                 dbg!(&val_info.const_val);
             }
@@ -159,6 +165,8 @@ impl TypeResolver<'_> {
         resolved_sym_id: SymbolId,
         pending_sym: &PendingSymbol,
     ) -> Result<bool, ()> {
+        // Tells the caller if the given pending symbol is fully resolved to where it can be
+        // removed as a pending symbol
         let mut can_remove = false;
         let mut queue: Vec<ExprId> = Vec::new();
 
@@ -175,6 +183,7 @@ impl TypeResolver<'_> {
 
             queue.push(pending_expr.pending_id);
         }
+        dbg!(&queue);
 
         // In the example:
         //
@@ -187,17 +196,23 @@ impl TypeResolver<'_> {
         // So, it needs to go x -> x + 2 -> y
         //
 
-        // Needs to first patch the root
+        // Tracking how many were resolved so it knows whether to remove or not
+        let mut resolved_count = 0;
+
+        // Needs to resolve first root
         for root_id in queue.iter().copied() {
             // Still need to repair root expr
             let root_expr = &mut self.compiler.exprs[root_id.id as usize];
             match self.compiler.symbols[&resolved_sym_id].kind {
                 SymbolKind::Type(type_id) => todo!("Hi types"),
                 SymbolKind::Val(val_id) => {
+                    // Subject to change if brain begins working again
                     let val_info = &self.compiler.values[val_id.id as usize];
-                    dbg!(&val_info);
                     root_expr.type_id = val_info.type_id;
+                    // This doesn't alter it's already present inner value which may be ok but
+                    // technically kinda weird?
                     root_expr.val_id = val_id;
+
                     let parent_sym_id = pending_sym.pending_exprs[0].parent_sym;
                     let parent_sym = self
                         .compiler
@@ -217,13 +232,13 @@ impl TypeResolver<'_> {
             // If the root has no users, then that means its, let y = x where there is nothing else
             // that needs resolution since the root is always a symbol.
             if root_expr.users.is_empty() {
-                can_remove = true;
                 break;
             }
 
             let start_expr = self.compiler.exprs[root_id.id as usize].users[0];
             match self.traverse_expr(start_expr) {
-                Ok(_) => (),
+                Ok(_) => resolved_count += 1,
+                // Reports the error and continues
                 Err(sem_err) => {
                     // Extracting module of origin from the pending expression by using the symbol
                     // attached to the expression upon it's creation
@@ -235,12 +250,20 @@ impl TypeResolver<'_> {
             };
         }
 
+        // If all pending expressions were pushed into the queue and the entire queue was resolved then can
+        // remove
+        if queue.len() == pending_sym.pending_exprs.len() && resolved_count == queue.len() {
+            can_remove = true;
+        }
+
         Ok(can_remove)
     }
 
     // This needs to go from x -> x + 2 -> y recursively however long needed
-    fn traverse_expr(&mut self, expr_id: ExprId) -> Result<(), SemanticError> {
-        let expr = &mut self.compiler.exprs[expr_id.id as usize];
+    fn traverse_expr(&mut self, current_expr_id: ExprId) -> Result<(), SemanticError> {
+        let expr = &mut self.compiler.exprs[current_expr_id.id as usize];
+        // dbg!(&self.compiler.values[expr.val_id.id as usize]);
+        // panic!();
 
         match expr.expr_hir {
             ExprHir::Val(val_id) => {
@@ -289,6 +312,8 @@ impl TypeResolver<'_> {
                         // corruption, and not one part just being unresolved
                         if !evaluator::is_compatible_binary(lhs_const, op, rhs_const) && !is_unknown
                         {
+                            //TODO: Expressions need spans
+                            // Removal of pending symbols need
                             // let full_span = lhs.span.merge(rhs.span);
                             //
                             // return Err(MathError::BinaryOpMismatch(
@@ -305,8 +330,20 @@ impl TypeResolver<'_> {
                     _ => None,
                 };
 
-                // let val_id = ValueId::new(self.compiler.values.len() as u32);
-                // let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+                //WARN: Suspicious
+                let type_id = lhs_expr.type_id;
+
+                //NOTE: Only the type of the expression is altered here, the rest is the inner
+                //value
+                let expr = &mut self.compiler.exprs[current_expr_id.id as usize];
+                expr.type_id = type_id;
+                dbg!(expr);
+
+                let inner_val = &mut self.compiler.values[current_expr_id.id as usize];
+                inner_val.type_id = type_id;
+                inner_val.const_val = const_val_opt;
+
+                dbg!(inner_val);
 
                 //WARN: Assuming this means they're the same type, or at least, uh. Um. Yeah.
                 // let type_id = if const_val_opt.is_some() {
@@ -329,11 +366,11 @@ impl TypeResolver<'_> {
 
                 // self.compiler.exprs.push(resolved_expr);
                 // self.compiler.values.push(val_info);
-                dbg!(const_val_opt);
-                todo!("I did stuff")
+
+                //TODO: For the current example, x needs to be properly assigned to defs.READ + 2
+                Ok(())
             }
         }
-        todo!();
     }
 
     fn resolve_var(&mut self, abs_var: &AbstractVar, ast_id: AstId) -> Result<(), ()> {
@@ -702,14 +739,39 @@ impl TypeResolver<'_> {
                 match self.resolve_member(sym_parent, &abs_member_access.base, scope_type)? {
                     PossibleMember::Module(mod_id) => {
                         let extern_mod = &mut self.compiler.mods[mod_id.id];
-                        if let Some(sym_id) =
+                        if let Some(extern_sym_id) =
                             extern_mod.get_sym_id(abs_member_access.field, scope_type)
                         {
-                            let symbol = &self.compiler.symbols[&sym_id];
+                            let symbol = &self.compiler.symbols[&extern_sym_id];
                             match symbol.kind {
                                 SymbolKind::Type(type_id) => todo!(),
-                                SymbolKind::Val(value_id) => todo!(),
-                                SymbolKind::Unknown => todo!(),
+                                SymbolKind::Val(val_id) => todo!(),
+                                SymbolKind::Unknown => {
+                                    let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+                                    let expr_hir = ExprHir::Var(extern_sym_id);
+                                    let pending_expr = PendingExpr::new(expr_id, sym_parent);
+
+                                    self.ty_ctx.store_pending_expr(extern_sym_id, pending_expr);
+                                    // Will possibly call for others to be resolved here, or do it from the
+                                    // var resolution method itself
+
+                                    let type_id = TypeId::new(script_compiler::TYPE_UNKNOWN_IDX);
+
+                                    // Creates value id that has an unknown type, no constant value, and an
+                                    // unresolved expression.
+                                    let val_id = ValueId::new(self.compiler.values.len() as u32);
+                                    let val_info = ValueInfo::new(type_id, expr_id, None);
+
+                                    ResolvedExpr::new(type_id, expr_hir, val_id, Vec::new());
+
+                                    self.compiler.values.push(val_info);
+
+                                    let expr =
+                                        ResolvedExpr::new(type_id, expr_hir, val_id, Vec::new());
+                                    self.compiler.exprs.push(expr);
+
+                                    Ok(expr_id)
+                                }
                             }
                         } else {
                             todo!("Unresolved");
@@ -780,7 +842,7 @@ impl TypeResolver<'_> {
                 // let type_id = self.compiler.symbols[&sym_id];
                 // return Ok(PossibleMember::Type(type_id));
             } else {
-                if name_id.id == Keyword::Self_ as u32 {
+                if name_id.id == intern::INTERNED_SELF as u32 {
                     panic!();
                 }
                 // What if this was in order of priority

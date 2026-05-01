@@ -34,14 +34,21 @@ pub enum DiagnosticLevel {
 
 // Would 2 diagnostics need to be produced where one has error and otherh as help related to it?
 // Um.
+/// Generic diagnostic struct
 #[derive(Debug)]
 pub struct Diagnostic {
+    /// The path origin of the diagnostic
     pub path: PathBuf,
+    /// The base message attached to the diagnostic
     pub core_msg: String,
+    /// The span of where the message took place
     pub span: Option<Span>,
+    /// The fully formatted error that is attached to the diagnostic which avoids having to in-line
+    /// creation outside of one source of internal truth.
     pub fmtted_diag: String,
     // level: DiagnosticLevel,
     // pub help: Option<String>,
+    /// Data for which stage of what compiler the diagnostic was emitted from
     pub area: Area,
 }
 

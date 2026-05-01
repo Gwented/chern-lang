@@ -41,7 +41,7 @@ impl AstInfo {
     pub(crate) fn get_const(&self, ast_id: AstId) -> &AbstractVar {
         match &self.items[ast_id.id as usize] {
             item => match item {
-                Item::VarDecl(abs_var) => abs_var,
+                Item::Var(abs_var) => abs_var,
                 _ => unreachable!(),
             },
         }
@@ -71,7 +71,7 @@ impl AstInfo {
             Item::Struct(abs_struct) => abs_struct.name_span,
             Item::Enum(abs_enum) => abs_enum.name_span,
             Item::Alias(abs_alias) => abs_alias.name_span,
-            Item::VarDecl(abs_var) => abs_var.name_span,
+            Item::Var(abs_var) => abs_var.name_span,
         }
     }
 }
@@ -84,18 +84,17 @@ pub(crate) enum Item {
     Struct(AbstractStruct),
     Enum(AbstractEnum),
     Alias(AbstractAlias),
-    VarDecl(AbstractVar),
+    Var(AbstractVar),
     // Func(AbstractFunc),
 }
 
-//TEST:
-// #[derive(Debug)]
-// pub(crate) enum Section {
-//     Var(Vec<Item>),
-//     Nest(Vec<Item>),
-//     Override(Vec<Item>),
-//     Complex(Vec<Item>),
-// }
+#[derive(Debug)]
+pub enum Section {
+    Var(Vec<AstId>),
+    Nest(Vec<AstId>),
+    Override(Vec<AstId>),
+    Complex(Vec<AstId>),
+}
 
 #[derive(Debug)]
 pub(crate) struct SpannedExpr {

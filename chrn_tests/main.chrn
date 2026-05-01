@@ -1,20 +1,31 @@
 // Need to re-route errors so they don't immediately form basic arrows to one so help messages
 // aren't just requirements because the err msgs themselves are misleading or bad
-// Multiple @def should be caught when @def and @end are tokens
 
 // I am messed up"
 // "I am not even supposed to be included"
-// The tilde has been changed (neutral)
 
 // import "../chrn_tests/defs.chrn"
 // import "../chrn_tests/CHERNGENTS.chrn" as seller
 
 @def
-    //import "../chrn_tests/defs.chrn"
+    // import "../chrn_tests/defs.chrn"
+    // Maybe just default to utf-8 since lexer can't know when to and not to care about pathing
+    // without suspicious measures
     import "../chrn_tests/defs.chrn"
-    let ζζ = 3
+
+    let x = defs.READ + 2
 
 @end
+    let ζζさる = 3
+
+    var->
+        e#as: i32
+    nest->
+        enum Color {
+            props: i32
+        }
+@end
+
     let y = x + 2
     let x = 5
     let z = 5

@@ -14,41 +14,17 @@ pub const DEFINITION_SIZE: usize = 4;
 // Ensure ranges and all keyword functions are adjusted
 // Ensure tests are aligned
 
-pub static KEYWORDS_ARRAY: [&str; 16] = [
-    // Special keyword i guess I don't know WHAT this is
-    "self", // 0
-    // "Integer"
-    // "Rational" (Rat)
-    // "Nat",
-    // "Real",
-    // "Prime"
-    // structures
-    "struct",
-    "enum", // 2
-    // Statements
-    "import",
-    "export", // 4
-    "bind",
-    "alias", // 6
-    "let",
-    "change", // 8
-    "as",
-    // Section names
-    "var", // 10
-    "nest",
-    "complex", // 12
-    "override",
-    // Special kiwis
-    // Predicate keywords
-    "IsEmpty", // 14
-    "IsWhitespace", // 15
-               // Functions
-               // "Range",
-               // "StartsW",
-               // "EndsW",
-               // "Contains",
-               // "Equals",
+pub static KEYWORDS_ARRAY: [&str; 13] = [
+    "struct", "enum", "import", "export", "bind", "alias", "let", "change", "as", "var", "nest",
+    "complex", "override",
 ];
+//FIX: not keywords but known identifiers
+// Functions
+// "Range",
+// "StartsW",
+// "EndsW",
+// "Contains",
+// "Equals",
 // "Nat" // 37
 // "Real" // 38
 // "Complex" // 39
@@ -59,28 +35,24 @@ pub static KEYWORDS_ARRAY: [&str; 16] = [
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(u32)]
 pub enum Keyword {
-    Self_ = 0,
-    Struct = 1,
-    Enum = 2,
-    Import = 3,
-    Export = 4,
-    Bind = 5,
-    Alias = 6,
-    Let = 7,
-    Change = 8,
-    As = 9,
-    Var = 10,
-    Nest = 11,
-    Complex = 12,
-    Override = 13,
-    IsEmpty = 14,
-    IsWhitespace = 15,
+    Struct = 0,
+    Enum = 1,
+    Import = 2,
+    Export = 3,
+    Bind = 4,
+    Alias = 5,
+    Let = 6,
+    Change = 7,
+    As = 8,
+    Var = 9,
+    Nest = 10,
+    Complex = 11,
+    Override = 12,
 }
 
 impl Formattable for Keyword {
     fn to_fmt(&self) -> common::fmter::Formatted {
         match self {
-            Keyword::Self_ => Formatted::Self_,
             Keyword::Struct => Formatted::Struct,
             Keyword::Enum => Formatted::Enum,
             Keyword::Import => Formatted::Import,
@@ -93,8 +65,6 @@ impl Formattable for Keyword {
             Keyword::Nest => Formatted::SectNest,
             Keyword::Complex => Formatted::SectComplex,
             Keyword::Override => Formatted::SectOverride,
-            Keyword::IsEmpty => Formatted::IsEmpty,
-            Keyword::IsWhitespace => Formatted::IsWhitespace,
             Keyword::As => Formatted::As,
         }
     }
@@ -112,7 +82,6 @@ impl Keyword {
     /// Returns Some keyword that matches the given id or None
     pub fn try_from_interned_id(id: u32) -> Option<Keyword> {
         match id {
-            intern::INTERNED_SELF => Some(Keyword::Self_),
             // Using literal because scared of if
             intern::INTERNED_STRUCT => Some(Keyword::Struct),
             intern::INTERNED_ENUM => Some(Keyword::Enum),
@@ -127,8 +96,6 @@ impl Keyword {
             intern::INTERNED_NEST => Some(Keyword::Nest),
             intern::INTERNED_COMPLEX => Some(Keyword::Complex),
             intern::INTERNED_OVERRIDE => Some(Keyword::Override),
-            intern::INTERNED_IS_EMPTY => Some(Keyword::IsEmpty),
-            intern::INTERNED_IS_WHITESPACE => Some(Keyword::IsWhitespace),
             _ => None,
         }
     }

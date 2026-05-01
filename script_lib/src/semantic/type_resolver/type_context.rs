@@ -56,7 +56,7 @@ impl TypeContext {
 /// "is_resolved" can be cached as opposed to giving it to individual expressions
 pub(super) struct PendingSymbol {
     pub(super) is_resolved: bool,
-    /// The all symbols the user is waiting on.
+    /// All symbols the user is waiting on.
     pub(super) pending_exprs: Vec<PendingExpr>,
 }
 

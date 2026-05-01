@@ -60,7 +60,7 @@ impl NamespaceResolver<'_> {
                 Item::Enum(abs_enum) => self.register_enum(abs_enum, ast_id),
                 Item::Alias(abs_alias) => self.register_alias(abs_alias, ast_id),
                 // Stmt let
-                Item::VarDecl(abs_var) => self.register_var(abs_var, ast_id),
+                Item::Var(abs_var) => self.register_var(abs_var, ast_id),
             }
         }
 
@@ -259,7 +259,7 @@ impl NamespaceResolver<'_> {
                         Item::Struct(abs_struct) => &abs_struct.name_span,
                         Item::Enum(abs_enum) => &abs_enum.name_span,
                         Item::Alias(abs_alias) => &abs_alias.name_span,
-                        Item::VarDecl(abs_var) => &abs_var.name_span,
+                        Item::Var(abs_var) => &abs_var.name_span,
                     }
                     .clone();
 
@@ -268,7 +268,7 @@ impl NamespaceResolver<'_> {
                         Item::Struct(abs_struct) => &abs_struct.name_span,
                         Item::Enum(abs_enum) => &abs_enum.name_span,
                         Item::Alias(abs_alias) => &abs_alias.name_span,
-                        Item::VarDecl(abs_var) => &abs_var.name_span,
+                        Item::Var(abs_var) => &abs_var.name_span,
                     }
                     .clone();
 

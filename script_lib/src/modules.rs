@@ -255,6 +255,7 @@ pub fn extract_modules(
     let (bind, main_imports) = ModuleFinder::new(
         &main_metadata.src_bytes,
         settings,
+        path,
         main_metadata.script_start,
         main_metadata.serial_start,
     )
@@ -431,9 +432,12 @@ fn resolve_modules(
 
         let name_id = InternedId::new(interner.intern(&file_name));
 
+        let origin = interner.search_path(prev_mod.path_id.id as usize);
+
         let (_, sub_imports) = ModuleFinder::new(
             &mod_metadata.src_bytes,
             settings,
+            origin.to_path_buf(),
             mod_metadata.script_start,
             mod_metadata.serial_start,
         )

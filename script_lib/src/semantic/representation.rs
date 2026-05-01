@@ -136,6 +136,10 @@ impl ResolvedExpr {
             val_id,
         }
     }
+
+    pub fn users_mut(&mut self) -> &mut Vec<ExprId> {
+        &mut self.users
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
