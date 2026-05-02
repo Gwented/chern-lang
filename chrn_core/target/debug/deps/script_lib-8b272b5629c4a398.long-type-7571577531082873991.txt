@@ -1,1 +1,0 @@
-&std::iter::Map<std::slice::Iter<'_, PendingExpr>, {closure@script_lib/src/semantic/type_resolver.rs:100:26: 100:32}>

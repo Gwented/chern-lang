@@ -1,5 +1,10 @@
+pub mod analyser;
+pub mod backend;
 pub mod definition;
+pub mod document;
+pub mod hover;
 pub mod state;
+pub mod text;
 
 #[cfg(test)]
 pub mod tests {

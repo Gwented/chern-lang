@@ -84,19 +84,15 @@ pub fn position_to_offset(text: &str, pos: Position) -> usize {
     let mut line = 0;
     for ln in text.split_inclusive('\n') {
         if line == pos.line {
-            // pos.character is utf-16 code units in LSP; approximate with chars for simplicity
-            let mut char_idx = 0;
-            for (i, c) in ln.char_indices() {
-                if char_idx == pos.character as usize {
-                    offset += i;
-                    return offset;
+            let mut current_utf16_idx = 0;
+            for (byte_idx, c) in ln.char_indices() {
+                if current_utf16_idx >= pos.character as usize {
+                    return offset + byte_idx;
                 }
-                // approximate utf-16 width: most BMP chars are 1, surrogate pairs rare in typical source
-                char_idx += 1;
+                current_utf16_idx += c.len_utf16();
             }
             // If requested character past line end, return end of this line
-            offset += ln.len();
-            return offset;
+            return offset + ln.len();
         }
         offset += ln.len();
         line += 1;
@@ -153,19 +149,18 @@ pub fn find_word_bounds(text: &str, offset: usize) -> (usize, usize) {
     (start, end)
 }
 
-/// Convert a byte offset into an LSP Position (line, character approximated by chars).
+/// Convert a byte offset into an LSP Position (line, character in UTF-16 code units).
 pub fn offset_to_position(text: &str, offset: usize) -> Position {
     let mut remaining = offset.min(text.len());
     let mut line = 0;
     for ln in text.split_inclusive('\n') {
         if remaining < ln.len() {
-            // count chars up to remaining bytes
             let mut char_idx = 0;
-            for (i, _) in ln.char_indices() {
-                if i >= remaining {
+            for (byte_idx, c) in ln.char_indices() {
+                if byte_idx >= remaining {
                     break;
                 }
-                char_idx += 1;
+                char_idx += c.len_utf16() as u32;
             }
             return Position {
                 line,
@@ -176,5 +171,8 @@ pub fn offset_to_position(text: &str, offset: usize) -> Position {
         line += 1;
     }
     // past end
-    Position { line, character: 0 }
+    Position {
+        line,
+        character: 0,
+    }
 }

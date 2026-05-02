@@ -1,4 +1,5 @@
 pub mod builtins;
+pub mod document;
 pub mod id_types;
 pub mod inner_args;
 pub mod intern;

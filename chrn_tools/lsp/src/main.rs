@@ -1,11 +1,4 @@
-mod analysis;
-mod backend;
-mod definition;
-mod hover;
-mod state;
-mod text;
-
-use backend::Backend;
+use chrn_lsp::backend::Backend;
 use tower_lsp::{LspService, Server};
 
 #[tokio::main]

@@ -1,33 +1,89 @@
 use parking_lot::RwLock;
 use script_lib::script_compiler::ScriptCompiler;
 use std::time::Duration;
-use std::{collections::{HashMap, HashSet}, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tower_lsp::lsp_types::SemanticToken;
 use tower_lsp::{Client, LanguageServer, jsonrpc};
 
-use crate::analysis::analyze_and_publish_task;
+use crate::analyser::analyze_and_publish_task;
 // use crate::definition::find_in_source;
 use crate::state::DocumentCache;
 use crate::text::apply_text_change;
 
 // Semantic token support (keyword/string/number highlighting)
 use chrn_utils::builtins::BuiltinTypeKind as ChBuiltinTypeKind;
-use chrn_utils::id_types::{InternedId, ModuleId, PathId};
-use chrn_utils::intern::Intern;
+use chrn_utils::id_types::InternedId;
 use common::chrn_settings::ChernSettings;
+use common::core_error::ConfigLoadError;
 use script_lib::config_loader::ChernConfigLoader;
-use script_lib::lexer::Lexer;
-use script_lib::modules::Module;
-use script_lib::semantic::name_resolver::NamespaceResolver;
 use script_lib::semantic::representation::SymbolKind;
 use script_lib::semantic::scopes::ScopeType;
-use script_lib::semantic::type_resolver::TypeResolver;
-use script_lib::semantic::type_resolver::type_context::TypeContext;
 use script_lib::token::Token as ScriptToken;
 use std::io::Cursor;
 use std::path::PathBuf;
+
+fn publish_config_load_error(
+    client: &Client,
+    uri: &tower_lsp::lsp_types::Url,
+    text: &str,
+    err: ConfigLoadError,
+) {
+    use tower_lsp::lsp_types::*;
+
+    let start = Position {
+        line: 0,
+        character: 0,
+    };
+
+    let diag = match err {
+        ConfigLoadError::Unclosed(diag) | ConfigLoadError::Module(diag) => {
+            let diag_span = diag.span.unwrap_or_default();
+
+            let start_pos = crate::text::offset_to_position(text, diag_span.start);
+            let end_pos = crate::text::offset_to_position(text, diag_span.end);
+
+            tower_lsp::lsp_types::Diagnostic {
+                range: Range {
+                    start: start_pos,
+                    end: end_pos,
+                },
+                severity: Some(DiagnosticSeverity::ERROR),
+                code: None,
+                code_description: None,
+                source: Some("chern-config".to_string()),
+                message: diag.core_msg,
+                related_information: None,
+                tags: None,
+                data: None,
+            }
+        }
+        ConfigLoadError::IO(io) => tower_lsp::lsp_types::Diagnostic {
+            range: Range { start, end: start },
+            severity: Some(DiagnosticSeverity::ERROR),
+            code: None,
+            code_description: None,
+            source: Some("chern-config".to_string()),
+            message: io.to_string(),
+            related_information: None,
+            tags: None,
+            data: None,
+        },
+    };
+
+    let diags_vec = vec![diag];
+    let client_clone = client.clone();
+    let uri_clone = uri.clone();
+    tokio::spawn(async move {
+        client_clone
+            .publish_diagnostics(uri_clone, diags_vec, None)
+            .await;
+    });
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SemanticTokenType {
@@ -64,7 +120,7 @@ impl SemanticTokenType {
 pub struct Backend {
     pub client: Client,
     // store documents text by uri
-    pub docs: Arc<RwLock<HashMap<String, String>>>,
+    pub docs: Arc<RwLock<HashMap<String, Arc<String>>>>,
     // per-document counter used to debounce rapid change events; incremented on each change
     pub pending_versions: Arc<RwLock<HashMap<String, u64>>>,
     // cache of last published diagnostics to avoid re-sending identical sets
@@ -85,6 +141,62 @@ impl Backend {
             pending_tasks: Arc::new(RwLock::new(HashMap::new())),
             doc_cache: Arc::new(DocumentCache::new(50)),
         }
+    }
+
+    fn get_analyzed_state(
+        &self,
+        uri: &tower_lsp::lsp_types::Url,
+        text: Arc<String>,
+    ) -> Option<Arc<RwLock<crate::state::DocumentState>>> {
+        let uri_str = uri.to_string();
+        
+        // Try to get existing analyzed state first
+        if let Some(state_arc) = self.doc_cache.get(&uri_str) {
+            let needs_analysis = {
+                let state = state_arc.read();
+                state.compiler.is_none() || state.text.len() != text.len() || *state.text != *text
+            };
+            
+            if !needs_analysis {
+                return Some(state_arc);
+            }
+        }
+
+        let path_buf = PathBuf::from(uri.path());
+        let settings = ChernSettings::default();
+
+        let metadata = match ChernConfigLoader::new(
+            path_buf.as_path(),
+            Cursor::new(text.as_bytes()),
+            &settings,
+        )
+        .load_config()
+        {
+            Ok(m) => m,
+            Err(e) => {
+                publish_config_load_error(&self.client, uri, &text, e);
+                return None;
+            }
+        };
+
+        let state_arc = self.doc_cache.get_or_create(
+            &uri_str,
+            Arc::clone(&text),
+            metadata.script_start,
+            metadata.serial_start,
+            0,
+        );
+
+        let imported_uris = {
+            let mut state = state_arc.write();
+            state.ensure_analyzed(&self.doc_cache, &path_buf)
+        };
+
+        if !imported_uris.is_empty() {
+            self.doc_cache.register_dependencies(&uri_str, &imported_uris);
+        }
+
+        Some(state_arc)
     }
 }
 
@@ -137,7 +249,7 @@ fn classify_id_token(
 impl LanguageServer for Backend {
     async fn initialize(
         &self,
-        params: tower_lsp::lsp_types::InitializeParams,
+        _params: tower_lsp::lsp_types::InitializeParams,
     ) -> jsonrpc::Result<tower_lsp::lsp_types::InitializeResult> {
         let server_capabilities = tower_lsp::lsp_types::ServerCapabilities {
             // Advertise incremental sync so clients (neovim) send ranged edits.
@@ -202,52 +314,62 @@ impl LanguageServer for Backend {
     }
 
     async fn did_open(&self, params: tower_lsp::lsp_types::DidOpenTextDocumentParams) {
-        let uri = params.text_document.uri.to_string();
-        let text = params.text_document.text;
-        self.docs.write().insert(uri, text);
+        let uri_str = params.text_document.uri.to_string();
+        let text = Arc::new(params.text_document.text);
+        self.docs.write().insert(uri_str.clone(), Arc::clone(&text));
+
+        // bump version
+        let version = {
+            let mut vers = self.pending_versions.write();
+            let v = vers.entry(uri_str.clone()).or_insert(0);
+            *v = v.wrapping_add(1);
+            *v
+        };
+
+        let client = self.client.clone();
+        let uri_cloned = params.text_document.uri.clone();
+        let dc = self.diags_cache.clone();
+        let doc_cache = self.doc_cache.clone();
+        let pending_versions = self.pending_versions.clone();
+        tokio::spawn(async move {
+            analyze_and_publish_task(client, uri_cloned, text, dc, doc_cache, pending_versions, version).await
+        });
     }
 
     async fn did_save(&self, params: tower_lsp::lsp_types::DidSaveTextDocumentParams) {
-        // Ensure we have the latest saved text if the client provided it
-        if let Some(text) = params.text.as_ref() {
-            let uri = params.text_document.uri.to_string();
-            self.docs.write().insert(uri, text.clone());
+        let uri_str = params.text_document.uri.to_string();
+        if let Some(text) = params.text {
+            self.docs.write().insert(uri_str.clone(), Arc::new(text));
         }
-        // run analysis on save (if uri available)
-        let uri = params.text_document.uri.clone();
-        // Avoid holding the lock across await by cloning text into local
-        if let Some(text) = params.text.as_ref() {
-            let client = self.client.clone();
-            let uri_cloned = uri.clone();
-            let text_cloned = text.clone();
-            // On explicit save, run analysis immediately (no debounce). Abort any pending debounce task
-            // to avoid duplicate work and keep task count bounded.
-            if let Some(handle) = self.pending_tasks.write().remove(&uri.to_string()) {
-                handle.abort();
-            }
-            let dc = self.diags_cache.clone();
-            tokio::spawn(async move {
-                analyze_and_publish_task(client, uri_cloned, text_cloned, dc).await
-            });
-        } else {
-            let maybe_text = {
-                let docs = self.docs.read();
-                docs.get(&uri.to_string()).cloned()
+        
+        let text_opt = {
+            let docs = self.docs.read();
+            docs.get(&uri_str).cloned()
+        };
+
+        if let Some(text) = text_opt {
+            // bump version
+            let version = {
+                let mut vers = self.pending_versions.write();
+                let v = vers.entry(uri_str.clone()).or_insert(0);
+                *v = v.wrapping_add(1);
+                *v
             };
 
-            if let Some(text) = maybe_text {
-                let client = self.client.clone();
-                let uri_cloned = uri.clone();
-                let text_cloned = text.clone();
-                // On save but without provided text, still run immediately. Abort any pending debounce task.
-                if let Some(handle) = self.pending_tasks.write().remove(&uri.to_string()) {
-                    handle.abort();
-                }
-                let dc = self.diags_cache.clone();
-                tokio::spawn(async move {
-                    analyze_and_publish_task(client, uri_cloned, text_cloned, dc).await
-                });
+            let client = self.client.clone();
+            let uri_cloned = params.text_document.uri.clone();
+            let text_cloned = text.clone();
+            
+            if let Some(handle) = self.pending_tasks.write().remove(&uri_str) {
+                handle.abort();
             }
+            
+            let dc = self.diags_cache.clone();
+            let doc_cache = self.doc_cache.clone();
+            let pending_versions = self.pending_versions.clone();
+            tokio::spawn(async move {
+                analyze_and_publish_task(client, uri_cloned, text_cloned, dc, doc_cache, pending_versions, version).await
+            });
         }
     }
 
@@ -268,11 +390,14 @@ impl LanguageServer for Backend {
     }
 
     async fn did_change(&self, params: tower_lsp::lsp_types::DidChangeTextDocumentParams) {
-        let uri = params.text_document.uri.clone();
+        let uri_str = params.text_document.uri.to_string();
+
         // Apply all content changes in order. If a change has no range, it is a full text replace.
         let mut docs = self.docs.write();
-        let existing = docs.remove(&uri.to_string()).unwrap_or_default();
-        let mut updated = existing;
+        let existing = docs
+            .remove(&uri_str)
+            .unwrap_or_default();
+        let mut updated = (*existing).clone();
         for change in params.content_changes.into_iter() {
             match apply_text_change(&updated, &change) {
                 Ok(next) => updated = next,
@@ -287,19 +412,18 @@ impl LanguageServer for Backend {
                 }
             }
         }
-        docs.insert(uri.to_string(), updated);
-        // clone the current text while holding the lock then drop lock before awaiting
-        let maybe_text = docs.get(&uri.to_string()).cloned();
+        let updated_arc = Arc::new(updated);
+        docs.insert(uri_str.clone(), Arc::clone(&updated_arc));
+        let text_opt = Some(updated_arc);
         drop(docs);
 
         // Invalidate cached document state since content changed
-        self.doc_cache.invalidate(&uri.to_string());
+        self.doc_cache.invalidate(&uri_str);
 
-        if let Some(text) = maybe_text {
+        if let Some(text) = text_opt {
             // Debounce rapid changes: increment a per-doc version and run analysis only
             // if the version hasn't changed for DEBOUNCE_MS.
             const DEBOUNCE_MS: u64 = 150;
-            let uri_str = uri.to_string();
 
             // bump version
             let my_version = {
@@ -311,8 +435,6 @@ impl LanguageServer for Backend {
 
             let client = self.client.clone();
             let pv = self.pending_versions.clone();
-            let uri_cloned = uri.clone();
-            let text_cloned = text.clone();
             // clone diag cache so the spawned task doesn't borrow `self`
             let dc = self.diags_cache.clone();
 
@@ -327,6 +449,7 @@ impl LanguageServer for Backend {
             // The Weak won't keep the Arc alive if the rest of the server drops it.
             let pending_tasks_weak = Arc::downgrade(&self.pending_tasks);
             let inner_uri_str = uri_str.clone();
+            let doc_cache_clone = self.doc_cache.clone();
             let handle = tokio::spawn(async move {
                 sleep(Duration::from_millis(DEBOUNCE_MS)).await;
 
@@ -340,7 +463,10 @@ impl LanguageServer for Backend {
                 };
 
                 if still_current {
-                    analyze_and_publish_task(client, uri_cloned, text_cloned, dc).await;
+                    let doc_cache = doc_cache_clone.clone();
+                    let pending_versions = pv.clone();
+                    analyze_and_publish_task(client, params.text_document.uri, Arc::clone(&text), dc, doc_cache, pending_versions, my_version)
+                        .await;
                 }
                 // Attempt to remove our handle from pending_tasks. Use Weak::upgrade so
                 // the spawned task does not hold a strong Arc to the pending_tasks map
@@ -351,7 +477,7 @@ impl LanguageServer for Backend {
             });
 
             // store handle so we can abort it if another edit arrives or doc closes
-            self.pending_tasks.write().insert(uri_str.clone(), handle);
+            self.pending_tasks.write().insert(uri_str, handle);
         }
     }
 
@@ -361,14 +487,21 @@ impl LanguageServer for Backend {
     ) -> jsonrpc::Result<Option<tower_lsp::lsp_types::Hover>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
-        let docs = self.docs.read();
-        let text = match docs.get(&uri.to_string()) {
-            Some(t) => t.clone(),
+        let text = {
+            let docs = self.docs.read();
+            match docs.get(&uri.to_string()) {
+                Some(t) => Arc::clone(t),
+                None => return Ok(None),
+            }
+        };
+
+        let state_arc = match self.get_analyzed_state(&uri, Arc::clone(&text)) {
+            Some(s) => s,
             None => return Ok(None),
         };
 
         // Delegate hover computation to hover module
-        let hover_opt = crate::hover::compute_hover(&text, &uri.to_string(), pos);
+        let hover_opt = crate::hover::compute_hover(&uri, pos, state_arc);
         Ok(hover_opt)
     }
 
@@ -377,104 +510,28 @@ impl LanguageServer for Backend {
         params: tower_lsp::lsp_types::SemanticTokensParams,
     ) -> jsonrpc::Result<Option<tower_lsp::lsp_types::SemanticTokensResult>> {
         let uri = params.text_document.uri;
-        let docs = self.docs.read();
-        let text = match docs.get(&uri.to_string()) {
-            Some(t) => t.clone(),
+        let text = {
+            let docs = self.docs.read();
+            match docs.get(&uri.to_string()) {
+                Some(t) => Arc::clone(t),
+                None => return Ok(None),
+            }
+        };
+
+        let state_arc = match self.get_analyzed_state(&uri, Arc::clone(&text)) {
+            Some(s) => s,
             None => return Ok(None),
         };
 
-        // Lex the document
-        let path_buf = PathBuf::from(uri.path());
-        let src_bytes = text.as_bytes().to_vec();
-        let settings = ChernSettings::default();
-
-        let metadata = match ChernConfigLoader::new(
-            path_buf.as_path(),
-            Cursor::new(src_bytes.clone()),
-            &settings,
-        )
-        .load_config()
-        {
-            Ok(m) => m,
-            Err(_) => return Ok(None),
+        let state = state_arc.read();
+        let compiler = match &state.compiler {
+            Some(c) => c,
+            None => return Ok(None),
         };
 
-        // Build a minimal in-memory compiler pipeline so we can consult
-        // the resolved symbols/types for semantic token classification.
-        let mut interner = Intern::init();
-
-        let name = path_buf
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("<unnamed>")
-            .to_string();
-        let name_id = InternedId::new(interner.intern(&name));
-        let path_id = PathId::new(interner.intern_path(&path_buf));
-        let module = Module::new(name_id, path_id, ModuleId::new(0), Vec::new(), metadata);
-
-        let mut mod_map = HashMap::new();
-        mod_map.insert(name_id, ModuleId::new(0));
-        let mut compiler = ScriptCompiler::new(None, mod_map, vec![module]);
-
-        let toks = Lexer::new(
-            &compiler.mods[0].metadata.src_bytes,
-            compiler.mods[0].metadata.script_start,
-        )
-        .tokenize(&mut interner);
-
-        // We'll iterate with indices so we can peek the next token when needed
-        let toks_vec = toks;
-
-        // Attempt to parse & resolve namespace/types. Failures are ignored and
-        // we'll still produce tokens without type-specialization.
-        let mut has_type_info = false;
-        // Collect struct field / enum variant name ids so we can mark them as Property
-        let mut maybe_member_ids: Option<HashSet<u32>> = None;
-        if let Ok(ast_info) =
-            script_lib::parser::parse(&settings, &compiler.mods[0], &toks_vec, &interner)
-        {
-            let mut ns_resolver = NamespaceResolver::new(
-                &settings,
-                &ast_info,
-                &interner,
-                ModuleId::new(0),
-                &mut compiler,
-            );
-
-            if ns_resolver.resolve().is_ok() {
-                let mut ty_ctx = TypeContext::new();
-                let mut type_resolver = TypeResolver::new(
-                    &settings,
-                    &ast_info,
-                    ModuleId::new(0),
-                    &mut ty_ctx,
-                    &interner,
-                    &mut compiler,
-                );
-
-                if type_resolver.resolve().is_ok() {
-                    has_type_info = true;
-                    // Build a set of member name ids (fields and enum variants)
-                    let mut mset: HashSet<u32> = HashSet::new();
-                    for ty_info in compiler.types.iter() {
-                        match &ty_info.ty {
-                            script_lib::semantic::representation::Type::Struct(sdef) => {
-                                for fld in sdef.fields.iter() {
-                                    mset.insert(fld.name_id.id);
-                                }
-                            }
-                            script_lib::semantic::representation::Type::Enum(edef) => {
-                                for v in edef.variants.iter() {
-                                    mset.insert(v.name_id.id);
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    maybe_member_ids = Some(mset);
-                }
-            }
-        }
+        let toks_vec = &state.tokens;
+        let has_type_info = state.compiler.is_some() && !state.has_parse_errors && !state.has_ns_errors;
+        let maybe_member_ids = Some(&state.member_ids);
 
         let mut tokens: Vec<SemanticToken> = Vec::new();
 
@@ -488,8 +545,8 @@ impl LanguageServer for Backend {
             let st = &toks_vec[i];
             let span = st.span;
             // convert start byte to position
-            let start_pos = crate::text::offset_to_position(&text, span.start);
-            let end_pos = crate::text::offset_to_position(&text, span.end.saturating_add(1));
+            let start_pos = crate::text::offset_to_position(&state.text, span.start);
+            let _end_pos = crate::text::offset_to_position(&state.text, span.end.saturating_add(1));
             // compute length in chars from start_pos to end_pos roughly using bytes difference
             let length = (span.end.saturating_add(1).saturating_sub(span.start)) as u32;
 
@@ -506,7 +563,13 @@ impl LanguageServer for Backend {
                 ScriptToken::Id(id) => {
                     let next_is_paren = i + 1 < toks_vec.len()
                         && matches!(toks_vec[i + 1].tok, ScriptToken::OParen);
-                    classify_id_token(&compiler, id, has_type_info, next_is_paren, maybe_member_ids.as_ref())
+                    classify_id_token(
+                        compiler,
+                        id,
+                        has_type_info,
+                        next_is_paren,
+                        maybe_member_ids,
+                    )
                 }
                 ScriptToken::At => SemanticTokenType::Macro.as_u32(),
                 ScriptToken::HashSymbol => SemanticTokenType::Operator.as_u32(),
@@ -589,87 +652,61 @@ impl LanguageServer for Backend {
         &self,
         params: tower_lsp::lsp_types::GotoDefinitionParams,
     ) -> jsonrpc::Result<Option<tower_lsp::lsp_types::GotoDefinitionResponse>> {
-        use tower_lsp::lsp_types::{GotoDefinitionResponse, LocationLink, Range};
+        use tower_lsp::lsp_types::{GotoDefinitionResponse, LocationLink, Range, Url};
+
+        let uri = params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
 
         let text = {
-            let uri = params
-                .text_document_position_params
-                .text_document
-                .uri
-                .clone();
             let docs = self.docs.read();
             match docs.get(&uri.to_string()) {
-                Some(t) => t.clone(),
+                Some(t) => Arc::clone(t),
                 None => return Ok(None),
             }
         };
 
-        let pos = params.text_document_position_params.position;
-
-        let path_buf = PathBuf::from(
-            params
-                .text_document_position_params
-                .text_document
-                .uri
-                .path(),
-        );
-        let src_bytes = text.as_bytes().to_vec();
-        let settings = ChernSettings::default();
-
-        let metadata = match ChernConfigLoader::new(
-            path_buf.as_path(),
-            Cursor::new(src_bytes.clone()),
-            &settings,
-        )
-        .load_config()
-        {
-            Ok(m) => m,
-            Err(_) => return Ok(None),
+        let state_arc = match self.get_analyzed_state(&uri, Arc::clone(&text)) {
+            Some(s) => s,
+            None => return Ok(None),
         };
 
-        let mut interner = Intern::init();
-        let toks = Lexer::new(text.as_bytes(), metadata.script_start).tokenize(&mut interner);
+        let state = state_arc.read();
+        let byte_offset = crate::text::position_to_offset(&state.text, pos);
 
-        let byte_offset = crate::text::position_to_offset(&text, pos);
-
-        let mut found_name: Option<String> = None;
-
-        for st in &toks {
-            let span = st.span;
-            if byte_offset >= span.start && byte_offset <= span.end {
-                match &st.tok {
-                    ScriptToken::Id(id) => {
-                        found_name = Some(interner.search(*id as usize).to_string());
-                        break;
-                    }
-                    _ => {}
-                }
-                break;
-            }
-        }
-
-        let name = match found_name {
-            Some(n) => n,
+        let (id, _start, _end) = match state.get_symbol_at_offset(byte_offset) {
+            Some(res) => res,
             None => return Ok(None),
         };
 
         let mut links: Vec<LocationLink> = Vec::new();
 
-        if let Some(def_range) = crate::definition::find_in_source(&text, &name) {
-            let start_pos = crate::text::offset_to_position(&text, def_range.0);
-            let end_pos = crate::text::offset_to_position(&text, def_range.1);
+        if let Some((def_path, def_span)) = state.find_definition_of_symbol(id) {
+            let target_uri = match Url::from_file_path(&def_path) {
+                Ok(u) => u,
+                Err(_) => uri.clone(),
+            };
 
-            if def_range.0 < text.len() {
+            // We need the text of the target file to convert span to position
+            // If it's the same file, we have it. If not, try doc_cache then disk.
+            let target_text = if def_path == uri.path() {
+                Some(Arc::clone(&state.text))
+            } else {
+                let target_uri_str = target_uri.to_string();
+                self.doc_cache.get_text(&target_uri_str)
+                    .or_else(|| self.docs.read().get(&target_uri_str).map(Arc::clone))
+                    .or_else(|| std::fs::read_to_string(&def_path).ok().map(Arc::new))
+            };
+
+            if let Some(t_text) = target_text {
+                let start_pos = crate::text::offset_to_position(&t_text, def_span.start);
+                let end_pos = crate::text::offset_to_position(&t_text, def_span.end);
+
                 links.push(LocationLink {
                     origin_selection_range: Some(Range {
                         start: pos,
                         end: pos,
                     }),
-                    target_uri: params
-                        .text_document_position_params
-                        .text_document
-                        .uri
-                        .clone(),
+                    target_uri,
                     target_range: Range {
                         start: start_pos,
                         end: end_pos,
@@ -695,41 +732,33 @@ impl LanguageServer for Backend {
     ) -> jsonrpc::Result<Option<tower_lsp::lsp_types::CompletionResponse>> {
         use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, CompletionResponse};
 
-        // Simple completion: combine a curated set of language tokens with
-        // identifiers discovered in the current document.
-        let uri = params.text_document_position.text_document.uri.clone();
-        let pos = params.text_document_position.position;
+        let uri = &params.text_document_position.text_document.uri;
+        let text = {
+            let docs = self.docs.read();
+            match docs.get(&uri.to_string()) {
+                Some(t) => Arc::clone(t),
+                None => return Ok(None),
+            }
+        };
 
-        let docs = self.docs.read();
-        let text = match docs.get(&uri.to_string()) {
-            Some(t) => t.clone(),
+        // Use the already-analyzed state to get script boundaries and tokens,
+        // avoiding a redundant config load and re-lex.
+        let state_arc = match self.get_analyzed_state(uri, Arc::clone(&text)) {
+            Some(s) => s,
             None => return Ok(None),
         };
 
+        let state = state_arc.read();
+
         // find current word prefix using byte offsets
-        let byte_off = crate::text::position_to_offset(&text, pos);
+        let byte_off =
+            crate::text::position_to_offset(&text, params.text_document_position.position);
         let (start_b, _end_b) = crate::text::find_word_bounds(&text, byte_off);
         let prefix = &text[start_b..byte_off.min(text.len())];
 
-        // Load metadata to determine script/serial boundaries
-        let path_buf = PathBuf::from(uri.path());
-        let src_bytes = text.as_bytes().to_vec();
-        let settings = ChernSettings::default();
-
-        let metadata = match ChernConfigLoader::new(
-            path_buf.as_path(),
-            Cursor::new(src_bytes.clone()),
-            &settings,
-        )
-        .load_config()
-        {
-            Ok(m) => m,
-            Err(_) => return Ok(None),
-        };
-
-        // Determine the script section boundaries
-        let script_start = metadata.script_start;
-        let serial_start = metadata.serial_start.unwrap_or(text.len());
+        // Determine the script section boundaries from cached state
+        let script_start = state.script_start;
+        let serial_start = state.serial_start.unwrap_or(text.len());
         let in_script_section = byte_off >= script_start && byte_off < serial_start;
 
         // If cursor is outside the script section, return no completions
@@ -776,13 +805,31 @@ impl LanguageServer for Backend {
             }
         }
 
-        // Add identifiers from the document (lexed only in script section).
-        // De-duplicate using a map.
-        let mut interner = Intern::init();
-        let toks = Lexer::new(text.as_bytes(), metadata.script_start).tokenize(&mut interner);
+        // Add modules from mod_map (using already-analyzed compiler state)
+        if let Some(compiler) = &state.compiler {
+            let current_mod_name_id = compiler.mods[0].name_id;
+            for (name_id, _) in &compiler.mod_map {
+                // Skip the current module's name to avoid redundant suggestions
+                if *name_id == current_mod_name_id {
+                    continue;
+                }
 
-        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for st in toks.into_iter() {
+                let name = state.interner.search(name_id.id as usize);
+                let display_name = name.strip_suffix(".chrn").unwrap_or(name);
+
+                if prefix.is_empty() || display_name.starts_with(prefix) {
+                    items.push(CompletionItem {
+                        label: display_name.to_string(),
+                        kind: Some(CompletionItemKind::MODULE),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+
+        // Reuse pre-computed tokens from the analyzed state instead of re-lexing.
+        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for st in &state.tokens {
             // Only include identifiers that are within the script section (before serial_start)
             let tok_end = st.span.end;
             if tok_end > serial_start {
@@ -790,10 +837,10 @@ impl LanguageServer for Backend {
             }
 
             if let ScriptToken::Id(id) = st.tok {
-                let name = interner.search(id as usize);
-                if (prefix.is_empty() || name.starts_with(prefix)) && seen.insert(name.into()) {
+                let name = state.interner.search(id as usize);
+                if (prefix.is_empty() || name.starts_with(prefix)) && seen.insert(name) {
                     items.push(CompletionItem {
-                        label: name.into(),
+                        label: name.to_string(),
                         kind: Some(CompletionItemKind::VARIABLE),
                         ..Default::default()
                     });
