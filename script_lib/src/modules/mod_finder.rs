@@ -46,7 +46,7 @@ impl ModuleFinder<'_> {
     }
 
     /// Returns a tuple of `Bind` and any imports found on Success.
-    pub(crate) fn collect_imports(
+    pub fn collect_imports(
         &mut self,
         interner: &mut Intern,
     ) -> Result<(Option<Bind>, Vec<Import>), ConfigLoadError> {

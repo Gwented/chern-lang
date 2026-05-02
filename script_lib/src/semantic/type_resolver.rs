@@ -1,12 +1,12 @@
 pub mod type_context;
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 
 use chrn_utils::builtins::BuiltinTypeKind;
 use chrn_utils::id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId};
 use chrn_utils::intern;
 use chrn_utils::values::{Value, ValueInfo, ValueResult};
-use chrn_utils::{builtins::BuiltinType, intern::Intern, keywords::Keyword};
+use chrn_utils::{builtins::BuiltinType, intern::Intern};
 use common::chrn_settings::ChernSettings;
 use common::fmter::{Formattable, Formatted};
 use common::{reporter::diagnostic::Diagnostic, span::Span};
@@ -94,7 +94,6 @@ impl TypeResolver<'_> {
                     continue;
                 }
 
-                //TODO: ENSURE THE CAN_REMOVE LOGIC IS ACTUALLY RIGHT
                 match self.try_resolve_pending(*sym_id, pending_sym) {
                     Ok(can_remove) => {
                         if can_remove {
@@ -122,7 +121,7 @@ impl TypeResolver<'_> {
                 panic!("I'm not ok");
             }
         }
-
+        //
         // let symbol = &self.compiler.symbols[&SymbolId::new(0)];
         // match symbol.kind {
         //     SymbolKind::Type(type_id) => {
@@ -140,7 +139,6 @@ impl TypeResolver<'_> {
         //     _ => todo!(),
         // };
         //
-        // Dbg purposes
         // if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 1].mod_id {
         //     for symbol in self.compiler.symbols.values() {
         //         if self.interner.search(symbol.name_id.id as usize) == "x" {
@@ -157,7 +155,7 @@ impl TypeResolver<'_> {
         //                 SymbolKind::Type(type_id) => todo!(),
         //                 SymbolKind::Unknown => todo!(),
         //             }
-        //             panic!();
+        //             panic!("Done");
         //         }
         //         // dbg!(self.interner.search(symbol.name_id.id as usize));
         //         // dbg!(symbol);
@@ -175,7 +173,7 @@ impl TypeResolver<'_> {
         //         dbg!(val);
         //     }
         // }
-
+        //
         if !self.reporter.err_vec.is_empty() {
             let mut diags = Vec::new();
             diags.append(&mut self.reporter.err_vec);
@@ -232,48 +230,48 @@ impl TypeResolver<'_> {
             match self.compiler.symbols[&resolved_sym_id].kind {
                 SymbolKind::Type(type_id) => todo!("Hi types"),
                 SymbolKind::Val(val_id) => {
-                    // Subject to change if brain begins working again
+                    // Brain starting working now it works
                     let val_info = &self.compiler.values[val_id.id as usize];
-                    root_expr.type_id = val_info.type_id;
-                    // This doesn't alter it's already present inner value which may be ok but
-                    // technically kinda weird?
-                    root_expr.val_id = val_id;
+                    let type_id = val_info.type_id;
+                    // WARN: It's only 32 bytes so trying to see something here
+                    // If there are no users then I could have the symbol just point to the same
+                    // val_id since that would avoid said clone but fine for now
+                    let const_val_opt = val_info.const_val.clone();
 
-                    // let parent_sym_id = pending_sym.pending_exprs[0].parent_sym;
-                    // let parent_sym = self
-                    //     .compiler
-                    //     .symbols
-                    //     .get_mut(&parent_sym_id)
-                    //     .expect("Exists");
-
-                    //WARN: QUESTIONABLE
-                    // parent_sym.kind = SymbolKind::Val(val_id);
-
-                    // dbg!(name);
-                    // panic!();
+                    root_expr.type_id = type_id;
+                    let inner_val = &mut self.compiler.values[root_expr.val_id.id as usize];
+                    inner_val.type_id = type_id;
+                    inner_val.const_val = const_val_opt;
                 }
+                // Uh is this possible
                 SymbolKind::Unknown => todo!("Hi unknowns"),
             }
 
-            // If the root has no users, then that means its, let y = x where there is nothing else
-            // that needs resolution since the root is always a symbol.
-            if root_expr.users.is_empty() {
+            if let Some(user) = root_expr.user {
+                // dbg!(user);
+                // panic!("Stop");
+                // If this is not done then it would stay 0 even though this by default would mean
+                // that there was 100% only 1 symbol expression found
+                match self.traverse_expr(user) {
+                    Ok(true) => resolved_count += 1,
+                    // WARN: Works suspiciously well
+                    Ok(false) => (),
+                    // Reports the error and continues
+                    Err(sem_err) => {
+                        // Extracting module of origin from the pending expression by using the symbol
+                        // attached to the expression upon it's creation
+                        let parent_sym_id = pending_sym.pending_exprs[0].parent_sym;
+                        let mod_id = self.compiler.get_owner(parent_sym_id);
+                        self.reporter
+                            .report_semantic(sem_err, &self.compiler.mods[mod_id.id as usize])
+                    }
+                };
+            } else {
+                // If the root has no users, then that means its, let y = x where there is nothing else
+                // that needs resolution since the root is always a symbol.
+                resolved_count += 1;
                 break;
             }
-
-            let start_expr = self.compiler.exprs[root_id.id as usize].users[0];
-            match self.traverse_expr(start_expr) {
-                Ok(_) => resolved_count += 1,
-                // Reports the error and continues
-                Err(sem_err) => {
-                    // Extracting module of origin from the pending expression by using the symbol
-                    // attached to the expression upon it's creation
-                    let parent_sym_id = pending_sym.pending_exprs[0].parent_sym;
-                    let mod_id = self.compiler.get_owner(parent_sym_id);
-                    self.reporter
-                        .report_semantic(sem_err, &self.compiler.mods[mod_id.id as usize])
-                }
-            };
         }
 
         // If all pending expressions were pushed into the queue and the entire queue was resolved then can
@@ -285,11 +283,14 @@ impl TypeResolver<'_> {
         Ok(can_remove)
     }
 
+    /// Returns an `Ok(true)` upon fully resolving a tree of expressions.
+    /// Returns an `Ok(false)` if the resolution failed because a value was unknown.
+    /// Returns `Err` upon real user errors.
+    /// Method to recursively mutate tree of unresolved expression
+    /// This works as user -> user -> ... -> None
     // This needs to go from x -> x + 2 -> y recursively however long needed
-    fn traverse_expr(&mut self, current_expr_id: ExprId) -> Result<(), SemanticError> {
+    fn traverse_expr(&mut self, current_expr_id: ExprId) -> Result<bool, SemanticError> {
         let expr = &mut self.compiler.exprs[current_expr_id.id as usize];
-        // dbg!(&self.compiler.values[expr.val_id.id as usize]);
-        // panic!();
 
         match expr.expr_hir {
             ExprHir::Val(val_id) => {
@@ -302,17 +303,65 @@ impl TypeResolver<'_> {
             }
             ExprHir::Var(sym_id) => todo!(),
             ExprHir::Default(sym_id, expr_id) => todo!(),
-            ExprHir::Unary { op, operand } => todo!(),
+            ExprHir::Unary { op, operand } => {
+                // Getting the operand that could be resolved (Might be guarnteed but um..e)
+                let operand_expr = &self.compiler.exprs[operand.id as usize];
+
+                let is_unknown = operand_expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX;
+
+                // This means that we reached an expression inside of a resolved expression that is
+                // not fully resolved yet, which is fine
+                if is_unknown {
+                    return Ok(false);
+                }
+
+                let operand_val_info = &self.compiler.values[operand_expr.val_id.id as usize];
+
+                // Basic validation of expression to see if it's const or runtime
+                let const_val_opt = if let Some(const_val) = &operand_val_info.const_val {
+                    if !evaluator::is_compatible_unary(op, const_val) {
+                        return Err(MathError::UnaryOpMismatch(
+                            const_val.kind().to_fmt(),
+                            op.to_fmt(),
+                            vec![operand_expr.span],
+                        ))?;
+                    } else {
+                        Some(evaluator::apply_unary_op(op, const_val)?)
+                    }
+                } else {
+                    None
+                };
+
+                let type_id = operand_expr.type_id;
+
+                // Mutating expression's type so that the symbol using this expr reflects the new
+                // information
+                let expr = &mut self.compiler.exprs[current_expr_id.id as usize];
+                expr.type_id = type_id;
+
+                // Mutating inner value so that the symbol using this value reflects the new
+                // information
+                let inner_val = &mut self.compiler.values[expr.val_id.id as usize];
+                inner_val.type_id = type_id;
+                inner_val.const_val = const_val_opt;
+            }
             ExprHir::BinaryExpr { lhs, op, rhs } => {
                 //TODO: Considering a span vector so that they dont need to be duplicated or
                 //computed by going inside items anymore.
 
                 let lhs_expr = &self.compiler.exprs[lhs.id as usize];
                 let rhs_expr = &self.compiler.exprs[rhs.id as usize];
+                dbg!(lhs_expr, rhs_expr);
 
-                // Not sure if thisi s possible
+                // Not sure if thisi s possible issss
                 let is_unknown = lhs_expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX
                     || rhs_expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX;
+
+                // This means that we reached an expression inside of a resolved expression that is
+                // not fully resolved yet
+                if is_unknown {
+                    return Ok(false);
+                }
 
                 // Composing this so it can be matched cleanly for if const eval can be performed
                 let lhs_val_opt = self.compiler.values[lhs_expr.val_id.id as usize]
@@ -323,11 +372,6 @@ impl TypeResolver<'_> {
                     .const_val
                     .as_ref();
 
-                // Is this unreadable!()? <--- unreadable!
-                if is_unknown {
-                    unreachable!("Actually reachable");
-                }
-
                 // This just checks if both are const, not if they were comptaible in the first
                 // place. So, if it's not a comptaible binary, that could either mean 2 + "hi" or 2
                 // + x where we just don't know x yet
@@ -335,8 +379,7 @@ impl TypeResolver<'_> {
                     (Some(lhs_const), Some(rhs_const)) => {
                         // If cannot perform operation and neither are unknown then there is actual
                         // corruption, and not one part just being unresolved
-                        if !evaluator::is_compatible_binary(lhs_const, op, rhs_const) && !is_unknown
-                        {
+                        if !evaluator::is_compatible_binary(lhs_const, op, rhs_const) {
                             //TODO: Expressions need spans
                             // Removal of pending symbols need
                             let full_span = lhs_expr.span.merge(rhs_expr.span);
@@ -361,40 +404,20 @@ impl TypeResolver<'_> {
                 //value
                 let expr = &mut self.compiler.exprs[current_expr_id.id as usize];
                 expr.type_id = type_id;
-                dbg!(expr);
 
-                let inner_val = &mut self.compiler.values[current_expr_id.id as usize];
+                let inner_val = &mut self.compiler.values[expr.val_id.id as usize];
                 inner_val.type_id = type_id;
                 inner_val.const_val = const_val_opt;
-
-                dbg!(inner_val);
-
-                //WARN: Assuming this means they're the same type, or at least, uh. Um. Yeah.
-                // let type_id = if const_val_opt.is_some() {
-                //     lhs_expr.type_id
-                // } else {
-                //     TypeId::new(script_compiler::TYPE_UNKNOWN_IDX)
-                // };
-
-                // Hm
-                // Expression points to the value so the expr_id is returned alone.
-
-                // let val_info = ValueInfo::new(type_id, expr_id, const_val_opt);
-
-                // dbg!(
-                //     self.compiler.exprs[lhs_id.id as usize],
-                //     self.compiler.exprs[rhs_id.id as usize],
-                //     resolved_expr,
-                //     val_info
-                // );
-
-                // self.compiler.exprs.push(resolved_expr);
-                // self.compiler.values.push(val_info);
-
-                //TODO: For the current example, x needs to be properly assigned to defs.READ + 2
-                Ok(())
             }
         }
+
+        // Uh huh
+        let expr = &mut self.compiler.exprs[current_expr_id.id as usize];
+        if let Some(user) = expr.user {
+            self.traverse_expr(user)?;
+        }
+
+        Ok(true)
     }
 
     fn resolve_var(&mut self, abs_var: &AbstractVar, ast_id: AstId) -> Result<(), ()> {
@@ -416,6 +439,8 @@ impl TypeResolver<'_> {
         };
 
         let expr = &self.compiler.exprs[expr_id.id as usize];
+        // dbg!(expr);
+        // dbg!(&self.compiler.values[expr.val_id.id as usize]);
         let is_unknown = expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX;
 
         // let inferred_type_id = match self.type_check_and_infer(&resolved_expr.expr_hir) {
@@ -440,7 +465,7 @@ impl TypeResolver<'_> {
         if let Some(pending_sym) = self.ty_ctx.sym_queue.get_mut(&sym_id)
             && !is_unknown
         {
-            // Two different caches
+            // Two caches
             pending_sym.is_resolved = true;
             self.ty_ctx.needs_check = true;
         }
@@ -497,7 +522,7 @@ impl TypeResolver<'_> {
                         let msg = format!("Cannot declare symbol `{name}` as itself");
 
                         let parent_ast_id = self.compiler.symbols[&sym_parent].ast_id;
-                        let parent_span = self.ast_info.get_ast_span(parent_ast_id);
+                        let parent_span = self.ast_info.get_sym_span(parent_ast_id);
 
                         return Err(SemanticError::General(
                             msg,
@@ -707,8 +732,8 @@ impl TypeResolver<'_> {
                 };
 
                 // Hm
-                self.compiler.exprs[lhs_id.id as usize].users.push(expr_id);
-                self.compiler.exprs[rhs_id.id as usize].users.push(expr_id);
+                self.compiler.exprs[lhs_id.id as usize].user = Some(expr_id);
+                self.compiler.exprs[rhs_id.id as usize].user = Some(expr_id);
 
                 // Expression points to the value so the expr_id is returned alone.
                 let resolved_expr = ResolvedExpr::new(
@@ -875,24 +900,55 @@ impl TypeResolver<'_> {
             }
             Expr::Unary(unary) => {
                 let operand_id = self.register_expr(sym_parent, &unary.spanned_expr, scope_type)?;
+                let operand_expr = &self.compiler.exprs[operand_id.id as usize];
 
-                let operand = &self.compiler.values[operand_id.id as usize];
+                let is_unknown = operand_expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX;
 
-                todo!("Operand no operating");
-                // if !evaluator::is_compatible_unary(unary.op, operand) {
-                //     return Err(MathError::UnaryOpMismatch(
-                //         operand.kind().to_fmt(),
-                //         unary.op.to_fmt(),
-                //         vec![spanned_expr.span],
-                //     ))?;
-                // }
+                let operand_val_opt = &self.compiler.values[operand_expr.val_id.id as usize];
 
-                // let val = evaluator::apply_unary_op(unary.op, operand)?;
+                let const_val_opt = if let Some(const_val) = &operand_val_opt.const_val {
+                    if !evaluator::is_compatible_unary(unary.op, const_val) && !is_unknown {
+                        return Err(MathError::UnaryOpMismatch(
+                            const_val.kind().to_fmt(),
+                            unary.op.to_fmt(),
+                            vec![spanned_expr.span],
+                        ))?;
+                    } else {
+                        Some(evaluator::apply_unary_op(unary.op, const_val)?)
+                    }
+                } else {
+                    None
+                };
+
                 let val_id = ValueId::new(self.compiler.values.len() as u32);
+                let unary_expr_id = ExprId::new(self.compiler.exprs.len() as u32);
 
-                // self.compiler.values.push(val);
+                let expr_hir = ExprHir::Unary {
+                    op: unary.op,
+                    operand: operand_id,
+                };
 
-                todo!();
+                let type_id = if const_val_opt.is_some() {
+                    operand_expr.type_id
+                } else {
+                    TypeId::new(script_compiler::TYPE_UNKNOWN_IDX)
+                };
+
+                let resolved_expr = ResolvedExpr::new(
+                    type_id,
+                    expr_hir,
+                    val_id,
+                    spanned_expr.span,
+                    vec![operand_id],
+                );
+
+                self.compiler.exprs.push(resolved_expr);
+                self.compiler.exprs[operand_id.id as usize].user = Some(unary_expr_id);
+
+                let val_info = ValueInfo::new(type_id, unary_expr_id, const_val_opt);
+                self.compiler.values.push(val_info);
+
+                Ok(unary_expr_id)
             }
             Expr::Bool(boolean) => {
                 //FIX:
@@ -943,6 +999,7 @@ impl TypeResolver<'_> {
             }
         }
 
+        dbg!(member);
         Err(SemanticError::UndefinedMember(member.span))
     }
 

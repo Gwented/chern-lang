@@ -1,5 +1,5 @@
 // This should be pointed to
-export let READ = 0b00000001
+export let READ = 0b00000010
 // export let WRITE = 0b00000010
 // export let EXEC = 0b00000100
 

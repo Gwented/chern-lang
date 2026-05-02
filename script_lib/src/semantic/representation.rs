@@ -116,7 +116,7 @@ pub struct ResolvedExpr {
     // May store these elsewhere depending on um...uh..unreachable!()
     pub inputs: Vec<ExprId>,
     // Should be one
-    pub users: Vec<ExprId>,
+    pub user: Option<ExprId>,
     pub span: Span,
     // This is not an option type even though `Value` as an `Option<Value>` because symbols are
     // already represented as unknown from `SymbolKind` and `Value` types already have the metadata
@@ -137,13 +137,9 @@ impl ResolvedExpr {
             expr_hir,
             inputs,
             span: expr_span,
-            users: Vec::new(),
+            user: None,
             val_id,
         }
-    }
-
-    pub fn users_mut(&mut self) -> &mut Vec<ExprId> {
-        &mut self.users
     }
 }
 

@@ -117,7 +117,7 @@ impl<'a> SemanticReporter<'a> {
             },
             SemanticError::UndefinedMember(span) => {
                 let msg = format!("Cannot infer member access");
-                (msg, [span].to_vec())
+                (msg, vec![span])
             }
         };
 

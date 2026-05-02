@@ -874,7 +874,7 @@ fn parse_call_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedEx
 
 fn parse_unary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Token> {
     match ctx.peek_tok() {
-        // May 'let op = if' evenually to combine similar unaries
+        //BUG: Unary does not properly apply self to member access
         Token::Hyphen => {
             let start = ctx.advance_span().start;
             let expr = parse_unary(ctx, interner)?;

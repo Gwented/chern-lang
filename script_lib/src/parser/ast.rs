@@ -65,7 +65,7 @@ impl AstInfo {
         }
     }
 
-    pub(crate) fn get_ast_span(&self, ast_id: AstId) -> Span {
+    pub fn get_sym_span(&self, ast_id: AstId) -> Span {
         match &self.items[ast_id.id as usize] {
             Item::TypeDef(abs_typedef) => abs_typedef.name_span,
             Item::Struct(abs_struct) => abs_struct.name_span,
