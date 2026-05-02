@@ -1,0 +1,14 @@
+/home/gwented/Downloads/CmkCurvFS/rustism/chern_script/target/release/deps/serde-045f329e52096d79.d: /home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /home/gwented/Downloads/CmkCurvFS/rustism/chern_script/target/release/build/serde-9d08b465ff0b51b1/out/private.rs
+
+/home/gwented/Downloads/CmkCurvFS/rustism/chern_script/target/release/deps/libserde-045f329e52096d79.rlib: /home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /home/gwented/Downloads/CmkCurvFS/rustism/chern_script/target/release/build/serde-9d08b465ff0b51b1/out/private.rs
+
+/home/gwented/Downloads/CmkCurvFS/rustism/chern_script/target/release/deps/libserde-045f329e52096d79.rmeta: /home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /home/gwented/Downloads/CmkCurvFS/rustism/chern_script/target/release/build/serde-9d08b465ff0b51b1/out/private.rs
+
+/home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/home/gwented/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/home/gwented/Downloads/CmkCurvFS/rustism/chern_script/target/release/build/serde-9d08b465ff0b51b1/out/private.rs:
+
+# env-dep:OUT_DIR=/home/gwented/Downloads/CmkCurvFS/rustism/chern_script/target/release/build/serde-9d08b465ff0b51b1/out
