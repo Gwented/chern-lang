@@ -19,11 +19,13 @@ use crate::modules::{Bind, Import};
 //being collected from.
 pub struct ModuleFinder<'a> {
     /// Module's stored bytes
+    // Maybe turn this into &str
     src_bytes: &'a [u8],
     settings: &'a ChernSettings,
-    /// Path origin so that errors can accurately report the path of the current module
+    /// Path origin so that errors can accurately report the path where the import was declared
     path_origin: PathBuf,
     pos: usize,
+    start: usize,
     end: usize,
 }
 
@@ -32,20 +34,22 @@ impl ModuleFinder<'_> {
         //TODO: Need to store beg
         src_bytes: &'a [u8],
         settings: &'a ChernSettings,
-        mod_origin: PathBuf,
+        path_origin: PathBuf,
         script_start: usize,
         serial_start: Option<usize>,
     ) -> ModuleFinder<'a> {
         ModuleFinder {
             src_bytes,
             settings,
-            path_origin: mod_origin,
+            path_origin,
             pos: script_start,
+            start: script_start,
             end: serial_start.unwrap_or(src_bytes.len()),
         }
     }
 
-    /// Returns a tuple of `Bind` and any imports found on Success.
+    /// Returns a tuple with `Bind` and all imports found on `Ok`.
+    /// Returns `ConfigLoadError` on `Err`
     pub fn collect_imports(
         &mut self,
         interner: &mut Intern,
@@ -54,7 +58,6 @@ impl ModuleFinder<'_> {
         let mut bind: Option<Bind> = None;
 
         loop {
-            //FIX: Does not account for "e#" I think I don't know
             self.skip_until_important();
 
             if self.pos >= self.end && self.peek() == b'\0' {
@@ -64,18 +67,18 @@ impl ModuleFinder<'_> {
             let ch = self.peek();
 
             match ch {
-                b'i' => {
-                    if self.is_import() {
-                        let import = self.parse_import(interner)?;
-                        imports.push(import);
-                    }
-                }
-                b'b' => {
-                    if self.is_bind() {
-                        bind = Some(self.parse_bind(interner)?);
-                    }
-                    self.advance();
-                }
+                // b'i' => {
+                //     if self.is_import() {
+                //         let import = self.parse_import(interner)?;
+                //         imports.push(import);
+                //     }
+                // }
+                // b'b' if is_after_whitespace => {
+                //     if self.is_bind() {
+                //         bind = Some(self.parse_bind(interner)?);
+                //     }
+                //     self.advance();
+                // }
                 b'"' => {
                     self.skip_quotes();
                 }
@@ -86,6 +89,20 @@ impl ModuleFinder<'_> {
                     } else if self.peek_ahead(1) == b'*' {
                         self.skip(2);
                         self.handle_multi_comment();
+                    } else {
+                        self.advance();
+                    }
+                }
+                // Should probably just work with &str directly at this point
+                c if c == b'i' || c == b'b' => {
+                    // The operation requires a full utf-8 check
+                    if self.peek_behind_char(1).is_whitespace() {
+                        if c == b'i' && self.is_import() {
+                            let import = self.parse_import(interner)?;
+                            imports.push(import);
+                        } else if c == b'b' && self.is_bind() {
+                            bind = Some(self.parse_bind(interner)?);
+                        }
                     } else {
                         self.advance();
                     }
@@ -213,8 +230,8 @@ impl ModuleFinder<'_> {
                 let os_str = OsStr::from_bytes(slice);
                 return Ok(PathBuf::from(os_str));
             }
-            // NOTE: This may be done differently but this remains a basic utf-8 check for now
         } else if cfg!(windows) {
+            // NOTE: This may be done differently but remains a basic utf-8 check for now
             // #[cfg(windows)]
             // {
             //     use std::os::windows::ffi::OsStrExt;
@@ -223,7 +240,7 @@ impl ModuleFinder<'_> {
             //     return Ok(PathBuf::from(slice));
             // }
             match str::from_utf8(slice) {
-                Ok(s) => return Ok(PathBuf::from_str(&s).expect("Uh")),
+                Ok(s) => return Ok(PathBuf::from_str(&s).expect("Infailable")),
                 Err(_) => {
                     todo!()
                 }
@@ -348,6 +365,24 @@ impl ModuleFinder<'_> {
         let id = interner.intern(&id_str);
 
         InternedId::new(id)
+    }
+
+    fn peek_behind_char(&mut self, dest: usize) -> char {
+        // Inclusive since otherwise it would skip the current character and there would need to be
+        // a saturating sub to make up for it
+        let chunk = &self.src_bytes[self.start..=self.pos];
+
+        std::str::from_utf8(chunk)
+            .ok()
+            .and_then(|c| c.chars().rev().skip(dest).next())
+            .unwrap_or('\0')
+    }
+
+    fn peek_behind(&mut self, dest: usize) -> u8 {
+        self.src_bytes
+            .get(self.pos - dest)
+            .copied()
+            .unwrap_or(b'\0')
     }
 
     fn skip_quotes(&mut self) {
