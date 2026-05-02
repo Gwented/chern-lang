@@ -1,3 +1,5 @@
+use core::fmt;
+
 use common::{
     chrn_settings::ChernSettings,
     core_error::{ConfigLoadError, CoreError, ScriptError},
@@ -5,7 +7,7 @@ use common::{
 use interpreter_lib::interpreter;
 
 use crate::{
-    args::{CheckCmd, Cli, Commands},
+    args::{CheckCmd, Cli, Commands, FmtCmd},
     config::CliConfig,
 };
 
@@ -13,7 +15,7 @@ pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
     match &cli.command {
         // Lint sub-command? eslint
         Commands::Check(check_cmd) => exec_check(&check_cmd, &cli_cfg),
-        Commands::Fmt(fmt_cmd) => todo!(),
+        Commands::Fmt(fmt_cmd) => exec_fmt(&fmt_cmd, &cli_cfg),
         Commands::Gen(gen_cmd) => todo!(),
     }
 }
@@ -58,4 +60,12 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
             _ => unreachable!("Serial isn't checked in this command"),
         },
     }
+}
+
+fn exec_fmt(fmt_cmd: &FmtCmd, cli_cfg: &CliConfig) -> Result<String, String> {
+    let settings = ChernSettings::new(cli_cfg.can_color);
+    match formatter::fmt::fmt_script_block(&fmt_cmd.path, &settings) {
+        Ok(_) => todo!("ok"),
+        Err(_) => todo!("err"),
+    };
 }

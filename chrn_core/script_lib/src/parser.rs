@@ -52,7 +52,7 @@ pub fn parse(
         // Checks if there is an export which is only a boolean due to there only being private and
         // public
         let is_priv = match parse_export(&mut ctx, interner) {
-            Ok(res) => res,
+            Ok(b) => b,
             Err(_) => continue,
         };
 

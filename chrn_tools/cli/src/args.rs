@@ -19,7 +19,8 @@ pub enum Commands {
     #[command(name = "check", alias = "c")]
     Check(CheckCmd),
     // Minify argument
-    Fmt(FMTCmd),
+    /// Formats `.chrn` file prettily
+    Fmt(FmtCmd),
     Gen(GenCmd),
 }
 
@@ -40,9 +41,11 @@ pub struct GenCmd {
 }
 
 #[derive(Args)]
-pub struct FMTCmd {
+pub struct FmtCmd {
     /// Path of `.chrn` file to format
     pub(crate) path: PathBuf,
+    #[arg(short = 'm', long = "minify", default_value_t = false)]
+    pub(crate) minify: bool,
 }
 
 //     #[arg(short = 'l', long = "log", default_value_t = false)]

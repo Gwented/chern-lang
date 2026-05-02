@@ -1,0 +1,10 @@
+[package]
+name = "interpreter_lib"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+script_lib = { path = "../../chrn_core/script_lib/" }
+serial_lib = { path = "../../chrn_core/serial_lib/" }
+chrn_utils = { path = "../../chrn_core/chrn_utils/" }
+common = { path = "../../chrn_core/common/" }

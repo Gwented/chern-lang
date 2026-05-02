@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use chrn_utils::document::Document;
 use chrn_utils::id_types::InternedId;
 use chrn_utils::intern::Intern;
 use chrn_utils::values::Value as CValue;
@@ -11,6 +10,7 @@ use script_lib::semantic::scopes::ScopeType;
 use script_lib::token::Token as ScriptToken;
 use tower_lsp::lsp_types::*;
 
+use crate::document::{self, Document};
 use crate::text::position_to_offset;
 
 use parking_lot::RwLock;
@@ -44,11 +44,19 @@ pub fn compute_hover(
     };
     let (hover_text, hover_range): (String, Option<(usize, usize)>) = match tok {
         ScriptToken::Def => {
-            let msg = "**@def** — Starts embedded script block\n\n---\n\n**Example:**\n```chrn\n@def\n    let x = 1\n    var->\n        name: str\n@end\n```".into();
+            let msg = format!(
+                "**@def** — Starts embedded script block\n\n{}\n\n**Example:**\n```chrn\n@def\n    let x = 1\n    var->\n        name: str\n@end\n```",
+                document::HOVER_DASHES
+            );
+
             (msg, Some((span_start, span_end.saturating_add(1))))
         }
         ScriptToken::End => {
-            let msg = "**@end** — Ends embedded script block\n\n---\n\n**Example:**\n```chrn\n@end\n// Everything after this is serialized data\n```".into();
+            let msg = format!(
+                "**@end** — Ends embedded script block\n\n{}\n\n**Example:**\n```chrn\n@end\n// Everything after this is serialized data\n```",
+                document::HOVER_DASHES
+            );
+
             (msg, Some((span_start, span_end.saturating_add(1))))
         }
         ScriptToken::Keyword(kw) => {
@@ -121,15 +129,17 @@ pub fn compute_hover(
                             hover_text = format!("{}: {} = {}", var_name, type_str, val_str);
                         }
                         script_lib::semantic::representation::SymbolKind::Unknown => {
-                            hover_text = "unknown".to_string();
+                            hover_text = "Unknown".to_string();
                         }
                     }
 
                     if !hover_text.is_empty() {
                         let privacy = if sym.is_priv { "private" } else { "public" };
                         hover_text.push_str(&format!(
-                            "\n\n---\n\n{} | **Scope:** {}",
-                            privacy, sym.scope_type
+                            "\n\n{}\n\n{} | **Scope:** {}",
+                            document::HOVER_DASHES,
+                            privacy,
+                            sym.scope_type
                         ));
                     }
                 }
@@ -213,18 +223,23 @@ pub fn compute_hover(
                     // Alias checking for display specifics
                     let alias_mention = if interned != module.name_id {
                         let alias_name = interner.search(interned.id as usize);
-                        format!("(alias **{alias_name}**) ")
+                        // Questionable markdown display behavior when parenthesis are used
+                        format!("alias **{alias_name}**|")
                     } else {
                         "".to_string()
                     };
 
                     let raw_mod_name = interner.search(module.name_id.id as usize);
+                    // Something is happening inside of mod_finder
                     let mod_name = raw_mod_name.strip_suffix(".chrn").unwrap_or(raw_mod_name);
                     let mod_path = interner.search_path(module.path_id.id as usize).display();
 
                     hover_text = format!(
-                        "{}module **{}**\n---\npath: `{}`",
-                        alias_mention, mod_name, mod_path
+                        "{}module **{}**\n{}\npath: `{}`",
+                        alias_mention,
+                        mod_name,
+                        document::HOVER_DASHES,
+                        mod_path
                     );
                 }
             }

@@ -299,14 +299,25 @@ impl TypeResolver<'_> {
         match expr.expr_hir {
             ExprHir::Val(val_id) => {
                 let val_info = &self.compiler.values[val_id.id as usize];
-                expr.type_id = val_info.type_id;
-                expr.val_id = val_id;
 
-                //WARN: QUESTIONABLE
+                let type_id = val_info.type_id;
+                let const_val_opt = val_info.const_val.clone();
+
+                expr.type_id = type_id;
+
+                let inner_val = &mut self.compiler.values[expr.val_id.id as usize];
+                inner_val.type_id = type_id;
+                inner_val.const_val = const_val_opt;
+                dbg!(inner_val);
+                todo!("Make sure this is ok")
+            }
+            // I don't think this is possible?
+            ExprHir::Var(sym_id) => {
+                todo!("What is a varrrble")
+            }
+            ExprHir::Default(sym_id, expr_id) => {
                 todo!()
             }
-            ExprHir::Var(sym_id) => todo!(),
-            ExprHir::Default(sym_id, expr_id) => todo!(),
             ExprHir::Unary { op, operand } => {
                 // Getting the operand that could be resolved (Might be guarnteed but um..e)
                 let operand_expr = &self.compiler.exprs[operand.id as usize];

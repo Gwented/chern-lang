@@ -6,17 +6,21 @@
 
 // import "../chrn_tests/defs.chrn"
 // import "../chrn_tests/CHERNGENTS.chrn" as seller
+// import "../chrn_tests/defs.chrn"
+// Maybe just default to utf-8 since lexer can't know when to and not to care about pathing
+// without suspicious measures
+// Unary cannot be applied to defs.READ unless wrapped with parens. Fine for now.
+// import "../../main.chrn" as tok
+
+// let x = -((defs.READ * "Ratatoudias"))
 
 @def
-    // import "../chrn_tests/defs.chrn"
-    // Maybe just default to utf-8 since lexer can't know when to and not to care about pathing
-    // without suspicious measures
-    import "../chrn_tests/defs.chrn"
-
-// Unary cannot be applied to defs.READ unless wrapped with parens. Fine for now.
-    let x = -((defs.READ * "Ratatoudias"))
+    simport "../../defs.chrn"
+    bind "./"
+    // Commenting
+    export let ζζさる = 3
 @end
-    let ζζさる = 3
+sbind "hi"
 
     var->
         e#as: i32
@@ -53,8 +57,6 @@ let token_seller = token_seller.STRONGEST_TOKENS
 
 //const HELLO = 4
 
-
-// Require forward slashes
 
 var->
     // Sure I guess

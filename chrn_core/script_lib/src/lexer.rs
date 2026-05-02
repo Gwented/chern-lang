@@ -798,7 +798,6 @@ impl Lexer<'_> {
         }
     }
 
-    // Oversight due to only testing asain characters
     fn peek_char(&mut self) -> char {
         let b = self.peek();
 

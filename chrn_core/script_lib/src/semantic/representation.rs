@@ -147,6 +147,8 @@ impl ResolvedExpr {
 pub enum ExprHir {
     Val(ValueId),
     Var(SymbolId),
+    /// alias default(x) = [Equals(x = 3)]
+    /// x = `SymbolId`, 5 = `ExprId`
     Default(SymbolId, ExprId),
     // Call(),
     // MemberAccess(),

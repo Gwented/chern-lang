@@ -1,5 +1,8 @@
 use chrn_utils::keywords::Keyword;
 
+/// 60 Dashes
+pub static HOVER_DASHES: &str = "--------------------------------------------------";
+
 /// A structured documentation entry for a language construct.
 /// Separates the name and description from the rendered presentation,
 /// enabling both direct lookup by key and formatted hover output.
@@ -17,7 +20,10 @@ impl Document {
     pub fn compose(&self) -> String {
         let header = format!("**{}** — {}", self.key, self.description);
         match self.example {
-            Some(example) => format!("{}\n\n---\n\n**Example:**\n{}", header, example),
+            Some(example) => format!(
+                "{}\n\n{}\n\n**Example:**\n{}",
+                header, HOVER_DASHES, example
+            ),
             None => header,
         }
     }

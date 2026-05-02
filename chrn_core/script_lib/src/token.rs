@@ -30,6 +30,7 @@ pub enum Token {
     Def,
     /// Represents @end
     End,
+    // Comment,
     Keyword(Keyword),
     BoolLiteral(bool),
     Id(u32),
@@ -123,6 +124,7 @@ impl Token {
             Token::Illegal(_) => TokenKind::Illegal,
             Token::Keyword(_) => TokenKind::Keyword,
             Token::BoolLiteral(_) => TokenKind::Bool,
+            // Token::Comment => TokenKind::Comment,
             Token::Def => TokenKind::Def,
             Token::End => TokenKind::End,
             Token::EOF => TokenKind::EOF,
@@ -201,6 +203,7 @@ pub(crate) enum TokenKind {
     Bool,
     Illegal,
     Poison,
+    // Comment,
     Def,
     End,
     EOF,
@@ -264,6 +267,7 @@ impl Display for TokenKind {
             TokenKind::Caret => write!(f, "^"),
             TokenKind::Bool => write!(f, "bool"),
             TokenKind::Keyword => write!(f, "keyword"),
+            // TokenKind::Comment => write!(f, "<comment>"),
             TokenKind::Def => write!(f, "@def"),
             TokenKind::End => write!(f, "@end"),
         }
@@ -319,6 +323,7 @@ pub(crate) const BOOL: u64 = 1 << 42;
 pub(crate) const DEF: u64 = 1 << 43;
 pub(crate) const END: u64 = 1 << 44;
 pub(crate) const EOF: u64 = 1 << 45;
+// pub(crate) const COMMENT: u64 = 1 << 46;
 
 //FIX: PLEASE ASSERT THIS THING
 impl TokenKind {
@@ -369,6 +374,7 @@ impl TokenKind {
             TokenKind::Keyword => KEYWORD,
             TokenKind::Bool => BOOL,
             TokenKind::Def => DEF,
+            // TokenKind::Comment => COMMENT,
             TokenKind::End => END,
             TokenKind::EOF => EOF,
         }
