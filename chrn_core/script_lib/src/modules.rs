@@ -11,7 +11,7 @@ use chrn_utils::{
     intern::Intern,
 };
 use common::{
-    chrn_settings::ChernSettings,
+    chrn_settings::ChrnSettings,
     core_error::{self, ConfigLoadError},
     reporter::{
         self,
@@ -21,7 +21,7 @@ use common::{
 };
 
 use crate::{
-    config_loader::ChernConfigLoader,
+    config_loader::ChrnConfigLoader,
     iyo::file_ops,
     modules::mod_finder::ModuleFinder,
     script_compiler::ScriptCompiler,
@@ -215,7 +215,7 @@ impl ModuleMetadata {
 pub fn extract_modules(
     // Does this get canonicalized here or earlier..
     path: &Path,
-    settings: &ChernSettings,
+    settings: &ChrnSettings,
     interner: &mut Intern,
 ) -> Result<ScriptCompiler, ConfigLoadError> {
     // This MUST be explicitly
@@ -231,7 +231,7 @@ pub fn extract_modules(
 
     let path = path.canonicalize()?;
 
-    let main_metadata = ChernConfigLoader::new(&path, src, settings).load_config()?;
+    let main_metadata = ChrnConfigLoader::new(&path, src, settings).load_config()?;
 
     // FIX: Aliasing?
     let file_name = match path.file_prefix().map(|n| n.to_str()) {
@@ -332,7 +332,7 @@ fn resolve_modules(
     modules: &mut Vec<Module>,
     prev_mod: &Module,
     mod_map: &mut HashMap<InternedId, ModuleId>,
-    settings: &ChernSettings,
+    settings: &ChrnSettings,
     interner: &mut Intern,
 ) -> Result<(), ConfigLoadError> {
     for import in &prev_mod.imports {
@@ -408,7 +408,7 @@ fn resolve_modules(
             }
         };
 
-        let mod_metadata = ChernConfigLoader::new(path, src, settings).load_config()?;
+        let mod_metadata = ChrnConfigLoader::new(path, src, settings).load_config()?;
 
         //Oh my
         let file_name = match path.file_prefix().map(|n| n.to_str()) {

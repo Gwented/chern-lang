@@ -17,7 +17,7 @@ use crate::analyser;
 
 use chrn_utils::id_types::{InternedId, ModuleId, PathId};
 use chrn_utils::intern::Intern;
-use common::chrn_settings::ChernSettings;
+use common::chrn_settings::ChrnSettings;
 use common::reporter::diagnostic::Diagnostic;
 
 pub struct DocumentState {
@@ -74,7 +74,7 @@ impl DocumentState {
             return Vec::new();
         }
 
-        let settings = ChernSettings::default();
+        let settings = ChrnSettings::default();
         let path_buf = path.to_path_buf();
 
         let name = path_buf

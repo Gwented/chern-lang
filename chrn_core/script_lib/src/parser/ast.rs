@@ -12,16 +12,55 @@ use crate::token::Notation;
 
 #[derive(Debug)]
 pub struct AstInfo {
+    // Maybe eventually just use a 5 sized array since there are max 5 sections
+    pub(crate) sections: [Option<Section>; 5],
     pub(crate) items: Vec<Item>,
 }
 
 impl AstInfo {
-    pub fn items(&self) -> &Vec<Item> {
-        &self.items
+    pub(crate) fn new() -> AstInfo {
+        AstInfo {
+            sections: [None, None, None, None, None],
+            items: Vec::new(),
+        }
     }
 
-    pub(crate) fn new() -> AstInfo {
-        AstInfo { items: Vec::new() }
+    pub fn push_item(&mut self, kind: SectionKind, item: Item) {
+        let ast_id = AstId::new(self.items.len() as u32);
+        self.items.push(item);
+
+        let sect = if let Some(sect) = &mut self.sections[kind as usize] {
+            sect
+        } else {
+            self.push_sect(kind);
+            &mut self.sections[kind as usize].as_mut().expect("Just created")
+        };
+
+        sect.push_ast_id(ast_id);
+    }
+
+    fn push_sect(&mut self, kind: SectionKind) {
+        match kind {
+            SectionKind::Neutral => {
+                self.sections[kind as usize] = Some(Section::Neutral(Vec::new()));
+            }
+            SectionKind::Var => {
+                self.sections[kind as usize] = Some(Section::Var(Vec::new()));
+            }
+            SectionKind::Nest => {
+                self.sections[kind as usize] = Some(Section::Nest(Vec::new()));
+            }
+            SectionKind::Override => {
+                self.sections[kind as usize] = Some(Section::Override(Vec::new()));
+            }
+            SectionKind::Complex => {
+                self.sections[kind as usize] = Some(Section::Complex(Vec::new()));
+            }
+        }
+    }
+
+    pub fn items(&self) -> &Vec<Item> {
+        &self.items
     }
 
     pub(crate) fn get_typedef(&self, ast_id: AstId) -> &AbstractTypeDef {
@@ -94,10 +133,43 @@ pub enum Item {
 
 #[derive(Debug)]
 pub enum Section {
+    Neutral(Vec<AstId>),
     Var(Vec<AstId>),
     Nest(Vec<AstId>),
     Override(Vec<AstId>),
     Complex(Vec<AstId>),
+}
+
+impl Section {
+    fn push_ast_id(&mut self, ast_id: AstId) {
+        match self {
+            Section::Neutral(ast_ids)
+            | Section::Var(ast_ids)
+            | Section::Nest(ast_ids)
+            | Section::Override(ast_ids)
+            | Section::Complex(ast_ids) => ast_ids.push(ast_id),
+        }
+    }
+
+    pub fn kind(&self) -> SectionKind {
+        match self {
+            Section::Neutral(_) => SectionKind::Neutral,
+            Section::Var(_) => SectionKind::Var,
+            Section::Nest(_) => SectionKind::Nest,
+            Section::Override(_) => SectionKind::Nest,
+            Section::Complex(_) => SectionKind::Complex,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+#[repr(u32)]
+pub enum SectionKind {
+    Neutral,
+    Var,
+    Nest,
+    Override,
+    Complex,
 }
 
 #[derive(Debug)]
@@ -269,22 +341,21 @@ pub(crate) enum TypeExpr {
     Path(Vec<SpannedTypeExpr>),
     Escaped(InternedId),
     Generic(Generic),
-    Tuple(Vec<SpannedTypeExpr>),
     Any,
 }
 
 // Maybe type inference could pick up on the fact that if a definition has a condition, and that
 // condition is applied to only a particular bit size, then it should be that bit size
 #[derive(Debug)]
-pub(crate) struct AbstractVar {
-    pub(crate) name_id: InternedId,
-    pub(crate) name_span: Span,
-    pub(crate) spanned_expr: SpannedExpr,
-    pub(crate) is_priv: bool,
+pub struct AbstractVar {
+    pub name_id: InternedId,
+    pub name_span: Span,
+    pub spanned_expr: SpannedExpr,
+    pub is_priv: bool,
 }
 
 impl AbstractVar {
-    pub(crate) fn new(
+    pub fn new(
         name_id: InternedId,
         name_span: Span,
         spanned_expr: SpannedExpr,

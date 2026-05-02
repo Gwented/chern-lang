@@ -6,18 +6,18 @@ mod parser_state;
 use crate::modules::Module;
 use crate::parser::ast::{
     AbstractAlias, AbstractEnum, AbstractMemberAccess, AbstractStruct, AbstractTypeDef,
-    AbstractVar, AbstractVariant, AstInfo, Expr, Generic, Item, SpannedExpr, SpannedTypeExpr,
-    TypeExpr, Unary, UnaryOp,
+    AbstractVar, AbstractVariant, AstInfo, Expr, Generic, Item, Section, SectionKind, SpannedExpr,
+    SpannedTypeExpr, TypeExpr, Unary, UnaryOp,
 };
 use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::Context;
 use crate::parser::parser_state::ParserState;
 use crate::token::{SpannedToken, Token, TokenKind};
-use chrn_utils::id_types::InternedId;
+use chrn_utils::id_types::{AstId, InternedId};
 use chrn_utils::inner_args::{InnerArgs, SpannedInnerArgs};
 use chrn_utils::intern::Intern;
 use chrn_utils::keywords::Keyword;
-use common::chrn_settings::ChernSettings;
+use common::chrn_settings::ChrnSettings;
 use common::core_error::ScriptError;
 use common::fmter::Formatted;
 use common::span::Span;
@@ -28,7 +28,7 @@ const MAX_ERRORS: u8 = 3;
 /// Returns a completed `AstInfo` on `Ok`. Returns a tuple with unfinished `AstInfo` and `ScriptError` on
 /// `Err`.
 pub fn parse(
-    settings: &ChernSettings,
+    settings: &ChrnSettings,
     module: &Module,
     tokens: &Vec<SpannedToken>,
     interner: &Intern,
@@ -38,7 +38,7 @@ pub fn parse(
     let mut state = ParserState::new();
     let mut ctx = Context::new(settings, module, tokens);
 
-    // Skipping @def first since it is recognized as it's own token
+    // Skipping possible @def first since it is recognized as it's own token
     if ctx.peek_tok() == Token::Def {
         ctx.advance_tok();
     }
@@ -94,15 +94,17 @@ pub fn parse(
                         state.flip_alias();
                     }
 
-                    if let Ok(alias) = parse_alias_stmt(&mut ctx, is_priv, interner) {
-                        ast_info.items.push(Item::Alias(alias));
+                    if let Ok(abs_alias) = parse_alias_stmt(&mut ctx, is_priv, interner) {
+                        let item = Item::Alias(abs_alias);
+                        ast_info.push_item(SectionKind::Neutral, item);
                     };
                 }
                 Keyword::Let => {
                     ctx.advance_tok();
 
                     if let Ok(abs_var) = parse_let(&mut ctx, is_priv, interner) {
-                        ast_info.items.push(Item::Var(abs_var));
+                        let item = Item::Var(abs_var);
+                        ast_info.push_item(SectionKind::Neutral, item);
                     }
                 }
                 Keyword::Import => {
@@ -161,7 +163,8 @@ pub fn parse(
                         }
 
                         if let Ok(type_def) = parse_var_sect(&mut ctx, interner) {
-                            ast_info.items.push(Item::TypeDef(type_def));
+                            let item = Item::TypeDef(type_def);
+                            ast_info.push_item(SectionKind::Var, item);
                         }
                     }
                 }
@@ -209,7 +212,7 @@ pub fn parse(
                         };
 
                         if let Ok(item) = parse_nest_sect(&mut ctx, is_priv, interner) {
-                            ast_info.items.push(item);
+                            ast_info.push_item(SectionKind::Nest, item);
                         }
                     }
                 }
@@ -255,7 +258,7 @@ pub fn parse(
                         report_export(
                             &mut ctx,
                             Formatted::SectComplex,
-                            Branch::Searching,
+                            Branch::Section(SectionBranch::Searching),
                             interner,
                         );
                     }
@@ -354,6 +357,7 @@ pub fn parse(
         }
     }
 
+    // Returning partial ast ifo and the diagnostics
     if !ctx.err_vec.is_empty() {
         return Err((ast_info, ScriptError::Parser(ctx.err_vec)));
     }
@@ -427,7 +431,6 @@ fn check_bind(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
         TokenKind::Str,
         "Expected a string literal after `bind`, found ",
         "",
-        // Maybe it is still a branch
         Branch::Neutral(NeutralBranch::Bind),
         interner,
     )?;

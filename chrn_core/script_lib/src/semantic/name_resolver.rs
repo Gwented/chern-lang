@@ -5,7 +5,7 @@ use chrn_utils::{
     intern::Intern,
     values::ValueInfo,
 };
-use common::{chrn_settings::ChernSettings, reporter::diagnostic::Diagnostic};
+use common::{chrn_settings::ChrnSettings, reporter::diagnostic::Diagnostic};
 
 use crate::{
     parser::ast::{
@@ -33,7 +33,7 @@ pub struct NamespaceResolver<'a> {
 
 impl NamespaceResolver<'_> {
     pub fn new<'a>(
-        settings: &'a ChernSettings,
+        settings: &'a ChrnSettings,
         ast_info: &'a AstInfo,
         interner: &'a Intern,
         current_mod: ModuleId,

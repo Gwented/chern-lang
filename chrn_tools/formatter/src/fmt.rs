@@ -1,11 +1,11 @@
 use std::path::Path;
 
 use chrn_utils::intern::Intern;
-use common::{chrn_settings::ChernSettings, core_error::ConfigLoadError};
+use common::{chrn_settings::ChrnSettings, core_error::ConfigLoadError};
 use script_lib::{modules, parser::ast::AstInfo};
 
 // Maybe make a new lexer for this maybe not maybe I don't know maybe <-
-pub fn fmt_script_block(path: &Path, settings: &ChernSettings) -> Result<String, ConfigLoadError> {
+pub fn fmt_script_block(path: &Path, settings: &ChrnSettings) -> Result<String, ConfigLoadError> {
     let mut interner = Intern::init();
     let script_compiler = modules::extract_modules(path, settings, &mut interner)?;
 

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use chrn_utils::{id_types::ModuleId, intern::Intern};
 use common::{
-    chrn_settings::ChernSettings,
+    chrn_settings::ChrnSettings,
     core_error::{CoreError, ScriptError},
     reporter::diagnostic::Reporter,
 };
@@ -17,7 +17,7 @@ use script_lib::{
 };
 
 // Maybe this shouldn't take metadata externally
-pub fn interpret_chrn_cfg(path: &Path, settings: &ChernSettings) -> Result<(), CoreError> {
+pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), CoreError> {
     let mut interner = Intern::init();
 
     // Doing this first since if modules were identified during the parsing stage any

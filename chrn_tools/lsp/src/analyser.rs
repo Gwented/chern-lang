@@ -1,5 +1,5 @@
 use parking_lot::RwLock;
-use script_lib::config_loader::ChernConfigLoader;
+use script_lib::config_loader::ChrnConfigLoader;
 use script_lib::modules::Module;
 use serde_json;
 use std::collections::HashMap;
@@ -10,7 +10,7 @@ use tower_lsp::lsp_types::*;
 
 use chrn_utils::id_types::{InternedId, ModuleId, PathId};
 use chrn_utils::intern::Intern;
-use common::chrn_settings::ChernSettings;
+use common::chrn_settings::ChrnSettings;
 use script_lib::modules::mod_finder::ModuleFinder;
 use std::io::Cursor;
 use tower_lsp::lsp_types::Url;
@@ -57,7 +57,7 @@ pub async fn analyze_and_publish_task(
     pending_versions: Arc<RwLock<HashMap<String, u64>>>,
     version: u64,
 ) {
-    let settings = ChernSettings::default();
+    let settings = ChrnSettings::default();
 
     let path_buf = uri
         .to_file_path()
@@ -65,7 +65,7 @@ pub async fn analyze_and_publish_task(
 
     // 1. Initial config load to find boundaries
     let metadata =
-        match ChernConfigLoader::new(path_buf.as_path(), Cursor::new(text.as_bytes()), &settings)
+        match ChrnConfigLoader::new(path_buf.as_path(), Cursor::new(text.as_bytes()), &settings)
             .load_config()
         {
             Ok(m) => m,
@@ -235,7 +235,7 @@ pub(crate) fn resolve_modules_lsp(
     modules: &mut Vec<Module>,
     prev_mod: &Module,
     mod_map: &mut HashMap<InternedId, ModuleId>,
-    settings: &ChernSettings,
+    settings: &ChrnSettings,
     interner: &mut Intern,
     doc_cache: &DocumentCache,
 ) -> Result<(), common::core_error::ConfigLoadError> {
@@ -291,7 +291,7 @@ pub(crate) fn resolve_modules_lsp(
             Err(e) => return Err(e),
         };
 
-        let mod_metadata = ChernConfigLoader::new(path, src, settings).load_config()?;
+        let mod_metadata = ChrnConfigLoader::new(path, src, settings).load_config()?;
 
         let file_name = match path.file_stem().and_then(|n| n.to_str()) {
             Some(p) => p.to_string(),

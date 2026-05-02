@@ -16,9 +16,10 @@
 
 @def
     import "../../defs.chrn" as identifer
-    bind "./"
     // Commenting
     export let ζζさる = 3
+    var->
+        x: i32
 @end
 sbind "hi"
 

@@ -9,7 +9,7 @@ use chrn_utils::{
     values::ValueResult,
 };
 use common::{
-    chrn_settings::ChernSettings,
+    chrn_settings::ChrnSettings,
     fmter::{Formattable, Formatted},
     reporter::diagnostic::Diagnostic,
     span::Span,
@@ -50,7 +50,7 @@ pub struct ConstraintResolver<'a> {
 
 impl<'a> ConstraintResolver<'a> {
     pub fn new(
-        settings: &'a ChernSettings,
+        settings: &'a ChrnSettings,
         ast_info: &'a [AstInfo],
         interner: &'a Intern,
         current_mod: ModuleId,

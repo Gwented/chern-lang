@@ -4,7 +4,7 @@ use chrn_utils::{
 };
 
 use common::{
-    chrn_settings::ChernSettings,
+    chrn_settings::ChrnSettings,
     fmter::Formattable,
     reporter::{
         self,
@@ -56,7 +56,7 @@ const A_BRANCH_FUNC_SET: u64 = A_BASE_EXIT_SET | token::C_BRACKET;
 // p_ctx
 #[derive(Debug)]
 pub(super) struct Context<'a> {
-    settings: &'a ChernSettings,
+    settings: &'a ChrnSettings,
     module: &'a Module,
     toks: &'a [SpannedToken],
     pos: usize,
@@ -65,7 +65,7 @@ pub(super) struct Context<'a> {
 
 impl<'a> Context<'a> {
     pub(super) fn new(
-        settings: &'a ChernSettings,
+        settings: &'a ChrnSettings,
         module: &'a Module,
         toks: &'a [SpannedToken],
     ) -> Context<'a> {

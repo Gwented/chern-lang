@@ -5,7 +5,7 @@ use chrn_utils::{
     intern::Intern,
 };
 use common::{
-    chrn_settings::ChernSettings,
+    chrn_settings::ChrnSettings,
     core_error::{self, ConfigLoadError},
     reporter::{
         self,
@@ -21,7 +21,7 @@ pub struct ModuleFinder<'a> {
     /// Module's stored bytes
     // Maybe turn this into &str
     src_bytes: &'a [u8],
-    settings: &'a ChernSettings,
+    settings: &'a ChrnSettings,
     /// Path origin so that errors can accurately report the path where the import was declared
     path_origin: PathBuf,
     pos: usize,
@@ -33,7 +33,7 @@ impl ModuleFinder<'_> {
     pub fn new<'a>(
         //TODO: Need to store beg
         src_bytes: &'a [u8],
-        settings: &'a ChernSettings,
+        settings: &'a ChrnSettings,
         path_origin: PathBuf,
         script_start: usize,
         serial_start: Option<usize>,

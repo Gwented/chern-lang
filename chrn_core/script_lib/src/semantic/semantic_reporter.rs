@@ -1,6 +1,6 @@
 use chrn_utils::intern::Intern;
 use common::{
-    chrn_settings::ChernSettings,
+    chrn_settings::ChrnSettings,
     fmter::Formattable,
     reporter::{
         self,
@@ -16,12 +16,12 @@ use super::error::MathError;
 #[derive(Debug)]
 pub(super) struct SemanticReporter<'a> {
     pub(super) err_vec: Vec<Diagnostic>,
-    pub(super) settings: &'a ChernSettings,
+    pub(super) settings: &'a ChrnSettings,
     pub(super) interner: &'a Intern,
 }
 
 impl<'a> SemanticReporter<'a> {
-    pub(super) fn new(settings: &'a ChernSettings, interner: &'a Intern) -> SemanticReporter<'a> {
+    pub(super) fn new(settings: &'a ChrnSettings, interner: &'a Intern) -> SemanticReporter<'a> {
         SemanticReporter {
             settings,
             interner,

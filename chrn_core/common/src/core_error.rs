@@ -30,7 +30,7 @@ impl From<SerialError> for CoreError {
     }
 }
 
-/// Error type for ChernConfigLoader
+/// Error type for ChrnConfigLoader
 // More like startup error now
 #[derive(Debug)]
 pub enum ConfigLoadError {

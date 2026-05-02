@@ -18,9 +18,9 @@ use crate::text::apply_text_change;
 // Semantic token support (keyword/string/number highlighting)
 use chrn_utils::builtins::BuiltinTypeKind as ChBuiltinTypeKind;
 use chrn_utils::id_types::InternedId;
-use common::chrn_settings::ChernSettings;
+use common::chrn_settings::ChrnSettings;
 use common::core_error::ConfigLoadError;
-use script_lib::config_loader::ChernConfigLoader;
+use script_lib::config_loader::ChrnConfigLoader;
 use script_lib::semantic::representation::SymbolKind;
 use script_lib::semantic::scopes::ScopeType;
 use script_lib::token::Token as ScriptToken;
@@ -163,9 +163,9 @@ impl Backend {
         }
 
         let path_buf = PathBuf::from(uri.path());
-        let settings = ChernSettings::default();
+        let settings = ChrnSettings::default();
 
-        let metadata = match ChernConfigLoader::new(
+        let metadata = match ChrnConfigLoader::new(
             path_buf.as_path(),
             Cursor::new(text.as_bytes()),
             &settings,

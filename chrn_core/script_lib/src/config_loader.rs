@@ -6,7 +6,7 @@ use std::{
 
 use chrn_utils::{keywords::DEFINITION_SIZE, quote_model};
 use common::{
-    chrn_settings::ChernSettings,
+    chrn_settings::ChrnSettings,
     core_error::ConfigLoadError,
     reporter::{
         self,
@@ -20,24 +20,24 @@ use crate::modules::ModuleMetadata;
 const READ_LIMIT_OFFSET: usize = 500;
 
 // More inclusive name
-pub struct ChernConfigLoader<'a, R: Read> {
+pub struct ChrnConfigLoader<'a, R: Read> {
     // Configuration file path
     path: &'a Path,
     handle: BufReader<R>,
-    settings: &'a ChernSettings,
+    settings: &'a ChrnSettings,
     pos: usize,
 }
 
 //NOTE: This forces paths to be given, but if the chern file itself doesn't have a path given
 //then the language doesn't work anyways. May leave as is.
-impl<R: Read> ChernConfigLoader<'_, R> {
+impl<R: Read> ChrnConfigLoader<'_, R> {
     // FIX: Rename to "with_path" after un-commenting the wall of tests
     pub fn new<'a>(
         path: &'a Path,
         handle: R,
-        settings: &'a ChernSettings,
-    ) -> ChernConfigLoader<'a, R> {
-        ChernConfigLoader {
+        settings: &'a ChrnSettings,
+    ) -> ChrnConfigLoader<'a, R> {
+        ChrnConfigLoader {
             path,
             settings,
             handle: BufReader::new(handle),

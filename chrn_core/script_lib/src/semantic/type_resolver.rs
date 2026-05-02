@@ -7,7 +7,7 @@ use chrn_utils::id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId
 use chrn_utils::intern;
 use chrn_utils::values::{Value, ValueInfo, ValueResult};
 use chrn_utils::{builtins::BuiltinType, intern::Intern};
-use common::chrn_settings::ChernSettings;
+use common::chrn_settings::ChrnSettings;
 use common::fmter::{Formattable, Formatted};
 use common::{reporter::diagnostic::Diagnostic, span::Span};
 
@@ -44,7 +44,7 @@ pub struct TypeResolver<'a> {
 
 impl TypeResolver<'_> {
     pub fn new<'a>(
-        settings: &'a ChernSettings,
+        settings: &'a ChrnSettings,
         ast_info: &'a AstInfo,
         current_mod: ModuleId,
         ty_ctx: &'a mut TypeContext,
@@ -1499,9 +1499,6 @@ impl TypeResolver<'_> {
                 );
 
                 Err(())
-            }
-            TypeExpr::Tuple(_) => {
-                unimplemented!("Unused Tuple type expression")
             }
         }
     }

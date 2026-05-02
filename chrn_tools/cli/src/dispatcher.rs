@@ -1,7 +1,7 @@
 use core::fmt;
 
 use common::{
-    chrn_settings::ChernSettings,
+    chrn_settings::ChrnSettings,
     core_error::{ConfigLoadError, CoreError, ScriptError},
 };
 use interpreter_lib::interpreter;
@@ -22,7 +22,7 @@ pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
 
 // What if this had 2 probability models?
 fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, String> {
-    let settings = ChernSettings::new(cli_cfg.can_color);
+    let settings = ChrnSettings::new(cli_cfg.can_color);
 
     match interpreter::interpret_chrn_cfg(&check_cmd.path, &settings) {
         Ok(_) => {
@@ -63,7 +63,7 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
 }
 
 fn exec_fmt(fmt_cmd: &FmtCmd, cli_cfg: &CliConfig) -> Result<String, String> {
-    let settings = ChernSettings::new(cli_cfg.can_color);
+    let settings = ChrnSettings::new(cli_cfg.can_color);
     match formatter::fmt::fmt_script_block(&fmt_cmd.path, &settings) {
         Ok(_) => todo!("ok"),
         Err(_) => todo!("err"),
