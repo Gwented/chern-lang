@@ -18,14 +18,14 @@ impl Reporter {
 /// Although there are error types that say where the error came from, all of `CoreError` needs to
 /// still returns `Diagnostic` as a vector, which could have other areas inside of it, making this
 /// serve as persistent metadata.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Area {
     ConfigLoad,
     Script,
     Serial,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagnosticLevel {
     Error,
     Note,
@@ -35,7 +35,7 @@ pub enum DiagnosticLevel {
 // Would 2 diagnostics need to be produced where one has error and otherh as help related to it?
 // Um.
 /// Generic diagnostic struct
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Diagnostic {
     /// The path origin of the diagnostic
     pub path: PathBuf,

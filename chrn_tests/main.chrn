@@ -13,10 +13,7 @@
     // without suspicious measures
     import "../chrn_tests/defs.chrn"
 
-    let x = 2.3
-
-    var->
-        name: defs.Person
+    let x = 2 + defs.READ
 @end
     let ζζさる = 3
 

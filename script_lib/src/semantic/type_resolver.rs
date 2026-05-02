@@ -141,19 +141,40 @@ impl TypeResolver<'_> {
         // };
         //
         // Dbg purposes
-        if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 1].mod_id {
-            for symbol in self.compiler.symbols.values() {
-                dbg!(symbol);
-            }
-
-            for ty in &self.compiler.types {
-                dbg!(ty);
-            }
-
-            for expr_thing in &self.compiler.exprs {
-                dbg!(expr_thing);
-            }
-        }
+        // if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 1].mod_id {
+        //     for symbol in self.compiler.symbols.values() {
+        //         if self.interner.search(symbol.name_id.id as usize) == "x" {
+        //             let name = self.interner.search(symbol.name_id.id as usize);
+        //             dbg!(name);
+        //             match symbol.kind {
+        //                 SymbolKind::Val(value_id) => {
+        //                     let val = &self.compiler.values[value_id.id as usize];
+        //                     dbg!(value_id, val);
+        //                     let expr = &self.compiler.exprs[val.expr_id.id as usize];
+        //                     dbg!(expr.val_id, expr);
+        //                     dbg!(&self.compiler.values[expr.val_id.id as usize]);
+        //                 }
+        //                 SymbolKind::Type(type_id) => todo!(),
+        //                 SymbolKind::Unknown => todo!(),
+        //             }
+        //             panic!();
+        //         }
+        //         // dbg!(self.interner.search(symbol.name_id.id as usize));
+        //         // dbg!(symbol);
+        //     }
+        //
+        //     for ty in &self.compiler.types {
+        //         dbg!(ty);
+        //     }
+        //
+        //     for expr_thing in &self.compiler.exprs {
+        //         dbg!(expr_thing);
+        //     }
+        //
+        //     for val in &self.compiler.values {
+        //         dbg!(val);
+        //     }
+        // }
 
         if !self.reporter.err_vec.is_empty() {
             let mut diags = Vec::new();
@@ -218,15 +239,15 @@ impl TypeResolver<'_> {
                     // technically kinda weird?
                     root_expr.val_id = val_id;
 
-                    let parent_sym_id = pending_sym.pending_exprs[0].parent_sym;
-                    let parent_sym = self
-                        .compiler
-                        .symbols
-                        .get_mut(&parent_sym_id)
-                        .expect("Exists");
+                    // let parent_sym_id = pending_sym.pending_exprs[0].parent_sym;
+                    // let parent_sym = self
+                    //     .compiler
+                    //     .symbols
+                    //     .get_mut(&parent_sym_id)
+                    //     .expect("Exists");
 
                     //WARN: QUESTIONABLE
-                    parent_sym.kind = SymbolKind::Val(val_id);
+                    // parent_sym.kind = SymbolKind::Val(val_id);
 
                     // dbg!(name);
                     // panic!();
@@ -248,7 +269,7 @@ impl TypeResolver<'_> {
                     // Extracting module of origin from the pending expression by using the symbol
                     // attached to the expression upon it's creation
                     let parent_sym_id = pending_sym.pending_exprs[0].parent_sym;
-                    let mod_id = &self.compiler.symbols[&parent_sym_id].owner;
+                    let mod_id = self.compiler.get_owner(parent_sym_id);
                     self.reporter
                         .report_semantic(sem_err, &self.compiler.mods[mod_id.id as usize])
                 }
@@ -305,7 +326,6 @@ impl TypeResolver<'_> {
                 // Is this unreadable!()? <--- unreadable!
                 if is_unknown {
                     unreachable!("Actually reachable");
-                    return Ok(());
                 }
 
                 // This just checks if both are const, not if they were comptaible in the first
@@ -319,15 +339,14 @@ impl TypeResolver<'_> {
                         {
                             //TODO: Expressions need spans
                             // Removal of pending symbols need
-                            // let full_span = lhs.span.merge(rhs.span);
-                            //
-                            // return Err(MathError::BinaryOpMismatch(
-                            //     lhs_const.kind().to_fmt(),
-                            //     rhs_const.kind().to_fmt(),
-                            //     op.to_fmt(),
-                            //     vec![full_span],
-                            // ))?;
-                            todo!()
+                            let full_span = lhs_expr.span.merge(rhs_expr.span);
+
+                            return Err(MathError::BinaryOpMismatch(
+                                lhs_const.kind().to_fmt(),
+                                rhs_const.kind().to_fmt(),
+                                op.to_fmt(),
+                                vec![full_span],
+                            ))?;
                         } else {
                             Some(evaluator::apply_binary_op(lhs_const, op, rhs_const)?)
                         }
@@ -385,7 +404,7 @@ impl TypeResolver<'_> {
 
         let sym_id = table.sym_ids[&ast_id];
 
-        //TODO: Create pipeline where expressions are always returned, just that some may have
+        //NOTE: Pipeline where expressions are always returned, just that some may have
         //unresolved parts, which are put into the queue, not the variable itself.
         let expr_id = match self.register_expr(sym_id, &abs_var.spanned_expr, ScopeType::Neutral) {
             Ok(expr_id) => expr_id,
@@ -396,33 +415,22 @@ impl TypeResolver<'_> {
             }
         };
 
-        // let symbol = &self.compiler.symbols[&sym_id];
-        // let name = self.interner.search(symbol.name_id.id as usize);
         let expr = &self.compiler.exprs[expr_id.id as usize];
         let is_unknown = expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX;
-        // GET ME OUT
-        let val_opt = self.compiler.values[expr.val_id.id as usize]
-            .const_val
-            .as_ref()
-            .map(|v| v.clone());
 
-        let resolved_expr = &self.compiler.exprs[expr_id.id as usize];
-        let inferred_type_id = match self.type_check_and_infer(&resolved_expr.expr_hir) {
-            Ok(type_id) => type_id,
-            Err(sem_err) => {
-                self.reporter
-                    .report_semantic(sem_err, &self.compiler.mods[self.current_mod.id]);
-                return Err(());
-            }
-        };
-        //FIXME: MAYBE THIS IS WHEN TRY RESOLUTION HAPPENS SINCE VALUE IS NONE HERE, BUT SHOULD BE
-        //BASED OFF CONST EVAL ATTEMPTS. RIGHT? RIGHT?
+        // let inferred_type_id = match self.type_check_and_infer(&resolved_expr.expr_hir) {
+        //     Ok(type_id) => type_id,
+        //     Err(sem_err) => {
+        //         self.reporter
+        //             .report_semantic(sem_err, &self.compiler.mods[self.current_mod.id]);
+        //         return Err(());
+        //     }
+        // };
+        let val_id = expr.val_id;
 
-        //FIX: This needs to be done since value info needs to be stored and...um..
-        let val_id = ValueId::new(self.compiler.values.len() as u32);
-        let val_info = ValueInfo::new(inferred_type_id, expr_id, val_opt);
-        self.compiler.values.push(val_info);
-
+        // Sets the symbol's value to be the last expression's value so that later, if it's
+        // expression is resolved further, since it's already pointing the the same expression it
+        // will by proxy be updated
         let symbol = self.compiler.symbols.get_mut(&sym_id).expect("Exists");
         symbol.kind = SymbolKind::Val(val_id);
 
@@ -509,7 +517,13 @@ impl TypeResolver<'_> {
                             let val_info = &self.compiler.values[val_id.id as usize];
                             let expr_hir = ExprHir::Var(sym_id);
 
-                            ResolvedExpr::new(val_info.type_id, expr_hir, val_id, Vec::new())
+                            ResolvedExpr::new(
+                                val_info.type_id,
+                                expr_hir,
+                                val_id,
+                                spanned_expr.span,
+                                Vec::new(),
+                            )
                         }
                         SymbolKind::Unknown => {
                             let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
@@ -532,7 +546,13 @@ impl TypeResolver<'_> {
 
                             self.compiler.values.push(val_info);
 
-                            ResolvedExpr::new(type_id, expr_hir, val_id, Vec::new());
+                            ResolvedExpr::new(
+                                type_id,
+                                expr_hir,
+                                val_id,
+                                spanned_expr.span,
+                                Vec::new(),
+                            );
 
                             // Pushes expression that is referencing an unresolved symbol into a
                             // queue to be resolved when the symbol is seen later
@@ -546,7 +566,13 @@ impl TypeResolver<'_> {
 
                             self.compiler.values.push(val_info);
 
-                            ResolvedExpr::new(type_id, expr_hir, val_id, Vec::new())
+                            ResolvedExpr::new(
+                                type_id,
+                                expr_hir,
+                                val_id,
+                                spanned_expr.span,
+                                Vec::new(),
+                            )
                         }
                     };
 
@@ -575,7 +601,8 @@ impl TypeResolver<'_> {
                     let expr_hir = ExprHir::Val(val_id);
                     let type_id = TypeId::new(BuiltinTypeKind::I64 as u32);
 
-                    let resolved_expr = ResolvedExpr::new(type_id, expr_hir, val_id, Vec::new());
+                    let resolved_expr =
+                        ResolvedExpr::new(type_id, expr_hir, val_id, spanned_expr.span, Vec::new());
 
                     // Creating the actual value portion of the expression
                     let val = Value::I64(num);
@@ -601,7 +628,8 @@ impl TypeResolver<'_> {
 
                     let expr_hir = ExprHir::Val(val_id);
                     let type_id = TypeId::new(BuiltinTypeKind::F64 as u32);
-                    let expr = ResolvedExpr::new(type_id, expr_hir, val_id, Vec::new());
+                    let expr =
+                        ResolvedExpr::new(type_id, expr_hir, val_id, spanned_expr.span, Vec::new());
 
                     let val = Value::F64(num);
                     let val_info = ValueInfo::new(type_id, expr_id, Some(val));
@@ -683,8 +711,13 @@ impl TypeResolver<'_> {
                 self.compiler.exprs[rhs_id.id as usize].users.push(expr_id);
 
                 // Expression points to the value so the expr_id is returned alone.
-                let resolved_expr =
-                    ResolvedExpr::new(type_id, expr_hir, val_id, vec![lhs_id, rhs_id]);
+                let resolved_expr = ResolvedExpr::new(
+                    type_id,
+                    expr_hir,
+                    val_id,
+                    spanned_expr.span,
+                    vec![lhs_id, rhs_id],
+                );
 
                 let val_info = ValueInfo::new(type_id, expr_id, const_val_opt);
 
@@ -710,7 +743,8 @@ impl TypeResolver<'_> {
                 self.compiler.values.push(val_info);
 
                 let expr_hir = ExprHir::Val(val_id);
-                let resolved_expr = ResolvedExpr::new(type_id, expr_hir, val_id, Vec::new());
+                let resolved_expr =
+                    ResolvedExpr::new(type_id, expr_hir, val_id, spanned_expr.span, Vec::new());
                 self.compiler.exprs.push(resolved_expr);
 
                 Ok(expr_id)
@@ -732,7 +766,8 @@ impl TypeResolver<'_> {
                 self.compiler.values.push(val_info);
 
                 let expr_hir = ExprHir::Val(val_id);
-                let resolved_expr = ResolvedExpr::new(type_id, expr_hir, val_id, Vec::new());
+                let resolved_expr =
+                    ResolvedExpr::new(type_id, expr_hir, val_id, spanned_expr.span, Vec::new());
                 self.compiler.exprs.push(resolved_expr);
 
                 Ok(expr_id)
@@ -784,12 +819,24 @@ impl TypeResolver<'_> {
                                     let val_id = ValueId::new(self.compiler.values.len() as u32);
                                     let val_info = ValueInfo::new(type_id, expr_id, None);
 
-                                    ResolvedExpr::new(type_id, expr_hir, val_id, Vec::new());
+                                    ResolvedExpr::new(
+                                        type_id,
+                                        expr_hir,
+                                        val_id,
+                                        spanned_expr.span,
+                                        Vec::new(),
+                                    );
 
                                     self.compiler.values.push(val_info);
 
-                                    let expr =
-                                        ResolvedExpr::new(type_id, expr_hir, val_id, Vec::new());
+                                    let expr = ResolvedExpr::new(
+                                        type_id,
+                                        expr_hir,
+                                        val_id,
+                                        spanned_expr.span,
+                                        Vec::new(),
+                                    );
+
                                     self.compiler.exprs.push(expr);
 
                                     Ok(expr_id)

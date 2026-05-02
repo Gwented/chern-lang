@@ -13,7 +13,7 @@ export let READ = 0b00000001
 // var->
     // var: Tuple<str, u8, str> [StartsW("Hello")]
 nest->
-    struct erson {
+    export struct Person {
         name: str
         age: u8
     }

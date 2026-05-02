@@ -100,8 +100,7 @@ impl Symbol {
     }
 }
 
-// May call this id kind..
-/// Maps to a `TypeId` or `ValueId`
+/// Maps to a `TypeId`, `ValueId`, or `Unknown`
 #[derive(Debug, Clone, Copy)]
 pub enum SymbolKind {
     Type(TypeId),
@@ -109,7 +108,7 @@ pub enum SymbolKind {
     Unknown,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ResolvedExpr {
     // NOTE: Considering making a typesafe wrapper to unknown check explicitly
     pub type_id: TypeId,
@@ -118,6 +117,7 @@ pub struct ResolvedExpr {
     pub inputs: Vec<ExprId>,
     // Should be one
     pub users: Vec<ExprId>,
+    pub span: Span,
     // This is not an option type even though `Value` as an `Option<Value>` because symbols are
     // already represented as unknown from `SymbolKind` and `Value` types already have the metadata
     // of their type and if they have a const value inside.
@@ -129,12 +129,14 @@ impl ResolvedExpr {
         type_id: TypeId,
         expr_hir: ExprHir,
         val_id: ValueId,
+        expr_span: Span,
         inputs: Vec<ExprId>,
     ) -> ResolvedExpr {
         ResolvedExpr {
             type_id,
             expr_hir,
             inputs,
+            span: expr_span,
             users: Vec::new(),
             val_id,
         }

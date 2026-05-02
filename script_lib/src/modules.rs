@@ -142,13 +142,12 @@ impl Module {
         scope_id
     }
 
-    // And type?
     /// Checks if the name id corresponds to a `SymbolId` within the given `ScopeType`.
     /// Returns a tuple of the `AstId` and `ScopeType` the `NameId` was found in. Returns None if
     /// no accessible scopes contain the given `NameId`.
     pub fn get_sym_id(&self, name_id: InternedId, scope_type: ScopeType) -> Option<SymbolId> {
         // I don't think this can fail. Should maybe expect for clarity.
-        let allowed_scope_types = scope_type.accessible_scopes(false);
+        let allowed_scope_types = scope_type.accessible_scopes();
 
         // Loops over all allowed scopes and checks their individual namespaces
         for allowed_scope_type in allowed_scope_types {

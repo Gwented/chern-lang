@@ -279,6 +279,7 @@ impl ScriptCompiler {
         }
     }
 
+    /// Returns `ModuleId` which is the module of origin
     pub(super) fn get_owner(&self, sym_id: SymbolId) -> ModuleId {
         self.symbols[&sym_id].owner
     }
