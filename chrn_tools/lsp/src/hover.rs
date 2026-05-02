@@ -390,14 +390,24 @@ fn format_type(
                             Type::Struct(sdef) => compiler
                                 .symbols
                                 .get(&sdef.sym_id)
-                                .map(|sym| interner.search(sym.name_id.id as usize))
+                                .map(|sym| {
+                                    format!(
+                                        "struct {} {{}}",
+                                        interner.search(sym.name_id.id as usize)
+                                    )
+                                })
                                 .unwrap_or("<struct>".into()),
                             Type::Enum(edef) => compiler
                                 .symbols
                                 .get(&edef.sym_id)
-                                .map(|sym| interner.search(sym.name_id.id as usize))
+                                .map(|sym| {
+                                    format!(
+                                        "enum {} {{}}",
+                                        interner.search(sym.name_id.id as usize)
+                                    )
+                                })
                                 .unwrap_or("<enum>".into()),
-                            _ => &format_type(field_ty, compiler, interner),
+                            _ => format_type(field_ty, compiler, interner),
                         };
 
                         format!("\t{}: {}", field_name, field_ty_str)
@@ -428,18 +438,28 @@ fn format_type(
                                 Type::Struct(sdef) => compiler
                                     .symbols
                                     .get(&sdef.sym_id)
-                                    .map(|sym| interner.search(sym.name_id.id as usize))
+                                    .map(|sym| {
+                                        format!(
+                                            "struct {} {{}}",
+                                            interner.search(sym.name_id.id as usize)
+                                        )
+                                    })
                                     .unwrap_or("<struct>".into()),
                                 Type::Enum(edef) => compiler
                                     .symbols
                                     .get(&edef.sym_id)
-                                    .map(|sym| interner.search(sym.name_id.id as usize))
+                                    .map(|sym| {
+                                        format!(
+                                            "enum {} {{}}",
+                                            interner.search(sym.name_id.id as usize)
+                                        )
+                                    })
                                     .unwrap_or("<enum>".into()),
-                                _ => &format_type(variant_ty, compiler, interner),
+                                _ => format_type(variant_ty, compiler, interner),
                             };
                             format!("\t{}: {}", variant_name, variant_ty_str)
                         } else {
-                            variant_name.to_string()
+                            format!("\t{}", variant_name)
                         }
                     })
                     .collect();

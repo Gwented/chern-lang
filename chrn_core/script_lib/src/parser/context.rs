@@ -52,6 +52,8 @@ const A_BRANCH_TYPE_ARGS_SET: u64 = A_BASE_EXIT_SET | token::COLON;
 const C_BRANCH_FUNC_SET: u64 = C_BASE_EXIT_SET | token::C_PAREN;
 const A_BRANCH_FUNC_SET: u64 = A_BASE_EXIT_SET | token::C_BRACKET;
 
+/// Parser context struct that orchestrates parser as well as reports errors
+// p_ctx
 #[derive(Debug)]
 pub(super) struct Context<'a> {
     settings: &'a ChernSettings,

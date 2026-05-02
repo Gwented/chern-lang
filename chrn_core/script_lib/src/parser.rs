@@ -25,8 +25,8 @@ use common::span::Span;
 // May be lower
 const MAX_ERRORS: u8 = 3;
 
-/// Returns a completed `AstInfo` on `Ok`. Returns an unfinished `AstInfo` and `ScriptError` on
-/// `Err`
+/// Returns a completed `AstInfo` on `Ok`. Returns a tuple with unfinished `AstInfo` and `ScriptError` on
+/// `Err`.
 pub fn parse(
     settings: &ChernSettings,
     module: &Module,
@@ -450,7 +450,7 @@ fn check_import(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
         ctx.advance_tok();
         ctx.expect_id_verbose(
             TokenKind::Id,
-            "Expected an alias for the given import after keyword `as`, found ",
+            "Expected an identifier alias for the given import after keyword `as`, found ",
             "",
             Branch::Neutral(NeutralBranch::Import),
             interner,

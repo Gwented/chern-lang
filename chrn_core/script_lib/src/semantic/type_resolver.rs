@@ -1118,14 +1118,14 @@ impl TypeResolver<'_> {
 
             seen.push((i, variant.name_id));
 
-            if let Some(spanned_ty_expr) = &variant.ty_expr {
+            let variant_repre = if let Some(spanned_ty_expr) = &variant.ty_expr {
                 let type_id = self.resolve_type_expr(&spanned_ty_expr, ScopeType::Nest, ast_id)?;
+                VariantRepre::new(variant.name_id, Some(type_id), AstId::new(i as u32))
+            } else {
+                VariantRepre::new(variant.name_id, None, AstId::new(i as u32))
+            };
 
-                let variant_repre =
-                    VariantRepre::new(variant.name_id, Some(type_id), AstId::new(i as u32));
-
-                variants.push(variant_repre);
-            }
+            variants.push(variant_repre);
         }
 
         let module = &mut self.compiler.mods[self.current_mod.id];

@@ -1,0 +1,8 @@
+@def
+    import "main.chrn"
+
+    // No bit-wise yet
+    // let READ_WRITE = def
+
+
+@end

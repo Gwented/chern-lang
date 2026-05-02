@@ -1,11 +1,8 @@
 # chrn_core
 chrn_core/target/
 chrn_core/Cargo.lock
+chrn_core/chrn_tests/gwop
 
 # chrn_tools
 chrn_tools/target/
-chrn_core/Cargo.lock
-chrn_core/chrn_tests/gwop
-
-inner/target/
-inner/Cargo.lock
+chrn_tools/Cargo.lock

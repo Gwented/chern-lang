@@ -1,9 +1,35 @@
 // I don't think it's in Go
 
 ## Language intent
-- This is a scripting language with a markdown language paired with it that allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required in-line in a language. The scripting language can either use the keyword `bind` to tell it where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
+- This is a scripting language that has a serialized data representation paired with it that allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required in-line in a language. The scripting language can either use the keyword `bind` to tell the interpreter where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
 
 - Features such as conditions, arguments, and anything that is beyond just setting serialized data details or serialized data specific settings are not intended to be heavily used.
+
+- The projected main use-case of this language is as a library for inside of a programming language it is available for which takes in a path to a script file which could contain the serialized data too, or separately having the script file and data given as arguments.
+
+So something like:
+
+```rust
+use chrn;
+
+struct User {
+    id: u32,
+    age: u8
+}
+
+// Uhh wait
+fn main() {
+    let script_path = "path/to/script/file"
+    let user = User { id: 0, age: 0 }
+
+    chrn::serialize(script_path, user)
+
+    // or if serialized data is separate
+
+    let serialized_data = "path/to/serialized/data"
+    chrn::serialize(script_path, serialized_data, user)
+}
+```
 
 # SCRIPT
 

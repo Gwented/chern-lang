@@ -15,7 +15,7 @@
 // let x = -((defs.READ * "Ratatoudias"))
 
 @def
-    simport "../../defs.chrn"
+    import "../../defs.chrn" as identifer
     bind "./"
     // Commenting
     export let ζζさる = 3

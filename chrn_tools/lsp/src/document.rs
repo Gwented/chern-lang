@@ -46,6 +46,7 @@ impl Document {
 //  Keywords
 
 pub static KEYWORD_DOCS: [Document; 15] = [
+    //FIX: Key should be the interned id, or maybe a mixture of both depending on DECISIONS
     Document {
         key: "struct",
         description: "Defines a data structure",
@@ -72,21 +73,21 @@ pub static KEYWORD_DOCS: [Document; 15] = [
     },
     Document {
         key: "bind",
-        description: "References external serialized file",
+        description: "Binds to external serialized file",
         example: Some("```chrn\nbind \"data.chrn\"\n```"),
     },
     Document {
         key: "alias",
         description: "Creates reusable predicate functions",
         example: Some(
-            "```chrn\nalias Positive() = [Range(0.0, 100.0)]\nalias ValidName() = [!IsEmpty, StartsW(\"A\")]\n```",
+            "```chrn\nalias Positive() = [Range(0.0, 100.0)]\n// Can also be exported\nexport alias ValidName() = [!IsEmpty, StartsW(\"chrn\")]\n```",
         ),
     },
     Document {
         key: "let",
         description: "Declares reusable values",
         example: Some(
-            "```chrn\n@def\n\tlet count = 10\n\tlet name = \"test\"\n\tlet result = VALUE * 2\n@end\n```",
+            "```chrn\n@def\n\tlet count = 10\n\tlet name = \"chrning\"\n\tlet result = VALUE * 2\n// Can be used for any conditions\nvar->\n\tx: i32 [Equals(result)]\n@end\n```",
         ),
     },
     Document {
@@ -98,7 +99,7 @@ pub static KEYWORD_DOCS: [Document; 15] = [
         key: "as",
         description: "Aliases imported module names",
         example: Some(
-            "```chrn\n@def\n\timport \"module.chrn\" as m\n\t\tlet x = m.MAGIC_NUM - 2\n@end\n```",
+            "```chrn\n@def\n\timport \"module.chrn\" as mod\n\t\tlet x = mod.MAGIC_NUM - 2\nvar->\n\tfield: mod.EXTERN_TYPE\n@end\n```",
         ),
     },
     Document {
@@ -112,7 +113,7 @@ pub static KEYWORD_DOCS: [Document; 15] = [
         key: "nest->",
         description: "Defines structs and enums section",
         example: Some(
-            "```chrn\nnest->\n\tstruct Address {\n\t\tcity: str\n\t\tzip: u32\n\t}\n\tenum Color {Red Blue Green}\n```",
+            "```chrn\nnest->\n\tstruct Address {\n\t\tcity: str\n\t\tzip: u32\n\t}\n\tenum Color {Red Blue Green}\n\n```",
         ),
     },
     Document {

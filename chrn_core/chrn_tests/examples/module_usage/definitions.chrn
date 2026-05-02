@@ -1,0 +1,29 @@
+// chrn doesn't require script blocks so definition files can
+// declare exactly as a non-definition centered chrn file would
+
+// Export is required to make these public
+export let READ = 0b00000001
+export let WRITE = 0b00000010
+export let EXEC = 0b00000100
+
+// Would error with a message saying this is private if an external reference was attempted
+let MAGIC_STRING = "chrn"
+
+// var section data cannot be referenced outside of the module it was declared in. (Could change)
+var->
+    x: i32
+nest->
+// Anything exported in nest will be public
+
+    export struct File {
+        path: str
+        permissions: u8
+    }
+
+    // Is publicly accessible
+    export enum State {
+        Ready: Tuple<u8, str>
+        Pending
+        Failed
+    }
+

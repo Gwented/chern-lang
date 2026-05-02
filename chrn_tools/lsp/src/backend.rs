@@ -149,14 +149,14 @@ impl Backend {
         text: Arc<String>,
     ) -> Option<Arc<RwLock<crate::state::DocumentState>>> {
         let uri_str = uri.to_string();
-        
+
         // Try to get existing analyzed state first
         if let Some(state_arc) = self.doc_cache.get(&uri_str) {
             let needs_analysis = {
                 let state = state_arc.read();
                 state.compiler.is_none() || state.text.len() != text.len() || *state.text != *text
             };
-            
+
             if !needs_analysis {
                 return Some(state_arc);
             }
@@ -193,7 +193,8 @@ impl Backend {
         };
 
         if !imported_uris.is_empty() {
-            self.doc_cache.register_dependencies(&uri_str, &imported_uris);
+            self.doc_cache
+                .register_dependencies(&uri_str, &imported_uris);
         }
 
         Some(state_arc)
@@ -332,7 +333,16 @@ impl LanguageServer for Backend {
         let doc_cache = self.doc_cache.clone();
         let pending_versions = self.pending_versions.clone();
         tokio::spawn(async move {
-            analyze_and_publish_task(client, uri_cloned, text, dc, doc_cache, pending_versions, version).await
+            analyze_and_publish_task(
+                client,
+                uri_cloned,
+                text,
+                dc,
+                doc_cache,
+                pending_versions,
+                version,
+            )
+            .await
         });
     }
 
@@ -341,7 +351,7 @@ impl LanguageServer for Backend {
         if let Some(text) = params.text {
             self.docs.write().insert(uri_str.clone(), Arc::new(text));
         }
-        
+
         let text_opt = {
             let docs = self.docs.read();
             docs.get(&uri_str).cloned()
@@ -359,16 +369,25 @@ impl LanguageServer for Backend {
             let client = self.client.clone();
             let uri_cloned = params.text_document.uri.clone();
             let text_cloned = text.clone();
-            
+
             if let Some(handle) = self.pending_tasks.write().remove(&uri_str) {
                 handle.abort();
             }
-            
+
             let dc = self.diags_cache.clone();
             let doc_cache = self.doc_cache.clone();
             let pending_versions = self.pending_versions.clone();
             tokio::spawn(async move {
-                analyze_and_publish_task(client, uri_cloned, text_cloned, dc, doc_cache, pending_versions, version).await
+                analyze_and_publish_task(
+                    client,
+                    uri_cloned,
+                    text_cloned,
+                    dc,
+                    doc_cache,
+                    pending_versions,
+                    version,
+                )
+                .await
             });
         }
     }
@@ -394,9 +413,7 @@ impl LanguageServer for Backend {
 
         // Apply all content changes in order. If a change has no range, it is a full text replace.
         let mut docs = self.docs.write();
-        let existing = docs
-            .remove(&uri_str)
-            .unwrap_or_default();
+        let existing = docs.remove(&uri_str).unwrap_or_default();
         let mut updated = (*existing).clone();
         for change in params.content_changes.into_iter() {
             match apply_text_change(&updated, &change) {
@@ -465,8 +482,16 @@ impl LanguageServer for Backend {
                 if still_current {
                     let doc_cache = doc_cache_clone.clone();
                     let pending_versions = pv.clone();
-                    analyze_and_publish_task(client, params.text_document.uri, Arc::clone(&text), dc, doc_cache, pending_versions, my_version)
-                        .await;
+                    analyze_and_publish_task(
+                        client,
+                        params.text_document.uri,
+                        Arc::clone(&text),
+                        dc,
+                        doc_cache,
+                        pending_versions,
+                        my_version,
+                    )
+                    .await;
                 }
                 // Attempt to remove our handle from pending_tasks. Use Weak::upgrade so
                 // the spawned task does not hold a strong Arc to the pending_tasks map
@@ -530,7 +555,8 @@ impl LanguageServer for Backend {
         };
 
         let toks_vec = &state.tokens;
-        let has_type_info = state.compiler.is_some() && !state.has_parse_errors && !state.has_ns_errors;
+        let has_type_info =
+            state.compiler.is_some() && !state.has_parse_errors && !state.has_ns_errors;
         let maybe_member_ids = Some(&state.member_ids);
 
         let mut tokens: Vec<SemanticToken> = Vec::new();
@@ -563,13 +589,7 @@ impl LanguageServer for Backend {
                 ScriptToken::Id(id) => {
                     let next_is_paren = i + 1 < toks_vec.len()
                         && matches!(toks_vec[i + 1].tok, ScriptToken::OParen);
-                    classify_id_token(
-                        compiler,
-                        id,
-                        has_type_info,
-                        next_is_paren,
-                        maybe_member_ids,
-                    )
+                    classify_id_token(compiler, id, has_type_info, next_is_paren, maybe_member_ids)
                 }
                 ScriptToken::At => SemanticTokenType::Macro.as_u32(),
                 ScriptToken::HashSymbol => SemanticTokenType::Operator.as_u32(),
@@ -692,7 +712,8 @@ impl LanguageServer for Backend {
                 Some(Arc::clone(&state.text))
             } else {
                 let target_uri_str = target_uri.to_string();
-                self.doc_cache.get_text(&target_uri_str)
+                self.doc_cache
+                    .get_text(&target_uri_str)
                     .or_else(|| self.docs.read().get(&target_uri_str).map(Arc::clone))
                     .or_else(|| std::fs::read_to_string(&def_path).ok().map(Arc::new))
             };
@@ -788,6 +809,7 @@ impl LanguageServer for Backend {
             ("Tuple", CompletionItemKind::STRUCT),
             ("true", CompletionItemKind::CONSTANT),
             ("false", CompletionItemKind::CONSTANT),
+            ("change", CompletionItemKind::CONSTANT),
             //TODO: Not exactly a keyword
             ("#warn", CompletionItemKind::VALUE),
             ("#ignore", CompletionItemKind::VALUE),

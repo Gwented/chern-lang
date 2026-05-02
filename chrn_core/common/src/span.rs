@@ -23,7 +23,7 @@ impl Span {
     }
 }
 
-/// Takes in an array of spans and merges all of them together. Expects there is at least 1 span
+/// Takes in an array of spans and merges all of them together. Expects that there is at least 1 span
 /// present.
 //TODO: Should just return option span
 pub fn merge_spans(spans: &[Span]) -> Span {
