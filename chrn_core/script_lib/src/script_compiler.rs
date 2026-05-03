@@ -10,7 +10,8 @@ use chrn_utils::{
 use crate::{
     modules::{Bind, Module},
     semantic::representation::{
-        EnumDef, FuncRepre, ResolvedExpr, StructDef, Symbol, SymbolKind, Type, TypeDef, TypeInfo,
+        AliasDef, EnumDef, FuncDef, ResolvedExpr, StructDef, Symbol, SymbolKind, Type, TypeDef,
+        TypeInfo,
     },
 };
 
@@ -211,7 +212,7 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_func(&self, sym_id: SymbolId) -> &FuncRepre {
+    pub(super) fn get_func(&self, sym_id: SymbolId) -> &FuncDef {
         match &self.symbols[&sym_id] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
@@ -223,7 +224,7 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_func_mut(&mut self, sym_id: SymbolId) -> &mut FuncRepre {
+    pub(super) fn get_func_mut(&mut self, sym_id: SymbolId) -> &mut FuncDef {
         match self.symbols.get_mut(&sym_id).expect("misusage") {
             sym_info => match &mut sym_info.kind {
                 SymbolKind::Type(type_id) => match &mut self.types[type_id.id as usize].ty {
@@ -252,6 +253,30 @@ impl ScriptCompiler {
             sym_info => match &mut sym_info.kind {
                 SymbolKind::Type(type_id) => match &mut self.types[type_id.id as usize].ty {
                     Type::Enum(enum_def) => enum_def,
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    pub(super) fn get_alias(&self, sym_id: SymbolId) -> &AliasDef {
+        match &self.symbols[&sym_id] {
+            sym_info => match &sym_info.kind {
+                SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
+                    Type::Alias(alias_def) => alias_def,
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    pub(super) fn get_alias_mut(&mut self, sym_id: SymbolId) -> &mut AliasDef {
+        match self.symbols.get_mut(&sym_id).expect("Misusage") {
+            sym_info => match &mut sym_info.kind {
+                SymbolKind::Type(type_id) => match &mut self.types[type_id.id as usize].ty {
+                    Type::Alias(alias_def) => alias_def,
                     _ => unreachable!(),
                 },
                 _ => unreachable!(),

@@ -2,9 +2,9 @@ use std::path::Path;
 
 use chrn_utils::intern::Intern;
 use common::{chrn_settings::ChrnSettings, core_error::ConfigLoadError};
-use script_lib::{modules, parser::ast::AstInfo};
+use script_lib::modules;
 
-// Maybe make a new lexer for this maybe not maybe I don't know maybe <-
+//TODO: Will be continued after a Token is added to track whitespace and comments within the lexer
 pub fn fmt_script_block(path: &Path, settings: &ChrnSettings) -> Result<String, ConfigLoadError> {
     let mut interner = Intern::init();
     let script_compiler = modules::extract_modules(path, settings, &mut interner)?;

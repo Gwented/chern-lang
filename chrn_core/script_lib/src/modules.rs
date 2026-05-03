@@ -78,10 +78,11 @@ pub struct Module {
     pub mod_id: ModuleId,
     /// Imports found in the module
     pub imports: Vec<Import>,
-    /// Represents the 4 existent scopes
+    /// Represents the 5 existent scopes
     pub scopes: Vec<Scope>,
     pub metadata: ModuleMetadata,
 }
+//NOTE: Now that scopes are tracked by the parser maybe this can be
 
 impl Module {
     pub fn new(

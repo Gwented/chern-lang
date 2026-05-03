@@ -8,4 +8,6 @@ clap = "4.6.0"
 clap_derive = "4.6.0"
 interpreter_lib = { path = "../interpreter_lib/"}
 formatter = { path = "../formatter"}
+printer = { path = "../printer/"}
 common = { path = "../../chrn_core/common/"}
+

@@ -175,13 +175,11 @@ impl Lexer<'_> {
                 }
                 '@' => {
                     // Allows for same behavior even in file with serialized data
-                    // NOTE: Could be removed if the initial loader starts the offset, AFTER the
-                    // definition, but can stay like this for now.
                     if self.is_def_start() {
                         // in_def = true;
                         toks.push(SpannedToken {
                             tok: Token::Def,
-                            span: Span::new(self.pos, self.pos + keywords::DEFINITION_SIZE),
+                            span: Span::new(self.pos, self.pos + keywords::DEFINITION_SIZE - 1),
                         });
 
                         self.skip(keywords::DEFINITION_SIZE);

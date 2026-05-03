@@ -15,7 +15,7 @@ use crate::parser::ast::{AbstractVar, Expr, SpannedExpr};
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::error::{MathError, SemanticError};
 use crate::semantic::evaluator;
-use crate::semantic::representation::{ExprHir, PossibleMember, ResolvedExpr, SymbolKind};
+use crate::semantic::representation::{ExprHir, Param, PossibleMember, ResolvedExpr, SymbolKind};
 use crate::semantic::scopes::ScopeType;
 use crate::semantic::type_resolver::type_context::{PendingExpr, PendingSymbol, TypeContext};
 
@@ -100,9 +100,8 @@ impl TypeResolver<'_> {
                             removable_syms.insert(*sym_id);
                         }
                     }
-                    Err(_) => {
-                        eprint!("Flaibled")
-                    }
+                    // Uhhh not sure what to do here
+                    Err(_) => {}
                 };
             }
 
@@ -312,9 +311,11 @@ impl TypeResolver<'_> {
                 todo!("Make sure this is ok")
             }
             // I don't think this is possible?
+            //TODO:
             ExprHir::Var(sym_id) => {
                 todo!("What is a varrrble")
             }
+            //TODO:
             ExprHir::Default(sym_id, expr_id) => {
                 todo!()
             }
@@ -474,13 +475,13 @@ impl TypeResolver<'_> {
         let symbol = self.compiler.symbols.get_mut(&sym_id).expect("Exists");
         symbol.kind = SymbolKind::Val(val_id);
 
-        // x could be unresolved so need to check if there are others that were awaiting x
-        // So we just need to check if the thing we just solved is also a dependency something else
-        // was waiting for so that it can be chained
+        // If the symbol that was just examined is a pending symbol AND it was actually resolved,
+        // then it'll be marked as resolved
         if let Some(pending_sym) = self.ty_ctx.sym_queue.get_mut(&sym_id)
             && !is_unknown
         {
             // Two caches
+            //FIX: This maybe needs to be checked elsewhere too
             pending_sym.is_resolved = true;
             self.ty_ctx.needs_check = true;
         }
@@ -1142,13 +1143,57 @@ impl TypeResolver<'_> {
 
     fn resolve_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) -> Result<(), ()> {
         // Should the variable check happen here?
-        let mut params: Vec<TypeId> = Vec::new();
+        let mut params: Vec<Param> = Vec::new();
+        let mut seen: Vec<(usize, InternedId)> = Vec::new();
+
         for (i, spanned_ty_expr) in abs_alias.params.iter().enumerate() {
-            let type_id = self.resolve_type_expr(&spanned_ty_expr, ScopeType::Neutral, ast_id)?;
-            params.push(type_id);
+            match &spanned_ty_expr.ty_expr {
+                TypeExpr::Var(interned_id) | TypeExpr::Escaped(interned_id) => {
+                    if let Some(original) = seen.iter().find(|other| *interned_id == other.1) {
+                        let alias_name = self.interner.search(abs_alias.name_id.id as usize);
+                        let dup_name = self.interner.search(interned_id.id as usize);
+
+                        let orig_span = abs_alias.params[original.0].span;
+                        let field_span = abs_alias.params[i].span;
+
+                        let msg = format!(
+                            "More than one variable has the identifier \"{dup_name}\" within alias `{alias_name}`"
+                        );
+
+                        self.reporter.report_spanned(
+                            &msg,
+                            None,
+                            &[orig_span, field_span],
+                            &self.compiler.mods[self.current_mod.id],
+                        );
+                    }
+
+                    seen.push((i, *interned_id));
+
+                    let param = Param::new(
+                        *interned_id,
+                        // spanned_ty_expr.span,
+                        AstId::new(i as u32),
+                        TypeId::new(script_compiler::TYPE_UNKNOWN_IDX),
+                    );
+
+                    params.push(param);
+                }
+                // The parser checks for these so this will probably become just interned ids
+                _ => unreachable!("Should maybe change this to ids if possible"),
+            }
         }
-        dbg!(&params);
-        todo!();
+
+        let module = &mut self.compiler.mods[self.current_mod.id];
+        let scope_id = module.extract_scope_id(ScopeType::Neutral);
+        let table = &module.get_scope_mut(scope_id).table;
+
+        let sym_id = table.sym_ids[&ast_id];
+
+        let alias_def = self.compiler.get_alias_mut(sym_id);
+        alias_def.params = params;
+
+        Ok(())
     }
 
     fn resolve_type_expr(

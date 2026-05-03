@@ -166,14 +166,10 @@ impl DocumentState {
             if mod_idx == 0 {
                 self.has_parse_errors = parse_errors.is_some();
 
-                if let Some(err) = parse_errors {
-                    if let common::core_error::ScriptError::Parser(diags)
-                    | common::core_error::ScriptError::Semantic(diags) = err
-                    {
-                        self.parse_errors = Some(diags);
-                    } else {
-                        self.parse_errors = None;
-                    }
+                if let Some(diags) = parse_errors {
+                    self.parse_errors = Some(diags);
+                } else {
+                    self.parse_errors = None;
                 }
             }
 
@@ -380,7 +376,9 @@ impl DocumentCache {
             serial_start,
             version,
         )));
-        cache.docs.insert(uri.to_string(), (text, Arc::clone(&state)));
+        cache
+            .docs
+            .insert(uri.to_string(), (text, Arc::clone(&state)));
         state
     }
 
@@ -438,7 +436,11 @@ impl DocumentCache {
     }
 
     pub fn get_text(&self, uri: &str) -> Option<Arc<String>> {
-        self.inner.read().docs.get(uri).map(|(text, _)| Arc::clone(text))
+        self.inner
+            .read()
+            .docs
+            .get(uri)
+            .map(|(text, _)| Arc::clone(text))
     }
 
     pub fn clear(&self) {
