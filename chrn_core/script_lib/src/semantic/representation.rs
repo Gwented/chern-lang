@@ -221,8 +221,9 @@ impl Table {
 pub struct StructDef {
     pub sym_id: SymbolId,
     pub fields: Vec<FieldRepre>,
-    pub conds: Vec<ExprId>,
-    pub args: Vec<InnerArgs>,
+    pub glob_conds: Vec<ExprId>,
+    //Maybe SpannedInnerArgs is fine here
+    pub glob_args: Vec<InnerArgs>,
 }
 
 impl StructDef {
@@ -230,8 +231,8 @@ impl StructDef {
         StructDef {
             sym_id,
             fields,
-            conds: Vec::new(),
-            args: Vec::new(),
+            glob_conds: Vec::new(),
+            glob_args: Vec::new(),
         }
     }
 }
@@ -241,7 +242,7 @@ pub struct EnumDef {
     pub sym_id: SymbolId,
     pub variants: Vec<VariantRepre>,
     pub args: Vec<InnerArgs>,
-    pub conds: Vec<ExprId>,
+    pub glob_conds: Vec<ExprId>,
 }
 
 impl EnumDef {
@@ -249,7 +250,7 @@ impl EnumDef {
         EnumDef {
             sym_id,
             variants,
-            conds: Vec::new(),
+            glob_conds: Vec::new(),
             args: Vec::new(),
         }
     }

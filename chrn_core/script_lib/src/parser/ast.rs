@@ -339,7 +339,7 @@ impl SpannedTypeExpr {
 pub(crate) enum TypeExpr {
     Var(InternedId),
     Path(Vec<SpannedTypeExpr>),
-    Escaped(InternedId),
+    //FIX: Remove this
     Generic(Generic),
     Any,
 }

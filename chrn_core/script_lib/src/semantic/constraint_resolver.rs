@@ -410,7 +410,7 @@ impl<'a> ConstraintResolver<'a> {
         let structure = self.compiler.get_struct_mut(sym_id);
 
         // I'm scared of this
-        structure.args = args;
+        structure.glob_args = args;
         // structure.conds = conds;
 
         Ok(())

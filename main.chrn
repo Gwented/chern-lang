@@ -12,13 +12,13 @@
 
     alias something() = // [IsOdd]
 
-    var->
+    //var->
     // Should probably filter out duplicate arguments if present
-        x: str [] #warn
-    /*nest->
-        export struct Person {
-            name: str [] #warn
-        }*/
+        // x: str [] #when
+    nest->
+        export enum Person {
+            State: Tuple<str> [] #scient
+        } [] #warn
 @end
 
 @def

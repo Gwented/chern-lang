@@ -11,7 +11,6 @@ use common::chrn_settings::ChrnSettings;
 use common::fmter::{Formattable, Formatted};
 use common::{reporter::diagnostic::Diagnostic, span::Span};
 
-use crate::conditions::Cond;
 use crate::parser::ast::{AbstractVar, Expr, SpannedExpr};
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::error::{MathError, SemanticError};
@@ -214,7 +213,6 @@ impl TypeResolver<'_> {
 
             queue.push(pending_expr.pending_id);
         }
-        dbg!(&queue);
 
         // In the example:
         //
@@ -485,6 +483,319 @@ impl TypeResolver<'_> {
             pending_sym.is_resolved = true;
             self.ty_ctx.needs_check = true;
         }
+
+        Ok(())
+    }
+
+    fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
+        let type_id =
+            self.resolve_type_expr(&abs_typedef.spanned_ty_expr, ScopeType::Var, ast_id)?;
+
+        let module = &self.compiler.mods[self.current_mod.id];
+        let scope_id = module.extract_scope_id(ScopeType::Var);
+        let table = &module.get_scope(scope_id).table;
+        let sym_id = table.sym_ids[&ast_id];
+
+        let mut conds: Vec<ExprId> = Vec::new();
+        for spanned_expr in &abs_typedef.conds {
+            //FIX: Scope type is a little wrong here since it's a condition
+            let cond = match self.register_expr(sym_id, spanned_expr, ScopeType::Neutral) {
+                // There is no sym parrent..
+                Ok(c) => c,
+                Err(sem_err) => {
+                    self.reporter.report_semantic(
+                        sem_err,
+                        &self.compiler.mods[self.current_mod.id as usize],
+                    );
+
+                    return Err(());
+                }
+            };
+
+            conds.push(cond);
+        }
+
+        let type_def = self.compiler.get_typedef_mut(sym_id);
+        // Assinging from `Unknown` to it's actual type
+        type_def.type_id = type_id;
+        type_def.conds = conds;
+        type_def.args = abs_typedef.args.iter().map(|sp_arg| sp_arg.arg).collect();
+
+        Ok(())
+    }
+
+    fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
+        // Not sure of if this should stay a Field type or just be a TypeDef since their intent
+        // somewhat conflicts. For now, typedef is just consumed differently depending on if it's a
+        // field declared in var-> or not since var-> fields may be made possible to reference, but
+        // fields in structures can't. Will possibly just be unified in the future.
+        let mut fields: Vec<FieldRepre> = Vec::new();
+        let mut seen: Vec<(usize, InternedId)> = Vec::new();
+
+        let module = &self.compiler.mods[self.current_mod.id];
+        let scope_id = module.extract_scope_id(ScopeType::Nest);
+        let table = &module.get_scope(scope_id).table;
+
+        //TODO: global condition and argument setting.
+        //field arg and cond settings.
+        //same for enums.
+
+        let sym_id = table.sym_ids[&ast_id];
+
+        // Checking if there are duplicate name ids within the same struct along with resolution
+        for (i, field_typedef) in abs_struct.fields.iter().enumerate() {
+            let type_id =
+                self.resolve_type_expr(&field_typedef.spanned_ty_expr, ScopeType::Nest, ast_id)?;
+
+            if let Some(original) = seen.iter().find(|other| field_typedef.name_id == other.1) {
+                let struct_name = self.interner.search(abs_struct.name_id.id as usize);
+                let dup_name = self.interner.search(field_typedef.name_id.id as usize);
+
+                let orig_span = abs_struct.fields[original.0].name_span;
+                let field_span = abs_struct.fields[i].name_span;
+
+                let msg = format!(
+                    "More than one field has the identifier \"{dup_name}\" within struct `{struct_name}`"
+                );
+
+                self.reporter.report_spanned(
+                    &msg,
+                    None,
+                    &[orig_span, field_span],
+                    &self.compiler.mods[self.current_mod.id],
+                );
+            }
+
+            seen.push((i, field_typedef.name_id));
+
+            let field = FieldRepre::new(field_typedef.name_id, type_id, ast_id);
+
+            fields.push(field);
+        }
+
+        //TODO: Could make this less terminal but ok for now
+        for (i, field) in fields.iter_mut().enumerate() {
+            let abs_field = &abs_struct.fields[i];
+            let mut conds: Vec<ExprId> = Vec::new();
+
+            for cond in &abs_field.conds {
+                let cond_expr = match self.register_expr(sym_id, &cond, ScopeType::Nest) {
+                    Ok(c) => c,
+                    Err(sem_err) => {
+                        self.reporter.report_semantic(
+                            sem_err,
+                            &self.compiler.mods[self.current_mod.id as usize],
+                        );
+
+                        return Err(());
+                    }
+                };
+
+                conds.push(cond_expr);
+            }
+
+            field.conds = conds;
+            // TEST:
+            field.args = abs_field.args.iter().map(|sp_arg| sp_arg.arg).collect();
+        }
+
+        let mut glob_conds: Vec<ExprId> = Vec::new();
+
+        for cond in &abs_struct.glob_conds {
+            let cond = match self.register_expr(sym_id, cond, ScopeType::Nest) {
+                Ok(c) => c,
+                Err(sem_err) => {
+                    self.reporter.report_semantic(
+                        sem_err,
+                        &self.compiler.mods[self.current_mod.id as usize],
+                    );
+
+                    return Err(());
+                }
+            };
+
+            glob_conds.push(cond);
+        }
+
+        let struct_def = self.compiler.get_struct_mut(sym_id);
+
+        struct_def.fields.append(&mut fields);
+        struct_def.glob_conds = glob_conds;
+        struct_def.glob_args = abs_struct
+            .glob_args
+            .iter()
+            .map(|sp_arg| sp_arg.arg)
+            .collect();
+
+        dbg!(abs_struct);
+        dbg!(&struct_def);
+
+        // let struct_def = self.compiler.get_struct(sym_id);
+        // for field in &struct_def.fields {
+        //     let name = self.interner.search(field.name_id.id as usize);
+        //     let ty_info = &self.compiler.types[field.type_id.id as usize];
+        //     dbg!(name, ty_info);
+        // }
+
+        todo!("structn ot done");
+
+        Ok(())
+    }
+
+    fn resolve_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) -> Result<(), ()> {
+        let mut variants: Vec<VariantRepre> = Vec::new();
+
+        let module = &mut self.compiler.mods[self.current_mod.id];
+        let scope_id = module.extract_scope_id(ScopeType::Nest);
+        let table = &module.get_scope(scope_id).table;
+
+        let sym_id = table.sym_ids[&ast_id];
+
+        // (ast variant idx, name_id)
+        let mut seen: Vec<(usize, InternedId)> = Vec::new();
+        //Maybe just compute this once after along with struct fields
+
+        // Checking if there are duplicate name ids within the same enum
+        for (i, variant) in abs_enum.variants.iter().enumerate() {
+            if let Some(original) = seen.iter().find(|other| variant.name_id == other.1) {
+                let enum_name = self.interner.search(abs_enum.name_id.id as usize);
+                let dup_name = self.interner.search(variant.name_id.id as usize);
+
+                let orig_span = abs_enum.variants[original.0].name_span;
+                let variant_span = abs_enum.variants[i].name_span;
+
+                let msg = format!(
+                    "More than one variant has the identifier \"{dup_name}\" within enum `{enum_name}`"
+                );
+
+                self.reporter.report_spanned(
+                    &msg,
+                    None,
+                    &[orig_span, variant_span],
+                    &self.compiler.mods[self.current_mod.id],
+                );
+            }
+
+            seen.push((i, variant.name_id));
+
+            let variant_repre = if let Some(spanned_ty_expr) = &variant.ty_expr {
+                let type_id = self.resolve_type_expr(&spanned_ty_expr, ScopeType::Nest, ast_id)?;
+                VariantRepre::new(variant.name_id, Some(type_id), AstId::new(i as u32))
+            } else {
+                VariantRepre::new(variant.name_id, None, AstId::new(i as u32))
+            };
+
+            variants.push(variant_repre);
+        }
+
+        for (i, variant) in variants.iter_mut().enumerate() {
+            let abs_variant = &abs_enum.variants[i];
+            let mut conds: Vec<ExprId> = Vec::new();
+
+            for cond in &abs_variant.conds {
+                let cond_expr = match self.register_expr(sym_id, &cond, ScopeType::Nest) {
+                    Ok(c) => c,
+                    Err(sem_err) => {
+                        self.reporter.report_semantic(
+                            sem_err,
+                            &self.compiler.mods[self.current_mod.id as usize],
+                        );
+
+                        return Err(());
+                    }
+                };
+
+                conds.push(cond_expr);
+            }
+
+            variant.conds = conds;
+            variant.args = abs_variant.args.iter().map(|sp_arg| sp_arg.arg).collect();
+        }
+
+        let mut glob_conds: Vec<ExprId> = Vec::new();
+        for cond in &abs_enum.glob_conds {
+            let cond = match self.register_expr(sym_id, cond, ScopeType::Nest) {
+                Ok(c) => c,
+                Err(sem_err) => {
+                    self.reporter.report_semantic(
+                        sem_err,
+                        &self.compiler.mods[self.current_mod.id as usize],
+                    );
+
+                    return Err(());
+                }
+            };
+
+            glob_conds.push(cond);
+        }
+
+        let enum_def = self.compiler.get_enum_mut(sym_id);
+
+        enum_def.variants.append(&mut variants);
+        enum_def.glob_conds = glob_conds;
+        enum_def.args = abs_enum.glob_args.iter().map(|sp_arg| sp_arg.arg).collect();
+
+        // let enum_def = self.compiler.get_enum(sym_id);
+        // for variant in &enum_def.variants {
+        //     let name = self.interner.search(variant.name_id.id as usize);
+        //     let ty_info = &self.compiler.types[variant.type_id.unwrap().id as usize];
+        //     dbg!(name, ty_info);
+        // }
+
+        Ok(())
+    }
+
+    fn resolve_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) -> Result<(), ()> {
+        // Should the variable check happen here?
+        let mut params: Vec<Param> = Vec::new();
+        let mut seen: Vec<(usize, InternedId)> = Vec::new();
+
+        for (i, spanned_ty_expr) in abs_alias.params.iter().enumerate() {
+            match &spanned_ty_expr.ty_expr {
+                TypeExpr::Var(interned_id) => {
+                    if let Some(original) = seen.iter().find(|other| *interned_id == other.1) {
+                        let alias_name = self.interner.search(abs_alias.name_id.id as usize);
+                        let dup_name = self.interner.search(interned_id.id as usize);
+
+                        let orig_span = abs_alias.params[original.0].span;
+                        let field_span = abs_alias.params[i].span;
+
+                        let msg = format!(
+                            "More than one variable has the identifier \"{dup_name}\" within alias `{alias_name}`"
+                        );
+
+                        self.reporter.report_spanned(
+                            &msg,
+                            None,
+                            &[orig_span, field_span],
+                            &self.compiler.mods[self.current_mod.id],
+                        );
+                    }
+
+                    seen.push((i, *interned_id));
+
+                    let param = Param::new(
+                        *interned_id,
+                        // spanned_ty_expr.span,
+                        AstId::new(i as u32),
+                        TypeId::new(script_compiler::TYPE_UNKNOWN_IDX),
+                    );
+
+                    params.push(param);
+                }
+                // The parser checks for these so this will probably become just interned ids
+                _ => unreachable!("Should maybe change this to ids if possible"),
+            }
+        }
+
+        let module = &mut self.compiler.mods[self.current_mod.id];
+        let scope_id = module.extract_scope_id(ScopeType::Neutral);
+        let table = &module.get_scope_mut(scope_id).table;
+
+        let sym_id = table.sym_ids[&ast_id];
+
+        let alias_def = self.compiler.get_alias_mut(sym_id);
+        alias_def.params = params;
 
         Ok(())
     }
@@ -1055,251 +1366,6 @@ impl TypeResolver<'_> {
 
         Err(SemanticError::UndefinedMember(member.span))
     }
-
-    fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
-        let type_id =
-            self.resolve_type_expr(&abs_typedef.spanned_ty_expr, ScopeType::Var, ast_id)?;
-
-        let module = &self.compiler.mods[self.current_mod.id];
-        let scope_id = module.extract_scope_id(ScopeType::Var);
-        let table = &module.get_scope(scope_id).table;
-        let sym_id = table.sym_ids[&ast_id];
-
-        let mut conds: Vec<ExprId> = Vec::new();
-        for spanned_expr in &abs_typedef.conds {
-            //FIX: Scope type is a little wrong here since it's a condition
-            let cond = match self.register_expr(sym_id, spanned_expr, ScopeType::Neutral) {
-                // There is no sym parrent..
-                Ok(c) => c,
-                Err(sem_err) => {
-                    self.reporter.report_semantic(
-                        sem_err,
-                        &self.compiler.mods[self.current_mod.id as usize],
-                    );
-
-                    return Err(());
-                }
-            };
-
-            conds.push(cond);
-        }
-
-        let type_def = self.compiler.get_typedef_mut(sym_id);
-        // Assinging from `Unknown` to it's actual type
-        type_def.type_id = type_id;
-        type_def.conds = conds;
-        type_def.args = abs_typedef.args.iter().map(|sp_arg| sp_arg.arg).collect();
-
-        Ok(())
-    }
-
-    fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
-        // Not sure of if this should stay a Field type or just be a TypeDef since their intent
-        // somewhat conflicts. For now, typedef is just consumed differently depending on if it's a
-        // field declared in var-> or not since var-> fields may be made possible to reference, but
-        // fields in structures can't. Will possibly just be unified in the future.
-        let mut fields: Vec<FieldRepre> = Vec::new();
-        let mut seen: Vec<(usize, InternedId)> = Vec::new();
-
-        let module = &self.compiler.mods[self.current_mod.id];
-        let scope_id = module.extract_scope_id(ScopeType::Nest);
-        let table = &module.get_scope(scope_id).table;
-
-        //TODO: global condition and argument setting.
-        //field arg and cond settings.
-        //same for enums.
-
-        let sym_id = table.sym_ids[&ast_id];
-
-        // Checking if there are duplicate name ids within the same struct along with resolution
-        for (i, field_typedef) in abs_struct.fields.iter().enumerate() {
-            let type_id =
-                self.resolve_type_expr(&field_typedef.spanned_ty_expr, ScopeType::Nest, ast_id)?;
-
-            if let Some(original) = seen.iter().find(|other| field_typedef.name_id == other.1) {
-                let struct_name = self.interner.search(abs_struct.name_id.id as usize);
-                let dup_name = self.interner.search(field_typedef.name_id.id as usize);
-
-                let orig_span = abs_struct.fields[original.0].name_span;
-                let field_span = abs_struct.fields[i].name_span;
-
-                let msg = format!(
-                    "More than one field has the identifier \"{dup_name}\" within struct `{struct_name}`"
-                );
-
-                self.reporter.report_spanned(
-                    &msg,
-                    None,
-                    &[orig_span, field_span],
-                    &self.compiler.mods[self.current_mod.id],
-                );
-            }
-
-            seen.push((i, field_typedef.name_id));
-
-            let field = FieldRepre::new(field_typedef.name_id, type_id, ast_id);
-
-            fields.push(field);
-        }
-
-        //TODO: Could make this less terminal but ok for now
-        for (i, field) in fields.iter_mut().enumerate() {
-            let abs_field = &abs_struct.fields[i];
-            let mut conds: Vec<ExprId> = Vec::new();
-
-            for cond in &abs_field.conds {
-                let cond_expr = match self.register_expr(sym_id, &cond, ScopeType::Nest) {
-                    Ok(c) => c,
-                    Err(sem_err) => {
-                        self.reporter.report_semantic(
-                            sem_err,
-                            &self.compiler.mods[self.current_mod.id as usize],
-                        );
-
-                        return Err(());
-                    }
-                };
-
-                conds.push(cond_expr);
-            }
-
-            field.conds = conds;
-            // TEST:
-            field.args = abs_field.args.iter().map(|sp_arg| sp_arg.arg).collect();
-        }
-
-        let struct_def = self.compiler.get_struct_mut(sym_id);
-        struct_def.fields.append(&mut fields);
-
-        struct_def.args = abs_struct
-            .glob_args
-            .iter()
-            .map(|sp_arg| sp_arg.arg)
-            .collect();
-
-        dbg!(abs_struct);
-        dbg!(&struct_def);
-
-        let struct_def = self.compiler.get_struct(sym_id);
-        for field in &struct_def.fields {
-            let name = self.interner.search(field.name_id.id as usize);
-            let ty_info = &self.compiler.types[field.type_id.id as usize];
-            dbg!(name, ty_info);
-        }
-
-        todo!("structn ot done");
-
-        Ok(())
-    }
-
-    fn resolve_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) -> Result<(), ()> {
-        let mut variants: Vec<VariantRepre> = Vec::new();
-
-        // (ast_id, name_id)
-        let mut seen: Vec<(usize, InternedId)> = Vec::new();
-        //Maybe just compute this once after along with struct fields
-
-        // Checking if there are duplicate name ids within the same enum
-        for (i, variant) in abs_enum.variants.iter().enumerate() {
-            if let Some(original) = seen.iter().find(|other| variant.name_id == other.1) {
-                let enum_name = self.interner.search(abs_enum.name_id.id as usize);
-                let dup_name = self.interner.search(variant.name_id.id as usize);
-
-                let orig_span = abs_enum.variants[original.0].name_span;
-                let variant_span = abs_enum.variants[i].name_span;
-
-                let msg = format!(
-                    "More than one variant has the identifier \"{dup_name}\" within enum `{enum_name}`"
-                );
-
-                self.reporter.report_spanned(
-                    &msg,
-                    None,
-                    &[orig_span, variant_span],
-                    &self.compiler.mods[self.current_mod.id],
-                );
-            }
-
-            seen.push((i, variant.name_id));
-
-            let variant_repre = if let Some(spanned_ty_expr) = &variant.ty_expr {
-                let type_id = self.resolve_type_expr(&spanned_ty_expr, ScopeType::Nest, ast_id)?;
-                VariantRepre::new(variant.name_id, Some(type_id), AstId::new(i as u32))
-            } else {
-                VariantRepre::new(variant.name_id, None, AstId::new(i as u32))
-            };
-
-            variants.push(variant_repre);
-        }
-
-        let module = &mut self.compiler.mods[self.current_mod.id];
-        let scope_id = module.extract_scope_id(ScopeType::Nest);
-        let table = &module.get_scope_mut(scope_id).table;
-
-        let sym_id = table.sym_ids[&ast_id];
-        let enum_def = self.compiler.get_enum_mut(sym_id);
-
-        enum_def.variants.append(&mut variants);
-
-        todo!("Unfinished enum");
-        Ok(())
-    }
-
-    fn resolve_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) -> Result<(), ()> {
-        // Should the variable check happen here?
-        let mut params: Vec<Param> = Vec::new();
-        let mut seen: Vec<(usize, InternedId)> = Vec::new();
-
-        for (i, spanned_ty_expr) in abs_alias.params.iter().enumerate() {
-            match &spanned_ty_expr.ty_expr {
-                TypeExpr::Var(interned_id) | TypeExpr::Escaped(interned_id) => {
-                    if let Some(original) = seen.iter().find(|other| *interned_id == other.1) {
-                        let alias_name = self.interner.search(abs_alias.name_id.id as usize);
-                        let dup_name = self.interner.search(interned_id.id as usize);
-
-                        let orig_span = abs_alias.params[original.0].span;
-                        let field_span = abs_alias.params[i].span;
-
-                        let msg = format!(
-                            "More than one variable has the identifier \"{dup_name}\" within alias `{alias_name}`"
-                        );
-
-                        self.reporter.report_spanned(
-                            &msg,
-                            None,
-                            &[orig_span, field_span],
-                            &self.compiler.mods[self.current_mod.id],
-                        );
-                    }
-
-                    seen.push((i, *interned_id));
-
-                    let param = Param::new(
-                        *interned_id,
-                        // spanned_ty_expr.span,
-                        AstId::new(i as u32),
-                        TypeId::new(script_compiler::TYPE_UNKNOWN_IDX),
-                    );
-
-                    params.push(param);
-                }
-                // The parser checks for these so this will probably become just interned ids
-                _ => unreachable!("Should maybe change this to ids if possible"),
-            }
-        }
-
-        let module = &mut self.compiler.mods[self.current_mod.id];
-        let scope_id = module.extract_scope_id(ScopeType::Neutral);
-        let table = &module.get_scope_mut(scope_id).table;
-
-        let sym_id = table.sym_ids[&ast_id];
-
-        let alias_def = self.compiler.get_alias_mut(sym_id);
-        alias_def.params = params;
-
-        Ok(())
-    }
-
     fn resolve_type_expr(
         &mut self,
         spanned_ty_expr: &SpannedTypeExpr,
@@ -1341,28 +1407,6 @@ impl TypeResolver<'_> {
                     &[spanned_ty_expr.span],
                     module,
                 );
-
-                return Err(());
-            }
-            TypeExpr::Escaped(name_id) => {
-                let module = &self.compiler.mods[self.current_mod.id];
-
-                if let Some(sym_id) = module.get_sym_id(*name_id, scope_type) {
-                    let type_id = match self.compiler.symbols[&sym_id].kind {
-                        SymbolKind::Type(type_id) => type_id,
-                        SymbolKind::Unknown => unreachable!("Not possible yet. Yet."),
-                        SymbolKind::Val(val_id) => unreachable!("Values are not resolved yet"),
-                    };
-
-                    return Ok(type_id);
-                }
-
-                let err_name = self.interner.search(name_id.id as usize);
-
-                let err_msg = format!("\"{err_name}\" is not defined as a type");
-
-                self.reporter
-                    .report_spanned(&err_msg, None, &[spanned_ty_expr.span], &module);
 
                 return Err(());
             }
@@ -1586,7 +1630,7 @@ impl TypeResolver<'_> {
                 };
 
                 let name_id = match &spanned_ty_exprs[1].ty_expr {
-                    TypeExpr::Var(name_id) | TypeExpr::Escaped(name_id) => name_id,
+                    TypeExpr::Var(name_id) => name_id,
                     _ => unreachable!("Parser does not pick this up"),
                 };
 
