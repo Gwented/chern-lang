@@ -109,6 +109,27 @@ pub enum SymbolKind {
 }
 
 #[derive(Debug)]
+<<<<<<< Updated upstream
+=======
+pub struct Param {
+    pub name_id: InternedId,
+    //FIX: More like "FieldId"
+    pub ast_id: AstId,
+    pub type_id: TypeId,
+}
+
+impl Param {
+    pub fn new(name_id: InternedId, ast_id: AstId, type_id: TypeId) -> Param {
+        Param {
+            name_id,
+            type_id,
+            ast_id,
+        }
+    }
+}
+
+#[derive(Debug)]
+>>>>>>> Stashed changes
 pub struct ResolvedExpr {
     // NOTE: Considering making a typesafe wrapper to unknown check explicitly
     pub type_id: TypeId,

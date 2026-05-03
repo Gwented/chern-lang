@@ -76,6 +76,17 @@ impl AstId {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct FieldId {
+    pub id: u32,
+}
+
+impl FieldId {
+    pub fn new(id: u32) -> FieldId {
+        FieldId { id }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct ExprId {
     pub id: u32,
 }
