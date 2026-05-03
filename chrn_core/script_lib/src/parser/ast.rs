@@ -324,9 +324,9 @@ impl Call {
 }
 
 #[derive(Debug)]
-pub(crate) struct SpannedTypeExpr {
-    pub(crate) ty_expr: TypeExpr,
-    pub(crate) span: Span,
+pub struct SpannedTypeExpr {
+    pub ty_expr: TypeExpr,
+    pub span: Span,
 }
 
 impl SpannedTypeExpr {
@@ -511,11 +511,15 @@ impl AbstractFunc {
 pub struct AbstractFuncDecl {
     pub name_id: InternedId,
     pub name_span: Span,
-    pub params: Vec<Param>,
+    pub params: Vec<AbstractParam>,
 }
 
 impl AbstractFuncDecl {
-    pub fn new(name_id: InternedId, name_span: Span, params: Vec<Param>) -> AbstractFuncDecl {
+    pub fn new(
+        name_id: InternedId,
+        name_span: Span,
+        params: Vec<AbstractParam>,
+    ) -> AbstractFuncDecl {
         AbstractFuncDecl {
             name_id,
             name_span,
@@ -525,15 +529,15 @@ impl AbstractFuncDecl {
 }
 
 #[derive(Debug)]
-pub struct Param {
+pub struct AbstractParam {
     pub name_id: InternedId,
     pub name_span: Span,
     pub ty_expr: SpannedTypeExpr,
 }
 
-impl Param {
-    pub fn new(name_id: InternedId, name_span: Span, ty_expr: SpannedTypeExpr) -> Param {
-        Param {
+impl AbstractParam {
+    pub fn new(name_id: InternedId, name_span: Span, ty_expr: SpannedTypeExpr) -> AbstractParam {
+        AbstractParam {
             name_id,
             name_span,
             ty_expr,
@@ -559,7 +563,7 @@ pub struct AbstractAlias {
     pub name_id: InternedId,
     pub name_span: Span,
     // Variables only
-    // May change to param
+    // May change to Vec<SpannedInternedId>
     pub params: Vec<SpannedTypeExpr>,
     pub conds: Vec<SpannedExpr>,
     pub args: Vec<SpannedInnerArgs>,

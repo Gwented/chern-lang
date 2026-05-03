@@ -22,14 +22,14 @@ use crate::{
         AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Expr, Item,
         SpannedExpr, UnaryOp,
     },
-    script_compiler::{ScriptCompiler, VALUE_FALSE_POS, VALUE_TRUE_POS},
+    script_compiler::ScriptCompiler,
     semantic::{
         constraint_resolver::value_context::{Job, JobStatus, ValueContext},
         constraints::ArgConstraint,
         error::{MathError, SemanticError},
         evaluator,
         representation::{
-            ExprHir, FuncArgsRepre, FuncKind, FuncRepre, PossibleMember, ResolvedExpr, Symbol,
+            ExprHir, FuncArgsRepre, FuncDef, FuncKind, PossibleMember, ResolvedExpr, Symbol,
             SymbolKind, Type,
         },
         scopes::ScopeType,
@@ -537,7 +537,7 @@ impl<'a> ConstraintResolver<'a> {
                     }
                 };
 
-                let func = FuncRepre::new(spanned_expr.span.clone(), kind, constraints, func_args);
+                let func = FuncDef::new(spanned_expr.span.clone(), kind, constraints, func_args);
 
                 // Needs the type to check all constraints. Must put this elsewhere
                 match self.check_func_constraints(&func) {
@@ -1181,7 +1181,7 @@ impl<'a> ConstraintResolver<'a> {
 
     /// Returns a success if all constraints within the given function align with the function's
     /// signature.
-    fn check_func_constraints(&self, func: &FuncRepre) -> Result<(), SemanticError> {
+    fn check_func_constraints(&self, func: &FuncDef) -> Result<(), SemanticError> {
         for constraint in func.constraints.iter().copied() {
             match constraint {
                 ArgConstraint::Numeric => {

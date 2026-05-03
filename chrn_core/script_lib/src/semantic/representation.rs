@@ -56,10 +56,9 @@ pub enum Type {
     BuiltinType(BuiltinType),
     Struct(StructDef),
     Enum(EnumDef),
-    Func(FuncRepre),
+    Func(FuncDef),
     Alias(AliasDef),
     TypeDef(TypeDef),
-    // Var(VarDef),
     Unknown,
 }
 
@@ -147,14 +146,14 @@ impl ResolvedExpr {
         type_id: TypeId,
         expr_hir: ExprHir,
         val_id: ValueId,
-        expr_span: Span,
+        span: Span,
         inputs: Vec<ExprId>,
     ) -> ResolvedExpr {
         ResolvedExpr {
             type_id,
             expr_hir,
             inputs,
-            span: expr_span,
+            span,
             user: None,
             val_id,
         }
@@ -305,21 +304,21 @@ impl TypeDef {
 }
 
 #[derive(Debug)]
-pub struct FuncRepre {
+pub struct FuncDef {
     pub call_span: Span,
     pub kind: FuncKind,
     pub constraints: Vec<ArgConstraint>,
     pub args: Vec<FuncArgsRepre>,
 }
 
-impl FuncRepre {
+impl FuncDef {
     pub fn new(
         call_span: Span,
         kind: FuncKind,
         constraints: Vec<ArgConstraint>,
         args: Vec<FuncArgsRepre>,
-    ) -> FuncRepre {
-        FuncRepre {
+    ) -> FuncDef {
+        FuncDef {
             kind,
             call_span,
             constraints,
@@ -447,7 +446,7 @@ impl FieldRepre {
 #[derive(Debug)]
 pub struct AliasDef {
     pub sym_id: SymbolId,
-    pub params: Vec<TypeId>,
+    pub params: Vec<Param>,
     pub conds: Vec<Cond>,
     pub args: Vec<InnerArgs>,
 }
@@ -455,7 +454,7 @@ pub struct AliasDef {
 impl AliasDef {
     pub fn new(
         sym_id: SymbolId,
-        params: Vec<TypeId>,
+        params: Vec<Param>,
         conds: Vec<Cond>,
         args: Vec<InnerArgs>,
     ) -> AliasDef {

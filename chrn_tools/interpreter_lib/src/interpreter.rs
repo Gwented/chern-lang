@@ -3,12 +3,13 @@ use std::path::Path;
 use chrn_utils::{id_types::ModuleId, intern::Intern};
 use common::{
     chrn_settings::ChrnSettings,
-    core_error::{CoreError, ScriptError},
+    core_error::{ConfigLoadError, CoreError, ScriptError},
     reporter::diagnostic::Reporter,
 };
 use script_lib::{
     modules::{self},
     parser::ast::AstInfo,
+    script_compiler::ScriptCompiler,
     semantic::{
         constraint_resolver::{ConstraintResolver, value_context::ValueContext},
         name_resolver::NamespaceResolver,
@@ -36,16 +37,14 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
             script_lib::lexer::Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
                 .tokenize(&mut interner);
 
+        // Maybe it should just return diagnostics normally and let the caller return whatever
+        // script error it wants
         let ast_info = match script_lib::parser::parse(settings, &module, &toks, &mut interner) {
             Ok(info) => info,
-            Err((unfinished_ast, script_err)) => match script_err {
-                ScriptError::Parser(mut diags) | ScriptError::Semantic(mut diags) => {
-                    reporter.diags.append(&mut diags);
-                    unfinished_ast
-                }
-                // Maybe this shouldn't be so terminal?
-                e => return Err(e.into()),
-            },
+            Err((unfinished_ast, mut diags)) => {
+                reporter.diags.append(&mut diags);
+                unfinished_ast
+            }
         };
 
         NamespaceResolver::new(
@@ -107,12 +106,5 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
         return Err(ScriptError::Semantic(reporter.diags).into());
     }
 
-    // let main_mod = &program.mods[0];
-
-    // Src bytes does not contain the rest of the file so the serial lexer must perform io. Again.
-
-    // Maybe bind is now gotten from module resolution
-
-    // IR will be very different
     Ok(())
 }

@@ -20,6 +20,7 @@ use chrn_utils::keywords::Keyword;
 use common::chrn_settings::ChrnSettings;
 use common::core_error::ScriptError;
 use common::fmter::Formatted;
+use common::reporter::diagnostic::Diagnostic;
 use common::span::Span;
 
 // May be lower
@@ -32,7 +33,7 @@ pub fn parse(
     module: &Module,
     tokens: &Vec<SpannedToken>,
     interner: &Intern,
-) -> Result<AstInfo, (AstInfo, ScriptError)> {
+) -> Result<AstInfo, (AstInfo, Vec<Diagnostic>)> {
     let mut ast_info = AstInfo::new();
 
     let mut state = ParserState::new();
@@ -357,9 +358,9 @@ pub fn parse(
         }
     }
 
-    // Returning partial ast ifo and the diagnostics
+    // Returning broken ast and the diagnostics
     if !ctx.err_vec.is_empty() {
-        return Err((ast_info, ScriptError::Parser(ctx.err_vec)));
+        return Err((ast_info, ctx.err_vec));
     }
 
     Ok(ast_info)
@@ -1261,6 +1262,7 @@ fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<SpannedInnerArgs, T
     Ok(SpannedInnerArgs::new(arg, name_span))
 }
 
+// Alias is this only one that uses this so_+@$_$@
 fn parse_func_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTypeExpr>, Token> {
     let mut args: Vec<SpannedTypeExpr> = Vec::new();
 
@@ -1273,17 +1275,10 @@ fn parse_func_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
                 SpannedTypeExpr::new(ty_expr, span)
             }
             Token::EOF => return Err(Token::Poison),
-            t => {
+            _ => {
                 ctx.advance_tok();
 
-                let msg = match t {
-                    Token::Illegal(id) => format!(
-                        "Cannot have \"{}\" within alias definition",
-                        interner.search(id as usize)
-                    ),
-                    _ => format!("Cannot have '{}' within alias definition", t.kind()),
-                };
-
+                let msg = "Only identifiers can be within alias parameters";
                 ctx.report_verbose(&msg, Branch::Cond, interner);
                 return Err(Token::Poison);
             }
@@ -1299,7 +1294,7 @@ fn parse_func_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
             TokenKind::Comma,
             "Expected a ',' to separate arguments or ')' to close, found ",
             "",
-            Branch::Cond,
+            Branch::FuncArgs,
             interner,
         )?;
     }

@@ -22,6 +22,8 @@ pub enum Commands {
     /// Formats `.chrn` file prettily
     Fmt(FmtCmd),
     Gen(GenCmd),
+    #[command(name = "details", alias = "d")]
+    Details(DetailsCmd),
 }
 
 #[derive(Args)]
@@ -46,6 +48,12 @@ pub struct FmtCmd {
     pub(crate) path: PathBuf,
     #[arg(short = 'm', long = "minify", default_value_t = false)]
     pub(crate) minify: bool,
+}
+
+#[derive(Args)]
+pub struct DetailsCmd {
+    /// Path of `.chrn` file to display details of
+    pub(crate) path: PathBuf,
 }
 
 //     #[arg(short = 'l', long = "log", default_value_t = false)]

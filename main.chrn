@@ -1,25 +1,20 @@
 // Need to re-route errors so they don't immediately form basic arrows to one so help messages
 // aren't just requirements because the err msgs themselves are misleading or bad
 
-// I am messed up"
-// "I am not even supposed to be included"
-
-// import "../chrn_tests/defs.chrn"
-// import "../chrn_tests/CHERNGENTS.chrn" as seller
-// import "../chrn_tests/defs.chrn"
 // Maybe just default to utf-8 since lexer can't know when to and not to care about pathing
 // without suspicious measures
 // Unary cannot be applied to defs.READ unless wrapped with parens. Fine for now.
-// import "../../main.chrn" as tok
-
 // let x = -((defs.READ * "Ratatoudias"))
 
 @def
+    alias default(x, y) = []
+
     import "../../defs.chrn" as identifer
     // Commenting
     export let ζζさる = 3
     var->
         x: i32
+    nest->
 @end
 sbind "hi"
 
