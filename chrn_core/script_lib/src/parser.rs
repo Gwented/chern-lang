@@ -394,7 +394,7 @@ fn parse_alias_stmt(
         interner,
     )?;
 
-    let params = parse_func_decl(ctx, interner)?;
+    let params = parse_alias_decl(ctx, interner)?;
 
     ctx.expect_verbose(
         TokenKind::Assign,
@@ -779,7 +779,7 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
 
             ctx.advance_tok();
 
-            let expr = parse_unary(ctx, interner)?;
+            let expr = parse_expr(ctx, 0, interner)?;
 
             let span = Span::new(name_span.start, ctx.peek_behind(1).span.end);
 
@@ -1263,7 +1263,7 @@ fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<SpannedInnerArgs, T
 }
 
 // Alias is this only one that uses this so_+@$_$@
-fn parse_func_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTypeExpr>, Token> {
+fn parse_alias_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTypeExpr>, Token> {
     let mut args: Vec<SpannedTypeExpr> = Vec::new();
 
     while ctx.peek_kind() != TokenKind::CParen {

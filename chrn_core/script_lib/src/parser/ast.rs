@@ -375,22 +375,22 @@ pub struct AbstractTypeDef {
     pub name_id: InternedId,
     pub name_span: Span,
     pub spanned_ty_expr: SpannedTypeExpr,
-    pub args: Vec<SpannedInnerArgs>,
     pub conds: Vec<SpannedExpr>,
+    pub args: Vec<SpannedInnerArgs>,
 }
 
 impl AbstractTypeDef {
     pub fn new(
         name_id: InternedId,
         name_span: Span,
-        ty_expr: SpannedTypeExpr,
+        spanned_ty_expr: SpannedTypeExpr,
         args: Vec<SpannedInnerArgs>,
         conds: Vec<SpannedExpr>,
     ) -> AbstractTypeDef {
         AbstractTypeDef {
             name_id,
             name_span,
-            spanned_ty_expr: ty_expr,
+            spanned_ty_expr,
             args,
             conds,
         }

@@ -83,11 +83,12 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
         return Err(ScriptError::Semantic(reporter.diags).into());
     }
 
+    todo!("Ignoring constraints for now");
+
     // For ensuring a stateful piece of context is retained for resolving all module variables.
     // This is not a value resolver
     let mut val_ctx = ValueContext::new();
 
-    todo!("Not at constraints");
     for i in 0..script_compiler.mods.len() {
         let mod_id = ModuleId::new(i);
         ConstraintResolver::new(
@@ -105,6 +106,8 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     if !reporter.diags.is_empty() {
         return Err(ScriptError::Semantic(reporter.diags).into());
     }
+
+    todo!("Out of constraitns");
 
     Ok(())
 }

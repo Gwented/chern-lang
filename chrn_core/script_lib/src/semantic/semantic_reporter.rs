@@ -183,6 +183,7 @@ impl<'a> SemanticReporter<'a> {
         self.err_vec.push(diag);
     }
 
+    //TODO: Needs many changes
     fn try_help(&self, err_name: &str) -> Option<String> {
         let found_kw = algo::fuzzy_match(err_name.as_bytes(), algo::FuzzyMatch::KW)?;
 

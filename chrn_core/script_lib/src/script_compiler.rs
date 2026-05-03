@@ -15,8 +15,13 @@ use crate::{
     },
 };
 
+//TODO: Intrinsic scope that holds value, type, etc. tables that is just a scope that is innate by
+//default, which can be explicitly referenced. Like, intrinsic.str is just the default str
+//identification, so no escape needed anymore for that
 pub struct ScriptCompiler {
     /// Optional bind statement that is obtained from the main module
+    // Maybe the module should keep it's bind info rather than give it to the compiler so that the
+    // information isn't lossy and contextual
     pub bind: Option<Bind>,
     /// Module name to module id mapping to index module array. import `as` aliases are also stored here
     pub mod_map: HashMap<InternedId, ModuleId>,

@@ -11,11 +11,14 @@ use common::chrn_settings::ChrnSettings;
 use common::fmter::{Formattable, Formatted};
 use common::{reporter::diagnostic::Diagnostic, span::Span};
 
+use crate::conditions::Cond;
 use crate::parser::ast::{AbstractVar, Expr, SpannedExpr};
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::error::{MathError, SemanticError};
 use crate::semantic::evaluator;
-use crate::semantic::representation::{ExprHir, Param, PossibleMember, ResolvedExpr, SymbolKind};
+use crate::semantic::representation::{
+    ExprHir, Param, PossibleMember, ResolvedExpr, SymbolKind, TypeDef,
+};
 use crate::semantic::scopes::ScopeType;
 use crate::semantic::type_resolver::type_context::{PendingExpr, PendingSymbol, TypeContext};
 
@@ -31,6 +34,7 @@ use crate::{
 };
 
 /// Resolves types and builds the rest of any structs or enums
+/// Also registers all expressions and performs constant evaluation where possible
 pub struct TypeResolver<'a> {
     ast_info: &'a AstInfo,
     interner: &'a Intern,
@@ -215,12 +219,12 @@ impl TypeResolver<'_> {
         // In the example:
         //
         // ```
-        // let y = x
+        // let y = x + 2
         // let x = 2
         // ```
         //
         // root_expr = x
-        // So, it needs to go x -> x + 2 -> y
+        // So, it needs to go x -> x + 2 -> None
         //
 
         // Tracking how many were resolved so it knows whether to remove or not
@@ -251,10 +255,6 @@ impl TypeResolver<'_> {
             }
 
             if let Some(user) = root_expr.user {
-                // dbg!(user);
-                // panic!("Stop");
-                // If this is not done then it would stay 0 even though this by default would mean
-                // that there was 100% only 1 symbol expression found
                 match self.traverse_expr(user) {
                     Ok(true) => resolved_count += 1,
                     // WARN: Works suspiciously well
@@ -277,8 +277,8 @@ impl TypeResolver<'_> {
             }
         }
 
-        // If all pending expressions were pushed into the queue and the entire queue was resolved then can
-        // remove
+        // If all pending expressions were pushed into the queue and the entire queue was resolved then
+        // can remove
         if queue.len() == pending_sym.pending_exprs.len() && resolved_count == queue.len() {
             can_remove = true;
         }
@@ -317,7 +317,7 @@ impl TypeResolver<'_> {
             }
             //TODO:
             ExprHir::Default(sym_id, expr_id) => {
-                todo!()
+                todo!("Default not finished")
             }
             ExprHir::Unary { op, operand } => {
                 // Getting the operand that could be resolved (Might be guarnteed but um..e)
@@ -496,6 +496,7 @@ impl TypeResolver<'_> {
             ExprHir::Default(sym_id, expr_id) => todo!(),
             ExprHir::Val(val_id) => {
                 let type_id = self.compiler.values[val_id.id as usize].type_id;
+                todo!("Stop typing");
                 Ok(())
             }
             ExprHir::Var(sym_id) => match &self.compiler.symbols[&sym_id].kind {
@@ -557,8 +558,18 @@ impl TypeResolver<'_> {
 
                     let resolved_expr = match symbol.kind {
                         SymbolKind::Type(type_id) => {
+                            // We need to get the type, then check the type's fields against the
+                            // field we have
                             let ty_info = &self.compiler.types[type_id.id as usize];
-                            todo!("type symbol")
+                            match &ty_info.ty {
+                                Type::BuiltinType(builtin_type) => todo!("type symbol"),
+                                Type::Struct(struct_def) => todo!(),
+                                Type::Enum(enum_def) => todo!(),
+                                Type::Func(func_def) => todo!(),
+                                Type::Alias(alias_def) => todo!(),
+                                Type::TypeDef(type_def) => todo!(),
+                                Type::Unknown => todo!(),
+                            }
                         }
                         SymbolKind::Val(val_id) => {
                             let val_info = &self.compiler.values[val_id.id as usize];
@@ -797,10 +808,33 @@ impl TypeResolver<'_> {
                 Ok(expr_id)
             }
             Expr::Default(name_id, spanned_expr) => {
-                // DO NOT QUESTION THIS
-                if self.interner.search(name_id.id as usize) == "_" {}
+                let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+                let val_id = ValueId::new(self.compiler.values.len() as u32);
 
-                todo!();
+                let default_expr = self.register_expr(sym_parent, &spanned_expr, scope_type)?;
+
+                //TODO: Need symbol of name id
+                //Need it's inputs to be the symbol and spanned expression
+
+                dbg!(&self.compiler.exprs[default_expr.id as usize]);
+
+                // DO NOT QUESTION THIS
+                let expr_hir = ExprHir::Default(todo!(), default_expr);
+                // inputs = symid default expr
+
+                let resolved_expr = ResolvedExpr::new(
+                    todo!(),
+                    expr_hir,
+                    val_id,
+                    spanned_expr.span,
+                    vec![todo!(), default_expr],
+                );
+
+                self.compiler.exprs[default_expr.id as usize].user = Some(expr_id);
+
+                self.compiler.exprs.push(resolved_expr);
+
+                todo!("Default not checked yet");
             }
             Expr::Str(name_id) => {
                 let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
@@ -1007,10 +1041,8 @@ impl TypeResolver<'_> {
                 // return Ok(PossibleMember::Type(type_id));
             } else {
                 if name_id.id == intern::INTERNED_SELF as u32 {
-                    panic!();
+                    panic!("self");
                 }
-                // What if this was in order of priority
-                // No
                 // Dot reference sounds better
                 let msg = format!(
                     "Could not find the symbol `{}` as a module, type, or value",
@@ -1021,7 +1053,6 @@ impl TypeResolver<'_> {
             }
         }
 
-        dbg!(member);
         Err(SemanticError::UndefinedMember(member.span))
     }
 
@@ -1029,31 +1060,65 @@ impl TypeResolver<'_> {
         let type_id =
             self.resolve_type_expr(&abs_typedef.spanned_ty_expr, ScopeType::Var, ast_id)?;
 
-        let module = &mut self.compiler.mods[self.current_mod.id];
+        let module = &self.compiler.mods[self.current_mod.id];
         let scope_id = module.extract_scope_id(ScopeType::Var);
-        let table = &mut module.get_scope_mut(scope_id).table;
-
+        let table = &module.get_scope(scope_id).table;
         let sym_id = table.sym_ids[&ast_id];
 
-        // Assinging from `Unknown` to it's actual type
+        let mut conds: Vec<ExprId> = Vec::new();
+        for spanned_expr in &abs_typedef.conds {
+            //FIX: Scope type is a little wrong here since it's a condition
+            let cond = match self.register_expr(sym_id, spanned_expr, ScopeType::Neutral) {
+                // There is no sym parrent..
+                Ok(c) => c,
+                Err(sem_err) => {
+                    self.reporter.report_semantic(
+                        sem_err,
+                        &self.compiler.mods[self.current_mod.id as usize],
+                    );
+
+                    return Err(());
+                }
+            };
+
+            conds.push(cond);
+        }
+
         let type_def = self.compiler.get_typedef_mut(sym_id);
+        // Assinging from `Unknown` to it's actual type
         type_def.type_id = type_id;
+        type_def.conds = conds;
+        type_def.args = abs_typedef.args.iter().map(|sp_arg| sp_arg.arg).collect();
 
         Ok(())
     }
 
     fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
+        // Not sure of if this should stay a Field type or just be a TypeDef since their intent
+        // somewhat conflicts. For now, typedef is just consumed differently depending on if it's a
+        // field declared in var-> or not since var-> fields may be made possible to reference, but
+        // fields in structures can't. Will possibly just be unified in the future.
         let mut fields: Vec<FieldRepre> = Vec::new();
         let mut seen: Vec<(usize, InternedId)> = Vec::new();
 
-        // Checking if there are duplicate name ids within the same struct along with resolution
-        for (i, type_def) in abs_struct.fields.iter().enumerate() {
-            let type_id =
-                self.resolve_type_expr(&type_def.spanned_ty_expr, ScopeType::Nest, ast_id)?;
+        let module = &self.compiler.mods[self.current_mod.id];
+        let scope_id = module.extract_scope_id(ScopeType::Nest);
+        let table = &module.get_scope(scope_id).table;
 
-            if let Some(original) = seen.iter().find(|other| type_def.name_id == other.1) {
+        //TODO: global condition and argument setting.
+        //field arg and cond settings.
+        //same for enums.
+
+        let sym_id = table.sym_ids[&ast_id];
+
+        // Checking if there are duplicate name ids within the same struct along with resolution
+        for (i, field_typedef) in abs_struct.fields.iter().enumerate() {
+            let type_id =
+                self.resolve_type_expr(&field_typedef.spanned_ty_expr, ScopeType::Nest, ast_id)?;
+
+            if let Some(original) = seen.iter().find(|other| field_typedef.name_id == other.1) {
                 let struct_name = self.interner.search(abs_struct.name_id.id as usize);
-                let dup_name = self.interner.search(type_def.name_id.id as usize);
+                let dup_name = self.interner.search(field_typedef.name_id.id as usize);
 
                 let orig_span = abs_struct.fields[original.0].name_span;
                 let field_span = abs_struct.fields[i].name_span;
@@ -1070,21 +1135,59 @@ impl TypeResolver<'_> {
                 );
             }
 
-            seen.push((i, type_def.name_id));
+            seen.push((i, field_typedef.name_id));
 
-            let field_repre = FieldRepre::new(type_def.name_id, type_id, AstId::new(i as u32));
+            let field = FieldRepre::new(field_typedef.name_id, type_id, ast_id);
 
-            fields.push(field_repre);
+            fields.push(field);
         }
 
-        let module = &mut self.compiler.mods[self.current_mod.id];
-        let scope_id = module.extract_scope_id(ScopeType::Nest);
-        let table = &module.get_scope_mut(scope_id).table;
+        //TODO: Could make this less terminal but ok for now
+        for (i, field) in fields.iter_mut().enumerate() {
+            let abs_field = &abs_struct.fields[i];
+            let mut conds: Vec<ExprId> = Vec::new();
 
-        let sym_id = table.sym_ids[&ast_id];
+            for cond in &abs_field.conds {
+                let cond_expr = match self.register_expr(sym_id, &cond, ScopeType::Nest) {
+                    Ok(c) => c,
+                    Err(sem_err) => {
+                        self.reporter.report_semantic(
+                            sem_err,
+                            &self.compiler.mods[self.current_mod.id as usize],
+                        );
+
+                        return Err(());
+                    }
+                };
+
+                conds.push(cond_expr);
+            }
+
+            field.conds = conds;
+            // TEST:
+            field.args = abs_field.args.iter().map(|sp_arg| sp_arg.arg).collect();
+        }
 
         let struct_def = self.compiler.get_struct_mut(sym_id);
         struct_def.fields.append(&mut fields);
+
+        struct_def.args = abs_struct
+            .glob_args
+            .iter()
+            .map(|sp_arg| sp_arg.arg)
+            .collect();
+
+        dbg!(abs_struct);
+        dbg!(&struct_def);
+
+        let struct_def = self.compiler.get_struct(sym_id);
+        for field in &struct_def.fields {
+            let name = self.interner.search(field.name_id.id as usize);
+            let ty_info = &self.compiler.types[field.type_id.id as usize];
+            dbg!(name, ty_info);
+        }
+
+        todo!("structn ot done");
 
         Ok(())
     }
@@ -1138,6 +1241,7 @@ impl TypeResolver<'_> {
 
         enum_def.variants.append(&mut variants);
 
+        todo!("Unfinished enum");
         Ok(())
     }
 

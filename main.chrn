@@ -3,19 +3,37 @@
 
 // Maybe just default to utf-8 since lexer can't know when to and not to care about pathing
 // without suspicious measures
+
 // Unary cannot be applied to defs.READ unless wrapped with parens. Fine for now.
-// let x = -((defs.READ * "Ratatoudias"))
+// let x = -((defs.READ * "fllorp"))
+
+@def
+    // import "../../defs.chrn" as something
+
+    alias something() = // [IsOdd]
+
+    var->
+    // Should probably filter out duplicate arguments if present
+        x: str [] #warn
+    /*nest->
+        export struct Person {
+            name: str [] #warn
+        }*/
+@end
 
 @def
     alias default(x, y) = []
+    let x = 3
 
     import "../../defs.chrn" as identifer
     // Commenting
     export let ζζさる = 3
     var->
         x: i32
+        y: str [default()]
     nest->
 @end
+
 sbind "hi"
 
     var->

@@ -3,13 +3,13 @@ use common::fmter::{Formattable, Formatted};
 
 use crate::semantic::representation::FuncKind;
 
-// Spanned cond can't exist because conds are expressions
 #[derive(Debug, Clone)]
 pub enum Cond {
     //FIX:
     Func(SymbolId, FuncKind),
     IsEmpty,
     IsWhitespace,
+    // Predicate(ExprId),
     Not(Box<Cond>),
 }
 
@@ -30,10 +30,10 @@ impl Cond {
     /// Only returns a condition if it is solely a keyword, excluding any functional
     /// conditions.
     // This is really really really really smelly
-    pub fn try_from_id(id: u32) -> Option<Cond> {
+    pub fn try_from_interned_id(id: u32) -> Option<Cond> {
         match id {
-            id if id == intern::INTERNED_IS_EMPTY => Some(Cond::IsEmpty),
-            id if id == intern::INTERNED_IS_WHITESPACE => Some(Cond::IsWhitespace),
+            intern::INTERNED_IS_EMPTY => Some(Cond::IsEmpty),
+            intern::INTERNED_IS_WHITESPACE => Some(Cond::IsWhitespace),
             _ => None,
         }
     }

@@ -1,5 +1,7 @@
 pub mod value_context;
 
+use std::collections::VecDeque;
+
 use chrn_utils::{
     builtins::BuiltinType,
     id_types::{AstId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
@@ -19,8 +21,8 @@ use crate::{
     conditions::Cond,
     modules::Module,
     parser::ast::{
-        AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Expr, Item,
-        SpannedExpr, UnaryOp,
+        AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Expr,
+        Item, SpannedExpr, UnaryOp,
     },
     script_compiler::ScriptCompiler,
     semantic::{
@@ -68,6 +70,8 @@ impl<'a> ConstraintResolver<'a> {
     }
 
     pub fn resolve(&mut self) -> Result<(), Vec<Diagnostic>> {
+        // The current module and current ast align but that's a bit too arbitrary so will likely
+        // stoer that information more explicitly
         for (id, item) in self.ast_info[self.current_mod.id].items.iter().enumerate() {
             let ast_id = AstId::new(id as u32);
 
@@ -81,7 +85,9 @@ impl<'a> ConstraintResolver<'a> {
                 Item::Enum(abs_enum) => {
                     _ = self.resolve_enum(abs_enum, ast_id);
                 }
-                Item::Alias(abs_alias) => todo!(),
+                Item::Alias(abs_alias) => {
+                    _ = self.resolve_alias(abs_alias, ast_id);
+                }
                 Item::Var(abs_var) => {
                     _ = self.resolve_var(abs_var, ast_id);
                 }
@@ -91,19 +97,18 @@ impl<'a> ConstraintResolver<'a> {
         //NOTE: Subject to change
 
         // Starts jobs upon resolving everything from all modules
-        // if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 1].mod_id {
-        //     match self.resolve_leftover_jobs() {
-        //         Ok(_) => (),
-        //         Err(_) => {
-        //             let mut jobs: VecDeque<Job> = VecDeque::new();
-        //             jobs.append(&mut self.val_ctx.jobs);
-        //             for job in jobs {
-        //                 self.report_job(job);
-        //             }
-        //         }
-        //     };
-        // }
-        // dbg!(&self.compiler.values);
+        if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 1].mod_id {
+            match self.resolve_leftover_jobs() {
+                Ok(_) => (),
+                Err(_) => {
+                    let mut jobs: VecDeque<Job> = VecDeque::new();
+                    jobs.append(&mut self.val_ctx.jobs);
+                    for job in jobs {
+                        self.report_job(job);
+                    }
+                }
+            };
+        }
 
         if !self.reporter.err_vec.is_empty() {
             let mut diags = Vec::new();
@@ -114,81 +119,81 @@ impl<'a> ConstraintResolver<'a> {
 
         Ok(())
     }
-    //
-    // fn report_job(&mut self, job: Job) {
-    //     let symbol = &self.compiler.symbols[&job.sym_id];
-    //     match &symbol.sym_kind {
-    //         SymbolKind::Val(val_id) => {
-    //             let val_info = &self.compiler.values[val_id.id as usize];
-    //             let msg = format!("Could not evaluate variable");
-    //             self.reporter.report_spanned(
-    //                 &msg,
-    //                 None,
-    //                 &[job.span],
-    //                 &self.compiler.mods[self.current_mod.id],
-    //             );
-    //         }
-    //         SymbolKind::Type(type_id) => todo!(),
-    //         SymbolKind::Unknown => todo!(),
-    //     }
-    // }
-    //
-    // fn resolve_leftover_jobs(&mut self) -> Result<(), ()> {
-    //     // Tracking if a full cycle was reached given the amount of jobs which should be
-    //     // deterministic (Assuming it's right)
-    //     let mut full_cycle = self.val_ctx.jobs.len();
-    //     let mut cycle = 0;
-    //
-    //     while let Some(job) = self.val_ctx.jobs.pop_front() {
-    //         self.current_mod = job.mod_id;
-    //         let val_res = match &self.ast_info[job.mod_id.id].items[job.ast_id.id as usize] {
-    //             Item::VarDecl(abs_var) => {
-    //                 match self.resolve_expr(&abs_var.spanned_expr, job.scope_type) {
-    //                     Ok(res) => res,
-    //                     Err(sem_err) => {
-    //                         self.reporter
-    //                             .report_semantic(sem_err, &self.compiler.mods[job.mod_id.id]);
-    //
-    //                         return Err(());
-    //                     }
-    //                 }
-    //             }
-    //             // Item::Var(abs_typedef) => resolve_typedef(abs_typedef, job.ast_id),
-    //             // Item::Struct(abs_struct) => self.resolve_struct(abs_struct, job.ast_id),
-    //             // Item::Enum(abs_enum) => self.resolve_enum(abs_enum, job.ast_id),
-    //             // Item::Alias(abs_alias) => todo!(),
-    //             _ => todo!(),
-    //         };
-    //
-    //         match val_res {
-    //             ValueResult::Resolved(val_id) => {
-    //                 // I can't
-    //                 cycle = 0;
-    //                 full_cycle -= 1;
-    //                 let symbol = self.compiler.symbols.get_mut(&job.sym_id).expect("Exists");
-    //
-    //                 match &mut symbol.sym_kind {
-    //                     SymbolKind::Val(val_id) => {
-    //                         let val_info = &self.compiler.values[val_id.id as usize];
-    //                         todo!();
-    //                     }
-    //                     SymbolKind::Type(type_id) => todo!(),
-    //                     SymbolKind::Unknown => todo!(),
-    //                 }
-    //             }
-    //             ValueResult::Unresolved => {
-    //                 cycle += 1;
-    //                 self.val_ctx.jobs.push_back(job);
-    //
-    //                 if cycle > full_cycle {
-    //                     return Err(());
-    //                 }
-    //             }
-    //         }
-    //     }
-    //
-    //     Ok(())
-    // }
+
+    fn report_job(&mut self, job: Job) {
+        let symbol = &self.compiler.symbols[&job.sym_id];
+        match &symbol.kind {
+            SymbolKind::Val(val_id) => {
+                let val_info = &self.compiler.values[val_id.id as usize];
+                let msg = format!("Could not evaluate variable");
+                self.reporter.report_spanned(
+                    &msg,
+                    None,
+                    &[job.span],
+                    &self.compiler.mods[self.current_mod.id],
+                );
+            }
+            SymbolKind::Type(type_id) => todo!(),
+            SymbolKind::Unknown => todo!(),
+        }
+    }
+
+    fn resolve_leftover_jobs(&mut self) -> Result<(), ()> {
+        // Tracking if a full cycle was reached given the amount of jobs which should be
+        // deterministic (Assuming it's right)
+        let mut full_cycle = self.val_ctx.jobs.len();
+        let mut cycle = 0;
+
+        while let Some(job) = self.val_ctx.jobs.pop_front() {
+            self.current_mod = job.mod_id;
+            let val_res = match &self.ast_info[job.mod_id.id].items[job.ast_id.id as usize] {
+                Item::Var(abs_var) => {
+                    match self.resolve_expr(&abs_var.spanned_expr, job.scope_type) {
+                        Ok(res) => res,
+                        Err(sem_err) => {
+                            self.reporter
+                                .report_semantic(sem_err, &self.compiler.mods[job.mod_id.id]);
+
+                            return Err(());
+                        }
+                    }
+                }
+                // Item::Var(abs_typedef) => resolve_typedef(abs_typedef, job.ast_id),
+                // Item::Struct(abs_struct) => self.resolve_struct(abs_struct, job.ast_id),
+                // Item::Enum(abs_enum) => self.resolve_enum(abs_enum, job.ast_id),
+                // Item::Alias(abs_alias) => todo!(),
+                _ => todo!(),
+            };
+
+            match val_res {
+                ValueResult::Resolved(val_id) => {
+                    // I can't
+                    cycle = 0;
+                    full_cycle -= 1;
+                    let symbol = self.compiler.symbols.get_mut(&job.sym_id).expect("Exists");
+
+                    match &mut symbol.kind {
+                        SymbolKind::Val(val_id) => {
+                            let val_info = &self.compiler.values[val_id.id as usize];
+                            todo!();
+                        }
+                        SymbolKind::Type(type_id) => todo!(),
+                        SymbolKind::Unknown => todo!(),
+                    }
+                }
+                ValueResult::Unresolved => {
+                    cycle += 1;
+                    self.val_ctx.jobs.push_back(job);
+
+                    if cycle > full_cycle {
+                        return Err(());
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
 
     fn resolve_var(&mut self, abs_var: &AbstractVar, ast_id: AstId) -> Result<(), ()> {
         let module = &self.compiler.mods[self.current_mod.id];
@@ -249,7 +254,19 @@ impl<'a> ConstraintResolver<'a> {
         let mut conds = Vec::new();
 
         for expr in &abs_typedef.conds {
-            conds.push(self.resolve_cond(expr, ast_id)?);
+            let cond = match self.resolve_cond(expr, ast_id) {
+                Ok(c) => c,
+                Err(sem_err) => {
+                    self.reporter.report_semantic(
+                        sem_err,
+                        &self.compiler.mods[self.current_mod.id as usize],
+                    );
+
+                    return Err(());
+                }
+            };
+
+            conds.push(cond);
         }
 
         // Second borrow
@@ -265,6 +282,7 @@ impl<'a> ConstraintResolver<'a> {
 
             match ty {
                 Type::Struct(_) | Type::Enum(_) => {
+                    //NOTE: Would be better as a note
                     let msg = "Cannot give a `var->` defined variable a condition when it has a `struct` or `enum` type, define\nthis within `nest->`";
 
                     self.reporter
@@ -275,11 +293,11 @@ impl<'a> ConstraintResolver<'a> {
                 _ => (),
             }
 
-            if let Err(sem_err) = self.check_cond_constraints(type_id, &ast_span, cond, &mut vec![])
-            {
-                self.reporter.report_semantic(sem_err, &module);
-                return Err(());
-            }
+            // if let Err(sem_err) = self.check_cond_constraints(type_id, &ast_span, cond, &mut vec![])
+            // {
+            //     self.reporter.report_semantic(sem_err, &module);
+            //     return Err(());
+            // }
         }
         //TODO: RESOLVE FUNC CONSTRAINTS HERE
 
@@ -314,10 +332,17 @@ impl<'a> ConstraintResolver<'a> {
 
         // Fourth borrow...
         let type_def = &mut self.compiler.get_typedef_mut(sym_id);
-        type_def.conds = conds;
+        // type_def.conds = conds;
         type_def.args = args;
 
+        dbg!(type_def);
+        todo!("Typedef gone through");
+
         Ok(())
+    }
+
+    fn resolve_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) -> Result<(), ()> {
+        todo!("Alias resolution")
     }
 
     //NOTE: The reason this would need to look at the struct again would be because it is iterating
@@ -334,7 +359,19 @@ impl<'a> ConstraintResolver<'a> {
         let mut conds: Vec<Cond> = Vec::new();
 
         for expr in &abs_struct.glob_conds {
-            conds.push(self.resolve_cond(expr, ast_id)?);
+            let cond = match self.resolve_cond(expr, ast_id) {
+                Ok(c) => c,
+                Err(sem_err) => {
+                    self.reporter.report_semantic(
+                        sem_err,
+                        &self.compiler.mods[self.current_mod.id as usize],
+                    );
+
+                    return Err(());
+                }
+            };
+
+            conds.push(cond);
         }
 
         let module = &self.compiler.mods[self.current_mod.id];
@@ -344,12 +381,12 @@ impl<'a> ConstraintResolver<'a> {
             let ast_span = &abs_struct.glob_conds[i].span;
 
             for field in fields {
-                if let Err(sem_err) =
-                    self.check_cond_constraints(field.type_id, &ast_span, cond, &mut vec![])
-                {
-                    self.reporter.report_semantic(sem_err, &module);
-                    return Err(());
-                }
+                // if let Err(sem_err) =
+                //     self.check_cond_constraints(field.type_id, &ast_span, cond, &mut vec![])
+                // {
+                //     self.reporter.report_semantic(sem_err, &module);
+                //     return Err(());
+                // }
             }
         }
 
@@ -374,7 +411,7 @@ impl<'a> ConstraintResolver<'a> {
 
         // I'm scared of this
         structure.args = args;
-        structure.conds = conds;
+        // structure.conds = conds;
 
         Ok(())
     }
@@ -389,7 +426,19 @@ impl<'a> ConstraintResolver<'a> {
         let mut conds: Vec<Cond> = Vec::new();
 
         for expr in &abs_enum.glob_conds {
-            conds.push(self.resolve_cond(expr, ast_id)?);
+            let cond = match self.resolve_cond(expr, ast_id) {
+                Ok(c) => c,
+                Err(sem_err) => {
+                    self.reporter.report_semantic(
+                        sem_err,
+                        &self.compiler.mods[self.current_mod.id as usize],
+                    );
+
+                    return Err(());
+                }
+            };
+
+            conds.push(cond);
         }
 
         // First borrow
@@ -400,13 +449,13 @@ impl<'a> ConstraintResolver<'a> {
             let ast_span = &abs_enum.glob_conds[i].span;
 
             for variant in variants {
-                if let Some(type_id) = variant.type_id {
-                    if let Err(sem_err) =
-                        self.check_cond_constraints(type_id, &ast_span, cond, &mut Vec::new())
-                    {
-                        self.reporter.report_semantic(sem_err, &module);
-                    }
-                }
+                // if let Some(type_id) = variant.type_id {
+                //     if let Err(sem_err) =
+                //         self.check_cond_constraints(type_id, &ast_span, cond, &mut Vec::new())
+                //     {
+                //         self.reporter.report_semantic(sem_err, &module);
+                //     }
+                // }
             }
         }
 
@@ -433,17 +482,21 @@ impl<'a> ConstraintResolver<'a> {
 
         let enumeration = self.compiler.get_enum_mut(sym_id);
 
-        enumeration.conds = conds;
+        // enumeration.conds = conds;
         enumeration.args = args;
 
         Ok(())
     }
 
     // Do we need ast id?
-    fn resolve_cond(&mut self, spanned_expr: &SpannedExpr, ast_id: AstId) -> Result<Cond, ()> {
+    fn resolve_cond(
+        &mut self,
+        spanned_expr: &SpannedExpr,
+        ast_id: AstId,
+    ) -> Result<Cond, SemanticError> {
         match &spanned_expr.expr {
             Expr::Var(name_id) => {
-                if let Some(cond) = Cond::try_from_id(name_id.id) {
+                if let Some(cond) = Cond::try_from_interned_id(name_id.id) {
                     return Ok(cond);
                 }
 
@@ -451,14 +504,8 @@ impl<'a> ConstraintResolver<'a> {
                 let err_msg = format!("\"{err_name}\" is not a valid condition");
 
                 // If the error name IS a functional condition, it just says it's not a condition
-                self.reporter.report_spanned(
-                    &err_msg,
-                    Some(err_name),
-                    &[spanned_expr.span.clone()],
-                    &self.compiler.mods[self.current_mod.id],
-                );
 
-                Err(())
+                Err(SemanticError::General(err_msg, vec![spanned_expr.span]))
             }
             Expr::Unary(unary) => match unary.op {
                 UnaryOp::Not => {
@@ -489,14 +536,11 @@ impl<'a> ConstraintResolver<'a> {
                         todo!();
                     }
                     _ => {
-                        let msg = "Condition blocks must contain either keywords, or functions";
-                        self.reporter.report_spanned(
-                            msg,
-                            None,
-                            &[caller.span.clone()],
-                            &self.compiler.mods[self.current_mod.id],
-                        );
-                        return Err(());
+                        let err_msg = "Condition blocks must contain either keywords, or functions";
+                        return Err(SemanticError::General(
+                            err_msg.to_string(),
+                            vec![caller.span],
+                        ));
                     }
                 };
 
@@ -543,13 +587,11 @@ impl<'a> ConstraintResolver<'a> {
                 match self.check_func_constraints(&func) {
                     Ok(_) => (),
                     Err(sem_err) => {
-                        self.reporter.report_semantic(sem_err, &module);
-                        return Err(());
+                        return Err(sem_err);
                     }
                 };
 
                 // Conditions are private by default
-                //WARN: Visibility is_priv by default
                 let symbol = Symbol::new(
                     InternedId::new(name_id),
                     sym_id,
@@ -568,26 +610,12 @@ impl<'a> ConstraintResolver<'a> {
                 let err_name = self.interner.search(name_id.id as usize);
                 let err_msg = format!("\"{err_name}\" is not a valid condition");
 
-                self.reporter.report_spanned(
-                    &err_msg,
-                    Some(err_name),
-                    &[spanned_expr.span.clone()],
-                    &self.compiler.mods[self.current_mod.id],
-                );
-
-                Err(())
+                Err(SemanticError::General(err_msg, vec![spanned_expr.span]))
             }
             Expr::Integer(_, _) | Expr::Float(_, _) => {
                 let err_msg = format!("Numerics cannot be used as conditions alone");
 
-                self.reporter.report_spanned(
-                    &err_msg,
-                    None,
-                    &[spanned_expr.span.clone()],
-                    &self.compiler.mods[self.current_mod.id],
-                );
-
-                Err(())
+                Err(SemanticError::General(err_msg, vec![spanned_expr.span]))
             }
             Expr::MemberAccess(member_access) => {
                 //TODO: Is this worth evaluating as an expression just to get the name?
@@ -595,14 +623,7 @@ impl<'a> ConstraintResolver<'a> {
 
                 let err_msg = format!("Conditions cannot be accessed as fields");
 
-                self.reporter.report_spanned(
-                    &err_msg,
-                    None,
-                    &[spanned_expr.span.clone()],
-                    &self.compiler.mods[self.current_mod.id],
-                );
-
-                Err(())
+                Err(SemanticError::General(err_msg, vec![spanned_expr.span]))
             }
             Expr::BinaryExpr { lhs, op, rhs } => todo!(),
             Expr::Char(_) => todo!(),
@@ -632,25 +653,27 @@ impl<'a> ConstraintResolver<'a> {
                         //FIXME:
                         //COPY
                         if !spanned_arg.arg.is_basic() {
-                            let field_span = match &self.ast_info[self.current_mod.id].items
-                                [symbol.ast_id.id as usize]
-                            {
-                                // Weird looking hack
-                                Item::Struct(abs_struct) => {
-                                    abs_struct.fields[field.ast_id.id as usize]
-                                        .spanned_ty_expr
-                                        .span
-                                }
-                                _ => unreachable!(),
-                            }
-                            .clone();
+                            // let field_span = match &self.ast_info[self.current_mod.id].items
+                            //     [symbol.ast_id.id as usize]
+                            // {
+                            //     // Weird looking hack
+                            //     Item::Struct(abs_struct) => {
+                            //         // abs_struct.fields[field.ast_id.id as usize]
+                            //         //     .spanned_ty_expr
+                            //         //     .span
+                            //         todo!()
+                            //     }
+                            //     _ => unreachable!(),
+                            // }
+                            // .clone();
                             //NOTE:
 
-                            return Err(SemanticError::CircularArg(
-                                spanned_arg.arg,
-                                Formatted::Struct,
-                                vec![field_span, spanned_arg.span.clone()],
-                            ));
+                            // return Err(SemanticError::CircularArg(
+                            //     spanned_arg.arg,
+                            //     Formatted::Struct,
+                            //     vec![field_span, spanned_arg.span.clone()],
+                            // ));
+                            todo!()
                         }
 
                         continue;
@@ -666,17 +689,18 @@ impl<'a> ConstraintResolver<'a> {
                         //COPY
                         let abs_struct =
                             self.ast_info[self.current_mod.id].get_struct(symbol.ast_id);
-                        let field_span = abs_struct.fields[field.ast_id.id as usize]
-                            .spanned_ty_expr
-                            .span;
+                        // let field_span = abs_struct.fields[field.ast_id.id as usize]
+                        //     .spanned_ty_expr
+                        //     .span;
 
                         //NOTE:
 
-                        return Err(SemanticError::UnsupportedArg(
-                            arg,
-                            kind,
-                            vec![field_span, spanned_arg.span.clone()],
-                        ));
+                        // return Err(SemanticError::UnsupportedArg(
+                        //     arg,
+                        //     kind,
+                        //     vec![field_span, spanned_arg.span.clone()],
+                        // ));
+                        todo!()
                     }
 
                     if arg_res.is_err() {
@@ -1008,177 +1032,177 @@ impl<'a> ConstraintResolver<'a> {
     //         }
     //     }
     // }
-
-    fn resolve_member(
-        &mut self,
-        member: &SpannedExpr,
-        scope_type: ScopeType,
-    ) -> Result<PossibleMember, SemanticError> {
-        if let Ok(val_res) = self.resolve_expr(member, scope_type) {
-            match val_res {
-                ValueResult::Resolved(val_id) => return Ok(PossibleMember::Var(val_id)),
-                ValueResult::Unresolved => return Ok(PossibleMember::Nothing),
-            };
-        }
-
-        if let Expr::Var(name_id) = member.expr {
-            if let Some(mod_id) = self.compiler.mod_map.get(&name_id) {
-                return Ok(PossibleMember::Module(*mod_id));
-            }
-
-            let module = &self.compiler.mods[self.current_mod.id];
-            if let Some(sym_id) = module.get_sym_id(name_id, scope_type) {
-                todo!();
-                // let type_id = self.compiler.symbols[&sym_id];
-                // return Ok(PossibleMember::Type(type_id));
-            } else {
-                if name_id.id == intern::INTERNED_SELF as u32 {
-                    panic!();
-                }
-                // What if this was in order of priority
-                // No
-                // Dot reference sounds better
-                let msg = format!(
-                    "Could not find the symbol `{}` as a module, type, or value",
-                    self.interner.search(name_id.id as usize)
-                );
-
-                return Err(SemanticError::General(msg, vec![member.span]));
-            }
-        }
-
-        Err(SemanticError::UndefinedMember(member.span))
-    }
-
-    //TEST:
-
-    /// Returns a success if all conditions align with the type of the given `type_id`
-    /// Takes in the type id that is being checked for validity, the ast id
-    fn check_cond_constraints(
-        &self,
-        type_id: TypeId,
-        cond_span: &Span,
-        cond: &Cond,
-        visited: &mut Vec<TypeId>,
-    ) -> Result<(), SemanticError> {
-        match &self.compiler.types[type_id.id as usize].ty {
-            Type::BuiltinType(builtin_type) => match cond {
-                Cond::IsEmpty | Cond::IsWhitespace => {
-                    let kind = builtin_type.kind();
-
-                    if !cond.supports_builtin_type(kind) {
-                        return Err(SemanticError::UnsupportedCond(
-                            cond.clone(),
-                            kind.to_fmt(),
-                            vec![cond_span.clone()],
-                        ));
-                    }
-
-                    Ok(())
-                }
-                Cond::Not(inner) => self.check_cond_constraints(type_id, cond_span, inner, visited),
-                // Need to check const, alias, and condition namespaces, and let modules stay
-                // lazily resolved. Exclamation point!
-                Cond::Func(sym_id, func_kind) => Ok(()),
-            },
-            Type::Struct(struct_def) => {
-                let symbol = &self.compiler.symbols[&struct_def.sym_id];
-                visited.push(type_id);
-
-                for (i, field) in struct_def.fields.iter().enumerate() {
-                    //BUG: The structure.type_id == type_id does check if the last type it saw is
-                    //itself, but that could also just mean the last type was a structure that just
-                    //so happened to have the same type id
-                    //
-                    if type_id == field.type_id {
-                        let abs_struct =
-                            &self.ast_info[self.current_mod.id].get_struct(symbol.ast_id);
-                        let field_span = abs_struct.fields[i].spanned_ty_expr.span;
-
-                        return Err(SemanticError::CircularCond(
-                            cond.clone(),
-                            Formatted::Struct,
-                            vec![cond_span.clone(), field_span],
-                        ));
-                    }
-
-                    let cond_res =
-                        self.check_cond_constraints(field.type_id, cond_span, cond, visited);
-
-                    if let Err(SemanticError::UnsupportedCond(cond, fmted_ty, mut spans)) = cond_res
-                    {
-                        let abs_struct =
-                            &self.ast_info[self.current_mod.id].get_struct(symbol.ast_id);
-                        let field_span = abs_struct.fields[i].spanned_ty_expr.span;
-                        spans.push(field_span);
-
-                        return Err(SemanticError::UnsupportedCond(cond, fmted_ty, spans));
-                    }
-
-                    if cond_res.is_err() {
-                        return cond_res;
-                    }
-                }
-
-                Ok(())
-            }
-            Type::Enum(enum_def) => {
-                let symbol = &self.compiler.symbols[&enum_def.sym_id];
-
-                for (i, variant) in enum_def.variants.iter().enumerate() {
-                    if let Some(ty) = variant.type_id {
-                        // Circular ref checking
-                        if visited.contains(&ty) {
-                            let abs_variant = &self.ast_info[self.current_mod.id]
-                                .get_enum(symbol.ast_id)
-                                .variants[i];
-
-                            let variant_span =
-                                abs_variant.ty_expr.as_ref().expect("Already found").span;
-
-                            return Err(SemanticError::CircularCond(
-                                cond.clone(),
-                                Formatted::Enum,
-                                vec![cond_span.clone(), variant_span],
-                            ));
-                        }
-
-                        visited.push(ty);
-
-                        let cond_res = self.check_cond_constraints(ty, cond_span, cond, visited);
-
-                        if let Err(SemanticError::UnsupportedCond(cond, fmted_ty, mut spans)) =
-                            cond_res
-                        {
-                            let abs_struct =
-                                &self.ast_info[self.current_mod.id].get_enum(symbol.ast_id);
-                            let field_span = abs_struct.variants[i]
-                                .ty_expr
-                                .as_ref()
-                                .expect("Already found")
-                                .span;
-
-                            spans.push(field_span);
-
-                            return Err(SemanticError::UnsupportedCond(cond, fmted_ty, spans));
-                        }
-
-                        if cond_res.is_err() {
-                            return cond_res;
-                        }
-                    }
-                }
-
-                Ok(())
-            }
-            Type::Alias(sym_id) => todo!(),
-            Type::Unknown | Type::Func(_) => {
-                unreachable!("Parser and semantic cannot produce these variants")
-            }
-            Type::TypeDef(type_def) => todo!(),
-        }
-    }
-
+    //
+    // fn resolve_member(
+    //     &mut self,
+    //     member: &SpannedExpr,
+    //     scope_type: ScopeType,
+    // ) -> Result<PossibleMember, SemanticError> {
+    //     if let Ok(val_res) = self.resolve_expr(member, scope_type) {
+    //         match val_res {
+    //             ValueResult::Resolved(val_id) => return Ok(PossibleMember::Var(val_id)),
+    //             ValueResult::Unresolved => return Ok(PossibleMember::Nothing),
+    //         };
+    //     }
+    //
+    //     if let Expr::Var(name_id) = member.expr {
+    //         if let Some(mod_id) = self.compiler.mod_map.get(&name_id) {
+    //             return Ok(PossibleMember::Module(*mod_id));
+    //         }
+    //
+    //         let module = &self.compiler.mods[self.current_mod.id];
+    //         if let Some(sym_id) = module.get_sym_id(name_id, scope_type) {
+    //             todo!();
+    //             // let type_id = self.compiler.symbols[&sym_id];
+    //             // return Ok(PossibleMember::Type(type_id));
+    //         } else {
+    //             if name_id.id == intern::INTERNED_SELF as u32 {
+    //                 panic!();
+    //             }
+    //             // What if this was in order of priority
+    //             // No
+    //             // Dot reference sounds better
+    //             let msg = format!(
+    //                 "Could not find the symbol `{}` as a module, type, or value",
+    //                 self.interner.search(name_id.id as usize)
+    //             );
+    //
+    //             return Err(SemanticError::General(msg, vec![member.span]));
+    //         }
+    //     }
+    //
+    //     Err(SemanticError::UndefinedMember(member.span))
+    // }
+    //
+    // //TEST:
+    //
+    // /// Returns a success if all conditions align with the type of the given `type_id`
+    // /// Takes in the type id that is being checked for validity, the ast id
+    // fn check_cond_constraints(
+    //     &self,
+    //     type_id: TypeId,
+    //     cond_span: &Span,
+    //     cond: &Cond,
+    //     visited: &mut Vec<TypeId>,
+    // ) -> Result<(), SemanticError> {
+    //     match &self.compiler.types[type_id.id as usize].ty {
+    //         Type::BuiltinType(builtin_type) => match cond {
+    //             Cond::IsEmpty | Cond::IsWhitespace => {
+    //                 let kind = builtin_type.kind();
+    //
+    //                 if !cond.supports_builtin_type(kind) {
+    //                     return Err(SemanticError::UnsupportedCond(
+    //                         cond.clone(),
+    //                         kind.to_fmt(),
+    //                         vec![cond_span.clone()],
+    //                     ));
+    //                 }
+    //
+    //                 Ok(())
+    //             }
+    //             Cond::Not(inner) => self.check_cond_constraints(type_id, cond_span, inner, visited),
+    //             // Need to check const, alias, and condition namespaces, and let modules stay
+    //             // lazily resolved. Exclamation point!
+    //             Cond::Func(sym_id, func_kind) => Ok(()),
+    //         },
+    //         Type::Struct(struct_def) => {
+    //             let symbol = &self.compiler.symbols[&struct_def.sym_id];
+    //             visited.push(type_id);
+    //
+    //             for (i, field) in struct_def.fields.iter().enumerate() {
+    //                 //BUG: The structure.type_id == type_id does check if the last type it saw is
+    //                 //itself, but that could also just mean the last type was a structure that just
+    //                 //so happened to have the same type id
+    //                 //
+    //                 if type_id == field.type_id {
+    //                     let abs_struct =
+    //                         &self.ast_info[self.current_mod.id].get_struct(symbol.ast_id);
+    //                     let field_span = abs_struct.fields[i].spanned_ty_expr.span;
+    //
+    //                     return Err(SemanticError::CircularCond(
+    //                         cond.clone(),
+    //                         Formatted::Struct,
+    //                         vec![cond_span.clone(), field_span],
+    //                     ));
+    //                 }
+    //
+    //                 let cond_res =
+    //                     self.check_cond_constraints(field.type_id, cond_span, cond, visited);
+    //
+    //                 if let Err(SemanticError::UnsupportedCond(cond, fmted_ty, mut spans)) = cond_res
+    //                 {
+    //                     let abs_struct =
+    //                         &self.ast_info[self.current_mod.id].get_struct(symbol.ast_id);
+    //                     let field_span = abs_struct.fields[i].spanned_ty_expr.span;
+    //                     spans.push(field_span);
+    //
+    //                     return Err(SemanticError::UnsupportedCond(cond, fmted_ty, spans));
+    //                 }
+    //
+    //                 if cond_res.is_err() {
+    //                     return cond_res;
+    //                 }
+    //             }
+    //
+    //             Ok(())
+    //         }
+    //         Type::Enum(enum_def) => {
+    //             let symbol = &self.compiler.symbols[&enum_def.sym_id];
+    //
+    //             for (i, variant) in enum_def.variants.iter().enumerate() {
+    //                 if let Some(ty) = variant.type_id {
+    //                     // Circular ref checking
+    //                     if visited.contains(&ty) {
+    //                         let abs_variant = &self.ast_info[self.current_mod.id]
+    //                             .get_enum(symbol.ast_id)
+    //                             .variants[i];
+    //
+    //                         let variant_span =
+    //                             abs_variant.ty_expr.as_ref().expect("Already found").span;
+    //
+    //                         return Err(SemanticError::CircularCond(
+    //                             cond.clone(),
+    //                             Formatted::Enum,
+    //                             vec![cond_span.clone(), variant_span],
+    //                         ));
+    //                     }
+    //
+    //                     visited.push(ty);
+    //
+    //                     let cond_res = self.check_cond_constraints(ty, cond_span, cond, visited);
+    //
+    //                     if let Err(SemanticError::UnsupportedCond(cond, fmted_ty, mut spans)) =
+    //                         cond_res
+    //                     {
+    //                         let abs_struct =
+    //                             &self.ast_info[self.current_mod.id].get_enum(symbol.ast_id);
+    //                         let field_span = abs_struct.variants[i]
+    //                             .ty_expr
+    //                             .as_ref()
+    //                             .expect("Already found")
+    //                             .span;
+    //
+    //                         spans.push(field_span);
+    //
+    //                         return Err(SemanticError::UnsupportedCond(cond, fmted_ty, spans));
+    //                     }
+    //
+    //                     if cond_res.is_err() {
+    //                         return cond_res;
+    //                     }
+    //                 }
+    //             }
+    //
+    //             Ok(())
+    //         }
+    //         Type::Alias(sym_id) => todo!(),
+    //         Type::Unknown | Type::Func(_) => {
+    //             unreachable!("Parser and semantic cannot produce these variants")
+    //         }
+    //         Type::TypeDef(type_def) => todo!(),
+    //     }
+    // }
+    //
     /// Returns a success if all constraints within the given function align with the function's
     /// signature.
     fn check_func_constraints(&self, func: &FuncDef) -> Result<(), SemanticError> {

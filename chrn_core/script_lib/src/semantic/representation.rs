@@ -221,8 +221,8 @@ impl Table {
 pub struct StructDef {
     pub sym_id: SymbolId,
     pub fields: Vec<FieldRepre>,
+    pub conds: Vec<ExprId>,
     pub args: Vec<InnerArgs>,
-    pub conds: Vec<Cond>,
 }
 
 impl StructDef {
@@ -230,22 +230,18 @@ impl StructDef {
         StructDef {
             sym_id,
             fields,
-            args: Vec::new(),
             conds: Vec::new(),
+            args: Vec::new(),
         }
     }
 }
 
 #[derive(Debug)]
 pub struct EnumDef {
-    // pub(crate) name_id: InternedId,
-    // // Unsure about this positioning, I am hallucinating.
-    // pub(crate) ast_id: AstId,
-    // pub(crate) type_id: TypeId,
     pub sym_id: SymbolId,
     pub variants: Vec<VariantRepre>,
     pub args: Vec<InnerArgs>,
-    pub conds: Vec<Cond>,
+    pub conds: Vec<ExprId>,
 }
 
 impl EnumDef {
@@ -253,8 +249,8 @@ impl EnumDef {
         EnumDef {
             sym_id,
             variants,
-            args: Vec::new(),
             conds: Vec::new(),
+            args: Vec::new(),
         }
     }
 }
@@ -264,11 +260,10 @@ pub struct VariantRepre {
     pub name_id: InternedId,
     // Because enum types are nullable
     pub type_id: Option<TypeId>,
-    // Possible tuple
     // Points to variant within original Ast enum
     pub ast_id: AstId,
     pub args: Vec<InnerArgs>,
-    pub conds: Vec<Cond>,
+    pub conds: Vec<ExprId>,
 }
 
 impl VariantRepre {
@@ -277,8 +272,8 @@ impl VariantRepre {
             name_id,
             type_id,
             ast_id,
-            args: Vec::new(),
             conds: Vec::new(),
+            args: Vec::new(),
         }
     }
 }
@@ -286,9 +281,9 @@ impl VariantRepre {
 #[derive(Debug)]
 pub struct TypeDef {
     // Typedefs are: "var-> name: str" meaning the typedef type has types so it has a type id
-    pub sym_id: SymbolId,
+    sym_id: SymbolId,
     pub type_id: TypeId,
-    pub conds: Vec<Cond>,
+    pub conds: Vec<ExprId>,
     pub args: Vec<InnerArgs>,
 }
 
@@ -428,9 +423,12 @@ pub enum FuncArgsKind {
 #[derive(Debug)]
 pub struct FieldRepre {
     pub name_id: InternedId,
+    // To TypeDef
     pub type_id: TypeId,
     // Ast contained field id, maybe this should just be AstId
     pub ast_id: AstId,
+    pub conds: Vec<ExprId>,
+    pub args: Vec<InnerArgs>,
 }
 
 impl FieldRepre {
@@ -438,6 +436,8 @@ impl FieldRepre {
         FieldRepre {
             name_id,
             type_id,
+            conds: Vec::new(),
+            args: Vec::new(),
             ast_id,
         }
     }
@@ -447,15 +447,15 @@ impl FieldRepre {
 pub struct AliasDef {
     pub sym_id: SymbolId,
     pub params: Vec<Param>,
-    pub conds: Vec<Cond>,
     pub args: Vec<InnerArgs>,
+    pub conds: Vec<ExprId>,
 }
 
 impl AliasDef {
     pub fn new(
         sym_id: SymbolId,
         params: Vec<Param>,
-        conds: Vec<Cond>,
+        conds: Vec<ExprId>,
         args: Vec<InnerArgs>,
     ) -> AliasDef {
         AliasDef {

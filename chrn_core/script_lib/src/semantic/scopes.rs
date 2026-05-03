@@ -25,6 +25,7 @@ impl Scope {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ScopeType {
+    Intrinsic,
     Neutral,
     Var,
     Nest,
@@ -37,6 +38,7 @@ impl ScopeType {
     /// `needs_global` purely exists for all scope accessibility reasons
     pub(crate) fn accessible_scopes(&self) -> Vec<ScopeType> {
         match self {
+            ScopeType::Intrinsic => vec![ScopeType::Intrinsic],
             // Mainly for internal usage, not an actual program recognizable scope
             // Neutral can only access neutral because this section is purely for declaring and
             // using in other sections
@@ -49,10 +51,11 @@ impl ScopeType {
     }
 }
 
-// Not using Formattable unless needed globally
+// TODO: Formattable
 impl Display for ScopeType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ScopeType::Intrinsic => write!(f, "intrinsic"),
             ScopeType::Neutral => write!(f, "neutral"),
             ScopeType::Var => write!(f, "var"),
             ScopeType::Nest => write!(f, "nest"),

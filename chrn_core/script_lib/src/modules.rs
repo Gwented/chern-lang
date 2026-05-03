@@ -125,7 +125,7 @@ impl Module {
         &self.scopes[scope_id.id]
     }
 
-    /// Get's mutably borrowed scope using a `ScopeId`
+    /// Returns mutably borrowed scope using a `ScopeId`
     pub fn get_scope_mut(&mut self, scope_id: ScopeId) -> &mut Scope {
         &mut self.scopes[scope_id.id]
     }
@@ -148,10 +148,10 @@ impl Module {
     /// no accessible scopes contain the given `NameId`.
     pub fn get_sym_id(&self, name_id: InternedId, scope_type: ScopeType) -> Option<SymbolId> {
         // I don't think this can fail. Should maybe expect for clarity.
-        let allowed_scope_types = scope_type.accessible_scopes();
+        let allowed_scopes = scope_type.accessible_scopes();
 
         // Loops over all allowed scopes and checks their individual namespaces
-        for allowed_scope_type in allowed_scope_types {
+        for allowed_scope_type in allowed_scopes {
             // In this scenario the scope may or may not exist since this could be used from
             // another module
             if let Some(scope) = self.find_scope(allowed_scope_type) {
@@ -166,11 +166,13 @@ impl Module {
                 }
             }
         }
+        //TEST: If all scopes fail
 
         None
     }
 
     /// Returns Some scope if it exists, None otherwise
+    //NOTE: May opt for indices similarly to the ast's way of making sections
     fn find_scope(&self, scope_type: ScopeType) -> Option<&Scope> {
         for scope in &self.scopes {
             if scope.scope_type == scope_type {
