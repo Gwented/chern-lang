@@ -111,7 +111,7 @@ impl NamespaceResolver<'_> {
 
         self.compiler.symbols.insert(sym_id, symbol);
 
-        let ty_info = TypeInfo::new(Type::TypeDef(type_def_repre), Some(self.current_mod));
+        let ty_info = TypeInfo::new(Type::TypeDef(type_def_repre), self.compiler.std_mod_id);
         self.compiler.types.push(ty_info);
     }
 
@@ -141,7 +141,7 @@ impl NamespaceResolver<'_> {
 
         self.compiler.symbols.insert(sym_id, symbol);
 
-        let ty_info = TypeInfo::new(Type::Struct(struct_def), Some(self.current_mod));
+        let ty_info = TypeInfo::new(Type::Struct(struct_def), self.compiler.std_mod_id);
         self.compiler.types.push(ty_info);
     }
 
@@ -171,7 +171,7 @@ impl NamespaceResolver<'_> {
 
         self.compiler.symbols.insert(sym_id, symbol);
 
-        let ty_info = TypeInfo::new(Type::Enum(enum_def), Some(self.current_mod));
+        let ty_info = TypeInfo::new(Type::Enum(enum_def), self.compiler.std_mod_id);
         self.compiler.types.push(ty_info);
     }
 
@@ -201,7 +201,7 @@ impl NamespaceResolver<'_> {
 
         self.compiler.symbols.insert(sym_id, symbol);
 
-        let ty_info = TypeInfo::new(Type::Alias(alias_def), Some(self.current_mod));
+        let ty_info = TypeInfo::new(Type::Alias(alias_def), self.compiler.std_mod_id);
         self.compiler.types.push(ty_info);
     }
 
@@ -274,11 +274,15 @@ impl NamespaceResolver<'_> {
                         scope.scope_type
                     );
 
+                    let module = &self.compiler.mods[self.current_mod.id];
                     self.reporter.report_spanned(
                         &msg,
                         None,
                         &[orig_span, dup_span],
-                        &self.compiler.mods[self.current_mod.id],
+                        &module
+                            .metadata
+                            .as_ref()
+                            .expect("std should not be resolved"),
                     );
                 }
             }

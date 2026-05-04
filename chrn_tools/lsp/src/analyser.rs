@@ -87,7 +87,7 @@ pub async fn analyze_and_publish_task(
                                 end: end_pos,
                             },
                             severity: Some(DiagnosticSeverity::ERROR),
-                            source: Some("chern-config".to_string()),
+                            source: Some("chrn-config".to_string()),
                             message: diag.core_msg,
                             ..Default::default()
                         }
@@ -96,7 +96,7 @@ pub async fn analyze_and_publish_task(
                         tower_lsp::lsp_types::Diagnostic {
                             range: Range { start, end: start },
                             severity: Some(DiagnosticSeverity::ERROR),
-                            source: Some("chern-config".to_string()),
+                            source: Some("chrn-config".to_string()),
                             message: io.to_string(),
                             ..Default::default()
                         }

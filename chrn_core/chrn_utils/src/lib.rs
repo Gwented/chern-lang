@@ -12,7 +12,7 @@ pub mod tests {
     use crate::intern::{self, Intern};
 
     #[test]
-    pub fn keyword_intern_alignment() {
+    fn keyword_intern_alignment() {
         let interner = Intern::init();
 
         assert_eq!(
@@ -128,7 +128,7 @@ pub mod tests {
     }
 
     #[test]
-    pub fn builtin_type_intern_alignment() {
+    fn builtin_type_intern_alignment() {
         let interner = Intern::init();
 
         assert_eq!(
@@ -259,7 +259,7 @@ pub mod tests {
     }
 
     #[test]
-    pub fn builtin_type_kind_alignment() {
+    fn builtin_type_kind_alignment() {
         let interner = Intern::init();
 
         assert_eq!(interner.search(intern::INTERNED_I8 as usize), "i8");
@@ -295,7 +295,7 @@ pub mod tests {
     }
 
     #[test]
-    pub fn interned_preload_size_matches() {
+    fn interned_preload_size_matches() {
         assert_eq!(
             intern::INTERNED_TUPLE + 1,
             49,

@@ -3,7 +3,7 @@ mod branch;
 mod context;
 mod parser_state;
 
-use crate::modules::Module;
+use crate::modules::{Module, ModuleMetadata};
 use crate::parser::ast::{
     AbstractAlias, AbstractEnum, AbstractMemberAccess, AbstractStruct, AbstractTypeDef,
     AbstractVar, AbstractVariant, AstInfo, Expr, Generic, Item, Section, SectionKind, SpannedExpr,
@@ -30,14 +30,14 @@ const MAX_ERRORS: u8 = 3;
 /// `Err`.
 pub fn parse(
     settings: &ChrnSettings,
-    module: &Module,
+    metadata: &ModuleMetadata,
     tokens: &Vec<SpannedToken>,
     interner: &Intern,
 ) -> Result<AstInfo, (AstInfo, Vec<Diagnostic>)> {
     let mut ast_info = AstInfo::new();
 
     let mut state = ParserState::new();
-    let mut ctx = Context::new(settings, module, tokens);
+    let mut ctx = Context::new(settings, metadata, tokens);
 
     // Skipping possible @def first since it is recognized as it's own token
     if ctx.peek_tok() == Token::Def {
@@ -659,7 +659,7 @@ fn parse_let(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Result<Abst
 
     ctx.expect_verbose(
         TokenKind::Assign,
-        "Expected '=' to declare value, found ",
+        "Expected '=' to declare a value, found ",
         "",
         Branch::Neutral(NeutralBranch::Let),
         interner,

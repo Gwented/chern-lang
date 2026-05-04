@@ -78,7 +78,7 @@ impl DocumentState {
         let path_buf = path.to_path_buf();
 
         let name = path_buf
-            .file_name()
+            .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("<unnamed>")
             .to_string();
@@ -245,7 +245,7 @@ impl DocumentState {
         let doc_len = self.text.len();
 
         if let Some(diags) = &self.parse_errors {
-            analyser::push_diagnostics(&mut lsp_diags, diags, doc_len, &self.text, "chern-parser");
+            analyser::push_diagnostics(&mut lsp_diags, diags, doc_len, &self.text, "chrn-parser");
         }
         if let Some(diags) = &self.ns_errors {
             analyser::push_diagnostics(
@@ -253,11 +253,11 @@ impl DocumentState {
                 diags,
                 doc_len,
                 &self.text,
-                "chern-namespace",
+                "chrn-namespace",
             );
         }
         if let Some(diags) = &self.ty_errors {
-            analyser::push_diagnostics(&mut lsp_diags, diags, doc_len, &self.text, "chern-type");
+            analyser::push_diagnostics(&mut lsp_diags, diags, doc_len, &self.text, "chrn-type");
         }
 
         lsp_diags

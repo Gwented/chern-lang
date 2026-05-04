@@ -102,11 +102,8 @@ pub fn compute_hover(
                                         let module = &compiler.mods[sym.owner.id];
                                         let raw_mod_name =
                                             interner.search(module.name_id.id as usize);
-                                        let mod_name = raw_mod_name
-                                            .strip_suffix(".chrn")
-                                            .unwrap_or(raw_mod_name);
                                         final_text
-                                            .push_str(&format!("module: **{}**\n\n", mod_name));
+                                            .push_str(&format!("module: **{}**\n\n", raw_mod_name));
                                         final_text.push_str(&format!("{}{}", export_prefix, t));
                                     } else {
                                         final_text.push_str(&format!("type: {}", t));
@@ -120,7 +117,11 @@ pub fn compute_hover(
                             let ty_info = &compiler.types[val_info.type_id.id as usize];
 
                             let var_name = interner.search(sym.name_id.id as usize);
-                            let type_str = format_type(&ty_info.ty, &compiler, &interner);
+                            let type_str = strip_struct_enum_prefix(&format_type(
+                                &ty_info.ty,
+                                &compiler,
+                                &interner,
+                            ));
                             let val_str = match &val_info.const_val {
                                 Some(v) => format_value(v, &interner),
                                 None => "unknown".to_string(),
@@ -166,7 +167,9 @@ pub fn compute_hover(
                                         let field_name = interner.search(field.name_id.id as usize);
                                         let field_ty =
                                             &compiler.types[field.type_id.id as usize].ty;
-                                        let type_str = format_type(field_ty, compiler, interner);
+                                        let type_str = strip_struct_enum_prefix(&format_type(
+                                            field_ty, compiler, interner,
+                                        ));
                                         hover_text = format!("{}: {}", field_name, type_str);
                                         if is_def {
                                             found_exact = true;
@@ -194,8 +197,9 @@ pub fn compute_hover(
                                             interner.search(variant.name_id.id as usize);
                                         if let Some(tid) = variant.type_id {
                                             let variant_ty = &compiler.types[tid.id as usize].ty;
-                                            let type_str =
-                                                format_type(variant_ty, compiler, interner);
+                                            let type_str = strip_struct_enum_prefix(&format_type(
+                                                variant_ty, compiler, interner,
+                                            ));
                                             hover_text = format!("{}: {}", variant_name, type_str);
                                         } else {
                                             hover_text = variant_name.to_string();
@@ -224,20 +228,18 @@ pub fn compute_hover(
                     let alias_mention = if interned != module.name_id {
                         let alias_name = interner.search(interned.id as usize);
                         // Questionable markdown display behavior when parenthesis are used
-                        format!("alias **{alias_name}**|")
+                        format!("alias **{alias_name}** | ")
                     } else {
                         "".to_string()
                     };
 
                     let raw_mod_name = interner.search(module.name_id.id as usize);
-                    // Something is happening inside of mod_finder
-                    let mod_name = raw_mod_name.strip_suffix(".chrn").unwrap_or(raw_mod_name);
                     let mod_path = interner.search_path(module.path_id.id as usize).display();
 
                     hover_text = format!(
                         "{}module **{}**\n{}\npath: `{}`",
                         alias_mention,
-                        mod_name,
+                        raw_mod_name,
                         document::HOVER_DASHES,
                         mod_path
                     );
@@ -390,22 +392,12 @@ fn format_type(
                             Type::Struct(sdef) => compiler
                                 .symbols
                                 .get(&sdef.sym_id)
-                                .map(|sym| {
-                                    format!(
-                                        "struct {} {{}}",
-                                        interner.search(sym.name_id.id as usize)
-                                    )
-                                })
+                                .map(|sym| interner.search(sym.name_id.id as usize).to_string())
                                 .unwrap_or("<struct>".into()),
                             Type::Enum(edef) => compiler
                                 .symbols
                                 .get(&edef.sym_id)
-                                .map(|sym| {
-                                    format!(
-                                        "enum {} {{}}",
-                                        interner.search(sym.name_id.id as usize)
-                                    )
-                                })
+                                .map(|sym| interner.search(sym.name_id.id as usize).to_string())
                                 .unwrap_or("<enum>".into()),
                             _ => format_type(field_ty, compiler, interner),
                         };
@@ -438,22 +430,12 @@ fn format_type(
                                 Type::Struct(sdef) => compiler
                                     .symbols
                                     .get(&sdef.sym_id)
-                                    .map(|sym| {
-                                        format!(
-                                            "struct {} {{}}",
-                                            interner.search(sym.name_id.id as usize)
-                                        )
-                                    })
+                                    .map(|sym| interner.search(sym.name_id.id as usize).to_string())
                                     .unwrap_or("<struct>".into()),
                                 Type::Enum(edef) => compiler
                                     .symbols
                                     .get(&edef.sym_id)
-                                    .map(|sym| {
-                                        format!(
-                                            "enum {} {{}}",
-                                            interner.search(sym.name_id.id as usize)
-                                        )
-                                    })
+                                    .map(|sym| interner.search(sym.name_id.id as usize).to_string())
                                     .unwrap_or("<enum>".into()),
                                 _ => format_type(variant_ty, compiler, interner),
                             };
@@ -473,6 +455,16 @@ fn format_type(
             format_type(inner, compiler, interner)
         }
         Type::Unknown => "unknown".into(),
+    }
+}
+
+fn strip_struct_enum_prefix(s: &str) -> String {
+    if let Some(stripped) = s.strip_prefix("struct ") {
+        stripped.to_string()
+    } else if let Some(stripped) = s.strip_prefix("enum ") {
+        stripped.to_string()
+    } else {
+        s.to_string()
     }
 }
 

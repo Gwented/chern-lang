@@ -65,6 +65,26 @@ impl Bind {
     }
 }
 
+// // Separation exists here due to modules needing to be hacked around to where it would likely be
+// // better to just have a specific structure that handles the dinstinction of modules with a source,
+// // and modules without.
+// pub struct SourceModule {
+//     /// File name that will be used internally
+//     pub name_id: InternedId,
+//     /// It's own module id position
+//     pub mod_id: ModuleId,
+//     /// Bytes from chrn config file
+//     pub src_bytes: Vec<u8>,
+//     /// Path of module
+//     pub path_id: PathId,
+//     // / Amount of \n within config file so binary search can be done by error reporter
+//     // pub new_lines: Vec<usize>,
+//     /// The script language start which can be different depending on if @def is used
+//     pub script_start: usize,
+//     /// The serial start which can be None if there is no serialized file within the chrn file
+//     pub serial_start: Option<usize>,
+// }
+
 // What about OUR name?
 // What?
 // I actually don't know why that's there
@@ -72,29 +92,26 @@ impl Bind {
 pub struct Module {
     /// File name that will be used internally
     pub name_id: InternedId,
-    /// Actual path used to find the file itself
-    pub path_id: PathId,
     /// It's own module id position
     pub mod_id: ModuleId,
     /// Imports found in the module
     pub imports: Vec<Import>,
     /// Represents the 5 existent scopes
     pub scopes: Vec<Scope>,
-    pub metadata: ModuleMetadata,
+    pub metadata: Option<ModuleMetadata>,
+    // pub src_mod: Option<SourceModule>,
 }
 //NOTE: Now that scopes are tracked by the parser maybe this can be
 
 impl Module {
     pub fn new(
         name_id: InternedId,
-        path_id: PathId,
         mod_id: ModuleId,
         imports: Vec<Import>,
-        metadata: ModuleMetadata,
+        metadata: Option<ModuleMetadata>,
     ) -> Module {
         Module {
             name_id,
-            path_id,
             mod_id,
             imports,
             scopes: Vec::new(),
@@ -173,7 +190,7 @@ impl Module {
 
     /// Returns Some scope if it exists, None otherwise
     //NOTE: May opt for indices similarly to the ast's way of making sections
-    fn find_scope(&self, scope_type: ScopeType) -> Option<&Scope> {
+    pub fn find_scope(&self, scope_type: ScopeType) -> Option<&Scope> {
         for scope in &self.scopes {
             if scope.scope_type == scope_type {
                 return Some(scope);
@@ -188,6 +205,7 @@ impl Module {
 pub struct ModuleMetadata {
     /// Bytes from chrn config file
     pub src_bytes: Vec<u8>,
+    pub path_id: PathId,
     // / Amount of \n within config file so binary search can be done by error reporter
     // pub new_lines: Vec<usize>,
     /// The script language start which can be different depending on if @def is used
@@ -199,6 +217,7 @@ pub struct ModuleMetadata {
 impl ModuleMetadata {
     pub fn new(
         src_bytes: Vec<u8>,
+        path_id: PathId,
         script_start: usize,
         serial_start: Option<usize>,
     ) -> ModuleMetadata {
@@ -207,6 +226,7 @@ impl ModuleMetadata {
             src_bytes,
             script_start,
             serial_start,
+            path_id,
             //TODO: Could be env var
         }
     }
@@ -215,26 +235,26 @@ impl ModuleMetadata {
 //TEST: Lets depending on self recursively as a module happen for now
 /// Takes in a path to a `chrn` config file, then recursively resolved all imports associated with
 /// the path given in separate modules.
+/// THIS IMPLICITLY LOADS STD
+// Called std but it's more like "intrinsics" or "core"
 pub fn extract_modules(
     // Does this get canonicalized here or earlier..
     path: &Path,
     settings: &ChrnSettings,
     interner: &mut Intern,
 ) -> Result<ScriptCompiler, ConfigLoadError> {
-    // This MUST be explicitly
-
     let src = match file_ops::fopen(&path) {
         Ok(f) => f,
         Err(err_msg) => {
-            // This is the sole reason the span is an option
             let diag = Diagnostic::new(path, err_msg.clone(), None, err_msg, Area::ConfigLoad);
             return Err(ConfigLoadError::Module(diag));
         }
     };
 
     let path = path.canonicalize()?;
+    let path_id = PathId::new(interner.intern_path(&path));
 
-    let main_metadata = ChrnConfigLoader::new(&path, src, settings).load_config()?;
+    let main_metadata = ChrnConfigLoader::new(path_id, src, settings, interner).load_config()?;
 
     // FIX: Aliasing?
     let file_name = match path.file_prefix().map(|n| n.to_str()) {
@@ -252,7 +272,6 @@ pub fn extract_modules(
     };
 
     let name_id = InternedId::new(interner.intern(&file_name));
-    let path_id = PathId::new(interner.intern_path(&path));
 
     // dbg!(str::from_utf8(&main_metadata.src_bytes[..]));
     let (bind, main_imports) = ModuleFinder::new(
@@ -265,13 +284,13 @@ pub fn extract_modules(
     .collect_imports(interner)?;
 
     let mod_id = ModuleId::new(0);
-    let main_mod = Module::new(name_id, path_id, mod_id, main_imports, main_metadata);
+    let main_mod = Module::new(name_id, mod_id, main_imports, Some(main_metadata));
 
     let mut mod_map: HashMap<InternedId, ModuleId> = HashMap::new();
     mod_map.insert(main_mod.name_id, mod_id);
 
     let mut seen: HashSet<PathId> = HashSet::new();
-    seen.insert(main_mod.path_id);
+    seen.insert(path_id);
 
     // Will incur borrowing issues unless the main_mod is put in last since the list of it's
     // imports is needed to start recursive process
@@ -290,7 +309,7 @@ pub fn extract_modules(
     let mut all_mods: Vec<Module> = Vec::new();
     all_mods.push(main_mod);
     all_mods.append(&mut other_mods);
-
+    //
     // all_mods.iter().for_each(|m| {
     //     println!(
     //         "Module \"{}\" nid = {}\nPath: \"{}\" | ModuleId = {:?}\n{:#?}",
@@ -301,23 +320,21 @@ pub fn extract_modules(
     //         m.imports
     //     );
     // });
-
-    // Module hierarchy command, dependencies, extended classes, Springboot support
+    //
     // for module in &all_mods {
     //     println!(
     //         "Module \"{}\" -> {}",
     //         interner.search(module.name_id.id as usize),
     //         interner.search_path(module.path_id.id as usize).display()
     //     );
-    //     for path_id in &module.imports {
+    //     for import in &module.imports {
     //         println!(
     //             "\tImport -> {}",
-    //             interner.search_path(path_id.id as usize).display()
+    //             interner.search_path(import.name_id.id as usize).display()
     //         );
     //     }
     //     println!("_______\n")
     // }
-    // panic!();
 
     let compiler = ScriptCompiler::new(bind, mod_map, all_mods);
 
@@ -343,6 +360,11 @@ fn resolve_modules(
             continue;
         }
 
+        // This entire process is performing IO recursively based off of file paths so a failure
+        // here would be either an early detailed error, or deterministic system no longer being
+        // deterministic
+        let prev_metadata = &prev_mod.metadata.as_ref().expect("Infailable currently");
+
         // Tracks the id of the current module by tracking however many imports were seen, which
         // all represent one module
         let current_mod_id = seen.len();
@@ -355,12 +377,12 @@ fn resolve_modules(
                 let core_msg = format!("The path \"{}\" is a directory", path.display());
 
                 let ln_data = reporter::form_err_diag(
-                    &prev_mod.metadata.src_bytes,
+                    &prev_metadata.src_bytes,
                     &[import.path_span],
                     settings.can_color,
                 );
 
-                let prev_path = interner.search_path(prev_mod.path_id.id as usize);
+                let prev_path = interner.search_path(prev_metadata.path_id.id as usize);
                 let fmtted_diag = reporter::standardize_err(
                     &core_msg,
                     &ln_data,
@@ -385,12 +407,12 @@ fn resolve_modules(
                     core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
 
                 let ln_data = reporter::form_err_diag(
-                    &prev_mod.metadata.src_bytes,
+                    &prev_metadata.src_bytes,
                     &[import.path_span],
                     settings.can_color,
                 );
 
-                let prev_path = interner.search_path(prev_mod.path_id.id as usize);
+                let prev_path = interner.search_path(prev_metadata.path_id.id as usize);
                 let fmtted_diag = reporter::standardize_err(
                     &core_msg,
                     &ln_data,
@@ -411,7 +433,10 @@ fn resolve_modules(
             }
         };
 
-        let mod_metadata = ChrnConfigLoader::new(path, src, settings).load_config()?;
+        let mod_metadata =
+            ChrnConfigLoader::new(import.path_id, src, settings, interner).load_config()?;
+
+        let path = interner.search_path(import.path_id.id as usize);
 
         //Oh my
         let file_name = match path.file_prefix().map(|n| n.to_str()) {
@@ -435,7 +460,7 @@ fn resolve_modules(
 
         let name_id = InternedId::new(interner.intern(&file_name));
 
-        let origin = interner.search_path(prev_mod.path_id.id as usize);
+        let origin = interner.search_path(prev_metadata.path_id.id as usize);
 
         let (_, sub_imports) = ModuleFinder::new(
             &mod_metadata.src_bytes,
@@ -448,10 +473,9 @@ fn resolve_modules(
 
         let sub_mod = Module::new(
             name_id,
-            import.path_id,
             ModuleId::new(current_mod_id),
             sub_imports,
-            mod_metadata,
+            Some(mod_metadata),
         );
 
         if let Some(alias_id) = import.alias_id {

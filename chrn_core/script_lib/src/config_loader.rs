@@ -4,7 +4,7 @@ use std::{
     path::Path,
 };
 
-use chrn_utils::{keywords::DEFINITION_SIZE, quote_model};
+use chrn_utils::{id_types::PathId, intern::Intern, keywords::DEFINITION_SIZE, quote_model};
 use common::{
     chrn_settings::ChrnSettings,
     core_error::ConfigLoadError,
@@ -22,9 +22,10 @@ const READ_LIMIT_OFFSET: usize = 500;
 // More inclusive name
 pub struct ChrnConfigLoader<'a, R: Read> {
     // Configuration file path
-    path: &'a Path,
+    path_id: PathId,
     handle: BufReader<R>,
     settings: &'a ChrnSettings,
+    interner: &'a mut Intern,
     pos: usize,
 }
 
@@ -32,14 +33,17 @@ pub struct ChrnConfigLoader<'a, R: Read> {
 //then the language doesn't work anyways. May leave as is.
 impl<R: Read> ChrnConfigLoader<'_, R> {
     // FIX: Rename to "with_path" after un-commenting the wall of tests
+    /// Uses `PathId` for error location reporting purposes
     pub fn new<'a>(
-        path: &'a Path,
+        path_id: PathId,
         handle: R,
         settings: &'a ChrnSettings,
+        interner: &'a mut Intern,
     ) -> ChrnConfigLoader<'a, R> {
         ChrnConfigLoader {
-            path,
+            path_id,
             settings,
+            interner,
             handle: BufReader::new(handle),
             pos: 0,
         }
@@ -129,12 +133,12 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                             &core_msg,
                             &ln_data,
                             "",
-                            self.path,
+                            self.interner.search_path(self.path_id.id as usize),
                             self.settings.can_color,
                         );
 
                         let diag = Diagnostic::new(
-                            self.path,
+                            self.interner.search_path(self.path_id.id as usize),
                             core_msg,
                             Some(common::span::merge_spans(&spans)),
                             fmtted_diag,
@@ -195,12 +199,12 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                             &core_msg,
                             &ln_data,
                             "",
-                            self.path,
+                            self.interner.search_path(self.path_id.id as usize),
                             self.settings.can_color,
                         );
 
                         let diag = Diagnostic::new(
-                            self.path,
+                            self.interner.search_path(self.path_id.id as usize),
                             core_msg,
                             Some(common::span::merge_spans(&spans)),
                             fmtted_diag,
@@ -246,6 +250,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
 
                         return Ok(ModuleMetadata::new(
                             self.handle.buffer()[..self.pos + DEFINITION_SIZE].to_vec(),
+                            self.path_id,
                             lex_start,
                             Some(serial_start),
                         ));
@@ -279,6 +284,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
         if !requires_end {
             Ok(ModuleMetadata::new(
                 self.handle.buffer()[..self.pos].to_vec(),
+                self.path_id,
                 lex_start,
                 None,
             ))
@@ -307,12 +313,12 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                 &core_msg,
                 &ln_data,
                 "",
-                self.path,
+                self.interner.search_path(self.path_id.id as usize),
                 self.settings.can_color,
             );
 
             let diag = Diagnostic::new(
-                self.path,
+                self.interner.search_path(self.path_id.id as usize),
                 core_msg,
                 Some(def_span.merge(eof_span)),
                 fmtted_diag,
@@ -398,12 +404,12 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                 &core_msg,
                 &ln_data,
                 "",
-                self.path,
+                self.interner.search_path(self.path_id.id as usize),
                 self.settings.can_color,
             );
 
             let diag = Diagnostic::new(
-                self.path,
+                self.interner.search_path(self.path_id.id as usize),
                 core_msg,
                 Some(comment_span.merge(eof_span)),
                 fmtted_diag,

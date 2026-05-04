@@ -12,7 +12,6 @@ use common::{
 };
 
 use crate::{
-    conditions::Cond,
     parser::ast::{BinaryOp, UnaryOp},
     semantic::{constraints::ArgConstraint, scopes::ScopeType},
 };
@@ -24,31 +23,15 @@ use crate::{
 #[derive(Debug)]
 pub struct TypeInfo {
     pub ty: Type,
-    pub owner: Option<ModuleId>,
+    // May turn owner back into option since unknown isn't really owned, but uhhhhhhh
+    pub owner: ModuleId,
 }
 
 impl TypeInfo {
-    pub fn new(ty: Type, owner: Option<ModuleId>) -> TypeInfo {
+    pub fn new(ty: Type, owner: ModuleId) -> TypeInfo {
         TypeInfo { ty, owner }
     }
 }
-//
-// #[derive(Debug)]
-// pub struct SymbolInfo {
-//     pub symbol: Symbol,
-//     pub owner: ModuleId,
-//     pub is_priv: bool,
-// }
-//
-// impl SymbolInfo {
-//     pub fn new(symbol: Symbol, is_priv: bool, owner: ModuleId) -> SymbolInfo {
-//         SymbolInfo {
-//             symbol,
-//             is_priv,
-//             owner,
-//         }
-//     }
-// }
 
 //NOTE: Should be in chrn_utils?
 #[derive(Debug)]
@@ -200,23 +183,6 @@ impl Table {
     }
 }
 
-// #[derive(Debug)]
-// pub(crate) struct VarDef {
-//     pub(crate) type_id: TypeId,
-//     pub(crate) expr_id: ExprId,
-//     pub(crate) const_val: Option<ValueId>,
-// }
-//
-// impl VarDef {
-//     pub fn new(type_id: TypeId, expr_id: ExprId, const_val: Option<ValueId>) -> VarDef {
-//         VarDef {
-//             type_id,
-//             expr_id,
-//             const_val,
-//         }
-//     }
-// }
-
 #[derive(Debug)]
 pub struct StructDef {
     pub sym_id: SymbolId,
@@ -256,6 +222,7 @@ impl EnumDef {
     }
 }
 
+/// A HIR of enum variants created by script semantics
 #[derive(Debug)]
 pub struct VariantRepre {
     pub name_id: InternedId,

@@ -3,13 +3,12 @@ use std::path::Path;
 use chrn_utils::{id_types::ModuleId, intern::Intern};
 use common::{
     chrn_settings::ChrnSettings,
-    core_error::{ConfigLoadError, CoreError, ScriptError},
+    core_error::{CoreError, ScriptError},
     reporter::diagnostic::Reporter,
 };
 use script_lib::{
     modules::{self},
     parser::ast::AstInfo,
-    script_compiler::ScriptCompiler,
     semantic::{
         constraint_resolver::{ConstraintResolver, value_context::ValueContext},
         name_resolver::NamespaceResolver,
@@ -31,15 +30,17 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     // Need to separate namespace resolution and type resolver because if the modules namespaces
     // aren't resolved first, then type resolution isn't possible since it could be using types
     // from elsewhere, which are not known yet.
-    for mod_idx in 0..script_compiler.mods.len() {
+    //FIX: Should probably not longer be arbitrary eventually but fine for now
+    for mod_idx in 0..script_compiler.mods.len() - 1 {
         let module = &script_compiler.mods[mod_idx];
-        let toks =
-            script_lib::lexer::Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
-                .tokenize(&mut interner);
 
-        // Maybe it should just return diagnostics normally and let the caller return whatever
-        // script error it wants
-        let ast_info = match script_lib::parser::parse(settings, &module, &toks, &mut interner) {
+        // NOTE: Brain not on yet
+        let metadata = &module.metadata.as_ref().expect("Infailable");
+
+        let toks = script_lib::lexer::Lexer::new(&metadata.src_bytes, metadata.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = match script_lib::parser::parse(settings, &metadata, &toks, &mut interner) {
             Ok(info) => info,
             Err((unfinished_ast, mut diags)) => {
                 reporter.diags.append(&mut diags);
@@ -65,8 +66,14 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     }
 
     let mut ty_ctx = TypeContext::new();
-    for i in 0..script_compiler.mods.len() {
+    for i in 0..script_compiler.mods.len() - 1 {
         let mod_id = ModuleId::new(i);
+
+        if mod_id == script_compiler.std_mod_id {
+            break;
+        }
+
+        // NOTE: Brain not on yet
         TypeResolver::new(
             settings,
             &asts[i],
@@ -89,8 +96,13 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     // This is not a value resolver
     let mut val_ctx = ValueContext::new();
 
-    for i in 0..script_compiler.mods.len() {
+    for i in 0..script_compiler.mods.len() - 1 {
         let mod_id = ModuleId::new(i);
+
+        if mod_id == script_compiler.std_mod_id {
+            break;
+        }
+
         ConstraintResolver::new(
             settings,
             &asts,

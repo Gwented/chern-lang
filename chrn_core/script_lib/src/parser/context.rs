@@ -15,7 +15,7 @@ use common::{
 
 use crate::{
     algo,
-    modules::Module,
+    modules::{Module, ModuleMetadata},
     parser::{NeutralBranch, SectionBranch, branch::Branch},
     token::{self, SpannedToken, Token, TokenKind},
 };
@@ -57,7 +57,7 @@ const A_BRANCH_FUNC_SET: u64 = A_BASE_EXIT_SET | token::C_BRACKET;
 #[derive(Debug)]
 pub(super) struct Context<'a> {
     settings: &'a ChrnSettings,
-    module: &'a Module,
+    metadata: &'a ModuleMetadata,
     toks: &'a [SpannedToken],
     pos: usize,
     pub(super) err_vec: Vec<Diagnostic>,
@@ -66,12 +66,12 @@ pub(super) struct Context<'a> {
 impl<'a> Context<'a> {
     pub(super) fn new(
         settings: &'a ChrnSettings,
-        module: &'a Module,
+        metadata: &'a ModuleMetadata,
         toks: &'a [SpannedToken],
     ) -> Context<'a> {
         Context {
             settings,
-            module,
+            metadata,
             toks,
             pos: 0,
             err_vec: Vec::new(),
@@ -107,13 +107,10 @@ impl<'a> Context<'a> {
 
         let spans = self.safely_handle_span(&found);
 
-        let ln_data = reporter::form_err_diag(
-            &self.module.metadata.src_bytes,
-            &spans,
-            self.settings.can_color,
-        );
+        let ln_data =
+            reporter::form_err_diag(&self.metadata.src_bytes, &spans, self.settings.can_color);
 
-        let path = interner.search_path(self.module.path_id.id as usize);
+        let path = interner.search_path(self.metadata.path_id.id as usize);
 
         let core_msg = if let Some(name) = err_ident_opt {
             format!("(in {branch})\n{bmsg}{name}{amsg}")
@@ -125,7 +122,7 @@ impl<'a> Context<'a> {
             &core_msg,
             &ln_data,
             &help,
-            interner.search_path(self.module.path_id.id as usize),
+            interner.search_path(self.metadata.path_id.id as usize),
             self.settings.can_color,
         );
 
@@ -165,13 +162,10 @@ impl<'a> Context<'a> {
 
         let spans = self.safely_handle_span(&found);
 
-        let ln_data = reporter::form_err_diag(
-            &self.module.metadata.src_bytes,
-            &spans,
-            self.settings.can_color,
-        );
+        let ln_data =
+            reporter::form_err_diag(&self.metadata.src_bytes, &spans, self.settings.can_color);
 
-        let path = interner.search_path(self.module.path_id.id as usize);
+        let path = interner.search_path(self.metadata.path_id.id as usize);
 
         let core_msg = if let Some(ident) = err_ident_opt {
             format!("(in {branch})\n{bmsg}{ident}{amsg}")
@@ -183,7 +177,7 @@ impl<'a> Context<'a> {
             &core_msg,
             &ln_data,
             &help,
-            interner.search_path(self.module.path_id.id as usize),
+            interner.search_path(self.metadata.path_id.id as usize),
             self.settings.can_color,
         );
 
@@ -213,21 +207,18 @@ impl<'a> Context<'a> {
 
         let spans = self.safely_handle_span(found);
 
-        let ln_data = reporter::form_err_diag(
-            &self.module.metadata.src_bytes,
-            &spans,
-            self.settings.can_color,
-        );
+        let ln_data =
+            reporter::form_err_diag(&self.metadata.src_bytes, &spans, self.settings.can_color);
 
         let core_msg = format!("(in {branch})\n{msg}");
 
-        let path = interner.search_path(self.module.path_id.id as usize);
+        let path = interner.search_path(self.metadata.path_id.id as usize);
 
         let fmtted_msg = reporter::standardize_err(
             &core_msg,
             &ln_data,
             &help,
-            interner.search_path(self.module.path_id.id as usize),
+            interner.search_path(self.metadata.path_id.id as usize),
             self.settings.can_color,
         );
 
@@ -263,17 +254,14 @@ impl<'a> Context<'a> {
 
             let spans = self.safely_handle_span(found);
 
-            let ln_data = reporter::form_err_diag(
-                &self.module.metadata.src_bytes,
-                &spans,
-                self.settings.can_color,
-            );
+            let ln_data =
+                reporter::form_err_diag(&self.metadata.src_bytes, &spans, self.settings.can_color);
 
             let help = self
                 .try_help(expected, &found, branch, interner)
                 .unwrap_or_default();
 
-            let path = interner.search_path(self.module.path_id.id as usize);
+            let path = interner.search_path(self.metadata.path_id.id as usize);
 
             let core_msg = if let Some(id_str) = err_ident_opt {
                 format!(
@@ -288,7 +276,7 @@ impl<'a> Context<'a> {
                 &core_msg,
                 &ln_data,
                 &help,
-                interner.search_path(self.module.path_id.id as usize),
+                interner.search_path(self.metadata.path_id.id as usize),
                 self.settings.can_color,
             );
 
@@ -327,21 +315,18 @@ impl<'a> Context<'a> {
 
         let spans = self.safely_handle_span(found);
 
-        let ln_data = reporter::form_err_diag(
-            &self.module.metadata.src_bytes,
-            &spans,
-            self.settings.can_color,
-        );
+        let ln_data =
+            reporter::form_err_diag(&self.metadata.src_bytes, &spans, self.settings.can_color);
 
         let core_msg = format!("(in {branch})\nExpected {emsg}, found {fmsg}");
 
-        let path = interner.search_path(self.module.path_id.id as usize);
+        let path = interner.search_path(self.metadata.path_id.id as usize);
 
         let fmtted_diag = reporter::standardize_err(
             &core_msg,
             &ln_data,
             &help,
-            interner.search_path(self.module.path_id.id as usize),
+            interner.search_path(self.metadata.path_id.id as usize),
             self.settings.can_color,
         );
 

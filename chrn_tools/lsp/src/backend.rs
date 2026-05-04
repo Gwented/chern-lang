@@ -55,7 +55,7 @@ fn publish_config_load_error(
                 severity: Some(DiagnosticSeverity::ERROR),
                 code: None,
                 code_description: None,
-                source: Some("chern-config".to_string()),
+                source: Some("chrn-config".to_string()),
                 message: diag.core_msg,
                 related_information: None,
                 tags: None,
@@ -67,7 +67,7 @@ fn publish_config_load_error(
             severity: Some(DiagnosticSeverity::ERROR),
             code: None,
             code_description: None,
-            source: Some("chern-config".to_string()),
+            source: Some("chrn-config".to_string()),
             message: io.to_string(),
             related_information: None,
             tags: None,
@@ -224,7 +224,6 @@ fn classify_id_token(
         return SemanticTokenType::Function.as_u32();
     }
 
-    //TODO: A bit more specific eventually
     if has_type_info {
         let interned = InternedId::new(id);
         if let Some(sym_id) = compiler.mods[0].get_sym_id(interned, ScopeType::Var) {
@@ -803,13 +802,13 @@ impl LanguageServer for Backend {
             ("override->", CompletionItemKind::KEYWORD),
             ("struct", CompletionItemKind::KEYWORD),
             ("enum", CompletionItemKind::KEYWORD),
+            ("change", CompletionItemKind::KEYWORD),
             ("List", CompletionItemKind::STRUCT),
             ("Map", CompletionItemKind::STRUCT),
             ("Set", CompletionItemKind::STRUCT),
             ("Tuple", CompletionItemKind::STRUCT),
             ("true", CompletionItemKind::CONSTANT),
             ("false", CompletionItemKind::CONSTANT),
-            ("change", CompletionItemKind::CONSTANT),
             //TODO: Not exactly a keyword
             ("#warn", CompletionItemKind::VALUE),
             ("#ignore", CompletionItemKind::VALUE),
@@ -829,19 +828,14 @@ impl LanguageServer for Backend {
 
         // Add modules from mod_map (using already-analyzed compiler state)
         if let Some(compiler) = &state.compiler {
-            let current_mod_name_id = compiler.mods[0].name_id;
             for (name_id, _) in &compiler.mod_map {
                 // Skip the current module's name to avoid redundant suggestions
-                if *name_id == current_mod_name_id {
-                    continue;
-                }
 
                 let name = state.interner.search(name_id.id as usize);
-                let display_name = name.strip_suffix(".chrn").unwrap_or(name);
 
-                if prefix.is_empty() || display_name.starts_with(prefix) {
+                if prefix.is_empty() || name.starts_with(prefix) {
                     items.push(CompletionItem {
-                        label: display_name.to_string(),
+                        label: name.to_string(),
                         kind: Some(CompletionItemKind::MODULE),
                         ..Default::default()
                     });

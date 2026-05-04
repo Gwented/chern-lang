@@ -336,7 +336,7 @@ impl SpannedTypeExpr {
 }
 
 #[derive(Debug)]
-pub(crate) enum TypeExpr {
+pub enum TypeExpr {
     Var(InternedId),
     Path(Vec<SpannedTypeExpr>),
     //FIX: Remove this

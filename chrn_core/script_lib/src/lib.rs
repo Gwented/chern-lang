@@ -33,19 +33,19 @@ mod tests {
     }
 
     fn mock_single_module_compiler(text: &str) -> (Intern, ChrnSettings, ScriptCompiler) {
-        let interner = mock_interner(0, 1);
+        let mut interner = mock_interner(0, 1);
         let settings = ChrnSettings::default();
 
-        let metadata = ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
-            .load_config()
-            .unwrap();
+        let metadata =
+            ChrnConfigLoader::new(PathId::new(0), text.as_bytes(), &settings, &mut interner)
+                .load_config()
+                .unwrap();
 
         let module = Module::new(
             Default::default(),
             Default::default(),
             Default::default(),
-            Default::default(),
-            metadata,
+            Some(metadata),
         );
 
         let compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
@@ -76,16 +76,16 @@ mod tests {
         interner: &mut Intern,
     ) -> Module {
         let settings = ChrnSettings::default();
-        let metadata = ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+        let path_id = PathId::new(interner.intern_path(Path::new(path_name)));
+        let metadata = ChrnConfigLoader::new(path_id, text.as_bytes(), &settings, interner)
             .load_config()
             .unwrap();
 
         Module::new(
             InternedId::new(interner.intern(name)),
-            PathId::new(interner.intern_path(Path::new(path_name))),
             ModuleId::new(mod_id),
             imports,
-            metadata,
+            Some(metadata),
         )
     }
 
@@ -131,7 +131,7 @@ mod tests {
         lexer::Lexer,
         modules::{Import, Module},
         parser::{self, ast::AstInfo},
-        script_compiler::{ScriptCompiler, VALUE_FALSE_POS, VALUE_TRUE_POS},
+        script_compiler::ScriptCompiler,
         semantic::{
             constraint_resolver::{ConstraintResolver, value_context::ValueContext},
             name_resolver::NamespaceResolver,
@@ -145,12 +145,16 @@ mod tests {
     fn lex_tok_test() {
         let text = r#"bind "./some/path""#;
 
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
-
         let mut interner = Intern::init();
+        let path_id = PathId::new(interner.intern_path(Path::new("")));
+        let metadata = ChrnConfigLoader::new(
+            path_id,
+            text.as_bytes(),
+            &ChrnSettings::default(),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
 
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
@@ -166,9 +170,15 @@ mod tests {
         // Properly closed @def and @end
         let correct = r#"@defbind "./some/path"@end"#;
 
-        let opt =
-            ChrnConfigLoader::new(Path::new(""), correct.as_bytes(), &ChrnSettings::new(false))
-                .load_config();
+        let mut interner = mock_interner(1, 1);
+        let path_id = PathId::new(interner.intern_path(Path::new("")));
+        let opt = ChrnConfigLoader::new(
+            path_id,
+            correct.as_bytes(),
+            &ChrnSettings::default(),
+            &mut interner,
+        )
+        .load_config();
 
         assert_eq!(true, opt.is_ok());
 
@@ -177,8 +187,13 @@ mod tests {
         // now.
         let wrong = r#"@defbind "./some/path""#;
 
-        let opt = ChrnConfigLoader::new(Path::new(""), wrong.as_bytes(), &ChrnSettings::new(false))
-            .load_config();
+        let opt = ChrnConfigLoader::new(
+            path_id,
+            wrong.as_bytes(),
+            &ChrnSettings::default(),
+            &mut interner,
+        )
+        .load_config();
 
         assert_eq!(true, opt.is_err());
     }
@@ -189,11 +204,18 @@ mod tests {
     fn char_literal_test() {
         // Valid single character
         let text = "'a'";
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
         let mut interner = Intern::init();
+
+        let path_id = PathId::new(interner.intern_path(Path::new("")));
+
+        let metadata = ChrnConfigLoader::new(
+            path_id,
+            text.as_bytes(),
+            &ChrnSettings::default(),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
@@ -205,12 +227,19 @@ mod tests {
 
         // Valid escaped character
         let text = "'\\n'";
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
-
         let mut interner = Intern::init();
+
+        let path_id = PathId::new(interner.intern_path(Path::new("")));
+
+        let metadata = ChrnConfigLoader::new(
+            path_id,
+            text.as_bytes(),
+            &ChrnSettings::default(),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
+
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
@@ -222,11 +251,19 @@ mod tests {
 
         // Valid hex escape
         let text = "'\\x2F'";
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
+
         let mut interner = Intern::init();
+        let path_id = PathId::new(interner.intern_path(Path::new("")));
+
+        let metadata = ChrnConfigLoader::new(
+            path_id,
+            text.as_bytes(),
+            &ChrnSettings::default(),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
+
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
@@ -238,11 +275,16 @@ mod tests {
 
         // Invalid character
         let text = "'aa'";
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
         let mut interner = Intern::init();
+        let path_id = PathId::new(interner.intern_path(Path::new("")));
+        let metadata = ChrnConfigLoader::new(
+            path_id,
+            text.as_bytes(),
+            &ChrnSettings::default(),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
@@ -254,11 +296,16 @@ mod tests {
 
         // Invalid hex escape
         let text = "'\\x2'";
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
         let mut interner = Intern::init();
+        let path_id = PathId::new(interner.intern_path(Path::new("")));
+        let metadata = ChrnConfigLoader::new(
+            path_id,
+            text.as_bytes(),
+            &ChrnSettings::default(),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
@@ -271,11 +318,16 @@ mod tests {
         // I can't actually read hex
         // Invalid hex digits
         let text = "'\\x255'";
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
         let mut interner = Intern::init();
+        let path_id = PathId::new(interner.intern_path(Path::new("")));
+        let metadata = ChrnConfigLoader::new(
+            path_id,
+            text.as_bytes(),
+            &ChrnSettings::new(false),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
@@ -287,11 +339,16 @@ mod tests {
 
         // Unknown escape
         let text = "'\\q'";
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
         let mut interner = Intern::init();
+        let path_id = PathId::new(interner.intern_path(Path::new("")));
+        let metadata = ChrnConfigLoader::new(
+            path_id,
+            text.as_bytes(),
+            &ChrnSettings::new(false),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
@@ -303,11 +360,16 @@ mod tests {
 
         // Out of range escape
         let text = "'\\x1Y'";
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
         let mut interner = Intern::init();
+        let path_id = PathId::new(interner.intern_path(Path::new("")));
+        let metadata = ChrnConfigLoader::new(
+            path_id,
+            text.as_bytes(),
+            &ChrnSettings::new(false),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
@@ -332,24 +394,41 @@ mod tests {
             "
         .as_bytes();
 
-        let correct =
-            ChrnConfigLoader::new(Path::new(""), correct, &ChrnSettings::new(false)).load_config();
-        let wrong =
-            ChrnConfigLoader::new(Path::new(""), wrong, &ChrnSettings::new(false)).load_config();
+        let mut interner = mock_interner(0, 2);
+
+        let correct = ChrnConfigLoader::new(
+            PathId::default(),
+            correct,
+            &ChrnSettings::default(),
+            &mut interner,
+        )
+        .load_config();
+
+        let wrong = ChrnConfigLoader::new(
+            PathId::default(),
+            wrong,
+            &ChrnSettings::default(),
+            &mut interner,
+        )
+        .load_config();
 
         assert_eq!(true, correct.is_ok());
         assert_eq!(true, wrong.is_err());
     }
 
-    // beautiful name
     #[test]
     fn start_and_serial_offset_test() {
         let text = format!("adwh@def var-> int: i32 @endhi");
+        let mut interner = mock_interner(0, 1);
 
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
+        let metadata = ChrnConfigLoader::new(
+            PathId::default(),
+            text.as_bytes(),
+            &ChrnSettings::default(),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
         dbg!(metadata.serial_start);
 
         assert_eq!(&text[4..], &text[metadata.script_start..]);
@@ -361,11 +440,17 @@ mod tests {
     fn lex_notation_test() {
         // Hex Test (Hex Text (Hex Test))
         let text = "0xff";
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
-        let mut interner = Intern::init();
+        let mut interner = mock_interner(1, 1);
+
+        let metadata = ChrnConfigLoader::new(
+            Default::default(),
+            text.as_bytes(),
+            &Default::default(),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
+
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
@@ -378,11 +463,14 @@ mod tests {
 
         // Binary
         let text = "0b1010";
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
-        let mut interner = Intern::init();
+        let metadata = ChrnConfigLoader::new(
+            Default::default(),
+            text.as_bytes(),
+            &Default::default(),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
@@ -395,11 +483,14 @@ mod tests {
 
         // Octal
         let text = "0o77";
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
-        let mut interner = Intern::init();
+        let metadata = ChrnConfigLoader::new(
+            Default::default(),
+            text.as_bytes(),
+            &Default::default(),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
@@ -412,12 +503,14 @@ mod tests {
 
         // Decimal
         let text = "42";
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
-
-        let mut interner = Intern::init();
+        let metadata = ChrnConfigLoader::new(
+            Default::default(),
+            text.as_bytes(),
+            &Default::default(),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
@@ -430,11 +523,14 @@ mod tests {
 
         // Float with decimal
         let text = "3.14";
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
-        let mut interner = Intern::init();
+        let metadata = ChrnConfigLoader::new(
+            Default::default(),
+            text.as_bytes(),
+            &Default::default(),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
@@ -447,11 +543,14 @@ mod tests {
 
         // Positive Scientific Notation
         let text = "1e+23";
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
-        let mut interner = Intern::init();
+        let metadata = ChrnConfigLoader::new(
+            Default::default(),
+            text.as_bytes(),
+            &Default::default(),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
@@ -464,11 +563,14 @@ mod tests {
 
         // Negative Scientific Notation
         let text = "1e-23";
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
-        let mut interner = Intern::init();
+        let metadata = ChrnConfigLoader::new(
+            Default::default(),
+            text.as_bytes(),
+            &Default::default(),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
@@ -481,11 +583,14 @@ mod tests {
 
         // Underscored Numbers
         let text = "1_000_000";
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
-        let mut interner = Intern::init();
+        let metadata = ChrnConfigLoader::new(
+            Default::default(),
+            text.as_bytes(),
+            &Default::default(),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
@@ -498,11 +603,14 @@ mod tests {
 
         // Underscored Hex
         let text = "0x_ff_ff";
-        let metadata =
-            ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &ChrnSettings::new(false))
-                .load_config()
-                .unwrap();
-        let mut interner = Intern::init();
+        let metadata = ChrnConfigLoader::new(
+            Default::default(),
+            text.as_bytes(),
+            &Default::default(),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
@@ -526,10 +634,10 @@ mod tests {
 
         let module = &compiler.mods[0];
 
-        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
-            .tokenize(&mut interner);
+        let metadata = module.metadata.as_ref().unwrap();
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+        let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
 
         // Calls `reporter` internally but the path is fake so this fails
         let res = NamespaceResolver::new(
@@ -552,10 +660,10 @@ mod tests {
 
         let module = &compiler.mods[0];
 
-        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
-            .tokenize(&mut interner);
+        let metadata = module.metadata.as_ref().unwrap();
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+        let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
 
         // Calls `reporter` internally but the path is fake so this fails
         let res = NamespaceResolver::new(
@@ -582,10 +690,10 @@ mod tests {
 
         let module = &compiler.mods[0];
 
-        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
-            .tokenize(&mut interner);
+        let metadata = module.metadata.as_ref().unwrap();
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+        let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
 
         // Calls `reporter` internally but the path is fake so this fails
         let res = NamespaceResolver::new(
@@ -609,10 +717,10 @@ mod tests {
 
         let module = &compiler.mods[0];
 
-        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
-            .tokenize(&mut interner);
+        let metadata = module.metadata.as_ref().unwrap();
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+        let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
 
         // Calls `reporter` internally but the path is fake so this fails
         let res = NamespaceResolver::new(
@@ -640,10 +748,10 @@ mod tests {
 
         let module = &compiler.mods[0];
 
-        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
-            .tokenize(&mut interner);
+        let metadata = module.metadata.as_ref().unwrap();
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+        let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
 
         // Calls `reporter` internally but the path is fake so this fails
         let res = NamespaceResolver::new(
@@ -667,10 +775,10 @@ mod tests {
 
         let module = &compiler.mods[0];
 
-        let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
-            .tokenize(&mut interner);
+        let metadata = module.metadata.as_ref().unwrap();
+        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+        let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
 
         // Calls `reporter` internally but the path is fake so this fails
         let res = NamespaceResolver::new(
@@ -687,21 +795,24 @@ mod tests {
 
         //TEST: -- OVERRIDE --
     }
-    // Thank you <leader>sr
     //
     // #[test]
     // fn module_simple_test() {
     //     // -- NEUTRAL --
     //     let mut interner = mock_interner(0, 2);
-    //     let settings = ChrnSettings::default();
     //
     //     let main_txt = "
     //             let CONSTANT = 3
     //         ";
     //
-    //     let main_meta = ChrnConfigLoader::new(Path::new(""), main_txt.as_bytes(), &settings)
-    //         .load_config()
-    //         .unwrap();
+    //     let main_meta = ChrnConfigLoader::new(
+    //         Default::default(),
+    //         main_txt.as_bytes(),
+    //         &Default::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
     //
     //     // Doing this first since if modules were identified during the parsing stage any
     //     // syntax error within another module would not be reportable since the parser failed.
@@ -710,10 +821,9 @@ mod tests {
     //
     //     let main_mod = Module::new(
     //         InternedId::new(0),
-    //         PathId::new(0),
     //         ModuleId::new(0),
     //         vec![sub_import],
-    //         main_meta,
+    //         Some(main_meta),
     //     );
     //
     //     let sub_txt = "

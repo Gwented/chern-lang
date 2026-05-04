@@ -8,17 +8,17 @@
 // let x = -((defs.READ * "fllorp"))
 
 @def
-    // import "../../defs.chrn" as something
+    import "../../defs.chrn" as something
+    let x = true
+    let y = false
 
-    alias something() = // [IsOdd]
-
-    //var->
+    var->
     // Should probably filter out duplicate arguments if present
-        // x: str [] #when
-    nest->
+        x: std.u8
+    /*nest->
         export enum Person {
             State: Tuple<str> [] #scient
-        } [] #warn
+        } [] #warn */
 @end
 
 @def

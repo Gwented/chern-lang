@@ -1,8 +1,15 @@
 use std::fmt::Display;
 
-use chrn_utils::id_types::ScopeId;
+use chrn_utils::{
+    builtins::BuiltinType,
+    id_types::{InternedId, ModuleId, ScopeId, SymbolId, TypeId},
+};
 
-use crate::semantic::representation::Table;
+use crate::{
+    modules::Module,
+    script_compiler::ScriptCompiler,
+    semantic::representation::{SymbolKind, Table},
+};
 
 // Neutral, var, nest, and complex scopes can only access variables from neutral and nest.
 // Override is unsure
@@ -21,6 +28,85 @@ impl Scope {
             scope_type,
         }
     }
+}
+
+//TEST:
+pub fn get_sym_id(
+    compiler: &ScriptCompiler,
+    current_mod: &Module,
+    target_name_id: InternedId,
+    scope_type: ScopeType,
+) -> Option<SymbolId> {
+    // I don't think this can fail. Should maybe expect for clarity.
+    let allowed_scopes = scope_type.accessible_scopes();
+
+    // Loops over all allowed scopes and checks their individual namespaces
+    for allowed_scope_type in allowed_scopes {
+        // In this scenario the scope may or may not exist since this could be used from
+        // another module
+        if let Some(scope) = current_mod.find_scope(allowed_scope_type) {
+            for (current_ast_id, current_name_id) in &scope.table.name_ids {
+                if *current_name_id == target_name_id {
+                    let scope_id = current_mod.extract_scope_id(allowed_scope_type);
+                    let scope = current_mod.get_scope(scope_id);
+
+                    let sym_id = scope.table.sym_ids[&current_ast_id];
+                    return Some(sym_id);
+                }
+            }
+        }
+    }
+
+    //TODO: No std symbols yet
+    // let std_mod = &compiler.mods[compiler.std_mod_id.id];
+
+    //TEST: If all scopes fail
+
+    None
+}
+
+//TEST:
+/// Get's `TypeId` associated with the `NameId` given if possible. Searches local scope then std
+pub fn get_type_id(
+    compiler: &ScriptCompiler,
+    current_mod: &Module,
+    target_name_id: InternedId,
+    scope_type: ScopeType,
+) -> Option<TypeId> {
+    // I don't think this can fail. Should maybe expect for clarity.
+    let allowed_scopes = scope_type.accessible_scopes();
+
+    // Loops over all allowed scopes and checks their individual namespaces
+    for allowed_scope_type in allowed_scopes {
+        // In this scenario the scope may or may not exist since this could be used from
+        // another module
+        if let Some(scope) = current_mod.find_scope(allowed_scope_type) {
+            for (current_ast_id, current_name_id) in &scope.table.name_ids {
+                if *current_name_id == target_name_id {
+                    let scope_id = current_mod.extract_scope_id(allowed_scope_type);
+                    let scope = current_mod.get_scope(scope_id);
+
+                    let sym_id = scope.table.sym_ids[&current_ast_id];
+                    match &compiler.symbols[&sym_id].kind {
+                        SymbolKind::Type(type_id) => return Some(*type_id),
+                        SymbolKind::Val(val_id) => {
+                            return Some(compiler.values[val_id.id as usize].type_id);
+                        }
+                        SymbolKind::Unknown => return None,
+                    }
+                }
+            }
+        }
+    }
+
+    // Uhhhhhhh brain isn't working
+    if let Some(ty) = BuiltinType::try_from_interned_id(target_name_id.id) {
+        // This technically relies on the original pushing of values being in order so
+        // may also be changed to a const idx but fine for iteration purposes
+        return Some(TypeId::new(ty.kind() as u32));
+    }
+
+    None
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

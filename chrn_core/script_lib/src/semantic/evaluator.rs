@@ -1,8 +1,8 @@
-use chrn_utils::{keywords::Keyword, values::Value};
+use chrn_utils::values::Value;
 
 use crate::{
     parser::ast::{BinaryOp, UnaryOp},
-    semantic::error::{MathError, SemanticError},
+    semantic::error::SemanticError,
 };
 
 pub fn is_compatible_unary(op: UnaryOp, operand: &Value) -> bool {

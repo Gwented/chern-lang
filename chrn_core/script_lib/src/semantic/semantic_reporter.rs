@@ -9,7 +9,11 @@ use common::{
     span::Span,
 };
 
-use crate::{algo, modules::Module, semantic::error::SemanticError};
+use crate::{
+    algo,
+    modules::{Module, ModuleMetadata},
+    semantic::error::SemanticError,
+};
 
 use super::error::MathError;
 
@@ -30,7 +34,7 @@ impl<'a> SemanticReporter<'a> {
     }
 
     //WARN: Could be better looking
-    pub(super) fn report_semantic(&mut self, sem_err: SemanticError, module: &Module) {
+    pub(super) fn report_semantic(&mut self, sem_err: SemanticError, metadata: &ModuleMetadata) {
         let (core_msg, spans) = match sem_err {
             SemanticError::UnsupportedArg(arg, type_kind, spans) => {
                 let msg = format!(
@@ -121,18 +125,17 @@ impl<'a> SemanticReporter<'a> {
             }
         };
 
-        let ln_data =
-            reporter::form_err_diag(&module.metadata.src_bytes, &spans, self.settings.can_color);
+        let ln_data = reporter::form_err_diag(&metadata.src_bytes, &spans, self.settings.can_color);
 
         let fmt_msg = reporter::standardize_err(
             &core_msg,
             &ln_data,
             "",
-            &self.interner.search_path(module.path_id.id as usize),
+            &self.interner.search_path(metadata.path_id.id as usize),
             self.settings.can_color,
         );
 
-        let path = self.interner.search_path(module.path_id.id as usize);
+        let path = self.interner.search_path(metadata.path_id.id as usize);
 
         let diag = Diagnostic::new(
             path,
@@ -151,10 +154,10 @@ impl<'a> SemanticReporter<'a> {
         msg: &str,
         err_name: Option<&str>,
         spans: &[Span],
-        module: &Module,
+        metadata: &ModuleMetadata,
     ) {
         let line_data =
-            reporter::form_err_diag(&module.metadata.src_bytes, spans, self.settings.can_color);
+            reporter::form_err_diag(&metadata.src_bytes, spans, self.settings.can_color);
 
         let help = if let Some(name) = err_name {
             self.try_help(name).unwrap_or_default()
@@ -167,11 +170,11 @@ impl<'a> SemanticReporter<'a> {
             msg,
             &line_data,
             &help,
-            self.interner.search_path(module.path_id.id as usize),
+            self.interner.search_path(metadata.path_id.id as usize),
             self.settings.can_color,
         );
 
-        let path = self.interner.search_path(module.path_id.id as usize);
+        let path = self.interner.search_path(metadata.path_id.id as usize);
         let diag = Diagnostic::new(
             path,
             msg.to_string(),
