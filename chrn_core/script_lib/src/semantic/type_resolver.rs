@@ -285,7 +285,7 @@ impl TypeResolver<'_> {
                         self.reporter.report_semantic(
                             sem_err,
                             &module
-                                .metadata
+                                .src_metadata
                                 .as_ref()
                                 .expect("std should not be resolved"),
                         )
@@ -476,7 +476,7 @@ impl TypeResolver<'_> {
                 self.reporter.report_semantic(
                     sem_err,
                     &module
-                        .metadata
+                        .src_metadata
                         .as_ref()
                         .expect("std should not be resolved"),
                 );
@@ -540,7 +540,7 @@ impl TypeResolver<'_> {
                     self.reporter.report_semantic(
                         sem_err,
                         &module
-                            .metadata
+                            .src_metadata
                             .as_ref()
                             .expect("std should not be resolved"),
                     );
@@ -604,7 +604,7 @@ impl TypeResolver<'_> {
                     None,
                     &[orig_span, field_span],
                     &module
-                        .metadata
+                        .src_metadata
                         .as_ref()
                         .expect("std should not be resolved"),
                 );
@@ -630,7 +630,7 @@ impl TypeResolver<'_> {
                         self.reporter.report_semantic(
                             sem_err,
                             &module
-                                .metadata
+                                .src_metadata
                                 .as_ref()
                                 .expect("std should not be resolved"),
                         );
@@ -657,7 +657,7 @@ impl TypeResolver<'_> {
                     self.reporter.report_semantic(
                         sem_err,
                         &module
-                            .metadata
+                            .src_metadata
                             .as_ref()
                             .expect("std should not be resolved"),
                     );
@@ -725,7 +725,7 @@ impl TypeResolver<'_> {
                     None,
                     &[orig_span, variant_span],
                     &module
-                        .metadata
+                        .src_metadata
                         .as_ref()
                         .expect("std should not be resolved"),
                 );
@@ -755,7 +755,7 @@ impl TypeResolver<'_> {
                         self.reporter.report_semantic(
                             sem_err,
                             &module
-                                .metadata
+                                .src_metadata
                                 .as_ref()
                                 .expect("std should not be resolved"),
                         );
@@ -780,7 +780,7 @@ impl TypeResolver<'_> {
                     self.reporter.report_semantic(
                         sem_err,
                         &module
-                            .metadata
+                            .src_metadata
                             .as_ref()
                             .expect("std should not be resolved"),
                     );
@@ -833,7 +833,7 @@ impl TypeResolver<'_> {
                             None,
                             &[orig_span, field_span],
                             &module
-                                .metadata
+                                .src_metadata
                                 .as_ref()
                                 .expect("std should not be resolved"),
                         );
@@ -914,9 +914,10 @@ impl TypeResolver<'_> {
     ) -> Result<ExprId, SemanticError> {
         match &spanned_expr.expr {
             Expr::Var(name_id) => {
-                let module = &self.compiler.mods[self.current_mod.id];
-
-                if let Some(sym_id) = self.compiler.get_sym_id(*name_id, scope_type, module) {
+                if let Some(sym_id) =
+                    self.compiler
+                        .get_sym_id(*name_id, scope_type, self.current_mod)
+                {
                     if sym_id == sym_parent {
                         let name = self
                             .interner
@@ -1021,10 +1022,12 @@ impl TypeResolver<'_> {
                     Ok(expr_id)
                 } else {
                     // SemanticError needs centralization
-                    let name = self.interner.search(name_id.id as usize);
+                    let module = &self.compiler.mods[self.current_mod.id];
+                    let err_name = self.interner.search(name_id.id as usize);
                     let mod_name = self.interner.search(module.name_id.id as usize);
-                    let msg =
-                        format!("The variable `{name}` was not found in the module `{mod_name}`");
+                    let msg = format!(
+                        "The variable `{err_name}` was not found in the module `{mod_name}`"
+                    );
 
                     Err(SemanticError::General(msg, vec![spanned_expr.span]))
                 }
@@ -1242,7 +1245,7 @@ impl TypeResolver<'_> {
                         if let Some(extern_sym_id) = self.compiler.get_sym_id(
                             abs_member_access.field,
                             scope_type,
-                            extern_mod,
+                            extern_mod.mod_id,
                         ) {
                             let symbol = &self.compiler.symbols[&extern_sym_id];
 
@@ -1258,7 +1261,7 @@ impl TypeResolver<'_> {
                                     None,
                                     &[spanned_expr.span],
                                     &extern_mod
-                                        .metadata
+                                        .src_metadata
                                         .as_ref()
                                         .expect("std should not be resolved"),
                                 );
@@ -1445,8 +1448,10 @@ impl TypeResolver<'_> {
                 return Ok(PossibleMember::Module(*mod_id));
             }
 
-            let module = &self.compiler.mods[self.current_mod.id];
-            if let Some(sym_id) = self.compiler.get_sym_id(name_id, scope_type, module) {
+            if let Some(sym_id) = self
+                .compiler
+                .get_sym_id(name_id, scope_type, self.current_mod)
+            {
                 todo!();
                 // let type_id = self.compiler.symbols[&sym_id];
                 // return Ok(PossibleMember::Type(type_id));
@@ -1496,7 +1501,7 @@ impl TypeResolver<'_> {
                     Some(err_name),
                     &[spanned_ty_expr.span],
                     &module
-                        .metadata
+                        .src_metadata
                         .as_ref()
                         .expect("std should not be resolved"),
                 );
@@ -1522,7 +1527,7 @@ impl TypeResolver<'_> {
                                     None,
                                     &[spanned_ty_expr.span],
                                     &module
-                                        .metadata
+                                        .src_metadata
                                         .as_ref()
                                         .expect("std should not be resolved"),
                                 );
@@ -1569,7 +1574,7 @@ impl TypeResolver<'_> {
                                     None,
                                     &[spanned_ty_expr.span],
                                     &module
-                                        .metadata
+                                        .src_metadata
                                         .as_ref()
                                         .expect("std should not be resolved"),
                                 );
@@ -1604,7 +1609,7 @@ impl TypeResolver<'_> {
                                     None,
                                     &[spanned_ty_expr.span],
                                     &module
-                                        .metadata
+                                        .src_metadata
                                         .as_ref()
                                         .expect("std should not be resolved"),
                                 );
@@ -1638,7 +1643,7 @@ impl TypeResolver<'_> {
                                 Some(err_name),
                                 &[spanned_ty_expr.span],
                                 &module
-                                    .metadata
+                                    .src_metadata
                                     .as_ref()
                                     .expect("std should not be resolved"),
                             );
@@ -1660,7 +1665,7 @@ impl TypeResolver<'_> {
                             Some(err_name),
                             &[spanned_ty_expr.span],
                             &module
-                                .metadata
+                                .src_metadata
                                 .as_ref()
                                 .expect("std should not be resolved"),
                         );
@@ -1708,7 +1713,7 @@ impl TypeResolver<'_> {
                         None,
                         &spans,
                         &module
-                            .metadata
+                            .src_metadata
                             .as_ref()
                             .expect("std should not be resolved"),
                     );
@@ -1728,7 +1733,7 @@ impl TypeResolver<'_> {
                                 None,
                                 &[spanned_ty_exprs[0].span],
                                 &module
-                                    .metadata
+                                    .src_metadata
                                     .as_ref()
                                     .expect("std should not be resolved"),
                             );
@@ -1760,7 +1765,7 @@ impl TypeResolver<'_> {
                             None,
                             &[spanned_ty_exprs[1].span],
                             &extern_mod
-                                .metadata
+                                .src_metadata
                                 .as_ref()
                                 .expect("std should not be resolved"),
                         );

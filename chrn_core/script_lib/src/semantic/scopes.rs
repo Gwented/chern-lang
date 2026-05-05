@@ -1,9 +1,6 @@
 use std::fmt::Display;
 
-use chrn_utils::{
-    builtins::BuiltinType,
-    id_types::{InternedId, ModuleId, ScopeId, SymbolId, TypeId},
-};
+use chrn_utils::id_types::{InternedId, ModuleId, ScopeId, SymbolId, TypeId};
 
 use crate::{
     modules::Module,
@@ -24,7 +21,14 @@ impl ScopeInfo {
     }
 }
 
-// Bitwise food
+pub const SCOPE_CORE: u8 = 1 << 0;
+pub const SCOPE_NEUTRAL: u8 = 1 << 1;
+pub const SCOPE_VAR: u8 = 1 << 2;
+pub const SCOPE_NEST: u8 = 1 << 3;
+pub const SCOPE_COMPLEX: u8 = 1 << 4;
+pub const SCOPE_OVERRIDE: u8 = 1 << 5;
+
+// Bitwise into array of scopes that filters each time a lookup is done?
 pub static SCOPE_CORE_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Core];
 pub static SCOPE_NEUTRAL_ACCESSIBLE: [ScopeType; 2] = [ScopeType::Neutral, ScopeType::Core];
 pub static SCOPE_REST_ACCESSIBLE: [ScopeType; 5] = [
@@ -42,7 +46,7 @@ pub struct Scope {
     pub table: Table,
     pub scope_id: ScopeId,
     pub scope_type: ScopeType,
-    //FIX: BITWISE FOOD LATER
+    //FIX: Ok this is not bit-wise food I am scared
     pub accessible_scopes: &'static [ScopeType],
 }
 
@@ -60,7 +64,6 @@ impl Scope {
 
     pub(crate) fn with_table(scope_id: ScopeId, scope_type: ScopeType, table: Table) -> Scope {
         let accessible_scopes = scope_type.accessible_scopes();
-
         Scope {
             table,
             scope_id,
@@ -77,23 +80,13 @@ pub fn get_sym_id(
     target_name_id: InternedId,
     scope_type: ScopeType,
 ) -> Option<SymbolId> {
-    // I don't think this can fail. Should maybe expect for clarity.
-    // Loops over all allowed scopes and checks their individual namespaces
-    for scope_id in &current_mod.scopes {
-        let scope = &compiler.scopes[scope_id.id].scope;
-        // In this scenario the scope may or may not exist since this could be used from
-        // another module
-        for allowed_scope_type in scope.accessible_scopes.iter().copied() {
-            if let Some(scope_info) = compiler.find_scope(allowed_scope_type, current_mod) {
-                for (current_ast_id, current_name_id) in &scope_info.scope.table.name_ids {
-                    if *current_name_id == target_name_id {
-                        let scope_id =
-                            compiler.extract_scope_id(allowed_scope_type, current_mod.mod_id);
-                        let scope_info = compiler.get_scope(scope_id);
+    let accessible_scopes = scope_type.accessible_scopes();
 
-                        let sym_id = scope_info.scope.table.ast_to_sym[&current_ast_id];
-                        return Some(sym_id);
-                    }
+    for allowed_scope_type in accessible_scopes.iter().copied() {
+        if let Some(scope_info) = compiler.find_scope(allowed_scope_type, current_mod.mod_id) {
+            for (current_name_id, current_sym_id) in &scope_info.scope.table.interned_to_sym {
+                if *current_name_id == target_name_id {
+                    return Some(*current_sym_id);
                 }
             }
         }
@@ -116,41 +109,29 @@ pub fn get_type_id(
     target_name_id: InternedId,
     scope_type: ScopeType,
 ) -> Option<TypeId> {
+    let accessible_scopes = scope_type.accessible_scopes();
     // I don't think this can fail. Should maybe expect for clarity.
     //     let scope = &compiler.scopes[scope_id.id].scope;
     // Loops over all allowed scopes and checks their individual namespaces
 
-    for scope_id in &current_mod.scopes {
-        let scope = &compiler.scopes[scope_id.id].scope;
-        dbg!(scope);
-
-        for allowed_scope_type in scope.accessible_scopes.iter().copied() {
-            // In this scenario the scope may or may not exist since this could be used from
-            // another module
-            if let Some(scope_info) = compiler.find_scope(allowed_scope_type, current_mod) {
-                for current_sym_id in scope_info.scope.table.interned_to_sym.values() {
-                    let current_sym = &compiler.symbols[current_sym_id];
-                    if current_sym.name_id == target_name_id {
-                        match &compiler.symbols[&current_sym_id].kind {
-                            SymbolKind::Type(type_id) => return Some(*type_id),
-                            // Is this even possible
-                            SymbolKind::Val(val_id) => {
-                                return Some(compiler.values[val_id.id as usize].type_id);
-                            }
-                            SymbolKind::Unknown => return None,
+    for allowed_scope_type in accessible_scopes.iter().copied() {
+        // In this scenario the scope may or may not exist since this could be used from
+        // another module
+        if let Some(scope_info) = compiler.find_scope(allowed_scope_type, current_mod.mod_id) {
+            for current_sym_id in scope_info.scope.table.interned_to_sym.values() {
+                let current_sym = &compiler.symbols[current_sym_id];
+                if current_sym.name_id == target_name_id {
+                    match &compiler.symbols[&current_sym_id].kind {
+                        SymbolKind::Type(type_id) => return Some(*type_id),
+                        // Is this even possible
+                        SymbolKind::Val(val_id) => {
+                            return Some(compiler.values[val_id.id as usize].type_id);
                         }
+                        SymbolKind::Unknown => return None,
                     }
                 }
             }
         }
-    }
-
-    todo!("No core found");
-    // Uhhhhhhh brain isn't working
-    if let Some(ty) = BuiltinType::try_from_interned_id(target_name_id.id) {
-        // This technically relies on the original pushing of values being in order so
-        // may also be changed to a const idx but fine for iteration purposes
-        return Some(TypeId::new(ty.kind() as u32));
     }
 
     None
@@ -183,23 +164,23 @@ impl ScopeType {
         }
     }
 
-    // pub(crate) fn to_u8(&self) -> u8 {
-    //     match self {
-    //         ScopeType::Core => todo!(),
-    //         ScopeType::Neutral => todo!(),
-    //         ScopeType::Var => todo!(),
-    //         ScopeType::Nest => todo!(),
-    //         ScopeType::Complex => todo!(),
-    //         ScopeType::Override => todo!(),
-    //     }
-    // }
+    pub(crate) fn to_u8(&self) -> u8 {
+        match self {
+            ScopeType::Core => SCOPE_CORE,
+            ScopeType::Neutral => SCOPE_NEUTRAL,
+            ScopeType::Var => SCOPE_VAR,
+            ScopeType::Nest => SCOPE_NEST,
+            ScopeType::Complex => SCOPE_COMPLEX,
+            ScopeType::Override => SCOPE_OVERRIDE,
+        }
+    }
 }
 
 // TODO: Formattable
 impl Display for ScopeType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ScopeType::Core => write!(f, "intrinsic"),
+            ScopeType::Core => write!(f, "core"),
             ScopeType::Neutral => write!(f, "neutral"),
             ScopeType::Var => write!(f, "var"),
             ScopeType::Nest => write!(f, "nest"),

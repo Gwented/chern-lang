@@ -261,7 +261,8 @@ impl ScriptCompiler {
     ///
     /// This method exists along with extract_scope_id due to cross module namespace checking not
     /// innately confirming whether or not it contains a particular `ScopeType`
-    pub fn get_scope_id(&self, scope_type: ScopeType, owner: &Module) -> Option<ScopeId> {
+    //FIX: Id for consistency
+    pub fn get_scope_id(&self, scope_type: ScopeType, owner: ModuleId) -> Option<ScopeId> {
         self.find_scope(scope_type, owner).map(|s| s.scope.scope_id)
     }
 
@@ -270,8 +271,7 @@ impl ScriptCompiler {
     /// This exists because if the current module has something like a typedef in the semantic stage,
     /// that means the parser itself already checked if it was legal grammar-wise.
     pub fn extract_scope_id(&self, scope_type: ScopeType, owner_id: ModuleId) -> ScopeId {
-        let owner_mod = &self.mods[owner_id.id];
-        self.find_scope(scope_type, owner_mod)
+        self.find_scope(scope_type, owner_id)
             .expect("Either semantic broke, parser broke, or modules broke")
             .scope
             .scope_id
@@ -282,7 +282,7 @@ impl ScriptCompiler {
         &self.scopes[scope_id.id]
     }
 
-    /// Returns mutably borrowed scope using a `ScopeId`
+    /// Returns mutably borrowed `ScopeInfo` using a `ScopeId`
     pub fn get_scope_mut(&mut self, scope_id: ScopeId) -> &mut ScopeInfo {
         &mut self.scopes[scope_id.id]
     }
@@ -290,8 +290,7 @@ impl ScriptCompiler {
     /// Pushes new scope with given scope type and returns the `ScopeId`. If the scope already
     /// exists then it returns the existent `ScopeId`.
     pub fn push_scope(&mut self, scope_type: ScopeType, owner_id: ModuleId) -> ScopeId {
-        let owner_mod = &self.mods[owner_id.id];
-        if let Some(scope_info) = self.find_scope(scope_type, owner_mod) {
+        if let Some(scope_info) = self.find_scope(scope_type, owner_id) {
             return scope_info.scope.scope_id;
         }
 
@@ -302,6 +301,7 @@ impl ScriptCompiler {
 
         let owner_mod = &mut self.mods[owner_id.id];
         owner_mod.scopes.push(scope_id);
+        owner_mod.held_scopes |= scope_type.to_u8();
         // BRAIN OFF
 
         scope_id
@@ -314,37 +314,29 @@ impl ScriptCompiler {
         &self,
         name_id: InternedId,
         scope_type: ScopeType,
-        mod_owner: &Module,
+        owner_id: ModuleId,
     ) -> Option<SymbolId> {
-        // I don't think this can fail. Should maybe expect for clarity.
-        for scope_id in &mod_owner.scopes {
-            let scope = &self.scopes[scope_id.id].scope;
-            // Loops over all allowed scopes and checks their individual namespaces
-            for allowed_scope_type in scope.accessible_scopes.iter().copied() {
-                // In this scenario the scope may or may not exist since this could be used from
-                // another module
-                if let Some(scope_info) = self.find_scope(allowed_scope_type, mod_owner) {
-                    for (current_ast_id, current_name_id) in &scope_info.scope.table.name_ids {
-                        if *current_name_id == name_id {
-                            let scope_id =
-                                self.extract_scope_id(allowed_scope_type, mod_owner.mod_id);
-                            let scope_info = self.get_scope(scope_id);
+        let accessible_scopes = scope_type.accessible_scopes();
 
-                            let sym_id = scope_info.scope.table.ast_to_sym[&current_ast_id];
-                            return Some(sym_id);
-                        }
+        for allowed_scope_type in accessible_scopes.iter().copied() {
+            // In this scenario the scope may or may not exist since this could be used from
+            // another module
+            if let Some(scope_info) = self.find_scope(allowed_scope_type, owner_id) {
+                for (current_name_id, current_sym_id) in &scope_info.scope.table.interned_to_sym {
+                    if *current_name_id == name_id {
+                        return Some(*current_sym_id);
                     }
                 }
             }
         }
-        //TEST: If all scopes fail
 
         None
     }
 
     /// Returns Some scope if it exists, None otherwise
     //NOTE: May opt for indices similarly to the ast's way of making sections
-    pub fn find_scope(&self, scope_type: ScopeType, mod_owner: &Module) -> Option<&ScopeInfo> {
+    pub fn find_scope(&self, scope_type: ScopeType, owner_id: ModuleId) -> Option<&ScopeInfo> {
+        let mod_owner = &self.mods[owner_id.id];
         for scope_id in &mod_owner.scopes {
             let scope_info = &self.scopes[scope_id.id];
             if scope_info.scope.scope_type == scope_type {

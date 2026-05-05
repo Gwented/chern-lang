@@ -153,8 +153,11 @@ impl DocumentState {
                 // Reuse pre-computed tokens for main module
                 script_lib::parser::parse(&settings, &module, &self.tokens, &self.interner)
             } else {
-                let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
-                    .tokenize(&mut self.interner);
+                let toks = Lexer::new(
+                    &module.src_metadata.src_bytes,
+                    module.src_metadata.script_start,
+                )
+                .tokenize(&mut self.interner);
                 script_lib::parser::parse(&settings, &module, &toks, &self.interner)
             };
 

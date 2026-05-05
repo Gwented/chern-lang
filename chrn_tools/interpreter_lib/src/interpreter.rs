@@ -35,7 +35,7 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
         let module = &script_compiler.mods[mod_idx];
 
         // NOTE: Brain not on yet
-        let metadata = &module.metadata.as_ref().expect("Infailable");
+        let metadata = &module.src_metadata.as_ref().expect("Infailable");
 
         let toks = script_lib::lexer::Lexer::new(&metadata.src_bytes, metadata.script_start)
             .tokenize(&mut interner);

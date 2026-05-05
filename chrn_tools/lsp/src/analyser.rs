@@ -262,7 +262,7 @@ pub(crate) fn resolve_modules_lsp(
                         let core_msg = common::core_error::form_string_from_io_err(&e, path)
                             .unwrap_or(e.to_string());
                         let ln_data = common::reporter::form_err_diag(
-                            &prev_mod.metadata.src_bytes,
+                            &prev_mod.src_metadata.src_bytes,
                             &[import.path_span],
                             settings.can_color,
                         );

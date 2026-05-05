@@ -634,7 +634,7 @@ mod tests {
 
         let module = &compiler.mods[0];
 
-        let metadata = module.metadata.as_ref().unwrap();
+        let metadata = module.src_metadata.as_ref().unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
@@ -660,7 +660,7 @@ mod tests {
 
         let module = &compiler.mods[0];
 
-        let metadata = module.metadata.as_ref().unwrap();
+        let metadata = module.src_metadata.as_ref().unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
@@ -690,7 +690,7 @@ mod tests {
 
         let module = &compiler.mods[0];
 
-        let metadata = module.metadata.as_ref().unwrap();
+        let metadata = module.src_metadata.as_ref().unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
@@ -717,7 +717,7 @@ mod tests {
 
         let module = &compiler.mods[0];
 
-        let metadata = module.metadata.as_ref().unwrap();
+        let metadata = module.src_metadata.as_ref().unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
@@ -748,7 +748,7 @@ mod tests {
 
         let module = &compiler.mods[0];
 
-        let metadata = module.metadata.as_ref().unwrap();
+        let metadata = module.src_metadata.as_ref().unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
@@ -775,7 +775,7 @@ mod tests {
 
         let module = &compiler.mods[0];
 
-        let metadata = module.metadata.as_ref().unwrap();
+        let metadata = module.src_metadata.as_ref().unwrap();
         let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();

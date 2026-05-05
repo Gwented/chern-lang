@@ -17,7 +17,7 @@ pub fn fmt_script_block(path: &Path, settings: &ChrnSettings) -> Result<String, 
         }
 
         let metadata = module
-            .metadata
+            .src_metadata
             .as_ref()
             .expect("std should not be resolved");
 

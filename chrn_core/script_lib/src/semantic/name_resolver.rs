@@ -85,6 +85,7 @@ impl NamespaceResolver<'_> {
     fn register_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) {
         // This will all likely fail eventually
         let scope_id = self.compiler.push_scope(ScopeType::Var, self.current_mod);
+        dbg!("CALLED");
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
 
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
@@ -282,7 +283,7 @@ impl NamespaceResolver<'_> {
                         None,
                         &[orig_span, dup_span],
                         &module
-                            .metadata
+                            .src_metadata
                             .as_ref()
                             .expect("std should not be resolved"),
                     );
