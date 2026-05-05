@@ -11,8 +11,8 @@ use crate::{
     modules::{Bind, Module},
     semantic::{
         representation::{
-            AliasDef, EnumDef, FuncDef, ResolvedExpr, StructDef, Symbol, SymbolKind, Table, Type,
-            TypeDef, TypeInfo,
+            AliasDef, EnumDef, FuncDef, Param, ResolvedExpr, StructDef, Symbol, SymbolKind, Table,
+            Type, TypeDef, TypeInfo,
         },
         scopes::{Scope, ScopeInfo, ScopeType},
     },
@@ -356,6 +356,35 @@ impl ScriptCompiler {
         let core_scope_id = ScopeId::new(compiler.scopes.len());
         let mut core_mod = Module::new(core_name, core_mod_id, Vec::new(), None);
 
+        Self::load_core_types(compiler, &core_mod, &mut table);
+        // Self::load_core_aliases(compiler, &core_mod, &mut table);
+
+        // Done adding all of core
+        let scope_id = ScopeId::new(compiler.scopes.len());
+        let scope = Scope::with_table(scope_id, ScopeType::Core, table);
+        let scope_info = ScopeInfo::new(scope, core_mod_id);
+
+        compiler.scopes.push(scope_info);
+        core_mod.scopes.push(scope_id);
+
+        compiler.mod_map.insert(core_name, core_mod_id);
+        compiler.mods.push(core_mod);
+
+        for module in &mut compiler.mods {
+            module.scopes.push(core_scope_id);
+        }
+    }
+
+    fn load_core_aliases(compiler: &mut ScriptCompiler, core_mod: &Module, table: &mut Table) {
+        // Functions aren't done yet
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        // let func_def = FuncDef::new(call_span, kind, constraints, args);
+        // compiler.types.push(alias);
+        todo!();
+    }
+
+    fn load_core_types(compiler: &mut ScriptCompiler, core_mod: &Module, table: &mut Table) {
+        let core_mod_id = core_mod.mod_id;
         compiler.types.push(TypeInfo::new(
             Type::BuiltinType(BuiltinType::I8),
             core_mod_id,
@@ -799,22 +828,5 @@ impl ScriptCompiler {
         compiler
             .types
             .push(TypeInfo::new(Type::Unknown, core_mod_id));
-
-        let scope_id = ScopeId::new(compiler.scopes.len());
-        let scope = Scope::with_table(scope_id, ScopeType::Core, table);
-        let scope_info = ScopeInfo::new(scope, core_mod_id);
-
-        compiler.scopes.push(scope_info);
-        core_mod.scopes.push(scope_id);
-
-        compiler.mod_map.insert(core_name, core_mod_id);
-        compiler.mods.push(core_mod);
-
-        for module in &mut compiler.mods {
-            module.scopes.push(core_scope_id);
-        }
-
-        //TODO: Maybe global scope table with the root being std since this std_lib_id stuff is a
-        //bit fewfijewf
     }
 }

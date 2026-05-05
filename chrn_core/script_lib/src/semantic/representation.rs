@@ -143,7 +143,7 @@ impl ResolvedExpr {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum ExprHir {
     Val(ValueId),
     Var(SymbolId),
@@ -153,7 +153,8 @@ pub enum ExprHir {
     // Call(),
     // MemberAccess(),
     // Um
-    // Call(Box<SpannedExpr>, Vec<SpannedExpr>),
+    /// Caller, arguments
+    Call(ExprId, Vec<ExprId>),
     // MemberAccess(AbstractMemberAccess),
     Unary {
         op: UnaryOp,
@@ -211,7 +212,7 @@ impl StructDef {
 pub struct EnumDef {
     pub sym_id: SymbolId,
     pub variants: Vec<VariantRepre>,
-    pub args: Vec<InnerArgs>,
+    pub glob_args: Vec<InnerArgs>,
     pub glob_conds: Vec<ExprId>,
 }
 
@@ -221,7 +222,7 @@ impl EnumDef {
             sym_id,
             variants,
             glob_conds: Vec::new(),
-            args: Vec::new(),
+            glob_args: Vec::new(),
         }
     }
 }
@@ -275,7 +276,7 @@ pub struct FuncDef {
     pub call_span: Span,
     pub kind: FuncKind,
     pub constraints: Vec<ArgConstraint>,
-    pub args: Vec<FuncArgsRepre>,
+    pub args: Vec<ExprId>,
 }
 
 impl FuncDef {
@@ -283,7 +284,7 @@ impl FuncDef {
         call_span: Span,
         kind: FuncKind,
         constraints: Vec<ArgConstraint>,
-        args: Vec<FuncArgsRepre>,
+        args: Vec<ExprId>,
     ) -> FuncDef {
         FuncDef {
             kind,
@@ -292,104 +293,6 @@ impl FuncDef {
             args,
         }
     }
-}
-
-// I'm scared of this
-// This should be removed
-// TODO:
-#[derive(Debug)]
-pub enum FuncArgsRepre {
-    Integer(ValueId),
-    Float(ValueId),
-    Char(char),
-    //TEST:
-    Var(TypeId, BuiltinTypeKind),
-    Default(TypeId, BuiltinTypeKind, ValueId),
-    Str(InternedId),
-}
-
-impl FuncArgsRepre {
-    pub fn is_numeric(&self) -> bool {
-        match self {
-            FuncArgsRepre::Integer(_) | FuncArgsRepre::Float(_) => true,
-            FuncArgsRepre::Char(_) | FuncArgsRepre::Str(_) => false,
-            FuncArgsRepre::Var(_, kind) | FuncArgsRepre::Default(_, kind, _) => kind.is_numeric(),
-        }
-    }
-
-    // TEST: Currently testing out a way of formatting that is more encapsulated so that the code
-    // outside doesn't have to be repeated as intensely.
-    pub fn is_integer(&self) -> bool {
-        match self.kind() {
-            FuncArgsKind::Integer => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_float(&self) -> bool {
-        match self.kind() {
-            FuncArgsKind::Float => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_char(&self) -> bool {
-        match self.kind() {
-            FuncArgsKind::Char => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_str(&self) -> bool {
-        match self.kind() {
-            FuncArgsKind::Str => true,
-            _ => false,
-        }
-    }
-
-    // to_builtin_type_kind is getting a little long for something so contextually obvious
-    pub fn to_builtin_kind(&self) -> BuiltinTypeKind {
-        match self {
-            FuncArgsRepre::Integer(_) => BuiltinTypeKind::I64,
-            FuncArgsRepre::Float(_) => BuiltinTypeKind::F64,
-            FuncArgsRepre::Char(_) => BuiltinTypeKind::Char,
-            FuncArgsRepre::Var(_, kind) | FuncArgsRepre::Default(_, kind, _) => *kind,
-            FuncArgsRepre::Str(_) => BuiltinTypeKind::Str,
-        }
-    }
-
-    pub fn kind(&self) -> FuncArgsKind {
-        match self {
-            FuncArgsRepre::Integer(_) => FuncArgsKind::Integer,
-            FuncArgsRepre::Float(_) => FuncArgsKind::Float,
-            FuncArgsRepre::Char(_) => FuncArgsKind::Char,
-            FuncArgsRepre::Var(_, _) => FuncArgsKind::Var,
-            FuncArgsRepre::Str(_) => FuncArgsKind::Str,
-            FuncArgsRepre::Default(_, _, _) => FuncArgsKind::Default,
-        }
-    }
-}
-
-impl Formattable for FuncArgsRepre {
-    fn to_fmt(&self) -> Formatted {
-        match self {
-            FuncArgsRepre::Integer(_) => Formatted::Integer,
-            FuncArgsRepre::Float(_) => Formatted::Float,
-            FuncArgsRepre::Char(_) => Formatted::Char,
-            FuncArgsRepre::Var(_, kind) | FuncArgsRepre::Default(_, kind, _) => kind.to_fmt(),
-            FuncArgsRepre::Str(_) => Formatted::Str,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FuncArgsKind {
-    Integer,
-    Float,
-    Char,
-    Var,
-    Default,
-    Str,
 }
 
 #[derive(Debug)]
@@ -448,7 +351,7 @@ pub(crate) enum PossibleMember {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FuncKind {
+pub enum FuncKind {
     Contains,
     Range,
     StartsW,

@@ -40,6 +40,7 @@ impl TypeContext {
         }
     }
 
+    // This explanation is confusing!
     /// Takes an input of the symbol that is pending and the expression that is pending.
     /// This method is intended to prevent boiler-plate of checking if the symbol exists each time.
     pub(super) fn store_pending_expr(&mut self, sym_id: SymbolId, pending_expr: PendingExpr) {

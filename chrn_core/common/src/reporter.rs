@@ -1,5 +1,7 @@
 //BUG: The byte position of EOF is inherently not trackable due to the nature of how line views are
 //collected, so it would need to have some conditionals that just for the token. Fixable.
+//
+//FIX: Needs to handle eof. please.
 use std::path::Path;
 
 //TODO: ORGANIZE NEW ARCHITECTURE

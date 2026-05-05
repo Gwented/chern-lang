@@ -8,7 +8,7 @@ use crate::semantic::representation::FuncKind;
 // Prime
 // TEST:
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ArgConstraint {
+pub enum ArgConstraint {
     ArgCount(u8),
     DynType,
     MatchingType,

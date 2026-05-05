@@ -146,57 +146,57 @@ impl TypeResolver<'_> {
             _ => todo!(),
         };
 
-        // if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
-        //     for symbol in self.compiler.symbols.values() {
-        //         if self.interner.search(symbol.name_id.id as usize) == "x" {
-        //             let name = self.interner.search(symbol.name_id.id as usize);
-        //             dbg!(name);
-        //             match symbol.kind {
-        //                 SymbolKind::Val(value_id) => {
-        //                     let val = &self.compiler.values[value_id.id as usize];
-        //                     dbg!(value_id, val);
-        //                     let expr = &self.compiler.exprs[val.expr_id.id as usize];
-        //                     dbg!(expr.val_id, expr);
-        //                     dbg!(&self.compiler.values[expr.val_id.id as usize]);
-        //                 }
-        //                 SymbolKind::Type(type_id) => {
-        //                     let ty_info = &self.compiler.types[type_id.id as usize];
-        //                     match &ty_info.ty {
-        //                         Type::BuiltinType(builtin_type) => {
-        //                             dbg!(builtin_type);
-        //                         }
-        //                         Type::Struct(struct_def) => todo!(),
-        //                         Type::Enum(enum_def) => todo!(),
-        //                         Type::Func(func_def) => todo!(),
-        //                         Type::Alias(alias_def) => todo!(),
-        //                         Type::TypeDef(type_def) => {
-        //                             let ty = &self.compiler.types[type_def.type_id.id as usize];
-        //                             dbg!(ty);
-        //                         }
-        //                         Type::Unknown => todo!(),
-        //                     }
-        //                 }
-        //                 SymbolKind::Unknown => todo!(),
-        //             }
-        //             panic!("Done");
-        //         }
-        //         // dbg!(self.interner.search(symbol.name_id.id as usize));
-        //         // dbg!(symbol);
-        //     }
-        //
-        //     for ty in &self.compiler.types {
-        //         dbg!(ty);
-        //     }
-        //
-        //     for expr_thing in &self.compiler.exprs {
-        //         dbg!(expr_thing);
-        //     }
-        //
-        //     for val in &self.compiler.values {
-        //         dbg!(val);
-        //     }
-        // }
-        //
+        if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
+            for symbol in self.compiler.symbols.values() {
+                if self.interner.search(symbol.name_id.id as usize) == "x" {
+                    let name = self.interner.search(symbol.name_id.id as usize);
+                    dbg!(name);
+                    match symbol.kind {
+                        SymbolKind::Val(value_id) => {
+                            let val = &self.compiler.values[value_id.id as usize];
+                            dbg!(value_id, val);
+                            let expr = &self.compiler.exprs[val.expr_id.id as usize];
+                            dbg!(expr.val_id, expr);
+                            dbg!(&self.compiler.values[expr.val_id.id as usize]);
+                        }
+                        SymbolKind::Type(type_id) => {
+                            let ty_info = &self.compiler.types[type_id.id as usize];
+                            match &ty_info.ty {
+                                Type::BuiltinType(builtin_type) => {
+                                    dbg!(builtin_type);
+                                }
+                                Type::Struct(struct_def) => todo!(),
+                                Type::Enum(enum_def) => todo!(),
+                                Type::Func(func_def) => todo!(),
+                                Type::Alias(alias_def) => todo!(),
+                                Type::TypeDef(type_def) => {
+                                    let ty = &self.compiler.types[type_def.type_id.id as usize];
+                                    dbg!(ty);
+                                }
+                                Type::Unknown => todo!(),
+                            }
+                        }
+                        SymbolKind::Unknown => todo!(),
+                    }
+                    panic!("Done");
+                }
+                // dbg!(self.interner.search(symbol.name_id.id as usize));
+                // dbg!(symbol);
+            }
+
+            for ty in &self.compiler.types {
+                dbg!(ty);
+            }
+
+            for expr_thing in &self.compiler.exprs {
+                dbg!(expr_thing);
+            }
+
+            for val in &self.compiler.values {
+                dbg!(val);
+            }
+        }
+
         if !self.reporter.err_vec.is_empty() {
             let mut diags = Vec::new();
             diags.append(&mut self.reporter.err_vec);
@@ -315,15 +315,14 @@ impl TypeResolver<'_> {
     /// This works as user -> user -> ... -> None
     // This needs to go from x -> x + 2 -> y recursively however long needed
     fn traverse_expr(&mut self, current_expr_id: ExprId) -> Result<bool, SemanticError> {
-        let expr = &mut self.compiler.exprs[current_expr_id.id as usize];
-
-        match expr.expr_hir {
+        match &self.compiler.exprs[current_expr_id.id as usize].expr_hir {
             ExprHir::Val(val_id) => {
                 let val_info = &self.compiler.values[val_id.id as usize];
 
                 let type_id = val_info.type_id;
                 let const_val_opt = val_info.const_val.clone();
 
+                let expr = &mut self.compiler.exprs[current_expr_id.id as usize];
                 expr.type_id = type_id;
 
                 let inner_val = &mut self.compiler.values[expr.val_id.id as usize];
@@ -332,12 +331,9 @@ impl TypeResolver<'_> {
                 dbg!(inner_val);
                 todo!("Make sure this is ok")
             }
-            // I don't think this is possible?
-            //TODO:
             ExprHir::Var(sym_id) => {
                 todo!("What is a varrrble")
             }
-            //TODO:
             ExprHir::Default(sym_id, expr_id) => {
                 todo!("Default not finished")
             }
@@ -357,14 +353,14 @@ impl TypeResolver<'_> {
 
                 // Basic validation of expression to see if it's const or runtime
                 let const_val_opt = if let Some(const_val) = &operand_val_info.const_val {
-                    if !evaluator::is_compatible_unary(op, const_val) {
+                    if !evaluator::is_compatible_unary(*op, const_val) {
                         return Err(MathError::UnaryOpMismatch(
                             const_val.kind().to_fmt(),
                             op.to_fmt(),
                             vec![operand_expr.span],
                         ))?;
                     } else {
-                        Some(evaluator::apply_unary_op(op, const_val)?)
+                        Some(evaluator::apply_unary_op(*op, const_val)?)
                     }
                 } else {
                     None
@@ -417,7 +413,7 @@ impl TypeResolver<'_> {
                     (Some(lhs_const), Some(rhs_const)) => {
                         // If cannot perform operation and neither are unknown then there is actual
                         // corruption, and not one part just being unresolved
-                        if !evaluator::is_compatible_binary(lhs_const, op, rhs_const) {
+                        if !evaluator::is_compatible_binary(lhs_const, *op, rhs_const) {
                             //TODO: Expressions need spans
                             // Removal of pending symbols need
                             let full_span = lhs_expr.span.merge(rhs_expr.span);
@@ -429,7 +425,7 @@ impl TypeResolver<'_> {
                                 vec![full_span],
                             ))?;
                         } else {
-                            Some(evaluator::apply_binary_op(lhs_const, op, rhs_const)?)
+                            Some(evaluator::apply_binary_op(lhs_const, *op, rhs_const)?)
                         }
                     }
                     _ => None,
@@ -447,6 +443,7 @@ impl TypeResolver<'_> {
                 inner_val.type_id = type_id;
                 inner_val.const_val = const_val_opt;
             }
+            ExprHir::Call(expr_id, expr_ids) => todo!(),
         }
 
         // Uh huh
@@ -459,7 +456,6 @@ impl TypeResolver<'_> {
     }
 
     fn resolve_var(&mut self, abs_var: &AbstractVar, ast_id: AstId) -> Result<(), ()> {
-        let module = &mut self.compiler.mods[self.current_mod.id];
         let scope_id = self
             .compiler
             .extract_scope_id(ScopeType::Neutral, self.current_mod);
@@ -673,6 +669,7 @@ impl TypeResolver<'_> {
 
         struct_def.fields.append(&mut fields);
         struct_def.glob_conds = glob_conds;
+        //TODO: Probably will be kept
         struct_def.glob_args = abs_struct
             .glob_args
             .iter()
@@ -796,7 +793,7 @@ impl TypeResolver<'_> {
 
         enum_def.variants.append(&mut variants);
         enum_def.glob_conds = glob_conds;
-        enum_def.args = abs_enum.glob_args.iter().map(|sp_arg| sp_arg.arg).collect();
+        enum_def.glob_args = abs_enum.glob_args.iter().map(|sp_arg| sp_arg.arg).collect();
 
         // let enum_def = self.compiler.get_enum(sym_id);
         // for variant in &enum_def.variants {
@@ -903,6 +900,7 @@ impl TypeResolver<'_> {
 
                 todo!()
             }
+            ExprHir::Call(expr_id, expr_ids) => todo!(),
         }
     }
 
@@ -993,26 +991,6 @@ impl TypeResolver<'_> {
                                 val_id,
                                 spanned_expr.span,
                                 Vec::new(),
-                            );
-
-                            // Pushes expression that is referencing an unresolved symbol into a
-                            // queue to be resolved when the symbol is seen later
-
-                            let type_id = TypeId::new(script_compiler::TYPE_UNKNOWN_IDX);
-
-                            // Creates value id that has an unknown type, no constant value, and an
-                            // unresolved expression.
-                            let val_id = ValueId::new(self.compiler.values.len() as u32);
-                            let val_info = ValueInfo::new(type_id, expr_id, None);
-
-                            self.compiler.values.push(val_info);
-
-                            ResolvedExpr::new(
-                                type_id,
-                                expr_hir,
-                                val_id,
-                                spanned_expr.span,
-                                Vec::new(),
                             )
                         }
                     };
@@ -1025,9 +1003,8 @@ impl TypeResolver<'_> {
                     let module = &self.compiler.mods[self.current_mod.id];
                     let err_name = self.interner.search(name_id.id as usize);
                     let mod_name = self.interner.search(module.name_id.id as usize);
-                    let msg = format!(
-                        "The variable `{err_name}` was not found in the module `{mod_name}`"
-                    );
+                    let msg =
+                        format!("The symbol `{err_name}` was not found in the module `{mod_name}`");
 
                     Err(SemanticError::General(msg, vec![spanned_expr.span]))
                 }
@@ -1232,6 +1209,7 @@ impl TypeResolver<'_> {
                 Ok(expr_id)
             }
             Expr::Call(caller, spanned_exprs) => {
+                let call_id = self.register_expr(sym_parent, caller, scope_type)?;
                 todo!();
             }
             // Maybe having "::" exist could help..
@@ -1286,14 +1264,6 @@ impl TypeResolver<'_> {
                                     let val_id = ValueId::new(self.compiler.values.len() as u32);
                                     let val_info = ValueInfo::new(type_id, expr_id, None);
 
-                                    ResolvedExpr::new(
-                                        type_id,
-                                        expr_hir,
-                                        val_id,
-                                        spanned_expr.span,
-                                        Vec::new(),
-                                    );
-
                                     self.compiler.values.push(val_info);
 
                                     let expr = ResolvedExpr::new(
@@ -1314,7 +1284,7 @@ impl TypeResolver<'_> {
                             // form at all state why a symbol that exists wasn't seen
                             // Find similar symbols
                             let msg = format!(
-                                "Could not find the symbol `{}` inside module `{}` as a value or type",
+                                "Could not find the symbol `{}` inside module `{}` as a value, type, or alias",
                                 self.interner.search(abs_member_access.field.id as usize),
                                 self.interner.search(extern_mod.name_id.id as usize)
                             );

@@ -116,11 +116,7 @@ const STMT_START: u32 = 3;
 const STMT_END: u32 = 9;
 
 pub const SECT_START: u32 = 9;
-pub const SECT_END: u32 = 13;
-
-//TODO: Suspicious classification
-const PREDICATE_START: u32 = 14;
-const PREDICATE_END: u32 = 15;
+pub const SECT_END: u32 = 12;
 
 //WARN: The amount of casting here is painful. SEVERELY painful.
 pub fn is_kw(id: u32) -> bool {
@@ -142,8 +138,4 @@ pub fn stmt_range() -> RangeInclusive<usize> {
 
 pub fn sect_range() -> RangeInclusive<usize> {
     (SECT_START as usize)..=(SECT_END as usize)
-}
-
-pub fn predicate_range() -> RangeInclusive<usize> {
-    (PREDICATE_START as usize)..=(PREDICATE_END as usize)
 }

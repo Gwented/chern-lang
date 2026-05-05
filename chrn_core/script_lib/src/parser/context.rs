@@ -1,7 +1,4 @@
-use chrn_utils::{
-    intern::Intern,
-    keywords::{self, Keyword},
-};
+use chrn_utils::{intern::Intern, keywords::Keyword};
 
 use common::{
     chrn_settings::ChrnSettings,
@@ -15,7 +12,7 @@ use common::{
 
 use crate::{
     algo,
-    modules::{Module, ModuleMetadata},
+    modules::ModuleMetadata,
     parser::{NeutralBranch, SectionBranch, branch::Branch},
     token::{self, SpannedToken, Token, TokenKind},
 };
@@ -148,6 +145,7 @@ impl<'a> Context<'a> {
         interner: &Intern,
     ) -> Result<Keyword, Token> {
         // WARN: IF ANYTHING GOES WRONG ADD THE IF STATEMENTS BACK FOR EOF
+        // HIGHLIY SUSPICIOUS
         let found = self.advance();
 
         if let Token::Keyword(kw) = found.tok {
@@ -199,13 +197,13 @@ impl<'a> Context<'a> {
     /// This must ALWAYS be advanced before usage due to the found token always being assumed to be
     /// the previous token.
     pub(super) fn report_verbose(&mut self, msg: &str, branch: Branch, interner: &Intern) {
-        let found = &self.toks[self.pos - 1];
+        let found = self.peek_behind(1);
 
         let help = self
             .try_help(TokenKind::Poison, &found, branch, interner)
             .unwrap_or_default();
 
-        let spans = self.safely_handle_span(found);
+        let spans = self.safely_handle_span(&found);
 
         let ln_data =
             reporter::form_err_diag(&self.metadata.src_bytes, &spans, self.settings.can_color);
@@ -246,6 +244,7 @@ impl<'a> Context<'a> {
         branch: Branch,
         interner: &Intern,
     ) -> Result<Token, Token> {
+        //WARN: HIGHLY SUSPICIOUS
         let found = &self.toks[self.pos];
         self.pos += 1;
 
@@ -307,7 +306,7 @@ impl<'a> Context<'a> {
         branch: Branch,
         interner: &Intern,
     ) {
-        let found = &self.toks[self.pos - 1];
+        let found = &self.peek_behind(1);
 
         let help = self
             .try_help(TokenKind::Poison, &found, branch, interner)
@@ -614,7 +613,7 @@ impl<'a> Context<'a> {
             Token::Keyword(kw) => Some(format!("`{}`", kw.to_fmt().to_string())),
             Token::Illegal(id) => {
                 let illegal_msg = interner.search(id as usize);
-                let new_msg = format!("\"{illegal_msg}\"");
+                let new_msg = format!("invalid token \"{illegal_msg}\"");
                 Some(new_msg)
             }
             Token::Char(ch) => Some(format!("'{ch}'")),

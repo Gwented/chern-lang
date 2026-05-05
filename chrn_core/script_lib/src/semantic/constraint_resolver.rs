@@ -31,8 +31,7 @@ use crate::{
         error::{MathError, SemanticError},
         evaluator,
         representation::{
-            ExprHir, FuncArgsRepre, FuncDef, FuncKind, PossibleMember, ResolvedExpr, Symbol,
-            SymbolKind, Type,
+            ExprHir, FuncDef, FuncKind, PossibleMember, ResolvedExpr, Symbol, SymbolKind, Type,
         },
         scopes::ScopeType,
         semantic_reporter::SemanticReporter,

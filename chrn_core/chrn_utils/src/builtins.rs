@@ -105,7 +105,6 @@ impl BuiltinType {
     }
 }
 
-// TODO: Something.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum BuiltinTypeKind {
