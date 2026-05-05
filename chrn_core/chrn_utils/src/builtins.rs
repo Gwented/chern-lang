@@ -2,10 +2,10 @@ use common::fmter::{Formattable, Formatted};
 
 use crate::{id_types::TypeId, intern};
 
-pub static BUILTIN_TYPE_ARRAY: [&str; 26] = [
+pub static BUILTIN_TYPE_ARRAY: [&str; 27] = [
     "i8", "u8", "i16", "u16", "f16", "i32", "u32", "f32", "i64", "u64", "f64", "i128", "u128",
     "f128", "sized", "unsized", "char", "str", "bool", "nil", "BigInt", "BigFloat", "List", "Map",
-    "Set", "Tuple",
+    "Set", "Tuple", "any",
 ];
 
 //TEST: Serial and script interact with this directly so
@@ -34,10 +34,10 @@ pub enum BuiltinType {
     BigInt,
     BigFloat,
     List(TypeId),
-    Set(TypeId),
     Map(TypeId, TypeId),
+    Set(TypeId),
     Tuple(Vec<TypeId>),
-    Any(Option<TypeId>),
+    Any,
 }
 
 impl BuiltinType {
@@ -67,6 +67,7 @@ impl BuiltinType {
             intern::INTERNED_STR => Some(BuiltinType::Str),
             intern::INTERNED_BIGINT => Some(BuiltinType::BigInt),
             intern::INTERNED_BIGFLOAT => Some(BuiltinType::BigFloat),
+            intern::INTERNED_ANY => Some(BuiltinType::Any),
             _ => None,
         }
     }
@@ -95,10 +96,10 @@ impl BuiltinType {
             BuiltinType::Str => BuiltinTypeKind::Str,
             BuiltinType::BigInt => BuiltinTypeKind::BigInt,
             BuiltinType::BigFloat => BuiltinTypeKind::BigFloat,
+            BuiltinType::Any => BuiltinTypeKind::Any,
             BuiltinType::List(_) => BuiltinTypeKind::List,
             BuiltinType::Set(_) => BuiltinTypeKind::Set,
             BuiltinType::Map(_, _) => BuiltinTypeKind::Map,
-            BuiltinType::Any(_) => BuiltinTypeKind::Any,
             BuiltinType::Tuple(_) => BuiltinTypeKind::Tuple,
         }
     }
@@ -133,8 +134,8 @@ pub enum BuiltinTypeKind {
     List,
     Set,
     Map,
-    Any,
     Tuple,
+    Any,
 }
 
 impl BuiltinTypeKind {

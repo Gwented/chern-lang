@@ -11,7 +11,7 @@ use crate::{
     parser::ast::{
         AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Item,
     },
-    script_compiler::{self, ScriptCompiler},
+    script_compiler::ScriptCompiler,
     semantic::{
         representation::{
             AliasDef, EnumDef, StructDef, Symbol, SymbolKind, Type, TypeDef, TypeInfo,
@@ -84,14 +84,14 @@ impl NamespaceResolver<'_> {
     /// referenced
     fn register_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) {
         // This will all likely fail eventually
-        let module = &mut self.compiler.mods[self.current_mod.id];
-        let scope_id = module.push_scope(ScopeType::Var);
-        let table = &mut module.get_scope_mut(scope_id).table;
+        let scope_id = self.compiler.push_scope(ScopeType::Var, self.current_mod);
+        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+
+        let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
         table.name_ids.insert(ast_id, abs_typedef.name_id);
-
-        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
-        table.sym_ids.insert(ast_id, sym_id);
+        table.ast_to_sym.insert(ast_id, sym_id);
+        table.interned_to_sym.insert(abs_typedef.name_id, sym_id);
 
         // Promising a type will exist in the given index
         let type_id = TypeId::new(self.compiler.types.len() as u32);
@@ -102,7 +102,7 @@ impl NamespaceResolver<'_> {
         let symbol = Symbol::new(
             abs_typedef.name_id,
             sym_id,
-            ast_id,
+            Some(ast_id),
             self.current_mod,
             true,
             ScopeType::Var,
@@ -111,19 +111,18 @@ impl NamespaceResolver<'_> {
 
         self.compiler.symbols.insert(sym_id, symbol);
 
-        let ty_info = TypeInfo::new(Type::TypeDef(type_def_repre), self.compiler.std_mod_id);
+        let ty_info = TypeInfo::new(Type::TypeDef(type_def_repre), self.compiler.core_mod_id);
         self.compiler.types.push(ty_info);
     }
 
     fn register_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) {
-        let module = &mut self.compiler.mods[self.current_mod.id];
-        let scope_id = module.push_scope(ScopeType::Nest);
-        let table = &mut module.get_scope_mut(scope_id).table;
+        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+        let scope_id = self.compiler.push_scope(ScopeType::Nest, self.current_mod);
+        let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
         table.name_ids.insert(ast_id, abs_struct.name_id);
-
-        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
-        table.sym_ids.insert(ast_id, sym_id);
+        table.ast_to_sym.insert(ast_id, sym_id);
+        table.interned_to_sym.insert(abs_struct.name_id, sym_id);
 
         let type_id = TypeId::new(self.compiler.types.len() as u32);
 
@@ -132,7 +131,7 @@ impl NamespaceResolver<'_> {
         let symbol = Symbol::new(
             abs_struct.name_id,
             sym_id,
-            ast_id,
+            Some(ast_id),
             self.current_mod,
             abs_struct.is_priv,
             ScopeType::Nest,
@@ -141,28 +140,27 @@ impl NamespaceResolver<'_> {
 
         self.compiler.symbols.insert(sym_id, symbol);
 
-        let ty_info = TypeInfo::new(Type::Struct(struct_def), self.compiler.std_mod_id);
+        let ty_info = TypeInfo::new(Type::Struct(struct_def), self.compiler.core_mod_id);
         self.compiler.types.push(ty_info);
     }
 
     fn register_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) {
-        let module = &mut self.compiler.mods[self.current_mod.id];
-        let scope_id = module.push_scope(ScopeType::Nest);
-        let table = &mut module.get_scope_mut(scope_id).table;
-
-        table.name_ids.insert(ast_id, abs_enum.name_id);
-
+        let scope_id = self.compiler.push_scope(ScopeType::Nest, self.current_mod);
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
         let type_id = TypeId::new(self.compiler.types.len() as u32);
 
-        table.sym_ids.insert(ast_id, sym_id);
+        let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
+
+        table.name_ids.insert(ast_id, abs_enum.name_id);
+        table.ast_to_sym.insert(ast_id, sym_id);
+        table.interned_to_sym.insert(abs_enum.name_id, sym_id);
 
         let enum_def = EnumDef::new(sym_id, Vec::new());
 
         let symbol = Symbol::new(
             abs_enum.name_id,
             sym_id,
-            ast_id,
+            Some(ast_id),
             self.current_mod,
             abs_enum.is_priv,
             ScopeType::Nest,
@@ -171,28 +169,29 @@ impl NamespaceResolver<'_> {
 
         self.compiler.symbols.insert(sym_id, symbol);
 
-        let ty_info = TypeInfo::new(Type::Enum(enum_def), self.compiler.std_mod_id);
+        let ty_info = TypeInfo::new(Type::Enum(enum_def), self.compiler.core_mod_id);
         self.compiler.types.push(ty_info);
     }
 
     fn register_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) {
-        let module = &mut self.compiler.mods[self.current_mod.id];
-        let scope_id = module.push_scope(ScopeType::Neutral);
-        let table = &mut module.get_scope_mut(scope_id).table;
+        let scope_id = self
+            .compiler
+            .push_scope(ScopeType::Neutral, self.current_mod);
+        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+        let type_id = TypeId::new(self.compiler.types.len() as u32);
+
+        let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
         table.name_ids.insert(ast_id, abs_alias.name_id);
-
-        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
-        table.sym_ids.insert(ast_id, sym_id);
-
-        let type_id = TypeId::new(self.compiler.types.len() as u32);
+        table.ast_to_sym.insert(ast_id, sym_id);
+        table.interned_to_sym.insert(abs_alias.name_id, sym_id);
 
         let alias_def = AliasDef::new(sym_id, Vec::new(), Vec::new(), Vec::new());
 
         let symbol = Symbol::new(
             abs_alias.name_id,
             sym_id,
-            ast_id,
+            Some(ast_id),
             self.current_mod,
             abs_alias.is_priv,
             ScopeType::Neutral,
@@ -201,19 +200,20 @@ impl NamespaceResolver<'_> {
 
         self.compiler.symbols.insert(sym_id, symbol);
 
-        let ty_info = TypeInfo::new(Type::Alias(alias_def), self.compiler.std_mod_id);
+        let ty_info = TypeInfo::new(Type::Alias(alias_def), self.compiler.core_mod_id);
         self.compiler.types.push(ty_info);
     }
 
     fn register_var(&mut self, abs_var: &AbstractVar, ast_id: AstId) {
-        let module = &mut self.compiler.mods[self.current_mod.id];
-        let scope_id = module.push_scope(ScopeType::Neutral);
-        let table = &mut module.get_scope_mut(scope_id).table;
+        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+        let scope_id = self
+            .compiler
+            .push_scope(ScopeType::Neutral, self.current_mod);
+        let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
         table.name_ids.insert(ast_id, abs_var.name_id);
-
-        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
-        table.sym_ids.insert(ast_id, sym_id);
+        table.ast_to_sym.insert(ast_id, sym_id);
+        table.interned_to_sym.insert(abs_var.name_id, sym_id);
 
         //TODO: PLACEHOLDER USED EXPR ID DOESNT EXIST YET
 
@@ -221,7 +221,7 @@ impl NamespaceResolver<'_> {
         let symbol = Symbol::new(
             abs_var.name_id,
             sym_id,
-            ast_id,
+            Some(ast_id),
             self.current_mod,
             abs_var.is_priv,
             ScopeType::Neutral,
@@ -233,6 +233,7 @@ impl NamespaceResolver<'_> {
 
     // Cannot check for this since the type is not known
     /// Checks registered namespace for duplicates and collects errors if any are found
+    //FIX: CHANGE TO NAME ID
     fn check_duplicates(&mut self) {
         // Solely a HashMap for spanning
         let mut seen: HashMap<InternedId, AstId> = HashMap::new();
@@ -241,8 +242,9 @@ impl NamespaceResolver<'_> {
         let module = &self.compiler.mods[self.current_mod.id];
 
         // Searching if there are any duplicates with respect to the scope
-        for scope in &module.scopes {
-            for (ast_id, name_id) in &scope.table.name_ids {
+        for scope_id in &module.scopes {
+            let scope_info = &self.compiler.scopes[scope_id.id];
+            for (ast_id, name_id) in &self.compiler.scopes[scope_id.id].scope.table.name_ids {
                 // Why is it not true if it exists false otherwise...seems backwards
                 let ast_opt = seen.insert(*name_id, *ast_id);
 
@@ -271,7 +273,7 @@ impl NamespaceResolver<'_> {
 
                     let msg = format!(
                         "Found more than one symbol with identifier \"{dup_name}\" in the section `{}`",
-                        scope.scope_type
+                        &scope_info.scope.scope_type
                     );
 
                     let module = &self.compiler.mods[self.current_mod.id];

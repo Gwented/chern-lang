@@ -939,11 +939,6 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
 
             Ok(SpannedTypeExpr::new(ty_expr, span))
         }
-        Token::QuestionMark => {
-            let span = ctx.advance_span();
-
-            Ok(SpannedTypeExpr::new(TypeExpr::Any, span))
-        }
         Token::Str(id) | Token::Integer(id, _) => {
             let name = interner.search(id as usize);
             let kind = ctx.peek_kind();

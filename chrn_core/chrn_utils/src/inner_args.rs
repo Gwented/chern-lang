@@ -66,7 +66,7 @@ impl InnerArgs {
                     | BuiltinType::BigFloat
                     | BuiltinType::Unsized
                     //NOTE: Checks this at runtime
-                    |BuiltinType::Any(_) => true,
+                    |BuiltinType::Any => true,
                     // This is unreachable because when arguments are resolved, it requires the
                     // data structures to be recursively resolved into a builtin type
                     BuiltinType::List(_)

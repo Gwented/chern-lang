@@ -69,7 +69,7 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     for i in 0..script_compiler.mods.len() - 1 {
         let mod_id = ModuleId::new(i);
 
-        if mod_id == script_compiler.std_mod_id {
+        if mod_id == script_compiler.core_mod_id {
             break;
         }
 
@@ -99,7 +99,7 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     for i in 0..script_compiler.mods.len() - 1 {
         let mod_id = ModuleId::new(i);
 
-        if mod_id == script_compiler.std_mod_id {
+        if mod_id == script_compiler.core_mod_id {
             break;
         }
 

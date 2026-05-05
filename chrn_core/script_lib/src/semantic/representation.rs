@@ -51,7 +51,7 @@ pub struct Symbol {
     pub name_id: InternedId,
     pub sym_id: SymbolId,
     //err span purposes
-    pub ast_id: AstId,
+    pub ast_id: Option<AstId>,
     pub kind: SymbolKind,
     pub owner: ModuleId,
     pub scope_type: ScopeType,
@@ -64,7 +64,7 @@ impl Symbol {
         name_id: InternedId,
         sym_id: SymbolId,
         //dbgr
-        ast_id: AstId,
+        ast_id: Option<AstId>,
         owner: ModuleId,
         is_priv: bool,
         scope_type: ScopeType,
@@ -171,14 +171,18 @@ pub struct Table {
     // Type specific tables
     pub(crate) name_ids: HashMap<AstId, InternedId>,
     // Can still change some to vec maybe
-    pub(crate) sym_ids: HashMap<AstId, SymbolId>,
+    pub(crate) ast_to_sym: HashMap<AstId, SymbolId>,
+    //TEST:
+    pub(crate) interned_to_sym: HashMap<InternedId, SymbolId>,
+    // Maybe also to type
 }
 
 impl Table {
     pub fn new() -> Table {
         Table {
             name_ids: HashMap::new(),
-            sym_ids: HashMap::new(),
+            ast_to_sym: HashMap::new(),
+            interned_to_sym: HashMap::new(),
         }
     }
 }

@@ -97,7 +97,12 @@ pub struct Module {
     /// Imports found in the module
     pub imports: Vec<Import>,
     /// Represents the 5 existent scopes
-    pub scopes: Vec<Scope>,
+    //TODO: How would parent be represented by the section hierarchy described in
+    //accessible_scopes!
+    //
+    //FIX: MAKE OPTIONS AS SCOPE IDS. SO, EACH SCOPE HAS THEIR OWN VECTOR OF SCOPE IDS, WITH ONE OF
+    //THEN BEING STD, OR JUST MAKE AN STD SPECIFIC SCOPE ID ATTACHED
+    pub scopes: Vec<ScopeId>,
     pub metadata: Option<ModuleMetadata>,
     // pub src_mod: Option<SourceModule>,
 }
@@ -119,86 +124,87 @@ impl Module {
         }
     }
 
-    /// Get's the `ScopeId` with no assumption of it existing.
-    ///
-    /// This method exists along with extract_scope_id due to cross module namespace checking not
-    /// innately confirming whether or not it contains a particular `ScopeType`
-    pub fn get_scope_id(&self, scope_type: ScopeType) -> Option<ScopeId> {
-        self.find_scope(scope_type).map(|s| s.scope_id)
-    }
-
-    /// Get's the `ScopeId` assuming that the scope already exists. Panics otherwise.
-    ///
-    /// This exists because if the current module has something like a typedef in the semantic stage,
-    /// that means the parser itself already checked if it was legal grammar-wise.
-    pub fn extract_scope_id(&self, scope_type: ScopeType) -> ScopeId {
-        self.find_scope(scope_type)
-            .expect("Either semantic broke, parser broke, or modules broke")
-            .scope_id
-    }
-
-    /// Get's scope using a `ScopeId`
-    pub fn get_scope(&self, scope_id: ScopeId) -> &Scope {
-        &self.scopes[scope_id.id]
-    }
-
-    /// Returns mutably borrowed scope using a `ScopeId`
-    pub fn get_scope_mut(&mut self, scope_id: ScopeId) -> &mut Scope {
-        &mut self.scopes[scope_id.id]
-    }
-
-    /// Pushes new scope with given scope type and returns the `ScopeId`. If the scope already
-    /// exists then it returns the existent `ScopeId`.
-    pub fn push_scope(&mut self, scope_type: ScopeType) -> ScopeId {
-        if let Some(scope) = self.find_scope(scope_type) {
-            return scope.scope_id;
-        }
-
-        let scope_id = ScopeId::new(self.scopes.len());
-        self.scopes.push(Scope::new(scope_id, scope_type));
-
-        scope_id
-    }
-
-    /// Checks if the name id corresponds to a `SymbolId` within the given `ScopeType`.
-    /// Returns a tuple of the `AstId` and `ScopeType` the `NameId` was found in. Returns None if
-    /// no accessible scopes contain the given `NameId`.
-    pub fn get_sym_id(&self, name_id: InternedId, scope_type: ScopeType) -> Option<SymbolId> {
-        // I don't think this can fail. Should maybe expect for clarity.
-        let allowed_scopes = scope_type.accessible_scopes();
-
-        // Loops over all allowed scopes and checks their individual namespaces
-        for allowed_scope_type in allowed_scopes {
-            // In this scenario the scope may or may not exist since this could be used from
-            // another module
-            if let Some(scope) = self.find_scope(allowed_scope_type) {
-                for (current_ast_id, current_name_id) in &scope.table.name_ids {
-                    if *current_name_id == name_id {
-                        let scope_id = self.extract_scope_id(allowed_scope_type);
-                        let scope = self.get_scope(scope_id);
-
-                        let sym_id = scope.table.sym_ids[&current_ast_id];
-                        return Some(sym_id);
-                    }
-                }
-            }
-        }
-        //TEST: If all scopes fail
-
-        None
-    }
-
-    /// Returns Some scope if it exists, None otherwise
-    //NOTE: May opt for indices similarly to the ast's way of making sections
-    pub fn find_scope(&self, scope_type: ScopeType) -> Option<&Scope> {
-        for scope in &self.scopes {
-            if scope.scope_type == scope_type {
-                return Some(scope);
-            }
-        }
-
-        None
-    }
+    // /// Get's the `ScopeId` with no assumption of it existing.
+    // ///
+    // /// This method exists along with extract_scope_id due to cross module namespace checking not
+    // /// innately confirming whether or not it contains a particular `ScopeType`
+    // pub fn get_scope_id(&self, scope_type: ScopeType) -> Option<ScopeId> {
+    //     self.find_scope(scope_type).map(|s| s.scope_id)
+    // }
+    //
+    // /// Get's the `ScopeId` assuming that the scope already exists. Panics otherwise.
+    // ///
+    // /// This exists because if the current module has something like a typedef in the semantic stage,
+    // /// that means the parser itself already checked if it was legal grammar-wise.
+    // pub fn extract_scope_id(&self, scope_type: ScopeType) -> ScopeId {
+    //     self.find_scope(scope_type)
+    //         .expect("Either semantic broke, parser broke, or modules broke")
+    //         .scope_id
+    // }
+    //
+    // /// Get's scope using a `ScopeId`
+    // pub fn get_scope(&self, scope_id: ScopeId) -> &Scope {
+    //     &self.scopes[scope_id.id]
+    // }
+    //
+    // /// Returns mutably borrowed scope using a `ScopeId`
+    // pub fn get_scope_mut(&mut self, scope_id: ScopeId) -> &mut Scope {
+    //     &mut self.scopes[scope_id.id]
+    // }
+    //
+    // /// Pushes new scope with given scope type and returns the `ScopeId`. If the scope already
+    // /// exists then it returns the existent `ScopeId`.
+    // pub fn push_scope(&mut self, scope_type: ScopeType) -> ScopeId {
+    //     if let Some(scope) = self.find_scope(scope_type) {
+    //         return scope.scope_id;
+    //     }
+    //
+    //     let scope_id = ScopeId::new(self.scopes.len());
+    //     self.scopes
+    //         .push(Scope::new(scope_id, scope_type, todo!("Feed me")));
+    //
+    //     scope_id
+    // }
+    //
+    // /// Checks if the name id corresponds to a `SymbolId` within the given `ScopeType`.
+    // /// Returns a tuple of the `AstId` and `ScopeType` the `NameId` was found in. Returns None if
+    // /// no accessible scopes contain the given `NameId`.
+    // pub fn get_sym_id(&self, name_id: InternedId, scope_type: ScopeType) -> Option<SymbolId> {
+    //     // I don't think this can fail. Should maybe expect for clarity.
+    //     let allowed_scopes = scope_type.accessible_scopes();
+    //
+    //     // Loops over all allowed scopes and checks their individual namespaces
+    //     for allowed_scope_type in allowed_scopes {
+    //         // In this scenario the scope may or may not exist since this could be used from
+    //         // another module
+    //         if let Some(scope) = self.find_scope(allowed_scope_type) {
+    //             for (current_ast_id, current_name_id) in &scope.table.name_ids {
+    //                 if *current_name_id == name_id {
+    //                     let scope_id = self.extract_scope_id(allowed_scope_type);
+    //                     let scope = self.get_scope(scope_id);
+    //
+    //                     let sym_id = scope.table.ast_to_sym[&current_ast_id];
+    //                     return Some(sym_id);
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     //TEST: If all scopes fail
+    //
+    //     None
+    // }
+    //
+    // /// Returns Some scope if it exists, None otherwise
+    // //NOTE: May opt for indices similarly to the ast's way of making sections
+    // pub fn find_scope(&self, scope_type: ScopeType) -> Option<&Scope> {
+    //     for scope in &self.scopes {
+    //         if scope.scope_type == scope_type {
+    //             return Some(scope);
+    //         }
+    //     }
+    //
+    //     None
+    // }
 }
 
 #[derive(Debug)]

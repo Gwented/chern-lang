@@ -12,7 +12,7 @@ pub fn fmt_script_block(path: &Path, settings: &ChrnSettings) -> Result<String, 
     for mod_idx in 0..script_compiler.mods.len() {
         let module = &script_compiler.mods[mod_idx];
         // TEMP
-        if mod_idx == script_compiler.std_mod_id.id {
+        if mod_idx == script_compiler.core_mod_id.id {
             continue;
         }
 

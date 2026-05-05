@@ -53,7 +53,7 @@ char, bool, str, struct, enum, nil, BigInt, BigFloat, List, Map, Set, Tuple
 `struct`: For defining a structure of data.
 `enum`: For defining an enum type which can also hold enumerations with types.
 
-`?`: Infers type and expects type consistency throughout entire given serialized data file type.
+`any`: Infers type and expects type consistency throughout entire given serialized data file type.
 
 ## Prefix/Unary Operations
 `!`: NOT
@@ -266,9 +266,9 @@ export let VALUE = defs.MAGIC_NUMBER + valid_name.OTHER_MAGICAL_NUMBER
 bind "serialized_data.chrn"
 
 var-> // #ignore <---- Maybe allow for this to be global
-    ptr: ? #ignore
-    capacity: ? #ignore
-    len: ? #ignore
+    ptr: any #ignore
+    capacity: any #ignore
+    len: any #ignore
 ```
 
 ## FORGOT ABOUT UNICODE

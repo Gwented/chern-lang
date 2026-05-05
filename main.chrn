@@ -8,13 +8,13 @@
 // let x = -((defs.READ * "fllorp"))
 
 @def
-    import "../../defs.chrn" as something
-    let x = true
-    let y = false
+    // import "../../defs.chrn" as something
+    // let x = true
+    // let y = false
 
     var->
     // Should probably filter out duplicate arguments if present
-        x: std.u8
+        x: i32
     /*nest->
         export enum Person {
             State: Tuple<str> [] #scient
