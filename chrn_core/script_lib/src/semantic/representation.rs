@@ -169,8 +169,8 @@ pub enum ExprHir {
 
 #[derive(Debug)]
 pub struct Table {
-    // Type specific tables
-    pub(crate) name_ids: HashMap<AstId, InternedId>,
+    // May remove
+    pub(crate) ast_to_interned: HashMap<AstId, InternedId>,
     // Can still change some to vec maybe
     pub(crate) ast_to_sym: HashMap<AstId, SymbolId>,
     //TEST:
@@ -181,7 +181,7 @@ pub struct Table {
 impl Table {
     pub fn new() -> Table {
         Table {
-            name_ids: HashMap::new(),
+            ast_to_interned: HashMap::new(),
             ast_to_sym: HashMap::new(),
             interned_to_sym: HashMap::new(),
         }
@@ -273,22 +273,15 @@ impl TypeDef {
 
 #[derive(Debug)]
 pub struct FuncDef {
-    pub call_span: Span,
     pub kind: FuncKind,
     pub constraints: Vec<ArgConstraint>,
     pub args: Vec<ExprId>,
 }
 
 impl FuncDef {
-    pub fn new(
-        call_span: Span,
-        kind: FuncKind,
-        constraints: Vec<ArgConstraint>,
-        args: Vec<ExprId>,
-    ) -> FuncDef {
+    pub fn new(kind: FuncKind, constraints: Vec<ArgConstraint>, args: Vec<ExprId>) -> FuncDef {
         FuncDef {
             kind,
-            call_span,
             constraints,
             args,
         }

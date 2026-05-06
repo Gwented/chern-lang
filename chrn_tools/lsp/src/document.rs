@@ -1,7 +1,7 @@
 use chrn_utils::keywords::Keyword;
 
 /// 60 Dashes
-pub static HOVER_DASHES: &str = "--------------------------------------------------";
+pub static HOVER_DASHES: &str = "------------------------------------------------------------";
 
 /// A structured documentation entry for a language construct.
 /// Separates the name and description from the rendered presentation,

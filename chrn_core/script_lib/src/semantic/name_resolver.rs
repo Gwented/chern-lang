@@ -89,7 +89,7 @@ impl NamespaceResolver<'_> {
 
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
-        table.name_ids.insert(ast_id, abs_typedef.name_id);
+        table.ast_to_interned.insert(ast_id, abs_typedef.name_id);
         table.ast_to_sym.insert(ast_id, sym_id);
         table.interned_to_sym.insert(abs_typedef.name_id, sym_id);
 
@@ -111,7 +111,7 @@ impl NamespaceResolver<'_> {
 
         self.compiler.symbols.insert(sym_id, symbol);
 
-        let ty_info = TypeInfo::new(Type::TypeDef(type_def_repre), self.compiler.core_mod_id);
+        let ty_info = TypeInfo::new(Type::TypeDef(type_def_repre), self.current_mod);
         self.compiler.types.push(ty_info);
     }
 
@@ -120,7 +120,7 @@ impl NamespaceResolver<'_> {
         let scope_id = self.compiler.push_scope(ScopeType::Nest, self.current_mod);
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
-        table.name_ids.insert(ast_id, abs_struct.name_id);
+        table.ast_to_interned.insert(ast_id, abs_struct.name_id);
         table.ast_to_sym.insert(ast_id, sym_id);
         table.interned_to_sym.insert(abs_struct.name_id, sym_id);
 
@@ -140,7 +140,7 @@ impl NamespaceResolver<'_> {
 
         self.compiler.symbols.insert(sym_id, symbol);
 
-        let ty_info = TypeInfo::new(Type::Struct(struct_def), self.compiler.core_mod_id);
+        let ty_info = TypeInfo::new(Type::Struct(struct_def), self.current_mod);
         self.compiler.types.push(ty_info);
     }
 
@@ -151,7 +151,7 @@ impl NamespaceResolver<'_> {
 
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
-        table.name_ids.insert(ast_id, abs_enum.name_id);
+        table.ast_to_interned.insert(ast_id, abs_enum.name_id);
         table.ast_to_sym.insert(ast_id, sym_id);
         table.interned_to_sym.insert(abs_enum.name_id, sym_id);
 
@@ -169,7 +169,7 @@ impl NamespaceResolver<'_> {
 
         self.compiler.symbols.insert(sym_id, symbol);
 
-        let ty_info = TypeInfo::new(Type::Enum(enum_def), self.compiler.core_mod_id);
+        let ty_info = TypeInfo::new(Type::Enum(enum_def), self.current_mod);
         self.compiler.types.push(ty_info);
     }
 
@@ -182,7 +182,7 @@ impl NamespaceResolver<'_> {
 
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
-        table.name_ids.insert(ast_id, abs_alias.name_id);
+        table.ast_to_interned.insert(ast_id, abs_alias.name_id);
         table.ast_to_sym.insert(ast_id, sym_id);
         table.interned_to_sym.insert(abs_alias.name_id, sym_id);
 
@@ -200,7 +200,7 @@ impl NamespaceResolver<'_> {
 
         self.compiler.symbols.insert(sym_id, symbol);
 
-        let ty_info = TypeInfo::new(Type::Alias(alias_def), self.compiler.core_mod_id);
+        let ty_info = TypeInfo::new(Type::Alias(alias_def), self.current_mod);
         self.compiler.types.push(ty_info);
     }
 
@@ -211,7 +211,7 @@ impl NamespaceResolver<'_> {
             .push_scope(ScopeType::Neutral, self.current_mod);
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
-        table.name_ids.insert(ast_id, abs_var.name_id);
+        table.ast_to_interned.insert(ast_id, abs_var.name_id);
         table.ast_to_sym.insert(ast_id, sym_id);
         table.interned_to_sym.insert(abs_var.name_id, sym_id);
 
@@ -244,7 +244,11 @@ impl NamespaceResolver<'_> {
         // Searching if there are any duplicates with respect to the scope
         for scope_id in &module.scopes {
             let scope_info = &self.compiler.scopes[scope_id.id];
-            for (ast_id, name_id) in &self.compiler.scopes[scope_id.id].scope.table.name_ids {
+            for (ast_id, name_id) in &self.compiler.scopes[scope_id.id]
+                .scope
+                .table
+                .ast_to_interned
+            {
                 // Why is it not true if it exists false otherwise...seems backwards
                 let ast_opt = seen.insert(*name_id, *ast_id);
 
@@ -284,7 +288,7 @@ impl NamespaceResolver<'_> {
                         &module
                             .src_metadata
                             .as_ref()
-                            .expect("std should not be resolved"),
+                            .expect("core should not be resolved"),
                     );
                 }
             }

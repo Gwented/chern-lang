@@ -89,6 +89,11 @@ impl Bind {
 // What?
 // I actually don't know why that's there
 // Still don't know
+//TODO:
+//Maybe, a kind field that says user or builtin,
+//or, a wrapper that has a module that could explicitly represent if it's user or not
+//OR maybe src_metadata is actually a kind, which says whether it's user defined or not so it's
+//just not a basic nullable field, and actually has meaning
 #[derive(Debug)]
 pub struct Module {
     /// File name that will be used internally

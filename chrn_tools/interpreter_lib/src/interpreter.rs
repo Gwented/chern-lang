@@ -69,10 +69,6 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     for i in 0..script_compiler.mods.len() - 1 {
         let mod_id = ModuleId::new(i);
 
-        if mod_id == script_compiler.core_mod_id {
-            break;
-        }
-
         // NOTE: Brain not on yet
         TypeResolver::new(
             settings,
@@ -98,10 +94,6 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
 
     for i in 0..script_compiler.mods.len() - 1 {
         let mod_id = ModuleId::new(i);
-
-        if mod_id == script_compiler.core_mod_id {
-            break;
-        }
 
         ConstraintResolver::new(
             settings,

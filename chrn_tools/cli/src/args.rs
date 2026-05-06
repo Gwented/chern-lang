@@ -52,7 +52,7 @@ pub struct FmtCmd {
 
 #[derive(Args)]
 pub struct DetailsCmd {
-    /// Path of `.chrn` file to display details of
+    /// Path of `.chrn` file to display the structural details of
     pub(crate) path: PathBuf,
 }
 

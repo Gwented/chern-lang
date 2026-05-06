@@ -287,7 +287,7 @@ impl TypeResolver<'_> {
                             &module
                                 .src_metadata
                                 .as_ref()
-                                .expect("std should not be resolved"),
+                                .expect("core should not be resolved"),
                         )
                     }
                 };
@@ -474,7 +474,7 @@ impl TypeResolver<'_> {
                     &module
                         .src_metadata
                         .as_ref()
-                        .expect("std should not be resolved"),
+                        .expect("core should not be resolved"),
                 );
                 return Err(());
             }
@@ -538,7 +538,7 @@ impl TypeResolver<'_> {
                         &module
                             .src_metadata
                             .as_ref()
-                            .expect("std should not be resolved"),
+                            .expect("core should not be resolved"),
                     );
 
                     println!("{}", self.reporter.err_vec[0].fmtted_diag);
@@ -602,7 +602,7 @@ impl TypeResolver<'_> {
                     &module
                         .src_metadata
                         .as_ref()
-                        .expect("std should not be resolved"),
+                        .expect("core should not be resolved"),
                 );
             }
 
@@ -628,7 +628,7 @@ impl TypeResolver<'_> {
                             &module
                                 .src_metadata
                                 .as_ref()
-                                .expect("std should not be resolved"),
+                                .expect("core should not be resolved"),
                         );
 
                         return Err(());
@@ -655,7 +655,7 @@ impl TypeResolver<'_> {
                         &module
                             .src_metadata
                             .as_ref()
-                            .expect("std should not be resolved"),
+                            .expect("core should not be resolved"),
                     );
 
                     return Err(());
@@ -724,7 +724,7 @@ impl TypeResolver<'_> {
                     &module
                         .src_metadata
                         .as_ref()
-                        .expect("std should not be resolved"),
+                        .expect("core should not be resolved"),
                 );
             }
 
@@ -754,7 +754,7 @@ impl TypeResolver<'_> {
                             &module
                                 .src_metadata
                                 .as_ref()
-                                .expect("std should not be resolved"),
+                                .expect("core should not be resolved"),
                         );
 
                         return Err(());
@@ -779,7 +779,7 @@ impl TypeResolver<'_> {
                         &module
                             .src_metadata
                             .as_ref()
-                            .expect("std should not be resolved"),
+                            .expect("core should not be resolved"),
                     );
 
                     return Err(());
@@ -832,7 +832,7 @@ impl TypeResolver<'_> {
                             &module
                                 .src_metadata
                                 .as_ref()
-                                .expect("std should not be resolved"),
+                                .expect("core should not be resolved"),
                         );
                     }
 
@@ -911,6 +911,7 @@ impl TypeResolver<'_> {
         scope_type: ScopeType,
     ) -> Result<ExprId, SemanticError> {
         match &spanned_expr.expr {
+            //TODO: Check ownership in constraints
             Expr::Var(name_id) => {
                 if let Some(sym_id) =
                     self.compiler
@@ -939,18 +940,20 @@ impl TypeResolver<'_> {
 
                     let resolved_expr = match symbol.kind {
                         SymbolKind::Type(type_id) => {
-                            // We need to get the type, then check the type's fields against the
-                            // field we have
+                            // Not sure what to do with this yet
+                            // This would make types expressions, which wasn't true before
                             let ty_info = &self.compiler.types[type_id.id as usize];
-                            match &ty_info.ty {
-                                Type::BuiltinType(builtin_type) => todo!("type symbol"),
-                                Type::Struct(struct_def) => todo!(),
-                                Type::Enum(enum_def) => todo!(),
-                                Type::Func(func_def) => todo!(),
-                                Type::Alias(alias_def) => todo!(),
-                                Type::TypeDef(type_def) => todo!(),
-                                Type::Unknown => todo!(),
-                            }
+                            // match &ty_info.ty {
+                            //     Type::BuiltinType(builtin_type) => {}
+                            //     Type::Struct(struct_def) => todo!(),
+                            //     Type::Enum(enum_def) => todo!(),
+                            //     Type::Func(func_def) => todo!(),
+                            //     Type::Alias(alias_def) => todo!(),
+                            //     Type::TypeDef(type_def) => todo!(),
+                            //     Type::Unknown => todo!(),
+                            // }
+                            let msg = "Cannot have a type within expressions".to_string();
+                            return Err(SemanticError::General(msg, vec![spanned_expr.span]));
                         }
                         SymbolKind::Val(val_id) => {
                             let val_info = &self.compiler.values[val_id.id as usize];
@@ -1208,8 +1211,21 @@ impl TypeResolver<'_> {
 
                 Ok(expr_id)
             }
-            Expr::Call(caller, spanned_exprs) => {
+            Expr::Call(caller, arg_exprs) => {
                 let call_id = self.register_expr(sym_parent, caller, scope_type)?;
+                let mut call_args: Vec<ExprId> = Vec::new();
+
+                for sp_expr in arg_exprs {
+                    let arg = self.register_expr(sym_parent, sp_expr, scope_type)?;
+                    call_args.push(arg);
+                }
+
+                let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+                let val_id = ValueId::new(self.compiler.values.len() as u32);
+
+                let expr_hir = ExprHir::Call(call_id, call_args);
+                // let resolved_expr = ResolvedExpr::new(type_id, expr_hir, val_id, span, inputs);
+
                 todo!();
             }
             // Maybe having "::" exist could help..
@@ -1241,7 +1257,7 @@ impl TypeResolver<'_> {
                                     &extern_mod
                                         .src_metadata
                                         .as_ref()
-                                        .expect("std should not be resolved"),
+                                        .expect("core should not be resolved"),
                                 );
                             }
 
@@ -1284,7 +1300,7 @@ impl TypeResolver<'_> {
                             // form at all state why a symbol that exists wasn't seen
                             // Find similar symbols
                             let msg = format!(
-                                "Could not find the symbol `{}` inside module `{}` as a value, type, or alias",
+                                "Could not find the symbol `{}` inside module `{}` as a value, type, alias, or function",
                                 self.interner.search(abs_member_access.field.id as usize),
                                 self.interner.search(extern_mod.name_id.id as usize)
                             );
@@ -1449,37 +1465,32 @@ impl TypeResolver<'_> {
     ) -> Result<TypeId, ()> {
         match &spanned_ty_expr.ty_expr {
             TypeExpr::Var(name_id) => {
-                let module = &self.compiler.mods[self.current_mod.id];
+                // Just uhhh um
+                match scopes::get_type_id(self.compiler, self.current_mod, *name_id, scope_type) {
+                    Some(type_id) => Ok(type_id),
+                    None => {
+                        let module = &self.compiler.mods[self.current_mod.id];
+                        let err_name = self.interner.search(name_id.id as usize);
+                        let err_msg = format!("\"{err_name}\" is not defined as a type");
 
-                // Loop that checks if the name id was registered in a valid scope, then uses its
-                // corresponding ast_id to extract the name id's type and returns that
-                // as the type to be referenced
-                //WARN:
-                if let Some(type_id) =
-                    scopes::get_type_id(self.compiler, module, *name_id, scope_type)
-                {
-                    return Ok(type_id);
+                        self.reporter.report_spanned(
+                            &err_msg,
+                            Some(err_name),
+                            &[spanned_ty_expr.span],
+                            &module
+                                .src_metadata
+                                .as_ref()
+                                .expect("core should not be resolved"),
+                        );
+
+                        Err(())
+                    }
                 }
-
-                let err_name = self.interner.search(name_id.id as usize);
-
-                let err_msg = format!("\"{err_name}\" is not defined as a type");
-
-                let module = &self.compiler.mods[self.current_mod.id];
-                self.reporter.report_spanned(
-                    &err_msg,
-                    Some(err_name),
-                    &[spanned_ty_expr.span],
-                    &module
-                        .src_metadata
-                        .as_ref()
-                        .expect("std should not be resolved"),
-                );
-
-                return Err(());
             }
-            // Generics can only be thest types so this can stay for now
+            // Generics can only be these types so this can stay for now
             TypeExpr::Generic(generic) => {
+                //FIX: This is still using the old id matching but maybe it's ok since this is
+                //actually supposed to be specifically only known data structures
                 match BuiltinTypeKind::try_from_interned_id(generic.base.id) {
                     // Self referential type ids used here
                     Some(kw) => match kw {
@@ -1499,7 +1510,7 @@ impl TypeResolver<'_> {
                                     &module
                                         .src_metadata
                                         .as_ref()
-                                        .expect("std should not be resolved"),
+                                        .expect("core should not be resolved"),
                                 );
 
                                 return Err(());
@@ -1546,7 +1557,7 @@ impl TypeResolver<'_> {
                                     &module
                                         .src_metadata
                                         .as_ref()
-                                        .expect("std should not be resolved"),
+                                        .expect("core should not be resolved"),
                                 );
 
                                 return Err(());
@@ -1581,7 +1592,7 @@ impl TypeResolver<'_> {
                                     &module
                                         .src_metadata
                                         .as_ref()
-                                        .expect("std should not be resolved"),
+                                        .expect("core should not be resolved"),
                                 );
 
                                 return Err(());
@@ -1615,7 +1626,7 @@ impl TypeResolver<'_> {
                                 &module
                                     .src_metadata
                                     .as_ref()
-                                    .expect("std should not be resolved"),
+                                    .expect("core should not be resolved"),
                             );
 
                             Err(())
@@ -1637,31 +1648,15 @@ impl TypeResolver<'_> {
                             &module
                                 .src_metadata
                                 .as_ref()
-                                .expect("std should not be resolved"),
+                                .expect("core should not be resolved"),
                         );
 
                         Err(())
                     }
                 }
             }
+            // FIX: REMOVE THIS
             TypeExpr::Any => Ok(TypeId::new(script_compiler::CORE_ANY)),
-            // TypeExpr::Tuple(unres_tuple) => {
-            //     let mut elements: Vec<TypeId> = Vec::new();
-            //
-            //     for element in unres_tuple {
-            //         let type_id = self.resolve_type_expr(element, scope_type, ast_id)?;
-            //         elements.push(type_id);
-            //     }
-            //
-            //     let tuple_id = TypeId::new(self.compiler.types.len() as u32);
-            //     let tuple = Type::Tuple(Tuple::new(elements));
-            //     panic!("Intrinsic stuff");
-            //
-            //     let ty_info = TypeInfo::new(tuple, Some(self.current_mod));
-            //     self.compiler.types.push(ty_info);
-            //
-            //     Ok(tuple_id)
-            // }
             TypeExpr::Path(spanned_ty_exprs) => {
                 // The parser disallows < 2 type pathing to actually exist so indexing should be
                 // safe here
@@ -1685,7 +1680,7 @@ impl TypeResolver<'_> {
                         &module
                             .src_metadata
                             .as_ref()
-                            .expect("std should not be resolved"),
+                            .expect("core should not be resolved"),
                     );
                 }
 
@@ -1705,7 +1700,7 @@ impl TypeResolver<'_> {
                                 &module
                                     .src_metadata
                                     .as_ref()
-                                    .expect("std should not be resolved"),
+                                    .expect("core should not be resolved"),
                             );
 
                             return Err(());
@@ -1714,55 +1709,8 @@ impl TypeResolver<'_> {
                     _ => unreachable!("Parser does not pick this up"),
                 };
 
-                let name_id = match &spanned_ty_exprs[1].ty_expr {
-                    TypeExpr::Var(name_id) => name_id,
-                    _ => unreachable!("Parser does not pick this up"),
-                };
-
-                match scopes::get_type_id(self.compiler, extern_mod, *name_id, scope_type) {
-                    Some(type_id) => Ok(type_id),
-                    None => {
-                        let err_name = self.interner.search(name_id.id as usize);
-                        let err_mod_name = self.interner.search(extern_mod.name_id.id as usize);
-
-                        // FIND SIMILAR CAN BE DONE, IT CAN BE DONE later.
-                        let msg = format!(
-                            "The type `{err_name}` does not exist within the module `{err_mod_name}`",
-                        );
-
-                        self.reporter.report_spanned(
-                            &msg,
-                            None,
-                            &[spanned_ty_exprs[1].span],
-                            &extern_mod
-                                .src_metadata
-                                .as_ref()
-                                .expect("std should not be resolved"),
-                        );
-
-                        Err(())
-                        //WARN: Only scoping issue left is alias and const collision and maybe some
-                        //others
-
-                        // if symbol.is_priv && symbol.owner != self.current_mod {
-                        //     let err_name = self.interner.search(name_id.id as usize);
-                        //     let msg = format!("The type `{err_name}` is private",);
-                        //
-                        //     let module = &self.compiler.mods[self.current_mod.id];
-                        //     self.reporter.report_spanned(
-                        //         &msg,
-                        //         None,
-                        //         &[spanned_ty_exprs[1].span],
-                        //         &module
-                        //             .metadata
-                        //             .as_ref()
-                        //             .expect("std should not be resolved"),
-                        //     );
-                        // }
-
-                        // HAPPY PATH DONE
-                    }
-                }
+                // self.current_mod = extern_mod.mod_id;
+                self.resolve_type_expr(&spanned_ty_exprs[1], scope_type, ast_id)
             }
         }
     }

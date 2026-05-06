@@ -6,22 +6,21 @@
 
 // Unary cannot be applied to defs.READ unless wrapped with parens. Fine for now.
 // let x = -((defs.READ * "fllorp"))
-
 @def
-    let y = x
-    let x = 3
     // import "../../defs.chrn" as something
-    // let x = true
-    // let y = false
 
     var->
     // Should probably filter out duplicate arguments if present
-        x: Person
-        y: i32
-    nest->
+        z: core.Tuple<i32> []
+        //x: i32 [core.StartsW("chrn")] #warn
+    /*nest->
+        enum State {
+            o: List<i32>
+            i: Tuple<i32, u32> #warn
+        }
         export enum Person {
             State: Tuple<str> [] #scient
-        } [] #warn 
+        } [] #warn*/
 @end
 
 @def

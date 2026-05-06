@@ -101,14 +101,15 @@ pub fn get_sym_id(
     None
 }
 
-//TEST:
-/// Get's `TypeId` associated with the `NameId` given if possible. Searches local scope then std
+//NOTE: Exists for separation reasons due to the compiler becoming bloated in many forms
+/// Get's `TypeId` associated with the `NameId` given if possible
 pub fn get_type_id(
     compiler: &ScriptCompiler,
-    current_mod: &Module,
+    owner_id: ModuleId,
     target_name_id: InternedId,
     scope_type: ScopeType,
 ) -> Option<TypeId> {
+    let current_mod = &compiler.mods[owner_id.id];
     let accessible_scopes = scope_type.accessible_scopes();
     // I don't think this can fail. Should maybe expect for clarity.
     //     let scope = &compiler.scopes[scope_id.id].scope;
@@ -151,7 +152,7 @@ pub enum ScopeType {
 impl ScopeType {
     /// Direct representation of how the language views scope accessibility.
     /// `needs_global` purely exists for all scope accessibility reasons
-    pub(crate) fn accessible_scopes(&self) -> &'static [ScopeType] {
+    pub fn accessible_scopes(&self) -> &'static [ScopeType] {
         match self {
             ScopeType::Core => &SCOPE_CORE_ACCESSIBLE,
             // Mainly for internal usage, not an actual program recognizable scope

@@ -973,15 +973,38 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
 fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTypeExpr>, Token> {
     let mut ty_path: Vec<SpannedTypeExpr> = Vec::new();
 
-    // Technically only allows 2 type paths total since, there is no scenario where it would be
-    // possible otherwise, but this will still allow any amount because it ensures any future
-    // development decision to change this will be easier
     loop {
-        if ctx.peek_ahead(1).tok == Token::Dot {
+        let is_generic = ctx.peek_ahead(1).tok == Token::OAngleBracket;
+        let is_dot = ctx.peek_ahead(1).tok == Token::Dot;
+
+        // There cannot be "List<i32>.something" so this breaks
+        if is_generic {
+            let start = ctx.peek_span().start;
+            let base_id = ctx.expect_id_verbose(
+                TokenKind::Id,
+                "Expected an identifier after '.', found ",
+                "",
+                Branch::Type,
+                interner,
+            )?;
+
+            let args = parse_generic(ctx, interner)?;
+            let end = ctx.peek_behind(1).span.end;
+
+            let generic = Generic::new(InternedId::new(base_id), args);
+
+            let ty_expr = TypeExpr::Generic(generic);
+            let span = Span::new(start, end);
+            let spanned_ty_expr = SpannedTypeExpr::new(ty_expr, span);
+
+            ty_path.push(spanned_ty_expr);
+            break;
+        // This is just the normal case of an identifier after a dot
+        } else if is_dot {
             let span = ctx.peek_span();
             let name_id = ctx.expect_id_verbose(
                 TokenKind::Id,
-                "Expected an identifier after dot reference, found ",
+                "Expected an identifier after '.', found ",
                 "",
                 Branch::Type,
                 interner,
@@ -994,25 +1017,25 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
             ty_path.push(spanned_ty_expr);
         }
 
-        if ctx.peek_ahead(1).tok != Token::Dot {
+        // If there's no dot then that means that the current token must be an identifier that is
+        // the field to access
+        if !is_dot {
+            let span = ctx.peek_span();
+            let final_id = ctx.expect_id_verbose(
+                TokenKind::Id,
+                "Expected a complete member access, found ",
+                "",
+                Branch::Type,
+                interner,
+            )?;
+
+            let ty_expr = TypeExpr::Var(InternedId::new(final_id));
+
+            let final_expr = SpannedTypeExpr::new(ty_expr, span);
+            ty_path.push(final_expr);
             break;
         }
     }
-
-    //TODO: More intuitive errors or help
-    let span = ctx.peek_span();
-    let final_id = ctx.expect_id_verbose(
-        TokenKind::Id,
-        "Expected a complete dot reference chain, found ",
-        "",
-        Branch::Type,
-        interner,
-    )?;
-
-    let ty_expr = TypeExpr::Var(InternedId::new(final_id));
-
-    let final_expr = SpannedTypeExpr::new(ty_expr, span);
-    ty_path.push(final_expr);
 
     Ok(ty_path)
 }
