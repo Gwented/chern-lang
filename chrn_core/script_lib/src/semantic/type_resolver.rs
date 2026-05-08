@@ -31,8 +31,9 @@ use crate::{
     },
 };
 
-/// Resolves types and builds the rest of any structs or enums
-/// Also registers all expressions and performs constant evaluation where possible
+/// Resolves types and builds the rest of any structs, enums, or expressions that can be const
+/// evaluated. Does so by mutating the compiler given, and maintaining context to retain it's last
+/// state.
 pub struct TypeResolver<'a> {
     ast_info: &'a AstInfo,
     interner: &'a Intern,
@@ -121,14 +122,8 @@ impl TypeResolver<'_> {
             // Not sure what to do with this yet
             //
             // This means the resolution failed at last module pass
-            if !self.ty_ctx.sym_queue.is_empty()
-                && self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id
-            {
-                dbg!(&self.ty_ctx);
-                panic!("How to check if this is runtime..");
-            }
         }
-        //
+
         // let symbol = &self.compiler.symbols[&SymbolId::new(0)];
         // match symbol.kind {
         //     SymbolKind::Type(type_id) => {
@@ -201,7 +196,7 @@ impl TypeResolver<'_> {
             && self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id
         {
             dbg!(&self.ty_ctx);
-            panic!("How to check if this is runtime..");
+            panic!("Runtime not sorted yet");
         }
 
         if !self.reporter.err_vec.is_empty() {
@@ -564,6 +559,7 @@ impl TypeResolver<'_> {
 
         let type_def = self.compiler.get_typedef_mut(sym_id);
         // Assinging from `Unknown` to it's actual type
+        //TODO: Constraints should check if this is unknown
         type_def.type_id = type_id;
         type_def.conds = conds;
         type_def.args = abs_typedef.args.iter().map(|sp_arg| sp_arg.arg).collect();
@@ -935,10 +931,13 @@ impl TypeResolver<'_> {
         match &spanned_expr.expr {
             //TODO: Check ownership in constraints
             Expr::Var(name_id) => {
-                if let Some(sym_id) =
-                    self.compiler
-                        .get_sym_id(*name_id, scope_type, self.current_mod)
-                {
+                if let Some(sym_id) = scopes::get_sym_id(
+                    self.compiler,
+                    self.current_mod,
+                    *name_id,
+                    scope_type,
+                    LookupPattern::AllConnections,
+                ) {
                     if sym_id == sym_parent {
                         let name = self
                             .interner
@@ -1257,11 +1256,14 @@ impl TypeResolver<'_> {
                         //TODO: Allow self references if not already doable
                         // main.thing
 
+                        //NOTE: Maybe privacy should be checked from this resolver?
                         let extern_mod = &self.compiler.mods[mod_id.id];
-                        if let Some(extern_sym_id) = self.compiler.get_sym_id(
+                        if let Some(extern_sym_id) = scopes::get_sym_id(
+                            self.compiler,
+                            extern_mod.mod_id,
                             abs_member_access.field,
                             scope_type,
-                            extern_mod.mod_id,
+                            LookupPattern::ModuleOnly,
                         ) {
                             let symbol = &self.compiler.symbols[&extern_sym_id];
 
@@ -1285,7 +1287,10 @@ impl TypeResolver<'_> {
 
                             match symbol.kind {
                                 SymbolKind::Type(type_id) => todo!(),
-                                SymbolKind::Val(val_id) => todo!(),
+                                SymbolKind::Val(val_id) => {
+                                    let val_info = &self.compiler.values[val_id.id as usize];
+                                    Ok(val_info.expr_id)
+                                }
                                 SymbolKind::Unknown => {
                                     let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
                                     let expr_hir = ExprHir::Var(extern_sym_id);
@@ -1456,10 +1461,13 @@ impl TypeResolver<'_> {
                 return Ok(PossibleMember::Module(*mod_id));
             }
 
-            if let Some(sym_id) = self
-                .compiler
-                .get_sym_id(name_id, scope_type, self.current_mod)
-            {
+            if let Some(sym_id) = scopes::get_sym_id(
+                self.compiler,
+                self.current_mod,
+                name_id,
+                scope_type,
+                LookupPattern::AllConnections,
+            ) {
                 todo!();
                 // let type_id = self.compiler.symbols[&sym_id];
                 // return Ok(PossibleMember::Type(type_id));
@@ -1715,10 +1723,7 @@ impl TypeResolver<'_> {
                 // The parser disallows < 2 type pathing to actually exist so indexing should be
                 // safe here
                 if spanned_ty_exprs.len() != 2 {
-                    let msg = format!(
-                        "Only 1 dot reference can be used for types but {} were found",
-                        spanned_ty_exprs.len() - 1
-                    );
+                    let msg = format!("Only 1 member access can be used for types");
 
                     let spans: Vec<Span> = spanned_ty_exprs
                         .iter()

@@ -73,14 +73,23 @@ impl Scope {
     }
 }
 
-//TEST:
 pub fn get_sym_id(
     compiler: &ScriptCompiler,
-    current_mod: &Module,
+    owner_id: ModuleId,
     target_name_id: InternedId,
     scope_type: ScopeType,
+    lookup_pattern: LookupPattern,
 ) -> Option<SymbolId> {
+    let current_mod = &compiler.mods[owner_id.id];
+
     let accessible_scopes = scope_type.accessible_scopes();
+    let accessible_scopes = match lookup_pattern {
+        LookupPattern::ModuleOnly if current_mod.src_metadata.is_some() => {
+            &accessible_scopes[..accessible_scopes.len() - 1]
+        }
+        // If it's core then it'll only have access to core anyways so this is fine
+        LookupPattern::AllConnections | LookupPattern::ModuleOnly => accessible_scopes,
+    };
 
     for allowed_scope_type in accessible_scopes.iter().copied() {
         if let Some(scope_info) = compiler.find_scope(allowed_scope_type, current_mod.mod_id) {
@@ -91,12 +100,6 @@ pub fn get_sym_id(
             }
         }
     }
-
-    //TODO: No std symbols yet
-    // let std_mod = &compiler.mods[compiler.std_mod_id.id];
-
-    //TEST: If all scopes fail
-    todo!("Stop it");
 
     None
 }
@@ -118,6 +121,7 @@ pub fn get_type_id(
         LookupPattern::ModuleOnly if current_mod.src_metadata.is_some() => {
             &accessible_scopes[..accessible_scopes.len() - 1]
         }
+        // If it's core then it'll only have access to core anyways so this is fine
         LookupPattern::AllConnections | LookupPattern::ModuleOnly => accessible_scopes,
     };
     dbg!(&current_mod.src_metadata);
@@ -148,7 +152,6 @@ pub fn get_type_id(
     None
 }
 
-// Bit flags?
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ScopeType {
     Core,

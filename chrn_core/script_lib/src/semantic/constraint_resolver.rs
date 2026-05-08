@@ -265,6 +265,8 @@ impl<'a> ConstraintResolver<'a> {
         let sym_id = table.ast_to_sym[&ast_id];
 
         let type_def = self.compiler.get_typedef(sym_id);
+        dbg!(type_def);
+        panic!();
 
         // Checking if condition is valid for the given type
         // Using the Ast node's condition so that the span information is not lost

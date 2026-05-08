@@ -15,10 +15,12 @@
     // This should be possible if not
     // let z = main.x
 
+    let x = main.y
+    let y = 3
     var->
     // Should probably filter out duplicate arguments if present before emitting instructions
         //z: Tuple<i32, u32, defs.Person> [] #scient
-        x: main.i32 //[core.StartsW("chrn")] #warn
+        x: main.x //[core.StartsW("chrn")] #warn
 
     nest->
         /*enum State {

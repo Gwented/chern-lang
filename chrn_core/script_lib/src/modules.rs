@@ -87,6 +87,7 @@ pub struct Module {
     pub scopes: Vec<ScopeId>,
     /// Flag for checking if a scope exists in the current module more efficiently than manual
     /// iteration.
+    //WARN: May or may not have use for quick checks
     pub(crate) held_scopes: u8,
     /// Metadata that exists if the module contains a source file
     // As of right now this represents the difference between a pre-loaded and user space module
