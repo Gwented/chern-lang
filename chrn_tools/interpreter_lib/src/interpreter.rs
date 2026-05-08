@@ -23,6 +23,8 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     // Doing this first since if modules were identified during the parsing stage any
     // syntax error within another module would not be reportable since the parser failed.
     let mut script_compiler = modules::extract_modules(path, settings, &mut interner)?;
+    // dbg!(interner.search(script_compiler.mods[0].imports[1].name_id.id as usize));
+    // panic!();
     let mut reporter = Reporter::new();
 
     let mut asts: Vec<AstInfo> = Vec::new();
@@ -85,8 +87,6 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     if !reporter.diags.is_empty() {
         return Err(ScriptError::Semantic(reporter.diags).into());
     }
-
-    todo!("Ignoring constraints for now");
 
     // For ensuring a stateful piece of context is retained for resolving all module variables.
     // This is not a value resolver

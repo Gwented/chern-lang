@@ -574,7 +574,7 @@ impl<'a> Context<'a> {
             },
             Branch::Type => match found.tok {
                 Token::CAngleBracket if prev_kind == TokenKind::Comma => {
-                    let msg = "Was there a trailing ',' or an intended second type?";
+                    let msg = "Was there a trailing ',' ?";
                     let help = reporter::standardize_help(msg, self.settings.can_color);
 
                     Some(help)

@@ -136,7 +136,7 @@ mod tests {
             constraint_resolver::{ConstraintResolver, value_context::ValueContext},
             name_resolver::NamespaceResolver,
             scopes::ScopeType,
-            type_resolver::TypeResolver,
+            type_resolver::{TypeResolver, type_context::TypeContext},
         },
         token::{Notation, Token},
     };
@@ -735,8 +735,6 @@ mod tests {
         assert_eq!(res.is_ok(), true);
 
         // -- NEST --
-        let mut interner = mock_interner(0, 1);
-        let settings = ChrnSettings::default();
 
         let wrong = "
                 nest->
@@ -795,96 +793,94 @@ mod tests {
 
         //TEST: -- OVERRIDE --
     }
-    //
-    // #[test]
-    // fn module_simple_test() {
-    //     // -- NEUTRAL --
-    //     let mut interner = mock_interner(0, 2);
-    //
-    //     let main_txt = "
-    //             let CONSTANT = 3
-    //         ";
-    //
-    //     let main_meta = ChrnConfigLoader::new(
-    //         Default::default(),
-    //         main_txt.as_bytes(),
-    //         &Default::default(),
-    //         &mut interner,
-    //     )
-    //     .load_config()
-    //     .unwrap();
-    //
-    //     // Doing this first since if modules were identified during the parsing stage any
-    //     // syntax error within another module would not be reportable since the parser failed.
-    //
-    //     let sub_import = Import::new(InternedId::new(1), PathId::new(1), Default::default(), None);
-    //
-    //     let main_mod = Module::new(
-    //         InternedId::new(0),
-    //         ModuleId::new(0),
-    //         vec![sub_import],
-    //         Some(main_meta),
-    //     );
-    //
-    //     let sub_txt = "
-    //             let OTHER_CONSTANT = 5
-    //         ";
-    //
-    //     let sub_meta = ChrnConfigLoader::new(Path::new(""), sub_txt.as_bytes(), &settings)
-    //         .load_config()
-    //         .unwrap();
-    //
-    //     let sub_mod = Module::new(
-    //         InternedId::new(1),
-    //         PathId::new(1),
-    //         ModuleId::new(1),
-    //         Default::default(),
-    //         sub_meta,
-    //     );
-    //
-    //     let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![main_mod, sub_mod]);
-    //
-    //     let mut asts: Vec<AstInfo> = Vec::new();
-    //
-    //     for mod_idx in 0..compiler.mods.len() {
-    //         let module = &compiler.mods[mod_idx];
-    //         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
-    //             .tokenize(&mut interner);
-    //
-    //         let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
-    //
-    //         NamespaceResolver::new(
-    //             &settings,
-    //             &ast_info,
-    //             &interner,
-    //             module.mod_id,
-    //             &mut compiler,
-    //         )
-    //         .resolve()
-    //         .unwrap();
-    //
-    //         asts.push(ast_info);
-    //     }
-    //
-    //     let mut val_ctx = ValueContext::new();
-    //     for i in 0..compiler.mods.len() {
-    //         let mod_id = ModuleId::new(i);
-    //         TypeResolver::new(&settings, &asts[i], mod_id, &interner, &mut compiler)
-    //             .resolve()
-    //             .unwrap();
-    //
-    //         ConstraintResolver::new(
-    //             &settings,
-    //             &asts,
-    //             &interner,
-    //             mod_id,
-    //             &mut val_ctx,
-    //             &mut compiler,
-    //         )
-    //         .resolve()
-    //         .unwrap();
-    //     }
-    // }
+
+    #[test]
+    fn module_simple_test() {
+        // -- NEUTRAL --
+        let mut interner = mock_interner(0, 2);
+        let settings = ChrnSettings::default();
+
+        let main_txt = "
+                let CONSTANT = 3
+            ";
+
+        let main_meta = ChrnConfigLoader::new(
+            Default::default(),
+            main_txt.as_bytes(),
+            &Default::default(),
+            &mut interner,
+        )
+        .load_config()
+        .unwrap();
+
+        // Doing this first since if modules were identified during the parsing stage any
+        // syntax error within another module would not be reportable since the parser failed.
+
+        let sub_import = Import::new(InternedId::new(1), PathId::new(1), Default::default(), None);
+
+        let main_mod = Module::new(
+            InternedId::new(0),
+            ModuleId::new(0),
+            vec![sub_import],
+            Some(main_meta),
+        );
+
+        let sub_txt = "
+                let OTHER_CONSTANT = 5
+            ";
+
+        let sub_meta =
+            ChrnConfigLoader::new(PathId::new(1), sub_txt.as_bytes(), &settings, &mut interner)
+                .load_config()
+                .unwrap();
+
+        let sub_mod = Module::new(
+            InternedId::new(1),
+            ModuleId::new(1),
+            Default::default(),
+            Some(sub_meta),
+        );
+
+        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![main_mod, sub_mod]);
+
+        let mut asts: Vec<AstInfo> = Vec::new();
+
+        for mod_idx in 0..compiler.mods.len() {
+            let module = &compiler.mods[mod_idx];
+            let metadata = module.src_metadata.as_ref().unwrap();
+            let toks =
+                Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+
+            let ast_info = parser::parse(&settings, metadata, &toks, &mut interner).unwrap();
+
+            NamespaceResolver::new(
+                &settings,
+                &ast_info,
+                &interner,
+                module.mod_id,
+                &mut compiler,
+            )
+            .resolve()
+            .unwrap();
+
+            asts.push(ast_info);
+        }
+
+        let mut ty_ctx = TypeContext::new();
+        for i in 0..compiler.mods.len() {
+            let mod_id = ModuleId::new(i);
+            TypeResolver::new(
+                &settings,
+                &asts[i],
+                mod_id,
+                &mut ty_ctx,
+                &interner,
+                &mut compiler,
+            )
+            .resolve()
+            .unwrap();
+        }
+    }
     //
     // #[test]
     // fn module_alias_test() {

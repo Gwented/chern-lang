@@ -67,6 +67,9 @@ impl InnerArgs {
                     | BuiltinType::Unsized
                     //NOTE: Checks this at runtime
                     |BuiltinType::Any => true,
+                    // Maybe this means that it shouldn't be a method, it should be a function that
+                    // has access to their inner, which can do the rolving. Rolving.
+                    //
                     // This is unreachable because when arguments are resolved, it requires the
                     // data structures to be recursively resolved into a builtin type
                     BuiltinType::List(_)

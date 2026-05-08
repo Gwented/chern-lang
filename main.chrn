@@ -8,19 +8,27 @@
 // let x = -((defs.READ * "fllorp"))
 @def
     // import "../../defs.chrn" as something
+    // let self_domain = 2 + self
+
+    // []
+
+    // This should be possible if not
+    // let z = main.x
 
     var->
-    // Should probably filter out duplicate arguments if present
-        z: core.Tuple<i32> []
-        //x: i32 [core.StartsW("chrn")] #warn
-    /*nest->
-        enum State {
+    // Should probably filter out duplicate arguments if present before emitting instructions
+        //z: Tuple<i32, u32, defs.Person> [] #scient
+        x: main.i32 //[core.StartsW("chrn")] #warn
+
+    nest->
+        /*enum State {
             o: List<i32>
             i: Tuple<i32, u32> #warn
-        }
-        export enum Person {
-            State: Tuple<str> [] #scient
-        } [] #warn*/
+        } #scient*/
+
+        /*struct Person {
+            state: str []
+        } [] #scient*/
 @end
 
 @def

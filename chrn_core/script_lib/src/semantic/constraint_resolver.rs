@@ -69,30 +69,42 @@ impl<'a> ConstraintResolver<'a> {
     }
 
     pub fn resolve(&mut self) -> Result<(), Vec<Diagnostic>> {
-        todo!("Constraints commented out");
         // The current module and current ast align but that's a bit too arbitrary so will likely
         // stoer that information more explicitly
-        // for (id, item) in self.ast_info[self.current_mod.id].items.iter().enumerate() {
-        //     let ast_id = AstId::new(id as u32);
-        //
-        //     match item {
-        //         Item::TypeDef(abs_typedef) => {
-        //             _ = self.resolve_typedef(abs_typedef, ast_id);
-        //         }
-        //         Item::Struct(abs_struct) => {
-        //             _ = self.resolve_struct(abs_struct, ast_id);
-        //         }
-        //         Item::Enum(abs_enum) => {
-        //             _ = self.resolve_enum(abs_enum, ast_id);
-        //         }
-        //         Item::Alias(abs_alias) => {
-        //             _ = self.resolve_alias(abs_alias, ast_id);
-        //         }
-        //         Item::Var(abs_var) => {
-        //             _ = self.resolve_var(abs_var, ast_id);
-        //         }
-        //     }
-        // }
+        // stoer
+        for (id, item) in self.ast_info[self.current_mod.id].items.iter().enumerate() {
+            let ast_id = AstId::new(id as u32);
+
+            match item {
+                Item::TypeDef(abs_typedef) => {
+                    _ = self.resolve_typedef(abs_typedef, ast_id);
+                    for err in &self.reporter.err_vec {
+                        println!("{}", err.fmtted_diag);
+                    }
+                    todo!("hi");
+                }
+                Item::Struct(abs_struct) => {
+                    _ = self.resolve_struct(abs_struct, ast_id);
+                    for err in &self.reporter.err_vec {
+                        println!("{}", err.fmtted_diag);
+                    }
+                    todo!("hello");
+                }
+                Item::Enum(abs_enum) => {
+                    todo!();
+                    // _ = self.resolve_enum(abs_enum, ast_id);
+                }
+                Item::Alias(abs_alias) => {
+                    todo!();
+                    // _ = self.resolve_alias(abs_alias, ast_id);
+                }
+                Item::Var(abs_var) => {
+                    todo!();
+                    // _ = self.resolve_var(abs_var, ast_id);
+                }
+            }
+        }
+        todo!("I am constrained");
         //
         // //NOTE: Subject to change
         //
@@ -235,6 +247,7 @@ impl<'a> ConstraintResolver<'a> {
     //
     //     Ok(())
     // }
+    //
     // fn resolve_expr(
     //     &mut self,
     //     spanned_expr: &SpannedExpr,
@@ -243,103 +256,90 @@ impl<'a> ConstraintResolver<'a> {
     //     todo!();
     // }
     //
-    // fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
-    //     // First borrow starts here
-    //     let module = &self.compiler.mods[self.current_mod.id];
-    //     let scope_id = module.extract_scope_id(ScopeType::Var);
-    //     let table = &module.get_scope(scope_id).table;
-    //
-    //     let sym_id = table.sym_ids[&ast_id];
-    //
-    //     let mut conds = Vec::new();
-    //
-    //     for expr in &abs_typedef.conds {
-    //         let cond = match self.check_cond(expr, ast_id) {
-    //             Ok(c) => c,
-    //             Err(sem_err) => {
-    //                 self.reporter.report_semantic(
-    //                     sem_err,
-    //                     &self.compiler.mods[self.current_mod.id as usize],
-    //                 );
-    //
-    //                 return Err(());
-    //             }
-    //         };
-    //
-    //         conds.push(cond);
-    //     }
-    //
-    //     // Second borrow
-    //     let module = &self.compiler.mods[self.current_mod.id];
-    //     let type_id = self.compiler.get_typedef(sym_id).type_id;
-    //
-    //     let ty = &self.compiler.types[type_id.id as usize].ty;
-    //
-    //     // Checking if condition is valid for the given type
-    //     // Using the Ast node's condition so that the span information is not lost
-    //     for (i, cond) in conds.iter().enumerate() {
-    //         let ast_span = &abs_typedef.conds[i].span;
-    //
-    //         match ty {
-    //             Type::Struct(_) | Type::Enum(_) => {
-    //                 //NOTE: Would be better as a note
-    //                 let msg = "Cannot give a `var->` defined variable a condition when it has a `struct` or `enum` type, define\nthis within `nest->`";
-    //
-    //                 self.reporter
-    //                     .report_spanned(msg, None, &[ast_span.clone()], &module);
-    //
-    //                 return Err(());
-    //             }
-    //             _ => (),
-    //         }
-    //
-    //         // if let Err(sem_err) = self.check_cond_constraints(type_id, &ast_span, cond, &mut vec![])
-    //         // {
-    //         //     self.reporter.report_semantic(sem_err, &module);
-    //         //     return Err(());
-    //         // }
-    //     }
-    //     //TODO: RESOLVE FUNC CONSTRAINTS HERE
-    //
-    //     // Third borrow
-    //     // Re-borrowing due to resolution happening above being mutable
-    //     let ty = &self.compiler.types[self.compiler.get_typedef(sym_id).type_id.id as usize].ty;
-    //
-    //     let mut args = Vec::new();
-    //
-    //     //TODO: Make less terminal and have a better solution for this
-    //     for spanned_arg in &abs_typedef.args {
-    //         match ty {
-    //             Type::Struct(_) | Type::Enum(_) => {
-    //                 if !spanned_arg.arg.is_basic() {
-    //                     let span = Span::new(spanned_arg.span.start, spanned_arg.span.end);
-    //                     let sem_err = SemanticError::VagueArg(spanned_arg.arg, vec![span]);
-    //
-    //                     self.reporter.report_semantic(sem_err, &module);
-    //                     return Err(());
-    //                 }
-    //             }
-    //             _ => (),
-    //         }
-    //
-    //         if let Err(sem_err) = self.resolve_arg(type_id, module, &spanned_arg, &mut vec![]) {
-    //             self.reporter.report_semantic(sem_err, &module);
-    //             return Err(());
-    //         }
-    //
-    //         args.push(spanned_arg.arg);
-    //     }
-    //
-    //     // Fourth borrow...
-    //     let type_def = &mut self.compiler.get_typedef_mut(sym_id);
-    //     // type_def.conds = conds;
-    //     type_def.args = args;
-    //
-    //     dbg!(type_def);
-    //     todo!("Typedef gone through");
-    //
-    //     Ok(())
-    // }
+    fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
+        // First borrow starts here
+        let scope_id = self
+            .compiler
+            .extract_scope_id(ScopeType::Var, self.current_mod);
+        let table = &self.compiler.get_scope(scope_id).scope.table;
+        let sym_id = table.ast_to_sym[&ast_id];
+
+        let type_def = self.compiler.get_typedef(sym_id);
+
+        // Checking if condition is valid for the given type
+        // Using the Ast node's condition so that the span information is not lost
+        // for (i, cond) in conds.iter().enumerate() {
+        //     let ast_span = &abs_typedef.conds[i].span;
+        //
+        //     match ty {
+        //         Type::Struct(_) | Type::Enum(_) => {
+        //             //NOTE: Would be better as a note
+        //             let msg = "Cannot give a `var->` defined variable a condition when it has a `struct` or `enum` type, define\nthis within `nest->`";
+        //
+        //             self.reporter.report_spanned(
+        //                 msg,
+        //                 None,
+        //                 &[ast_span.clone()],
+        //                 &self.compiler.mods[self.current_mod.id as usize]
+        //                     .src_metadata
+        //                     .as_ref()
+        //                     .expect("core should not be resolved"),
+        //             );
+        //
+        //             return Err(());
+        //         }
+        //         _ => (),
+        //     }
+        //
+        //     // if let Err(sem_err) = self.check_cond_constraints(type_id, &ast_span, cond, &mut vec![])
+        //     // {
+        //     //     self.reporter.report_semantic(sem_err, &module);
+        //     //     return Err(());
+        //     // }
+        // }
+        //TODO: RESOLVE FUNC CONSTRAINTS HERE
+
+        let ty_info = &self.compiler.types[type_def.type_id.id as usize];
+        let module = &self.compiler.mods[self.current_mod.id];
+        //TODO: Make less terminal and have a better solution for this
+        for spanned_arg in &abs_typedef.args {
+            match &ty_info.ty {
+                Type::Struct(_) | Type::Enum(_) => {
+                    if !spanned_arg.arg.is_basic() {
+                        let span = Span::new(spanned_arg.span.start, spanned_arg.span.end);
+                        let sem_err = SemanticError::VagueArg(spanned_arg.arg, vec![span]);
+
+                        self.reporter.report_semantic(
+                            sem_err,
+                            &self.compiler.mods[self.current_mod.id as usize]
+                                .src_metadata
+                                .as_ref()
+                                .expect("core should not be resolved"),
+                        );
+                        return Err(());
+                    }
+                }
+                _ => (),
+            }
+
+            if let Err(sem_err) =
+                self.check_arg(type_def.type_id, module, &spanned_arg, &mut vec![])
+            {
+                self.reporter.report_semantic(
+                    sem_err,
+                    module
+                        .src_metadata
+                        .as_ref()
+                        .expect("core should not be resolved"),
+                );
+                return Err(());
+            }
+        }
+        dbg!(type_def);
+        todo!("Typedef gone through");
+
+        Ok(())
+    }
     //
     // fn resolve_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) -> Result<(), ()> {
     //     todo!("Alias resolution")
@@ -349,72 +349,74 @@ impl<'a> ConstraintResolver<'a> {
     // // through items despite there already being a known struct id, which could be prevented if the
     // // struct id itself was passed, but then the loop would iterate over everything by default
     // // which seems bad if they're just builtins etc.
-    // fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
-    //     let module = &self.compiler.mods[self.current_mod.id];
-    //     let scope_id = module.extract_scope_id(ScopeType::Nest);
-    //     let table = &module.get_scope(scope_id).table;
-    //
-    //     let sym_id = table.sym_ids[&ast_id];
-    //
-    //     let mut conds: Vec<Cond> = Vec::new();
-    //
-    //     for expr in &abs_struct.glob_conds {
-    //         let cond = match self.check_cond(expr, ast_id) {
-    //             Ok(c) => c,
-    //             Err(sem_err) => {
-    //                 self.reporter.report_semantic(
-    //                     sem_err,
-    //                     &self.compiler.mods[self.current_mod.id as usize],
-    //                 );
-    //
-    //                 return Err(());
-    //             }
-    //         };
-    //
-    //         conds.push(cond);
-    //     }
-    //
-    //     let module = &self.compiler.mods[self.current_mod.id];
-    //     let fields = &self.compiler.get_struct(sym_id).fields;
-    //
-    //     for (i, cond) in conds.iter().enumerate() {
-    //         let ast_span = &abs_struct.glob_conds[i].span;
-    //
-    //         for field in fields {
-    //             // if let Err(sem_err) =
-    //             //     self.check_cond_constraints(field.type_id, &ast_span, cond, &mut vec![])
-    //             // {
-    //             //     self.reporter.report_semantic(sem_err, &module);
-    //             //     return Err(());
-    //             // }
-    //         }
-    //     }
-    //
-    //     let mut args: Vec<InnerArgs> = Vec::new();
-    //
-    //     let fields = &self.compiler.get_struct(sym_id).fields;
-    //
-    //     for field in fields {
-    //         for spanned_arg in &abs_struct.glob_args {
-    //             if let Err(sem_err) =
-    //                 self.resolve_arg(field.type_id, module, spanned_arg, &mut vec![])
-    //             {
-    //                 self.reporter.report_semantic(sem_err, &module);
-    //                 return Err(());
-    //             }
-    //
-    //             args.push(spanned_arg.arg);
-    //         }
-    //     }
-    //
-    //     let structure = self.compiler.get_struct_mut(sym_id);
-    //
-    //     // I'm scared of this
-    //     structure.glob_args = args;
-    //     // structure.conds = conds;
-    //
-    //     Ok(())
-    // }
+    fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
+        let scope_id = self
+            .compiler
+            .extract_scope_id(ScopeType::Nest, self.current_mod);
+        let table = &self.compiler.get_scope(scope_id).scope.table;
+
+        //TODO: global condition and argument setting.
+        //field arg and cond settings.
+        //same for enums.
+
+        let sym_id = table.ast_to_sym[&ast_id];
+        //
+        //     let mut conds: Vec<Cond> = Vec::new();
+        //
+        //     for expr in &abs_struct.glob_conds {
+        //         let cond = match self.check_cond(expr, ast_id) {
+        //             Ok(c) => c,
+        //             Err(sem_err) => {
+        //                 self.reporter.report_semantic(
+        //                     sem_err,
+        //                     &self.compiler.mods[self.current_mod.id as usize],
+        //                 );
+        //
+        //                 return Err(());
+        //             }
+        //         };
+        //
+        //         conds.push(cond);
+        //     }
+        //
+        //     let module = &self.compiler.mods[self.current_mod.id];
+        //     let fields = &self.compiler.get_struct(sym_id).fields;
+        //
+        //     for (i, cond) in conds.iter().enumerate() {
+        //         let ast_span = &abs_struct.glob_conds[i].span;
+        //
+        //         for field in fields {
+        //             // if let Err(sem_err) =
+        //             //     self.check_cond_constraints(field.type_id, &ast_span, cond, &mut vec![])
+        //             // {
+        //             //     self.reporter.report_semantic(sem_err, &module);
+        //             //     return Err(());
+        //             // }
+        //         }
+        //     }
+        let fields = &self.compiler.get_struct(sym_id).fields;
+        let module = &self.compiler.mods[self.current_mod.id];
+
+        for field in fields {
+            for spanned_arg in &abs_struct.glob_args {
+                if let Err(sem_err) =
+                    self.check_arg(field.type_id, module, spanned_arg, &mut vec![])
+                {
+                    self.reporter.report_semantic(
+                        sem_err,
+                        module
+                            .src_metadata
+                            .as_ref()
+                            .expect("core should not be resolved"),
+                    );
+                    return Err(());
+                }
+            }
+        }
+
+        todo!("Alright lot");
+        Ok(())
+    }
     //
     // fn resolve_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) -> Result<(), ()> {
     //     let module = &self.compiler.mods[self.current_mod.id];
@@ -498,339 +500,216 @@ impl<'a> ConstraintResolver<'a> {
     // }
     //
     // //TODO: Make this less horrific looking
-    // fn resolve_arg(
-    //     &self,
-    //     type_id: TypeId,
-    //     module: &Module,
-    //     spanned_arg: &SpannedInnerArgs,
-    //     visited: &mut Vec<TypeId>,
-    // ) -> Result<(), SemanticError> {
-    //     match &self.compiler.types[type_id.id as usize].ty {
-    //         Type::Struct(struct_def) => {
-    //             let symbol = &self.compiler.symbols[&struct_def.sym_id];
-    //             visited.push(type_id);
-    //
-    //             for field in &struct_def.fields {
-    //                 // Checking if one of it's variants are self referencing, or if the type from
-    //                 // the last call stack, possibly a tuple, is self referencing the current
-    //                 // struct.
-    //                 if visited.contains(&field.type_id) {
-    //                     //FIXME:
-    //                     //COPY
-    //                     if !spanned_arg.arg.is_basic() {
-    //                         // let field_span = match &self.ast_info[self.current_mod.id].items
-    //                         //     [symbol.ast_id.id as usize]
-    //                         // {
-    //                         //     // Weird looking hack
-    //                         //     Item::Struct(abs_struct) => {
-    //                         //         // abs_struct.fields[field.ast_id.id as usize]
-    //                         //         //     .spanned_ty_expr
-    //                         //         //     .span
-    //                         //         todo!()
-    //                         //     }
-    //                         //     _ => unreachable!(),
-    //                         // }
-    //                         // .clone();
-    //                         //NOTE:
-    //
-    //                         // return Err(SemanticError::CircularArg(
-    //                         //     spanned_arg.arg,
-    //                         //     Formatted::Struct,
-    //                         //     vec![field_span, spanned_arg.span.clone()],
-    //                         // ));
-    //                         todo!()
-    //                     }
-    //
-    //                     continue;
-    //                 }
-    //
-    //                 visited.push(field.type_id);
-    //                 //FIXME:
-    //
-    //                 let arg_res = self.resolve_arg(field.type_id, module, spanned_arg, visited);
-    //
-    //                 // Need to get circular span in a more composed way that's not WEIRD
-    //                 if let Err(SemanticError::UnsupportedArg(arg, kind, _)) = arg_res {
-    //                     //COPY
-    //                     let abs_struct =
-    //                         self.ast_info[self.current_mod.id].get_struct(symbol.ast_id);
-    //                     // let field_span = abs_struct.fields[field.ast_id.id as usize]
-    //                     //     .spanned_ty_expr
-    //                     //     .span;
-    //
-    //                     //NOTE:
-    //
-    //                     // return Err(SemanticError::UnsupportedArg(
-    //                     //     arg,
-    //                     //     kind,
-    //                     //     vec![field_span, spanned_arg.span.clone()],
-    //                     // ));
-    //                     todo!()
-    //                 }
-    //
-    //                 if arg_res.is_err() {
-    //                     return arg_res;
-    //                 }
-    //             }
-    //
-    //             Ok(())
-    //         }
-    //         Type::Enum(enum_def) => {
-    //             let symbol = &self.compiler.symbols[&enum_def.sym_id];
-    //             visited.push(type_id);
-    //
-    //             for variant in &enum_def.variants {
-    //                 if let Some(ty) = variant.type_id {
-    //                     visited.push(ty);
-    //                     //FIXME:
-    //                     //COPY
-    //
-    //                     // Checking if one of it's variants are self referencing, or if the type we
-    //                     // just came from, possibly a tuple, is referring to itself from a
-    //                     // different context.
-    //                     //WARN: Changed so could be broken. Removed "enum_def.type_id == type_id"
-    //                     if type_id.id == ty.id {
-    //                         if !spanned_arg.arg.is_basic() {
-    //                             //FIX: Not field's span, just the symbol's.
-    //                             if let Item::Enum(abs_enum) = &self.ast_info[self.current_mod.id]
-    //                                 .items[symbol.ast_id.id as usize]
-    //                             {
-    //                                 // or field span
-    //                                 let ast_span = abs_enum.variants[variant.ast_id.id as usize]
-    //                                     .ty_expr
-    //                                     .as_ref()
-    //                                     .expect("The type was already found")
-    //                                     .span;
-    //
-    //                                 //NOTE:
-    //                                 // This should be restructured
-    //                                 return Err(SemanticError::CircularArg(
-    //                                     spanned_arg.arg,
-    //                                     Formatted::Enum,
-    //                                     vec![ast_span, spanned_arg.span.clone()],
-    //                                 ));
-    //                             }
-    //                         }
-    //                         //FIXME:
-    //
-    //                         // If the type id is self referencing it just skips since we're checking
-    //                         // the enum anyways
-    //                         continue;
-    //                     }
-    //
-    //                     let arg_res = self.resolve_arg(ty, module, spanned_arg, visited);
-    //
-    //                     if let Err(SemanticError::UnsupportedArg(arg, fmted, _)) = arg_res {
-    //                         let abs_enum =
-    //                             &self.ast_info[self.current_mod.id].get_enum(symbol.ast_id);
-    //                         let variant_span = abs_enum.variants[variant.ast_id.id as usize]
-    //                             .ty_expr
-    //                             .as_ref()
-    //                             .expect("Type already exists")
-    //                             .span
-    //                             .clone();
-    //
-    //                         //NOTE:
-    //
-    //                         // fmted or fmtted...
-    //                         return Err(SemanticError::UnsupportedArg(
-    //                             arg,
-    //                             fmted,
-    //                             vec![variant_span, spanned_arg.span.clone()],
-    //                         ));
-    //                     }
-    //
-    //                     // If err != nil { return err }
-    //                     if arg_res.is_err() {
-    //                         return arg_res;
-    //                     }
-    //                 }
-    //             }
-    //
-    //             Ok(())
-    //         }
-    //         Type::BuiltinType(builtin_type) => {
-    //             match builtin_type {
-    //                 BuiltinType::Set(type_id) | BuiltinType::List(type_id) => {
-    //                     self.resolve_arg(*type_id, module, spanned_arg, visited)
-    //                 }
-    //                 BuiltinType::Map(key_id, val_id) => {
-    //                     // This looks weird...
-    //                     self.resolve_arg(*key_id, module, spanned_arg, visited)?;
-    //                     self.resolve_arg(*val_id, module, spanned_arg, visited)
-    //                 }
-    //                 BuiltinType::Any(_) => Ok(()),
-    //                 BuiltinType::Tuple(elements) => {
-    //                     visited.push(type_id);
-    //                     for element in elements {
-    //                         if visited.contains(&*element) {
-    //                             if !spanned_arg.arg.is_basic() {
-    //                                 return Err(SemanticError::CircularArg(
-    //                                     spanned_arg.arg,
-    //                                     Formatted::Tuple,
-    //                                     vec![spanned_arg.span.clone(), spanned_arg.span.clone()],
-    //                                 ));
-    //                             }
-    //                         }
-    //
-    //                         visited.push(*element);
-    //
-    //                         self.resolve_arg(*element, module, spanned_arg, visited)?;
-    //                     }
-    //
-    //                     Ok(())
-    //                 }
-    //                 builtin_type => {
-    //                     //BUG: Does reach this error correctly but doesn't send it back?
-    //                     if !spanned_arg.arg.supports_builtin_type(&builtin_type) {
-    //                         // panic!();
-    //                         return Err(SemanticError::UnsupportedArg(
-    //                             spanned_arg.arg,
-    //                             builtin_type.kind().to_fmt(),
-    //                             vec![spanned_arg.span.clone()],
-    //                         ));
-    //                     }
-    //
-    //                     Ok(())
-    //                 }
-    //             }
-    //         }
-    //         Type::Func(sym_id) => todo!("Func"),
-    //         Type::Alias(_) | Type::Unknown => {
-    //             unreachable!("Parser and semantic cannot produce these variants. I think.")
-    //         }
-    //         Type::TypeDef(type_def) => todo!(),
-    //     }
-    // }
+    fn check_arg(
+        &self,
+        type_id: TypeId,
+        module: &Module,
+        spanned_arg: &SpannedInnerArgs,
+        visited: &mut Vec<TypeId>,
+    ) -> Result<(), SemanticError> {
+        match &self.compiler.types[type_id.id as usize].ty {
+            Type::Struct(struct_def) => {
+                let symbol = &self.compiler.symbols[&struct_def.sym_id];
+                visited.push(type_id);
+
+                for field in &struct_def.fields {
+                    // Checking if one of it's variants are self referencing, or if the type from
+                    // the last call stack, possibly a tuple, is self referencing the current
+                    // struct.
+                    if visited.contains(&field.type_id) {
+                        //FIXME:
+                        //COPY
+                        if !spanned_arg.arg.is_basic() {
+                            // let field_span = match &self.ast_info[self.current_mod.id].items
+                            //     [symbol.ast_id.id as usize]
+                            // {
+                            //     // Weird looking hack
+                            //     Item::Struct(abs_struct) => {
+                            //         // abs_struct.fields[field.ast_id.id as usize]
+                            //         //     .spanned_ty_expr
+                            //         //     .span
+                            //         todo!()
+                            //     }
+                            //     _ => unreachable!(),
+                            // }
+                            // .clone();
+                            //NOTE:
+
+                            // return Err(SemanticError::CircularArg(
+                            //     spanned_arg.arg,
+                            //     Formatted::Struct,
+                            //     vec![field_span, spanned_arg.span.clone()],
+                            // ));
+                            todo!()
+                        }
+
+                        continue;
+                    }
+
+                    visited.push(field.type_id);
+                    //FIXME:
+
+                    let arg_res = self.check_arg(field.type_id, module, spanned_arg, visited);
+
+                    // Need to get circular span in a more composed way that's not WEIRD
+                    // if let Err(SemanticError::UnsupportedArg(arg, kind, _)) = arg_res {
+                    //     //COPY
+                    //     let abs_struct =
+                    //         self.ast_info[self.current_mod.id].get_struct(symbol.ast_id);
+                    //     // let field_span = abs_struct.fields[field.ast_id.id as usize]
+                    //     //     .spanned_ty_expr
+                    //     //     .span;
+                    //
+                    //     //NOTE:
+                    //
+                    //     // return Err(SemanticError::UnsupportedArg(
+                    //     //     arg,
+                    //     //     kind,
+                    //     //     vec![field_span, spanned_arg.span.clone()],
+                    //     // ));
+                    //     todo!()
+                    // }
+
+                    if arg_res.is_err() {
+                        return arg_res;
+                    }
+                }
+
+                Ok(())
+            }
+            //         Type::Enum(enum_def) => {
+            //             let symbol = &self.compiler.symbols[&enum_def.sym_id];
+            //             visited.push(type_id);
+            //
+            //             for variant in &enum_def.variants {
+            //                 if let Some(ty) = variant.type_id {
+            //                     visited.push(ty);
+            //                     //FIXME:
+            //                     //COPY
+            //
+            //                     // Checking if one of it's variants are self referencing, or if the type we
+            //                     // just came from, possibly a tuple, is referring to itself from a
+            //                     // different context.
+            //                     //WARN: Changed so could be broken. Removed "enum_def.type_id == type_id"
+            //                     if type_id.id == ty.id {
+            //                         if !spanned_arg.arg.is_basic() {
+            //                             //FIX: Not field's span, just the symbol's.
+            //                             if let Item::Enum(abs_enum) = &self.ast_info[self.current_mod.id]
+            //                                 .items[symbol.ast_id.id as usize]
+            //                             {
+            //                                 // or field span
+            //                                 let ast_span = abs_enum.variants[variant.ast_id.id as usize]
+            //                                     .ty_expr
+            //                                     .as_ref()
+            //                                     .expect("The type was already found")
+            //                                     .span;
+            //
+            //                                 //NOTE:
+            //                                 // This should be restructured
+            //                                 return Err(SemanticError::CircularArg(
+            //                                     spanned_arg.arg,
+            //                                     Formatted::Enum,
+            //                                     vec![ast_span, spanned_arg.span.clone()],
+            //                                 ));
+            //                             }
+            //                         }
+            //                         //FIXME:
+            //
+            //                         // If the type id is self referencing it just skips since we're checking
+            //                         // the enum anyways
+            //                         continue;
+            //                     }
+            //
+            //                     let arg_res = self.resolve_arg(ty, module, spanned_arg, visited);
+            //
+            //                     if let Err(SemanticError::UnsupportedArg(arg, fmted, _)) = arg_res {
+            //                         let abs_enum =
+            //                             &self.ast_info[self.current_mod.id].get_enum(symbol.ast_id);
+            //                         let variant_span = abs_enum.variants[variant.ast_id.id as usize]
+            //                             .ty_expr
+            //                             .as_ref()
+            //                             .expect("Type already exists")
+            //                             .span
+            //                             .clone();
+            //
+            //                         //NOTE:
+            //
+            //                         // fmted or fmtted...
+            //                         return Err(SemanticError::UnsupportedArg(
+            //                             arg,
+            //                             fmted,
+            //                             vec![variant_span, spanned_arg.span.clone()],
+            //                         ));
+            //                     }
+            //
+            //                     // If err != nil { return err }
+            //                     if arg_res.is_err() {
+            //                         return arg_res;
+            //                     }
+            //                 }
+            //             }
+            //
+            //             Ok(())
+            //         }
+            Type::BuiltinType(builtin_type) => {
+                match builtin_type {
+                    BuiltinType::Set(type_id) | BuiltinType::List(type_id) => {
+                        self.check_arg(*type_id, module, spanned_arg, visited)
+                    }
+                    BuiltinType::Map(key_id, val_id) => {
+                        // This looks weird...
+                        self.check_arg(*key_id, module, spanned_arg, visited)?;
+                        self.check_arg(*val_id, module, spanned_arg, visited)
+                    }
+                    BuiltinType::Any => Ok(()),
+                    BuiltinType::Tuple(elements) => {
+                        visited.push(type_id);
+                        for element in elements {
+                            if visited.contains(&*element) {
+                                if !spanned_arg.arg.is_basic() {
+                                    return Err(SemanticError::CircularArg(
+                                        spanned_arg.arg,
+                                        Formatted::Tuple,
+                                        vec![spanned_arg.span],
+                                    ));
+                                }
+                            }
+
+                            let ty = &self.compiler.types[element.id as usize].ty;
+                            match ty {
+                                Type::BuiltinType(_) => (),
+                                _ => visited.push(*element),
+                            }
+
+                            self.check_arg(*element, module, spanned_arg, visited)?;
+                        }
+                        // todo!("Out of tup");
+
+                        Ok(())
+                    }
+                    builtin_type => {
+                        if !spanned_arg.arg.supports_builtin_type(&builtin_type) {
+                            return Err(SemanticError::UnsupportedArg(
+                                spanned_arg.arg,
+                                builtin_type.kind().to_fmt(),
+                                vec![spanned_arg.span.clone()],
+                            ));
+                        }
+
+                        Ok(())
+                    }
+                }
+            }
+            //         Type::Func(sym_id) => todo!("Func"),
+            //         Type::Alias(_) | Type::Unknown => {
+            //             unreachable!("Parser and semantic cannot produce these variants. I think.")
+            //         }
+            //         Type::TypeDef(type_def) => todo!("typedef"),
+            _ => todo!("heyy"),
+        }
+    }
+
     // // //TEST:
-    // //
-    // // /// Returns a success if all conditions align with the type of the given `type_id`
-    // // /// Takes in the type id that is being checked for validity, the ast id
-    // // fn check_cond_constraints(
-    // //     &self,
-    // //     type_id: TypeId,
-    // //     cond_span: &Span,
-    // //     cond: &Cond,
-    // //     visited: &mut Vec<TypeId>,
-    // // ) -> Result<(), SemanticError> {
-    // //     match &self.compiler.types[type_id.id as usize].ty {
-    // //         Type::BuiltinType(builtin_type) => match cond {
-    // //             Cond::IsEmpty | Cond::IsWhitespace => {
-    // //                 let kind = builtin_type.kind();
-    // //
-    // //                 if !cond.supports_builtin_type(kind) {
-    // //                     return Err(SemanticError::UnsupportedCond(
-    // //                         cond.clone(),
-    // //                         kind.to_fmt(),
-    // //                         vec![cond_span.clone()],
-    // //                     ));
-    // //                 }
-    // //
-    // //                 Ok(())
-    // //             }
-    // //             Cond::Not(inner) => self.check_cond_constraints(type_id, cond_span, inner, visited),
-    // //             // Need to check const, alias, and condition namespaces, and let modules stay
-    // //             // lazily resolved. Exclamation point!
-    // //             Cond::Func(sym_id, func_kind) => Ok(()),
-    // //         },
-    // //         Type::Struct(struct_def) => {
-    // //             let symbol = &self.compiler.symbols[&struct_def.sym_id];
-    // //             visited.push(type_id);
-    // //
-    // //             for (i, field) in struct_def.fields.iter().enumerate() {
-    // //                 //BUG: The structure.type_id == type_id does check if the last type it saw is
-    // //                 //itself, but that could also just mean the last type was a structure that just
-    // //                 //so happened to have the same type id
-    // //                 //
-    // //                 if type_id == field.type_id {
-    // //                     let abs_struct =
-    // //                         &self.ast_info[self.current_mod.id].get_struct(symbol.ast_id);
-    // //                     let field_span = abs_struct.fields[i].spanned_ty_expr.span;
-    // //
-    // //                     return Err(SemanticError::CircularCond(
-    // //                         cond.clone(),
-    // //                         Formatted::Struct,
-    // //                         vec![cond_span.clone(), field_span],
-    // //                     ));
-    // //                 }
-    // //
-    // //                 let cond_res =
-    // //                     self.check_cond_constraints(field.type_id, cond_span, cond, visited);
-    // //
-    // //                 if let Err(SemanticError::UnsupportedCond(cond, fmted_ty, mut spans)) = cond_res
-    // //                 {
-    // //                     let abs_struct =
-    // //                         &self.ast_info[self.current_mod.id].get_struct(symbol.ast_id);
-    // //                     let field_span = abs_struct.fields[i].spanned_ty_expr.span;
-    // //                     spans.push(field_span);
-    // //
-    // //                     return Err(SemanticError::UnsupportedCond(cond, fmted_ty, spans));
-    // //                 }
-    // //
-    // //                 if cond_res.is_err() {
-    // //                     return cond_res;
-    // //                 }
-    // //             }
-    // //
-    // //             Ok(())
-    // //         }
-    // //         Type::Enum(enum_def) => {
-    // //             let symbol = &self.compiler.symbols[&enum_def.sym_id];
-    // //
-    // //             for (i, variant) in enum_def.variants.iter().enumerate() {
-    // //                 if let Some(ty) = variant.type_id {
-    // //                     // Circular ref checking
-    // //                     if visited.contains(&ty) {
-    // //                         let abs_variant = &self.ast_info[self.current_mod.id]
-    // //                             .get_enum(symbol.ast_id)
-    // //                             .variants[i];
-    // //
-    // //                         let variant_span =
-    // //                             abs_variant.ty_expr.as_ref().expect("Already found").span;
-    // //
-    // //                         return Err(SemanticError::CircularCond(
-    // //                             cond.clone(),
-    // //                             Formatted::Enum,
-    // //                             vec![cond_span.clone(), variant_span],
-    // //                         ));
-    // //                     }
-    // //
-    // //                     visited.push(ty);
-    // //
-    // //                     let cond_res = self.check_cond_constraints(ty, cond_span, cond, visited);
-    // //
-    // //                     if let Err(SemanticError::UnsupportedCond(cond, fmted_ty, mut spans)) =
-    // //                         cond_res
-    // //                     {
-    // //                         let abs_struct =
-    // //                             &self.ast_info[self.current_mod.id].get_enum(symbol.ast_id);
-    // //                         let field_span = abs_struct.variants[i]
-    // //                             .ty_expr
-    // //                             .as_ref()
-    // //                             .expect("Already found")
-    // //                             .span;
-    // //
-    // //                         spans.push(field_span);
-    // //
-    // //                         return Err(SemanticError::UnsupportedCond(cond, fmted_ty, spans));
-    // //                     }
-    // //
-    // //                     if cond_res.is_err() {
-    // //                         return cond_res;
-    // //                     }
-    // //                 }
-    // //             }
-    // //
-    // //             Ok(())
-    // //         }
-    // //         Type::Alias(sym_id) => todo!(),
-    // //         Type::Unknown | Type::Func(_) => {
-    // //             unreachable!("Parser and semantic cannot produce these variants")
-    // //         }
-    // //         Type::TypeDef(type_def) => todo!(),
-    // //     }
-    // // }
-    // //
     // /// Returns a success if all constraints within the given function align with the function's
     // /// signature.
     // fn check_func_constraints(&self, func: &FuncDef) -> Result<(), SemanticError> {

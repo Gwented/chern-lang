@@ -146,7 +146,7 @@ impl Display for Formatted {
             Formatted::Cond => write!(f, "condition"),
             Formatted::UserFunc => write!(f, "function"),
             Formatted::Unknown => write!(f, "Unknown"),
-            Formatted::Tuple => write!(f, "tuple"),
+            Formatted::Tuple => write!(f, "Tuple"),
             Formatted::Self_ => write!(f, "self"),
             Formatted::UnknownType => write!(f, "untyped"),
             Formatted::As => write!(f, "as"),
@@ -168,10 +168,10 @@ impl Display for Formatted {
             Formatted::OpBitOr => write!(f, "|"),
             Formatted::OpBitAnd => write!(f, "&"),
             Formatted::OpBitNot => write!(f, "~"),
-            Formatted::ExclamationPoint => write!(f, "!"),
             Formatted::OpBitRightShift => write!(f, ">>"),
             Formatted::OpBitLeftShift => write!(f, "<<"),
             Formatted::OpBitXor => write!(f, "^"),
+            Formatted::ExclamationPoint => write!(f, "!"),
         }
     }
 }

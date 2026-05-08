@@ -65,26 +65,6 @@ impl Bind {
     }
 }
 
-// // Separation exists here due to modules needing to be hacked around to where it would likely be
-// // better to just have a specific structure that handles the dinstinction of modules with a source,
-// // and modules without.
-// pub struct SourceModule {
-//     /// File name that will be used internally
-//     pub name_id: InternedId,
-//     /// It's own module id position
-//     pub mod_id: ModuleId,
-//     /// Bytes from chrn config file
-//     pub src_bytes: Vec<u8>,
-//     /// Path of module
-//     pub path_id: PathId,
-//     // / Amount of \n within config file so binary search can be done by error reporter
-//     // pub new_lines: Vec<usize>,
-//     /// The script language start which can be different depending on if @def is used
-//     pub script_start: usize,
-//     /// The serial start which can be None if there is no serialized file within the chrn file
-//     pub serial_start: Option<usize>,
-// }
-
 // What about OUR name?
 // What?
 // I actually don't know why that's there
@@ -101,6 +81,7 @@ pub struct Module {
     /// It's own module id position
     pub mod_id: ModuleId,
     /// Imports found in the module
+    // What if imports were tagged with bit-wise?
     pub imports: Vec<Import>,
     /// Represents the 5 existent scopes
     pub scopes: Vec<ScopeId>,
@@ -108,8 +89,8 @@ pub struct Module {
     /// iteration.
     pub(crate) held_scopes: u8,
     /// Metadata that exists if the module contains a source file
+    // As of right now this represents the difference between a pre-loaded and user space module
     pub src_metadata: Option<ModuleMetadata>,
-    // pub src_mod: Option<SourceModule>,
 }
 
 //TEST:

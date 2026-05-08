@@ -404,7 +404,6 @@ impl Lexer<'_> {
 
         // e# for escape
         let is_escaped = if self.peek() == b'e' && self.peek_ahead(1) == b'#' {
-            dbg!(self.peek() as char);
             self.skip(2);
             start = self.pos;
             true
@@ -419,15 +418,6 @@ impl Lexer<'_> {
         }
 
         let end = self.pos;
-
-        // Checking for is_escaped first so that silent bugs don't arise if possible
-        // If this is not done then it would make a start > end since end - 1 needs to be done at
-        // the end. This is giving recover_illegal start - 2 so that the error message actually
-        // points to the start of the escape
-        // NOTE: Should the lexer get error reporting capabilities?
-        if is_escaped && start > end - 1 {
-            return self.recover_illegal(Some(start - 2), interner);
-        }
 
         // Enforces utf-8 but module paths themselves don't need to be valid utf-8, am I
         // hallucinating?
@@ -491,7 +481,6 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 b'0'..=b'7' if (notation & NOTATION_OCTO) != 0 => {
-                    self.advance();
                     self.advance();
                 }
                 b'0'..=b'9' => {
@@ -791,7 +780,7 @@ impl Lexer<'_> {
         while self.pos < self.src_bytes.len() && !self.peek_char().is_whitespace() {
             self.advance_char();
         }
-
+        //WARN: Same behavior as read_id
         let end = self.pos;
 
         let err_str = str::from_utf8(&self.src_bytes[start..end])
@@ -802,7 +791,6 @@ impl Lexer<'_> {
         SpannedToken {
             tok: Token::Illegal(id),
             // Same offset reason as all other spans
-            //WARN: Same behavior as read_id
             span: Span::new(start, end - 1),
         }
     }

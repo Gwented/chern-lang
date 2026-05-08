@@ -16,7 +16,7 @@ use crate::parser::ast::{AbstractVar, Expr, SpannedExpr};
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::error::{MathError, SemanticError};
 use crate::semantic::representation::{ExprHir, Param, PossibleMember, ResolvedExpr, SymbolKind};
-use crate::semantic::scopes::ScopeType;
+use crate::semantic::scopes::{LookupPattern, ScopeType};
 use crate::semantic::type_resolver::type_context::{PendingExpr, PendingSymbol, TypeContext};
 use crate::semantic::{evaluator, scopes};
 
@@ -121,80 +121,87 @@ impl TypeResolver<'_> {
             // Not sure what to do with this yet
             //
             // This means the resolution failed at last module pass
-            // if !self.ty_ctx.sym_queue.is_empty()
-            //     && self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id
-            // {
-            //     dbg!(&self.ty_ctx);
-            //     panic!("How to check if this is runtime..");
-            // }
+            if !self.ty_ctx.sym_queue.is_empty()
+                && self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id
+            {
+                dbg!(&self.ty_ctx);
+                panic!("How to check if this is runtime..");
+            }
         }
+        //
+        // let symbol = &self.compiler.symbols[&SymbolId::new(0)];
+        // match symbol.kind {
+        //     SymbolKind::Type(type_id) => {
+        //         let name = self.interner.search(symbol.name_id.id as usize);
+        //         let ty = &self.compiler.types[type_id.id as usize];
+        //         dbg!(name, &ty.ty);
+        //     }
+        //     SymbolKind::Val(value_id) => {
+        //         let name = self.interner.search(symbol.name_id.id as usize);
+        //         let val_info = &self.compiler.values[value_id.id as usize];
+        //         let ty_info = &self.compiler.types[val_info.type_id.id as usize];
+        //
+        //         dbg!(name, ty_info);
+        //     }
+        //     _ => todo!(),
+        // };
+        //
+        // if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
+        //     for symbol in self.compiler.symbols.values() {
+        //         if self.interner.search(symbol.name_id.id as usize) == "x" {
+        //             let name = self.interner.search(symbol.name_id.id as usize);
+        //             dbg!(name);
+        //             match symbol.kind {
+        //                 SymbolKind::Val(value_id) => {
+        //                     let val = &self.compiler.values[value_id.id as usize];
+        //                     dbg!(value_id, val);
+        //                     let expr = &self.compiler.exprs[val.expr_id.id as usize];
+        //                     dbg!(expr.val_id, expr);
+        //                     dbg!(&self.compiler.values[expr.val_id.id as usize]);
+        //                 }
+        //                 SymbolKind::Type(type_id) => {
+        //                     let ty_info = &self.compiler.types[type_id.id as usize];
+        //                     match &ty_info.ty {
+        //                         Type::BuiltinType(builtin_type) => {
+        //                             dbg!(builtin_type);
+        //                         }
+        //                         Type::Struct(struct_def) => todo!(),
+        //                         Type::Enum(enum_def) => todo!(),
+        //                         Type::Func(func_def) => todo!(),
+        //                         Type::Alias(alias_def) => todo!(),
+        //                         Type::TypeDef(type_def) => {
+        //                             let ty = &self.compiler.types[type_def.type_id.id as usize];
+        //                             dbg!(ty);
+        //                         }
+        //                         Type::Unknown => todo!(),
+        //                     }
+        //                 }
+        //                 SymbolKind::Unknown => todo!(),
+        //             }
+        //             panic!("Done");
+        //         }
+        //         // dbg!(self.interner.search(symbol.name_id.id as usize));
+        //         // dbg!(symbol);
+        //     }
+        //
+        //     for ty in &self.compiler.types {
+        //         dbg!(ty);
+        //     }
+        //
+        //     for expr_thing in &self.compiler.exprs {
+        //         dbg!(expr_thing);
+        //     }
+        //
+        //     for val in &self.compiler.values {
+        //         dbg!(val);
+        //     }
+        // }
 
-        let symbol = &self.compiler.symbols[&SymbolId::new(0)];
-        match symbol.kind {
-            SymbolKind::Type(type_id) => {
-                let name = self.interner.search(symbol.name_id.id as usize);
-                let ty = &self.compiler.types[type_id.id as usize];
-                dbg!(name, &ty.ty);
-            }
-            SymbolKind::Val(value_id) => {
-                let name = self.interner.search(symbol.name_id.id as usize);
-                let val_info = &self.compiler.values[value_id.id as usize];
-                let ty_info = &self.compiler.types[val_info.type_id.id as usize];
-
-                dbg!(name, ty_info);
-            }
-            _ => todo!(),
-        };
-
-        if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
-            for symbol in self.compiler.symbols.values() {
-                if self.interner.search(symbol.name_id.id as usize) == "x" {
-                    let name = self.interner.search(symbol.name_id.id as usize);
-                    dbg!(name);
-                    match symbol.kind {
-                        SymbolKind::Val(value_id) => {
-                            let val = &self.compiler.values[value_id.id as usize];
-                            dbg!(value_id, val);
-                            let expr = &self.compiler.exprs[val.expr_id.id as usize];
-                            dbg!(expr.val_id, expr);
-                            dbg!(&self.compiler.values[expr.val_id.id as usize]);
-                        }
-                        SymbolKind::Type(type_id) => {
-                            let ty_info = &self.compiler.types[type_id.id as usize];
-                            match &ty_info.ty {
-                                Type::BuiltinType(builtin_type) => {
-                                    dbg!(builtin_type);
-                                }
-                                Type::Struct(struct_def) => todo!(),
-                                Type::Enum(enum_def) => todo!(),
-                                Type::Func(func_def) => todo!(),
-                                Type::Alias(alias_def) => todo!(),
-                                Type::TypeDef(type_def) => {
-                                    let ty = &self.compiler.types[type_def.type_id.id as usize];
-                                    dbg!(ty);
-                                }
-                                Type::Unknown => todo!(),
-                            }
-                        }
-                        SymbolKind::Unknown => todo!(),
-                    }
-                    panic!("Done");
-                }
-                // dbg!(self.interner.search(symbol.name_id.id as usize));
-                // dbg!(symbol);
-            }
-
-            for ty in &self.compiler.types {
-                dbg!(ty);
-            }
-
-            for expr_thing in &self.compiler.exprs {
-                dbg!(expr_thing);
-            }
-
-            for val in &self.compiler.values {
-                dbg!(val);
-            }
+        if !self.ty_ctx.sym_queue.is_empty()
+            && self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id
+        {
+            dbg!(&self.ty_ctx);
+            panic!("How to check if this is runtime..");
         }
 
         if !self.reporter.err_vec.is_empty() {
@@ -312,7 +319,7 @@ impl TypeResolver<'_> {
     /// Returns an `Ok(false)` if the resolution failed because a value was unknown.
     /// Returns `Err` upon real user errors.
     /// Method to recursively mutate tree of unresolved expression
-    /// This works as user -> user -> ... -> None
+    /// This works as root -> user -> user -> ... -> None
     // This needs to go from x -> x + 2 -> y recursively however long needed
     fn traverse_expr(&mut self, current_expr_id: ExprId) -> Result<bool, SemanticError> {
         match &self.compiler.exprs[current_expr_id.id as usize].expr_hir {
@@ -446,8 +453,9 @@ impl TypeResolver<'_> {
             ExprHir::Call(expr_id, expr_ids) => todo!(),
         }
 
-        // Uh huh
-        let expr = &mut self.compiler.exprs[current_expr_id.id as usize];
+        // Traversing up tree
+        let expr = &self.compiler.exprs[current_expr_id.id as usize];
+        //FIX: Should return manually here, but not testing this yete
         if let Some(user) = expr.user {
             self.traverse_expr(user)?;
         }
@@ -516,8 +524,12 @@ impl TypeResolver<'_> {
     }
 
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
-        let type_id =
-            self.resolve_type_expr(&abs_typedef.spanned_ty_expr, ScopeType::Var, ast_id)?;
+        let type_id = self.resolve_type_expr(
+            &abs_typedef.spanned_ty_expr,
+            ScopeType::Var,
+            ast_id,
+            LookupPattern::AllConnections,
+        )?;
 
         let scope_id = self
             .compiler
@@ -580,8 +592,12 @@ impl TypeResolver<'_> {
 
         // Checking if there are duplicate name ids within the same struct along with resolution
         for (i, field_typedef) in abs_struct.fields.iter().enumerate() {
-            let type_id =
-                self.resolve_type_expr(&field_typedef.spanned_ty_expr, ScopeType::Nest, ast_id)?;
+            let type_id = self.resolve_type_expr(
+                &field_typedef.spanned_ty_expr,
+                ScopeType::Nest,
+                ast_id,
+                LookupPattern::AllConnections,
+            )?;
 
             if let Some(original) = seen.iter().find(|other| field_typedef.name_id == other.1) {
                 let struct_name = self.interner.search(abs_struct.name_id.id as usize);
@@ -731,7 +747,12 @@ impl TypeResolver<'_> {
             seen.push((i, variant.name_id));
 
             let variant_repre = if let Some(spanned_ty_expr) = &variant.ty_expr {
-                let type_id = self.resolve_type_expr(&spanned_ty_expr, ScopeType::Nest, ast_id)?;
+                let type_id = self.resolve_type_expr(
+                    &spanned_ty_expr,
+                    ScopeType::Nest,
+                    ast_id,
+                    LookupPattern::AllConnections,
+                )?;
                 VariantRepre::new(variant.name_id, Some(type_id), AstId::new(i as u32))
             } else {
                 VariantRepre::new(variant.name_id, None, AstId::new(i as u32))
@@ -904,6 +925,7 @@ impl TypeResolver<'_> {
         }
     }
 
+    /// On `Ok`, Creates a HIR expression type and returns the identifier of the expression.
     fn register_expr(
         &mut self,
         sym_parent: SymbolId,
@@ -1457,16 +1479,26 @@ impl TypeResolver<'_> {
 
         Err(SemanticError::UndefinedMember(member.span))
     }
+
+    // Need some way to tell this method how to search for things so that it knows if it should be
+    // able to default to core, or if it should just search for a symbol in one scope.
     fn resolve_type_expr(
         &mut self,
         spanned_ty_expr: &SpannedTypeExpr,
         scope_type: ScopeType,
         ast_id: AstId,
+        lookup_pattern: LookupPattern,
     ) -> Result<TypeId, ()> {
         match &spanned_ty_expr.ty_expr {
             TypeExpr::Var(name_id) => {
                 // Just uhhh um
-                match scopes::get_type_id(self.compiler, self.current_mod, *name_id, scope_type) {
+                match scopes::get_type_id(
+                    self.compiler,
+                    self.current_mod,
+                    *name_id,
+                    scope_type,
+                    lookup_pattern,
+                ) {
                     Some(type_id) => Ok(type_id),
                     None => {
                         let module = &self.compiler.mods[self.current_mod.id];
@@ -1516,8 +1548,12 @@ impl TypeResolver<'_> {
                                 return Err(());
                             }
 
-                            let inner =
-                                self.resolve_type_expr(&generic.args[0], scope_type, ast_id)?;
+                            let inner = self.resolve_type_expr(
+                                &generic.args[0],
+                                scope_type,
+                                ast_id,
+                                lookup_pattern,
+                            )?;
 
                             let list = Type::BuiltinType(BuiltinType::List(inner));
                             let list_id = TypeId::new(self.compiler.types.len() as u32);
@@ -1531,7 +1567,12 @@ impl TypeResolver<'_> {
                             let mut elements: Vec<TypeId> = Vec::new();
 
                             for arg in &generic.args {
-                                elements.push(self.resolve_type_expr(arg, scope_type, ast_id)?);
+                                elements.push(self.resolve_type_expr(
+                                    arg,
+                                    scope_type,
+                                    ast_id,
+                                    lookup_pattern,
+                                )?);
                             }
 
                             let type_id = TypeId::new(self.compiler.types.len() as u32);
@@ -1563,10 +1604,19 @@ impl TypeResolver<'_> {
                                 return Err(());
                             }
 
-                            let key =
-                                self.resolve_type_expr(&generic.args[0], scope_type, ast_id)?;
-                            let val =
-                                self.resolve_type_expr(&generic.args[1], scope_type, ast_id)?;
+                            let key = self.resolve_type_expr(
+                                &generic.args[0],
+                                scope_type,
+                                ast_id,
+                                lookup_pattern,
+                            )?;
+
+                            let val = self.resolve_type_expr(
+                                &generic.args[1],
+                                scope_type,
+                                ast_id,
+                                lookup_pattern,
+                            )?;
 
                             let map = Type::BuiltinType(BuiltinType::Map(key, val));
                             let map_id = self.compiler.types.len() as u32;
@@ -1598,8 +1648,12 @@ impl TypeResolver<'_> {
                                 return Err(());
                             }
 
-                            let inner =
-                                self.resolve_type_expr(&generic.args[0], scope_type, ast_id)?;
+                            let inner = self.resolve_type_expr(
+                                &generic.args[0],
+                                scope_type,
+                                ast_id,
+                                lookup_pattern,
+                            )?;
 
                             let set = Type::BuiltinType(BuiltinType::Set(inner));
                             let set_id = TypeId::new(self.compiler.types.len() as u32);
@@ -1709,8 +1763,20 @@ impl TypeResolver<'_> {
                     _ => unreachable!("Parser does not pick this up"),
                 };
 
-                // self.current_mod = extern_mod.mod_id;
-                self.resolve_type_expr(&spanned_ty_exprs[1], scope_type, ast_id)
+                //DIRTY
+                let current_mod = self.current_mod;
+                self.current_mod = extern_mod.mod_id;
+
+                //TEST: Patterns
+                let type_id_res = self.resolve_type_expr(
+                    &spanned_ty_exprs[1],
+                    scope_type,
+                    ast_id,
+                    LookupPattern::ModuleOnly,
+                );
+
+                self.current_mod = current_mod;
+                type_id_res
             }
         }
     }

@@ -108,9 +108,19 @@ pub fn get_type_id(
     owner_id: ModuleId,
     target_name_id: InternedId,
     scope_type: ScopeType,
+    lookup_pattern: LookupPattern,
 ) -> Option<TypeId> {
     let current_mod = &compiler.mods[owner_id.id];
+    dbg!(current_mod);
+    //WARN: Core is always the last scope so this is kept so an owned vec isn't created
     let accessible_scopes = scope_type.accessible_scopes();
+    let accessible_scopes = match lookup_pattern {
+        LookupPattern::ModuleOnly if current_mod.src_metadata.is_some() => {
+            &accessible_scopes[..accessible_scopes.len() - 1]
+        }
+        LookupPattern::AllConnections | LookupPattern::ModuleOnly => accessible_scopes,
+    };
+    dbg!(&current_mod.src_metadata);
     // I don't think this can fail. Should maybe expect for clarity.
     //     let scope = &compiler.scopes[scope_id.id].scope;
     // Loops over all allowed scopes and checks their individual namespaces
@@ -175,6 +185,18 @@ impl ScopeType {
             ScopeType::Override => SCOPE_OVERRIDE,
         }
     }
+}
+
+/// This enum is intended to disallow core defined values from being searched for when syntax such
+/// as "main.i32" is used. i32 is not owned by main, but innately main is attached to core, meaning
+/// without the explicit noting of whether we are searching a singular module's namespace it would
+/// innately allow for main.i32 to be interpreted the same as if just i32 was written, which is
+/// wrong since the namespace "main" owns no such thing.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum LookupPattern {
+    // The naming please
+    AllConnections,
+    ModuleOnly,
 }
 
 // TODO: Formattable
