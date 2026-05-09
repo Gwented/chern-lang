@@ -1,5 +1,5 @@
 use chrn_utils::{
-    id_types::{AstId, InternedId, PathId},
+    id_types::{AstId, InternedId},
     inner_args::SpannedInnerArgs,
 };
 //NOTE: MAY MAKE EXPRESSION THAT HELPS RESOLVE SEMANTIC TYPES MORE CLEANLY
@@ -72,7 +72,7 @@ impl AstInfo {
         }
     }
 
-    pub(crate) fn get_struct(&self, ast_id: AstId) -> &AbstractStruct {
+    pub fn get_struct(&self, ast_id: AstId) -> &AbstractStruct {
         match &self.items[ast_id.id as usize] {
             item => match item {
                 Item::Struct(abs_struct) => abs_struct,
@@ -81,7 +81,7 @@ impl AstInfo {
         }
     }
 
-    pub(crate) fn get_const(&self, ast_id: AstId) -> &AbstractVar {
+    pub fn get_const(&self, ast_id: AstId) -> &AbstractVar {
         match &self.items[ast_id.id as usize] {
             item => match item {
                 Item::Var(abs_var) => abs_var,
@@ -99,10 +99,19 @@ impl AstInfo {
     //     }
     // }
 
-    pub(crate) fn get_enum(&self, ast_id: AstId) -> &AbstractEnum {
+    pub fn get_enum(&self, ast_id: AstId) -> &AbstractEnum {
         match &self.items[ast_id.id as usize] {
             item => match item {
                 Item::Enum(abs_enum) => abs_enum,
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    pub fn get_alias(&self, ast_id: AstId) -> &AbstractAlias {
+        match &self.items[ast_id.id as usize] {
+            item => match item {
+                Item::Alias(abs_alias) => abs_alias,
                 _ => unreachable!(),
             },
         }

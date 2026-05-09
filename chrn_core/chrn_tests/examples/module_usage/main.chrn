@@ -1,3 +1,5 @@
+@def import "def.chrn" as burg export let main_stuff = 5 alias b(x,y)=[]#warn let x =5 let z =x+3var->x:i32 ty:str nest->struct str{len:unsized x:i32}#warn@end
+
 @def
     import "definitions.chrn"
 

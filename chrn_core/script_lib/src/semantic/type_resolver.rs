@@ -101,20 +101,17 @@ impl TypeResolver<'_> {
                     Ok(can_remove) => {
                         // Not sure about this yet
                         if can_remove {
-                            current_resolved_count += 1;
                             removable_syms.insert(*sym_id);
+                            current_resolved_count += 1;
                         }
                     }
-                    // Uhhh not sure what to do here
+                    // Not sure if anything more can be done here since the diagnostic is already
+                    // made
                     Err(_) => (),
                 };
             }
 
             self.ty_ctx.sym_queue.extend(pending_syms);
-
-            // let symbol = &self.compiler.symbols[&SymbolId::new(24)];
-            // let name = self.interner.search(symbol.name_id.id as usize);
-            // dbg!(name);
 
             //TEST: Not confident in how well this works
             // The intent of this is to check if the symbol itself was resolved during the
@@ -130,13 +127,16 @@ impl TypeResolver<'_> {
                     SymbolKind::Unknown => TypeId::new(script_compiler::TYPE_UNKNOWN_IDX),
                 };
 
-                // NO
+                // The reason for some index checks, some deep checks, is because core should
+                // probably not be using set indices upon loading, but parts still depend on said
+                // index being given, so all possible not index specific checking is being used.
                 let ty = &self.compiler.types[type_id.id as usize].ty;
                 if let Type::Unknown = ty {
                     continue;
                 }
 
                 pending_sym.is_resolved = true;
+                self.ty_ctx.needs_check = true;
             }
 
             //TEMP or not I don't know
@@ -173,7 +173,7 @@ impl TypeResolver<'_> {
         // if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
         //     dbg!(&self.ty_ctx);
         //     for symbol in self.compiler.symbols.values() {
-        //         if self.interner.search(symbol.name_id.id as usize) == "x" {
+        //         if self.interner.search(symbol.name_id.id as usize) == "z" {
         //             let name = self.interner.search(symbol.name_id.id as usize);
         //             dbg!(name);
         //             match symbol.kind {
@@ -204,7 +204,7 @@ impl TypeResolver<'_> {
         //             }
         //             panic!("Done");
         //         }
-        //         // dbg!(self.interner.search(symbol.name_id.id as usize));
+        //         dbg!(self.interner.search(symbol.name_id.id as usize));
         //         // dbg!(symbol);
         //     }
         //
@@ -247,14 +247,6 @@ impl TypeResolver<'_> {
         // removed as a pending symbol
         let mut can_remove = false;
         let mut queue: Vec<ExprId> = Vec::new();
-        //TODO: Given
-        // let x = y
-        // let y = 2 + z
-        // let z = 3
-        //
-        // x is never notified that it can be resolved because x is not directly dependant on z.
-        // This means that y isn't correctly saying when it's resolved, and/or needs check isn't
-        // being utilized to it's needed extent.
 
         //Suspicious
         for pending_expr in &pending_sym.pending_exprs {
@@ -533,6 +525,14 @@ impl TypeResolver<'_> {
         };
 
         let expr = &self.compiler.exprs[expr_id.id as usize];
+
+        // let symbol = &self.compiler.symbols[&sym_id];
+        // let name = self.interner.search(symbol.name_id.id as usize);
+
+        // if name == "z" {
+        //     dbg!(&self.ty_ctx);
+        //     panic!("Hi Zhea");
+        // }
         // dbg!(expr);
         // dbg!(&self.compiler.values[expr.val_id.id as usize]);
         let is_unknown = expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX;
@@ -559,7 +559,6 @@ impl TypeResolver<'_> {
             && !is_unknown
         {
             // Two caches
-            //FIX: This maybe needs to be checked elsewhere too
             pending_sym.is_resolved = true;
             self.ty_ctx.needs_check = true;
         }
@@ -588,7 +587,7 @@ impl TypeResolver<'_> {
                 sym_id,
                 spanned_expr,
                 ScopeType::Neutral,
-                &mut vec![sym_id].as_mut(),
+                &mut vec![sym_id],
             ) {
                 // There is no sym parrent..
                 Ok(c) => c,
@@ -602,8 +601,8 @@ impl TypeResolver<'_> {
                             .expect("core should not be resolved"),
                     );
 
-                    println!("{}", self.reporter.err_vec[0].fmtted_diag);
-                    todo!("Errored");
+                    // println!("{}", self.reporter.err_vec[0].fmtted_diag);
+                    // todo!("Errored");
                     return Err(());
                 }
             };
@@ -994,51 +993,12 @@ impl TypeResolver<'_> {
                     scope_type,
                     LookupPattern::AllConnections,
                 ) {
-                    //WARN: Cosntant iteration upon seeing any symbol instead of a single check
+                    //WARN: Constant iteration upon seeing any symbol instead of a single check
                     //elsewhere
                     seen.push(found_sym_id);
-                    for seen_sym_id in seen.iter() {
-                        // In:
-                        // ```
-                        // let a = b
-                        // let b = a
-                        // ```
-                        // Within b, it checks of the symbol a is inside of `TypeContext`, and
-                        // if that a depends on symbol b
-                        if let Some(pending_sym) = self.ty_ctx.sym_queue.get(seen_sym_id) {
-                            let has_cycle = pending_sym
-                                .pending_exprs
-                                .iter()
-                                .any(|pend_expr| pend_expr.parent_sym == found_sym_id);
 
-                            if has_cycle {
-                                let parent_sym = &self.compiler.symbols[&parent_sym_id];
-                                let parent_name =
-                                    self.interner.search(parent_sym.name_id.id as usize);
-                                let parent_ast_id =
-                                    parent_sym.ast_id.expect("core should not be resolved");
-
-                                let found_sym = &self.compiler.symbols[&found_sym_id];
-                                let found_ast_id =
-                                    found_sym.ast_id.expect("core should not be resolved");
-                                let found_name =
-                                    self.interner.search(found_sym.name_id.id as usize);
-
-                                let cycled_span = self.ast_info.get_sym_span(parent_ast_id);
-                                let found_span = self.ast_info.get_sym_span(found_ast_id);
-
-                                let msg = format!(
-                                    "The symbol `{}` depends on `{}`, but `b` has no value",
-                                    parent_name, found_name
-                                );
-
-                                return Err(SemanticError::General(
-                                    msg,
-                                    vec![cycled_span, found_span],
-                                ));
-                            }
-                        }
-                    }
+                    // Code duplication reduction
+                    self.check_cycle(seen, parent_sym_id, found_sym_id)?;
 
                     //NOTE: Only the PendingSymbol struct carries the PendingExpr struct, meaning
                     //there is no way to check for cycles outside of `TypeContext`, so this has to
@@ -1065,6 +1025,7 @@ impl TypeResolver<'_> {
                     let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
 
                     let resolved_expr = match symbol.kind {
+                        // I don't think this is needed since types are already known
                         SymbolKind::Type(type_id) => {
                             // Not sure what to do with this yet
                             // This would make types expressions, which wasn't true before
@@ -1083,6 +1044,13 @@ impl TypeResolver<'_> {
                         }
                         SymbolKind::Val(val_id) => {
                             let val_info = &self.compiler.values[val_id.id as usize];
+                            let ty = &self.compiler.types[val_info.type_id.id as usize].ty;
+
+                            if let Type::Unknown = ty {
+                                let pending_expr = PendingExpr::new(expr_id, parent_sym_id);
+                                self.ty_ctx.store_pending_expr(found_sym_id, pending_expr);
+                            }
+
                             let expr_hir = ExprHir::Var(found_sym_id);
 
                             ResolvedExpr::new(
@@ -1356,6 +1324,7 @@ impl TypeResolver<'_> {
                 todo!();
             }
             // Maybe having "::" exist could help..
+            // FIX: Could be an issue here regarding cycle detection
             Expr::MemberAccess(abs_member_access) => {
                 match self.resolve_member(
                     parent_sym_id,
@@ -1376,6 +1345,9 @@ impl TypeResolver<'_> {
                             scope_type,
                             LookupPattern::ModuleOnly,
                         ) {
+                            seen.push(extern_sym_id);
+                            self.check_cycle(seen, parent_sym_id, extern_sym_id)?;
+
                             let symbol = &self.compiler.symbols[&extern_sym_id];
 
                             // symbol kind aware reporting.
@@ -1396,6 +1368,24 @@ impl TypeResolver<'_> {
                                 );
                             }
 
+                            if extern_sym_id == parent_sym_id {
+                                let name = self.interner.search(
+                                    self.compiler.symbols[&extern_sym_id].name_id.id as usize,
+                                );
+                                let msg = format!("Cannot declare symbol `{name}` as itself");
+
+                                let parent_ast_id = self.compiler.symbols[&parent_sym_id].ast_id;
+                                let mut spans = Vec::new();
+                                spans.push(spanned_expr.span);
+
+                                if let Some(ast_id) = parent_ast_id {
+                                    let ast_span = self.ast_info.get_sym_span(ast_id);
+                                    spans.push(ast_span);
+                                };
+
+                                return Err(SemanticError::General(msg, spans));
+                            }
+
                             match symbol.kind {
                                 SymbolKind::Type(type_id) => todo!(),
                                 SymbolKind::Val(val_id) => {
@@ -1408,6 +1398,12 @@ impl TypeResolver<'_> {
                                     let pending_expr = PendingExpr::new(expr_id, parent_sym_id);
 
                                     self.ty_ctx.store_pending_expr(extern_sym_id, pending_expr);
+                                    // dbg!(self.interner.search(
+                                    //     self.compiler.symbols[&SymbolId::new(25)].name_id.id
+                                    //         as usize
+                                    // ));
+                                    // dbg!(&self.ty_ctx);
+                                    // panic!();
                                     // Will possibly call for others to be resolved here, or do it from the
                                     // var resolution method itself
 
@@ -1457,9 +1453,7 @@ impl TypeResolver<'_> {
                     }
                     PossibleMember::Var(val_id) => {
                         ValueResult::Resolved(val_id);
-                        unimplemented!(
-                            "Nothing matches this case yet but \"self.\" mentions would"
-                        );
+                        unimplemented!("Nothing matches this case yet");
                     }
                     PossibleMember::Nothing => todo!("Unresolved"),
                 }
@@ -1599,6 +1593,53 @@ impl TypeResolver<'_> {
         }
 
         Err(SemanticError::UndefinedMember(member.span))
+    }
+
+    // Helper
+    fn check_cycle(
+        &self,
+        seen: &Vec<SymbolId>,
+        parent_sym_id: SymbolId,
+        found_sym_id: SymbolId,
+    ) -> Result<(), SemanticError> {
+        for seen_sym_id in seen.iter() {
+            // In:
+            // ```
+            // let a = b
+            // let b = a
+            // ```
+            // Within b, it checks of the symbol a is inside of `TypeContext`, and
+            // if that a depends on symbol b
+            if let Some(pending_sym) = self.ty_ctx.sym_queue.get(seen_sym_id) {
+                let has_cycle = pending_sym
+                    .pending_exprs
+                    .iter()
+                    .any(|pend_expr| pend_expr.parent_sym == found_sym_id);
+
+                if has_cycle {
+                    let parent_sym = &self.compiler.symbols[&parent_sym_id];
+                    let parent_name = self.interner.search(parent_sym.name_id.id as usize);
+                    let parent_ast_id = parent_sym.ast_id.expect("core should not be resolved");
+
+                    let found_sym = &self.compiler.symbols[&found_sym_id];
+                    let found_ast_id = found_sym.ast_id.expect("core should not be resolved");
+                    let found_name = self.interner.search(found_sym.name_id.id as usize);
+
+                    let cycled_span = self.ast_info.get_sym_span(parent_ast_id);
+                    let found_span = self.ast_info.get_sym_span(found_ast_id);
+
+                    // Not even going to address what was here
+                    let msg = format!(
+                        "The symbol `{}` depends on `{}`, but `{}` has no value",
+                        parent_name, found_name, found_name
+                    );
+
+                    return Err(SemanticError::General(msg, vec![cycled_span, found_span]));
+                }
+            }
+        }
+
+        Ok(())
     }
 
     // Need some way to tell this method how to search for things so that it knows if it should be
