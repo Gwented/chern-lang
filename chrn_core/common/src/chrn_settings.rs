@@ -1,5 +1,3 @@
-// Will rellocate both eventually
-
 //TEST:
 #[derive(Debug)]
 pub struct ChrnSettings {

@@ -52,9 +52,9 @@ impl TypeContext {
         }
     }
 }
-#[derive(Debug)]
 /// Struct to represent a symbol that is has users. Mainly exists so there is one point where
 /// "is_resolved" can be cached as opposed to giving it to individual expressions
+#[derive(Debug)]
 pub(super) struct PendingSymbol {
     pub(super) is_resolved: bool,
     /// All symbols the user is waiting on.
@@ -89,11 +89,6 @@ impl PendingUser {
     }
 }
 
-pub(super) enum PendingUserType {
-    Symbol(SymbolId),
-    Expr(ExprId),
-}
-
 #[derive(Debug)]
 /// Struct to represent an expr that any amount of other expression are waiting for so that they can
 /// be resolved.
@@ -103,19 +98,10 @@ pub(super) struct PendingExpr {
 }
 
 impl PendingExpr {
-    pub(super) fn new(pending_expr_id: ExprId, parent: SymbolId) -> PendingExpr {
+    pub(super) fn new(pending_id: ExprId, parent_sym: SymbolId) -> PendingExpr {
         PendingExpr {
-            pending_id: pending_expr_id,
-            parent_sym: parent,
+            pending_id,
+            parent_sym,
         }
     }
 }
-
-// #[derive(Debug)]
-// pub(super) enum ExprResult {
-//     Resolved(ExprId),
-//     // May change to just outright give the caller.
-//     /// SymbolId of the expression that was not reolved. Given, "let y = x + 2", x would be
-//     /// unresolved so x is returned so the caller, y, can store itself as a user of x.
-//     Unresolved(SymbolId),
-// }

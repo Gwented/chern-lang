@@ -38,6 +38,7 @@ pub struct ScriptCompiler {
     /// All expressions that were found
     pub exprs: Vec<ResolvedExpr>,
     // pub exprs: Vec<ValueInfo>,
+    // Can this just be a vec?
     pub symbols: HashMap<SymbolId, Symbol>,
     ///
     pub scopes: Vec<ScopeInfo>,

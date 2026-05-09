@@ -1,8 +1,8 @@
 @def
-    import "main.chrn"
+    import "definitions.chrn"
 
     // No bit-wise yet
-    // let READ_WRITE = def
+    let READ_WRITE = definitions.READ
 
 
 @end

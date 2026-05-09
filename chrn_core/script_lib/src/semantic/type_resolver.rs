@@ -81,12 +81,14 @@ impl TypeResolver<'_> {
         }
 
         // Maybe shouldn't in-line this
-        if self.ty_ctx.needs_check {
-            // Clearing cache.
-            self.ty_ctx.needs_check = false;
+        // Clearing cache.
+        // self.ty_ctx.needs_check = false;
 
-            // Giving ownership to a variable since the traversal chosen needs mutation while
-            // traversing
+        // Giving ownership to a variable since the traversal chosen needs mutation while
+        // traversing
+
+        while self.ty_ctx.needs_check {
+            self.ty_ctx.needs_check = false;
             let mut pending_syms: Vec<(SymbolId, PendingSymbol)> = Vec::new();
             pending_syms.extend(self.ty_ctx.sym_queue.drain());
 
@@ -99,6 +101,7 @@ impl TypeResolver<'_> {
 
                 match self.try_resolve_pending(*sym_id, pending_sym) {
                     Ok(can_remove) => {
+                        // Not sure about this yet
                         if can_remove {
                             removable_syms.insert(*sym_id);
                         }
@@ -112,18 +115,38 @@ impl TypeResolver<'_> {
 
             self.ty_ctx.sym_queue.extend(pending_syms);
 
+            // let symbol = &self.compiler.symbols[&SymbolId::new(24)];
+            // let name = self.interner.search(symbol.name_id.id as usize);
+            // dbg!(name);
+
+            //TEST: Not confident in how well this works
+            // The intent of this is to check if the symbol itself was resolved during the
+            // traverse_expr innately but did not send a signal
+            for (sym_id, pending_sym) in self.ty_ctx.sym_queue.iter_mut() {
+                let type_id = match self.compiler.symbols[&sym_id].kind {
+                    SymbolKind::Type(type_id) => type_id,
+                    SymbolKind::Val(val_id) => self.compiler.values[val_id.id as usize].type_id,
+                    SymbolKind::Unknown => TypeId::new(script_compiler::TYPE_UNKNOWN_IDX),
+                };
+
+                // NO
+                let ty = &self.compiler.types[type_id.id as usize].ty;
+                if let Type::Unknown = ty {
+                    continue;
+                }
+
+                pending_sym.is_resolved = true;
+                self.ty_ctx.needs_check = true;
+            }
+
             //TEMP or not I don't know
             for sym_id in removable_syms {
                 self.ty_ctx.sym_queue.remove(&sym_id);
             }
-
-            //FIXME:
-            //FIX:
-            // Not sure what to do with this yet
-            //
-            // This means the resolution failed at last module pass
+            // dbg!(&self.ty_ctx);
         }
 
+        //
         // let symbol = &self.compiler.symbols[&SymbolId::new(0)];
         // match symbol.kind {
         //     SymbolKind::Type(type_id) => {
@@ -140,57 +163,57 @@ impl TypeResolver<'_> {
         //     }
         //     _ => todo!(),
         // };
-        //
-        // if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
-        //     for symbol in self.compiler.symbols.values() {
-        //         if self.interner.search(symbol.name_id.id as usize) == "x" {
-        //             let name = self.interner.search(symbol.name_id.id as usize);
-        //             dbg!(name);
-        //             match symbol.kind {
-        //                 SymbolKind::Val(value_id) => {
-        //                     let val = &self.compiler.values[value_id.id as usize];
-        //                     dbg!(value_id, val);
-        //                     let expr = &self.compiler.exprs[val.expr_id.id as usize];
-        //                     dbg!(expr.val_id, expr);
-        //                     dbg!(&self.compiler.values[expr.val_id.id as usize]);
-        //                 }
-        //                 SymbolKind::Type(type_id) => {
-        //                     let ty_info = &self.compiler.types[type_id.id as usize];
-        //                     match &ty_info.ty {
-        //                         Type::BuiltinType(builtin_type) => {
-        //                             dbg!(builtin_type);
-        //                         }
-        //                         Type::Struct(struct_def) => todo!(),
-        //                         Type::Enum(enum_def) => todo!(),
-        //                         Type::Func(func_def) => todo!(),
-        //                         Type::Alias(alias_def) => todo!(),
-        //                         Type::TypeDef(type_def) => {
-        //                             let ty = &self.compiler.types[type_def.type_id.id as usize];
-        //                             dbg!(ty);
-        //                         }
-        //                         Type::Unknown => todo!(),
-        //                     }
-        //                 }
-        //                 SymbolKind::Unknown => todo!(),
-        //             }
-        //             panic!("Done");
-        //         }
-        //         // dbg!(self.interner.search(symbol.name_id.id as usize));
-        //         // dbg!(symbol);
-        //     }
-        //
-        //     for ty in &self.compiler.types {
-        //         dbg!(ty);
-        //     }
-        //
-        //     for expr_thing in &self.compiler.exprs {
-        //         dbg!(expr_thing);
-        //     }
-        //
-        //     for val in &self.compiler.values {
-        //         dbg!(val);
-        //     }
-        // }
+
+        if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
+            dbg!(&self.ty_ctx);
+            for symbol in self.compiler.symbols.values() {
+                if self.interner.search(symbol.name_id.id as usize) == "x" {
+                    let name = self.interner.search(symbol.name_id.id as usize);
+                    dbg!(name);
+                    match symbol.kind {
+                        SymbolKind::Val(value_id) => {
+                            let val = &self.compiler.values[value_id.id as usize];
+                            let expr = &self.compiler.exprs[val.expr_id.id as usize];
+                            // dbg!(expr.val_id, expr);
+                            dbg!(expr, val);
+                        }
+                        SymbolKind::Type(type_id) => {
+                            let ty_info = &self.compiler.types[type_id.id as usize];
+                            match &ty_info.ty {
+                                Type::BuiltinType(builtin_type) => {
+                                    dbg!(builtin_type);
+                                }
+                                Type::Struct(struct_def) => todo!(),
+                                Type::Enum(enum_def) => todo!(),
+                                Type::Func(func_def) => todo!(),
+                                Type::Alias(alias_def) => todo!(),
+                                Type::TypeDef(type_def) => {
+                                    let ty = &self.compiler.types[type_def.type_id.id as usize];
+                                    dbg!(ty);
+                                }
+                                Type::Unknown => todo!(),
+                            }
+                        }
+                        SymbolKind::Unknown => todo!(),
+                    }
+                    panic!("Done");
+                }
+                // dbg!(self.interner.search(symbol.name_id.id as usize));
+                // dbg!(symbol);
+            }
+
+            for ty in &self.compiler.types {
+                dbg!(ty);
+            }
+
+            for expr_thing in &self.compiler.exprs {
+                dbg!(expr_thing);
+            }
+
+            for val in &self.compiler.values {
+                dbg!(val);
+            }
+        }
 
         if !self.ty_ctx.sym_queue.is_empty()
             && self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id
@@ -218,7 +241,16 @@ impl TypeResolver<'_> {
         // removed as a pending symbol
         let mut can_remove = false;
         let mut queue: Vec<ExprId> = Vec::new();
+        //TODO: Given
+        // let x = y
+        // let y = 2 + z
+        // let z = 3
+        //
+        // x is never notified that it can be resolved because x is not directly dependant on z.
+        // This means that y isn't correctly saying when it's resolved, and/or needs check isn't
+        // being utilized to it's needed extent.
 
+        //Suspicious
         for pending_expr in &pending_sym.pending_exprs {
             let expr = &self.compiler.exprs[pending_expr.pending_id.id as usize];
             let is_solvable = expr.inputs.iter().all(|inner_expr_id| {
@@ -257,11 +289,12 @@ impl TypeResolver<'_> {
                     // Brain starting working now it works
                     let val_info = &self.compiler.values[val_id.id as usize];
                     let type_id = val_info.type_id;
-                    // WARN: It's only 32 bytes so trying to see something here
-                    // If there are no users then I could have the symbol just point to the same
-                    // val_id since that would avoid said clone but fine for now
                     let const_val_opt = val_info.const_val.clone();
 
+                    // Not sure if clone can be avoided here since mutating val_id so that it
+                    // points to the current expr would mutate the symbol it was gotten from,
+                    // which would mangle the resolved symbol itself even though we just want the
+                    // const value if present.
                     root_expr.type_id = type_id;
                     let inner_val = &mut self.compiler.values[root_expr.val_id.id as usize];
                     inner_val.type_id = type_id;
@@ -274,7 +307,8 @@ impl TypeResolver<'_> {
             if let Some(user) = root_expr.user {
                 match self.traverse_expr(user) {
                     Ok(true) => resolved_count += 1,
-                    // WARN: Works suspiciously well
+
+                    // WARN: This case is not hit yet
                     Ok(false) => (),
                     // Reports the error and continues
                     Err(sem_err) => {
@@ -295,7 +329,7 @@ impl TypeResolver<'_> {
                 };
             } else {
                 // If the root has no users, then that means its, let y = x where there is nothing else
-                // that needs resolution since the root is always a symbol.
+                // that needs resolution since the root is always a single variable.
                 resolved_count += 1;
                 break;
             }
@@ -304,6 +338,10 @@ impl TypeResolver<'_> {
         // If all pending expressions were pushed into the queue and the entire queue was resolved then
         // can remove
         if queue.len() == pending_sym.pending_exprs.len() && resolved_count == queue.len() {
+            // println!(
+            //     "------\nCan remove {}\n------",
+            //     self.interner.search(sym.name_id.id as usize)
+            // );
             can_remove = true;
         }
 
@@ -450,9 +488,10 @@ impl TypeResolver<'_> {
 
         // Traversing up tree
         let expr = &self.compiler.exprs[current_expr_id.id as usize];
-        //FIX: Should return manually here, but not testing this yete
+        //FIX: Should return manually here, but not testing this yet
+        // Suspiciously suspicious
         if let Some(user) = expr.user {
-            self.traverse_expr(user)?;
+            return self.traverse_expr(user);
         }
 
         Ok(true)
@@ -651,7 +690,6 @@ impl TypeResolver<'_> {
             }
 
             field.conds = conds;
-            // TEST:
             field.args = abs_field.args.iter().map(|sp_arg| sp_arg.arg).collect();
         }
 

@@ -15,12 +15,22 @@
     // This should be possible if not
     // let z = main.x
 
-    let x = main.y
-    let y = 3
+    // y and z are resolved, but y is never set as "is_resolved".
+    // 'z' is set as resolved innately because it is in fact resolved upon declaration,
+    // but the add expression does not pick that up.
+    // The issue is that removable_syms can only collect ones that are remoable, which doesn't include all
+    // evaluated pending symbols. We need to somehow have this loop incorporate all of us withou severe
+    // overight.
+
+    let x = y + z
+    let y = z
+    let z = 8 + c
+    let c = 2
     var->
     // Should probably filter out duplicate arguments if present before emitting instructions
         //z: Tuple<i32, u32, defs.Person> [] #scient
-        x: main.x //[core.StartsW("chrn")] #warn
+        // This is a bug
+        // x: main.x //[core.StartsW("chrn")] #warn
 
     nest->
         /*enum State {

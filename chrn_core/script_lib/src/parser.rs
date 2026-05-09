@@ -18,7 +18,6 @@ use chrn_utils::inner_args::{InnerArgs, SpannedInnerArgs};
 use chrn_utils::intern::Intern;
 use chrn_utils::keywords::Keyword;
 use common::chrn_settings::ChrnSettings;
-use common::core_error::ScriptError;
 use common::fmter::Formatted;
 use common::reporter::diagnostic::Diagnostic;
 use common::span::Span;
@@ -45,11 +44,6 @@ pub fn parse(
     }
 
     while !ctx.peek_kind().is_terminator() {
-        //TEST:
-        // if ctx.err_vec.len() > 10 {
-        //     break;
-        // }
-
         // Checks if there is an export which is only a boolean due to there only being private and
         // public
         let is_priv = match parse_export(&mut ctx, interner) {
