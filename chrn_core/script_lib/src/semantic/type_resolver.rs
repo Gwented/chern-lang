@@ -568,9 +568,9 @@ impl TypeResolver<'_> {
 
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
         let type_id = self.resolve_type_expr(
+            self.current_mod,
             &abs_typedef.spanned_ty_expr,
             ScopeType::Var,
-            ast_id,
             LookupPattern::AllConnections,
         )?;
 
@@ -642,9 +642,9 @@ impl TypeResolver<'_> {
         // Checking if there are duplicate name ids within the same struct along with resolution
         for (i, field_typedef) in abs_struct.fields.iter().enumerate() {
             let type_id = self.resolve_type_expr(
+                self.current_mod,
                 &field_typedef.spanned_ty_expr,
                 ScopeType::Nest,
-                ast_id,
                 LookupPattern::AllConnections,
             )?;
 
@@ -797,9 +797,9 @@ impl TypeResolver<'_> {
 
             let variant_repre = if let Some(spanned_ty_expr) = &variant.ty_expr {
                 let type_id = self.resolve_type_expr(
+                    self.current_mod,
                     &spanned_ty_expr,
                     ScopeType::Nest,
-                    ast_id,
                     LookupPattern::AllConnections,
                 )?;
                 VariantRepre::new(variant.name_id, Some(type_id), AstId::new(i as u32))
@@ -1030,6 +1030,8 @@ impl TypeResolver<'_> {
                             // Not sure what to do with this yet
                             // This would make types expressions, which wasn't true before
                             let ty_info = &self.compiler.types[type_id.id as usize];
+                            //TODO: Alias is being looked up and seen as a type, not a
+                            //function-like entity
                             // match &ty_info.ty {
                             //     Type::BuiltinType(builtin_type) => {}
                             //     Type::Struct(struct_def) => todo!(),
@@ -1307,6 +1309,7 @@ impl TypeResolver<'_> {
                 Ok(expr_id)
             }
             Expr::Call(caller, arg_exprs) => {
+                //FIX: Let alias get processed
                 let call_id = self.register_expr(parent_sym_id, caller, scope_type, seen)?;
                 let mut call_args: Vec<ExprId> = Vec::new();
 
@@ -1646,12 +1649,16 @@ impl TypeResolver<'_> {
     // able to default to core, or if it should just search for a symbol in one scope.
     fn resolve_type_expr(
         &mut self,
+        // Module that is actively being searched within, not the source. Source remains
+        // current_mod
+        active_mod_id: ModuleId,
         spanned_ty_expr: &SpannedTypeExpr,
         scope_type: ScopeType,
-        ast_id: AstId,
         lookup_pattern: LookupPattern,
     ) -> Result<TypeId, ()> {
         match &spanned_ty_expr.ty_expr {
+            //FIXME: If an error occurs while self.current_mod = extern_mod, it tries to report the
+            //error from the external module instead of the actual module of origin.
             TypeExpr::Var(name_id) => {
                 // Just uhhh um
                 match scopes::get_type_id(
@@ -1667,6 +1674,8 @@ impl TypeResolver<'_> {
                         let err_name = self.interner.search(name_id.id as usize);
                         let err_msg = format!("\"{err_name}\" is not defined as a type");
 
+                        // dbg!(err_name, spanned_ty_expr.span);
+                        // panic!();
                         self.reporter.report_spanned(
                             &err_msg,
                             Some(err_name),
@@ -1711,9 +1720,9 @@ impl TypeResolver<'_> {
                             }
 
                             let inner = self.resolve_type_expr(
+                                active_mod_id,
                                 &generic.args[0],
                                 scope_type,
-                                ast_id,
                                 lookup_pattern,
                             )?;
 
@@ -1730,9 +1739,9 @@ impl TypeResolver<'_> {
 
                             for arg in &generic.args {
                                 elements.push(self.resolve_type_expr(
+                                    active_mod_id,
                                     arg,
                                     scope_type,
-                                    ast_id,
                                     lookup_pattern,
                                 )?);
                             }
@@ -1767,16 +1776,16 @@ impl TypeResolver<'_> {
                             }
 
                             let key = self.resolve_type_expr(
+                                active_mod_id,
                                 &generic.args[0],
                                 scope_type,
-                                ast_id,
                                 lookup_pattern,
                             )?;
 
                             let val = self.resolve_type_expr(
+                                active_mod_id,
                                 &generic.args[1],
                                 scope_type,
-                                ast_id,
                                 lookup_pattern,
                             )?;
 
@@ -1811,9 +1820,9 @@ impl TypeResolver<'_> {
                             }
 
                             let inner = self.resolve_type_expr(
+                                active_mod_id,
                                 &generic.args[0],
                                 scope_type,
-                                ast_id,
                                 lookup_pattern,
                             )?;
 
@@ -1922,19 +1931,14 @@ impl TypeResolver<'_> {
                     _ => unreachable!("Parser does not pick this up"),
                 };
 
-                //DIRTY
-                let current_mod = self.current_mod;
-                self.current_mod = extern_mod.mod_id;
-
                 //TEST: Patterns
                 let type_id_res = self.resolve_type_expr(
+                    extern_mod.mod_id,
                     &spanned_ty_exprs[1],
                     scope_type,
-                    ast_id,
                     LookupPattern::ModuleOnly,
                 );
 
-                self.current_mod = current_mod;
                 type_id_res
             }
         }

@@ -72,6 +72,7 @@ impl LineGroups {
 // Ability to choose color when help exists in a better form
 /// Returns the line number, column and red arrows under given spans
 pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineData {
+    dbg!(str::from_utf8(&src_bytes[..]),);
     let start = spans.iter().map(|s| s.start).min().expect("Cannot be < 1");
     let actual_start = get_ln_start_byte(src_bytes, start);
 
@@ -360,6 +361,8 @@ fn form_ln_view(src_bytes: &[u8], span: &Span) -> LineView {
 
 /// Gets the first new line byte using the given position
 fn get_ln_start_byte(src_bytes: &[u8], pos: usize) -> usize {
+    // If there is an out of bounds error here, it is possible that module reporting was done
+    // wrongly elsewhere
     for i in (0..=pos).rev() {
         let b = src_bytes[i];
 

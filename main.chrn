@@ -6,42 +6,6 @@
 
 // Unary cannot be applied to defs.READ unless wrapped with parens. Fine for now.
 // let x = -((defs.READ * "fllorp"))
-@def
-    import "../../defs.chrn" as something
-    // let self_domain = 2 + self
-
-    // []
-
-    // This should be possible if not
-    // let z = main.x
-
-    // y and z are resolved, but y is never set as "is_resolved".
-    // 'z' is set as resolved innately because it is in fact resolved upon declaration,
-    // but the add expression does not pick that up.
-    // The issue is that removable_syms can only collect ones that are remoable, which doesn't include all
-    // evaluated pending symbols. We need to somehow have this loop incorporate all of us withou severe
-    // overight.
-
-    let a = b
-    let b = a
-
-    // let x = defs.READ + 3 - defs.string
-    var->
-    // Should probably filter out duplicate arguments if present before emitting instructions
-        //z: Tuple<i32, u32, defs.Person> [] #scient
-        // This is a bug
-        // x: main.x //[core.StartsW("chrn")] #warn
-
-    nest->
-        /*enum State {
-            o: List<i32>
-            i: Tuple<i32, u32> #warn
-        } #scient*/
-
-        /*struct Person {
-            state: str []
-        } [] #scient*/
-@end
 
 @def
     alias default(x, y) = []
@@ -52,7 +16,9 @@
     export let ζζさる = 3
     var->
         x: i32
+        // It thinks every alias is a type so this is invalid
         y: str [default()]
+        // allow for [Thing(), <--- trailing]
     nest->
 @end
 

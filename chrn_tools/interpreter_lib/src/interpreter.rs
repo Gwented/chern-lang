@@ -25,17 +25,18 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     let mut script_compiler = modules::extract_modules(path, settings, &mut interner)?;
     let mut reporter = Reporter::new();
 
+    //TODO: May have to just make this into a, ModuleId -> AstId hashmap.
     let mut asts: Vec<AstInfo> = Vec::new();
 
     // Need to separate namespace resolution and type resolver because if the modules namespaces
     // aren't resolved first, then type resolution isn't possible since it could be using types
     // from elsewhere, which are not known yet.
-    //FIX: Should probably not longer be arbitrary eventually but fine for now
-    for mod_idx in 0..script_compiler.mods.len() - 1 {
+    for mod_idx in 0..script_compiler.mods.len() {
         let module = &script_compiler.mods[mod_idx];
-
-        // NOTE: Brain not on yet
-        let metadata = &module.src_metadata.as_ref().expect("Infailable");
+        let metadata = match &module.src_metadata {
+            Some(m) => m,
+            None => continue,
+        };
 
         let toks = script_lib::lexer::Lexer::new(&metadata.src_bytes, metadata.script_start)
             .tokenize(&mut interner);
@@ -65,9 +66,14 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
         return Err(ScriptError::Semantic(reporter.diags).into());
     }
 
+    //FIX: AstId position should be a direct tie, not sequential
     let mut ty_ctx = TypeContext::new();
-    for i in 0..script_compiler.mods.len() - 1 {
+    for i in 0..script_compiler.mods.len() {
         let mod_id = ModuleId::new(i);
+        let module = &script_compiler.mods[mod_id.id];
+        if module.src_metadata.is_none() {
+            continue;
+        }
 
         // NOTE: Brain not on yet
         TypeResolver::new(
@@ -92,8 +98,12 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     // This is not a value resolver
     let mut val_ctx = ValueContext::new();
 
-    for i in 0..script_compiler.mods.len() - 1 {
+    for i in 0..script_compiler.mods.len() {
         let mod_id = ModuleId::new(i);
+        let module = &script_compiler.mods[mod_id.id];
+        if module.src_metadata.is_none() {
+            continue;
+        }
 
         ConstraintResolver::new(
             settings,
