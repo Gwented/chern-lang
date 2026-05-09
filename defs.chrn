@@ -1,6 +1,7 @@
 // This should be pointed to
 export let WRITE = 0b00000000
 export let READ = 0b00000010
+    export let string = "Hi"
 // export let WRITE = 0b00000010
 // export let EXEC = 0b00000100
 nest->

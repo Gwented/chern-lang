@@ -64,7 +64,6 @@ impl TypeResolver<'_> {
         }
     }
 
-    //TODO: Check structures of data for same name symbols
     pub fn resolve(&mut self) -> Result<(), Vec<Diagnostic>> {
         // This is resolving types but not resolving args or conditions.
         // Everything is in order so this cannot fail unless something internally went wrong.
@@ -80,15 +79,14 @@ impl TypeResolver<'_> {
             }
         }
 
-        // Maybe shouldn't in-line this
-        // Clearing cache.
-        // self.ty_ctx.needs_check = false;
-
-        // Giving ownership to a variable since the traversal chosen needs mutation while
-        // traversing
-
+        // This can maybe be removed if the cam_remove logic is changed to be more meaningful but
+        // works for now
+        let mut last_resolved_count = 0;
+        let mut current_resolved_count = 0;
         while self.ty_ctx.needs_check {
             self.ty_ctx.needs_check = false;
+            // Giving ownership to a variable since the traversal chosen needs mutation while
+            // traversing
             let mut pending_syms: Vec<(SymbolId, PendingSymbol)> = Vec::new();
             pending_syms.extend(self.ty_ctx.sym_queue.drain());
 
@@ -103,13 +101,12 @@ impl TypeResolver<'_> {
                     Ok(can_remove) => {
                         // Not sure about this yet
                         if can_remove {
+                            current_resolved_count += 1;
                             removable_syms.insert(*sym_id);
                         }
                     }
                     // Uhhh not sure what to do here
-                    Err(_) => {
-                        eprintln!("TODO TYPE RESOLUTION");
-                    }
+                    Err(_) => (),
                 };
             }
 
@@ -123,6 +120,10 @@ impl TypeResolver<'_> {
             // The intent of this is to check if the symbol itself was resolved during the
             // traverse_expr innately but did not send a signal
             for (sym_id, pending_sym) in self.ty_ctx.sym_queue.iter_mut() {
+                if pending_sym.is_resolved {
+                    continue;
+                }
+
                 let type_id = match self.compiler.symbols[&sym_id].kind {
                     SymbolKind::Type(type_id) => type_id,
                     SymbolKind::Val(val_id) => self.compiler.values[val_id.id as usize].type_id,
@@ -136,14 +137,19 @@ impl TypeResolver<'_> {
                 }
 
                 pending_sym.is_resolved = true;
-                self.ty_ctx.needs_check = true;
             }
 
             //TEMP or not I don't know
             for sym_id in removable_syms {
                 self.ty_ctx.sym_queue.remove(&sym_id);
             }
-            // dbg!(&self.ty_ctx);
+
+            if current_resolved_count == last_resolved_count {
+                break;
+            } else {
+                last_resolved_count = current_resolved_count;
+                self.ty_ctx.needs_check = true;
+            }
         }
 
         //
@@ -164,63 +170,63 @@ impl TypeResolver<'_> {
         //     _ => todo!(),
         // };
 
-        if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
-            dbg!(&self.ty_ctx);
-            for symbol in self.compiler.symbols.values() {
-                if self.interner.search(symbol.name_id.id as usize) == "x" {
-                    let name = self.interner.search(symbol.name_id.id as usize);
-                    dbg!(name);
-                    match symbol.kind {
-                        SymbolKind::Val(value_id) => {
-                            let val = &self.compiler.values[value_id.id as usize];
-                            let expr = &self.compiler.exprs[val.expr_id.id as usize];
-                            // dbg!(expr.val_id, expr);
-                            dbg!(expr, val);
-                        }
-                        SymbolKind::Type(type_id) => {
-                            let ty_info = &self.compiler.types[type_id.id as usize];
-                            match &ty_info.ty {
-                                Type::BuiltinType(builtin_type) => {
-                                    dbg!(builtin_type);
-                                }
-                                Type::Struct(struct_def) => todo!(),
-                                Type::Enum(enum_def) => todo!(),
-                                Type::Func(func_def) => todo!(),
-                                Type::Alias(alias_def) => todo!(),
-                                Type::TypeDef(type_def) => {
-                                    let ty = &self.compiler.types[type_def.type_id.id as usize];
-                                    dbg!(ty);
-                                }
-                                Type::Unknown => todo!(),
-                            }
-                        }
-                        SymbolKind::Unknown => todo!(),
-                    }
-                    panic!("Done");
-                }
-                // dbg!(self.interner.search(symbol.name_id.id as usize));
-                // dbg!(symbol);
-            }
+        // if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
+        //     dbg!(&self.ty_ctx);
+        //     for symbol in self.compiler.symbols.values() {
+        //         if self.interner.search(symbol.name_id.id as usize) == "x" {
+        //             let name = self.interner.search(symbol.name_id.id as usize);
+        //             dbg!(name);
+        //             match symbol.kind {
+        //                 SymbolKind::Val(value_id) => {
+        //                     let val = &self.compiler.values[value_id.id as usize];
+        //                     let expr = &self.compiler.exprs[val.expr_id.id as usize];
+        //                     // dbg!(expr.val_id, expr);
+        //                     dbg!(expr, val);
+        //                 }
+        //                 SymbolKind::Type(type_id) => {
+        //                     let ty_info = &self.compiler.types[type_id.id as usize];
+        //                     match &ty_info.ty {
+        //                         Type::BuiltinType(builtin_type) => {
+        //                             dbg!(builtin_type);
+        //                         }
+        //                         Type::Struct(struct_def) => todo!(),
+        //                         Type::Enum(enum_def) => todo!(),
+        //                         Type::Func(func_def) => todo!(),
+        //                         Type::Alias(alias_def) => todo!(),
+        //                         Type::TypeDef(type_def) => {
+        //                             let ty = &self.compiler.types[type_def.type_id.id as usize];
+        //                             dbg!(ty);
+        //                         }
+        //                         Type::Unknown => todo!(),
+        //                     }
+        //                 }
+        //                 SymbolKind::Unknown => todo!(),
+        //             }
+        //             panic!("Done");
+        //         }
+        //         // dbg!(self.interner.search(symbol.name_id.id as usize));
+        //         // dbg!(symbol);
+        //     }
+        //
+        //     for ty in &self.compiler.types {
+        //         dbg!(ty);
+        //     }
+        //
+        //     for expr_thing in &self.compiler.exprs {
+        //         dbg!(expr_thing);
+        //     }
+        //
+        //     for val in &self.compiler.values {
+        //         dbg!(val);
+        //     }
+        // }
 
-            for ty in &self.compiler.types {
-                dbg!(ty);
-            }
-
-            for expr_thing in &self.compiler.exprs {
-                dbg!(expr_thing);
-            }
-
-            for val in &self.compiler.values {
-                dbg!(val);
-            }
-        }
-
-        if !self.ty_ctx.sym_queue.is_empty()
-            && self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id
-        {
-            dbg!(&self.ty_ctx);
-            panic!("Runtime not sorted yet");
-        }
+        // if !self.ty_ctx.sym_queue.is_empty()
+        //     && self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id
+        // {
+        //     dbg!(&self.ty_ctx);
+        //     panic!("Runtime not sorted yet");
+        // }
 
         if !self.reporter.err_vec.is_empty() {
             let mut diags = Vec::new();
@@ -307,7 +313,6 @@ impl TypeResolver<'_> {
             if let Some(user) = root_expr.user {
                 match self.traverse_expr(user) {
                     Ok(true) => resolved_count += 1,
-
                     // WARN: This case is not hit yet
                     Ok(false) => (),
                     // Reports the error and continues
@@ -371,6 +376,8 @@ impl TypeResolver<'_> {
                 dbg!(inner_val);
                 todo!("Make sure this is ok")
             }
+            // Not sure if this is reachable since other than the root, there can't another
+            // singular variable seen since, "let z = x y" is non-existen syntactically
             ExprHir::Var(sym_id) => {
                 todo!("What is a varrrble")
             }
@@ -425,7 +432,6 @@ impl TypeResolver<'_> {
 
                 let lhs_expr = &self.compiler.exprs[lhs.id as usize];
                 let rhs_expr = &self.compiler.exprs[rhs.id as usize];
-                dbg!(lhs_expr, rhs_expr);
 
                 // Not sure if thisi s possible issss
                 let is_unknown = lhs_expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX
@@ -488,8 +494,7 @@ impl TypeResolver<'_> {
 
         // Traversing up tree
         let expr = &self.compiler.exprs[current_expr_id.id as usize];
-        //FIX: Should return manually here, but not testing this yet
-        // Suspiciously suspicious
+        //WARN: Seems to be working
         if let Some(user) = expr.user {
             return self.traverse_expr(user);
         }
@@ -507,7 +512,12 @@ impl TypeResolver<'_> {
 
         //NOTE: Pipeline where expressions are always returned, just that some may have
         //unresolved parts, which are put into the queue, not the variable itself.
-        let expr_id = match self.register_expr(sym_id, &abs_var.spanned_expr, ScopeType::Neutral) {
+        let expr_id = match self.register_expr(
+            sym_id,
+            &abs_var.spanned_expr,
+            ScopeType::Neutral,
+            &mut vec![sym_id],
+        ) {
             Ok(expr_id) => expr_id,
             Err(sem_err) => {
                 let module = &self.compiler.mods[self.current_mod.id];
@@ -574,7 +584,12 @@ impl TypeResolver<'_> {
         let mut conds: Vec<ExprId> = Vec::new();
         for spanned_expr in &abs_typedef.conds {
             //FIX: Scope type is a little wrong here since it's a condition
-            let cond = match self.register_expr(sym_id, spanned_expr, ScopeType::Neutral) {
+            let cond = match self.register_expr(
+                sym_id,
+                spanned_expr,
+                ScopeType::Neutral,
+                &mut vec![sym_id].as_mut(),
+            ) {
                 // There is no sym parrent..
                 Ok(c) => c,
                 Err(sem_err) => {
@@ -670,21 +685,22 @@ impl TypeResolver<'_> {
             let mut conds: Vec<ExprId> = Vec::new();
 
             for cond in &abs_field.conds {
-                let cond_expr = match self.register_expr(sym_id, &cond, ScopeType::Nest) {
-                    Ok(c) => c,
-                    Err(sem_err) => {
-                        let module = &self.compiler.mods[self.current_mod.id];
-                        self.reporter.report_semantic(
-                            sem_err,
-                            &module
-                                .src_metadata
-                                .as_ref()
-                                .expect("core should not be resolved"),
-                        );
+                let cond_expr =
+                    match self.register_expr(sym_id, &cond, ScopeType::Nest, &mut vec![sym_id]) {
+                        Ok(c) => c,
+                        Err(sem_err) => {
+                            let module = &self.compiler.mods[self.current_mod.id];
+                            self.reporter.report_semantic(
+                                sem_err,
+                                &module
+                                    .src_metadata
+                                    .as_ref()
+                                    .expect("core should not be resolved"),
+                            );
 
-                        return Err(());
-                    }
-                };
+                            return Err(());
+                        }
+                    };
 
                 conds.push(cond_expr);
             }
@@ -696,7 +712,7 @@ impl TypeResolver<'_> {
         let mut glob_conds: Vec<ExprId> = Vec::new();
 
         for cond in &abs_struct.glob_conds {
-            let cond = match self.register_expr(sym_id, cond, ScopeType::Nest) {
+            let cond = match self.register_expr(sym_id, cond, ScopeType::Nest, &mut vec![sym_id]) {
                 Ok(c) => c,
                 Err(sem_err) => {
                     let module = &self.compiler.mods[self.current_mod.id];
@@ -726,8 +742,8 @@ impl TypeResolver<'_> {
             .map(|sp_arg| sp_arg.arg)
             .collect();
 
-        dbg!(abs_struct);
-        dbg!(&struct_def);
+        // dbg!(abs_struct);
+        // dbg!(&struct_def);
 
         // let struct_def = self.compiler.get_struct(sym_id);
         // for field in &struct_def.fields {
@@ -800,21 +816,22 @@ impl TypeResolver<'_> {
             let mut conds: Vec<ExprId> = Vec::new();
 
             for cond in &abs_variant.conds {
-                let cond_expr = match self.register_expr(sym_id, &cond, ScopeType::Nest) {
-                    Ok(c) => c,
-                    Err(sem_err) => {
-                        let module = &self.compiler.mods[self.current_mod.id];
-                        self.reporter.report_semantic(
-                            sem_err,
-                            &module
-                                .src_metadata
-                                .as_ref()
-                                .expect("core should not be resolved"),
-                        );
+                let cond_expr =
+                    match self.register_expr(sym_id, &cond, ScopeType::Nest, &mut vec![sym_id]) {
+                        Ok(c) => c,
+                        Err(sem_err) => {
+                            let module = &self.compiler.mods[self.current_mod.id];
+                            self.reporter.report_semantic(
+                                sem_err,
+                                &module
+                                    .src_metadata
+                                    .as_ref()
+                                    .expect("core should not be resolved"),
+                            );
 
-                        return Err(());
-                    }
-                };
+                            return Err(());
+                        }
+                    };
 
                 conds.push(cond_expr);
             }
@@ -825,7 +842,7 @@ impl TypeResolver<'_> {
 
         let mut glob_conds: Vec<ExprId> = Vec::new();
         for cond in &abs_enum.glob_conds {
-            let cond = match self.register_expr(sym_id, cond, ScopeType::Nest) {
+            let cond = match self.register_expr(sym_id, cond, ScopeType::Nest, &mut vec![sym_id]) {
                 Ok(c) => c,
                 Err(sem_err) => {
                     let module = &self.compiler.mods[self.current_mod.id];
@@ -962,27 +979,77 @@ impl TypeResolver<'_> {
     /// On `Ok`, Creates a HIR expression type and returns the identifier of the expression.
     fn register_expr(
         &mut self,
-        sym_parent: SymbolId,
+        parent_sym_id: SymbolId,
         spanned_expr: &SpannedExpr,
         scope_type: ScopeType,
+        seen: &mut Vec<SymbolId>,
     ) -> Result<ExprId, SemanticError> {
         match &spanned_expr.expr {
             //TODO: Check ownership in constraints
             Expr::Var(name_id) => {
-                if let Some(sym_id) = scopes::get_sym_id(
+                if let Some(found_sym_id) = scopes::get_sym_id(
                     self.compiler,
                     self.current_mod,
                     *name_id,
                     scope_type,
                     LookupPattern::AllConnections,
                 ) {
-                    if sym_id == sym_parent {
+                    //WARN: Cosntant iteration upon seeing any symbol instead of a single check
+                    //elsewhere
+                    seen.push(found_sym_id);
+                    for seen_sym_id in seen.iter() {
+                        // In:
+                        // ```
+                        // let a = b
+                        // let b = a
+                        // ```
+                        // Within b, it checks of the symbol a is inside of `TypeContext`, and
+                        // if that a depends on symbol b
+                        if let Some(pending_sym) = self.ty_ctx.sym_queue.get(seen_sym_id) {
+                            let has_cycle = pending_sym
+                                .pending_exprs
+                                .iter()
+                                .any(|pend_expr| pend_expr.parent_sym == found_sym_id);
+
+                            if has_cycle {
+                                let parent_sym = &self.compiler.symbols[&parent_sym_id];
+                                let parent_name =
+                                    self.interner.search(parent_sym.name_id.id as usize);
+                                let parent_ast_id =
+                                    parent_sym.ast_id.expect("core should not be resolved");
+
+                                let found_sym = &self.compiler.symbols[&found_sym_id];
+                                let found_ast_id =
+                                    found_sym.ast_id.expect("core should not be resolved");
+                                let found_name =
+                                    self.interner.search(found_sym.name_id.id as usize);
+
+                                let cycled_span = self.ast_info.get_sym_span(parent_ast_id);
+                                let found_span = self.ast_info.get_sym_span(found_ast_id);
+
+                                let msg = format!(
+                                    "The symbol `{}` depends on `{}`, but `b` has no value",
+                                    parent_name, found_name
+                                );
+
+                                return Err(SemanticError::General(
+                                    msg,
+                                    vec![cycled_span, found_span],
+                                ));
+                            }
+                        }
+                    }
+
+                    //NOTE: Only the PendingSymbol struct carries the PendingExpr struct, meaning
+                    //there is no way to check for cycles outside of `TypeContext`, so this has to
+                    //pick up the edge case of, "let x = x". Could change.
+                    if found_sym_id == parent_sym_id {
                         let name = self
                             .interner
-                            .search(self.compiler.symbols[&sym_id].name_id.id as usize);
+                            .search(self.compiler.symbols[&found_sym_id].name_id.id as usize);
                         let msg = format!("Cannot declare symbol `{name}` as itself");
 
-                        let parent_ast_id = self.compiler.symbols[&sym_parent].ast_id;
+                        let parent_ast_id = self.compiler.symbols[&parent_sym_id].ast_id;
                         let mut spans = Vec::new();
                         spans.push(spanned_expr.span);
 
@@ -994,7 +1061,7 @@ impl TypeResolver<'_> {
                         return Err(SemanticError::General(msg, spans));
                     }
 
-                    let symbol = &self.compiler.symbols[&sym_id];
+                    let symbol = &self.compiler.symbols[&found_sym_id];
                     let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
 
                     let resolved_expr = match symbol.kind {
@@ -1016,7 +1083,7 @@ impl TypeResolver<'_> {
                         }
                         SymbolKind::Val(val_id) => {
                             let val_info = &self.compiler.values[val_id.id as usize];
-                            let expr_hir = ExprHir::Var(sym_id);
+                            let expr_hir = ExprHir::Var(found_sym_id);
 
                             ResolvedExpr::new(
                                 val_info.type_id,
@@ -1028,13 +1095,13 @@ impl TypeResolver<'_> {
                         }
                         SymbolKind::Unknown => {
                             let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
-                            let expr_hir = ExprHir::Var(sym_id);
-                            let pending_expr = PendingExpr::new(expr_id, sym_parent);
+                            let expr_hir = ExprHir::Var(found_sym_id);
+                            let pending_expr = PendingExpr::new(expr_id, parent_sym_id);
 
                             //NOTE: ONLY THIS POINT SHOULD STORE THE SYMBOL. This is how the
                             //connection is made so that, y = x + 2, goes from x -> x + 2 -> y
                             //after x is resolved.
-                            self.ty_ctx.store_pending_expr(sym_id, pending_expr);
+                            self.ty_ctx.store_pending_expr(found_sym_id, pending_expr);
                             // Will possibly call for others to be resolved here, or do it from the
                             // var resolution method itself
 
@@ -1129,8 +1196,8 @@ impl TypeResolver<'_> {
                 }
             }
             Expr::BinaryExpr { lhs, op, rhs } => {
-                let lhs_id = self.register_expr(sym_parent, &*lhs, scope_type)?;
-                let rhs_id = self.register_expr(sym_parent, &*rhs, scope_type)?;
+                let lhs_id = self.register_expr(parent_sym_id, &*lhs, scope_type, seen)?;
+                let rhs_id = self.register_expr(parent_sym_id, &*rhs, scope_type, seen)?;
 
                 let lhs_expr = &self.compiler.exprs[lhs_id.id as usize];
                 let rhs_expr = &self.compiler.exprs[rhs_id.id as usize];
@@ -1228,7 +1295,8 @@ impl TypeResolver<'_> {
                 let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
                 let val_id = ValueId::new(self.compiler.values.len() as u32);
 
-                let default_expr = self.register_expr(sym_parent, &spanned_expr, scope_type)?;
+                let default_expr =
+                    self.register_expr(parent_sym_id, &spanned_expr, scope_type, seen)?;
 
                 //TODO: Need symbol of name id
                 //Need it's inputs to be the symbol and spanned expression
@@ -1271,11 +1339,11 @@ impl TypeResolver<'_> {
                 Ok(expr_id)
             }
             Expr::Call(caller, arg_exprs) => {
-                let call_id = self.register_expr(sym_parent, caller, scope_type)?;
+                let call_id = self.register_expr(parent_sym_id, caller, scope_type, seen)?;
                 let mut call_args: Vec<ExprId> = Vec::new();
 
                 for sp_expr in arg_exprs {
-                    let arg = self.register_expr(sym_parent, sp_expr, scope_type)?;
+                    let arg = self.register_expr(parent_sym_id, sp_expr, scope_type, seen)?;
                     call_args.push(arg);
                 }
 
@@ -1289,7 +1357,12 @@ impl TypeResolver<'_> {
             }
             // Maybe having "::" exist could help..
             Expr::MemberAccess(abs_member_access) => {
-                match self.resolve_member(sym_parent, &abs_member_access.base, scope_type)? {
+                match self.resolve_member(
+                    parent_sym_id,
+                    &abs_member_access.base,
+                    scope_type,
+                    seen,
+                )? {
                     PossibleMember::Module(mod_id) => {
                         //TODO: Allow self references if not already doable
                         // main.thing
@@ -1332,7 +1405,7 @@ impl TypeResolver<'_> {
                                 SymbolKind::Unknown => {
                                     let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
                                     let expr_hir = ExprHir::Var(extern_sym_id);
-                                    let pending_expr = PendingExpr::new(expr_id, sym_parent);
+                                    let pending_expr = PendingExpr::new(expr_id, parent_sym_id);
 
                                     self.ty_ctx.store_pending_expr(extern_sym_id, pending_expr);
                                     // Will possibly call for others to be resolved here, or do it from the
@@ -1392,7 +1465,8 @@ impl TypeResolver<'_> {
                 }
             }
             Expr::Unary(unary) => {
-                let operand_id = self.register_expr(sym_parent, &unary.spanned_expr, scope_type)?;
+                let operand_id =
+                    self.register_expr(parent_sym_id, &unary.spanned_expr, scope_type, seen)?;
                 let operand_expr = &self.compiler.exprs[operand_id.id as usize];
 
                 let is_unknown = operand_expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX;
@@ -1487,8 +1561,9 @@ impl TypeResolver<'_> {
         sym_parent: SymbolId,
         member: &SpannedExpr,
         scope_type: ScopeType,
+        seen: &mut Vec<SymbolId>,
     ) -> Result<PossibleMember, SemanticError> {
-        if let Ok(expr_id) = self.register_expr(sym_parent, member, scope_type) {
+        if let Ok(expr_id) = self.register_expr(sym_parent, member, scope_type, seen) {
             let resolved_expr = &self.compiler.exprs[expr_id.id as usize];
 
             todo!();

@@ -3,7 +3,6 @@ use std::fmt::Display;
 use chrn_utils::id_types::{InternedId, ModuleId, ScopeId, SymbolId, TypeId};
 
 use crate::{
-    modules::Module,
     script_compiler::ScriptCompiler,
     semantic::representation::{SymbolKind, Table},
 };
@@ -31,6 +30,15 @@ pub const SCOPE_OVERRIDE: u8 = 1 << 5;
 // Bitwise into array of scopes that filters each time a lookup is done?
 pub static SCOPE_CORE_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Core];
 pub static SCOPE_NEUTRAL_ACCESSIBLE: [ScopeType; 2] = [ScopeType::Neutral, ScopeType::Core];
+// For the LSP
+pub static SCOPE_ALL: [ScopeType; 6] = [
+    ScopeType::Neutral,
+    ScopeType::Var,
+    ScopeType::Nest,
+    ScopeType::Complex,
+    ScopeType::Override,
+    ScopeType::Core,
+];
 pub static SCOPE_REST_ACCESSIBLE: [ScopeType; 5] = [
     ScopeType::Neutral,
     ScopeType::Nest,
@@ -114,8 +122,8 @@ pub fn get_type_id(
     lookup_pattern: LookupPattern,
 ) -> Option<TypeId> {
     let current_mod = &compiler.mods[owner_id.id];
-    dbg!(current_mod);
     //WARN: Core is always the last scope so this is kept so an owned vec isn't created
+    //May change
     let accessible_scopes = scope_type.accessible_scopes();
     let accessible_scopes = match lookup_pattern {
         LookupPattern::ModuleOnly if current_mod.src_metadata.is_some() => {
@@ -124,7 +132,6 @@ pub fn get_type_id(
         // If it's core then it'll only have access to core anyways so this is fine
         LookupPattern::AllConnections | LookupPattern::ModuleOnly => accessible_scopes,
     };
-    dbg!(&current_mod.src_metadata);
     // I don't think this can fail. Should maybe expect for clarity.
     //     let scope = &compiler.scopes[scope_id.id].scope;
     // Loops over all allowed scopes and checks their individual namespaces
