@@ -15,9 +15,10 @@
     // Commenting
     export let ζζさる = 3
     var->
-        x: i32
+        // I WANT THIS UPPERCASE
+        x: any
         // It thinks every alias is a type so this is invalid
-        y: str [default()]
+        y: core.unsized // [default()]
         // allow for [Thing(), <--- trailing]
     nest->
 @end

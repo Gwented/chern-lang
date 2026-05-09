@@ -21,11 +21,8 @@ use common::{
 };
 
 use crate::{
-    config_loader::ChrnConfigLoader,
-    iyo::file_ops,
-    modules::mod_finder::ModuleFinder,
+    config_loader::ChrnConfigLoader, iyo::file_ops, modules::mod_finder::ModuleFinder,
     script_compiler::ScriptCompiler,
-    semantic::scopes::{self, ScopeType},
 };
 //TEST: Relocate reollacl rreellocrelac
 #[derive(Debug)]
@@ -85,10 +82,10 @@ pub struct Module {
     pub imports: Vec<Import>,
     /// Represents the 5 existent scopes
     pub scopes: Vec<ScopeId>,
+    pub exports: Vec<SymbolId>,
     /// Flag for checking if a scope exists in the current module more efficiently than manual
     /// iteration.
     //WARN: May or may not have use for quick checks
-    pub(crate) held_scopes: u8,
     /// Metadata that exists if the module contains a source file
     // As of right now this represents the difference between a pre-loaded and user space module
     pub src_metadata: Option<ModuleMetadata>,
@@ -115,15 +112,10 @@ impl Module {
             name_id,
             mod_id,
             imports,
-            held_scopes: scopes::SCOPE_CORE,
+            exports: Vec::new(),
             scopes: Vec::new(),
             src_metadata,
         }
-    }
-
-    /// Cheap check for if a scope exists with bit-wise operations
-    pub fn has_scope(&self, scope_type: ScopeType) -> bool {
-        (self.held_scopes & scope_type.to_u8()) != 0
     }
 }
 

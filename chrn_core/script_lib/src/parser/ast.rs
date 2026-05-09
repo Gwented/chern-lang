@@ -350,7 +350,6 @@ pub enum TypeExpr {
     Path(Vec<SpannedTypeExpr>),
     //FIX: Remove this
     Generic(Generic),
-    Any,
 }
 
 // Maybe type inference could pick up on the fact that if a definition has a condition, and that

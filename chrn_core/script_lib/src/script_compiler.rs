@@ -303,7 +303,7 @@ impl ScriptCompiler {
 
         let owner_mod = &mut self.mods[owner_id.id];
         owner_mod.scopes.push(scope_id);
-        owner_mod.held_scopes |= scope_type.to_u8();
+        // owner_mod.held_scopes |= scope_type.to_u8();
         // BRAIN OFF
 
         scope_id

@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 
 use chrn_utils::{
-    id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
+    id_types::{AstId, InternedId, ModuleId, SymbolId, TypeId},
     intern::Intern,
-    values::ValueInfo,
 };
 use common::{chrn_settings::ChrnSettings, reporter::diagnostic::Diagnostic};
 
@@ -124,6 +123,11 @@ impl NamespaceResolver<'_> {
         table.ast_to_sym.insert(ast_id, sym_id);
         table.interned_to_sym.insert(abs_struct.name_id, sym_id);
 
+        if !abs_struct.is_priv {
+            let module = &mut self.compiler.mods[self.current_mod.id];
+            module.exports.push(sym_id);
+        }
+
         let type_id = TypeId::new(self.compiler.types.len() as u32);
 
         let struct_def = StructDef::new(sym_id, Vec::new());
@@ -154,6 +158,11 @@ impl NamespaceResolver<'_> {
         table.ast_to_interned.insert(ast_id, abs_enum.name_id);
         table.ast_to_sym.insert(ast_id, sym_id);
         table.interned_to_sym.insert(abs_enum.name_id, sym_id);
+
+        if !abs_enum.is_priv {
+            let module = &mut self.compiler.mods[self.current_mod.id];
+            module.exports.push(sym_id);
+        }
 
         let enum_def = EnumDef::new(sym_id, Vec::new());
 
@@ -186,6 +195,11 @@ impl NamespaceResolver<'_> {
         table.ast_to_sym.insert(ast_id, sym_id);
         table.interned_to_sym.insert(abs_alias.name_id, sym_id);
 
+        if !abs_alias.is_priv {
+            let module = &mut self.compiler.mods[self.current_mod.id];
+            module.exports.push(sym_id);
+        }
+
         let alias_def = AliasDef::new(sym_id, Vec::new(), Vec::new(), Vec::new());
 
         let symbol = Symbol::new(
@@ -214,6 +228,11 @@ impl NamespaceResolver<'_> {
         table.ast_to_interned.insert(ast_id, abs_var.name_id);
         table.ast_to_sym.insert(ast_id, sym_id);
         table.interned_to_sym.insert(abs_var.name_id, sym_id);
+
+        if !abs_var.is_priv {
+            let module = &mut self.compiler.mods[self.current_mod.id];
+            module.exports.push(sym_id);
+        }
 
         //TODO: PLACEHOLDER USED EXPR ID DOESNT EXIST YET
 

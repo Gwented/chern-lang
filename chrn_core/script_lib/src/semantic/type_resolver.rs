@@ -235,6 +235,8 @@ impl TypeResolver<'_> {
             return Err(diags);
         }
 
+        dbg!(&self.compiler.mods[self.current_mod.id].exports);
+
         Ok(())
     }
 
@@ -1663,16 +1665,22 @@ impl TypeResolver<'_> {
                 // Just uhhh um
                 match scopes::get_type_id(
                     self.compiler,
-                    self.current_mod,
+                    active_mod_id,
                     *name_id,
                     scope_type,
                     lookup_pattern,
                 ) {
                     Some(type_id) => Ok(type_id),
                     None => {
-                        let module = &self.compiler.mods[self.current_mod.id];
+                        let mod_origin = &self.compiler.mods[self.current_mod.id];
+
+                        let active_mod = &self.compiler.mods[active_mod_id.id];
+                        let active_name = self.interner.search(active_mod.name_id.id as usize);
+
                         let err_name = self.interner.search(name_id.id as usize);
-                        let err_msg = format!("\"{err_name}\" is not defined as a type");
+                        let err_msg = format!(
+                            "`{err_name}` is not defined as a type within module `{active_name}`"
+                        );
 
                         // dbg!(err_name, spanned_ty_expr.span);
                         // panic!();
@@ -1680,7 +1688,7 @@ impl TypeResolver<'_> {
                             &err_msg,
                             Some(err_name),
                             &[spanned_ty_expr.span],
-                            &module
+                            &mod_origin
                                 .src_metadata
                                 .as_ref()
                                 .expect("core should not be resolved"),
@@ -1705,12 +1713,12 @@ impl TypeResolver<'_> {
                                     generic.args.len()
                                 );
 
-                                let module = &self.compiler.mods[self.current_mod.id];
+                                let mod_origin = &self.compiler.mods[self.current_mod.id];
                                 self.reporter.report_spanned(
                                     &msg,
                                     None,
                                     &[spanned_ty_expr.span],
-                                    &module
+                                    &mod_origin
                                         .src_metadata
                                         .as_ref()
                                         .expect("core should not be resolved"),
@@ -1729,6 +1737,9 @@ impl TypeResolver<'_> {
                             let list = Type::BuiltinType(BuiltinType::List(inner));
                             let list_id = TypeId::new(self.compiler.types.len() as u32);
 
+                            // TODO: Technically it's a structure owned by core, but it wasn't
+                            // defined as core, but this can't be referenced directly anyways so it
+                            // doesn't really make a difference
                             let ty_info = TypeInfo::new(list, self.compiler.core_mod_id);
                             self.compiler.types.push(ty_info);
 
@@ -1761,12 +1772,12 @@ impl TypeResolver<'_> {
                                     generic.args.len()
                                 );
 
-                                let module = &self.compiler.mods[self.current_mod.id];
+                                let mod_origin = &self.compiler.mods[self.current_mod.id];
                                 self.reporter.report_spanned(
                                     &msg,
                                     None,
                                     &[spanned_ty_expr.span],
-                                    &module
+                                    &mod_origin
                                         .src_metadata
                                         .as_ref()
                                         .expect("core should not be resolved"),
@@ -1805,12 +1816,12 @@ impl TypeResolver<'_> {
                                     generic.args.len()
                                 );
 
-                                let module = &self.compiler.mods[self.current_mod.id];
+                                let mod_origin = &self.compiler.mods[self.current_mod.id];
                                 self.reporter.report_spanned(
                                     &msg,
                                     None,
                                     &[spanned_ty_expr.span],
-                                    &module
+                                    &mod_origin
                                         .src_metadata
                                         .as_ref()
                                         .expect("core should not be resolved"),
@@ -1843,12 +1854,12 @@ impl TypeResolver<'_> {
                                 "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, `Map`, and `Tuple` are valid data structures"
                             );
 
-                            let module = &self.compiler.mods[self.current_mod.id];
+                            let mod_origin = &self.compiler.mods[self.current_mod.id];
                             self.reporter.report_spanned(
                                 &err_msg,
                                 Some(err_name),
                                 &[spanned_ty_expr.span],
-                                &module
+                                &mod_origin
                                     .src_metadata
                                     .as_ref()
                                     .expect("core should not be resolved"),
@@ -1865,12 +1876,12 @@ impl TypeResolver<'_> {
                             "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, `Map`, and `Tuple` are valid data structures"
                         );
 
-                        let module = &self.compiler.mods[self.current_mod.id];
+                        let mod_origin = &self.compiler.mods[self.current_mod.id];
                         self.reporter.report_spanned(
                             &err_msg,
                             Some(err_name),
                             &[spanned_ty_expr.span],
-                            &module
+                            &mod_origin
                                 .src_metadata
                                 .as_ref()
                                 .expect("core should not be resolved"),
@@ -1881,7 +1892,6 @@ impl TypeResolver<'_> {
                 }
             }
             // FIX: REMOVE THIS
-            TypeExpr::Any => Ok(TypeId::new(script_compiler::CORE_ANY)),
             TypeExpr::Path(spanned_ty_exprs) => {
                 // The parser disallows < 2 type pathing to actually exist so indexing should be
                 // safe here
