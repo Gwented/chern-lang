@@ -358,7 +358,7 @@ impl ScriptCompiler {
         let core_scope_id = ScopeId::new(compiler.scopes.len());
         let mut core_mod = Module::new(core_name, core_mod_id, Vec::new(), None);
 
-        Self::load_core_types(compiler, &core_mod, &mut table);
+        Self::load_core_types(compiler, &mut core_mod, &mut table);
         // Self::load_core_funcs(compiler, &core_mod, &mut table);
 
         // Done adding all of core
@@ -384,7 +384,7 @@ impl ScriptCompiler {
         todo!();
     }
 
-    fn load_core_types(compiler: &mut ScriptCompiler, core_mod: &Module, table: &mut Table) {
+    fn load_core_types(compiler: &mut ScriptCompiler, core_mod: &mut Module, table: &mut Table) {
         let core_mod_id = core_mod.mod_id;
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -456,7 +456,6 @@ impl ScriptCompiler {
             core_mod_id,
         ));
 
-        let type_id = TypeId::new(compiler.types.len() as u32);
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_U16);
         let symbol = Symbol::new(
@@ -854,5 +853,9 @@ impl ScriptCompiler {
         compiler
             .types
             .push(TypeInfo::new(Type::Unknown, core_mod_id));
+
+        for sym_id in table.interned_to_sym.values().copied() {
+            core_mod.exports.push(sym_id);
+        }
     }
 }

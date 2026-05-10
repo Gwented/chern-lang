@@ -13,14 +13,18 @@
 
     import "../../defs.chrn" as identifer
     // Commenting
-    export let ζζさる = 3
+    export let コール = 3
+
     var->
         // I WANT THIS UPPERCASE
-        x: any
+        x: main.Person
         // It thinks every alias is a type so this is invalid
-        y: core.unsized // [default()]
+        y:  thing.unsized // [default()]
         // allow for [Thing(), <--- trailing]
     nest->
+        struct Person {
+            name: i32
+        }
 @end
 
 sbind "hi"

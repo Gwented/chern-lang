@@ -72,7 +72,7 @@ impl LineGroups {
 // Ability to choose color when help exists in a better form
 /// Returns the line number, column and red arrows under given spans
 pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineData {
-    dbg!(str::from_utf8(&src_bytes[..]),);
+    // dbg!(str::from_utf8(&src_bytes[..]),);
     let start = spans.iter().map(|s| s.start).min().expect("Cannot be < 1");
     let actual_start = get_ln_start_byte(src_bytes, start);
 

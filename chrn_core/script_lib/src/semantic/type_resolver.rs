@@ -235,8 +235,6 @@ impl TypeResolver<'_> {
             return Err(diags);
         }
 
-        dbg!(&self.compiler.mods[self.current_mod.id].exports);
-
         Ok(())
     }
 
@@ -1589,7 +1587,7 @@ impl TypeResolver<'_> {
                 }
                 // Dot reference sounds better
                 let msg = format!(
-                    "Could not find the symbol `{}` as a module, type, or value",
+                    "Could not find the symbol `{}` as a module or value",
                     self.interner.search(name_id.id as usize)
                 );
 
@@ -1662,41 +1660,44 @@ impl TypeResolver<'_> {
             //FIXME: If an error occurs while self.current_mod = extern_mod, it tries to report the
             //error from the external module instead of the actual module of origin.
             TypeExpr::Var(name_id) => {
-                // Just uhhh um
-                match scopes::get_type_id(
+                // Searching symbols because otherwise, the type of a variable would be valid
+                // which is not a favorable allowable syntax
+                match scopes::get_sym_id(
                     self.compiler,
                     active_mod_id,
                     *name_id,
                     scope_type,
                     lookup_pattern,
                 ) {
-                    Some(type_id) => Ok(type_id),
-                    None => {
-                        let mod_origin = &self.compiler.mods[self.current_mod.id];
-
-                        let active_mod = &self.compiler.mods[active_mod_id.id];
-                        let active_name = self.interner.search(active_mod.name_id.id as usize);
-
-                        let err_name = self.interner.search(name_id.id as usize);
-                        let err_msg = format!(
-                            "`{err_name}` is not defined as a type within module `{active_name}`"
-                        );
-
-                        // dbg!(err_name, spanned_ty_expr.span);
-                        // panic!();
-                        self.reporter.report_spanned(
-                            &err_msg,
-                            Some(err_name),
-                            &[spanned_ty_expr.span],
-                            &mod_origin
-                                .src_metadata
-                                .as_ref()
-                                .expect("core should not be resolved"),
-                        );
-
-                        Err(())
-                    }
+                    Some(sym_id) => match self.compiler.symbols[&sym_id].kind {
+                        SymbolKind::Type(type_id) => return Ok(type_id),
+                        SymbolKind::Val(_) | SymbolKind::Unknown => (),
+                    },
+                    None => (),
                 }
+
+                let mod_origin = &self.compiler.mods[self.current_mod.id];
+
+                let active_mod = &self.compiler.mods[active_mod_id.id];
+                let active_name = self.interner.search(active_mod.name_id.id as usize);
+
+                let err_name = self.interner.search(name_id.id as usize);
+                let err_msg =
+                    format!("`{err_name}` is not defined as a type within module `{active_name}`");
+
+                // dbg!(err_name, spanned_ty_expr.span);
+                // panic!();
+                self.reporter.report_spanned(
+                    &err_msg,
+                    Some(err_name),
+                    &[spanned_ty_expr.span],
+                    &mod_origin
+                        .src_metadata
+                        .as_ref()
+                        .expect("core should not be resolved"),
+                );
+
+                Err(())
             }
             // Generics can only be these types so this can stay for now
             TypeExpr::Generic(generic) => {
@@ -1941,15 +1942,12 @@ impl TypeResolver<'_> {
                     _ => unreachable!("Parser does not pick this up"),
                 };
 
-                //TEST: Patterns
-                let type_id_res = self.resolve_type_expr(
+                self.resolve_type_expr(
                     extern_mod.mod_id,
                     &spanned_ty_exprs[1],
                     scope_type,
                     LookupPattern::ModuleOnly,
-                );
-
-                type_id_res
+                )
             }
         }
     }
