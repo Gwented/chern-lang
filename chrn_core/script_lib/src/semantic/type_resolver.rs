@@ -1781,7 +1781,7 @@ impl TypeResolver<'_> {
                                 self.current_mod,
                                 &generic.args[0],
                                 scope_type,
-                                lookup_pattern,
+                                LookupPattern::AllConnections,
                             )?;
 
                             let val = self.resolve_type_expr(

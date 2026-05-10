@@ -19,7 +19,7 @@
     var->
         // I WANT THIS UPPERCASE
         // It thinks every alias is a type so this is invalid
-        y: main.List<u32>
+        y: main.List<u32> [2,]
         // allow for [Thing(), <--- trailing]
     nest->
         struct Person {

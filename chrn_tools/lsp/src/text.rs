@@ -151,28 +151,23 @@ pub fn find_word_bounds(text: &str, offset: usize) -> (usize, usize) {
 
 /// Convert a byte offset into an LSP Position (line, character in UTF-16 code units).
 pub fn offset_to_position(text: &str, offset: usize) -> Position {
-    let mut remaining = offset.min(text.len());
+    let target = offset.min(text.len());
     let mut line = 0;
-    for ln in text.split_inclusive('\n') {
-        if remaining < ln.len() {
-            let mut char_idx = 0;
-            for (byte_idx, c) in ln.char_indices() {
-                if byte_idx >= remaining {
-                    break;
-                }
-                char_idx += c.len_utf16() as u32;
-            }
-            return Position {
-                line,
-                character: char_idx,
-            };
+    let mut character = 0;
+    let mut current_offset = 0;
+
+    for c in text.chars() {
+        if current_offset >= target {
+            break;
         }
-        remaining -= ln.len();
-        line += 1;
+        if c == '\n' {
+            line += 1;
+            character = 0;
+        } else {
+            character += c.len_utf16() as u32;
+        }
+        current_offset += c.len_utf8();
     }
-    // past end
-    Position {
-        line,
-        character: 0,
-    }
+
+    Position { line, character }
 }

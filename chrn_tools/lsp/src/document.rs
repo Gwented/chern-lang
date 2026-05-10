@@ -7,7 +7,7 @@ pub static HOVER_DASHES: &str = "-----------------------------------------------
 /// Separates the name and description from the rendered presentation,
 /// enabling both direct lookup by key and formatted hover output.
 pub struct Document {
-    /// The name of the construct (e.g. "struct", "Range", "i32")
+    /// The name of the construct (e.g. "struct", "BigInt", "i32")
     pub key: &'static str,
     /// A brief description of the construct
     pub description: &'static str,
@@ -37,7 +37,6 @@ impl Document {
     pub fn lookup(key: &str) -> Option<&'static Document> {
         DIRECTIVE_DOCS
             .iter()
-            .chain(PREDICATE_DOCS.iter())
             .chain(TYPE_DOCS.iter())
             .find(|doc| doc.key == key)
     }
@@ -45,7 +44,7 @@ impl Document {
 
 //  Keywords
 
-pub static KEYWORD_DOCS: [Document; 15] = [
+pub static KEYWORD_DOCS: [Document; 13] = [
     //FIX: Key should be the interned id, or maybe a mixture of both depending on DECISIONS
     Document {
         key: "struct",
@@ -126,16 +125,6 @@ pub static KEYWORD_DOCS: [Document; 15] = [
         description: "Unimplemented",
         example: Some("```chrn\n// Not yet implemented\n```"),
     },
-    Document {
-        key: "IsEmpty",
-        description: "Predicate to check emptiness",
-        example: Some("```chrn\nvar->\n\tfield: List<i32> [!IsEmpty]\n```"),
-    },
-    Document {
-        key: "IsWhitespace",
-        description: "Predicate to check whitespace",
-        example: Some("```chrn\nvar->\n\tfield: str [!IsWhitespace]\n```"),
-    },
 ];
 
 //  Directives
@@ -144,13 +133,15 @@ pub static DIRECTIVE_DOCS: [Document; 4] = [
     Document {
         key: "@def",
         description: "Starts embedded script block",
-        example: Some("```chrn\n@def\n\tlet x = 1\n\tvar->\n\t\tname: str\n@end\n```"),
+        example: Some(
+            "```chrn\n// It is recommended to speak in only comments above @def so that errors like missing quotes\ndo not impact the keyword analysis for @def and @end\n@def\n\tlet x = 1\n\tvar->\n\t\tname: str\n@end\n```",
+        ),
     },
     Document {
         key: "@end",
         description: "Ends embedded script block",
         example: Some(
-            "```chrn\n@def\n\tlet x = 1\n@end\n// Everything after this is serialized data\n```",
+            "```chrn\n@def\n\tlet x = 1\n@end\n// Everything after this could be serialized data\n```",
         ),
     },
     Document {
@@ -162,51 +153,6 @@ pub static DIRECTIVE_DOCS: [Document; 4] = [
         key: "#",
         description: "Argument prefix (#warn/#ignore)",
         example: None,
-    },
-];
-
-//  Predicates
-
-pub static PREDICATE_DOCS: [Document; 8] = [
-    Document {
-        key: "Range",
-        description: "Range predicate",
-        example: Some("```chrn\nvar->\n\tscore: f64 [Range(0.0, 100.0)]\n```"),
-    },
-    Document {
-        key: "StartsW",
-        description: "Starts with predicate",
-        example: Some("```chrn\nvar->\n\tname: str [StartsW(\"A\")]\n```"),
-    },
-    Document {
-        key: "EndsW",
-        description: "Ends with predicate",
-        example: Some("```chrn\nvar->\n\textension: str [EndsW(\".chrn\")]\n```"),
-    },
-    Document {
-        key: "Contains",
-        description: "Contains predicate",
-        example: Some("```chrn\nvar->\n\tdescription: str [Contains(\"important\")]\n```"),
-    },
-    Document {
-        key: "Equals",
-        description: "Equality predicate",
-        example: Some("```chrn\nvar->\n\tstatus: str [Equals(\"active\")]\n```"),
-    },
-    Document {
-        key: "?",
-        description: "Type inference placeholder",
-        example: Some("```chrn\nvar->\n\tvalue: ?\n```"),
-    },
-    Document {
-        key: "#warn",
-        description: "Treat as warning instead of error",
-        example: Some("```chrn\nvar->\n\tfield: str #warn\n```"),
-    },
-    Document {
-        key: "#ignore",
-        description: "Ignore type errors",
-        example: Some("```chrn\nvar->\n\tfield: ? #ignore\n```"),
     },
 ];
 
@@ -255,7 +201,7 @@ pub static TYPE_DOCS: [Document; 27] = [
     },
     Document {
         key: "nil",
-        description: "Nil type (no value)",
+        description: "Representation of a null/nil within a given language if possible",
         example: None,
     },
     Document {

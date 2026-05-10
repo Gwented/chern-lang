@@ -1,28 +1,25 @@
 use parking_lot::RwLock;
 use script_lib::script_compiler::ScriptCompiler;
 use std::time::Duration;
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tower_lsp::lsp_types::SemanticToken;
 use tower_lsp::{Client, LanguageServer, jsonrpc};
 
 use crate::analyser::analyze_and_publish_task;
-// use crate::definition::find_in_source;
 use crate::state::DocumentCache;
 use crate::text::apply_text_change;
 
 // Semantic token support (keyword/string/number highlighting)
+use crate::state::SemanticEntity;
 use chrn_utils::builtins::BuiltinTypeKind as ChBuiltinTypeKind;
-use chrn_utils::id_types::InternedId;
+use chrn_utils::id_types::PathId;
+use chrn_utils::intern::Intern;
 use common::chrn_settings::ChrnSettings;
 use common::core_error::ConfigLoadError;
 use script_lib::config_loader::ChrnConfigLoader;
-use script_lib::semantic::representation::SymbolKind;
-use script_lib::semantic::scopes::ScopeType;
+use script_lib::semantic::representation::{SymbolKind, Type};
 use script_lib::token::Token as ScriptToken;
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -165,10 +162,13 @@ impl Backend {
         let path_buf = PathBuf::from(uri.path());
         let settings = ChrnSettings::default();
 
+        let mut interner = Intern::init();
+        let path_id = PathId::new(interner.intern_path(&path_buf));
         let metadata = match ChrnConfigLoader::new(
-            path_buf.as_path(),
+            path_id,
             Cursor::new(text.as_bytes()),
             &settings,
+            &mut interner,
         )
         .load_config()
         {
@@ -201,48 +201,51 @@ impl Backend {
     }
 }
 
-// Helper to classify identifier tokens into semantic token kinds.
 fn classify_id_token(
     compiler: &ScriptCompiler,
+    entity: Option<&SemanticEntity>,
     id: u32,
-    has_type_info: bool,
     next_is_paren: bool,
-    member_ids: Option<&HashSet<u32>>,
-) -> u32 {
-    // If this identifier is a struct field or enum variant name, classify as Property
-    if let Some(mset) = member_ids {
-        if mset.contains(&id) {
-            return SemanticTokenType::Property.as_u32();
+) -> Option<u32> {
+    if let Some(entity) = entity {
+        match entity {
+            SemanticEntity::Symbol(sym_id) => {
+                if let Some(sym) = compiler.symbols.get(sym_id) {
+                    match sym.kind {
+                        SymbolKind::Type(tid) => {
+                            let ty = &compiler.types[tid.id as usize].ty;
+                            if matches!(ty, Type::Alias(_)) {
+                                return Some(SemanticTokenType::Function.as_u32());
+                            }
+                            return Some(SemanticTokenType::Type.as_u32());
+                        }
+                        SymbolKind::Val(_) => {
+                            if next_is_paren {
+                                return Some(SemanticTokenType::Function.as_u32());
+                            }
+                            return Some(SemanticTokenType::Variable.as_u32());
+                        }
+                        _ => return Some(SemanticTokenType::Variable.as_u32()),
+                    }
+                }
+            }
+            SemanticEntity::Field { .. } | SemanticEntity::Variant { .. } => {
+                return Some(SemanticTokenType::Property.as_u32());
+            }
+            SemanticEntity::Module(_) => return Some(SemanticTokenType::Keyword.as_u32()),
+            SemanticEntity::Local { .. } => return Some(SemanticTokenType::Variable.as_u32()),
         }
     }
-    // Builtin type names are interned to well-known ids; check them first.
+
     if ChBuiltinTypeKind::try_from_interned_id(id).is_some() {
-        return SemanticTokenType::Type.as_u32();
+        return Some(SemanticTokenType::Type.as_u32());
     }
 
     if next_is_paren {
-        return SemanticTokenType::Function.as_u32();
+        return Some(SemanticTokenType::Function.as_u32());
     }
 
-    if has_type_info {
-        let interned = InternedId::new(id);
-        if let Some(sym_id) = compiler.mods[0].get_sym_id(interned, ScopeType::Var) {
-            if let Some(sym) = compiler.symbols.get(&sym_id) {
-                match sym.kind {
-                    SymbolKind::Type(_) => return SemanticTokenType::Type.as_u32(),
-                    // A SymbolKind::Val represents a value (variable). Even if the value
-                    // has a type annotation (struct/enum/typedef/etc.), we should not
-                    // highlight the identifier as a type. Only symbols that are
-                    // SymbolKind::Type (type declarations) or builtin type names are
-                    // considered types for highlighting.
-                    SymbolKind::Val(_) => return SemanticTokenType::Variable.as_u32(),
-                    _ => return SemanticTokenType::Variable.as_u32(),
-                }
-            }
-        }
-    }
-
-    SemanticTokenType::Variable.as_u32()
+    None
 }
 
 #[tower_lsp::async_trait]
@@ -257,16 +260,13 @@ impl LanguageServer for Backend {
                 tower_lsp::lsp_types::TextDocumentSyncKind::INCREMENTAL,
             )),
             hover_provider: Some(tower_lsp::lsp_types::HoverProviderCapability::Simple(true)),
+            definition_provider: Some(tower_lsp::lsp_types::OneOf::Left(true)),
+            rename_provider: Some(tower_lsp::lsp_types::OneOf::Left(true)),
+            references_provider: Some(tower_lsp::lsp_types::OneOf::Left(true)),
             // advertise completion support so clients will request completions
             completion_provider: Some(tower_lsp::lsp_types::CompletionOptions {
                 resolve_provider: Some(false),
-                trigger_characters: Some(vec![
-                    "@".to_string(),
-                    "#".to_string(),
-                    ":".to_string(),
-                    "-".to_string(),
-                    ">".to_string(),
-                ]),
+                trigger_characters: Some(vec!["@".to_string(), "#".to_string(), ".".to_string()]),
                 ..Default::default()
             }),
             // advertise semantic tokens for full documents (keywords/strings/numbers)
@@ -524,9 +524,67 @@ impl LanguageServer for Backend {
             None => return Ok(None),
         };
 
-        // Delegate hover computation to hover module
-        let hover_opt = crate::hover::compute_hover(&uri, pos, state_arc);
-        Ok(hover_opt)
+        // Use a timeout to avoid deadlocking if analysis is stuck holding a write lock
+        let arc_for_hover = Arc::clone(&state_arc);
+        if let Some(hover_opt) = state_arc
+            .try_read_for(Duration::from_millis(500))
+            .map(|_guard| {
+                // Drop our guard and let compute_hover take its own lock (which should succeed now)
+                crate::hover::compute_hover(&uri, pos, arc_for_hover)
+            })
+        {
+            return Ok(hover_opt);
+        }
+        Ok(None)
+    }
+
+    async fn rename(
+        &self,
+        params: tower_lsp::lsp_types::RenameParams,
+    ) -> jsonrpc::Result<Option<tower_lsp::lsp_types::WorkspaceEdit>> {
+        let uri = params.text_document_position.text_document.uri;
+        let pos = params.text_document_position.position;
+        let new_name = params.new_name;
+
+        // Ensure the document is analyzed
+        let text = {
+            let docs = self.docs.read();
+            match docs.get(&uri.to_string()) {
+                Some(t) => Arc::clone(t),
+                None => return Ok(None),
+            }
+        };
+
+        if self.get_analyzed_state(&uri, text).is_none() {
+            return Ok(None);
+        }
+
+        let edit = crate::rename::compute_rename(&uri, pos, new_name, &self.doc_cache);
+        Ok(edit)
+    }
+
+    async fn references(
+        &self,
+        params: tower_lsp::lsp_types::ReferenceParams,
+    ) -> jsonrpc::Result<Option<Vec<tower_lsp::lsp_types::Location>>> {
+        let uri = params.text_document_position.text_document.uri;
+        let pos = params.text_document_position.position;
+
+        // Ensure the document is analyzed
+        let text = {
+            let docs = self.docs.read();
+            match docs.get(&uri.to_string()) {
+                Some(t) => Arc::clone(t),
+                None => return Ok(None),
+            }
+        };
+
+        if self.get_analyzed_state(&uri, text).is_none() {
+            return Ok(None);
+        }
+
+        let refs = crate::references::compute_references(&uri, pos, &self.doc_cache);
+        Ok(refs)
     }
 
     async fn semantic_tokens_full(
@@ -554,9 +612,6 @@ impl LanguageServer for Backend {
         };
 
         let toks_vec = &state.tokens;
-        let has_type_info =
-            state.compiler.is_some() && !state.has_parse_errors && !state.has_ns_errors;
-        let maybe_member_ids = Some(&state.member_ids);
 
         let mut tokens: Vec<SemanticToken> = Vec::new();
 
@@ -588,7 +643,12 @@ impl LanguageServer for Backend {
                 ScriptToken::Id(id) => {
                     let next_is_paren = i + 1 < toks_vec.len()
                         && matches!(toks_vec[i + 1].tok, ScriptToken::OParen);
-                    classify_id_token(compiler, id, has_type_info, next_is_paren, maybe_member_ids)
+                    let entity = state.get_entity_at_offset(span.start);
+                    if let Some(ty) = classify_id_token(compiler, entity, id, next_is_paren) {
+                        ty
+                    } else {
+                        continue;
+                    }
                 }
                 ScriptToken::At => SemanticTokenType::Macro.as_u32(),
                 ScriptToken::HashSymbol => SemanticTokenType::Operator.as_u32(),
@@ -691,22 +751,23 @@ impl LanguageServer for Backend {
 
         let state = state_arc.read();
         let byte_offset = crate::text::position_to_offset(&state.text, pos);
-
-        let (id, _start, _end) = match state.get_symbol_at_offset(byte_offset) {
-            Some(res) => res,
-            None => return Ok(None),
-        };
-
         let mut links: Vec<LocationLink> = Vec::new();
 
-        if let Some((def_path, def_span)) = state.find_definition_of_symbol(id) {
+        let mut def_info = None;
+        let entity = state.get_entity_at_offset(byte_offset);
+        if let Some(entity) = entity {
+            if let Some((def_path, def_span, _)) = state.get_definition_location(entity) {
+                def_info = Some((def_path, def_span));
+            }
+        }
+
+        if let Some((def_path, def_span)) = def_info {
             let target_uri = match Url::from_file_path(&def_path) {
                 Ok(u) => u,
                 Err(_) => uri.clone(),
             };
 
             // We need the text of the target file to convert span to position
-            // If it's the same file, we have it. If not, try doc_cache then disk.
             let target_text = if def_path == uri.path() {
                 Some(Arc::clone(&state.text))
             } else {
@@ -719,7 +780,7 @@ impl LanguageServer for Backend {
 
             if let Some(t_text) = target_text {
                 let start_pos = crate::text::offset_to_position(&t_text, def_span.start);
-                let end_pos = crate::text::offset_to_position(&t_text, def_span.end);
+                let end_pos = crate::text::offset_to_position(&t_text, def_span.end + 1);
 
                 links.push(LocationLink {
                     origin_selection_range: Some(Range {
@@ -768,7 +829,11 @@ impl LanguageServer for Backend {
             None => return Ok(None),
         };
 
-        let state = state_arc.read();
+        let state_guard = match state_arc.try_read_for(Duration::from_millis(500)) {
+            Some(g) => g,
+            None => return Ok(None),
+        };
+        let state = &*state_guard;
 
         // find current word prefix using byte offsets
         let byte_off =
@@ -784,6 +849,73 @@ impl LanguageServer for Backend {
         // If cursor is outside the script section, return no completions
         if !in_script_section {
             return Ok(Some(CompletionResponse::Array(Vec::new())));
+        }
+
+        let is_dot_completion = start_b > 0 && text.as_bytes()[start_b - 1] == b'.';
+        let mut dot_target_name = None;
+        if is_dot_completion {
+            let (t_start, t_end) = crate::text::find_word_bounds(&text, start_b - 1);
+            if t_start < t_end {
+                dot_target_name = Some(&text[t_start..t_end]);
+            }
+        }
+
+        if let Some(target_name) = dot_target_name {
+            let mut items: Vec<CompletionItem> = Vec::new();
+            if let Some(target_id) = state.interner.get_interned_id_async(target_name) {
+                if let Some(compiler) = &state.compiler {
+                    let intern_id = chrn_utils::id_types::InternedId::new(target_id);
+                    if let Some(mod_id) = compiler.mod_map.get(&intern_id) {
+                        if let Some(module) = compiler.mods.get(mod_id.id as usize) {
+                            if mod_id.id == 0 {
+                                // Current module: show all symbols except ScopeType::Var
+                                for (_, sym) in &compiler.symbols {
+                                    if sym.owner.id == 0
+                                        && sym.scope_type
+                                            != script_lib::semantic::scopes::ScopeType::Var
+                                    {
+                                        let sym_name =
+                                            state.interner.search(sym.name_id.id as usize);
+                                        if prefix.is_empty() || sym_name.starts_with(prefix) {
+                                            let kind = match sym.kind {
+                                                script_lib::semantic::representation::SymbolKind::Type(_) => CompletionItemKind::STRUCT,
+                                                script_lib::semantic::representation::SymbolKind::Val(_) => CompletionItemKind::VARIABLE,
+                                                _ => CompletionItemKind::PROPERTY,
+                                            };
+                                            items.push(CompletionItem {
+                                                label: sym_name.to_string(),
+                                                kind: Some(kind),
+                                                ..Default::default()
+                                            });
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Other modules: show only exported symbols
+                                for sym_id in &module.exports {
+                                    if let Some(sym) = compiler.symbols.get(sym_id) {
+                                        let sym_name =
+                                            state.interner.search(sym.name_id.id as usize);
+                                        if prefix.is_empty() || sym_name.starts_with(prefix) {
+                                            let kind = match sym.kind {
+                                                script_lib::semantic::representation::SymbolKind::Type(_) => CompletionItemKind::STRUCT,
+                                                script_lib::semantic::representation::SymbolKind::Val(_) => CompletionItemKind::VARIABLE,
+                                                _ => CompletionItemKind::PROPERTY,
+                                            };
+                                            items.push(CompletionItem {
+                                                label: sym_name.to_string(),
+                                                kind: Some(kind),
+                                                ..Default::default()
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return Ok(Some(CompletionResponse::Array(items)));
         }
 
         // Suggestions for keywords, types, etc
@@ -803,14 +935,40 @@ impl LanguageServer for Backend {
             ("struct", CompletionItemKind::KEYWORD),
             ("enum", CompletionItemKind::KEYWORD),
             ("change", CompletionItemKind::KEYWORD),
+            ("any", CompletionItemKind::STRUCT),
+            ("BigInt", CompletionItemKind::STRUCT),
+            ("BigFloat", CompletionItemKind::STRUCT),
+            ("bool", CompletionItemKind::STRUCT),
+            ("char", CompletionItemKind::STRUCT),
+            ("f16", CompletionItemKind::STRUCT),
+            ("f32", CompletionItemKind::STRUCT),
+            ("f64", CompletionItemKind::STRUCT),
+            ("f128", CompletionItemKind::STRUCT),
+            ("i16", CompletionItemKind::STRUCT),
+            ("i32", CompletionItemKind::STRUCT),
+            ("i64", CompletionItemKind::STRUCT),
+            ("i8", CompletionItemKind::STRUCT),
+            ("i128", CompletionItemKind::STRUCT),
             ("List", CompletionItemKind::STRUCT),
             ("Map", CompletionItemKind::STRUCT),
+            ("nil", CompletionItemKind::STRUCT),
             ("Set", CompletionItemKind::STRUCT),
+            ("sized", CompletionItemKind::STRUCT),
+            ("str", CompletionItemKind::STRUCT),
             ("Tuple", CompletionItemKind::STRUCT),
+            ("u16", CompletionItemKind::STRUCT),
+            ("u32", CompletionItemKind::STRUCT),
+            ("u64", CompletionItemKind::STRUCT),
+            ("u8", CompletionItemKind::STRUCT),
+            ("u128", CompletionItemKind::STRUCT),
+            ("unsized", CompletionItemKind::STRUCT),
             ("true", CompletionItemKind::CONSTANT),
             ("false", CompletionItemKind::CONSTANT),
-            //TODO: Not exactly a keyword
             ("#warn", CompletionItemKind::VALUE),
+            ("#bin", CompletionItemKind::VALUE),
+            ("#octo", CompletionItemKind::VALUE),
+            ("#scient", CompletionItemKind::VALUE),
+            ("#hex", CompletionItemKind::VALUE),
             ("#ignore", CompletionItemKind::VALUE),
         ];
 

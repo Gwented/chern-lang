@@ -238,6 +238,11 @@ impl Intern {
         id
     }
 
+    // I'm scared of you
+    pub fn get_interned_id_async(&self, s: &str) -> Option<u32> {
+        self.id_map.get(s).copied()
+    }
+
     //
     pub fn intern_path(&mut self, s: &Path) -> u32 {
         if let Some(id) = self.path_map.get(s) {

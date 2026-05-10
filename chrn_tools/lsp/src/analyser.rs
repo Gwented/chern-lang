@@ -63,11 +63,17 @@ pub async fn analyze_and_publish_task(
         .to_file_path()
         .unwrap_or_else(|_| PathBuf::from(uri.path()));
 
+    let mut interner = Intern::init();
+    let path_id = PathId::new(interner.intern_path(&path_buf));
     // 1. Initial config load to find boundaries
-    let metadata =
-        match ChrnConfigLoader::new(path_buf.as_path(), Cursor::new(text.as_bytes()), &settings)
-            .load_config()
-        {
+    let metadata = match ChrnConfigLoader::new(
+        path_id,
+        Cursor::new(text.as_bytes()),
+        &settings,
+        &mut interner,
+    )
+    .load_config()
+    {
             Ok(m) => m,
             Err(e) => {
                 // Handle config load error (same as before)
@@ -247,7 +253,8 @@ pub(crate) fn resolve_modules_lsp(
         let current_mod_id = seen.len();
         seen.insert(import.path_id);
 
-        let path = interner.search_path(import.path_id.id as usize);
+        let path_owned = interner.search_path(import.path_id.id as usize).to_path_buf();
+        let path = path_owned.as_path();
 
         // Try to get from doc_cache first
         let uri = Url::from_file_path(path).unwrap();
@@ -261,12 +268,13 @@ pub(crate) fn resolve_modules_lsp(
                     .map_err(|e| {
                         let core_msg = common::core_error::form_string_from_io_err(&e, path)
                             .unwrap_or(e.to_string());
+                        let metadata = prev_mod.src_metadata.as_ref().unwrap();
                         let ln_data = common::reporter::form_err_diag(
-                            &prev_mod.src_metadata.src_bytes,
+                            &metadata.src_bytes,
                             &[import.path_span],
                             settings.can_color,
                         );
-                        let prev_path = interner.search_path(prev_mod.path_id.id as usize);
+                        let prev_path = interner.search_path(metadata.path_id.id as usize);
                         let fmtted_diag = common::reporter::standardize_err(
                             &core_msg,
                             &ln_data,
@@ -291,7 +299,8 @@ pub(crate) fn resolve_modules_lsp(
             Err(e) => return Err(e),
         };
 
-        let mod_metadata = ChrnConfigLoader::new(path, src, settings).load_config()?;
+        let mod_metadata =
+            ChrnConfigLoader::new(import.path_id, src, settings, interner).load_config()?;
 
         let file_name = match path.file_stem().and_then(|n| n.to_str()) {
             Some(p) => p.to_string(),
@@ -316,7 +325,8 @@ pub(crate) fn resolve_modules_lsp(
         };
 
         let name_id = InternedId::new(interner.intern(&file_name));
-        let origin = interner.search_path(prev_mod.path_id.id as usize);
+        let metadata = prev_mod.src_metadata.as_ref().unwrap();
+        let origin = interner.search_path(metadata.path_id.id as usize);
 
         let (_, sub_imports) = ModuleFinder::new(
             &mod_metadata.src_bytes,
@@ -329,10 +339,9 @@ pub(crate) fn resolve_modules_lsp(
 
         let sub_mod = Module::new(
             name_id,
-            import.path_id,
             ModuleId::new(current_mod_id),
             sub_imports,
-            mod_metadata,
+            Some(mod_metadata),
         );
 
         if let Some(alias_id) = import.alias_id {

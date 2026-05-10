@@ -927,7 +927,6 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
         Token::Id(id) => {
             let span = ctx.advance_span();
 
-            //FIX: How is this going to be escaped.
             let name_id = InternedId::new(id);
             let ty_expr = TypeExpr::Var(name_id);
 
@@ -1340,7 +1339,7 @@ fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>
         return Ok(conds);
     }
 
-    loop {
+    while ctx.peek_tok() != Token::CBracket {
         let new_cond = parse_expr(ctx, 0, interner);
 
         if let Ok(cond) = new_cond {
@@ -1353,11 +1352,17 @@ fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>
             err_count += 1;
         }
 
-        if ctx.peek_kind() != TokenKind::Comma {
+        if ctx.peek_tok() == Token::CBracket {
             break;
         }
 
-        ctx.advance_tok();
+        ctx.expect_verbose(
+            TokenKind::Comma,
+            "Expected ',' to separate arguments or ']' to close, found ",
+            "",
+            Branch::Cond,
+            interner,
+        )?;
     }
 
     if err_count == 0 {
