@@ -853,7 +853,7 @@ fn parse_call_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedEx
         let arg = parse_expr(ctx, 0, interner)?;
         args.push(arg);
 
-        if ctx.peek_kind() == TokenKind::CParen {
+        if ctx.peek_tok() == Token::CParen {
             ctx.advance_tok();
             break;
         }
@@ -1353,7 +1353,6 @@ fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>
             err_count += 1;
         }
 
-        // Should be able to send help since ctx would know a comma was used after a cond
         if ctx.peek_kind() != TokenKind::Comma {
             break;
         }

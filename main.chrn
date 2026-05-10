@@ -8,22 +8,22 @@
 // let x = -((defs.READ * "fllorp"))
 
 @def
-    alias default(x, y) = []
+    import "../../defs.chrn"
+    alias default(x, y, z) = [IsEmpty]
     let x = 3
+    let string = "h\x25i"
 
-    import "../../defs.chrn" as identifer
+    // import "../../defs.chrn" as identifer
     // Commenting
-    export let コール = 3
 
     var->
         // I WANT THIS UPPERCASE
-        x: main.Person
         // It thinks every alias is a type so this is invalid
-        y:  thing.unsized // [default()]
+        y: main.List<u32>
         // allow for [Thing(), <--- trailing]
     nest->
         struct Person {
-            name: i32
+            name: core.BigInt
         }
 @end
 

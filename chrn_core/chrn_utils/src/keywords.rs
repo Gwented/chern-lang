@@ -6,14 +6,8 @@ use crate::intern;
 
 /// Known size in bytes for `@def` and `@end`
 pub const DEFINITION_SIZE: usize = 4;
-//WARN: WAY TOO MANY MICRO-DEPENDENCIES
 
-//WARN:
-// Before adding a keyword:
-// Ensure array string is aligned with the Keyword enum
-// Ensure ranges and all keyword functions are adjusted
-// Ensure tests are aligned
-
+/// All keywords for `chrn`
 pub static KEYWORDS_ARRAY: [&str; 13] = [
     "struct", "enum", "import", "export", "bind", "alias", "let", "change", "as", "var", "nest",
     "complex", "override",

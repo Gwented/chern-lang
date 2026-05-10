@@ -3,8 +3,10 @@ export let WRITE = 0b00000001
 export let READ = 0b00000010
 // export let WRITE = 0b00000010
 // export let EXEC = 0b00000100
-nest->
-    export struct Person {
+    let x = 3
+    let y = defs.x
+    nest->
+    struct Person {
         name: str
         age: u8
     }

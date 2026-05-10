@@ -526,15 +526,6 @@ impl TypeResolver<'_> {
 
         let expr = &self.compiler.exprs[expr_id.id as usize];
 
-        // let symbol = &self.compiler.symbols[&sym_id];
-        // let name = self.interner.search(symbol.name_id.id as usize);
-
-        // if name == "z" {
-        //     dbg!(&self.ty_ctx);
-        //     panic!("Hi Zhea");
-        // }
-        // dbg!(expr);
-        // dbg!(&self.compiler.values[expr.val_id.id as usize]);
         let is_unknown = expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX;
 
         // let inferred_type_id = match self.type_check(&expr.expr_hir) {
@@ -1631,10 +1622,9 @@ impl TypeResolver<'_> {
                     let cycled_span = self.ast_info.get_sym_span(parent_ast_id);
                     let found_span = self.ast_info.get_sym_span(found_ast_id);
 
-                    // Not even going to address what was here
                     let msg = format!(
-                        "The symbol `{}` depends on `{}`, but `{}` has no value",
-                        parent_name, found_name, found_name
+                        "`{}` depends on itself through `{}`",
+                        parent_name, found_name
                     );
 
                     return Err(SemanticError::General(msg, vec![cycled_span, found_span]));
@@ -1705,14 +1695,12 @@ impl TypeResolver<'_> {
                 //actually supposed to be specifically only known data structures
                 match BuiltinTypeKind::try_from_interned_id(generic.base.id) {
                     // Self referential type ids used here
-                    Some(kw) => match kw {
+                    Some(kind) => match kind {
                         //TODO: Should maybe put List | Set
-                        BuiltinTypeKind::List => {
+                        BuiltinTypeKind::List | BuiltinTypeKind::Set => {
                             if generic.args.len() != 1 {
-                                let msg = format!(
-                                    "Expected 1 type within `List`, found {}",
-                                    generic.args.len()
-                                );
+                                let msg =
+                                    format!("Expected only 1 type within `{}`", kind.to_fmt());
 
                                 let mod_origin = &self.compiler.mods[self.current_mod.id];
                                 self.reporter.report_spanned(
@@ -1729,32 +1717,37 @@ impl TypeResolver<'_> {
                             }
 
                             let inner = self.resolve_type_expr(
-                                active_mod_id,
+                                self.current_mod,
                                 &generic.args[0],
                                 scope_type,
-                                lookup_pattern,
+                                LookupPattern::AllConnections,
                             )?;
 
-                            let list = Type::BuiltinType(BuiltinType::List(inner));
-                            let list_id = TypeId::new(self.compiler.types.len() as u32);
+                            let ty = if kind == BuiltinTypeKind::List {
+                                Type::BuiltinType(BuiltinType::List(inner))
+                            } else {
+                                Type::BuiltinType(BuiltinType::Set(inner))
+                            };
+
+                            let type_id = TypeId::new(self.compiler.types.len() as u32);
 
                             // TODO: Technically it's a structure owned by core, but it wasn't
                             // defined as core, but this can't be referenced directly anyways so it
                             // doesn't really make a difference
-                            let ty_info = TypeInfo::new(list, self.compiler.core_mod_id);
+                            let ty_info = TypeInfo::new(ty, self.compiler.core_mod_id);
                             self.compiler.types.push(ty_info);
 
-                            return Ok(list_id);
+                            return Ok(type_id);
                         }
                         BuiltinTypeKind::Tuple => {
                             let mut elements: Vec<TypeId> = Vec::new();
 
                             for arg in &generic.args {
                                 elements.push(self.resolve_type_expr(
-                                    active_mod_id,
+                                    self.current_mod,
                                     arg,
                                     scope_type,
-                                    lookup_pattern,
+                                    LookupPattern::AllConnections,
                                 )?);
                             }
 
@@ -1768,10 +1761,7 @@ impl TypeResolver<'_> {
                         }
                         BuiltinTypeKind::Map => {
                             if generic.args.len() != 2 {
-                                let msg = format!(
-                                    "Expected 2 types within `Map`, found {}",
-                                    generic.args.len()
-                                );
+                                let msg = format!("Expected only 2 types within `Map`",);
 
                                 let mod_origin = &self.compiler.mods[self.current_mod.id];
                                 self.reporter.report_spanned(
@@ -1788,17 +1778,17 @@ impl TypeResolver<'_> {
                             }
 
                             let key = self.resolve_type_expr(
-                                active_mod_id,
+                                self.current_mod,
                                 &generic.args[0],
                                 scope_type,
                                 lookup_pattern,
                             )?;
 
                             let val = self.resolve_type_expr(
-                                active_mod_id,
+                                self.current_mod,
                                 &generic.args[1],
                                 scope_type,
-                                lookup_pattern,
+                                LookupPattern::AllConnections,
                             )?;
 
                             let map = Type::BuiltinType(BuiltinType::Map(key, val));
@@ -1808,43 +1798,6 @@ impl TypeResolver<'_> {
                             self.compiler.types.push(ty_info);
 
                             Ok(TypeId::new(map_id))
-                        }
-                        // Should probably just put this with list
-                        BuiltinTypeKind::Set => {
-                            if generic.args.len() != 1 {
-                                let msg = format!(
-                                    "Expected 1 type within `Set`, found {}",
-                                    generic.args.len()
-                                );
-
-                                let mod_origin = &self.compiler.mods[self.current_mod.id];
-                                self.reporter.report_spanned(
-                                    &msg,
-                                    None,
-                                    &[spanned_ty_expr.span],
-                                    &mod_origin
-                                        .src_metadata
-                                        .as_ref()
-                                        .expect("core should not be resolved"),
-                                );
-
-                                return Err(());
-                            }
-
-                            let inner = self.resolve_type_expr(
-                                active_mod_id,
-                                &generic.args[0],
-                                scope_type,
-                                lookup_pattern,
-                            )?;
-
-                            let set = Type::BuiltinType(BuiltinType::Set(inner));
-                            let set_id = TypeId::new(self.compiler.types.len() as u32);
-
-                            let ty_info = TypeInfo::new(set, self.compiler.core_mod_id);
-                            self.compiler.types.push(ty_info);
-
-                            return Ok(set_id);
                         }
                         // I'm sure this can be done better...
                         _ => {
