@@ -1,104 +1,16 @@
-// Need to re-route errors so they don't immediately form basic arrows to one so help messages
-// aren't just requirements because the err msgs themselves are misleading or bad
-
-// Maybe just default to utf-8 since lexer can't know when to and not to care about pathing
-// without suspicious measures
-
-// Unary cannot be applied to defs.READ unless wrapped with parens. Fine for now.
-// let x = -((defs.READ * "fllorp"))
 
 @def
-    import "../../defs.chrn"
-    alias default(x, y, z) = [IsEmpty]
-    let x = 3
-    let string = "h\x25i"
+ /* Hello I am a comment */   let
+// I am another
 
-    // import "../../defs.chrn" as identifer
-    // Commenting
-
-    var->
-        // I WANT THIS UPPERCASE
-        // It thinks every alias is a type so this is invalid
-        y: main.List<u32> [2,]
-        // allow for [Thing(), <--- trailing]
-    nest->
-        struct Person {
-            name: core.BigInt
-        }
-@end
-
-sbind "hi"
-
-    var->
-        e#as: i32
-    nest->
-        enum Color {
-            props: i32
-        }
-@end
-
-    let y = x + 2
-    let x = 5
-    let z = 5
-
-// alias x() = []
-    let x = z
-    let z = 2
-
-    var->
-        y: List<i32>,
-    nest->
-        struct Bist {
-            h: i32
-        }
-        // Maybe could have, if we end on a section keyword, then recover just returns normally?
-    //let x = z
-    //let z = 2
-
+export let /*letting*/ number/*variable*/= /*expr*/ 0x23
 
 @end
-let
-
-// This breaks
-let token_seller = token_seller.STRONGEST_TOKENS
-
-//const HELLO = 4
-
-
 var->
-    // Sure I guess
-    // defs.var
-    export: i32
-    // user: chern.Person
-    thing: BigFloat
-    var: Tuple<str, u8, str> // [StartsW(5)]
-
-    // parser needs this TypeExpr
+                        x: i32    // Hi
 nest->
-    struct Data {}
-
-    enum State {
-        Ready: Tuple<Data, str, hallo>
-        InProgress
-        Failed
-    }
-@end
-
-// alias x() = [IsEmpty, defs.DEFAULT(x = "4", y)]
-
-// const X = 4
-@end
-    // Should generate help message or override original error message
-    user: defs.User.Generic<i32>
-
-"Really
+struct Person {
+    name:str
+    age:    u8}
 
 
-
-
-Long
-
-Convincing
-
-
-Quotes"

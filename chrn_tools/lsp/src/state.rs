@@ -4,8 +4,8 @@ use script_lib::modules::Module;
 use script_lib::modules::ModuleMetadata;
 use script_lib::script_compiler::ScriptCompiler;
 use script_lib::semantic::name_resolver::NamespaceResolver;
-use script_lib::semantic::type_resolver::type_context::TypeContext;
 use script_lib::semantic::type_resolver::TypeResolver;
+use script_lib::semantic::type_resolver::type_context::TypeContext;
 use script_lib::token::SpannedToken;
 use script_lib::token::Token as ScriptToken;
 use std::collections::HashMap;
@@ -184,7 +184,7 @@ impl DocumentState {
                 // Reuse pre-computed tokens for main module
                 script_lib::parser::parse(&settings, metadata, &self.tokens, &self.interner)
             } else {
-                let toks = Lexer::new(&metadata.src_bytes, metadata.script_start)
+                let (toks, _) = Lexer::new(&metadata.src_bytes, metadata.script_start)
                     .tokenize(&mut self.interner);
                 script_lib::parser::parse(&settings, metadata, &toks, &self.interner)
             };
@@ -397,7 +397,8 @@ impl DocumentState {
                                 end: full_span.end,
                             };
 
-                            let search_area = &text[base_end..=(full_span.end).min(text.len().saturating_sub(1))];
+                            let search_area =
+                                &text[base_end..=(full_span.end).min(text.len().saturating_sub(1))];
                             if let Some(dot_idx) = search_area.find('.') {
                                 if let Some(name_idx) = search_area[dot_idx + 1..].find(field_name)
                                 {
@@ -815,7 +816,7 @@ impl DocumentCache {
 
         // 2. Perform expensive tokenization OUTSIDE any cache lock
         let mut interner = Intern::init();
-        let tokens = Lexer::new(text.as_bytes(), script_start).tokenize(&mut interner);
+        let (tokens, _) = Lexer::new(text.as_bytes(), script_start).tokenize(&mut interner);
 
         // 3. Re-acquire write lock to insert
         let mut cache = self.inner.write();

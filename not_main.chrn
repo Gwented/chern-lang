@@ -1,0 +1,124 @@
+// Need to re-route errors so they don't immediately form basic arrows to one so help messages
+// aren't just requirements because the err msgs themselves are misleading or bad
+//
+// import has weird behavior since it must check if the character before it was whitespace, but that
+// also means doing, "@defimport "thing"" invalidates import, but @def is a keyword
+// so it shouldn't, and it also doesn't appear obvious because there is no hard error or warn of this.
+
+// Maybe just default to utf-8 since lexer can't know when to and not to care about pathing
+// without suspicious measures
+
+// Unary cannot be applied to defs.READ unless wrapped with parens. Fine for now.
+// let x = -((defs.READ * "fllorp"))
+@def
+    // import "../../defs.chrn"
+    // alias default(x, y, z) = [IsEmpty]
+
+    // import "../../defs.chrn" as identifer
+    // Commenting
+
+    var->
+        // I WANT THIS UPPERCASE
+        // It thinks every alias is a type so this is invalid
+        y: Tuple<i32, i32, Tuple<str>> [] #hex
+        // allow for [Thing(), <--- trailing]
+@end
+    /*nest->
+        // Namespacing issues in nest should probably be mitigated in some form
+        // Technically, it can be by using other module's namespaces, but um...
+        struct Person {
+            name: core.BigInt,
+            // Not sure how to feel about this
+            hence: core.List<i32>,
+        } [] #warn
+
+        struct List {
+            thing: i32
+        }
+
+        enum Hence {
+            name: core.BigInt
+            hence: str
+        } [] #warn*/
+@end
+
+// The error from this is odd because it'll say there is no list type defined, but it's actually saying
+// there is no pre-loaded list type defined, but it implicitly owns - Great!
+// Great!
+hence: core.List,
+
+sbind "hi"
+
+    var->
+        e#as: i32
+    nest->
+        enum Color {
+            props: i32
+        }
+@end
+
+    let y = x + 2
+    let x = 5
+    let z = 5
+
+// alias x() = []
+    let x = z
+    let z = 2
+
+    var->
+        y: List<i32>,
+    nest->
+        struct Bist {
+            h: i32
+        }
+        // Maybe could have, if we end on a section keyword, then recover just returns normally?
+    //let x = z
+    //let z = 2
+
+
+@end
+let
+
+// This breaks
+let token_seller = token_seller.STRONGEST_TOKENS
+
+//const HELLO = 4
+
+
+var->
+    // Sure I guess
+    // defs.var
+    export: i32
+    // user: chern.Person
+    thing: BigFloat
+    var: Tuple<str, u8, str> // [StartsW(5)]
+
+    // parser needs this TypeExpr
+nest->
+    struct Data {}
+
+    enum State {
+        Ready: Tuple<Data, str, hallo>
+        InProgress
+        Failed
+    }
+@end
+
+// alias x() = [IsEmpty, defs.DEFAULT(x = "4", y)]
+
+// const X = 4
+@end
+    // Should generate help message or override original error message
+    user: defs.User.Generic<i32>
+
+"Really
+
+
+
+
+Long
+
+Convincing
+
+
+Quotes"

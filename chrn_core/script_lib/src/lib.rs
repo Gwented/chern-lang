@@ -10,6 +10,7 @@ pub mod parser;
 pub mod script_compiler;
 pub mod semantic;
 pub mod token;
+pub mod trivia;
 
 #[cfg(test)]
 mod tests {
@@ -156,7 +157,8 @@ mod tests {
         .load_config()
         .unwrap();
 
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(
             None, metadata.serial_start,
@@ -198,8 +200,6 @@ mod tests {
         assert_eq!(true, opt.is_err());
     }
 
-    //utf8 broke
-
     #[test]
     fn char_literal_test() {
         // Valid single character
@@ -216,7 +216,8 @@ mod tests {
         )
         .load_config()
         .unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         assert!(
@@ -240,7 +241,8 @@ mod tests {
         .load_config()
         .unwrap();
 
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         assert!(
@@ -264,7 +266,8 @@ mod tests {
         .load_config()
         .unwrap();
 
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         assert!(
@@ -285,7 +288,8 @@ mod tests {
         )
         .load_config()
         .unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         assert!(
@@ -306,7 +310,8 @@ mod tests {
         )
         .load_config()
         .unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         assert!(
@@ -328,7 +333,8 @@ mod tests {
         )
         .load_config()
         .unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         assert!(
@@ -349,7 +355,8 @@ mod tests {
         )
         .load_config()
         .unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         assert!(
@@ -370,7 +377,8 @@ mod tests {
         )
         .load_config()
         .unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         assert!(
@@ -451,7 +459,8 @@ mod tests {
         .load_config()
         .unwrap();
 
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {
@@ -471,7 +480,8 @@ mod tests {
         )
         .load_config()
         .unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {
@@ -491,7 +501,8 @@ mod tests {
         )
         .load_config()
         .unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {
@@ -511,7 +522,8 @@ mod tests {
         )
         .load_config()
         .unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {
@@ -531,7 +543,8 @@ mod tests {
         )
         .load_config()
         .unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {
@@ -551,7 +564,8 @@ mod tests {
         )
         .load_config()
         .unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {
@@ -571,7 +585,8 @@ mod tests {
         )
         .load_config()
         .unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {
@@ -591,7 +606,8 @@ mod tests {
         )
         .load_config()
         .unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {
@@ -611,7 +627,8 @@ mod tests {
         )
         .load_config()
         .unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         assert_eq!(2, toks.len());
         match toks[0].tok {
@@ -635,7 +652,8 @@ mod tests {
         let module = &compiler.mods[0];
 
         let metadata = module.src_metadata.as_ref().unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
 
@@ -661,7 +679,8 @@ mod tests {
         let module = &compiler.mods[0];
 
         let metadata = module.src_metadata.as_ref().unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
 
@@ -691,7 +710,8 @@ mod tests {
         let module = &compiler.mods[0];
 
         let metadata = module.src_metadata.as_ref().unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
 
@@ -718,7 +738,8 @@ mod tests {
         let module = &compiler.mods[0];
 
         let metadata = module.src_metadata.as_ref().unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
 
@@ -747,7 +768,8 @@ mod tests {
         let module = &compiler.mods[0];
 
         let metadata = module.src_metadata.as_ref().unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
 
@@ -774,7 +796,8 @@ mod tests {
         let module = &compiler.mods[0];
 
         let metadata = module.src_metadata.as_ref().unwrap();
-        let toks = Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
+        let (toks, _) =
+            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
 
@@ -847,8 +870,12 @@ mod tests {
 
         for mod_idx in 0..compiler.mods.len() {
             let module = &compiler.mods[mod_idx];
-            let metadata = module.src_metadata.as_ref().unwrap();
-            let toks =
+            let metadata = match &module.src_metadata {
+                Some(m) => m,
+                None => continue,
+            };
+
+            let (toks, _) =
                 Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
 
             let ast_info = parser::parse(&settings, metadata, &toks, &mut interner).unwrap();
@@ -869,6 +896,12 @@ mod tests {
         let mut ty_ctx = TypeContext::new();
         for i in 0..compiler.mods.len() {
             let mod_id = ModuleId::new(i);
+            let metadata = &compiler.mods[mod_id.id].src_metadata;
+
+            if metadata.is_none() {
+                continue;
+            }
+
             TypeResolver::new(
                 &settings,
                 &asts[i],
@@ -924,7 +957,7 @@ mod tests {
     //
     //     for mod_idx in 0..compiler.mods.len() {
     //         let module = &compiler.mods[mod_idx];
-    //         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //         let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //             .tokenize(&mut interner);
     //
     //         let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
@@ -1008,7 +1041,7 @@ mod tests {
     //
     //         for mod_idx in 0..compiler.mods.len() {
     //             let module = &compiler.mods[mod_idx];
-    //             let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //             let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //                 .tokenize(&mut interner);
     //
     //             let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
@@ -1079,7 +1112,7 @@ mod tests {
     //
     //         for mod_idx in 0..compiler.mods.len() {
     //             let module = &compiler.mods[mod_idx];
-    //             let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //             let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //                 .tokenize(&mut interner);
     //
     //             let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
@@ -1121,7 +1154,7 @@ mod tests {
     //
     //         let module = &compiler.mods[0];
     //
-    //         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //         let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //             .tokenize(&mut interner);
     //
     //         let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
@@ -1152,7 +1185,7 @@ mod tests {
     //
     //         let module = &compiler.mods[0];
     //
-    //         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //         let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //             .tokenize(&mut interner);
     //
     //         let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
@@ -1184,7 +1217,7 @@ mod tests {
     //
     //         let module = &compiler.mods[0];
     //
-    //         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //         let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //             .tokenize(&mut interner);
     //
     //         let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
@@ -1227,7 +1260,7 @@ mod tests {
     //         //
     //         // let module = &compiler.mods[0];
     //         //
-    //         // let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //         // let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //         //     .tokenize(&mut interner);
     //         //
     //         // let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
@@ -1273,7 +1306,7 @@ mod tests {
     //         //
     //         // let module = &compiler.mods[0];
     //         //
-    //         // let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //         // let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //         //     .tokenize(&mut interner);
     //         //
     //         // let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
@@ -1314,7 +1347,7 @@ mod tests {
     //
     //         let module = &compiler.mods[0];
     //
-    //         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //         let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //             .tokenize(&mut interner);
     //
     //         let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
@@ -1349,7 +1382,7 @@ mod tests {
     //
     //         let module = &compiler.mods[0];
     //
-    //         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //         let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //             .tokenize(&mut interner);
     //
     //         let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
@@ -1387,7 +1420,7 @@ mod tests {
     //
     //         let module = &compiler.mods[0];
     //
-    //         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //         let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //             .tokenize(&mut interner);
     //
     //         let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
@@ -1424,7 +1457,7 @@ mod tests {
     //
     //         let module = &compiler.mods[0];
     //
-    //         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //         let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //             .tokenize(&mut interner);
     //
     //         let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
@@ -1464,7 +1497,7 @@ mod tests {
     //
     //         let module = &compiler.mods[0];
     //
-    //         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //         let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //             .tokenize(&mut interner);
     //
     //         let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
@@ -1523,7 +1556,7 @@ mod tests {
     //
     //         let module = &compiler.mods[0];
     //
-    //         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //         let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //             .tokenize(&mut interner);
     //
     //         let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
@@ -1580,7 +1613,7 @@ mod tests {
     //
     //         let module = &compiler.mods[0];
     //
-    //         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //         let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //             .tokenize(&mut interner);
     //
     //         let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
@@ -1635,7 +1668,7 @@ mod tests {
     //
     //         let module = &compiler.mods[0];
     //
-    //         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //         let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //             .tokenize(&mut interner);
     //
     //         let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
@@ -1686,7 +1719,7 @@ mod tests {
     //
     //         let module = &compiler.mods[0];
     //
-    //         let toks = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
+    //         let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //             .tokenize(&mut interner);
     //
     //         let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();

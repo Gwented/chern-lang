@@ -1,0 +1,15 @@
+@def
+// Hello I am a comment
+
+let number=4
+
+
+@end
+
+let b = 3
+
+var->
+nest->
+struct Person {
+name:str
+         age:    u8}

@@ -32,7 +32,6 @@ pub struct ChrnConfigLoader<'a, R: Read> {
 //NOTE: This forces paths to be given, but if the chern file itself doesn't have a path given
 //then the language doesn't work anyways. May leave as is.
 impl<R: Read> ChrnConfigLoader<'_, R> {
-    // FIX: Rename to "with_path" after un-commenting the wall of tests
     /// Uses `PathId` for error location reporting purposes
     pub fn new<'a>(
         path_id: PathId,

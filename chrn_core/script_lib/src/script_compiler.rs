@@ -309,6 +309,7 @@ impl ScriptCompiler {
         scope_id
     }
 
+    //TODO: Remove then change lsp to use lookups accordingly
     /// Checks if the name id corresponds to a `SymbolId` within the given `ScopeType` within the
     /// owner module. Returns `Some` `SymbolId` if a symbol was found. Returns None if
     /// no accessible scopes contain the given `NameId`.

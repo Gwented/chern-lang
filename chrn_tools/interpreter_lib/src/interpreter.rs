@@ -38,7 +38,7 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
             None => continue,
         };
 
-        let toks = script_lib::lexer::Lexer::new(&metadata.src_bytes, metadata.script_start)
+        let (toks, _) = script_lib::lexer::Lexer::new(&metadata.src_bytes, metadata.script_start)
             .tokenize(&mut interner);
 
         let ast_info = match script_lib::parser::parse(settings, &metadata, &toks, &mut interner) {
@@ -92,7 +92,7 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
         return Err(ScriptError::Semantic(reporter.diags).into());
     }
 
-    todo!("No constraints");
+    // todo!("No constraints");
 
     // For ensuring a stateful piece of context is retained for resolving all module variables.
     // This is not a value resolver

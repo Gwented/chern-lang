@@ -966,7 +966,7 @@ impl LanguageServer for Backend {
             ("false", CompletionItemKind::CONSTANT),
             ("#warn", CompletionItemKind::VALUE),
             ("#bin", CompletionItemKind::VALUE),
-            ("#octo", CompletionItemKind::VALUE),
+            ("#octal", CompletionItemKind::VALUE),
             ("#scient", CompletionItemKind::VALUE),
             ("#hex", CompletionItemKind::VALUE),
             ("#ignore", CompletionItemKind::VALUE),

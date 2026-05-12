@@ -136,6 +136,7 @@ impl TypeResolver<'_> {
                 }
 
                 pending_sym.is_resolved = true;
+                // May be able to remove this
                 self.ty_ctx.needs_check = true;
             }
 
@@ -1351,11 +1352,12 @@ impl TypeResolver<'_> {
                                 let name = self.interner.search(symbol.name_id.id as usize);
                                 let msg = format!("The symbol `{name}` is private");
 
+                                let mod_origin = &self.compiler.mods[self.current_mod.id];
                                 self.reporter.report_spanned(
                                     &msg,
                                     None,
                                     &[spanned_expr.span],
-                                    &extern_mod
+                                    &mod_origin
                                         .src_metadata
                                         .as_ref()
                                         .expect("core should not be resolved"),
@@ -1428,7 +1430,7 @@ impl TypeResolver<'_> {
                             // form at all state why a symbol that exists wasn't seen
                             // Find similar symbols
                             let msg = format!(
-                                "Could not find the symbol `{}` inside module `{}` as a value, type, alias, or function",
+                                "Could not find the symbol `{}` inside module `{}` as a value",
                                 self.interner.search(abs_member_access.field.id as usize),
                                 self.interner.search(extern_mod.name_id.id as usize)
                             );
@@ -1600,7 +1602,8 @@ impl TypeResolver<'_> {
             // In:
             // ```
             // let a = b
-            // let b = a
+            // let b = c
+            // let c = b
             // ```
             // Within b, it checks of the symbol a is inside of `TypeContext`, and
             // if that a depends on symbol b
@@ -1845,7 +1848,6 @@ impl TypeResolver<'_> {
                     }
                 }
             }
-            // FIX: REMOVE THIS
             TypeExpr::Path(spanned_ty_exprs) => {
                 // The parser disallows < 2 type pathing to actually exist so indexing should be
                 // safe here

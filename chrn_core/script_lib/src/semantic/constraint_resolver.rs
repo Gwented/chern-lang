@@ -1,7 +1,5 @@
 pub mod value_context;
 
-use std::collections::VecDeque;
-
 use chrn_utils::{
     builtins::BuiltinType,
     id_types::{AstId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
@@ -18,7 +16,6 @@ use common::{
 };
 
 use crate::{
-    conditions::Cond,
     modules::Module,
     parser::ast::{
         AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Expr,
@@ -77,9 +74,13 @@ impl<'a> ConstraintResolver<'a> {
 
             match item {
                 Item::TypeDef(abs_typedef) => {
-                    _ = self.resolve_typedef(abs_typedef, ast_id);
-                    for err in &self.reporter.err_vec {
-                        println!("{}", err.fmtted_diag);
+                    let res = self.resolve_typedef(abs_typedef, ast_id);
+                    if res.is_err() {
+                        for err in &self.reporter.err_vec {
+                            println!("{}", err.fmtted_diag);
+                        }
+                    } else {
+                        dbg!(&self.compiler.types);
                     }
                     todo!("hi");
                 }
@@ -256,6 +257,7 @@ impl<'a> ConstraintResolver<'a> {
     //     todo!();
     // }
     //
+    //TODO: Needs to check validate conditions and arguments
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
         // First borrow starts here
         let scope_id = self
@@ -265,8 +267,6 @@ impl<'a> ConstraintResolver<'a> {
         let sym_id = table.ast_to_sym[&ast_id];
 
         let type_def = self.compiler.get_typedef(sym_id);
-        dbg!(type_def);
-        panic!();
 
         // Checking if condition is valid for the given type
         // Using the Ast node's condition so that the span information is not lost
@@ -506,6 +506,7 @@ impl<'a> ConstraintResolver<'a> {
         &self,
         type_id: TypeId,
         module: &Module,
+        // active_span: Span,
         spanned_arg: &SpannedInnerArgs,
         visited: &mut Vec<TypeId>,
     ) -> Result<(), SemanticError> {

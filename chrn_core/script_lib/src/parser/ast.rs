@@ -59,11 +59,15 @@ impl AstInfo {
         }
     }
 
+    pub fn sections(&self) -> &[Option<Section>] {
+        &self.sections
+    }
+
     pub fn items(&self) -> &Vec<Item> {
         &self.items
     }
 
-    pub(crate) fn get_typedef(&self, ast_id: AstId) -> &AbstractTypeDef {
+    pub fn get_typedef(&self, ast_id: AstId) -> &AbstractTypeDef {
         match &self.items[ast_id.id as usize] {
             item => match item {
                 Item::TypeDef(abs_typedef) => abs_typedef,

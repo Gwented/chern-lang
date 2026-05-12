@@ -17,12 +17,10 @@ use crate::{
     token::{self, SpannedToken, Token, TokenKind},
 };
 
-//NOTE: C_ == current. A_ == ahead
+// C_ == current. A_ == ahead
 
 // ALL SET LOGIC AND PARSE LOGIC NEED TO WORK WITH EACH OTHER
-// TODO:  Readjust Sets for new behavior
-
-//FIX: Find out what to do with this
+//TODO: Most optimal solution for this is to act off of only section context, so not as granular
 
 //NOTE: The basic exit sets should ONLY have tokens that will ALWAYS be stopped on.
 const C_BASE_EXIT_SET: u64 = token::EOF | token::ILLEGAL | token::KEYWORD;
@@ -42,7 +40,7 @@ const A_BRANCH_TYPE_SET: u64 = A_BASE_EXIT_SET | token::COLON;
 const C_BRANCH_COND_SET: u64 = C_BASE_EXIT_SET | token::HASH_SYMBOL | token::C_CURLY_BRACKET;
 const A_BRANCH_COND_SET: u64 = A_BASE_EXIT_SET | token::COLON;
 
-const C_BRANCH_TYPE_ARGS_SET: u64 = C_BASE_EXIT_SET | token::HASH_SYMBOL | token::C_CURLY_BRACKET;
+const C_BRANCH_TYPE_ARGS_SET: u64 = C_BASE_EXIT_SET | token::HASH_SYMBOL;
 const A_BRANCH_TYPE_ARGS_SET: u64 = A_BASE_EXIT_SET | token::COLON;
 
 //TODO: Find out what tuning works best for these if they are going to stay.
@@ -653,9 +651,11 @@ impl<'a> Context<'a> {
             .unwrap_or(SpannedToken {
                 tok: Token::EOF,
                 span: Span::new(self.pos, self.pos),
+                leading_trivia_indices: Span::new(self.pos, self.pos),
             })
     }
 
+    //FIX: I don't like these defaults
     pub(super) fn peek_behind(&self, dest: usize) -> SpannedToken {
         self.toks
             .get(self.pos - dest)
@@ -663,6 +663,7 @@ impl<'a> Context<'a> {
             .unwrap_or(SpannedToken {
                 tok: Token::EOF,
                 span: Span::new(self.pos, self.pos),
+                leading_trivia_indices: Span::new(self.pos, self.pos),
             })
     }
 

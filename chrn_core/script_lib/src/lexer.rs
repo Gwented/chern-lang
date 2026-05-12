@@ -1,10 +1,15 @@
+//TODO: Maybe actually make the spans inclusive inclusive so that + 1 is not needed later
+//and - 1 is not needed now
 use chrn_utils::{
     intern::{self, Intern},
     keywords::{self, Keyword},
 };
 use common::span::Span;
 
-use crate::token::{Notation, SpannedToken, Token};
+use crate::{
+    token::{Notation, SpannedToken, Token},
+    trivia::{Trivia, TriviaKind},
+};
 
 const MAX_ILLEGAL_TOKS: u8 = 5;
 
@@ -12,14 +17,19 @@ const MAX_ILLEGAL_TOKS: u8 = 5;
 const NOTATION_FLOAT: u8 = 1 << 0;
 const NOTATION_HEX: u8 = 1 << 1;
 const NOTATION_BIN: u8 = 1 << 2;
-const NOTATION_OCTO: u8 = 1 << 3;
+const NOTATION_OCTAL: u8 = 1 << 3;
 
 pub struct Lexer<'a> {
     src_bytes: &'a [u8],
     pos: usize,
+    trivia: Vec<Trivia>,
+    trivia_start_idx: usize,
+    trivia_end_idx: usize,
 }
 
 impl Lexer<'_> {
+    /// Returns lexed tokens using a tuple with the tokens lexed, along with the trivia if needed
+    /// for tooling
     // WARN: The file is fully dependent on being able to lex from a certain point so the @ confirmation
     // here should MAYBE be removed
     pub fn new(src: &[u8], script_start: usize) -> Lexer<'_> {
@@ -27,10 +37,13 @@ impl Lexer<'_> {
             src_bytes: src,
             // Not even going to acknowledge what was here before
             pos: script_start,
+            trivia: Vec::new(),
+            trivia_start_idx: 0,
+            trivia_end_idx: 0,
         }
     }
 
-    pub fn tokenize(&mut self, interner: &mut Intern) -> Vec<SpannedToken> {
+    pub fn tokenize(&mut self, interner: &mut Intern) -> (Vec<SpannedToken>, Vec<Trivia>) {
         let mut toks: Vec<SpannedToken> = Vec::new();
 
         // For threshold of illegal tokens before just giving up
@@ -40,12 +53,13 @@ impl Lexer<'_> {
         // let mut in_def = false;
 
         loop {
-            self.skip_whitespace();
+            self.handle_trivia();
 
             if self.peek() == b'\0' || illegal_toks > MAX_ILLEGAL_TOKS {
                 toks.push(SpannedToken {
                     tok: Token::EOF,
                     span: Span::new(self.pos, self.pos),
+                    leading_trivia_indices: Span::new(self.trivia_start_idx, self.trivia_end_idx),
                 });
 
                 break;
@@ -77,12 +91,20 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok,
                         span: Span::new(start, end),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
                 }
                 '(' => {
                     toks.push(SpannedToken {
                         tok: Token::OParen,
                         span: Span::new(self.pos, self.pos),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
 
                     self.advance();
@@ -91,6 +113,10 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok: Token::CParen,
                         span: Span::new(self.pos, self.pos),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
 
                     self.advance();
@@ -112,6 +138,10 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok,
                         span: Span::new(start, end),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
                 }
                 '>' => {
@@ -131,12 +161,20 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok,
                         span: Span::new(start, end),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
                 }
                 '[' => {
                     toks.push(SpannedToken {
                         tok: Token::OBracket,
                         span: Span::new(self.pos, self.pos),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
 
                     self.advance();
@@ -145,6 +183,10 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok: Token::CBracket,
                         span: Span::new(self.pos, self.pos),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
 
                     self.advance();
@@ -153,6 +195,10 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok: Token::OCurlyBracket,
                         span: Span::new(self.pos, self.pos),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
 
                     self.advance();
@@ -161,6 +207,10 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok: Token::CCurlyBracket,
                         span: Span::new(self.pos, self.pos),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
 
                     self.advance();
@@ -169,6 +219,10 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok: Token::Comma,
                         span: Span::new(self.pos, self.pos),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
 
                     self.advance();
@@ -180,6 +234,10 @@ impl Lexer<'_> {
                         toks.push(SpannedToken {
                             tok: Token::Def,
                             span: Span::new(self.pos, self.pos + keywords::DEFINITION_SIZE - 1),
+                            leading_trivia_indices: Span::new(
+                                self.trivia_start_idx,
+                                self.trivia_end_idx,
+                            ),
                         });
 
                         self.skip(keywords::DEFINITION_SIZE);
@@ -189,6 +247,10 @@ impl Lexer<'_> {
                         toks.push(SpannedToken {
                             tok: Token::End,
                             span: Span::new(self.pos, self.pos + keywords::DEFINITION_SIZE),
+                            leading_trivia_indices: Span::new(
+                                self.trivia_start_idx,
+                                self.trivia_end_idx,
+                            ),
                         });
 
                         // start_offset = self.pos + DEFINITION_SIZE;
@@ -197,6 +259,10 @@ impl Lexer<'_> {
                         toks.push(SpannedToken {
                             tok: Token::At,
                             span: Span::new(self.pos, self.pos),
+                            leading_trivia_indices: Span::new(
+                                self.trivia_start_idx,
+                                self.trivia_end_idx,
+                            ),
                         });
 
                         self.advance();
@@ -219,12 +285,20 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok,
                         span: Span::new(start, end),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     })
                 }
                 '#' => {
                     toks.push(SpannedToken {
                         tok: Token::HashSymbol,
                         span: Span::new(self.pos, self.pos),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
 
                     self.advance();
@@ -246,6 +320,10 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok,
                         span: Span::new(start, end),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
                 }
                 '|' => {
@@ -266,6 +344,10 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok,
                         span: Span::new(start, end),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
                 }
                 '"' => {
@@ -280,6 +362,10 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok: Token::Plus,
                         span: Span::new(self.pos, self.pos),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
 
                     self.advance();
@@ -298,6 +384,10 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok: token,
                         span: Span::new(start, end),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
 
                     self.advance();
@@ -306,25 +396,34 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok: Token::Asterisk,
                         span: Span::new(self.pos, self.pos),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
 
                     self.advance();
                 }
+                // Trivia handles comment possbibilites
                 '/' => {
-                    if self.peek_ahead(1) == b'/' {
-                        self.skip(2);
-                        self.handle_comment();
-                    } else if self.peek_ahead(1) == b'*' {
-                        self.skip(2);
-                        self.handle_multi_comment();
-                    } else {
-                        toks.push(SpannedToken {
-                            tok: Token::Slash,
-                            span: Span::new(self.pos, self.pos),
-                        });
+                    // if self.peek_ahead(1) == b'/' {
+                    //     self.skip(2);
+                    //     self.handle_comment();
+                    // } else if self.peek_ahead(1) == b'*' {
+                    //     self.skip(2);
+                    //     self.handle_multi_comment();
+                    // } else {
+                    toks.push(SpannedToken {
+                        tok: Token::Slash,
+                        span: Span::new(self.pos, self.pos),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
+                    });
 
-                        self.advance();
-                    }
+                    self.advance();
+                    // }
                 }
                 '=' => {
                     let (start, mut end) = (self.pos, self.pos);
@@ -340,6 +439,10 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok,
                         span: Span::new(start, end),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
 
                     self.advance();
@@ -348,6 +451,10 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok: Token::Tilde,
                         span: Span::new(self.pos, self.pos),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
 
                     self.advance();
@@ -356,6 +463,10 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok: Token::ExclamationPoint,
                         span: Span::new(self.pos, self.pos),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
 
                     self.advance();
@@ -364,6 +475,10 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok: Token::QuestionMark,
                         span: Span::new(self.pos, self.pos),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
 
                     self.advance();
@@ -372,6 +487,10 @@ impl Lexer<'_> {
                     toks.push(SpannedToken {
                         tok: Token::Percent,
                         span: Span::new(self.pos, self.pos),
+                        leading_trivia_indices: Span::new(
+                            self.trivia_start_idx,
+                            self.trivia_end_idx,
+                        ),
                     });
 
                     self.advance();
@@ -388,6 +507,10 @@ impl Lexer<'_> {
                         toks.push(SpannedToken {
                             tok: Token::EOF,
                             span: Span::new(self.pos, self.pos),
+                            leading_trivia_indices: Span::new(
+                                self.trivia_start_idx,
+                                self.trivia_end_idx,
+                            ),
                         });
 
                         break;
@@ -396,7 +519,9 @@ impl Lexer<'_> {
             }
         }
 
-        toks
+        let mut trivia: Vec<Trivia> = Vec::new();
+        trivia.append(&mut self.trivia);
+        (toks, trivia)
     }
 
     fn read_id(&mut self, interner: &mut Intern) -> SpannedToken {
@@ -433,11 +558,13 @@ impl Lexer<'_> {
             return SpannedToken {
                 tok: Token::BoolLiteral(true),
                 span,
+                leading_trivia_indices: Span::new(self.trivia_start_idx, self.trivia_end_idx),
             };
         } else if id == intern::INTERNED_FALSE && !is_escaped {
             return SpannedToken {
                 tok: Token::BoolLiteral(false),
                 span,
+                leading_trivia_indices: Span::new(self.trivia_start_idx, self.trivia_end_idx),
             };
         }
 
@@ -445,10 +572,12 @@ impl Lexer<'_> {
             Some(kw) if !is_escaped => SpannedToken {
                 tok: Token::Keyword(kw),
                 span,
+                leading_trivia_indices: Span::new(self.trivia_start_idx, self.trivia_end_idx),
             },
             _ => SpannedToken {
                 tok: Token::Id(id),
                 span,
+                leading_trivia_indices: Span::new(self.trivia_start_idx, self.trivia_end_idx),
             },
         }
     }
@@ -468,7 +597,7 @@ impl Lexer<'_> {
             notation |= NOTATION_BIN;
             self.skip(2);
         } else if self.peek() == b'0' && self.peek_ahead(1) == b'o' {
-            notation |= NOTATION_OCTO;
+            notation |= NOTATION_OCTAL;
             self.skip(2);
         }
 
@@ -480,14 +609,14 @@ impl Lexer<'_> {
                 b'0' | b'1' if (notation & NOTATION_BIN) != 0 => {
                     self.advance();
                 }
-                b'0'..=b'7' if (notation & NOTATION_OCTO) != 0 => {
+                b'0'..=b'7' if (notation & NOTATION_OCTAL) != 0 => {
                     self.advance();
                 }
                 b'0'..=b'9' => {
                     self.advance();
                 }
                 // May remove '+' being usable
-                b'e' if (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCTO)) == 0 => {
+                b'e' if (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCTAL)) == 0 => {
                     let next = self.peek_ahead(1);
 
                     if (next == b'+' || next == b'-') && self.peek_ahead(2).is_ascii_digit() {
@@ -501,7 +630,7 @@ impl Lexer<'_> {
                     }
                 }
                 b'.' if (notation & NOTATION_FLOAT) == 0
-                    && (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCTO)) == 0
+                    && (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCTAL)) == 0
                     && self.peek_ahead(1) != b'.'
                     // Maybe this will be possible, but it looks weird.
                     && self.peek_ahead(1).is_ascii_digit() =>
@@ -528,12 +657,13 @@ impl Lexer<'_> {
                 return SpannedToken {
                     tok: Token::Illegal(msg_id),
                     span: Span::new(start, end),
+                    leading_trivia_indices: Span::new(self.trivia_start_idx, self.trivia_end_idx),
                 };
             }
         };
 
         let (id_str, num_notation) =
-            if (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCTO)) != 0 {
+            if (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCTAL)) != 0 {
                 let digits_start = if raw_str.len() > 2 { 2 } else { 0 };
                 let digits = &raw_str[digits_start..].replace('_', "");
 
@@ -558,11 +688,13 @@ impl Lexer<'_> {
                 tok: Token::Integer(id, num_notation),
                 // NOTE: Same read_id reasoning
                 span: Span::new(start, end - 1),
+                leading_trivia_indices: Span::new(self.trivia_start_idx, self.trivia_end_idx),
             }
         } else {
             SpannedToken {
                 tok: Token::Float(id, num_notation),
                 span: Span::new(start, end - 1),
+                leading_trivia_indices: Span::new(self.trivia_start_idx, self.trivia_end_idx),
             }
         }
     }
@@ -604,6 +736,7 @@ impl Lexer<'_> {
                 SpannedToken {
                     tok: Token::Str(path_id),
                     span: Span::new(start - 1, end),
+                    leading_trivia_indices: Span::new(self.trivia_start_idx, self.trivia_end_idx),
                 }
             }
             Err(_) => {
@@ -612,6 +745,7 @@ impl Lexer<'_> {
                 SpannedToken {
                     tok: Token::Illegal(msg_id),
                     span: Span::new(start - 1, end),
+                    leading_trivia_indices: Span::new(self.trivia_start_idx, self.trivia_end_idx),
                 }
             }
         }
@@ -666,12 +800,14 @@ impl Lexer<'_> {
             Some(ch) => SpannedToken {
                 tok: Token::Char(ch),
                 span: Span::new(start - 1, end),
+                leading_trivia_indices: Span::new(self.trivia_start_idx, self.trivia_end_idx),
             },
             None => {
                 let id = interner.intern("empty character literal");
                 SpannedToken {
                     tok: Token::Illegal(id),
                     span: Span::new(start - 1, end),
+                    leading_trivia_indices: Span::new(self.trivia_start_idx, self.trivia_end_idx),
                 }
             }
         }
@@ -792,6 +928,7 @@ impl Lexer<'_> {
             tok: Token::Illegal(id),
             // Same offset reason as all other spans
             span: Span::new(start, end - 1),
+            leading_trivia_indices: Span::new(self.trivia_start_idx, self.trivia_end_idx),
         }
     }
 
@@ -867,12 +1004,77 @@ impl Lexer<'_> {
         ch
     }
 
+    // Possibility that spans are inclusive exclusive, not inclusive inclusive, so....um..
+    fn handle_trivia(&mut self) {
+        self.trivia_start_idx = self.trivia.len();
+        loop {
+            let trivia_start = self.pos;
+            match self.peek_char() {
+                c if !c.is_control() && c.is_whitespace() => {
+                    self.skip_whitespace();
+                    let trivia_end = self.pos - 1;
+
+                    self.trivia.push(Trivia::new(
+                        TriviaKind::Whitespace,
+                        Span::new(trivia_start, trivia_end),
+                    ));
+                }
+                '/' => {
+                    if self.peek_ahead(1) == b'/' {
+                        self.skip(2);
+                        self.handle_comment();
+                        // THIS IS REAL
+                        // Maintining inclusive exclusive spans
+                        let trivia_end = self.pos - 1;
+
+                        self.trivia.push(Trivia::new(
+                            TriviaKind::SingleComment,
+                            Span::new(trivia_start, trivia_end),
+                        ));
+                    } else if self.peek_ahead(1) == b'*' {
+                        self.skip(2);
+                        self.handle_multi_comment();
+                        let trivia_end = self.pos - 1;
+
+                        self.trivia.push(Trivia::new(
+                            TriviaKind::MultiComment,
+                            Span::new(trivia_start, trivia_end),
+                        ));
+                    } else {
+                        break;
+                    }
+                }
+                '\n' => {
+                    let trivia_end = self.pos;
+                    self.trivia.push(Trivia::new(
+                        TriviaKind::NewLine,
+                        Span::new(trivia_start, trivia_end),
+                    ));
+
+                    self.advance();
+                }
+                '\t' => {
+                    let trivia_end = self.pos;
+                    self.trivia.push(Trivia::new(
+                        TriviaKind::Tab,
+                        Span::new(trivia_start, trivia_end),
+                    ));
+
+                    self.advance();
+                }
+                _ => break,
+            }
+        }
+
+        self.trivia_end_idx = self.trivia.len();
+    }
+
     fn skip_whitespace(&mut self) {
-        while self.peek().is_ascii_whitespace() {
+        while !self.peek().is_ascii_control() && self.peek().is_ascii_whitespace() {
             self.advance();
         }
 
-        while self.peek_char().is_whitespace() {
+        while !self.peek_char().is_control() && self.peek_char().is_whitespace() {
             self.advance_char();
         }
     }

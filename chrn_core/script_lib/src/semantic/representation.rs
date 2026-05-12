@@ -234,6 +234,7 @@ pub struct VariantRepre {
     // Because enum types are nullable
     pub type_id: Option<TypeId>,
     // Points to variant within original Ast enum
+    // Also, more so a "FieldId"
     pub ast_id: AstId,
     pub args: Vec<InnerArgs>,
     pub conds: Vec<ExprId>,
@@ -251,10 +252,11 @@ impl VariantRepre {
     }
 }
 
+/// Typedefs are: "var-> name: str" meaning the typedef type has types so it has a type id
 #[derive(Debug)]
 pub struct TypeDef {
-    // Typedefs are: "var-> name: str" meaning the typedef type has types so it has a type id
-    sym_id: SymbolId,
+    pub sym_id: SymbolId,
+    /// Represents the str in "var-> name: str"
     pub type_id: TypeId,
     pub conds: Vec<ExprId>,
     pub args: Vec<InnerArgs>,

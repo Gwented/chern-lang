@@ -20,6 +20,9 @@ pub enum Notation {
 pub struct SpannedToken {
     pub tok: Token,
     pub span: Span,
+    /// A span that correlates to the trivia vector created by the lexer
+    /// This corresponds to owned indices of the token, not the source file's bytes.
+    pub leading_trivia_indices: Span,
 }
 
 // WHAT

@@ -4,7 +4,7 @@ use common::fmter::{Formattable, Formatted};
 
 use crate::intern;
 
-/// Known size in bytes for `@def` and `@end`
+/// Size in bytes for `@def` and `@end`
 pub const DEFINITION_SIZE: usize = 4;
 
 /// All keywords for `chrn`
@@ -115,11 +115,6 @@ pub const SECT_END: u32 = 12;
 //WARN: The amount of casting here is painful. SEVERELY painful.
 pub fn is_kw(id: u32) -> bool {
     id < KEYWORDS_ARRAY.len() as u32
-}
-
-/// Ensure this aligns with the actual id of export
-pub fn is_export(id: u32) -> bool {
-    id == 4
 }
 
 pub fn is_sect(id: u32) -> bool {

@@ -538,10 +538,6 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
 
             let struct_name = interner.search(plain_id as usize);
 
-            //FIXME: THIS SHOULD WARN OR SOMETHING OF THAT SORT
-            //BUG:
-            //FIX:
-
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
                 &format!("Expected a '{{' to define struct `{struct_name}`, found "),
@@ -1068,54 +1064,6 @@ fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedType
     Ok(args)
 }
 
-// //TEST:
-// fn parse_tuple(ctx: &mut Context, interner: &Intern) -> Result<TypeExpr, Token> {
-//     let start = ctx.peek_span().start;
-//
-//     ctx.expect_verbose(
-//         TokenKind::OParen,
-//         "Expected a '(' to declare tuple, found ",
-//         "",
-//         Branch::VarType,
-//         interner,
-//     )?;
-//
-//     let mut tuple: Vec<TypeExpr> = Vec::new();
-//
-//     while ctx.peek_kind() == TokenKind::Id {
-//         let ty = parse_type(ctx, interner)?;
-//         tuple.push(ty);
-//
-//         if ctx.peek_kind() == TokenKind::CParen {
-//             break;
-//         }
-//
-//         ctx.expect_verbose(
-//             TokenKind::Comma,
-//             "Expected a ',' or ')' after type, found ",
-//             "",
-//             Branch::NestEnum,
-//             interner,
-//         )?;
-//     }
-//
-//     let end = ctx.peek_span().end;
-//     // The loop could never run so expecting is needed
-//     ctx.expect_verbose(
-//         TokenKind::CParen,
-//         "Expected a ',' or ')' after type, found ",
-//         "",
-//         Branch::NestEnum,
-//         interner,
-//     )?;
-//
-//     let span = Span::new(start, end);
-//
-//     let tuple = TypeExpr::Tuple(tuple, span);
-//
-//     Ok(tuple)
-// }
-
 fn handle_struct_fields(
     ctx: &mut Context,
     struct_name: &str,
@@ -1124,13 +1072,12 @@ fn handle_struct_fields(
     let mut fields: Vec<AbstractTypeDef> = Vec::new();
 
     //WARN: Suspicious loop
-    while ctx.peek_kind() == TokenKind::Id {
+    while ctx.peek_tok() != Token::CCurlyBracket {
         let ty = parse_var_sect(ctx, interner)?;
         fields.push(ty);
 
-        // A little too suspicious
-        if ctx.peek_kind() == TokenKind::Comma {
-            ctx.advance_tok();
+        if ctx.peek_tok() == Token::CCurlyBracket {
+            break;
         }
     }
 
@@ -1154,11 +1101,11 @@ fn handle_enum_variants(
     let mut variants: Vec<AbstractVariant> = Vec::new();
 
     //NOTE: ALSO SUSPICIOUS
-    while ctx.peek_kind() == TokenKind::Id {
+    while ctx.peek_tok() != Token::CCurlyBracket {
         let variant = parse_variant(ctx, interner)?;
         variants.push(variant);
 
-        if ctx.peek_kind() == TokenKind::CCurlyBracket {
+        if ctx.peek_tok() == Token::CCurlyBracket {
             break;
         }
 
@@ -1212,11 +1159,6 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
     } else {
         Ok(Vec::new())
     };
-
-    // Might expect..
-    if ctx.peek_kind() == TokenKind::Comma {
-        ctx.advance_tok();
-    }
 
     let conds = conds_res?;
     let args = args_res?;

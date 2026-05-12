@@ -1,5 +1,3 @@
-// I don't think it's in Go
-
 ## Language intent
 - This is a scripting language that has a serialized data representation paired with it that allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required in-line in a language. The scripting language can either use the keyword `bind` to tell the interpreter where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
 
@@ -201,7 +199,7 @@ Very descriptive!
 
 `#ignore`: Ignores all errors for the type this is applied to for serialized data related errors.
 
-`#scient`, `#hex`, `#bin`, `#octo`: Numeric notations to output in serialized file.
+`#scient`, `#hex`, `#bin`, `#octal`: Numeric notations to output in serialized file.
 
 # DOES NOT EXIST
 `#unicode`:

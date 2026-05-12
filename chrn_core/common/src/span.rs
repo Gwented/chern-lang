@@ -21,6 +21,10 @@ impl Span {
         let end = self.end.max(other.end);
         Span::new(start, end)
     }
+
+    pub fn contains(&self, other: Span) -> bool {
+        self.start <= other.start && self.end >= other.end
+    }
 }
 
 /// Takes in an array of spans and merges all of them together. Expects that there is at least 1 span
