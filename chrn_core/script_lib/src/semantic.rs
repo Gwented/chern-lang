@@ -1,5 +1,5 @@
 pub mod constraint_resolver;
-mod constraints;
+pub mod constraints;
 mod error;
 mod evaluator;
 pub mod name_resolver;

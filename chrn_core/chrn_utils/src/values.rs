@@ -32,6 +32,7 @@ pub enum Value {
     F64(f64),
     Bool(bool),
     Char(char),
+    Func,
     Tuple(Vec<Value>),
     InternedStr(InternedId),
     RuntimeStr(String),
@@ -48,6 +49,7 @@ impl Value {
             Value::Tuple(_) => ValueKind::Tuple,
             Value::InternedStr(_) => ValueKind::InternedStr,
             Value::RuntimeStr(_) => ValueKind::RuntimeStr,
+            Value::Func => ValueKind::Func,
             Value::Unknown => ValueKind::Unknown,
         }
     }
@@ -67,6 +69,7 @@ pub enum ValueKind {
     I64,
     F64,
     Char,
+    Func,
     Bool,
     Tuple,
     InternedStr,
@@ -84,6 +87,7 @@ impl Formattable for ValueKind {
             ValueKind::Bool => Formatted::Bool,
             ValueKind::InternedStr | ValueKind::RuntimeStr => Formatted::Str,
             ValueKind::Unknown => Formatted::Unknown,
+            ValueKind::Func => Formatted::Func,
         }
     }
 }

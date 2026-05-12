@@ -55,21 +55,24 @@ impl<'a> SemanticReporter<'a> {
             }
             SemanticError::FuncConstraintMismatch(constraint, type_kind, func_kind, spans) => {
                 let msg = format!(
-                    "The type `{type_kind}` does not follow constraint `{constraint}` for function \"{func_kind}\""
+                    "The type `{type_kind}` does not follow constraint `{constraint}` for function \"{}\"",
+                    func_kind.to_fmt()
                 );
 
                 (msg, spans)
             }
             SemanticError::ArgMiscount(constraint, func_kind, count, spans) => {
-                let msg =
-                    format!("Expected `{constraint}` for function \"{func_kind}\", found {count}");
+                let msg = format!(
+                    "Expected `{constraint}` for function \"{}\", found {count}",
+                    func_kind.to_fmt()
+                );
 
                 (msg, spans)
             }
             SemanticError::CircularArg(arg, fmted_ty, spans) => {
                 let msg = format!(
                     // Suspicious error message
-                    "Cannot give type `{fmted_ty}` the argument \"#{arg}\" due to the circularly referenced type itself not supporting the argument"
+                    "Cannot give type `{fmted_ty}` the argument `#{arg}` due to the circularly referenced type itself not supporting the argument"
                 );
 
                 (msg, spans)

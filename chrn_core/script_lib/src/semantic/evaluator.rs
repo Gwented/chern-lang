@@ -15,6 +15,7 @@ pub fn is_compatible_unary(op: UnaryOp, operand: &Value) -> bool {
             | Value::Tuple(_)
             | Value::InternedStr(_)
             | Value::RuntimeStr(_)
+            | Value::Func
             | Value::Unknown => false,
         },
         UnaryOp::Negate => match operand {
@@ -73,7 +74,6 @@ pub fn is_compatible_binary(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
                 false
             }
         }
-        // Not right now
         Value::Char(_) => false,
         Value::InternedStr(_) => match op {
             BinaryOp::EqTo => match rhs {
@@ -92,10 +92,8 @@ pub fn is_compatible_binary(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
             // BinaryOp::LessOrEq => todo!(),
             _ => false,
         },
-        Value::Tuple(_) | Value::Unknown => false,
-        // Only semantic has access to these functions due a HIR being used for serial as opposed
-        // to Expr so this compile time step cannot touch runtime
-        Value::RuntimeStr(_) => unreachable!("Impossible at compile time"),
+        Value::Func | Value::Tuple(_) | Value::Unknown => false,
+        Value::RuntimeStr(_) => unreachable!("Impossible to reach at compile time"),
     }
 }
 
@@ -109,7 +107,8 @@ pub fn apply_unary_op(op: UnaryOp, operand: &Value) -> Result<Value, SemanticErr
             | Value::Tuple(_)
             | Value::InternedStr(_)
             | Value::RuntimeStr(_)
-            | Value::Unknown => unreachable!(),
+            | Value::Unknown
+            | Value::Func => unreachable!(),
         },
         UnaryOp::Negate => match operand {
             Value::I64(v) => Ok(Value::I64(-v)),
@@ -134,12 +133,12 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
                 Value::F64(rhs_inner) => Ok(Value::F64(lhs_inner + rhs_inner)),
                 _ => unreachable!(),
             },
-            // In case this is forgotten to be updated
             Value::Bool(_)
             | Value::Char(_)
             | Value::Tuple(_)
             | Value::InternedStr(_)
             | Value::RuntimeStr(_)
+            | Value::Func
             | Value::Unknown => unreachable!(),
         },
         BinaryOp::Sub => match lhs {

@@ -5,6 +5,7 @@ use chrn_utils::{
     builtins::{BuiltinType, BuiltinTypeKind},
     id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
     inner_args::InnerArgs,
+    values::ValueKind,
 };
 use common::{
     fmter::{Formattable, Formatted},
@@ -150,7 +151,6 @@ pub enum ExprHir {
     /// alias default(x) = [Equals(x = 3)]
     /// x = `SymbolId`, 5 = `ExprId`
     Default(SymbolId, ExprId),
-    // Call(),
     // MemberAccess(),
     // Um
     /// Caller, arguments
@@ -277,15 +277,15 @@ impl TypeDef {
 pub struct FuncDef {
     pub kind: FuncKind,
     pub constraints: Vec<ArgConstraint>,
-    pub args: Vec<ExprId>,
+    pub ret_type: ValueKind,
 }
 
 impl FuncDef {
-    pub fn new(kind: FuncKind, constraints: Vec<ArgConstraint>, args: Vec<ExprId>) -> FuncDef {
+    pub fn new(kind: FuncKind, constraints: Vec<ArgConstraint>, ret_type: ValueKind) -> FuncDef {
         FuncDef {
             kind,
             constraints,
-            args,
+            ret_type,
         }
     }
 }
@@ -347,12 +347,12 @@ pub(crate) enum PossibleMember {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FuncKind {
+    IsEmpty,
     Contains,
     Range,
     StartsW,
     EndsW, // UserDefined
     Equals,
-    UserDefined,
 }
 
 impl Formattable for FuncKind {
@@ -362,21 +362,8 @@ impl Formattable for FuncKind {
             FuncKind::Range => Formatted::FuncRange,
             FuncKind::StartsW => Formatted::FuncStartsW,
             FuncKind::EndsW => Formatted::FuncEndsW,
-            FuncKind::UserDefined => Formatted::UserFunc,
             FuncKind::Equals => Formatted::FuncEquals,
-        }
-    }
-}
-
-impl Display for FuncKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FuncKind::Contains => write!(f, "Contains"),
-            FuncKind::Range => write!(f, "Range"),
-            FuncKind::StartsW => write!(f, "StartsW"),
-            FuncKind::EndsW => write!(f, "EndsW"),
-            FuncKind::UserDefined => write!(f, "<Hi>"),
-            FuncKind::Equals => write!(f, "Equals"),
+            FuncKind::IsEmpty => Formatted::IsEmpty,
         }
     }
 }

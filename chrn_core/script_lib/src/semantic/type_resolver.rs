@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use chrn_utils::builtins::BuiltinTypeKind;
 use chrn_utils::id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId};
 use chrn_utils::intern;
-use chrn_utils::values::{Value, ValueInfo, ValueResult};
+use chrn_utils::values::{Value, ValueInfo, ValueKind, ValueResult};
 use chrn_utils::{builtins::BuiltinType, intern::Intern};
 use common::chrn_settings::ChrnSettings;
 use common::fmter::{Formattable, Formatted};
@@ -300,7 +300,7 @@ impl TypeResolver<'_> {
                     inner_val.const_val = const_val_opt;
                 }
                 // Uh is this possible
-                SymbolKind::Unknown => todo!("Hi unknowns"),
+                _ => unreachable!("The symbol is resolved already"),
             }
 
             if let Some(user) = root_expr.user {
@@ -1028,17 +1028,36 @@ impl TypeResolver<'_> {
                             let ty_info = &self.compiler.types[type_id.id as usize];
                             //TODO: Alias is being looked up and seen as a type, not a
                             //function-like entity
-                            // match &ty_info.ty {
-                            //     Type::BuiltinType(builtin_type) => {}
-                            //     Type::Struct(struct_def) => todo!(),
-                            //     Type::Enum(enum_def) => todo!(),
-                            //     Type::Func(func_def) => todo!(),
-                            //     Type::Alias(alias_def) => todo!(),
-                            //     Type::TypeDef(type_def) => todo!(),
-                            //     Type::Unknown => todo!(),
-                            // }
-                            let msg = "Cannot have a type within expressions".to_string();
-                            return Err(SemanticError::General(msg, vec![spanned_expr.span]));
+                            match &ty_info.ty {
+                                // I think this is ok?
+                                Type::Func(_) | Type::Alias(_) => {
+                                    let val_id = ValueId::new(self.compiler.values.len() as u32);
+                                    let val_info = ValueInfo::new(type_id, expr_id, None);
+
+                                    let expr_hir = ExprHir::Var(found_sym_id);
+
+                                    ResolvedExpr::new(
+                                        val_info.type_id,
+                                        expr_hir,
+                                        val_id,
+                                        spanned_expr.span,
+                                        Vec::new(),
+                                    )
+                                }
+                                // Some of these are unreachable
+                                Type::BuiltinType(_)
+                                | Type::Struct(_)
+                                | Type::Enum(_)
+                                | Type::TypeDef(_)
+                                | Type::Unknown => {
+                                    let msg = "Cannot have a type within expressions".to_string();
+
+                                    return Err(SemanticError::General(
+                                        msg,
+                                        vec![spanned_expr.span],
+                                    ));
+                                }
+                            }
                         }
                         SymbolKind::Val(val_id) => {
                             let val_info = &self.compiler.values[val_id.id as usize];
@@ -1305,8 +1324,8 @@ impl TypeResolver<'_> {
                 Ok(expr_id)
             }
             Expr::Call(caller, arg_exprs) => {
-                //FIX: Let alias get processed
                 let call_id = self.register_expr(parent_sym_id, caller, scope_type, seen)?;
+                let type_id = self.compiler.exprs[call_id.id as usize].type_id;
                 let mut call_args: Vec<ExprId> = Vec::new();
 
                 for sp_expr in arg_exprs {
@@ -1318,9 +1337,15 @@ impl TypeResolver<'_> {
                 let val_id = ValueId::new(self.compiler.values.len() as u32);
 
                 let expr_hir = ExprHir::Call(call_id, call_args);
-                // let resolved_expr = ResolvedExpr::new(type_id, expr_hir, val_id, span, inputs);
+                // Are the arguments inputs if they are the expression itself?
+                let resolved_expr =
+                    ResolvedExpr::new(type_id, expr_hir, val_id, spanned_expr.span, Vec::new());
+                let val_info = ValueInfo::new(type_id, expr_id, None);
 
-                todo!();
+                self.compiler.exprs.push(resolved_expr);
+                self.compiler.values.push(val_info);
+
+                Ok(expr_id)
             }
             // Maybe having "::" exist could help..
             // FIX: Could be an issue here regarding cycle detection
@@ -1436,7 +1461,7 @@ impl TypeResolver<'_> {
                             // form at all state why a symbol that exists wasn't seen
                             // Find similar symbols
                             let msg = format!(
-                                "Could not find the symbol `{}` inside module `{}` as a value",
+                                "Could not find the symbol `{}` inside module `{}` as a value, alias or function",
                                 self.interner.search(abs_member_access.field.id as usize),
                                 self.interner.search(extern_mod.name_id.id as usize)
                             );

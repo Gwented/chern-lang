@@ -62,15 +62,10 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
         asts.push(ast_info);
     }
 
-    if !reporter.diags.is_empty() {
-        return Err(ScriptError::Semantic(reporter.diags).into());
-    }
-
     //FIX: AstId position should be a direct tie, not sequential
     let mut ty_ctx = TypeContext::new();
     for i in 0..script_compiler.mods.len() {
-        let mod_id = ModuleId::new(i);
-        let module = &script_compiler.mods[mod_id.id];
+        let module = &script_compiler.mods[i];
         if module.src_metadata.is_none() {
             continue;
         }
@@ -79,7 +74,7 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
         TypeResolver::new(
             settings,
             &asts[i],
-            mod_id,
+            module.mod_id,
             &mut ty_ctx,
             &interner,
             &mut script_compiler,
@@ -88,29 +83,20 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
         .unwrap_or_else(|mut diags| reporter.diags.append(&mut diags));
     }
 
-    if !reporter.diags.is_empty() {
-        return Err(ScriptError::Semantic(reporter.diags).into());
-    }
-
-    dbg!(script_compiler);
-    todo!("No constraints");
-
-    // For ensuring a stateful piece of context is retained for resolving all module variables.
-    // This is not a value resolver
+    // Not sure if this is needed anymore
     let mut val_ctx = ValueContext::new();
 
     for i in 0..script_compiler.mods.len() {
-        let mod_id = ModuleId::new(i);
-        let module = &script_compiler.mods[mod_id.id];
+        let module = &script_compiler.mods[i];
         if module.src_metadata.is_none() {
             continue;
         }
 
         ConstraintResolver::new(
             settings,
-            &asts,
+            &asts[i],
             &interner,
-            mod_id,
+            module.mod_id,
             &mut val_ctx,
             &mut script_compiler,
         )
@@ -121,8 +107,6 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     if !reporter.diags.is_empty() {
         return Err(ScriptError::Semantic(reporter.diags).into());
     }
-
-    todo!("Out of constraitns");
 
     Ok(())
 }

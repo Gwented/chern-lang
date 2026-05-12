@@ -81,6 +81,7 @@ pub enum Formatted {
     False,
     IsEmpty,
     IsWhitespace,
+    Func,
     FuncRange,
     FuncStartsW,
     FuncEndsW,
@@ -88,7 +89,6 @@ pub enum Formatted {
     FuncEquals,
     ExclamationPoint,
     Cond,
-    UserFunc,
     // Hmm...
     Unknown,
 }
@@ -144,11 +144,10 @@ impl Display for Formatted {
             Formatted::FuncContains => write!(f, "Contains"),
             Formatted::FuncEquals => write!(f, "Equals"),
             Formatted::Cond => write!(f, "condition"),
-            Formatted::UserFunc => write!(f, "function"),
             Formatted::Unknown => write!(f, "Unknown"),
             Formatted::Tuple => write!(f, "Tuple"),
             Formatted::Self_ => write!(f, "self"),
-            Formatted::UnknownType => write!(f, "untyped"),
+            Formatted::UnknownType => write!(f, "UnknownType"),
             Formatted::As => write!(f, "as"),
             Formatted::True => write!(f, "true"),
             Formatted::False => write!(f, "false"),
@@ -172,6 +171,7 @@ impl Display for Formatted {
             Formatted::OpBitLeftShift => write!(f, "<<"),
             Formatted::OpBitXor => write!(f, "^"),
             Formatted::ExclamationPoint => write!(f, "!"),
+            Formatted::Func => write!(f, "function"),
         }
     }
 }

@@ -70,7 +70,7 @@ pub struct Intern {
     pos: usize,
 }
 
-pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_TUPLE + 1) as usize;
+pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_CORE + 1) as usize;
 
 impl Intern {
     /// Creates interner that pre-loads itself with all defined interned string literals.

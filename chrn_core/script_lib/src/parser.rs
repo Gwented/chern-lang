@@ -18,7 +18,7 @@ use chrn_utils::inner_args::{InnerArgs, SpannedInnerArgs};
 use chrn_utils::intern::Intern;
 use chrn_utils::keywords::Keyword;
 use common::chrn_settings::ChrnSettings;
-use common::fmter::Formatted;
+use common::fmter::{Formattable, Formatted};
 use common::reporter::diagnostic::Diagnostic;
 use common::span::Span;
 
@@ -298,13 +298,13 @@ pub fn parse(
                         _ = parse_override_sect(&mut ctx, interner);
                     }
                 }
-                id => {
+                kw => {
                     ctx.advance_tok();
 
-                    let name = interner.search(id as usize);
-                    let fmsg = format!("keyword `{name}`");
+                    let fmsg = format!("keyword `{}`", kw.to_fmt());
 
                     if state.is_neutral() {
+                        dbg!(ctx.peek_tok());
                         ctx.report_template(
                             "a statement or section",
                             &fmsg,
@@ -833,6 +833,10 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
                 Token::Illegal(id) => format!(
                     "Expected a valid expression, found illegal \"{}\"",
                     interner.search(id as usize)
+                ),
+                Token::Keyword(kw) => format!(
+                    "Expected a valid expression, found keyword `{}`",
+                    kw.to_fmt()
                 ),
                 _ => format!("Expected a valid expression, found \"{}\"", t.kind()),
             };

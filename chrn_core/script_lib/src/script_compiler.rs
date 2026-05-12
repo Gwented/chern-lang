@@ -4,15 +4,16 @@ use chrn_utils::{
     builtins::BuiltinType,
     id_types::{InternedId, ModuleId, ScopeId, SymbolId, TypeId},
     intern,
-    values::ValueInfo,
+    values::{ValueInfo, ValueKind},
 };
 
 use crate::{
     modules::{Bind, Module},
     semantic::{
+        constraints::ArgConstraint,
         representation::{
-            AliasDef, EnumDef, FuncDef, Param, ResolvedExpr, StructDef, Symbol, SymbolKind, Table,
-            Type, TypeDef, TypeInfo,
+            AliasDef, EnumDef, FuncDef, FuncKind, Param, ResolvedExpr, StructDef, Symbol,
+            SymbolKind, Table, Type, TypeDef, TypeInfo,
         },
         scopes::{Scope, ScopeInfo, ScopeType},
     },
@@ -37,6 +38,7 @@ pub struct ScriptCompiler {
     pub values: Vec<ValueInfo>,
     /// All expressions that were found
     pub exprs: Vec<ResolvedExpr>,
+    /// All symbols that were found
     pub symbols: Vec<Symbol>,
     ///
     pub scopes: Vec<ScopeInfo>,
@@ -272,7 +274,7 @@ impl ScriptCompiler {
     /// that means the parser itself already checked if it was legal grammar-wise.
     pub fn extract_scope_id(&self, scope_type: ScopeType, owner_id: ModuleId) -> ScopeId {
         self.find_scope(scope_type, owner_id)
-            .expect("Either semantic broke, parser broke, or modules broke")
+            .expect("Either misuage of function, semantic broke, parser broke, or modules broke")
             .scope
             .scope_id
     }
@@ -358,7 +360,7 @@ impl ScriptCompiler {
         let mut core_mod = Module::new(core_name, core_mod_id, Vec::new(), None);
 
         Self::load_core_types(compiler, &mut core_mod, &mut table);
-        // Self::load_core_funcs(compiler, &core_mod, &mut table);
+        Self::load_core_funcs(compiler, &core_mod, &mut table);
 
         // Done adding all of core
         let scope_id = ScopeId::new(compiler.scopes.len());
@@ -377,10 +379,57 @@ impl ScriptCompiler {
     }
 
     fn load_core_funcs(compiler: &mut ScriptCompiler, core_mod: &Module, table: &mut Table) {
+        let core_mod_id = core_mod.mod_id;
         // Functions aren't done yet
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        let func_def = FuncDef::new(
+            FuncKind::IsEmpty,
+            vec![ArgConstraint::ArgCount(1), ArgConstraint::MirroredType],
+            ValueKind::Bool,
+        );
+        compiler
+            .types
+            .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
+
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        // let func_def = FuncDef::new(kind, constraints, args);
-        todo!();
+        let interned_id = InternedId::new(intern::INTERNED_IS_EMPTY);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
+
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        let func_def = FuncDef::new(
+            FuncKind::Contains,
+            vec![ArgConstraint::ArgCount(1)],
+            ValueKind::Bool,
+        );
+        compiler
+            .types
+            .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_CONTAINS);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
     }
 
     fn load_core_types(compiler: &mut ScriptCompiler, core_mod: &mut Module, table: &mut Table) {
@@ -393,7 +442,6 @@ impl ScriptCompiler {
         ));
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        // Added this interned id part
         let interned_id = InternedId::new(intern::INTERNED_I8);
         let symbol = Symbol::new(
             interned_id,

@@ -8,7 +8,7 @@ export let READ = 0b00000010
     let y = defs.WRITING + z
     let z = defs.WRITE
     nest->
-        struct Person {
+        export struct Person {
             name: str
             age: u8
         }

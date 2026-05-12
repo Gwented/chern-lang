@@ -3,14 +3,23 @@
 
 @def
 import "../../defs.chrn"
-let x = 3// I am another
+//let x = 3// I am another
 
+//alias default() = []
 
-                // Gilber let b = 5 
-                
-        let r = 3.5// Testing Stuff
-var->
-    x: defs.Person
+                // Gilber let b = 5
+
+        //let r = 3.5// Testing Stuff
+nest->
+    enum State {
+        Ready: State
+        Stopped: nil
+    } #scient
+
+    struct Book {
+        len: str
+    } #ignore
+
 @end
 
 export let /*letting*/ number/*variable*/= /*expr*/ 0x23

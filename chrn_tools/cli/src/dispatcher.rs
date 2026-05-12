@@ -48,16 +48,15 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
                         eprintln!("{}", diag.fmtted_diag);
                     }
 
-                    eprintln!("Reported {} error(s)", diags.len());
-
-                    return Err("Failed to parse configuration file".to_string());
+                    let msg = format!("Reported {} error(s)", diags.len());
+                    return Err(msg);
                 }
                 ScriptError::IO(e) => {
                     let msg = format!("Process exited unsuccessfully.\nReason: {e}");
                     return Err(msg);
                 }
             },
-            _ => unreachable!("Serial isn't checked in this command"),
+            _ => unreachable!("Serial shouldn't be checked in this command"),
         },
     }
 }

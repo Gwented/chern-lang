@@ -30,13 +30,13 @@ pub enum InnerArgs {
 }
 
 impl InnerArgs {
-    // Better name...
+    // has_restrictions?
     /// Returns true if the given argument is applicable to every type, such as `#warn`, otherwise
     /// returns false
-    pub fn is_basic(&self) -> bool {
+    pub fn has_restrictions(&self) -> bool {
         match self {
-            InnerArgs::Ignore | InnerArgs::Warn => true,
-            InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => false,
+            InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => true,
+            InnerArgs::Ignore | InnerArgs::Warn => false,
         }
     }
 
@@ -74,7 +74,7 @@ impl InnerArgs {
                     // data structures to be recursively resolved into a builtin type
                     BuiltinType::List(_)
                     |BuiltinType::Set(_)
-                    |BuiltinType::Map(_, _) => unreachable!("TypeResolver broke"),
+                    |BuiltinType::Map(_, _) => unreachable!("ConstraintResolver broke"),
                     _ => false,
                 }
             }

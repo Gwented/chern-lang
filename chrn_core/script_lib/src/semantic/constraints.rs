@@ -11,7 +11,7 @@ use crate::semantic::representation::FuncKind;
 pub enum ArgConstraint {
     ArgCount(u8),
     DynType,
-    MatchingType,
+    MatchingArgumentTypes,
     /// Must be the same type as the type the condition is made for
     MirroredType,
     Numeric,
@@ -28,6 +28,7 @@ impl ArgConstraint {
     /// Takes in a function kind that is built in and returns it's constraints
     pub fn from_builtin(kind: FuncKind) -> Vec<ArgConstraint> {
         match kind {
+            FuncKind::IsEmpty => vec![ArgConstraint::ArgCount(1)],
             FuncKind::StartsW => {
                 // Maybe if we got something like 0x1FF it could StartsW(0x1FF)?
                 vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
@@ -42,13 +43,12 @@ impl ArgConstraint {
                 vec![
                     ArgConstraint::ArgCount(2),
                     ArgConstraint::Numeric,
-                    ArgConstraint::MatchingType,
+                    ArgConstraint::MatchingArgumentTypes,
                 ]
             }
             FuncKind::Equals => {
                 vec![ArgConstraint::MirroredType, ArgConstraint::Variadic]
             }
-            FuncKind::UserDefined => todo!(),
         }
     }
 }
@@ -57,7 +57,7 @@ impl Display for ArgConstraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ArgConstraint::DynType => write!(f, "DynamicType"),
-            ArgConstraint::MatchingType => write!(f, "MatchingType"),
+            ArgConstraint::MatchingArgumentTypes => write!(f, "MatchingType"),
             ArgConstraint::Numeric => write!(f, "Numeric"),
             ArgConstraint::Integer => write!(f, "Integer"),
             ArgConstraint::Float => write!(f, "Float"),

@@ -296,9 +296,10 @@ pub mod tests {
 
     #[test]
     fn interned_preload_size_matches() {
+        let interner = Intern::init();
         assert_eq!(
-            intern::INTERNED_TUPLE + 1,
-            49,
+            intern::INTERNED_CORE + 1,
+            51,
             "INTERNER_PRELOAD_SIZE should match number of preloaded interned strings"
         );
     }
