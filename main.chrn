@@ -1,11 +1,19 @@
 
+/* Hello I am a comment */   
+
 @def
- /* Hello I am a comment */   let
-// I am another
+import "../../defs.chrn"
+let x = 3// I am another
+
+
+                // Gilber let b = 5 
+                
+        let r = 3.5// Testing Stuff
+var->
+    x: defs.Person
+@end
 
 export let /*letting*/ number/*variable*/= /*expr*/ 0x23
-
-@end
 var->
                         x: i32    // Hi
 nest->

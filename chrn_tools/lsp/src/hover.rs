@@ -80,7 +80,7 @@ pub fn compute_hover(
             if let Some(entity) = entity {
                 match entity {
                     SemanticEntity::Symbol(sym_id) => {
-                        if let Some(sym) = compiler.symbols.get(sym_id) {
+                        if let Some(sym) = compiler.symbols.get(sym_id.id as usize) {
                             match sym.kind {
                                 script_lib::semantic::representation::SymbolKind::Type(type_id) => {
                                     let ty_info = &compiler.types[type_id.id as usize];
@@ -159,7 +159,7 @@ pub fn compute_hover(
                         owner_sym_id,
                         field_idx,
                     } => {
-                        if let Some(sym) = compiler.symbols.get(owner_sym_id) {
+                        if let Some(sym) = compiler.symbols.get(owner_sym_id.id as usize) {
                             if let Some(ast_id) = sym.ast_id {
                                 if let Some(Some(ast)) = state.asts.get(sym.owner.id) {
                                     let abs_struct = ast.get_struct(ast_id);
@@ -192,7 +192,7 @@ pub fn compute_hover(
                         owner_sym_id,
                         variant_idx,
                     } => {
-                        if let Some(sym) = compiler.symbols.get(owner_sym_id) {
+                        if let Some(sym) = compiler.symbols.get(owner_sym_id.id as usize) {
                             if let Some(ast_id) = sym.ast_id {
                                 if let Some(Some(ast)) = state.asts.get(sym.owner.id) {
                                     let abs_enum = ast.get_enum(ast_id);
@@ -403,7 +403,7 @@ fn format_type(
         Type::Struct(struct_def) => {
             let name = compiler
                 .symbols
-                .get(&struct_def.sym_id)
+                .get(struct_def.sym_id.id as usize)
                 .map(|sym| interner.search(sym.name_id.id as usize))
                 .unwrap_or("<struct>".into());
 
@@ -433,7 +433,7 @@ fn format_type(
         Type::Enum(enum_def) => {
             let name = compiler
                 .symbols
-                .get(&enum_def.sym_id)
+                .get(enum_def.sym_id.id as usize)
                 .map(|sym| interner.search(sym.name_id.id as usize))
                 .unwrap_or("<enum>".into());
 
@@ -468,7 +468,7 @@ fn format_type(
         Type::Alias(alias_def) => {
             let name = compiler
                 .symbols
-                .get(&alias_def.sym_id)
+                .get(alias_def.sym_id.id as usize)
                 .map(|sym| interner.search(sym.name_id.id as usize))
                 .unwrap_or("<alias>".into());
 

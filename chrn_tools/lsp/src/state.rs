@@ -451,12 +451,13 @@ impl DocumentState {
         }
 
         // 1. Symbol Definitions
-        for (sym_id, sym) in &compiler.symbols {
+        for (i, sym) in compiler.symbols.iter().enumerate() {
             if sym.owner.id == 0 {
+                let sym_id = SymbolId::new(i as u32);
                 if let Some(ast_id) = sym.ast_id {
                     if let Some(Some(ast)) = self.asts.get(0) {
                         let span = ast.get_sym_span(ast_id);
-                        map.push((span, SemanticEntity::Symbol(*sym_id)));
+                        map.push((span, SemanticEntity::Symbol(sym_id)));
                     }
                 }
             }
@@ -477,7 +478,7 @@ impl DocumentState {
             use script_lib::semantic::representation::Type;
             match &ty_info.ty {
                 Type::Struct(sdef) => {
-                    let sym = &compiler.symbols[&sdef.sym_id];
+                    let sym = &compiler.symbols[sdef.sym_id.id as usize];
                     if let Some(Some(ast)) = self.asts.get(0) {
                         if let Some(ast_id) = sym.ast_id {
                             let abs_struct = ast.get_struct(ast_id);
@@ -494,7 +495,7 @@ impl DocumentState {
                     }
                 }
                 Type::Enum(edef) => {
-                    let sym = &compiler.symbols[&edef.sym_id];
+                    let sym = &compiler.symbols[edef.sym_id.id as usize];
                     if let Some(Some(ast)) = self.asts.get(0) {
                         if let Some(ast_id) = sym.ast_id {
                             let abs_enum = ast.get_enum(ast_id);
@@ -511,7 +512,7 @@ impl DocumentState {
                     }
                 }
                 Type::Alias(adef) => {
-                    let sym = &compiler.symbols[&adef.sym_id];
+                    let sym = &compiler.symbols[adef.sym_id.id as usize];
                     if let Some(Some(ast)) = self.asts.get(0) {
                         if let Some(ast_id) = sym.ast_id {
                             let abs_alias = ast.get_alias(ast_id);
@@ -677,7 +678,7 @@ impl DocumentState {
             script_lib::semantic::scopes::ScopeType::Var,
             ModuleId::new(0),
         ) {
-            if let Some(sym) = compiler.symbols.get(&sym_id) {
+            if let Some(sym) = compiler.symbols.get(sym_id.id as usize) {
                 let module = &compiler.mods[sym.owner.id];
                 let ast_info = self.asts.get(sym.owner.id)?.as_ref()?;
                 let ast_id = sym.ast_id?;
@@ -698,7 +699,7 @@ impl DocumentState {
         let compiler = self.compiler.as_ref()?;
         match entity {
             SemanticEntity::Symbol(sym_id) => {
-                let sym = compiler.symbols.get(sym_id)?;
+                let sym = compiler.symbols.get(sym_id.id as usize)?;
                 let ast_id = sym.ast_id?;
                 let ast = self.asts.get(sym.owner.id)?.as_ref()?;
                 let span = ast.get_sym_span(ast_id);
@@ -710,7 +711,7 @@ impl DocumentState {
                 owner_sym_id,
                 field_idx,
             } => {
-                let sym = compiler.symbols.get(owner_sym_id)?;
+                let sym = compiler.symbols.get(owner_sym_id.id as usize)?;
                 let ast_id = sym.ast_id?;
                 let ast = self.asts.get(sym.owner.id)?.as_ref()?;
                 let abs_struct = ast.get_struct(ast_id);
@@ -727,7 +728,7 @@ impl DocumentState {
                 owner_sym_id,
                 variant_idx,
             } => {
-                let sym = compiler.symbols.get(owner_sym_id)?;
+                let sym = compiler.symbols.get(owner_sym_id.id as usize)?;
                 let ast_id = sym.ast_id?;
                 let ast = self.asts.get(sym.owner.id)?.as_ref()?;
                 let abs_enum = ast.get_enum(ast_id);

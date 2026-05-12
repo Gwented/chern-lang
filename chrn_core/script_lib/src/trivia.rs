@@ -25,13 +25,10 @@ pub enum TriviaKind {
 
 impl TriviaKind {
     // IS THE TAB CONTROL
-    pub fn is_spacing_no_control(&self) -> bool {
+    pub fn is_spacing_no_newline(&self) -> bool {
         match self {
-            TriviaKind::Whitespace => true,
-            TriviaKind::Tab
-            | TriviaKind::NewLine
-            | TriviaKind::SingleComment
-            | TriviaKind::MultiComment => false,
+            TriviaKind::Tab | TriviaKind::Whitespace => true,
+            TriviaKind::NewLine | TriviaKind::SingleComment | TriviaKind::MultiComment => false,
         }
     }
 

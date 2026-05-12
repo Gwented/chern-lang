@@ -37,12 +37,10 @@ pub struct ScriptCompiler {
     pub values: Vec<ValueInfo>,
     /// All expressions that were found
     pub exprs: Vec<ResolvedExpr>,
-    // pub exprs: Vec<ValueInfo>,
-    // Can this just be a vec?
-    pub symbols: HashMap<SymbolId, Symbol>,
+    pub symbols: Vec<Symbol>,
     ///
     pub scopes: Vec<ScopeInfo>,
-    /// Module id for the stdlib which is always pre-loaded
+    /// Module id for core which is always pre-loaded
     pub core_mod_id: ModuleId,
 }
 
@@ -104,7 +102,7 @@ impl ScriptCompiler {
             types: Vec::new(),
             values: Vec::new(),
             exprs: Vec::new(),
-            symbols: HashMap::new(),
+            symbols: Vec::new(),
             scopes: Vec::new(),
             //TEST:
             core_mod_id: ModuleId::new(core_mod_id),
@@ -115,7 +113,7 @@ impl ScriptCompiler {
         script_compiler
     }
     pub(super) fn get_typedef(&self, sym_id: SymbolId) -> &TypeDef {
-        match &self.symbols[&sym_id] {
+        match &self.symbols[sym_id.id as usize] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
                     Type::TypeDef(type_def) => type_def,
@@ -127,7 +125,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_typedef_mut(&mut self, sym_id: SymbolId) -> &mut TypeDef {
-        match &self.symbols.get_mut(&sym_id).expect("misusage") {
+        match &self.symbols.get_mut(sym_id.id as usize).expect("misusage") {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &mut self.types[type_id.id as usize].ty {
                     Type::TypeDef(type_def) => type_def,
@@ -139,7 +137,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_struct(&self, sym_id: SymbolId) -> &StructDef {
-        match &self.symbols[&sym_id] {
+        match &self.symbols[sym_id.id as usize] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
                     Type::Struct(struct_def) => struct_def,
@@ -151,7 +149,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_struct_mut(&mut self, sym_id: SymbolId) -> &mut StructDef {
-        match self.symbols.get_mut(&sym_id).expect("misusage") {
+        match self.symbols.get_mut(sym_id.id as usize).expect("misusage") {
             sym_info => match &mut sym_info.kind {
                 SymbolKind::Type(type_id) => match &mut self.types[type_id.id as usize].ty {
                     Type::Struct(struct_def) => struct_def,
@@ -163,7 +161,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_func(&self, sym_id: SymbolId) -> &FuncDef {
-        match &self.symbols[&sym_id] {
+        match &self.symbols[sym_id.id as usize] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
                     Type::Func(func_def) => func_def,
@@ -175,7 +173,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_func_mut(&mut self, sym_id: SymbolId) -> &mut FuncDef {
-        match self.symbols.get_mut(&sym_id).expect("misusage") {
+        match self.symbols.get_mut(sym_id.id as usize).expect("misusage") {
             sym_info => match &mut sym_info.kind {
                 SymbolKind::Type(type_id) => match &mut self.types[type_id.id as usize].ty {
                     Type::Func(func_def) => func_def,
@@ -187,7 +185,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_enum(&self, sym_id: SymbolId) -> &EnumDef {
-        match &self.symbols[&sym_id] {
+        match &self.symbols[sym_id.id as usize] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
                     Type::Enum(enum_def) => enum_def,
@@ -199,7 +197,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_enum_mut(&mut self, sym_id: SymbolId) -> &mut EnumDef {
-        match self.symbols.get_mut(&sym_id).expect("misusage") {
+        match self.symbols.get_mut(sym_id.id as usize).expect("misusage") {
             sym_info => match &mut sym_info.kind {
                 SymbolKind::Type(type_id) => match &mut self.types[type_id.id as usize].ty {
                     Type::Enum(enum_def) => enum_def,
@@ -211,7 +209,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_alias(&self, sym_id: SymbolId) -> &AliasDef {
-        match &self.symbols[&sym_id] {
+        match &self.symbols[sym_id.id as usize] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
                     Type::Alias(alias_def) => alias_def,
@@ -223,7 +221,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_alias_mut(&mut self, sym_id: SymbolId) -> &mut AliasDef {
-        match self.symbols.get_mut(&sym_id).expect("Misusage") {
+        match self.symbols.get_mut(sym_id.id as usize).expect("Misusage") {
             sym_info => match &mut sym_info.kind {
                 SymbolKind::Type(type_id) => match &mut self.types[type_id.id as usize].ty {
                     Type::Alias(alias_def) => alias_def,
@@ -236,7 +234,7 @@ impl ScriptCompiler {
 
     /// Assumes the symbol given is a variable, meaning a symbol with a value inside of it
     pub(super) fn get_var(&self, sym_id: SymbolId) -> &ValueInfo {
-        match &self.symbols[&sym_id] {
+        match &self.symbols[sym_id.id as usize] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Val(val_id) => &self.values[val_id.id as usize],
                 _ => unreachable!(),
@@ -246,7 +244,7 @@ impl ScriptCompiler {
 
     /// Assumes the symbol given is a variable, meaning a symbol with a value inside of it
     pub(super) fn get_var_mut(&mut self, sym_id: SymbolId) -> &mut ValueInfo {
-        match &self.symbols[&sym_id] {
+        match &self.symbols[sym_id.id as usize] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Val(val_id) => &mut self.values[val_id.id as usize],
                 _ => unreachable!(),
@@ -256,7 +254,7 @@ impl ScriptCompiler {
 
     /// Returns `ModuleId` which is the module of origin
     pub fn get_owner(&self, sym_id: SymbolId) -> ModuleId {
-        self.symbols[&sym_id].owner
+        self.symbols[sym_id.id as usize].owner
     }
 
     /// Get's the `ScopeId` with no assumption of it existing.
@@ -407,7 +405,7 @@ impl ScriptCompiler {
             SymbolKind::Type(type_id),
         );
 
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -428,7 +426,7 @@ impl ScriptCompiler {
             SymbolKind::Type(type_id),
         );
 
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -448,7 +446,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -468,7 +466,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -488,7 +486,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -508,7 +506,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -528,7 +526,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -548,7 +546,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -568,7 +566,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -588,7 +586,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -608,7 +606,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -628,7 +626,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -648,7 +646,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -668,7 +666,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -688,7 +686,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -708,7 +706,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -728,7 +726,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -748,7 +746,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -768,7 +766,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -788,7 +786,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -808,7 +806,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -828,7 +826,7 @@ impl ScriptCompiler {
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -849,7 +847,7 @@ impl ScriptCompiler {
             SymbolKind::Type(type_id),
         );
 
-        compiler.symbols.insert(sym_id, symbol);
+        compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
         compiler
             .types

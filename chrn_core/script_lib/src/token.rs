@@ -33,7 +33,6 @@ pub enum Token {
     Def,
     /// Represents @end
     End,
-    // Comment,
     Keyword(Keyword),
     BoolLiteral(bool),
     Id(u32),
@@ -82,7 +81,7 @@ pub enum Token {
 }
 
 impl Token {
-    pub(crate) fn kind(&self) -> TokenKind {
+    pub fn kind(&self) -> TokenKind {
         match self {
             Token::Id(_) => TokenKind::Id,
             Token::Str(_) => TokenKind::Str,
@@ -127,7 +126,6 @@ impl Token {
             Token::Illegal(_) => TokenKind::Illegal,
             Token::Keyword(_) => TokenKind::Keyword,
             Token::BoolLiteral(_) => TokenKind::Bool,
-            // Token::Comment => TokenKind::Comment,
             Token::Def => TokenKind::Def,
             Token::End => TokenKind::End,
             Token::EOF => TokenKind::EOF,
@@ -162,7 +160,7 @@ impl Token {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub(crate) enum TokenKind {
+pub enum TokenKind {
     Keyword,
     Id,
     Str,
@@ -206,7 +204,6 @@ pub(crate) enum TokenKind {
     Bool,
     Illegal,
     Poison,
-    // Comment,
     Def,
     End,
     EOF,
@@ -270,7 +267,6 @@ impl Display for TokenKind {
             TokenKind::Caret => write!(f, "^"),
             TokenKind::Bool => write!(f, "bool"),
             TokenKind::Keyword => write!(f, "keyword"),
-            // TokenKind::Comment => write!(f, "<comment>"),
             TokenKind::Def => write!(f, "@def"),
             TokenKind::End => write!(f, "@end"),
         }
@@ -377,7 +373,6 @@ impl TokenKind {
             TokenKind::Keyword => KEYWORD,
             TokenKind::Bool => BOOL,
             TokenKind::Def => DEF,
-            // TokenKind::Comment => COMMENT,
             TokenKind::End => END,
             TokenKind::EOF => EOF,
         }

@@ -141,9 +141,9 @@ pub fn get_type_id(
         // another module
         if let Some(scope_info) = compiler.find_scope(allowed_scope_type, current_mod.mod_id) {
             for current_sym_id in scope_info.scope.table.interned_to_sym.values() {
-                let current_sym = &compiler.symbols[current_sym_id];
+                let current_sym = &compiler.symbols[current_sym_id.id as usize];
                 if current_sym.name_id == target_name_id {
-                    match &compiler.symbols[&current_sym_id].kind {
+                    match &compiler.symbols[current_sym_id.id as usize].kind {
                         SymbolKind::Type(type_id) => return Some(*type_id),
                         // Is this even possible
                         SymbolKind::Val(val_id) => {

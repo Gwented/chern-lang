@@ -92,7 +92,8 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
         return Err(ScriptError::Semantic(reporter.diags).into());
     }
 
-    // todo!("No constraints");
+    dbg!(script_compiler);
+    todo!("No constraints");
 
     // For ensuring a stateful piece of context is retained for resolving all module variables.
     // This is not a value resolver

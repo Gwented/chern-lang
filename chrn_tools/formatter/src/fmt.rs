@@ -1,13 +1,8 @@
 use std::path::Path;
 
-use chrn_utils::{id_types::AstId, inner_args::SpannedInnerArgs, intern::Intern};
+use chrn_utils::intern::Intern;
 use common::{chrn_settings::ChrnSettings, core_error::ConfigLoadError};
-use script_lib::{
-    modules,
-    parser::ast::{AbstractVar, AstInfo, Item, Section},
-    token::{SpannedToken, Token},
-    trivia::Trivia,
-};
+use script_lib::modules;
 
 use crate::script_prettifier::ScriptPrettifier;
 

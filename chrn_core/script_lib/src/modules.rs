@@ -82,10 +82,8 @@ pub struct Module {
     pub imports: Vec<Import>,
     /// Represents the 5 existent scopes
     pub scopes: Vec<ScopeId>,
+    // HashSet maybe
     pub exports: Vec<SymbolId>,
-    /// Flag for checking if a scope exists in the current module more efficiently than manual
-    /// iteration.
-    //WARN: May or may not have use for quick checks
     /// Metadata that exists if the module contains a source file
     // As of right now this represents the difference between a pre-loaded and user space module
     pub src_metadata: Option<ModuleMetadata>,

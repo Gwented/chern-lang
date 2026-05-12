@@ -6,7 +6,7 @@ export let READ = 0b00000010
 // export let EXEC = 0b00000100
     let x = 3
     let y = defs.WRITING + z
-    let z = defs.x
+    let z = defs.WRITE
     nest->
         struct Person {
             name: str

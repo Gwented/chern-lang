@@ -39,7 +39,7 @@ impl AstInfo {
         sect.push_ast_id(ast_id);
     }
 
-    fn push_sect(&mut self, kind: SectionKind) {
+    pub fn push_sect(&mut self, kind: SectionKind) {
         match kind {
             SectionKind::Neutral => {
                 self.sections[kind as usize] = Some(Section::Neutral(Vec::new()));

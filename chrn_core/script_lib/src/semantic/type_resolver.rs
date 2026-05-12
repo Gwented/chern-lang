@@ -121,7 +121,7 @@ impl TypeResolver<'_> {
                     continue;
                 }
 
-                let type_id = match self.compiler.symbols[&sym_id].kind {
+                let type_id = match self.compiler.symbols[sym_id.id as usize].kind {
                     SymbolKind::Type(type_id) => type_id,
                     SymbolKind::Val(val_id) => self.compiler.values[val_id.id as usize].type_id,
                     SymbolKind::Unknown => TypeId::new(script_compiler::TYPE_UNKNOWN_IDX),
@@ -282,7 +282,7 @@ impl TypeResolver<'_> {
         for root_id in queue.iter().copied() {
             // Still need to repair root expr
             let root_expr = &mut self.compiler.exprs[root_id.id as usize];
-            match self.compiler.symbols[&resolved_sym_id].kind {
+            match self.compiler.symbols[resolved_sym_id.id as usize].kind {
                 SymbolKind::Type(type_id) => todo!("Hi types"),
                 SymbolKind::Val(val_id) => {
                     // Brain starting working now it works
@@ -542,7 +542,11 @@ impl TypeResolver<'_> {
         // Sets the symbol's value to be the last expression's value so that later, if it's
         // expression is resolved further, since it's already pointing the the same expression it
         // will by proxy be updated
-        let symbol = self.compiler.symbols.get_mut(&sym_id).expect("Exists");
+        let symbol = self
+            .compiler
+            .symbols
+            .get_mut(sym_id.id as usize)
+            .expect("Exists");
         symbol.kind = SymbolKind::Val(val_id);
 
         // If the symbol that was just examined is a pending symbol AND it was actually resolved,
@@ -938,7 +942,7 @@ impl TypeResolver<'_> {
                 todo!("Stop typing");
                 Ok(())
             }
-            ExprHir::Var(sym_id) => match &self.compiler.symbols[&sym_id].kind {
+            ExprHir::Var(sym_id) => match &self.compiler.symbols[sym_id.id as usize].kind {
                 SymbolKind::Type(type_id) => Ok(()),
                 SymbolKind::Val(val_id) => Ok(()),
                 SymbolKind::Unknown => Ok(()),
@@ -996,12 +1000,12 @@ impl TypeResolver<'_> {
                     //there is no way to check for cycles outside of `TypeContext`, so this has to
                     //pick up the edge case of, "let x = x". Could change.
                     if found_sym_id == parent_sym_id {
-                        let name = self
-                            .interner
-                            .search(self.compiler.symbols[&found_sym_id].name_id.id as usize);
+                        let name = self.interner.search(
+                            self.compiler.symbols[found_sym_id.id as usize].name_id.id as usize,
+                        );
                         let msg = format!("Cannot declare symbol `{name}` as itself");
 
-                        let parent_ast_id = self.compiler.symbols[&parent_sym_id].ast_id;
+                        let parent_ast_id = self.compiler.symbols[parent_sym_id.id as usize].ast_id;
                         let mut spans = Vec::new();
                         spans.push(spanned_expr.span);
 
@@ -1013,7 +1017,7 @@ impl TypeResolver<'_> {
                         return Err(SemanticError::General(msg, spans));
                     }
 
-                    let symbol = &self.compiler.symbols[&found_sym_id];
+                    let symbol = &self.compiler.symbols[found_sym_id.id as usize];
                     let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
 
                     let resolved_expr = match symbol.kind {
@@ -1343,7 +1347,7 @@ impl TypeResolver<'_> {
                             seen.push(extern_sym_id);
                             self.check_cycle(seen, parent_sym_id, extern_sym_id)?;
 
-                            let symbol = &self.compiler.symbols[&extern_sym_id];
+                            let symbol = &self.compiler.symbols[extern_sym_id.id as usize];
 
                             // symbol kind aware reporting.
                             // In need of cross-module reporting of where the not exported symbol
@@ -1366,11 +1370,13 @@ impl TypeResolver<'_> {
 
                             if extern_sym_id == parent_sym_id {
                                 let name = self.interner.search(
-                                    self.compiler.symbols[&extern_sym_id].name_id.id as usize,
+                                    self.compiler.symbols[extern_sym_id.id as usize].name_id.id
+                                        as usize,
                                 );
                                 let msg = format!("Cannot declare symbol `{name}` as itself");
 
-                                let parent_ast_id = self.compiler.symbols[&parent_sym_id].ast_id;
+                                let parent_ast_id =
+                                    self.compiler.symbols[parent_sym_id.id as usize].ast_id;
                                 let mut spans = Vec::new();
                                 spans.push(spanned_expr.span);
 
@@ -1572,7 +1578,7 @@ impl TypeResolver<'_> {
                 LookupPattern::AllConnections,
             ) {
                 todo!();
-                // let type_id = self.compiler.symbols[&sym_id];
+                // let type_id = self.compiler.symbols[sym_id.id as usize];
                 // return Ok(PossibleMember::Type(type_id));
             } else {
                 if name_id.id == intern::INTERNED_SELF as u32 {
@@ -1614,11 +1620,11 @@ impl TypeResolver<'_> {
                     .any(|pend_expr| pend_expr.parent_sym == found_sym_id);
 
                 if has_cycle {
-                    let parent_sym = &self.compiler.symbols[&parent_sym_id];
+                    let parent_sym = &self.compiler.symbols[parent_sym_id.id as usize];
                     let parent_name = self.interner.search(parent_sym.name_id.id as usize);
                     let parent_ast_id = parent_sym.ast_id.expect("core should not be resolved");
 
-                    let found_sym = &self.compiler.symbols[&found_sym_id];
+                    let found_sym = &self.compiler.symbols[found_sym_id.id as usize];
                     let found_ast_id = found_sym.ast_id.expect("core should not be resolved");
                     let found_name = self.interner.search(found_sym.name_id.id as usize);
 
@@ -1662,8 +1668,36 @@ impl TypeResolver<'_> {
                     scope_type,
                     lookup_pattern,
                 ) {
-                    Some(sym_id) => match self.compiler.symbols[&sym_id].kind {
-                        SymbolKind::Type(type_id) => return Ok(type_id),
+                    Some(sym_id) => match self.compiler.symbols[sym_id.id as usize].kind {
+                        SymbolKind::Type(type_id) => {
+                            // NOTE: Will probably error later in resolution but fine for now
+                            let symbol = &self.compiler.symbols[sym_id.id as usize];
+                            if symbol.is_priv && symbol.owner != self.current_mod {
+                                let active_mod = &self.compiler.mods[active_mod_id.id];
+                                let active_name =
+                                    self.interner.search(active_mod.name_id.id as usize);
+                                let sym_name = self.interner.search(symbol.name_id.id as usize);
+
+                                let msg = format!(
+                                    "The type `{sym_name}` is private within module `{active_name}`"
+                                );
+
+                                let mod_origin = &self.compiler.mods[self.current_mod.id];
+                                self.reporter.report_spanned(
+                                    &msg,
+                                    None,
+                                    &[spanned_ty_expr.span],
+                                    &mod_origin
+                                        .src_metadata
+                                        .as_ref()
+                                        .expect("core should not be resolved"),
+                                );
+
+                                return Err(());
+                            }
+
+                            return Ok(type_id);
+                        }
                         SymbolKind::Val(_) | SymbolKind::Unknown => (),
                     },
                     None => (),

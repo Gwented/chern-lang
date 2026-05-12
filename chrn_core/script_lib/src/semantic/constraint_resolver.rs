@@ -243,7 +243,7 @@ impl<'a> ConstraintResolver<'a> {
     //     };
     //
     //     // Setting var from an `Unknown` value to whatever was found
-    //     let symbol = self.compiler.symbols.get_mut(&sym_id).expect("Must exist");
+    //     let symbol = self.compiler.symbols.get_mut(sym_id.id as usize).expect("Must exist");
     //     symbol.kind = SymbolKind::Val(val_id);
     //
     //     Ok(())
@@ -512,7 +512,7 @@ impl<'a> ConstraintResolver<'a> {
     ) -> Result<(), SemanticError> {
         match &self.compiler.types[type_id.id as usize].ty {
             Type::Struct(struct_def) => {
-                let symbol = &self.compiler.symbols[&struct_def.sym_id];
+                let symbol = &self.compiler.symbols[struct_def.sym_id.id as usize];
                 visited.push(type_id);
 
                 for field in &struct_def.fields {

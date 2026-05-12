@@ -108,7 +108,7 @@ impl NamespaceResolver<'_> {
             SymbolKind::Type(type_id),
         );
 
-        self.compiler.symbols.insert(sym_id, symbol);
+        self.compiler.symbols.push(symbol);
 
         let ty_info = TypeInfo::new(Type::TypeDef(type_def_repre), self.current_mod);
         self.compiler.types.push(ty_info);
@@ -142,7 +142,7 @@ impl NamespaceResolver<'_> {
             SymbolKind::Type(type_id),
         );
 
-        self.compiler.symbols.insert(sym_id, symbol);
+        self.compiler.symbols.push(symbol);
 
         let ty_info = TypeInfo::new(Type::Struct(struct_def), self.current_mod);
         self.compiler.types.push(ty_info);
@@ -176,7 +176,7 @@ impl NamespaceResolver<'_> {
             SymbolKind::Type(type_id),
         );
 
-        self.compiler.symbols.insert(sym_id, symbol);
+        self.compiler.symbols.push(symbol);
 
         let ty_info = TypeInfo::new(Type::Enum(enum_def), self.current_mod);
         self.compiler.types.push(ty_info);
@@ -212,7 +212,7 @@ impl NamespaceResolver<'_> {
             SymbolKind::Type(type_id),
         );
 
-        self.compiler.symbols.insert(sym_id, symbol);
+        self.compiler.symbols.push(symbol);
 
         let ty_info = TypeInfo::new(Type::Alias(alias_def), self.current_mod);
         self.compiler.types.push(ty_info);
@@ -247,7 +247,7 @@ impl NamespaceResolver<'_> {
             SymbolKind::Unknown,
         );
 
-        self.compiler.symbols.insert(sym_id, symbol);
+        self.compiler.symbols.push(symbol);
     }
 
     // Cannot check for this since the type is not known

@@ -139,7 +139,10 @@ pub fn parse(
 
                         continue;
                     } else {
+                        // For metadata purposes in case it's empty and we still need to know if it was
+                        // used or not
                         state.flip_var();
+                        ast_info.push_sect(SectionKind::Var);
                     }
 
                     _ = ctx.expect_verbose(
@@ -184,6 +187,7 @@ pub fn parse(
                         continue;
                     } else {
                         state.flip_nest();
+                        ast_info.push_sect(SectionKind::Nest);
                     }
 
                     _ = ctx.expect_verbose(
@@ -228,6 +232,7 @@ pub fn parse(
                         continue;
                     } else {
                         state.flip_complex();
+                        ast_info.push_sect(SectionKind::Complex);
                     }
 
                     _ = ctx.expect_verbose(
@@ -269,6 +274,7 @@ pub fn parse(
                         continue;
                     } else {
                         state.flip_override();
+                        ast_info.push_sect(SectionKind::Override);
                     }
 
                     _ = ctx.expect_verbose(

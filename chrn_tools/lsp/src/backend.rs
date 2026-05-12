@@ -210,7 +210,7 @@ fn classify_id_token(
     if let Some(entity) = entity {
         match entity {
             SemanticEntity::Symbol(sym_id) => {
-                if let Some(sym) = compiler.symbols.get(sym_id) {
+                if let Some(sym) = compiler.symbols.get(sym_id.id as usize) {
                     match sym.kind {
                         SymbolKind::Type(tid) => {
                             let ty = &compiler.types[tid.id as usize].ty;
@@ -869,7 +869,7 @@ impl LanguageServer for Backend {
                         if let Some(module) = compiler.mods.get(mod_id.id as usize) {
                             if mod_id.id == 0 {
                                 // Current module: show all symbols except ScopeType::Var
-                                for (_, sym) in &compiler.symbols {
+                                for sym in &compiler.symbols {
                                     if sym.owner.id == 0
                                         && sym.scope_type
                                             != script_lib::semantic::scopes::ScopeType::Var
@@ -893,7 +893,7 @@ impl LanguageServer for Backend {
                             } else {
                                 // Other modules: show only exported symbols
                                 for sym_id in &module.exports {
-                                    if let Some(sym) = compiler.symbols.get(sym_id) {
+                                    if let Some(sym) = compiler.symbols.get(sym_id.id as usize) {
                                         let sym_name =
                                             state.interner.search(sym.name_id.id as usize);
                                         if prefix.is_empty() || sym_name.starts_with(prefix) {
