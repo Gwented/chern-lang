@@ -1,6 +1,6 @@
 use common::fmter::{Formattable, Formatted};
 
-use crate::id_types::{ExprId, InternedId, TypeId, ValueId};
+use crate::id_types::{ExprId, InternedId, SymbolId, TypeId, ValueId};
 
 // The value system of script would be simple but the serial does need this too so maybe re-use
 // it?
@@ -32,7 +32,7 @@ pub enum Value {
     F64(f64),
     Bool(bool),
     Char(char),
-    Func,
+    Func(SymbolId),
     Tuple(Vec<Value>),
     InternedStr(InternedId),
     RuntimeStr(String),
@@ -49,7 +49,7 @@ impl Value {
             Value::Tuple(_) => ValueKind::Tuple,
             Value::InternedStr(_) => ValueKind::InternedStr,
             Value::RuntimeStr(_) => ValueKind::RuntimeStr,
-            Value::Func => ValueKind::Func,
+            Value::Func(_) => ValueKind::Func,
             Value::Unknown => ValueKind::Unknown,
         }
     }
@@ -90,10 +90,4 @@ impl Formattable for ValueKind {
             ValueKind::Func => Formatted::Func,
         }
     }
-}
-
-#[derive(Debug)]
-pub enum ValueResult {
-    Resolved(ValueId),
-    Unresolved,
 }

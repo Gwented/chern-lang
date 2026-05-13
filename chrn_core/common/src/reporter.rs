@@ -185,7 +185,7 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
 // I know this doesn't show up correctly
 /// Error message type:
 /// X -> X()
-///       ++
+///      +++
 // The X should be red and the right X should have green + signs under the params
 // This is specific right now but will turn to more generic just pointing to transformation
 // Maybe prefix?

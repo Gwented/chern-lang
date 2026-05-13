@@ -6,7 +6,6 @@ use chrn_utils::{
     inner_args::{InnerArgs, SpannedInnerArgs},
     intern::{self, Intern},
     keywords::Keyword,
-    values::ValueResult,
 };
 use common::{
     chrn_settings::ChrnSettings,
@@ -349,7 +348,6 @@ impl<'a> ConstraintResolver<'a> {
                 );
             }
         }
-        dbg!(type_def);
 
         Ok(())
     }
@@ -431,7 +429,6 @@ impl<'a> ConstraintResolver<'a> {
                 }
             }
         }
-        dbg!(struct_def);
 
         Ok(())
     }
@@ -762,15 +759,20 @@ impl<'a> ConstraintResolver<'a> {
             }
             // Not sure how many of these can be reached
             //         Type::Func(sym_id) => todo!("Func"),
+            //         // Since aliases have functions, and functions have type restrictions,
+            //         argument be checked with the function's constraints
             //         Type::Alias(_) | Type::Unknown => {
             //             unreachable!("Parser and semantic cannot produce these variants. I think.")
             //         }
             //         Type::TypeDef(type_def) => todo!("typedef"),
-            _ => todo!("heyy"),
+            Type::Func(func_def) => todo!("Functioned"),
+            Type::Alias(alias_def) => todo!("Aliased"),
+            Type::TypeDef(type_def) => todo!("TypeDefed"),
+            Type::Unknown => todo!("Unknowned"),
         }
     }
 
-    // Maybe alias specific function not needed since alias is just a wrapper for calling multiple
+    // Maybe alias specific method not needed since alias is just a wrapper for calling multiple
     // functions
     fn check_func_constraints(
         &self,

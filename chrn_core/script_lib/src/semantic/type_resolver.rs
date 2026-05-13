@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use chrn_utils::builtins::BuiltinTypeKind;
 use chrn_utils::id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId};
 use chrn_utils::intern;
-use chrn_utils::values::{Value, ValueInfo, ValueKind, ValueResult};
+use chrn_utils::values::{Value, ValueInfo, ValueKind};
 use chrn_utils::{builtins::BuiltinType, intern::Intern};
 use common::chrn_settings::ChrnSettings;
 use common::fmter::{Formattable, Formatted};
@@ -508,6 +508,7 @@ impl TypeResolver<'_> {
         let expr_id = match self.register_expr(
             sym_id,
             &abs_var.spanned_expr,
+            self.current_mod,
             ScopeType::Neutral,
             &mut vec![sym_id],
         ) {
@@ -567,7 +568,7 @@ impl TypeResolver<'_> {
             self.current_mod,
             &abs_typedef.spanned_ty_expr,
             ScopeType::Var,
-            LookupPattern::AllConnections,
+            LookupPattern::NoRestrictions,
         )?;
 
         let scope_id = self
@@ -582,6 +583,7 @@ impl TypeResolver<'_> {
             let cond = match self.register_expr(
                 sym_id,
                 spanned_expr,
+                self.current_mod,
                 ScopeType::Neutral,
                 &mut vec![sym_id],
             ) {
@@ -641,7 +643,7 @@ impl TypeResolver<'_> {
                 self.current_mod,
                 &field_typedef.spanned_ty_expr,
                 ScopeType::Nest,
-                LookupPattern::AllConnections,
+                LookupPattern::NoRestrictions,
             )?;
 
             if let Some(original) = seen.iter().find(|other| field_typedef.name_id == other.1) {
@@ -680,22 +682,27 @@ impl TypeResolver<'_> {
             let mut conds: Vec<ExprId> = Vec::new();
 
             for cond in &abs_field.conds {
-                let cond_expr =
-                    match self.register_expr(sym_id, &cond, ScopeType::Nest, &mut vec![sym_id]) {
-                        Ok(c) => c,
-                        Err(sem_err) => {
-                            let module = &self.compiler.mods[self.current_mod.id];
-                            self.reporter.report_semantic(
-                                sem_err,
-                                &module
-                                    .src_metadata
-                                    .as_ref()
-                                    .expect("core should not be resolved"),
-                            );
+                let cond_expr = match self.register_expr(
+                    sym_id,
+                    &cond,
+                    self.current_mod,
+                    ScopeType::Nest,
+                    &mut vec![sym_id],
+                ) {
+                    Ok(c) => c,
+                    Err(sem_err) => {
+                        let module = &self.compiler.mods[self.current_mod.id];
+                        self.reporter.report_semantic(
+                            sem_err,
+                            &module
+                                .src_metadata
+                                .as_ref()
+                                .expect("core should not be resolved"),
+                        );
 
-                            return Err(());
-                        }
-                    };
+                        return Err(());
+                    }
+                };
 
                 conds.push(cond_expr);
             }
@@ -707,7 +714,13 @@ impl TypeResolver<'_> {
         let mut glob_conds: Vec<ExprId> = Vec::new();
 
         for cond in &abs_struct.glob_conds {
-            let cond = match self.register_expr(sym_id, cond, ScopeType::Nest, &mut vec![sym_id]) {
+            let cond = match self.register_expr(
+                sym_id,
+                cond,
+                self.current_mod,
+                ScopeType::Nest,
+                &mut vec![sym_id],
+            ) {
                 Ok(c) => c,
                 Err(sem_err) => {
                     let module = &self.compiler.mods[self.current_mod.id];
@@ -796,7 +809,7 @@ impl TypeResolver<'_> {
                     self.current_mod,
                     &spanned_ty_expr,
                     ScopeType::Nest,
-                    LookupPattern::AllConnections,
+                    LookupPattern::NoRestrictions,
                 )?;
                 VariantRepre::new(variant.name_id, Some(type_id), AstId::new(i as u32))
             } else {
@@ -811,22 +824,27 @@ impl TypeResolver<'_> {
             let mut conds: Vec<ExprId> = Vec::new();
 
             for cond in &abs_variant.conds {
-                let cond_expr =
-                    match self.register_expr(sym_id, &cond, ScopeType::Nest, &mut vec![sym_id]) {
-                        Ok(c) => c,
-                        Err(sem_err) => {
-                            let module = &self.compiler.mods[self.current_mod.id];
-                            self.reporter.report_semantic(
-                                sem_err,
-                                &module
-                                    .src_metadata
-                                    .as_ref()
-                                    .expect("core should not be resolved"),
-                            );
+                let cond_expr = match self.register_expr(
+                    sym_id,
+                    &cond,
+                    self.current_mod,
+                    ScopeType::Nest,
+                    &mut vec![sym_id],
+                ) {
+                    Ok(c) => c,
+                    Err(sem_err) => {
+                        let module = &self.compiler.mods[self.current_mod.id];
+                        self.reporter.report_semantic(
+                            sem_err,
+                            &module
+                                .src_metadata
+                                .as_ref()
+                                .expect("core should not be resolved"),
+                        );
 
-                            return Err(());
-                        }
-                    };
+                        return Err(());
+                    }
+                };
 
                 conds.push(cond_expr);
             }
@@ -837,7 +855,13 @@ impl TypeResolver<'_> {
 
         let mut glob_conds: Vec<ExprId> = Vec::new();
         for cond in &abs_enum.glob_conds {
-            let cond = match self.register_expr(sym_id, cond, ScopeType::Nest, &mut vec![sym_id]) {
+            let cond = match self.register_expr(
+                sym_id,
+                cond,
+                self.current_mod,
+                ScopeType::Nest,
+                &mut vec![sym_id],
+            ) {
                 Ok(c) => c,
                 Err(sem_err) => {
                     let module = &self.compiler.mods[self.current_mod.id];
@@ -873,7 +897,13 @@ impl TypeResolver<'_> {
     }
 
     fn resolve_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) -> Result<(), ()> {
-        // Should the variable check happen here?
+        let scope_id = self
+            .compiler
+            .extract_scope_id(ScopeType::Neutral, self.current_mod);
+        let table = &self.compiler.get_scope_mut(scope_id).scope.table;
+
+        let sym_id = table.ast_to_sym[&ast_id];
+
         let mut params: Vec<Param> = Vec::new();
         let mut seen: Vec<(usize, InternedId)> = Vec::new();
 
@@ -919,15 +949,39 @@ impl TypeResolver<'_> {
             }
         }
 
-        let scope_id = self
-            .compiler
-            .extract_scope_id(ScopeType::Neutral, self.current_mod);
-        let table = &self.compiler.get_scope_mut(scope_id).scope.table;
+        let mut conds: Vec<ExprId> = Vec::new();
+        for spanned_expr in &abs_alias.conds {
+            //FIX: Scope type is a little wrong here since it's a condition
+            let cond = match self.register_expr(
+                sym_id,
+                spanned_expr,
+                self.current_mod,
+                ScopeType::Neutral,
+                &mut vec![sym_id],
+            ) {
+                // There is no sym parrent..
+                Ok(c) => c,
+                Err(sem_err) => {
+                    let module = &self.compiler.mods[self.current_mod.id];
+                    self.reporter.report_semantic(
+                        sem_err,
+                        &module
+                            .src_metadata
+                            .as_ref()
+                            .expect("core should not be resolved"),
+                    );
 
-        let sym_id = table.ast_to_sym[&ast_id];
+                    return Err(());
+                }
+            };
+
+            conds.push(cond);
+        }
 
         let alias_def = self.compiler.get_alias_mut(sym_id);
         alias_def.params = params;
+        alias_def.conds = conds;
+        alias_def.args = abs_alias.args.iter().map(|sp_arg| sp_arg.arg).collect();
 
         Ok(())
     }
@@ -971,11 +1025,13 @@ impl TypeResolver<'_> {
         }
     }
 
+    // Maybe use active_mod here too so that code duplication is reduced
     /// On `Ok`, Creates a HIR expression type and returns the identifier of the expression.
     fn register_expr(
         &mut self,
         parent_sym_id: SymbolId,
         spanned_expr: &SpannedExpr,
+        active_mod_id: ModuleId,
         scope_type: ScopeType,
         seen: &mut Vec<SymbolId>,
     ) -> Result<ExprId, SemanticError> {
@@ -984,10 +1040,10 @@ impl TypeResolver<'_> {
             Expr::Var(name_id) => {
                 if let Some(found_sym_id) = scopes::get_sym_id(
                     self.compiler,
-                    self.current_mod,
+                    active_mod_id,
                     *name_id,
                     scope_type,
-                    LookupPattern::AllConnections,
+                    LookupPattern::NoRestrictions,
                 ) {
                     //WARN: Constant iteration upon seeing any symbol instead of a single check
                     //elsewhere
@@ -1113,12 +1169,16 @@ impl TypeResolver<'_> {
 
                     Ok(expr_id)
                 } else {
+                    let ident = self.interner.search(name_id.id as usize);
+                    // if ident == "_" {
+                    //     panic!("hi");
+                    // }
+
                     // SemanticError needs centralization
                     let module = &self.compiler.mods[self.current_mod.id];
-                    let err_name = self.interner.search(name_id.id as usize);
                     let mod_name = self.interner.search(module.name_id.id as usize);
                     let msg =
-                        format!("The symbol `{err_name}` was not found in the module `{mod_name}`");
+                        format!("The symbol `{ident}` was not found in the module `{mod_name}`");
 
                     Err(SemanticError::General(msg, vec![spanned_expr.span]))
                 }
@@ -1181,8 +1241,10 @@ impl TypeResolver<'_> {
                 }
             }
             Expr::BinaryExpr { lhs, op, rhs } => {
-                let lhs_id = self.register_expr(parent_sym_id, &*lhs, scope_type, seen)?;
-                let rhs_id = self.register_expr(parent_sym_id, &*rhs, scope_type, seen)?;
+                let lhs_id =
+                    self.register_expr(parent_sym_id, &*lhs, active_mod_id, scope_type, seen)?;
+                let rhs_id =
+                    self.register_expr(parent_sym_id, &*rhs, active_mod_id, scope_type, seen)?;
 
                 let lhs_expr = &self.compiler.exprs[lhs_id.id as usize];
                 let rhs_expr = &self.compiler.exprs[rhs_id.id as usize];
@@ -1276,35 +1338,44 @@ impl TypeResolver<'_> {
 
                 Ok(expr_id)
             }
+            //WARN: Make sure this works
             Expr::Default(name_id, spanned_expr) => {
                 let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
                 let val_id = ValueId::new(self.compiler.values.len() as u32);
 
-                let default_expr =
-                    self.register_expr(parent_sym_id, &spanned_expr, scope_type, seen)?;
+                let default_val_expr_id = self.register_expr(
+                    parent_sym_id,
+                    &spanned_expr,
+                    active_mod_id,
+                    scope_type,
+                    seen,
+                )?;
+                // Need the entire alias to use this as it's type through checks
+                let type_id = self.compiler.exprs[default_val_expr_id.id as usize].type_id;
 
                 //TODO: Need symbol of name id
                 //Need it's inputs to be the symbol and spanned expression
 
-                dbg!(&self.compiler.exprs[default_expr.id as usize]);
+                dbg!(&self.compiler.exprs[default_val_expr_id.id as usize]);
 
                 // DO NOT QUESTION THIS
-                let expr_hir = ExprHir::Default(todo!(), default_expr);
-                // inputs = symid default expr
+                let expr_hir = ExprHir::Default(*name_id, default_val_expr_id);
 
+                // Is the parameter an input if it doesn't have a value?
+                // The issue is, it's not a known input of any sort, it's just an identifier.
+                // Also, default is just a default so default only defaults when default defaults
                 let resolved_expr = ResolvedExpr::new(
-                    todo!(),
+                    type_id,
                     expr_hir,
                     val_id,
                     spanned_expr.span,
-                    vec![todo!(), default_expr],
+                    vec![default_val_expr_id],
                 );
 
-                self.compiler.exprs[default_expr.id as usize].user = Some(expr_id);
-
+                self.compiler.exprs[default_val_expr_id.id as usize].user = Some(expr_id);
                 self.compiler.exprs.push(resolved_expr);
 
-                todo!("Default not checked yet");
+                Ok(expr_id)
             }
             Expr::Str(name_id) => {
                 let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
@@ -1323,171 +1394,15 @@ impl TypeResolver<'_> {
 
                 Ok(expr_id)
             }
-            Expr::Call(caller, arg_exprs) => {
-                let call_id = self.register_expr(parent_sym_id, caller, scope_type, seen)?;
-                let type_id = self.compiler.exprs[call_id.id as usize].type_id;
-                let mut call_args: Vec<ExprId> = Vec::new();
-
-                for sp_expr in arg_exprs {
-                    let arg = self.register_expr(parent_sym_id, sp_expr, scope_type, seen)?;
-                    call_args.push(arg);
-                }
-
-                let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
-                let val_id = ValueId::new(self.compiler.values.len() as u32);
-
-                let expr_hir = ExprHir::Call(call_id, call_args);
-                // Are the arguments inputs if they are the expression itself?
-                let resolved_expr =
-                    ResolvedExpr::new(type_id, expr_hir, val_id, spanned_expr.span, Vec::new());
-                let val_info = ValueInfo::new(type_id, expr_id, None);
-
-                self.compiler.exprs.push(resolved_expr);
-                self.compiler.values.push(val_info);
-
-                Ok(expr_id)
-            }
-            // Maybe having "::" exist could help..
-            // FIX: Could be an issue here regarding cycle detection
-            Expr::MemberAccess(abs_member_access) => {
-                match self.resolve_member(
+            Expr::Unary(unary) => {
+                let operand_id = self.register_expr(
                     parent_sym_id,
-                    &abs_member_access.base,
+                    &unary.spanned_expr,
+                    active_mod_id,
                     scope_type,
                     seen,
-                )? {
-                    PossibleMember::Module(mod_id) => {
-                        //TODO: Allow self references if not already doable
-                        // main.thing
+                )?;
 
-                        //NOTE: Maybe privacy should be checked from this resolver?
-                        let extern_mod = &self.compiler.mods[mod_id.id];
-                        if let Some(extern_sym_id) = scopes::get_sym_id(
-                            self.compiler,
-                            extern_mod.mod_id,
-                            abs_member_access.field,
-                            scope_type,
-                            LookupPattern::ModuleOnly,
-                        ) {
-                            seen.push(extern_sym_id);
-                            self.check_cycle(seen, parent_sym_id, extern_sym_id)?;
-
-                            let symbol = &self.compiler.symbols[extern_sym_id.id as usize];
-
-                            // symbol kind aware reporting.
-                            // In need of cross-module reporting of where the not exported symbol
-                            // is
-                            if symbol.is_priv && symbol.owner != self.current_mod {
-                                let name = self.interner.search(symbol.name_id.id as usize);
-                                let msg = format!("The symbol `{name}` is private");
-
-                                let mod_origin = &self.compiler.mods[self.current_mod.id];
-                                self.reporter.report_spanned(
-                                    &msg,
-                                    None,
-                                    &[spanned_expr.span],
-                                    &mod_origin
-                                        .src_metadata
-                                        .as_ref()
-                                        .expect("core should not be resolved"),
-                                );
-                            }
-
-                            if extern_sym_id == parent_sym_id {
-                                let name = self.interner.search(
-                                    self.compiler.symbols[extern_sym_id.id as usize].name_id.id
-                                        as usize,
-                                );
-                                let msg = format!("Cannot declare symbol `{name}` as itself");
-
-                                let parent_ast_id =
-                                    self.compiler.symbols[parent_sym_id.id as usize].ast_id;
-                                let mut spans = Vec::new();
-                                spans.push(spanned_expr.span);
-
-                                if let Some(ast_id) = parent_ast_id {
-                                    let ast_span = self.ast_info.get_sym_span(ast_id);
-                                    spans.push(ast_span);
-                                };
-
-                                return Err(SemanticError::General(msg, spans));
-                            }
-
-                            match symbol.kind {
-                                SymbolKind::Type(type_id) => todo!(),
-                                SymbolKind::Val(val_id) => {
-                                    let val_info = &self.compiler.values[val_id.id as usize];
-                                    Ok(val_info.expr_id)
-                                }
-                                SymbolKind::Unknown => {
-                                    let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
-                                    let expr_hir = ExprHir::Var(extern_sym_id);
-                                    let pending_expr = PendingExpr::new(expr_id, parent_sym_id);
-
-                                    self.ty_ctx.store_pending_expr(extern_sym_id, pending_expr);
-                                    // dbg!(self.interner.search(
-                                    //     self.compiler.symbols[&SymbolId::new(25)].name_id.id
-                                    //         as usize
-                                    // ));
-                                    // dbg!(&self.ty_ctx);
-                                    // panic!();
-                                    // Will possibly call for others to be resolved here, or do it from the
-                                    // var resolution method itself
-
-                                    let type_id = TypeId::new(script_compiler::TYPE_UNKNOWN_IDX);
-
-                                    // Creates value id that has an unknown type, no constant value, and an
-                                    // unresolved expression.
-                                    let val_id = ValueId::new(self.compiler.values.len() as u32);
-                                    let val_info = ValueInfo::new(type_id, expr_id, None);
-
-                                    self.compiler.values.push(val_info);
-
-                                    let expr = ResolvedExpr::new(
-                                        type_id,
-                                        expr_hir,
-                                        val_id,
-                                        spanned_expr.span,
-                                        Vec::new(),
-                                    );
-
-                                    self.compiler.exprs.push(expr);
-
-                                    Ok(expr_id)
-                                }
-                            }
-                        } else {
-                            // TODO: Should also show what scopes were searched or just in some
-                            // form at all state why a symbol that exists wasn't seen
-                            // Find similar symbols
-                            let msg = format!(
-                                "Could not find the symbol `{}` inside module `{}` as a value, alias or function",
-                                self.interner.search(abs_member_access.field.id as usize),
-                                self.interner.search(extern_mod.name_id.id as usize)
-                            );
-
-                            return Err(SemanticError::General(msg, vec![spanned_expr.span]));
-                        }
-                    }
-                    // Maybe this shouldn't be allowed here since parsing types is different from
-                    // parinsg expressions within this resolver, meaning this should be an error
-                    //
-                    // But also, this is literally impossible since only `nest` sections can
-                    // actually access types, but expressions use types to check for if a value is
-                    // searchable so is it still needed?
-                    PossibleMember::Type(type_id) => {
-                        todo!("Type id");
-                    }
-                    PossibleMember::Var(val_id) => {
-                        ValueResult::Resolved(val_id);
-                        unimplemented!("Nothing matches this case yet");
-                    }
-                    PossibleMember::Nothing => todo!("Unresolved"),
-                }
-            }
-            Expr::Unary(unary) => {
-                let operand_id =
-                    self.register_expr(parent_sym_id, &unary.spanned_expr, scope_type, seen)?;
                 let operand_expr = &self.compiler.exprs[operand_id.id as usize];
 
                 let is_unknown = operand_expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX;
@@ -1574,6 +1489,195 @@ impl TypeResolver<'_> {
                     Ok(expr_id)
                 }
             }
+            Expr::Call(caller, arg_exprs) => {
+                let call_id =
+                    self.register_expr(parent_sym_id, caller, active_mod_id, scope_type, seen)?;
+                let type_id = self.compiler.exprs[call_id.id as usize].type_id;
+                let mut call_args: Vec<ExprId> = Vec::new();
+
+                for sp_expr in arg_exprs {
+                    let arg = self.register_expr(
+                        parent_sym_id,
+                        sp_expr,
+                        active_mod_id,
+                        scope_type,
+                        seen,
+                    )?;
+
+                    call_args.push(arg);
+                }
+
+                let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+                let val_id = ValueId::new(self.compiler.values.len() as u32);
+
+                let inputs = call_args.clone();
+
+                let expr_hir = ExprHir::Call(call_id, call_args);
+                // Are the arguments inputs if they are the expression itself?
+                let resolved_expr =
+                    ResolvedExpr::new(type_id, expr_hir, val_id, spanned_expr.span, inputs);
+                let val_info = ValueInfo::new(type_id, expr_id, None);
+
+                self.compiler.exprs.push(resolved_expr);
+                self.compiler.values.push(val_info);
+
+                Ok(expr_id)
+            }
+            // Maybe having "::" exist could help..
+            // FIX: Need to reduce code re-usage since this
+            Expr::MemberAccess(abs_member_access) => {
+                match self.resolve_member(
+                    parent_sym_id,
+                    &abs_member_access.base,
+                    active_mod_id,
+                    scope_type,
+                    seen,
+                )? {
+                    PossibleMember::Module(extern_mod_id) => {
+                        //TODO: Allow self references if not already doable
+                        // main.thing
+
+                        //NOTE: Maybe privacy should be checked from this resolver?
+                        if let Some(extern_sym_id) = scopes::get_sym_id(
+                            self.compiler,
+                            extern_mod_id,
+                            abs_member_access.field,
+                            scope_type,
+                            LookupPattern::ModuleOnly,
+                        ) {
+                            seen.push(extern_sym_id);
+                            // Dirtiness?
+                            self.check_cycle(seen, parent_sym_id, extern_sym_id)?;
+
+                            if extern_sym_id == parent_sym_id {
+                                let name = self.interner.search(
+                                    self.compiler.symbols[extern_sym_id.id as usize].name_id.id
+                                        as usize,
+                                );
+                                let msg = format!("Cannot declare symbol `{name}` as itself");
+
+                                let parent_ast_id =
+                                    self.compiler.symbols[parent_sym_id.id as usize].ast_id;
+                                let mut spans = Vec::new();
+                                spans.push(spanned_expr.span);
+
+                                if let Some(ast_id) = parent_ast_id {
+                                    let ast_span = self.ast_info.get_sym_span(ast_id);
+                                    spans.push(ast_span);
+                                };
+
+                                return Err(SemanticError::General(msg, spans));
+                            }
+
+                            let symbol = &self.compiler.symbols[extern_sym_id.id as usize];
+
+                            // symbol kind aware reporting.
+                            // In need of cross-module reporting of where the not exported symbol
+                            // is
+                            if symbol.owner != self.current_mod && symbol.is_priv {
+                                let name = self.interner.search(symbol.name_id.id as usize);
+                                let msg = format!("The symbol `{name}` is private");
+
+                                let mod_origin = &self.compiler.mods[self.current_mod.id];
+                                self.reporter.report_spanned(
+                                    &msg,
+                                    None,
+                                    &[spanned_expr.span],
+                                    &mod_origin
+                                        .src_metadata
+                                        .as_ref()
+                                        .expect("core should not be resolved"),
+                                );
+                            }
+
+                            // This SEEMS ok?
+                            let inline_expr = Expr::Var(abs_member_access.field);
+                            let sp_expr = SpannedExpr::new(inline_expr, spanned_expr.span);
+
+                            self.register_expr(
+                                parent_sym_id,
+                                &sp_expr,
+                                extern_mod_id,
+                                scope_type,
+                                seen,
+                            )
+                            //
+                            // match symbol.kind {
+                            //     SymbolKind::Type(type_id) => {
+                            //         todo!("Typed")
+                            //     }
+                            //     SymbolKind::Val(val_id) => {
+                            //         let val_info = &self.compiler.values[val_id.id as usize];
+                            //         Ok(val_info.expr_id)
+                            //     }
+                            //     SymbolKind::Unknown => {
+                            //         let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+                            //         let expr_hir = ExprHir::Var(extern_sym_id);
+                            //         let pending_expr = PendingExpr::new(expr_id, parent_sym_id);
+                            //
+                            //         self.ty_ctx.store_pending_expr(extern_sym_id, pending_expr);
+                            //         // dbg!(self.interner.search(
+                            //         //     self.compiler.symbols[&SymbolId::new(25)].name_id.id
+                            //         //         as usize
+                            //         // ));
+                            //         // dbg!(&self.ty_ctx);
+                            //         // panic!();
+                            //         // Will possibly call for others to be resolved here, or do it from the
+                            //         // var resolution method itself
+                            //
+                            //         let type_id = TypeId::new(script_compiler::TYPE_UNKNOWN_IDX);
+                            //
+                            //         // Creates value id that has an unknown type, no constant value, and an
+                            //         // unresolved expression.
+                            //         let val_id = ValueId::new(self.compiler.values.len() as u32);
+                            //         let val_info = ValueInfo::new(type_id, expr_id, None);
+                            //
+                            //         self.compiler.values.push(val_info);
+                            //
+                            //         let expr = ResolvedExpr::new(
+                            //             type_id,
+                            //             expr_hir,
+                            //             val_id,
+                            //             spanned_expr.span,
+                            //             Vec::new(),
+                            //         );
+                            //
+                            //         self.compiler.exprs.push(expr);
+                            //
+                            //         Ok(expr_id)
+                            //     }
+                            // }
+                        } else {
+                            // TODO: Should also show what scopes were searched or just in some
+                            // form at all state why a symbol that exists wasn't seen
+                            // Find similar symbols
+                            let extern_mod = &self.compiler.mods[extern_mod_id.id];
+
+                            // Misleading error message. Very misleading.
+                            let msg = format!(
+                                "Could not find the symbol `{}` inside module `{}` as a value, alias or function",
+                                self.interner.search(abs_member_access.field.id as usize),
+                                self.interner.search(extern_mod.name_id.id as usize)
+                            );
+
+                            return Err(SemanticError::General(msg, vec![spanned_expr.span]));
+                        }
+                    }
+                    // Maybe this shouldn't be allowed here since parsing types is different from
+                    // parinsg expressions within this resolver, meaning this should be an error
+                    //
+                    // But also, this is literally impossible since only `nest` sections can
+                    // actually access types, but expressions use types to check for if a value is
+                    // searchable so is it still needed?
+                    PossibleMember::Type(type_id) => {
+                        todo!("Type id");
+                    }
+                    PossibleMember::Var(val_id) => {
+                        unimplemented!("Nothing matches this case yet");
+                    }
+                    PossibleMember::Nothing => todo!("Unresolved"),
+                }
+            }
         }
     }
 
@@ -1581,10 +1685,12 @@ impl TypeResolver<'_> {
         &mut self,
         sym_parent: SymbolId,
         member: &SpannedExpr,
+        active_mod_id: ModuleId,
         scope_type: ScopeType,
         seen: &mut Vec<SymbolId>,
     ) -> Result<PossibleMember, SemanticError> {
-        if let Ok(expr_id) = self.register_expr(sym_parent, member, scope_type, seen) {
+        if let Ok(expr_id) = self.register_expr(sym_parent, member, active_mod_id, scope_type, seen)
+        {
             let resolved_expr = &self.compiler.exprs[expr_id.id as usize];
 
             todo!();
@@ -1600,16 +1706,12 @@ impl TypeResolver<'_> {
                 self.current_mod,
                 name_id,
                 scope_type,
-                LookupPattern::AllConnections,
+                LookupPattern::NoRestrictions,
             ) {
                 todo!();
                 // let type_id = self.compiler.symbols[sym_id.id as usize];
                 // return Ok(PossibleMember::Type(type_id));
             } else {
-                if name_id.id == intern::INTERNED_SELF as u32 {
-                    panic!("self");
-                }
-                // Dot reference sounds better
                 let msg = format!(
                     "Could not find the symbol `{}` as a module or value",
                     self.interner.search(name_id.id as usize)
@@ -1782,7 +1884,7 @@ impl TypeResolver<'_> {
                                 self.current_mod,
                                 &generic.args[0],
                                 scope_type,
-                                LookupPattern::AllConnections,
+                                LookupPattern::NoRestrictions,
                             )?;
 
                             let ty = if kind == BuiltinTypeKind::List {
@@ -1809,7 +1911,7 @@ impl TypeResolver<'_> {
                                     self.current_mod,
                                     arg,
                                     scope_type,
-                                    LookupPattern::AllConnections,
+                                    LookupPattern::NoRestrictions,
                                 )?);
                             }
 
@@ -1843,14 +1945,14 @@ impl TypeResolver<'_> {
                                 self.current_mod,
                                 &generic.args[0],
                                 scope_type,
-                                LookupPattern::AllConnections,
+                                LookupPattern::NoRestrictions,
                             )?;
 
                             let val = self.resolve_type_expr(
                                 self.current_mod,
                                 &generic.args[1],
                                 scope_type,
-                                LookupPattern::AllConnections,
+                                LookupPattern::NoRestrictions,
                             )?;
 
                             let map = Type::BuiltinType(BuiltinType::Map(key, val));

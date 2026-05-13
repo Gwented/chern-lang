@@ -62,6 +62,10 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
         asts.push(ast_info);
     }
 
+    if !reporter.diags.is_empty() {
+        return Err(ScriptError::Semantic(reporter.diags).into());
+    }
+
     //FIX: AstId position should be a direct tie, not sequential
     let mut ty_ctx = TypeContext::new();
     for i in 0..script_compiler.mods.len() {
@@ -81,6 +85,10 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
         )
         .resolve()
         .unwrap_or_else(|mut diags| reporter.diags.append(&mut diags));
+    }
+
+    if !reporter.diags.is_empty() {
+        return Err(ScriptError::Semantic(reporter.diags).into());
     }
 
     // Not sure if this is needed anymore

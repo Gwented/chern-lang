@@ -96,7 +96,7 @@ pub fn get_sym_id(
             &accessible_scopes[..accessible_scopes.len() - 1]
         }
         // If it's core then it'll only have access to core anyways so this is fine
-        LookupPattern::AllConnections | LookupPattern::ModuleOnly => accessible_scopes,
+        LookupPattern::NoRestrictions | LookupPattern::ModuleOnly => accessible_scopes,
     };
 
     for allowed_scope_type in accessible_scopes.iter().copied() {
@@ -130,7 +130,7 @@ pub fn get_type_id(
             &accessible_scopes[..accessible_scopes.len() - 1]
         }
         // If it's core then it'll only have access to core anyways so this is fine
-        LookupPattern::AllConnections | LookupPattern::ModuleOnly => accessible_scopes,
+        LookupPattern::NoRestrictions | LookupPattern::ModuleOnly => accessible_scopes,
     };
     // I don't think this can fail. Should maybe expect for clarity.
     //     let scope = &compiler.scopes[scope_id.id].scope;
@@ -205,7 +205,7 @@ impl ScopeType {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LookupPattern {
     // The naming please
-    AllConnections,
+    NoRestrictions,
     ModuleOnly,
 }
 

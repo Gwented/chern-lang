@@ -27,7 +27,6 @@ pub static KEYWORDS_ARRAY: [&str; 13] = [
 // Keep a compact enum for code that prefers typed keyword identifiers.
 // I think I don't know I am new to thinking does anyone have beginner thoughts?
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[repr(u32)]
 pub enum Keyword {
     Struct = 0,
     Enum = 1,

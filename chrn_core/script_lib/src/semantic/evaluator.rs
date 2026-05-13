@@ -15,7 +15,7 @@ pub fn is_compatible_unary(op: UnaryOp, operand: &Value) -> bool {
             | Value::Tuple(_)
             | Value::InternedStr(_)
             | Value::RuntimeStr(_)
-            | Value::Func
+            | Value::Func(_)
             | Value::Unknown => false,
         },
         UnaryOp::Negate => match operand {
@@ -92,7 +92,7 @@ pub fn is_compatible_binary(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
             // BinaryOp::LessOrEq => todo!(),
             _ => false,
         },
-        Value::Func | Value::Tuple(_) | Value::Unknown => false,
+        Value::Func(_) | Value::Tuple(_) | Value::Unknown => false,
         Value::RuntimeStr(_) => unreachable!("Impossible to reach at compile time"),
     }
 }
@@ -108,7 +108,7 @@ pub fn apply_unary_op(op: UnaryOp, operand: &Value) -> Result<Value, SemanticErr
             | Value::InternedStr(_)
             | Value::RuntimeStr(_)
             | Value::Unknown
-            | Value::Func => unreachable!(),
+            | Value::Func(_) => unreachable!(),
         },
         UnaryOp::Negate => match operand {
             Value::I64(v) => Ok(Value::I64(-v)),
@@ -138,7 +138,7 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
             | Value::Tuple(_)
             | Value::InternedStr(_)
             | Value::RuntimeStr(_)
-            | Value::Func
+            | Value::Func(_)
             | Value::Unknown => unreachable!(),
         },
         BinaryOp::Sub => match lhs {

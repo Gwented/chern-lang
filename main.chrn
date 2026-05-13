@@ -5,7 +5,12 @@
 import "../../defs.chrn"
 //let x = 3// I am another
 
-//alias default() = []
+alias default(x, y) = [Contains(x = "Defaulting", y = "Forklift")] #warn
+let b = default(_, _)
+
+let input = "Chrn"
+
+let x = IsEmpty
 
                 // Gilber let b = 5
 
