@@ -171,8 +171,8 @@ impl TypeResolver<'_> {
 
         // if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
         //     dbg!(&self.ty_ctx);
-        //     for symbol in self.compiler.symbols.values() {
-        //         if self.interner.search(symbol.name_id.id as usize) == "z" {
+        //     for symbol in &self.compiler.symbols {
+        //         if self.interner.search(symbol.name_id.id as usize) == "x" {
         //             let name = self.interner.search(symbol.name_id.id as usize);
         //             dbg!(name);
         //             match symbol.kind {
@@ -218,13 +218,6 @@ impl TypeResolver<'_> {
         //     for val in &self.compiler.values {
         //         dbg!(val);
         //     }
-        // }
-
-        // if !self.ty_ctx.sym_queue.is_empty()
-        //     && self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id
-        // {
-        //     dbg!(&self.ty_ctx);
-        //     panic!("Runtime not sorted yet");
         // }
 
         if !self.reporter.err_vec.is_empty() {
@@ -1080,11 +1073,12 @@ impl TypeResolver<'_> {
                                 Type::Func(_) | Type::Alias(_) => {
                                     let val_id = ValueId::new(self.compiler.values.len() as u32);
                                     let val_info = ValueInfo::new(type_id, expr_id, None);
+                                    self.compiler.values.push(val_info);
 
                                     let expr_hir = ExprHir::Var(found_sym_id);
 
                                     ResolvedExpr::new(
-                                        val_info.type_id,
+                                        type_id,
                                         expr_hir,
                                         val_id,
                                         spanned_expr.span,
@@ -1168,8 +1162,9 @@ impl TypeResolver<'_> {
                     // SemanticError needs centralization
                     let module = &self.compiler.mods[self.current_mod.id];
                     let mod_name = self.interner.search(module.name_id.id as usize);
-                    let msg =
-                        format!("The symbol `{ident}` was not found in the module `{mod_name}`");
+                    let msg = format!(
+                        "The symbol `{ident}` was not found in the module `{mod_name}` within `{scope_type}` searchable scopes"
+                    );
 
                     Err(SemanticError::General(msg, vec![spanned_expr.span]))
                 }
@@ -1598,7 +1593,7 @@ impl TypeResolver<'_> {
 
                             // Misleading error message. Very misleading.
                             let msg = format!(
-                                "Could not find the symbol `{}` inside module `{}` as a value, alias or function",
+                                "Could not find the symbol `{}` inside module `{}` as a value, alias or function within `{scope_type}` searchable scopes",
                                 self.interner.search(abs_member_access.field.id as usize),
                                 self.interner.search(extern_mod.name_id.id as usize)
                             );

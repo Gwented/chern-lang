@@ -131,122 +131,6 @@ impl<'a> ConstraintResolver<'a> {
         Ok(())
     }
 
-    // fn report_job(&mut self, job: Job) {
-    //     let symbol = &self.compiler.symbols[&job.sym_id];
-    //     match &symbol.kind {
-    //         SymbolKind::Val(val_id) => {
-    //             let val_info = &self.compiler.values[val_id.id as usize];
-    //             let msg = format!("Could not evaluate variable");
-    //             self.reporter.report_spanned(
-    //                 &msg,
-    //                 None,
-    //                 &[job.span],
-    //                 &self.compiler.mods[self.current_mod.id].metadata,
-    //             );
-    //         }
-    //         SymbolKind::Type(type_id) => todo!(),
-    //         SymbolKind::Unknown => todo!(),
-    //     }
-    // }
-    //
-    // fn resolve_leftover_jobs(&mut self) -> Result<(), ()> {
-    //     // Tracking if a full cycle was reached given the amount of jobs which should be
-    //     // deterministic (Assuming it's right)
-    //     let mut full_cycle = self.val_ctx.jobs.len();
-    //     let mut cycle = 0;
-    //
-    //     while let Some(job) = self.val_ctx.jobs.pop_front() {
-    //         self.current_mod = job.mod_id;
-    //         let val_res = match &self.ast_info[job.mod_id.id].items[job.ast_id.id as usize] {
-    //             Item::Var(abs_var) => {
-    //                 match self.resolve_expr(&abs_var.spanned_expr, job.scope_type) {
-    //                     Ok(res) => res,
-    //                     Err(sem_err) => {
-    //                         self.reporter
-    //                             .report_semantic(sem_err, &self.compiler.mods[job.mod_id.id]);
-    //
-    //                         return Err(());
-    //                     }
-    //                 }
-    //             }
-    //             // Item::Var(abs_typedef) => resolve_typedef(abs_typedef, job.ast_id),
-    //             // Item::Struct(abs_struct) => self.resolve_struct(abs_struct, job.ast_id),
-    //             // Item::Enum(abs_enum) => self.resolve_enum(abs_enum, job.ast_id),
-    //             // Item::Alias(abs_alias) => todo!(),
-    //             _ => todo!(),
-    //         };
-    //
-    //         match val_res {
-    //             ValueResult::Resolved(val_id) => {
-    //                 // I can't
-    //                 cycle = 0;
-    //                 full_cycle -= 1;
-    //                 let symbol = self.compiler.symbols.get_mut(&job.sym_id).expect("Exists");
-    //
-    //                 match &mut symbol.kind {
-    //                     SymbolKind::Val(val_id) => {
-    //                         let val_info = &self.compiler.values[val_id.id as usize];
-    //                         todo!();
-    //                     }
-    //                     SymbolKind::Type(type_id) => todo!(),
-    //                     SymbolKind::Unknown => todo!(),
-    //                 }
-    //             }
-    //             ValueResult::Unresolved => {
-    //                 cycle += 1;
-    //                 self.val_ctx.jobs.push_back(job);
-    //
-    //                 if cycle > full_cycle {
-    //                     return Err(());
-    //                 }
-    //             }
-    //         }
-    //     }
-    //
-    //     Ok(())
-    // }
-    //
-    // fn resolve_var(&mut self, abs_var: &AbstractVar, ast_id: AstId) -> Result<(), ()> {
-    //     let module = &self.compiler.mods[self.current_mod.id];
-    //     let scope_id = module.extract_scope_id(ScopeType::Neutral);
-    //     let table = &module.get_scope(scope_id).table;
-    //
-    //     let sym_id = table.sym_ids[&ast_id];
-    //
-    //     //TEST:
-    //     todo!();
-    //     let val_id = match self.resolve_expr(&abs_var.spanned_expr, ScopeType::Neutral) {
-    //         Ok(v) => match v {
-    //             ValueResult::Resolved(v_inner) => v_inner,
-    //             // TODO: Who is the one that pushes the job? Only the original caller?
-    //             ValueResult::Unresolved => {
-    //                 let job = Job::new(
-    //                     sym_id,
-    //                     self.current_mod,
-    //                     ast_id,
-    //                     abs_var.spanned_expr.span,
-    //                     scope_id,
-    //                     ScopeType::Neutral,
-    //                 );
-    //
-    //                 self.val_ctx.jobs.push_back(job);
-    //                 return Ok(());
-    //             }
-    //         },
-    //         Err(sem_err) => {
-    //             self.reporter
-    //                 .report_semantic(sem_err, &self.compiler.mods[self.current_mod.id]);
-    //             return Err(());
-    //         }
-    //     };
-    //
-    //     // Setting var from an `Unknown` value to whatever was found
-    //     let symbol = self.compiler.symbols.get_mut(sym_id.id as usize).expect("Must exist");
-    //     symbol.kind = SymbolKind::Val(val_id);
-    //
-    //     Ok(())
-    // }
-    //
     // fn resolve_expr(
     //     &mut self,
     //     spanned_expr: &SpannedExpr,
@@ -255,7 +139,9 @@ impl<'a> ConstraintResolver<'a> {
     //     todo!();
     // }
 
-    // Maybe we can privacy check here so semantic information is still present, but the error is
+    // Needs:
+    //
+    // Maybe we can privacy check here so semantic information is still present, and the error is
     // also present
     fn resolve_var(&mut self, abs_var: &AbstractVar, ast_id: AstId) -> Result<(), ()> {
         // Not sure what this might need checked yet other than privacy
@@ -267,6 +153,14 @@ impl<'a> ConstraintResolver<'a> {
 
         let symbol = &self.compiler.symbols[sym_id.id as usize];
 
+        let val_info = self.compiler.get_var(sym_id);
+        let ty = &self.compiler.types[val_info.type_id.id as usize].ty;
+
+        // Not currently syntactically possible to make runtime expressions
+        if let Type::Unknown = ty {
+            todo!("Unknowned");
+        }
+
         Ok(())
     }
 
@@ -277,15 +171,16 @@ impl<'a> ConstraintResolver<'a> {
         let table = &self.compiler.get_scope(scope_id).scope.table;
         let sym_id = table.ast_to_sym[&ast_id];
 
+        let module = &self.compiler.mods[self.current_mod.id];
         let type_def = self.compiler.get_typedef(sym_id);
-        let ty = &self.compiler.types[type_def.type_id.id as usize].ty;
+        let ty_info = &self.compiler.types[type_def.type_id.id as usize];
 
         // Checking if condition is valid for the given type
         // Using the Ast node's condition so that the span information is not lost
         for (i, cond_expr) in type_def.conds.iter().enumerate() {
             let ast_span = &abs_typedef.conds[i].span;
 
-            match ty {
+            match &ty_info.ty {
                 Type::Struct(_) | Type::Enum(_) => {
                     //NOTE: Would be better as a note
                     let msg = "Cannot give a `var->` defined variable a condition when it has a `struct` or `enum` type, define\nthis within `nest->`";
@@ -304,8 +199,6 @@ impl<'a> ConstraintResolver<'a> {
             }
 
             if let Err(sem_err) = self.check_cond(type_def.type_id, *cond_expr) {
-                let module = &self.compiler.mods[self.current_mod.id];
-
                 self.reporter.report_semantic(
                     sem_err,
                     module
@@ -316,9 +209,7 @@ impl<'a> ConstraintResolver<'a> {
             }
         }
 
-        let ty_info = &self.compiler.types[type_def.type_id.id as usize];
-        let module = &self.compiler.mods[self.current_mod.id];
-        //TODO: Make less terminal and have a better solution for this
+        let ty_span = abs_typedef.spanned_ty_expr.span;
         for spanned_arg in &abs_typedef.args {
             match &ty_info.ty {
                 Type::Struct(_) | Type::Enum(_) => {
@@ -339,7 +230,7 @@ impl<'a> ConstraintResolver<'a> {
             }
 
             if let Err(sem_err) =
-                self.check_arg(type_def.type_id, None, module, &spanned_arg, &mut vec![])
+                self.check_arg(type_def.type_id, ty_span, module, &spanned_arg, &mut vec![])
             {
                 self.reporter.report_semantic(
                     sem_err,
@@ -404,52 +295,65 @@ impl<'a> ConstraintResolver<'a> {
 
         let sym_id = table.ast_to_sym[&ast_id];
         let struct_def = self.compiler.get_struct(sym_id);
-        //
-        //     let mut conds: Vec<Cond> = Vec::new();
-        //
-        //     for expr in &abs_struct.glob_conds {
-        //         let cond = match self.check_cond(expr, ast_id) {
-        //             Ok(c) => c,
-        //             Err(sem_err) => {
-        //                 self.reporter.report_semantic(
-        //                     sem_err,
-        //                     &self.compiler.mods[self.current_mod.id as usize],
-        //                 );
-        //
-        //                 return Err(());
-        //             }
-        //         };
-        //
-        //         conds.push(cond);
-        //     }
-        //
-        //     let module = &self.compiler.mods[self.current_mod.id];
-        //     let fields = &self.compiler.get_struct(sym_id).fields;
-        //
-        //     for (i, cond) in conds.iter().enumerate() {
-        //         let ast_span = &abs_struct.glob_conds[i].span;
-        //
-        //         for field in fields {
-        //             // if let Err(sem_err) =
-        //             //     self.check_cond_constraints(field.type_id, &ast_span, cond, &mut vec![])
-        //             // {
-        //             //     self.reporter.report_semantic(sem_err, &module);
-        //             //     return Err(());
-        //             // }
-        //         }
-        //     }
+
         let module = &self.compiler.mods[self.current_mod.id];
 
+        // Glob conds
+        for field in &struct_def.fields {
+            for cond_expr in &struct_def.glob_conds {
+                if let Err(sem_err) = self.check_cond(field.type_id, *cond_expr) {
+                    self.reporter.report_semantic(
+                        sem_err,
+                        module
+                            .src_metadata
+                            .as_ref()
+                            .expect("core should not be resolved"),
+                    );
+                }
+            }
+        }
+
+        // Field conds
+        for field in &struct_def.fields {
+            for cond_expr in &field.conds {
+                if let Err(sem_err) = self.check_cond(field.type_id, *cond_expr) {
+                    self.reporter.report_semantic(
+                        sem_err,
+                        module
+                            .src_metadata
+                            .as_ref()
+                            .expect("core should not be resolved"),
+                    );
+                }
+            }
+        }
+
+        // Glob args
         for (i, field) in struct_def.fields.iter().enumerate() {
-            let active_span = abs_struct.fields[i].spanned_ty_expr.span;
+            let ty_span = abs_struct.fields[i].spanned_ty_expr.span;
             for spanned_arg in &abs_struct.glob_args {
-                if let Err(sem_err) = self.check_arg(
-                    field.type_id,
-                    Some(active_span),
-                    module,
-                    spanned_arg,
-                    &mut vec![],
-                ) {
+                if let Err(sem_err) =
+                    self.check_arg(field.type_id, ty_span, module, spanned_arg, &mut vec![])
+                {
+                    self.reporter.report_semantic(
+                        sem_err,
+                        module
+                            .src_metadata
+                            .as_ref()
+                            .expect("core should not be resolved"),
+                    );
+                }
+            }
+        }
+
+        // Field args
+        for (i, field) in struct_def.fields.iter().enumerate() {
+            let abs_field = &abs_struct.fields[i];
+            let ty_span = abs_field.spanned_ty_expr.span;
+            for spanned_arg in &abs_field.args {
+                if let Err(sem_err) =
+                    self.check_arg(field.type_id, ty_span, module, spanned_arg, &mut vec![])
+                {
                     self.reporter.report_semantic(
                         sem_err,
                         module
@@ -470,21 +374,49 @@ impl<'a> ConstraintResolver<'a> {
             .extract_scope_id(ScopeType::Nest, self.current_mod);
         let table = &self.compiler.get_scope(scope_id).scope.table;
 
-        //TODO: global condition and argument setting.
-        //field arg and cond settings.
-        //same for enums.
-
         let sym_id = table.ast_to_sym[&ast_id];
 
-        let variants = &self.compiler.get_enum(sym_id).variants;
+        let enum_def = &self.compiler.get_enum(sym_id);
         let module = &self.compiler.mods[self.current_mod.id];
 
-        // Conditions
+        // Glob conds
+        for variant in &enum_def.variants {
+            if let Some(inner_id) = variant.type_id {
+                for cond_expr in &enum_def.glob_conds {
+                    if let Err(sem_err) = self.check_cond(inner_id, *cond_expr) {
+                        self.reporter.report_semantic(
+                            sem_err,
+                            module
+                                .src_metadata
+                                .as_ref()
+                                .expect("core should not be resolved"),
+                        );
+                    }
+                }
+            }
+        }
 
-        // Args
-        for (i, variant) in variants.iter().enumerate() {
-            if let Some(ty) = variant.type_id {
-                let active_span = abs_enum.variants[i]
+        // Variant conds
+        for variant in &enum_def.variants {
+            if let Some(inner_id) = variant.type_id {
+                for cond_expr in &variant.conds {
+                    if let Err(sem_err) = self.check_cond(inner_id, *cond_expr) {
+                        self.reporter.report_semantic(
+                            sem_err,
+                            module
+                                .src_metadata
+                                .as_ref()
+                                .expect("core should not be resolved"),
+                        );
+                    }
+                }
+            }
+        }
+
+        // Glob args
+        for (i, variant) in enum_def.variants.iter().enumerate() {
+            if let Some(inner_id) = variant.type_id {
+                let ty_span = abs_enum.variants[i]
                     .ty_expr
                     .as_ref()
                     .expect("Just checked")
@@ -492,7 +424,29 @@ impl<'a> ConstraintResolver<'a> {
 
                 for spanned_arg in &abs_enum.glob_args {
                     if let Err(sem_err) =
-                        self.check_arg(ty, Some(active_span), module, spanned_arg, &mut vec![])
+                        self.check_arg(inner_id, ty_span, module, spanned_arg, &mut vec![])
+                    {
+                        self.reporter.report_semantic(
+                            sem_err,
+                            module
+                                .src_metadata
+                                .as_ref()
+                                .expect("core should not be resolved"),
+                        );
+                    }
+                }
+            }
+        }
+
+        // Variant args
+        for (i, variant) in enum_def.variants.iter().enumerate() {
+            if let Some(inner_id) = variant.type_id {
+                let abs_variant = &abs_enum.variants[i];
+                let ty_span = abs_variant.ty_expr.as_ref().expect("Just checked").span;
+
+                for spanned_arg in &abs_variant.args {
+                    if let Err(sem_err) =
+                        self.check_arg(inner_id, ty_span, module, spanned_arg, &mut vec![])
                     {
                         self.reporter.report_semantic(
                             sem_err,
@@ -508,125 +462,57 @@ impl<'a> ConstraintResolver<'a> {
 
         Ok(())
     }
-    //
-    // fn resolve_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) -> Result<(), ()> {
-    //     let module = &self.compiler.mods[self.current_mod.id];
-    //     let scope_id = module.extract_scope_id(ScopeType::Nest);
-    //     let table = &module.get_scope(scope_id).table;
-    //
-    //     let sym_id = table.sym_ids[&ast_id];
-    //
-    //     let mut conds: Vec<Cond> = Vec::new();
-    //
-    //     for expr in &abs_enum.glob_conds {
-    //         let cond = match self.check_cond(expr, ast_id) {
-    //             Ok(c) => c,
-    //             Err(sem_err) => {
-    //                 self.reporter.report_semantic(
-    //                     sem_err,
-    //                     &self.compiler.mods[self.current_mod.id as usize],
-    //                 );
-    //
-    //                 return Err(());
-    //             }
-    //         };
-    //
-    //         conds.push(cond);
-    //     }
-    //
-    //     // First borrow
-    //     let module = &self.compiler.mods[self.current_mod.id];
-    //     let variants = &self.compiler.get_enum(sym_id).variants;
-    //
-    //     for (i, cond) in conds.iter().enumerate() {
-    //         let ast_span = &abs_enum.glob_conds[i].span;
-    //
-    //         for variant in variants {
-    //             // if let Some(type_id) = variant.type_id {
-    //             //     if let Err(sem_err) =
-    //             //         self.check_cond_constraints(type_id, &ast_span, cond, &mut Vec::new())
-    //             //     {
-    //             //         self.reporter.report_semantic(sem_err, &module);
-    //             //     }
-    //             // }
-    //         }
-    //     }
-    //
-    //     // Second borrow
-    //     let variants = &self.compiler.get_enum(sym_id).variants;
-    //
-    //     let mut args: Vec<InnerArgs> = Vec::new();
-    //
-    //     for variant in variants {
-    //         for spanned_arg in &abs_enum.glob_args {
-    //             if let Some(type_id) = variant.type_id {
-    //                 if let Err(sem_err) =
-    //                     self.resolve_arg(type_id, module, spanned_arg, &mut vec![])
-    //                 {
-    //                     self.reporter.report_semantic(sem_err, &module);
-    //
-    //                     return Err(());
-    //                 };
-    //             }
-    //
-    //             args.push(spanned_arg.arg);
-    //         }
-    //     }
-    //
-    //     let enumeration = self.compiler.get_enum_mut(sym_id);
-    //
-    //     // enumeration.conds = conds;
-    //     enumeration.args = args;
-    //
-    //     Ok(())
-    // }
-    //
-    fn check_cond(&self, type_id: TypeId, expr_id: ExprId) -> Result<(), SemanticError> {
-        let ty_info = &self.compiler.types[type_id.id as usize];
-        match &ty_info.ty {
-            Type::Struct(struct_def) => todo!(),
-            Type::Enum(enum_def) => todo!(),
-            Type::Func(func_def) => todo!(),
-            Type::Alias(alias_def) => todo!(),
-            Type::TypeDef(type_def) => todo!(),
-            Type::BuiltinType(builtin_type) => match builtin_type {
-                BuiltinType::List(type_id) => todo!(),
-                BuiltinType::Map(type_id, type_id1) => todo!(),
-                BuiltinType::Set(type_id) => todo!(),
-                BuiltinType::Tuple(type_ids) => todo!(),
-                BuiltinType::I8 => todo!(),
-                BuiltinType::U8 => todo!(),
-                BuiltinType::I16 => todo!(),
-                BuiltinType::U16 => todo!(),
-                BuiltinType::F16 => todo!(),
-                BuiltinType::I32 => todo!(),
-                BuiltinType::U32 => todo!(),
-                BuiltinType::F32 => todo!(),
-                BuiltinType::I64 => todo!(),
-                BuiltinType::U64 => todo!(),
-                BuiltinType::F64 => todo!(),
-                BuiltinType::I128 => todo!(),
-                BuiltinType::U128 => todo!(),
-                BuiltinType::F128 => todo!(),
-                BuiltinType::Sized => todo!(),
-                BuiltinType::Unsized => todo!(),
-                BuiltinType::Bool => todo!(),
-                BuiltinType::Nil => todo!(),
-                BuiltinType::Char => todo!(),
-                BuiltinType::Str => todo!(),
-                BuiltinType::BigInt => todo!(),
-                BuiltinType::BigFloat => todo!(),
-                BuiltinType::Any => todo!(),
-            },
-            Type::Unknown => todo!(),
+
+    fn check_cond(&self, parent_ty_id: TypeId, cond_expr_id: ExprId) -> Result<(), SemanticError> {
+        let ty_info = &self.compiler.types[parent_ty_id.id as usize];
+        let cond_expr = &self.compiler.exprs[cond_expr_id.id as usize];
+
+        match &cond_expr.expr_hir {
+            ExprHir::Call(callee_expr_id, arg_expr_ids) => {
+                let callee = &self.compiler.exprs[callee_expr_id.id as usize];
+                todo!("Calling")
+            }
+            // Ok
+            ExprHir::Var(sym_id) => {
+                let sym = &self.compiler.symbols[sym_id.id as usize];
+                match sym.kind {
+                    SymbolKind::Type(type_id) => match &self.compiler.types[type_id.id as usize].ty
+                    {
+                        Type::BuiltinType(builtin_type) => todo!(),
+                        Type::Struct(struct_def) => todo!(),
+                        Type::Enum(enum_def) => todo!(),
+                        Type::Func(func_def) => todo!(),
+                        Type::Alias(alias_def) => todo!(),
+                        Type::TypeDef(type_def) => todo!(),
+                        Type::Unknown => todo!(),
+                    },
+                    SymbolKind::Val(_) => {
+                        let msg = "Cannot have a value within conditions".to_string();
+                        Err(SemanticError::General(msg, vec![cond_expr.span]))
+                    }
+                    SymbolKind::Unknown => todo!("Is this unknownable?"),
+                }
+            }
+            ExprHir::Val(_) => {
+                let msg = "Cannot directly use a value within conditions".to_string();
+                Err(SemanticError::General(msg, vec![cond_expr.span]))
+            }
+            ExprHir::Default(..) => {
+                let msg = "Cannot have a `default` expression within conditions".to_string();
+                Err(SemanticError::General(msg, vec![cond_expr.span]))
+            }
+            // Seems annoying to prevent this, might just allow it
+            ExprHir::Unary { .. } | ExprHir::BinaryExpr { .. } => {
+                let msg = "Cannot directly use expressions within a condition block without an `if()` function".to_string();
+                Err(SemanticError::General(msg, vec![cond_expr.span]))
+            }
         }
     }
-    //
-    // //TODO: Make this less horrific looking
+
     fn check_arg(
         &self,
         type_id: TypeId,
-        active_span: Option<Span>,
+        active_span: Span,
         module: &Module,
         spanned_arg: &SpannedInnerArgs,
         visited: &mut Vec<TypeId>,
@@ -648,13 +534,6 @@ impl<'a> ConstraintResolver<'a> {
                         //FIXME:
                         //COPY
                         if spanned_arg.arg.has_restrictions() {
-                            let mut spans = Vec::new();
-                            spans.push(spanned_arg.span);
-
-                            if let Some(s) = active_span {
-                                spans.push(s);
-                            }
-
                             let name = self.interner.search(symbol.name_id.id as usize);
 
                             let msg = format!(
@@ -662,7 +541,10 @@ impl<'a> ConstraintResolver<'a> {
                                 spanned_arg.arg
                             );
 
-                            return Err(SemanticError::General(msg, spans));
+                            return Err(SemanticError::General(
+                                msg,
+                                vec![spanned_arg.span, active_span],
+                            ));
                         }
 
                         continue;
@@ -696,12 +578,6 @@ impl<'a> ConstraintResolver<'a> {
                         // different context.
                         if visited.contains(&id) {
                             if spanned_arg.arg.has_restrictions() {
-                                let mut spans = Vec::new();
-                                spans.push(spanned_arg.span);
-
-                                if let Some(s) = active_span {
-                                    spans.push(s);
-                                }
                                 let name = self.interner.search(symbol.name_id.id as usize);
 
                                 let msg = format!(
@@ -709,7 +585,10 @@ impl<'a> ConstraintResolver<'a> {
                                     spanned_arg.arg
                                 );
 
-                                return Err(SemanticError::General(msg, spans));
+                                return Err(SemanticError::General(
+                                    msg,
+                                    vec![spanned_arg.span, active_span],
+                                ));
                             }
 
                             continue;
@@ -741,17 +620,10 @@ impl<'a> ConstraintResolver<'a> {
                         for element in elements {
                             if visited.contains(&*element) {
                                 if spanned_arg.arg.has_restrictions() {
-                                    let mut spans = Vec::new();
-                                    spans.push(spanned_arg.span);
-
-                                    if let Some(s) = active_span {
-                                        spans.push(s);
-                                    }
-
                                     return Err(SemanticError::CircularArg(
                                         spanned_arg.arg,
                                         Formatted::Tuple,
-                                        spans,
+                                        vec![spanned_arg.span, active_span],
                                     ));
                                 }
                             }
@@ -770,17 +642,10 @@ impl<'a> ConstraintResolver<'a> {
                     }
                     builtin_type => {
                         if !spanned_arg.arg.supports_builtin_type(&builtin_type) {
-                            let mut spans = Vec::new();
-                            spans.push(spanned_arg.span);
-
-                            if let Some(s) = active_span {
-                                spans.push(s);
-                            }
-
                             return Err(SemanticError::UnsupportedArg(
                                 spanned_arg.arg,
                                 builtin_type.kind().to_fmt(),
-                                spans,
+                                vec![spanned_arg.span, active_span],
                             ));
                         }
 
