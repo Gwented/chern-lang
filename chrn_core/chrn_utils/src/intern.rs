@@ -55,6 +55,7 @@ pub const INTERNED_MAP: u32 = 47;
 pub const INTERNED_TUPLE: u32 = 48;
 pub const INTERNED_ANY: u32 = 49;
 pub const INTERNED_CORE: u32 = 50;
+pub const INTERNED_IN: u32 = 51;
 
 // MAKE THE MACRO PLEASE
 // What macro. What is a macro? What is hygiene?
@@ -216,6 +217,8 @@ impl Intern {
         interner.stored_strs.push("any".to_string());
         interner.id_map.insert("core".to_string(), INTERNED_CORE);
         interner.stored_strs.push("core".to_string());
+        interner.id_map.insert("in".to_string(), INTERNED_IN);
+        interner.stored_strs.push("in".to_string());
 
         interner.pos = interner.stored_strs.len();
 

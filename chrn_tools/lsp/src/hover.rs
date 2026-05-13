@@ -185,7 +185,7 @@ pub fn compute_hover(
                                         }
                                         if hover_text.is_empty() {
                                             // Fallback to name-only if type resolution failed
-                                            hover_text = format!("{}: <unknown>", field_name);
+                                            hover_text = format!("{}: Unknown", field_name);
                                         }
                                     }
                                 }

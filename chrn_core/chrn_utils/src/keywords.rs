@@ -7,10 +7,11 @@ use crate::intern;
 /// Size in bytes for `@def` and `@end`
 pub const DEFINITION_SIZE: usize = 4;
 
+// To add a keyword, it must be added as a Keyword enum. The interner must intern it's identifier.
 /// All keywords for `chrn`
-pub static KEYWORDS_ARRAY: [&str; 13] = [
-    "struct", "enum", "import", "export", "bind", "alias", "let", "change", "as", "var", "nest",
-    "complex", "override",
+pub static KEYWORDS_ARRAY: [&str; 14] = [
+    "struct", "enum", "import", "export", "bind", "alias", "let", "change", "as", "in", "var",
+    "nest", "complex", "override",
 ];
 //FIX: not keywords but known identifiers
 // Functions
@@ -41,6 +42,7 @@ pub enum Keyword {
     Nest = 10,
     Complex = 11,
     Override = 12,
+    In = 13,
 }
 
 impl Formattable for Keyword {
@@ -59,6 +61,7 @@ impl Formattable for Keyword {
             Keyword::Complex => Formatted::SectComplex,
             Keyword::Override => Formatted::SectOverride,
             Keyword::As => Formatted::As,
+            Keyword::In => Formatted::In,
         }
     }
 }
@@ -89,6 +92,7 @@ impl Keyword {
             intern::INTERNED_NEST => Some(Keyword::Nest),
             intern::INTERNED_COMPLEX => Some(Keyword::Complex),
             intern::INTERNED_OVERRIDE => Some(Keyword::Override),
+            intern::INTERNED_IN => Some(Keyword::In),
             _ => None,
         }
     }
@@ -110,11 +114,6 @@ const STMT_END: u32 = 9;
 
 pub const SECT_START: u32 = 9;
 pub const SECT_END: u32 = 12;
-
-//WARN: The amount of casting here is painful. SEVERELY painful.
-pub fn is_kw(id: u32) -> bool {
-    id < KEYWORDS_ARRAY.len() as u32
-}
 
 pub fn is_sect(id: u32) -> bool {
     (SECT_START..=SECT_END).contains(&id)

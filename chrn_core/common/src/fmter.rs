@@ -46,6 +46,7 @@ pub enum Formatted {
     UnknownType,
     Struct,
     Enum,
+    TypeDef,
     Import,
     Export,
     Bind,
@@ -58,6 +59,7 @@ pub enum Formatted {
     SectComplex,
     SectOverride,
     As,
+    In,
     OpAdd,
     OpSub,
     OpMult,
@@ -172,6 +174,8 @@ impl Display for Formatted {
             Formatted::OpBitXor => write!(f, "^"),
             Formatted::ExclamationPoint => write!(f, "!"),
             Formatted::Func => write!(f, "function"),
+            Formatted::In => write!(f, "in"),
+            Formatted::TypeDef => write!(f, "typedef"),
         }
     }
 }

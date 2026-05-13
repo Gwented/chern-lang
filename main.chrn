@@ -10,10 +10,11 @@ let ffi = IsEmpty
 let a = b
 let b = c
 let c = 3
+let x = true == true
 
 var->
-    x: i32 [IsEmpty] #ignore
-
+    x: i32 [core.Range(2, "Hallo")] #ignore
+    y: i32
 @end
                 // Gilber let b = 5
 

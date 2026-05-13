@@ -46,6 +46,20 @@ pub enum Type {
     Unknown,
 }
 
+impl Formattable for Type {
+    fn to_fmt(&self) -> Formatted {
+        match self {
+            Type::BuiltinType(builtin_type) => builtin_type.kind().to_fmt(),
+            Type::Struct(struct_def) => struct_def.to_fmt(),
+            Type::Enum(enum_def) => enum_def.to_fmt(),
+            Type::Func(func_def) => func_def.to_fmt(),
+            Type::Alias(alias_def) => alias_def.to_fmt(),
+            Type::TypeDef(type_def) => type_def.to_fmt(),
+            Type::Unknown => Formatted::Unknown,
+        }
+    }
+}
+
 // Iyad yourrg gieyetters iiyand sieyetters
 #[derive(Debug)]
 pub struct Symbol {
@@ -208,6 +222,12 @@ impl StructDef {
     }
 }
 
+impl Formattable for StructDef {
+    fn to_fmt(&self) -> Formatted {
+        Formatted::Struct
+    }
+}
+
 #[derive(Debug)]
 pub struct EnumDef {
     pub sym_id: SymbolId,
@@ -224,6 +244,12 @@ impl EnumDef {
             glob_conds: Vec::new(),
             glob_args: Vec::new(),
         }
+    }
+}
+
+impl Formattable for EnumDef {
+    fn to_fmt(&self) -> Formatted {
+        Formatted::Enum
     }
 }
 
@@ -273,6 +299,12 @@ impl TypeDef {
     }
 }
 
+impl Formattable for TypeDef {
+    fn to_fmt(&self) -> Formatted {
+        Formatted::TypeDef
+    }
+}
+
 #[derive(Debug)]
 pub struct FuncDef {
     pub kind: FuncKind,
@@ -287,6 +319,12 @@ impl FuncDef {
             constraints,
             ret_type,
         }
+    }
+}
+
+impl Formattable for FuncDef {
+    fn to_fmt(&self) -> Formatted {
+        Formatted::Func
     }
 }
 
@@ -317,6 +355,7 @@ impl FieldRepre {
 pub struct AliasDef {
     pub sym_id: SymbolId,
     pub params: Vec<Param>,
+    pub constraints: Option<ArgConstraint>,
     pub args: Vec<InnerArgs>,
     pub conds: Vec<ExprId>,
 }
@@ -325,15 +364,23 @@ impl AliasDef {
     pub fn new(
         sym_id: SymbolId,
         params: Vec<Param>,
+        constraints: Option<ArgConstraint>,
         conds: Vec<ExprId>,
         args: Vec<InnerArgs>,
     ) -> AliasDef {
         AliasDef {
             sym_id,
             params,
+            constraints,
             conds,
             args,
         }
+    }
+}
+
+impl Formattable for AliasDef {
+    fn to_fmt(&self) -> Formatted {
+        Formatted::Alias
     }
 }
 
@@ -348,6 +395,7 @@ pub(crate) enum PossibleMember {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FuncKind {
     IsEmpty,
+    IsWhitespace,
     Contains,
     Range,
     StartsW,
@@ -359,6 +407,7 @@ impl Formattable for FuncKind {
     fn to_fmt(&self) -> common::fmter::Formatted {
         match self {
             FuncKind::Contains => Formatted::FuncContains,
+            FuncKind::IsWhitespace => Formatted::IsWhitespace,
             FuncKind::Range => Formatted::FuncRange,
             FuncKind::StartsW => Formatted::FuncStartsW,
             FuncKind::EndsW => Formatted::FuncEndsW,

@@ -493,8 +493,7 @@ impl<'a> ConstraintResolver<'a> {
                     {
                         // Case of just finding a single symbol that expands to a function, like
                         // IsEmpty
-                        // Need to check if the keyword used is usable for the type given
-                        // Should alias build constraints?
+                        // Need to check if the function used is usable for the type given
                         Type::Func(func_def) => {
                             todo!();
                         }
@@ -502,6 +501,7 @@ impl<'a> ConstraintResolver<'a> {
                         Type::Struct(struct_def) => todo!(),
                         Type::Unknown => todo!(),
                         Type::Enum(enum_def) => todo!(),
+                        // Should alias build constraints?
                         Type::Alias(alias_def) => todo!(),
                         Type::TypeDef(type_def) => unreachable!("Not syntactically possible"),
                     },
@@ -510,14 +510,13 @@ impl<'a> ConstraintResolver<'a> {
                         let type_id = &self.compiler.values[cond_expr.val_id.id as usize].type_id;
                         let ty = &self.compiler.types[type_id.id as usize].ty;
 
-                        let msg = if let Type::BuiltinType(BuiltinType::Bool) = ty {
-                            // Stops, [true] or [false] being a sole constraint
-                            "Cannot use a single boolean literal as a constraint".to_string()
+                        if let Type::BuiltinType(BuiltinType::Bool) = ty {
+                            Ok(())
                         } else {
-                            "Expressions within constraints must evaluate to a boolean and not be a single value".to_string()
-                        };
-
-                        Err(SemanticError::General(msg, vec![cond_expr.span]))
+                            let msg = "Expressions within constraints must evaluate to a boolean"
+                                .to_string();
+                            Err(SemanticError::General(msg, vec![cond_expr.span]))
+                        }
                     }
                 }
             }
@@ -539,15 +538,13 @@ impl<'a> ConstraintResolver<'a> {
                 let type_id = &self.compiler.values[cond_expr.val_id.id as usize].type_id;
                 let ty = &self.compiler.types[type_id.id as usize].ty;
 
-                let msg = if let Type::BuiltinType(BuiltinType::Bool) = ty {
-                    // Stops, [true] or [false] just being in a condition
-                    // Maybe just warn on this.
-                    "Cannot use a single boolean literal as a constraint".to_string()
+                if let Type::BuiltinType(BuiltinType::Bool) = ty {
+                    Ok(())
                 } else {
-                    "Expressions within constraints must evaluate to a boolean and not be a single value".to_string()
-                };
-
-                Err(SemanticError::General(msg, vec![cond_expr.span]))
+                    let msg =
+                        "Expressions within constraints must evaluate to a boolean".to_string();
+                    Err(SemanticError::General(msg, vec![cond_expr.span]))
+                }
             }
         }
     }
@@ -713,122 +710,179 @@ impl<'a> ConstraintResolver<'a> {
 
     // Maybe alias specific method not needed since alias is just a wrapper for calling multiple
     // functions
+    // Maybe we should have continue on success so that the cconstraint can immediately be reported
+    // rather than inlined same code
+
+    // TODO: Can be simplified eventually
     fn check_func_constraints(
         &self,
         expr_id_args: &[ExprId],
         constraints: &[ArgConstraint],
         kind: FuncKind,
     ) -> Result<(), SemanticError> {
-        //Maybe less terminal
-        for expr_id in expr_id_args {
-            let expr = &self.compiler.exprs[expr_id.id as usize];
-            let ty = &self.compiler.types[expr.type_id.id as usize].ty;
+        // Maybe less terminal
+        for constraint in constraints {
+            match constraint {
+                ArgConstraint::ArgCount(arg_count_constraint) => {
+                    let found_arg_count = expr_id_args.len() as u32;
 
-            for constraint in constraints {
-                match constraint {
-                    ArgConstraint::ArgCount(arg_count) => {
-                        let found_arg_count = expr_id_args.len() as u32;
+                    if found_arg_count != *arg_count_constraint {
+                        let spans: Vec<Span> = expr_id_args
+                            .iter()
+                            .map(|ex_id| self.compiler.exprs[ex_id.id as usize].span)
+                            .collect();
 
-                        if found_arg_count != *arg_count {
-                            let spans: Vec<Span> = expr_id_args
-                                .iter()
-                                .map(|ex_id| self.compiler.exprs[ex_id.id as usize].span)
-                                .collect();
+                        return Err(SemanticError::ArgCountMismatch(
+                            *constraint,
+                            //FIX: Should explicitly take in the type
+                            kind,
+                            found_arg_count,
+                            spans,
+                        ));
+                    }
+                }
+                ArgConstraint::MatchingArgumentTypes => {
+                    // If no arguments then it innately succeeds
+                    let req_expr_id = match expr_id_args.first() {
+                        Some(id) => id,
+                        None => continue,
+                    };
 
-                            return Err(SemanticError::ArgCountMismatch(
+                    let req_type_id = self.compiler.exprs[req_expr_id.id as usize].type_id;
+
+                    for expr_id in expr_id_args.iter().skip(1) {
+                        let other_type_id = self.compiler.exprs[expr_id.id as usize].type_id;
+
+                        if req_type_id != other_type_id {
+                            let req_span = self.compiler.exprs[req_expr_id.id as usize].span;
+                            let other_span = self.compiler.exprs[expr_id.id as usize].span;
+
+                            let ty = &self.compiler.types[req_type_id.id as usize].ty;
+                            return Err(SemanticError::FuncConstraintMismatch(
                                 *constraint,
-                                //FIX: Something other than this
+                                ty.to_fmt(),
                                 kind,
-                                found_arg_count,
-                                spans,
+                                vec![req_span, other_span],
                             ));
                         }
                     }
-                    ArgConstraint::MatchingArgumentTypes => todo!(),
-                    ArgConstraint::MirroredType => todo!(),
-                    ArgConstraint::Numeric => match ty {
-                        Type::BuiltinType(builtin_type) => {
-                            if !builtin_type.kind().is_numeric() {
+                }
+                ArgConstraint::MirroredType => todo!(),
+                ArgConstraint::Numeric => {
+                    for expr_id in expr_id_args {
+                        let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
+                        let ty = &self.compiler.types[type_id.id as usize].ty;
+
+                        if let Type::BuiltinType(builtin_ty) = ty {
+                            if !builtin_ty.kind().is_numeric() {
                                 let span = self.compiler.exprs[expr_id.id as usize].span;
 
                                 return Err(SemanticError::FuncConstraintMismatch(
                                     *constraint,
-                                    builtin_type.kind().to_fmt(),
+                                    ty.to_fmt(),
                                     kind,
                                     vec![span],
                                 ));
                             }
                         }
-                        Type::Struct(struct_def) => todo!(),
-                        Type::Enum(enum_def) => todo!(),
-                        Type::Func(func_def) => todo!(),
-                        Type::Alias(alias_def) => todo!(),
-                        Type::Unknown => todo!(),
-                        Type::TypeDef(type_def) => unreachable!("Not syntactically possible"),
-                    },
-                    ArgConstraint::Integer => match ty {
-                        Type::BuiltinType(builtin_type) => {
-                            if !builtin_type.kind().is_integer() {
-                                let span = self.compiler.exprs[expr_id.id as usize].span;
+                    }
+                }
+                ArgConstraint::Integer => {
+                    for expr_id in expr_id_args {
+                        let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
+                        let ty = &self.compiler.types[type_id.id as usize].ty;
 
-                                return Err(SemanticError::FuncConstraintMismatch(
-                                    *constraint,
-                                    builtin_type.kind().to_fmt(),
-                                    kind,
-                                    vec![span],
-                                ));
-                            }
-                        }
-                        Type::Struct(struct_def) => todo!(),
-                        Type::Enum(enum_def) => todo!(),
-                        Type::Func(func_def) => todo!(),
-                        Type::Alias(alias_def) => todo!(),
-                        Type::TypeDef(type_def) => todo!(),
-                        Type::Unknown => todo!(),
-                    },
-                    ArgConstraint::Float => match ty {
-                        Type::BuiltinType(builtin_ty) => {
+                        if let Type::BuiltinType(builtin_ty) = ty {
                             if !builtin_ty.kind().is_integer() {
                                 let span = self.compiler.exprs[expr_id.id as usize].span;
 
                                 return Err(SemanticError::FuncConstraintMismatch(
                                     *constraint,
-                                    builtin_ty.kind().to_fmt(),
+                                    ty.to_fmt(),
                                     kind,
                                     vec![span],
                                 ));
                             }
                         }
-                        Type::Struct(struct_def) => todo!(),
-                        Type::Enum(enum_def) => todo!(),
-                        Type::Func(func_def) => todo!(),
-                        Type::Alias(alias_def) => todo!(),
-                        Type::TypeDef(type_def) => todo!(),
-                        Type::Unknown => todo!(),
-                    },
-                    ArgConstraint::Str => match ty {
-                        Type::BuiltinType(builtin_ty) => {
+                    }
+                }
+                ArgConstraint::Float => {
+                    for expr_id in expr_id_args {
+                        let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
+                        let ty = &self.compiler.types[type_id.id as usize].ty;
+
+                        if let Type::BuiltinType(builtin_ty) = ty {
+                            if !builtin_ty.kind().is_float() {
+                                let span = self.compiler.exprs[expr_id.id as usize].span;
+
+                                return Err(SemanticError::FuncConstraintMismatch(
+                                    *constraint,
+                                    ty.to_fmt(),
+                                    kind,
+                                    vec![span],
+                                ));
+                            }
+                        }
+                    }
+                }
+                ArgConstraint::Str => {
+                    for expr_id in expr_id_args {
+                        let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
+                        let ty = &self.compiler.types[type_id.id as usize].ty;
+
+                        if let Type::BuiltinType(builtin_ty) = ty {
                             if builtin_ty.kind() != BuiltinTypeKind::Str {
                                 let span = self.compiler.exprs[expr_id.id as usize].span;
 
                                 return Err(SemanticError::FuncConstraintMismatch(
                                     *constraint,
-                                    builtin_ty.kind().to_fmt(),
+                                    ty.to_fmt(),
                                     kind,
                                     vec![span],
                                 ));
                             }
                         }
-                        Type::Struct(struct_def) => todo!(),
-                        Type::Enum(enum_def) => todo!(),
-                        Type::Func(func_def) => todo!(),
-                        Type::Alias(alias_def) => todo!(),
-                        Type::TypeDef(type_def) => todo!(),
-                        Type::Unknown => todo!(),
-                    },
-                    // Not sure what to do with these since they don't restrict anything
-                    ArgConstraint::Variadic | ArgConstraint::DynType => (),
+                    }
                 }
+                ArgConstraint::CharacterMappable => {
+                    for expr_id in expr_id_args {
+                        let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
+                        let ty = &self.compiler.types[type_id.id as usize].ty;
+
+                        if let Type::BuiltinType(builtin_ty) = ty {
+                            if !builtin_ty.kind().is_character_mappable() {
+                                let span = self.compiler.exprs[expr_id.id as usize].span;
+
+                                return Err(SemanticError::FuncConstraintMismatch(
+                                    *constraint,
+                                    ty.to_fmt(),
+                                    kind,
+                                    vec![span],
+                                ));
+                            }
+                        }
+                    }
+                }
+                ArgConstraint::Bool => {
+                    for expr_id in expr_id_args {
+                        let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
+                        let ty = &self.compiler.types[type_id.id as usize].ty;
+
+                        if let Type::BuiltinType(builtin_ty) = ty {
+                            if builtin_ty.kind() != BuiltinTypeKind::Bool {
+                                let span = self.compiler.exprs[expr_id.id as usize].span;
+
+                                return Err(SemanticError::FuncConstraintMismatch(
+                                    *constraint,
+                                    ty.to_fmt(),
+                                    kind,
+                                    vec![span],
+                                ));
+                            }
+                        }
+                    }
+                }
+                ArgConstraint::Variadic | ArgConstraint::DynType => (),
             }
         }
 

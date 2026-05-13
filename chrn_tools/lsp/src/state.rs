@@ -4,8 +4,8 @@ use script_lib::modules::Module;
 use script_lib::modules::ModuleMetadata;
 use script_lib::script_compiler::ScriptCompiler;
 use script_lib::semantic::name_resolver::NamespaceResolver;
-use script_lib::semantic::type_resolver::type_context::TypeContext;
 use script_lib::semantic::type_resolver::TypeResolver;
+use script_lib::semantic::type_resolver::type_context::TypeContext;
 use script_lib::token::SpannedToken;
 use script_lib::token::Token as ScriptToken;
 use script_lib::trivia::Trivia;
@@ -53,10 +53,6 @@ pub struct DocumentState {
     pub parse_errors: Option<Vec<Diagnostic>>,
     pub ns_errors: Option<Vec<Diagnostic>>,
     pub ty_errors: Option<Vec<Diagnostic>>,
-    pub has_parse_errors: bool,
-    pub has_ns_errors: bool,
-    pub has_ty_errors: bool,
-    pub member_ids: HashSet<u32>,
     pub symbol_map: Vec<(Span, SemanticEntity)>,
     pub main_expr_range: std::ops::Range<usize>,
     pub version: u64,
@@ -84,10 +80,6 @@ impl DocumentState {
             parse_errors: None,
             ns_errors: None,
             ty_errors: None,
-            has_parse_errors: false,
-            has_ns_errors: false,
-            has_ty_errors: false,
-            member_ids: HashSet::new(),
             symbol_map: Vec::new(),
             main_expr_range: 0..0,
             version: version,
@@ -199,8 +191,6 @@ impl DocumentState {
             };
 
             if mod_idx == 0 {
-                self.has_parse_errors = parse_errors.is_some();
-
                 if let Some(diags) = parse_errors {
                     self.parse_errors = Some(diags);
                 } else {
@@ -229,12 +219,11 @@ impl DocumentState {
             if let Err(ns_diags) = ns_resolver.resolve() {
                 if mod_idx == 0 {
                     self.ns_errors = Some(ns_diags);
-                    self.has_ns_errors = true;
                 }
             }
         }
 
-        if !self.has_parse_errors && !self.has_ns_errors {
+        if self.parse_errors.is_none() && self.ns_errors.is_none() {
             let mut ty_ctx = TypeContext::new();
             let mut main_expr_range = 0..0;
             for mod_idx in 0..compiler.mods.len() {
@@ -256,7 +245,6 @@ impl DocumentState {
                 if let Err(ty_diags) = type_resolver.resolve() {
                     if mod_idx == 0 {
                         self.ty_errors = Some(ty_diags);
-                        self.has_ty_errors = true;
                     }
                 }
                 let expr_end = compiler.exprs.len();
@@ -266,25 +254,6 @@ impl DocumentState {
             }
 
             self.main_expr_range = main_expr_range;
-
-            let mut member_map: HashSet<u32> = HashSet::new();
-            for ty_info in compiler.types.iter() {
-                match &ty_info.ty {
-                    script_lib::semantic::representation::Type::Struct(sdef) => {
-                        for fld in sdef.fields.iter() {
-                            member_map.insert(fld.name_id.id);
-                        }
-                    }
-                    script_lib::semantic::representation::Type::Enum(edef) => {
-                        for v in edef.variants.iter() {
-                            member_map.insert(v.name_id.id);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            self.member_ids = member_map;
         }
 
         self.asts = all_asts;

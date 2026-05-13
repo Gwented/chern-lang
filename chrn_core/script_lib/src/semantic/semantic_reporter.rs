@@ -55,7 +55,7 @@ impl<'a> SemanticReporter<'a> {
             }
             SemanticError::FuncConstraintMismatch(constraint, type_kind, func_kind, spans) => {
                 let msg = format!(
-                    "The type `{type_kind}` does not follow constraint `{constraint}` for function \"{}\"",
+                    "The type `{type_kind}` does not follow constraint `{constraint}` for function `{}`",
                     func_kind.to_fmt()
                 );
 

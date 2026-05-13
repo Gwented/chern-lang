@@ -390,7 +390,11 @@ impl ScriptCompiler {
         let type_id = TypeId::new(compiler.types.len() as u32);
         let func_def = FuncDef::new(
             FuncKind::IsEmpty,
-            vec![ArgConstraint::ArgCount(1), ArgConstraint::MirroredType],
+            vec![
+                ArgConstraint::ArgCount(1),
+                ArgConstraint::CharacterMappable,
+                ArgConstraint::MirroredType,
+            ],
             ValueKind::Bool,
         );
         compiler
@@ -412,11 +416,37 @@ impl ScriptCompiler {
         compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
-        // Contains(String)
+        // IsWhitespace
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        let func_def = FuncDef::new(
+            FuncKind::IsWhitespace,
+            vec![ArgConstraint::ArgCount(1), ArgConstraint::CharacterMappable],
+            ValueKind::Bool,
+        );
+        compiler
+            .types
+            .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_IS_WHITESPACE);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
+
+        // Contains(String | char)
         let type_id = TypeId::new(compiler.types.len() as u32);
         let func_def = FuncDef::new(
             FuncKind::Contains,
-            vec![ArgConstraint::ArgCount(1), ArgConstraint::Str],
+            vec![ArgConstraint::ArgCount(1), ArgConstraint::CharacterMappable],
             ValueKind::Bool,
         );
 
@@ -439,11 +469,15 @@ impl ScriptCompiler {
         compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
-        // Range(inclusive, inclusive)
+        // Range(inclusive | Numeric, inclusive | Numeric)
         let type_id = TypeId::new(compiler.types.len() as u32);
         let func_def = FuncDef::new(
-            FuncKind::Contains,
-            vec![ArgConstraint::ArgCount(2), ArgConstraint::Numeric],
+            FuncKind::Range,
+            vec![
+                ArgConstraint::ArgCount(2),
+                ArgConstraint::Numeric,
+                ArgConstraint::MatchingArgumentTypes,
+            ],
             ValueKind::Bool,
         );
 
@@ -467,6 +501,7 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
     }
 
+    // --- Beep
     fn load_core_types(compiler: &mut ScriptCompiler, core_mod: &mut Module, table: &mut Table) {
         let core_mod_id = core_mod.mod_id;
 

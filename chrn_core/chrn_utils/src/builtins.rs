@@ -267,4 +267,11 @@ impl BuiltinTypeKind {
             _ => false,
         }
     }
+
+    pub fn is_character_mappable(&self) -> bool {
+        match self {
+            BuiltinTypeKind::Str | BuiltinTypeKind::Char => true,
+            _ => false,
+        }
+    }
 }

@@ -4,7 +4,7 @@ use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
-use tower_lsp::lsp_types::SemanticToken;
+use tower_lsp::lsp_types::{CompletionItemKind, SemanticToken};
 use tower_lsp::{Client, LanguageServer, jsonrpc};
 
 use crate::analyser::analyze_and_publish_task;
@@ -19,7 +19,7 @@ use chrn_utils::intern::Intern;
 use common::chrn_settings::ChrnSettings;
 use common::core_error::ConfigLoadError;
 use script_lib::config_loader::ChrnConfigLoader;
-use script_lib::semantic::representation::{SymbolKind, Type};
+use script_lib::semantic::representation::{self, SymbolKind, Type};
 use script_lib::token::Token as ScriptToken;
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -214,10 +214,20 @@ fn classify_id_token(
                     match sym.kind {
                         SymbolKind::Type(tid) => {
                             let ty = &compiler.types[tid.id as usize].ty;
-                            if matches!(ty, Type::Alias(_)) {
-                                return Some(SemanticTokenType::Function.as_u32());
+                            match ty {
+                                Type::BuiltinType(_)
+                                | Type::TypeDef(_)
+                                | Type::Struct(_)
+                                | Type::Enum(_) => {
+                                    return Some(SemanticTokenType::Type.as_u32());
+                                }
+                                // IsEmpty and such can keep the same alias, but should just not
+                                // fill the parenthesis
+                                Type::Func(_) | Type::Alias(_) => {
+                                    return Some(SemanticTokenType::Function.as_u32());
+                                }
+                                Type::Unknown => return Some(SemanticTokenType::Type.as_u32()),
                             }
-                            return Some(SemanticTokenType::Type.as_u32());
                         }
                         SymbolKind::Val(_) => {
                             if next_is_paren {
@@ -263,7 +273,6 @@ impl LanguageServer for Backend {
             definition_provider: Some(tower_lsp::lsp_types::OneOf::Left(true)),
             rename_provider: Some(tower_lsp::lsp_types::OneOf::Left(true)),
             references_provider: Some(tower_lsp::lsp_types::OneOf::Left(true)),
-            // advertise completion support so clients will request completions
             completion_provider: Some(tower_lsp::lsp_types::CompletionOptions {
                 resolve_provider: Some(false),
                 trigger_characters: Some(vec!["@".to_string(), "#".to_string(), ".".to_string()]),
@@ -277,7 +286,6 @@ impl LanguageServer for Backend {
                             // Provide a richer set of token kinds so clients can color
                             // keywords, types, functions, macros, operators and variables
                             // differently.
-                            // Ok
                             token_types: vec![
                                 tower_lsp::lsp_types::SemanticTokenType::KEYWORD, // 0
                                 tower_lsp::lsp_types::SemanticTokenType::STRING,
@@ -852,12 +860,7 @@ impl LanguageServer for Backend {
         let in_script_section = byte_off >= script_start && byte_off < serial_start;
 
         // If cursor is outside the script section, return no completions
-        if !in_script_section {
-            return Ok(Some(CompletionResponse::Array(Vec::new())));
-        }
-
-        // If cursor is in a comment, return no completions
-        if state.offset_in_comment(byte_off) {
+        if !in_script_section || state.offset_in_comment(byte_off) {
             return Ok(Some(CompletionResponse::Array(Vec::new())));
         }
 
@@ -888,8 +891,40 @@ impl LanguageServer for Backend {
                                             state.interner.search(sym.name_id.id as usize);
                                         if prefix.is_empty() || sym_name.starts_with(prefix) {
                                             let kind = match sym.kind {
-                                                script_lib::semantic::representation::SymbolKind::Type(_) => CompletionItemKind::STRUCT,
-                                                script_lib::semantic::representation::SymbolKind::Val(_) => CompletionItemKind::VARIABLE,
+                                                representation::SymbolKind::Type(type_id) => {
+                                                    match &compiler.types[type_id.id as usize].ty {
+                                                        Type::Struct(_)
+                                                        | Type::Enum(_)
+                                                        | Type::TypeDef(_)
+                                                        | Type::BuiltinType(_) => {
+                                                            CompletionItemKind::STRUCT
+                                                        }
+                                                        // Should probably check if its something
+                                                        // like IsEmpty eventually but no explicit
+                                                        // validation exists yet and FuncKind is
+                                                        // not final as something that exists
+                                                        Type::Alias(_) | Type::Func(_) => {
+                                                            CompletionItemKind::FUNCTION
+                                                        }
+                                                        Type::Unknown => {
+                                                            CompletionItemKind::VARIABLE
+                                                        }
+                                                    }
+                                                }
+                                                representation::SymbolKind::Val(val_id) => {
+                                                    let type_id =
+                                                        compiler.values[val_id.id as usize].type_id;
+                                                    match &compiler.types[type_id.id as usize].ty {
+                                                        Type::BuiltinType(_)|
+                                                        Type::Struct(_)|
+                                                        // Not actually possible for typedef to be
+                                                        // a value
+                                                        Type::TypeDef(_) |
+                                                        Type::Enum(_) => CompletionItemKind::VARIABLE,
+                                                        Type::Alias(_) |Type::Func(_) => CompletionItemKind::FUNCTION,
+                                                        Type::Unknown => CompletionItemKind::VARIABLE,
+                                                    }
+                                                }
                                                 _ => CompletionItemKind::PROPERTY,
                                             };
                                             items.push(CompletionItem {
@@ -908,8 +943,36 @@ impl LanguageServer for Backend {
                                             state.interner.search(sym.name_id.id as usize);
                                         if prefix.is_empty() || sym_name.starts_with(prefix) {
                                             let kind = match sym.kind {
-                                                script_lib::semantic::representation::SymbolKind::Type(_) => CompletionItemKind::STRUCT,
-                                                script_lib::semantic::representation::SymbolKind::Val(_) => CompletionItemKind::VARIABLE,
+                                                representation::SymbolKind::Type(type_id) => {
+                                                    match &compiler.types[type_id.id as usize].ty {
+                                                        Type::Struct(_)
+                                                        | Type::Enum(_)
+                                                        | Type::TypeDef(_)
+                                                        | Type::BuiltinType(_) => {
+                                                            CompletionItemKind::STRUCT
+                                                        }
+                                                        Type::Alias(_) | Type::Func(_) => {
+                                                            CompletionItemKind::FUNCTION
+                                                        }
+                                                        Type::Unknown => {
+                                                            CompletionItemKind::VARIABLE
+                                                        }
+                                                    }
+                                                }
+                                                representation::SymbolKind::Val(val_id) => {
+                                                    let type_id =
+                                                        compiler.values[val_id.id as usize].type_id;
+                                                    match &compiler.types[type_id.id as usize].ty {
+                                                        Type::BuiltinType(_)|
+                                                        Type::Struct(_)|
+                                                        // Not actually possible for typedef to be
+                                                        // in the values vector
+                                                        Type::TypeDef(_) |
+                                                        Type::Enum(_) => CompletionItemKind::VARIABLE,
+                                                        Type::Alias(_) | Type::Func(_) => CompletionItemKind::FUNCTION,
+                                                        Type::Unknown => CompletionItemKind::VARIABLE,
+                                                    }
+                                                }
                                                 _ => CompletionItemKind::PROPERTY,
                                             };
                                             items.push(CompletionItem {
@@ -937,6 +1000,7 @@ impl LanguageServer for Backend {
             ("export", CompletionItemKind::KEYWORD),
             ("alias", CompletionItemKind::KEYWORD),
             ("let", CompletionItemKind::KEYWORD),
+            ("in", CompletionItemKind::KEYWORD),
             ("as", CompletionItemKind::KEYWORD),
             ("var->", CompletionItemKind::KEYWORD),
             ("nest->", CompletionItemKind::KEYWORD),
@@ -974,12 +1038,12 @@ impl LanguageServer for Backend {
             ("unsized", CompletionItemKind::STRUCT),
             ("true", CompletionItemKind::CONSTANT),
             ("false", CompletionItemKind::CONSTANT),
-            ("#warn", CompletionItemKind::VALUE),
-            ("#bin", CompletionItemKind::VALUE),
-            ("#octal", CompletionItemKind::VALUE),
-            ("#scient", CompletionItemKind::VALUE),
-            ("#hex", CompletionItemKind::VALUE),
-            ("#ignore", CompletionItemKind::VALUE),
+            ("#warn", CompletionItemKind::CONSTRUCTOR),
+            ("#bin", CompletionItemKind::CONSTRUCTOR),
+            ("#octal", CompletionItemKind::CONSTRUCTOR),
+            ("#scient", CompletionItemKind::CONSTRUCTOR),
+            ("#hex", CompletionItemKind::CONSTRUCTOR),
+            ("#ignore", CompletionItemKind::CONSTRUCTOR),
         ];
 
         let mut items: Vec<CompletionItem> = Vec::new();

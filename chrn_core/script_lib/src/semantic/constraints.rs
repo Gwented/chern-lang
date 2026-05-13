@@ -1,6 +1,8 @@
 use std::fmt::Display;
 
-use crate::semantic::representation::FuncKind;
+use chrn_utils::builtins::{BuiltinType, BuiltinTypeKind};
+
+use crate::semantic::representation::{FuncKind, Type};
 
 // Nat
 // Real
@@ -17,6 +19,8 @@ pub enum ArgConstraint {
     Numeric,
     Integer,
     Float,
+    CharacterMappable,
+    Bool,
     Str,
     // Suspicious
     Variadic,
@@ -49,6 +53,7 @@ impl ArgConstraint {
             FuncKind::Equals => {
                 vec![ArgConstraint::MirroredType, ArgConstraint::Variadic]
             }
+            FuncKind::IsWhitespace => vec![ArgConstraint::ArgCount(1), ArgConstraint::Str],
         }
     }
 }
@@ -70,7 +75,9 @@ impl Display for ArgConstraint {
                 }
             }
             ArgConstraint::MirroredType => write!(f, "MirroredType"),
+            ArgConstraint::CharacterMappable => write!(f, "CharacterMappable"),
             ArgConstraint::Variadic => write!(f, "variadic"),
+            ArgConstraint::Bool => write!(f, "bool"),
         }
     }
 }
