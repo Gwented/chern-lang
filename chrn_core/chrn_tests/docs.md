@@ -1,9 +1,9 @@
 ## Language intent
-- This is a scripting language that has a serialized data representation paired with it that allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required in-line in a language. The scripting language can either use the keyword `bind` to tell the interpreter where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
+- This is a scripting language that has a serialized data representation paired with it which allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required in-line in a language. The scripting language can either use the keyword `bind` to define where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
 
-- Features such as conditions, arguments, and anything that is beyond just setting serialized data details or serialized data specific settings are not intended to be heavily used.
+- Features such as type constraints, type arguments, and anything that is beyond just setting serialized data details or serialized data specific settings are not intended to be heavily used.
 
-- The projected main use-case of this language is as a library for inside of a programming language it is available for which takes in a path to a script file which could contain the serialized data too, or separately having the script file and data given as arguments.
+- The projected main use-case of this language is as a library for inside of a programming language it is available for, which takes in a path to a script file that could contain the serialized data too, or separately having the script file and data given as arguments.
 
 So something like:
 
@@ -64,6 +64,8 @@ char, bool, str, struct, enum, nil, BigInt, BigFloat, List, Map, Set, Tuple
 `%` MOD
 `&&`: AND
 `||` OR
+`==` Equal to
+`!=` Not Equal to
 
 ## Workspace
 - NOT FOR COMPLEXITY, JUST FOR AN ENFORCED CONVENTION. I WANT BINARY. Make binary
@@ -85,9 +87,9 @@ var->
 Example:
 ```chrn
 var->
-    x: e#str
+    x: e#let
 nest->
-    struct e#str {
+    struct e#let {
         ptr: u8
         len: unsized
         capacity: unsized
@@ -95,9 +97,10 @@ nest->
 ```
 
 ### DOES NOT EXIST YET
+// Maybe remove this entirely
 `(range)`: Explicit range syntax. The '=' is required. `0..=5`
 
-## Built-in Predicate Keywords
+## Predicate Keywords
 `IsEmpty`: Checks if the given array or string has a length of 0.
 
 `IsWhitespace`: Checks if a string is only white-space within UTF-8 standards
@@ -126,7 +129,9 @@ Contains("chrn") | Contains(1xF)
 
 ## Statements
 
-`let`: Allows the declaration of values under a re-usable variable instead of just literals. The type is more so a generic "number", "float" or "string" type as opposed to being something one would define.
+`bind`: Defines where a serialized file is located that should be checked, or deserialized. This is not needed if the script file is situated within the serialized data itself.
+
+`let`: Allows the declaration of values under a re-usable variable if literals are inconvenient. The type is inferred by default.
 
 `export`: Allows for the exported value to be used externally when imported.
 This can be applied to `struct`, `enum`, `let`, and `alias`.
@@ -145,15 +150,47 @@ var->
     some_str: str [ShortDefault()]
 ```
 
-`bind`: Defines where a serialized file is located that should be checked, or deserialized. This is not needed if the script file is situated within the serialized data itself.
-
 ## Sections
 
-- Sections instruct how data is parsed. They exist so that data is always defined in a readable, predictable manner.
+- Sections instruct how script code is interpreted, similar to how a statement would, but innately. They exist so that data is always defined in a readable, predictable manner.
 
 - The `->` operator is used after section keywords to swap to the section. There cannot be more than one of each section.
 
+- Each section has their own set of allowed other sections to search. Scope searching does not change in any form for searching module imports unless the symbol is explicitly kept private.
+
+`neutral`: This section needs no keyword and exists until a section is explicitly used.
+
+`neutral` allows for:
+- importing
+- exporting
+- Setting bind
+- Variable declarations
+- Alias declarations
+
+Searchable scopes: `neutral`
+
+```chrn
+// Everything above var-> is neutral
+import "definitions.chrn"
+
+let fact = 2 + 2 == 3
+export alias default() = [IsEmpty]
+
+// Neutral cannot be used after this
+var->
+    name: str
+override->
+```
+
+
 `var`: Front facing definitions of the data to be serialized or deserialized.
+
+`var` allows for:
+- Defining serialized data
+- Expressing type constraints ([[IsWhitespace, Regex("a-zA-Z")]])
+- Using type arguments (#warn/#octal)
+
+Searchable scopes: `neutral` and `nest`
 
 ```chrn
 // Given struct Person
@@ -166,7 +203,16 @@ var->
 // it would need a nest section
 ```
 
+
+
 `nest->`: Allows for the definition of a struct or enum
+
+`nest` allows for:
+- Defining nested data
+- Expressing type constraints ([[IsWhitespace, Equals("Hi")]])
+- Using type constraint arguments (#warn/#octal)
+
+Searchable scopes: `neutral` and `nest`
 
 ```chrn
 var->
@@ -184,6 +230,7 @@ nest->
         Failed
     }
 ```
+
 
 # DOES NOT EXIST YET
 `override`: Most important part of the language which controls things such as possible namespace casing to also look for and setting language type defaults. Language defaults exist but this can change any if needed.
@@ -203,7 +250,7 @@ Very descriptive!
 
 # DOES NOT EXIST
 `#unicode`:
-`#ignore_rm`: (Would remove anything that didn't align under condition rather than crash or warn.)
+`#ignore_rm`: (Would remove anything that didn't align under constraint rather than crash or warn.)
 # DOES NOT EXIST
 
 - Arguments can be applied to all types within a `struct` or `enum` if put directly after declaration within a nest.
@@ -232,6 +279,9 @@ import "definitions.chrn" as defs
 import "invalid_utf8_name.chrn" as valid_name
 
 export let VALUE = defs.MAGIC_NUMBER + valid_name.OTHER_MAGICAL_NUMBER
+
+var->
+    thing: defs.Thingy
 ```
 
 #### Full example of language
@@ -263,7 +313,7 @@ export let VALUE = defs.MAGIC_NUMBER + valid_name.OTHER_MAGICAL_NUMBER
 ```chrn
 bind "serialized_data.chrn"
 
-var-> // #ignore <---- Maybe allow for this to be global
+var-> // #ignore <---- Maybe allow for this to be global if next to a section
     ptr: any #ignore
     capacity: any #ignore
     len: any #ignore

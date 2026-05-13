@@ -1,27 +1,31 @@
 @def
-import "../../defs.chrn"
+// import "../../defs.chrn"
 
-// alias default(x, y) = [Contains(x = "Defaulting", y = "Forklift")] #warn
+// alias default(x, y) = [Contains(x = "Defaulting", y = "Forklift"), if(2 + self == 3)] #warn
 
 let input = "Chrn"
 
-var->
-    x: i32
+let ffi = IsEmpty
 
+let a = b
+let b = c
+let c = 3
+
+var->
+    x: i32 [IsEmpty] #ignore
+
+@end
                 // Gilber let b = 5
 
         //let r = 3.5// Testing Stuff
 nest->
-    enum State {
-        input:  core.BigInt
-        Ready: main.Book
-        Stopped: nil
-    } #scient
+    struct State {
+        input:  str [] #warn
+    }
 
-    struct Book {
-        len: str
-    } #ignore
-
+    enum Book {
+        len: sized []
+    }
 @end
 
 export let /*letting*/ number/*variable*/= /*expr*/ 0x23

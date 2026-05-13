@@ -61,9 +61,9 @@ impl<'a> SemanticReporter<'a> {
 
                 (msg, spans)
             }
-            SemanticError::ArgMiscount(constraint, func_kind, count, spans) => {
+            SemanticError::ArgCountMismatch(constraint, func_kind, count, spans) => {
                 let msg = format!(
-                    "Expected `{constraint}` for function \"{}\", found {count}",
+                    "Expected {constraint} for function `{}`, found {count}",
                     func_kind.to_fmt()
                 );
 

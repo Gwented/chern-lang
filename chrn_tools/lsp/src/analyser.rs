@@ -74,52 +74,50 @@ pub async fn analyze_and_publish_task(
     )
     .load_config()
     {
-            Ok(m) => m,
-            Err(e) => {
-                // Handle config load error (same as before)
-                let start = Position {
-                    line: 0,
-                    character: 0,
-                };
-                let diag = match e {
-                    common::core_error::ConfigLoadError::Unclosed(diag)
-                    | common::core_error::ConfigLoadError::Module(diag) => {
-                        let diag_span = diag.span.unwrap_or_default();
-                        let start_pos = crate::text::offset_to_position(&text, diag_span.start);
-                        let end_pos = crate::text::offset_to_position(&text, diag_span.end);
-                        tower_lsp::lsp_types::Diagnostic {
-                            range: Range {
-                                start: start_pos,
-                                end: end_pos,
-                            },
-                            severity: Some(DiagnosticSeverity::ERROR),
-                            source: Some("chrn-config".to_string()),
-                            message: diag.core_msg,
-                            ..Default::default()
-                        }
+        Ok(m) => m,
+        Err(e) => {
+            // Handle config load error (same as before)
+            let start = Position {
+                line: 0,
+                character: 0,
+            };
+            let diag = match e {
+                common::core_error::ConfigLoadError::Unclosed(diag)
+                | common::core_error::ConfigLoadError::Module(diag) => {
+                    let diag_span = diag.span.unwrap_or_default();
+                    let start_pos = crate::text::offset_to_position(&text, diag_span.start);
+                    let end_pos = crate::text::offset_to_position(&text, diag_span.end);
+                    tower_lsp::lsp_types::Diagnostic {
+                        range: Range {
+                            start: start_pos,
+                            end: end_pos,
+                        },
+                        severity: Some(DiagnosticSeverity::ERROR),
+                        source: Some("chrn-config".to_string()),
+                        message: diag.core_msg,
+                        ..Default::default()
                     }
-                    common::core_error::ConfigLoadError::IO(io) => {
-                        tower_lsp::lsp_types::Diagnostic {
-                            range: Range { start, end: start },
-                            severity: Some(DiagnosticSeverity::ERROR),
-                            source: Some("chrn-config".to_string()),
-                            message: io.to_string(),
-                            ..Default::default()
-                        }
-                    }
-                };
-                publish_if_current(
-                    &client,
-                    &uri,
-                    vec![diag],
-                    &diags_cache,
-                    &pending_versions,
-                    version,
-                )
-                .await;
-                return;
-            }
-        };
+                }
+                common::core_error::ConfigLoadError::IO(io) => tower_lsp::lsp_types::Diagnostic {
+                    range: Range { start, end: start },
+                    severity: Some(DiagnosticSeverity::ERROR),
+                    source: Some("chrn-config".to_string()),
+                    message: io.to_string(),
+                    ..Default::default()
+                },
+            };
+            publish_if_current(
+                &client,
+                &uri,
+                vec![diag],
+                &diags_cache,
+                &pending_versions,
+                version,
+            )
+            .await;
+            return;
+        }
+    };
 
     // 2. Use DocumentCache for heavy lifting
     let state_arc = doc_cache.get_or_create(
@@ -253,7 +251,9 @@ pub(crate) fn resolve_modules_lsp(
         let current_mod_id = seen.len();
         seen.insert(import.path_id);
 
-        let path_owned = interner.search_path(import.path_id.id as usize).to_path_buf();
+        let path_owned = interner
+            .search_path(import.path_id.id as usize)
+            .to_path_buf();
         let path = path_owned.as_path();
 
         // Try to get from doc_cache first
@@ -278,7 +278,7 @@ pub(crate) fn resolve_modules_lsp(
                         let fmtted_diag = common::reporter::standardize_err(
                             &core_msg,
                             &ln_data,
-                            "",
+                            None,
                             prev_path,
                             settings.can_color,
                         );
@@ -287,6 +287,7 @@ pub(crate) fn resolve_modules_lsp(
                                 path,
                                 core_msg,
                                 Some(import.path_span),
+                                None,
                                 fmtted_diag,
                                 common::reporter::diagnostic::Area::ConfigLoad,
                             ),
@@ -315,6 +316,7 @@ pub(crate) fn resolve_modules_lsp(
                     let diag = common::reporter::diagnostic::Diagnostic::new(
                         path,
                         core_msg.clone(),
+                        None,
                         None,
                         core_msg,
                         common::reporter::diagnostic::Area::ConfigLoad,

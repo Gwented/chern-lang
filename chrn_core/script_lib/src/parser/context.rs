@@ -239,14 +239,12 @@ impl<'a> Context<'a> {
         branch: Branch,
         interner: &Intern,
     ) -> Result<Token, Token> {
-        //WARN: HIGHLY SUSPICIOUS
-        let found = &self.toks[self.pos];
-        self.pos += 1;
+        let found = self.advance();
 
         if found.tok.kind() != expected {
             let err_ident_opt = self.get_err_ident(found.tok, interner);
 
-            let spans = self.safely_handle_span(found);
+            let spans = self.safely_handle_span(&found);
 
             let ln_data =
                 reporter::form_err_diag(&self.metadata.src_bytes, &spans, self.settings.can_color);
@@ -617,7 +615,7 @@ impl<'a> Context<'a> {
     /// Intended to handle the case where EOF is reached due to errors likely wanting to show the
     /// last token TO EOF, rather than just EOF
     fn safely_handle_span(&self, found: &SpannedToken) -> Vec<Span> {
-        if found.tok.kind() == TokenKind::EOF {
+        if found.tok.kind().is_terminator() {
             // Minus 2 since we advanced at the beginning
             let start_span = self.toks.get(self.pos - 2).unwrap_or(found).span.clone();
             vec![start_span, found.span.clone()]
@@ -663,6 +661,10 @@ impl<'a> Context<'a> {
     }
 
     pub(super) fn advance_tok(&mut self) -> Token {
+        if self.pos >= self.toks.len() {
+            return self.toks[self.toks.len() - 1].tok;
+        }
+
         let t = self.toks[self.pos].tok;
         self.pos += 1;
         t
@@ -674,12 +676,20 @@ impl<'a> Context<'a> {
     }
 
     pub(super) fn advance_span(&mut self) -> Span {
+        if self.pos >= self.toks.len() {
+            return self.toks[self.toks.len() - 1].span;
+        }
+
         let t = self.toks[self.pos].span.clone();
         self.pos += 1;
         t
     }
 
     fn advance(&mut self) -> SpannedToken {
+        if self.pos >= self.toks.len() {
+            return self.toks[self.toks.len() - 1].clone();
+        }
+
         let t = self.toks[self.pos].clone();
         self.pos += 1;
         t

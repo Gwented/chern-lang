@@ -9,7 +9,7 @@ use crate::semantic::representation::FuncKind;
 // TEST:
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArgConstraint {
-    ArgCount(u8),
+    ArgCount(u32),
     DynType,
     MatchingArgumentTypes,
     /// Must be the same type as the type the condition is made for

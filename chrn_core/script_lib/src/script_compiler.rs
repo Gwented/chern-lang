@@ -385,7 +385,6 @@ impl ScriptCompiler {
 
     fn load_core_funcs(compiler: &mut ScriptCompiler, core_mod: &Module, table: &mut Table) {
         let core_mod_id = core_mod.mod_id;
-        // Functions aren't done yet
 
         // IsEmpty
         let type_id = TypeId::new(compiler.types.len() as u32);
@@ -413,19 +412,47 @@ impl ScriptCompiler {
         compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
-        // Contains(DynType)
+        // Contains(String)
         let type_id = TypeId::new(compiler.types.len() as u32);
         let func_def = FuncDef::new(
             FuncKind::Contains,
-            vec![ArgConstraint::ArgCount(1)],
+            vec![ArgConstraint::ArgCount(1), ArgConstraint::Str],
             ValueKind::Bool,
         );
+
         compiler
             .types
             .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_CONTAINS);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
+
+        // Range(inclusive, inclusive)
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        let func_def = FuncDef::new(
+            FuncKind::Contains,
+            vec![ArgConstraint::ArgCount(2), ArgConstraint::Numeric],
+            ValueKind::Bool,
+        );
+
+        compiler
+            .types
+            .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_RANGE);
         let symbol = Symbol::new(
             interned_id,
             sym_id,

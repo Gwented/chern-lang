@@ -11,7 +11,7 @@ use common::chrn_settings::ChrnSettings;
 use common::fmter::{Formattable, Formatted};
 use common::{reporter::diagnostic::Diagnostic, span::Span};
 
-use crate::parser::ast::{AbstractVar, Expr, SpannedExpr};
+use crate::parser::ast::{AbstractVar, BinaryOp, Expr, SpannedExpr};
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::error::{MathError, SemanticError};
 use crate::semantic::representation::{ExprHir, Param, PossibleMember, ResolvedExpr, SymbolKind};
@@ -134,8 +134,7 @@ impl TypeResolver<'_> {
                 }
 
                 pending_sym.is_resolved = true;
-                // May be able to remove this
-                self.ty_ctx.needs_check = true;
+                current_resolved_count += 1;
             }
 
             //TEMP or not I don't know
@@ -172,7 +171,7 @@ impl TypeResolver<'_> {
         // if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
         //     dbg!(&self.ty_ctx);
         //     for symbol in &self.compiler.symbols {
-        //         if self.interner.search(symbol.name_id.id as usize) == "x" {
+        //         if self.interner.search(symbol.name_id.id as usize) == "d" {
         //             let name = self.interner.search(symbol.name_id.id as usize);
         //             dbg!(name);
         //             match symbol.kind {
@@ -435,8 +434,6 @@ impl TypeResolver<'_> {
                         // If cannot perform operation and neither are unknown then there is actual
                         // corruption, and not one part just being unresolved
                         if !evaluator::is_compatible_binary(lhs_const, *op, rhs_const) {
-                            //TODO: Expressions need spans
-                            // Removal of pending symbols need
                             let full_span = lhs_expr.span.merge(rhs_expr.span);
 
                             return Err(MathError::BinaryOpMismatch(
@@ -667,7 +664,6 @@ impl TypeResolver<'_> {
             fields.push(field);
         }
 
-        //TODO: Could make this less terminal but ok for now
         for (i, field) in fields.iter_mut().enumerate() {
             let abs_field = &abs_struct.fields[i];
             let mut conds: Vec<ExprId> = Vec::new();
@@ -927,6 +923,7 @@ impl TypeResolver<'_> {
                     params.push(param);
                 }
                 // The parser checks for these so this will probably become just interned ids
+                // to avoid unreachable calls
                 _ => unreachable!("Should maybe change this to ids if possible"),
             }
         }
@@ -941,7 +938,6 @@ impl TypeResolver<'_> {
                 ScopeType::Neutral,
                 &mut vec![sym_id],
             ) {
-                // There is no sym parrent..
                 Ok(c) => Some(c),
                 Err(sem_err) => {
                     let module = &self.compiler.mods[self.current_mod.id];
@@ -1009,8 +1005,8 @@ impl TypeResolver<'_> {
         }
     }
 
-    // Maybe use active_mod here too so that code duplication is reduced
-    /// On `Ok`, Creates a HIR expression type and returns the identifier of the expression.
+    /// On `Ok`, Creates a HIR expression type and returns the `ExprId` which is either going to be
+    /// fully resolved, or marked as pending to be resolved later if possible.
     fn register_expr(
         &mut self,
         parent_sym_id: SymbolId,
@@ -1281,14 +1277,51 @@ impl TypeResolver<'_> {
                     rhs: rhs_id,
                 };
 
-                //WARN: Assuming this means they're the same type, or at least, uh. Um. Yeah.
-                let type_id = if const_val_opt.is_some() {
-                    lhs_expr.type_id
-                } else {
-                    TypeId::new(script_compiler::TYPE_UNKNOWN_IDX)
+                // Maybe apply BinaryOp shouuld account for unknowns and return unknowns
+                let type_id = match &const_val_opt {
+                    Some(val) => match val {
+                        Value::I64(_) => TypeId::new(script_compiler::CORE_I64),
+                        Value::F64(_) => TypeId::new(script_compiler::CORE_F64),
+                        Value::Bool(_) => TypeId::new(script_compiler::CORE_BOOL),
+                        Value::Char(_) => TypeId::new(script_compiler::CORE_BOOL),
+                        Value::Func(_) => TypeId::new(script_compiler::TYPE_UNKNOWN_IDX),
+                        Value::InternedStr(_) => TypeId::new(script_compiler::CORE_STR),
+                        // Both of these are not possible as of right now from an operation
+                        // since there are no runtime values RIGHT NOW, and unknown is not a comptaible
+                        // binary op so it can't acually be produced.
+                        // Tuples also are not used outside of expressing type constraints.
+                        //
+                        // Value::RuntimeStr(_) => TypeId::new(script_compiler::CORE_STR),
+                        // Value::Tuple(_) => TypeId::new(script_compiler::CORE_TUPLE),
+                        // Value::Unknown => TypeId::new(script_compiler::TYPE_UNKNOWN_IDX),
+                        Value::Tuple(_) | Value::RuntimeStr(_) | Value::Unknown => unreachable!(),
+                    },
+                    None => match op {
+                        BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mult | BinaryOp::Div => {
+                            lhs_expr.type_id
+                        }
+                        BinaryOp::Greater
+                        | BinaryOp::Less
+                        | BinaryOp::GreaterOrEq
+                        | BinaryOp::And
+                        | BinaryOp::Or
+                        | BinaryOp::EqTo
+                        | BinaryOp::NotEq
+                        | BinaryOp::Mod
+                        | BinaryOp::LessOrEq => TypeId::new(script_compiler::CORE_BOOL),
+                        // Bitwise doesn't exist yet
+                        BinaryOp::BitOr => todo!(),
+                        BinaryOp::BitAnd => todo!(),
+                        BinaryOp::BitNot => todo!(),
+                        BinaryOp::BitRightShift => todo!(),
+                        BinaryOp::BitLeftShift => todo!(),
+                        BinaryOp::BitXor => todo!(),
+                    },
                 };
 
-                // Hm
+                // Assigning the user so that if unresolved, the expression can later go up a tree
+                // of all expressions that use it and have them be resolved alongside it where
+                // possible.
                 self.compiler.exprs[lhs_id.id as usize].user = Some(expr_id);
                 self.compiler.exprs[rhs_id.id as usize].user = Some(expr_id);
 
@@ -1474,9 +1507,10 @@ impl TypeResolver<'_> {
                 }
             }
             Expr::Call(caller, arg_exprs) => {
-                let call_id =
+                // The "Call" in "Call(x, y)"
+                let caller_id =
                     self.register_expr(parent_sym_id, caller, active_mod_id, scope_type, seen)?;
-                let type_id = self.compiler.exprs[call_id.id as usize].type_id;
+                let type_id = self.compiler.exprs[caller_id.id as usize].type_id;
                 let mut call_args: Vec<ExprId> = Vec::new();
 
                 for sp_expr in arg_exprs {
@@ -1496,7 +1530,7 @@ impl TypeResolver<'_> {
 
                 let inputs = call_args.clone();
 
-                let expr_hir = ExprHir::Call(call_id, call_args);
+                let expr_hir = ExprHir::Call(caller_id, call_args);
                 // Are the arguments inputs if they are the expression itself?
                 let resolved_expr =
                     ResolvedExpr::new(type_id, expr_hir, val_id, spanned_expr.span, inputs);
@@ -1518,9 +1552,6 @@ impl TypeResolver<'_> {
                     seen,
                 )? {
                     PossibleMember::Module(extern_mod_id) => {
-                        //TODO: Allow self references if not already doable
-                        // main.thing
-
                         //NOTE: Maybe privacy should be checked from this resolver?
                         if let Some(extern_sym_id) = scopes::get_sym_id(
                             self.compiler,
@@ -1530,7 +1561,8 @@ impl TypeResolver<'_> {
                             LookupPattern::ModuleOnly,
                         ) {
                             seen.push(extern_sym_id);
-                            // Dirtiness?
+                            // Dirtiness to prevent O(n) check of each and every expression in
+                            // whatever given symbol was used?
                             self.check_cycle(seen, parent_sym_id, extern_sym_id)?;
 
                             if extern_sym_id == parent_sym_id {
@@ -1945,6 +1977,8 @@ impl TypeResolver<'_> {
                     }
                 }
             }
+            // This only allows something like, defs.Thing which can go to at most one type deep,
+            // but no more. Will likely change since something like i32.MAX could be "core.i32.MAX".
             TypeExpr::Path(spanned_ty_exprs) => {
                 // The parser disallows < 2 type pathing to actually exist so indexing should be
                 // safe here

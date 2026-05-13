@@ -351,7 +351,7 @@ pub enum FuncKind {
     Contains,
     Range,
     StartsW,
-    EndsW, // UserDefined
+    EndsW,
     Equals,
 }
 

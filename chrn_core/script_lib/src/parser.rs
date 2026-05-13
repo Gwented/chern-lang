@@ -815,16 +815,22 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
 
             Ok(SpannedExpr::new(Expr::Char(ch), span))
         }
-        Token::EOF => {
+        t if t.kind().is_terminator() => {
             ctx.advance_tok();
 
+            let terminator = if t.kind() == TokenKind::EOF {
+                "<eof>"
+            } else {
+                "`@end`"
+            };
+
             ctx.report_verbose(
-                "Expected an expression, found <eof>",
+                &format!("Expected an expression, found {terminator}"),
                 Branch::Type,
                 interner,
             );
 
-            Err(Token::EOF)
+            Err(t)
         }
         t => {
             ctx.advance_tok();
@@ -1041,7 +1047,6 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
 
 /// Parses assuming that within "List<i32>" the "List" part was skipped, which would leave <i32>
 /// to be handled
-//WARN: USING BASIC SPAN IMPLEMENTATION AND MAY CHANGE
 fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTypeExpr>, Token> {
     ctx.expect_verbose(
         TokenKind::OAngleBracket,
@@ -1291,17 +1296,18 @@ fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>
     }
 
     while ctx.peek_tok() != Token::CBracket {
-        let new_cond = parse_expr(ctx, 0, interner);
+        let cond = parse_expr(ctx, 0, interner)?;
 
-        if let Ok(cond) = new_cond {
-            conds.push(cond);
-        } else {
-            if err_count > MAX_ERRORS {
-                break;
-            }
-
-            err_count += 1;
-        }
+        // Error reporting behavior is more dangerous the more lenient the reporting is
+        // if let Ok(cond) = new_cond {
+        conds.push(cond);
+        // } else {
+        //     if err_count > MAX_ERRORS {
+        //         break;
+        //     }
+        //
+        //     err_count += 1;
+        // }
 
         if ctx.peek_tok() == Token::CBracket {
             break;

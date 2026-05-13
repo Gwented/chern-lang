@@ -14,7 +14,7 @@ pub(super) enum SemanticError {
     /// Constraint, found type(builtin or user), function kind, spans
     FuncConstraintMismatch(ArgConstraint, Formatted, FuncKind, Vec<Span>),
     /// Constraint, function type, amount of incorrect params found, spans
-    ArgMiscount(ArgConstraint, FuncKind, u8, Vec<Span>),
+    ArgCountMismatch(ArgConstraint, FuncKind, u32, Vec<Span>),
     /// Argument failed at, found type, spans
     UnsupportedArg(InnerArgs, Formatted, Vec<Span>),
     /// Args Condition, Wrong type formatted, Spans
@@ -43,6 +43,14 @@ pub(super) enum MathError {
     UnaryOpMismatch(Formatted, Formatted, Vec<Span>),
     /// Lhs, rhs, spans
     DivideByZero(Formatted, Vec<Span>),
+}
+
+#[derive(Debug)]
+pub(super) enum FunctionConstraints {
+    /// Constraint, found type, function kind, spans
+    FuncConstraintMismatch(ArgConstraint, Formatted, FuncKind, Vec<Span>),
+    /// Constraint, function type, amount of incorrect params found, spans
+    ArgCountMismatch(ArgConstraint, FuncKind, u32, Vec<Span>),
 }
 
 impl From<MathError> for SemanticError {

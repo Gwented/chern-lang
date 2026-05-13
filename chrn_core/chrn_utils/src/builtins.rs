@@ -205,7 +205,6 @@ impl Formattable for BuiltinTypeKind {
     }
 }
 
-// SHOULD THIS ERR?
 impl BuiltinTypeKind {
     pub fn is_numeric(&self) -> bool {
         match self {
@@ -236,6 +235,36 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::Map
             | BuiltinTypeKind::Tuple
             | BuiltinTypeKind::Any => false,
+        }
+    }
+
+    pub fn is_integer(&self) -> bool {
+        match self {
+            BuiltinTypeKind::I8
+            | BuiltinTypeKind::U8
+            | BuiltinTypeKind::I16
+            | BuiltinTypeKind::U16
+            | BuiltinTypeKind::I32
+            | BuiltinTypeKind::U32
+            | BuiltinTypeKind::I64
+            | BuiltinTypeKind::U64
+            | BuiltinTypeKind::I128
+            | BuiltinTypeKind::U128
+            | BuiltinTypeKind::Sized
+            | BuiltinTypeKind::Unsized
+            | BuiltinTypeKind::BigInt => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_float(&self) -> bool {
+        match self {
+            BuiltinTypeKind::F16
+            | BuiltinTypeKind::F32
+            | BuiltinTypeKind::F64
+            | BuiltinTypeKind::F128
+            | BuiltinTypeKind::BigFloat => true,
+            _ => false,
         }
     }
 }
