@@ -19,7 +19,7 @@ pub enum Commands {
     #[command(name = "check", alias = "c")]
     Check(CheckCmd),
     // Minify argument
-    /// Formats `.chrn` file prettily
+    /// Formats `.chrn` file for highest readability. Changes with behavior with arguments.
     Fmt(FmtCmd),
     Gen(GenCmd),
     #[command(name = "details", alias = "d")]
@@ -46,6 +46,7 @@ pub struct GenCmd {
 pub struct FmtCmd {
     /// Path of `.chrn` file to format
     pub(crate) path: PathBuf,
+    /// Minifies file
     #[arg(short = 'm', long = "minify", default_value_t = false)]
     pub(crate) minify: bool,
 }

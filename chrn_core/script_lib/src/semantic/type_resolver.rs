@@ -5,8 +5,7 @@ use std::collections::HashSet;
 
 use chrn_utils::builtins::BuiltinTypeKind;
 use chrn_utils::id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId};
-use chrn_utils::intern;
-use chrn_utils::values::{Value, ValueInfo, ValueKind};
+use chrn_utils::values::{Value, ValueInfo};
 use chrn_utils::{builtins::BuiltinType, intern::Intern};
 use common::chrn_settings::ChrnSettings;
 use common::fmter::{Formattable, Formatted};
@@ -283,7 +282,6 @@ impl TypeResolver<'_> {
             // Still need to repair root expr
             let root_expr = &mut self.compiler.exprs[root_id.id as usize];
             match self.compiler.symbols[resolved_sym_id.id as usize].kind {
-                SymbolKind::Type(type_id) => todo!("Hi types"),
                 SymbolKind::Val(val_id) => {
                     // Brain starting working now it works
                     let val_info = &self.compiler.values[val_id.id as usize];
@@ -299,8 +297,10 @@ impl TypeResolver<'_> {
                     inner_val.type_id = type_id;
                     inner_val.const_val = const_val_opt;
                 }
+                // Types are known without dependency tracking.
+                // SymbolKind::Unknown is always turned into an expr_id
+                SymbolKind::Type(_) | SymbolKind::Unknown => unreachable!("Not possible"),
                 // Uh is this possible
-                _ => unreachable!("The symbol is resolved already"),
             }
 
             if let Some(user) = root_expr.user {
@@ -336,10 +336,6 @@ impl TypeResolver<'_> {
         // If all pending expressions were pushed into the queue and the entire queue was resolved then
         // can remove
         if queue.len() == pending_sym.pending_exprs.len() && resolved_count == queue.len() {
-            // println!(
-            //     "------\nCan remove {}\n------",
-            //     self.interner.search(sym.name_id.id as usize)
-            // );
             can_remove = true;
         }
 
@@ -750,16 +746,6 @@ impl TypeResolver<'_> {
             .map(|sp_arg| sp_arg.arg)
             .collect();
 
-        // dbg!(abs_struct);
-        // dbg!(&struct_def);
-
-        // let struct_def = self.compiler.get_struct(sym_id);
-        // for field in &struct_def.fields {
-        //     let name = self.interner.search(field.name_id.id as usize);
-        //     let ty_info = &self.compiler.types[field.type_id.id as usize];
-        //     dbg!(name, ty_info);
-        // }
-
         Ok(())
     }
 
@@ -885,13 +871,6 @@ impl TypeResolver<'_> {
         enum_def.variants.append(&mut variants);
         enum_def.glob_conds = glob_conds;
         enum_def.glob_args = abs_enum.glob_args.iter().map(|sp_arg| sp_arg.arg).collect();
-
-        // let enum_def = self.compiler.get_enum(sym_id);
-        // for variant in &enum_def.variants {
-        //     let name = self.interner.search(variant.name_id.id as usize);
-        //     let ty_info = &self.compiler.types[variant.type_id.unwrap().id as usize];
-        //     dbg!(name, ty_info);
-        // }
 
         Ok(())
     }
@@ -1356,8 +1335,6 @@ impl TypeResolver<'_> {
                 //TODO: Need symbol of name id
                 //Need it's inputs to be the symbol and spanned expression
 
-                dbg!(&self.compiler.exprs[default_val_expr_id.id as usize]);
-
                 // DO NOT QUESTION THIS
                 let expr_hir = ExprHir::Default(*name_id, default_val_expr_id);
 
@@ -1601,52 +1578,6 @@ impl TypeResolver<'_> {
                                 scope_type,
                                 seen,
                             )
-                            //
-                            // match symbol.kind {
-                            //     SymbolKind::Type(type_id) => {
-                            //         todo!("Typed")
-                            //     }
-                            //     SymbolKind::Val(val_id) => {
-                            //         let val_info = &self.compiler.values[val_id.id as usize];
-                            //         Ok(val_info.expr_id)
-                            //     }
-                            //     SymbolKind::Unknown => {
-                            //         let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
-                            //         let expr_hir = ExprHir::Var(extern_sym_id);
-                            //         let pending_expr = PendingExpr::new(expr_id, parent_sym_id);
-                            //
-                            //         self.ty_ctx.store_pending_expr(extern_sym_id, pending_expr);
-                            //         // dbg!(self.interner.search(
-                            //         //     self.compiler.symbols[&SymbolId::new(25)].name_id.id
-                            //         //         as usize
-                            //         // ));
-                            //         // dbg!(&self.ty_ctx);
-                            //         // panic!();
-                            //         // Will possibly call for others to be resolved here, or do it from the
-                            //         // var resolution method itself
-                            //
-                            //         let type_id = TypeId::new(script_compiler::TYPE_UNKNOWN_IDX);
-                            //
-                            //         // Creates value id that has an unknown type, no constant value, and an
-                            //         // unresolved expression.
-                            //         let val_id = ValueId::new(self.compiler.values.len() as u32);
-                            //         let val_info = ValueInfo::new(type_id, expr_id, None);
-                            //
-                            //         self.compiler.values.push(val_info);
-                            //
-                            //         let expr = ResolvedExpr::new(
-                            //             type_id,
-                            //             expr_hir,
-                            //             val_id,
-                            //             spanned_expr.span,
-                            //             Vec::new(),
-                            //         );
-                            //
-                            //         self.compiler.exprs.push(expr);
-                            //
-                            //         Ok(expr_id)
-                            //     }
-                            // }
                         } else {
                             // TODO: Should also show what scopes were searched or just in some
                             // form at all state why a symbol that exists wasn't seen
@@ -1839,8 +1770,6 @@ impl TypeResolver<'_> {
                 let err_msg =
                     format!("`{err_name}` is not defined as a type within module `{active_name}`");
 
-                // dbg!(err_name, spanned_ty_expr.span);
-                // panic!();
                 self.reporter.report_spanned(
                     &err_msg,
                     Some(err_name),

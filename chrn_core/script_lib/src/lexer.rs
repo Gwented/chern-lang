@@ -950,7 +950,7 @@ impl Lexer<'_> {
     }
 
     fn handle_comment(&mut self) {
-        while self.peek() != b'\n' {
+        while self.pos < self.src_bytes.len() && self.peek() != b'\n' {
             self.advance();
         }
     }
@@ -958,8 +958,7 @@ impl Lexer<'_> {
     //NOTE: Keeps depth tracked even though the loader would take care of this. Could change.
     fn handle_multi_comment(&mut self) {
         let mut depth = 1;
-        // Avoiding recursion...
-        // But why?
+
         while self.pos < self.src_bytes.len() && depth > 0 {
             if self.peek() == b'/' && self.peek_ahead(1) == b'*' {
                 self.skip(1);
@@ -970,10 +969,6 @@ impl Lexer<'_> {
             } else {
                 self.advance();
             }
-        }
-
-        if depth > 0 {
-            eprintln!("Could not find end of multi-line comment");
         }
     }
 
@@ -1004,8 +999,10 @@ impl Lexer<'_> {
         ch
     }
 
-    // Possibility that spans are inclusive exclusive, not inclusive inclusive, so....um..
+    // Spans are (inclusive, inclusive)
     fn handle_trivia(&mut self) {
+        // This is (inclusive, exclusive) but may make this (inclusive, inclusive) for
+        // consistency purposes
         self.trivia_start_idx = self.trivia.len();
         loop {
             let trivia_start = self.pos;
@@ -1024,7 +1021,7 @@ impl Lexer<'_> {
                         self.skip(2);
                         self.handle_comment();
                         // THIS IS REAL
-                        // Maintining inclusive exclusive spans
+                        // Maintining (inclusive, inclusive) spans since it stops at \n
                         let trivia_end = self.pos - 1;
 
                         self.trivia.push(Trivia::new(
@@ -1043,6 +1040,18 @@ impl Lexer<'_> {
                     } else {
                         break;
                     }
+                }
+                //TODO: Check if windows is ok
+                '\r' if self.peek_ahead(1) == b'\n' => {
+                    self.advance();
+
+                    let trivia_end = self.pos;
+                    self.trivia.push(Trivia::new(
+                        TriviaKind::NewLine,
+                        Span::new(trivia_start, trivia_end),
+                    ));
+
+                    self.advance();
                 }
                 '\n' => {
                     let trivia_end = self.pos;

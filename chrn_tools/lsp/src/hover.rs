@@ -524,7 +524,7 @@ fn format_value(v: &CValue, interner: &Intern) -> String {
             format!("\"{}\"", interner.search(id.id as usize).to_string())
         }
         CValue::RuntimeStr(s) => format!("\"{s}\""),
-        CValue::Func => format!("Function"),
+        CValue::Func(_) => format!("Function"),
         CValue::Unknown => "Unknown".into(),
     }
 }

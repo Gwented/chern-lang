@@ -1,23 +1,23 @@
 
-/* Hello I am a comment */   
 
 @def
+/* Hello I am a comment */   
 import "../../defs.chrn"
 //let x = 3// I am another
 
 alias default(x, y) = [Contains(x = "Defaulting", y = "Forklift")] #warn
-let b = default(_, _)
 
 let input = "Chrn"
 
-let x = IsEmpty
+var->
+    x: i32
 
                 // Gilber let b = 5
 
         //let r = 3.5// Testing Stuff
 nest->
     enum State {
-        Ready: State
+        Ready: main.Book
         Stopped: nil
     } #scient
 
