@@ -23,6 +23,10 @@ pub fn compute_hover(
     let text = &state.text;
     let offset = position_to_offset(text, pos);
 
+    if state.offset_in_comment(offset) {
+        return None;
+    }
+
     let (tok, span_start, span_end) = match state.get_symbol_at_offset(offset) {
         Some(res) => (ScriptToken::Id(res.0), res.1, res.2),
         None => {

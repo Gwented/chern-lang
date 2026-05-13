@@ -12,6 +12,11 @@ pub fn compute_references(
     let state = state_arc.read();
 
     let byte_offset = position_to_offset(&state.text, position);
+
+    if state.offset_in_comment(byte_offset) {
+        return None;
+    }
+
     let entity = state.get_entity_at_offset(byte_offset)?;
 
     // We don't support references for modules yet
@@ -79,15 +84,20 @@ pub fn compute_references(
                 let loc1 = &file_locations[i];
                 let mut is_redundant = false;
                 for j in 0..file_locations.len() {
-                    if i == j { continue; }
+                    if i == j {
+                        continue;
+                    }
                     let loc2 = &file_locations[j];
-                    
+
                     let r1 = &loc1.range;
                     let r2 = &loc2.range;
-                    
-                    let starts_after_or_at = r2.start.line > r1.start.line || (r2.start.line == r1.start.line && r2.start.character >= r1.start.character);
-                    let ends_before_or_at = r2.end.line < r1.end.line || (r2.end.line == r1.end.line && r2.end.character <= r1.end.character);
-                    
+
+                    let starts_after_or_at = r2.start.line > r1.start.line
+                        || (r2.start.line == r1.start.line
+                            && r2.start.character >= r1.start.character);
+                    let ends_before_or_at = r2.end.line < r1.end.line
+                        || (r2.end.line == r1.end.line && r2.end.character <= r1.end.character);
+
                     if starts_after_or_at && ends_before_or_at {
                         if r1.start != r2.start || r1.end != r2.end {
                             is_redundant = true;

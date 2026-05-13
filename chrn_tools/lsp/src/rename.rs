@@ -14,6 +14,11 @@ pub fn compute_rename(
     let state = state_arc.read();
 
     let byte_offset = position_to_offset(&state.text, position);
+
+    if state.offset_in_comment(byte_offset) {
+        return None;
+    }
+
     let entity = state.get_entity_at_offset(byte_offset)?;
 
     // We don't support renaming modules yet as it usually implies renaming files
@@ -83,13 +88,18 @@ pub fn compute_rename(
                     let (r1, _) = &file_edits[i];
                     let mut is_redundant = false;
                     for j in 0..file_edits.len() {
-                        if i == j { continue; }
+                        if i == j {
+                            continue;
+                        }
                         let (r2, _) = &file_edits[j];
-                        
+
                         // Check if r2 is strictly contained in r1, or if they are identical (keep first)
-                        let starts_after_or_at = r2.start.line > r1.start.line || (r2.start.line == r1.start.line && r2.start.character >= r1.start.character);
-                        let ends_before_or_at = r2.end.line < r1.end.line || (r2.end.line == r1.end.line && r2.end.character <= r1.end.character);
-                        
+                        let starts_after_or_at = r2.start.line > r1.start.line
+                            || (r2.start.line == r1.start.line
+                                && r2.start.character >= r1.start.character);
+                        let ends_before_or_at = r2.end.line < r1.end.line
+                            || (r2.end.line == r1.end.line && r2.end.character <= r1.end.character);
+
                         if starts_after_or_at && ends_before_or_at {
                             if r1.start != r2.start || r1.end != r2.end {
                                 // r2 is strictly smaller than r1

@@ -751,6 +751,11 @@ impl LanguageServer for Backend {
 
         let state = state_arc.read();
         let byte_offset = crate::text::position_to_offset(&state.text, pos);
+
+        if state.offset_in_comment(byte_offset) {
+            return Ok(None);
+        }
+
         let mut links: Vec<LocationLink> = Vec::new();
 
         let mut def_info = None;
@@ -848,6 +853,11 @@ impl LanguageServer for Backend {
 
         // If cursor is outside the script section, return no completions
         if !in_script_section {
+            return Ok(Some(CompletionResponse::Array(Vec::new())));
+        }
+
+        // If cursor is in a comment, return no completions
+        if state.offset_in_comment(byte_off) {
             return Ok(Some(CompletionResponse::Array(Vec::new())));
         }
 

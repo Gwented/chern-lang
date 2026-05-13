@@ -4,10 +4,11 @@ use script_lib::modules::Module;
 use script_lib::modules::ModuleMetadata;
 use script_lib::script_compiler::ScriptCompiler;
 use script_lib::semantic::name_resolver::NamespaceResolver;
-use script_lib::semantic::type_resolver::TypeResolver;
 use script_lib::semantic::type_resolver::type_context::TypeContext;
+use script_lib::semantic::type_resolver::TypeResolver;
 use script_lib::token::SpannedToken;
 use script_lib::token::Token as ScriptToken;
+use script_lib::trivia::Trivia;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;
@@ -43,6 +44,7 @@ pub enum SemanticEntity {
 pub struct DocumentState {
     pub text: Arc<String>,
     pub tokens: Vec<SpannedToken>,
+    pub trivia: Vec<Trivia>,
     pub interner: Intern,
     pub script_start: usize,
     pub serial_start: Option<usize>,
@@ -64,6 +66,7 @@ impl DocumentState {
     pub fn new(
         text: Arc<String>,
         tokens: Vec<SpannedToken>,
+        trivia: Vec<Trivia>,
         interner: Intern,
         script_start: usize,
         serial_start: Option<usize>,
@@ -72,6 +75,7 @@ impl DocumentState {
         DocumentState {
             text,
             tokens,
+            trivia,
             interner,
             script_start,
             serial_start,
@@ -762,6 +766,40 @@ impl DocumentState {
             }
         }
     }
+
+    /// Check if a given byte offset falls within a comment (single or multi).
+    /// Uses binary search for O(log n) performance.
+    /// Also checks for single-line comments by looking for // before the cursor on the current line.
+    pub fn offset_in_comment(&self, byte_offset: usize) -> bool {
+        if self.trivia.is_empty() && self.text.is_empty() {
+            return false;
+        }
+
+        let idx = self.trivia.partition_point(|t| t.span.start <= byte_offset);
+        if idx > 0 {
+            let t = &self.trivia[idx - 1];
+            if byte_offset <= t.span.end && t.kind.is_comment() {
+                return true;
+            }
+        }
+
+        let text = self.text.as_bytes();
+        if byte_offset >= text.len() {
+            return false;
+        }
+
+        let line_start = text[..byte_offset]
+            .iter()
+            .rposition(|&b| b == b'\n')
+            .map(|p| p + 1)
+            .unwrap_or(0);
+
+        if text[line_start..byte_offset].windows(2).any(|w| w == b"//") {
+            return true;
+        }
+
+        false
+    }
 }
 
 struct CacheInner {
@@ -817,7 +855,7 @@ impl DocumentCache {
 
         // 2. Perform expensive tokenization OUTSIDE any cache lock
         let mut interner = Intern::init();
-        let (tokens, _) = Lexer::new(text.as_bytes(), script_start).tokenize(&mut interner);
+        let (tokens, trivia) = Lexer::new(text.as_bytes(), script_start).tokenize(&mut interner);
 
         // 3. Re-acquire write lock to insert
         let mut cache = self.inner.write();
@@ -853,6 +891,7 @@ impl DocumentCache {
         let state = Arc::new(RwLock::new(DocumentState::new(
             Arc::clone(&text),
             tokens,
+            trivia,
             interner,
             script_start,
             serial_start,
