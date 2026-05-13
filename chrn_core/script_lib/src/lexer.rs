@@ -1,4 +1,4 @@
-//TODO: Maybe actually make the spans inclusive inclusive so that + 1 is not needed later
+//TODO: Maybe actually make the spans inclusive exclusive so that + 1 is not needed later
 //and - 1 is not needed now
 use chrn_utils::{
     intern::{self, Intern},

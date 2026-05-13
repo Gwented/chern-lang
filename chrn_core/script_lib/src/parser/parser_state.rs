@@ -38,7 +38,6 @@ impl ParserState {
         (self.flag & BIND_FLAG) != 0
     }
 
-    //TODO: Maybe remove
     pub(super) fn flip_alias(&mut self) {
         self.flag |= ALIAS_FLAG;
     }

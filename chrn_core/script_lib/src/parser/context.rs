@@ -96,9 +96,7 @@ impl<'a> Context<'a> {
             t => self.get_err_ident(t, interner),
         };
 
-        let help = self
-            .try_help(expected, &found, branch, interner)
-            .unwrap_or_default();
+        let help = self.try_help(expected, &found, branch, interner);
 
         let spans = self.safely_handle_span(&found);
 
@@ -116,7 +114,7 @@ impl<'a> Context<'a> {
         let fmtted_diag = reporter::standardize_err(
             &core_msg,
             &ln_data,
-            &help,
+            help.as_ref().map(|s| s.as_str()),
             interner.search_path(self.metadata.path_id.id as usize),
             self.settings.can_color,
         );
@@ -125,6 +123,7 @@ impl<'a> Context<'a> {
             path,
             core_msg,
             Some(common::span::merge_spans(&spans)),
+            help,
             fmtted_diag,
             Area::Script,
         ));
@@ -152,9 +151,7 @@ impl<'a> Context<'a> {
 
         let err_ident_opt = self.get_err_ident(found.tok, interner);
 
-        let help = self
-            .try_help(TokenKind::Keyword, &found, branch, interner)
-            .unwrap_or_default();
+        let help = self.try_help(TokenKind::Keyword, &found, branch, interner);
 
         let spans = self.safely_handle_span(&found);
 
@@ -172,7 +169,7 @@ impl<'a> Context<'a> {
         let fmtted_diag = reporter::standardize_err(
             &core_msg,
             &ln_data,
-            &help,
+            help.as_ref().map(|s| s.as_str()),
             interner.search_path(self.metadata.path_id.id as usize),
             self.settings.can_color,
         );
@@ -181,6 +178,7 @@ impl<'a> Context<'a> {
             path,
             core_msg,
             Some(common::span::merge_spans(&spans)),
+            help,
             fmtted_diag,
             Area::Script,
         ));
@@ -197,9 +195,7 @@ impl<'a> Context<'a> {
     pub(super) fn report_verbose(&mut self, msg: &str, branch: Branch, interner: &Intern) {
         let found = self.peek_behind(1);
 
-        let help = self
-            .try_help(TokenKind::Poison, &found, branch, interner)
-            .unwrap_or_default();
+        let help = self.try_help(TokenKind::Poison, &found, branch, interner);
 
         let spans = self.safely_handle_span(&found);
 
@@ -213,7 +209,7 @@ impl<'a> Context<'a> {
         let fmtted_msg = reporter::standardize_err(
             &core_msg,
             &ln_data,
-            &help,
+            help.as_ref().map(|s| s.as_str()),
             interner.search_path(self.metadata.path_id.id as usize),
             self.settings.can_color,
         );
@@ -224,6 +220,7 @@ impl<'a> Context<'a> {
             path,
             core_msg,
             Some(common::span::merge_spans(&spans)),
+            help,
             fmtted_msg,
             Area::Script,
         );
@@ -254,9 +251,7 @@ impl<'a> Context<'a> {
             let ln_data =
                 reporter::form_err_diag(&self.metadata.src_bytes, &spans, self.settings.can_color);
 
-            let help = self
-                .try_help(expected, &found, branch, interner)
-                .unwrap_or_default();
+            let help = self.try_help(expected, &found, branch, interner);
 
             let path = interner.search_path(self.metadata.path_id.id as usize);
 
@@ -272,7 +267,7 @@ impl<'a> Context<'a> {
             let fmtted_msg = reporter::standardize_err(
                 &core_msg,
                 &ln_data,
-                &help,
+                help.as_ref().map(|s| s.as_str()),
                 interner.search_path(self.metadata.path_id.id as usize),
                 self.settings.can_color,
             );
@@ -281,6 +276,7 @@ impl<'a> Context<'a> {
                 path,
                 core_msg,
                 Some(common::span::merge_spans(&spans)),
+                help,
                 fmtted_msg,
                 Area::Script,
             ));
@@ -306,9 +302,7 @@ impl<'a> Context<'a> {
     ) {
         let found = &self.peek_behind(1);
 
-        let help = self
-            .try_help(TokenKind::Poison, &found, branch, interner)
-            .unwrap_or_default();
+        let help = self.try_help(TokenKind::Poison, &found, branch, interner);
 
         let spans = self.safely_handle_span(found);
 
@@ -322,7 +316,7 @@ impl<'a> Context<'a> {
         let fmtted_diag = reporter::standardize_err(
             &core_msg,
             &ln_data,
-            &help,
+            help.as_ref().map(|s| s.as_str()),
             interner.search_path(self.metadata.path_id.id as usize),
             self.settings.can_color,
         );
@@ -333,6 +327,7 @@ impl<'a> Context<'a> {
             path,
             core_msg,
             Some(common::span::merge_spans(&spans)),
+            help,
             fmtted_diag,
             Area::Script,
         );

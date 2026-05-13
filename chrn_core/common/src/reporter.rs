@@ -472,12 +472,13 @@ fn form_ln_diag(
 pub fn standardize_err(
     base_msg: &str,
     line_data: &LineData,
-    help: &str,
+    help: Option<&str>,
     path: &Path,
     can_color: bool,
 ) -> String {
     let (red, nc) = color::get_red(can_color);
     let header = format!("From path => \"{}\"\n{red}error{nc}:", path.display());
+    let help = help.unwrap_or_default();
 
     format!(
         "{header} {base_msg}\n[{}:{}]\n{}\n{help}{}",
@@ -495,6 +496,16 @@ pub fn standardize_help(msg: &str, can_color: bool) -> String {
         format!("{orange}help{nc}: {msg}\n")
     } else {
         format!("help: {msg}\n")
+    }
+}
+
+pub fn standardize_note(msg: &str, can_color: bool) -> String {
+    let (cyan, nc) = color::get_cyan(can_color);
+
+    if can_color {
+        format!("{cyan}help{nc}: {msg}\n")
+    } else {
+        format!("note: {msg}\n")
     }
 }
 

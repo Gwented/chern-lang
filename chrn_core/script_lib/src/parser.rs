@@ -1149,7 +1149,6 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
 
     let name_id = InternedId::new(plain_id);
 
-    // TODO: Maybe this shouldn't look like a tuple by default since it's misleading
     let ty_opt: Option<SpannedTypeExpr> = if ctx.peek_kind() == TokenKind::Colon {
         ctx.advance_tok();
         let ty = parse_type(ctx, interner)?;

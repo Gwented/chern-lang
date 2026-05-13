@@ -93,8 +93,11 @@ impl<'a> ConstraintResolver<'a> {
                     // }
                 }
                 Item::Alias(abs_alias) => {
-                    todo!();
-                    // _ = self.resolve_alias(abs_alias, ast_id);
+                    _ = self.resolve_alias(abs_alias, ast_id);
+                    for err in &self.reporter.err_vec {
+                        println!("{}", err.fmtted_diag);
+                    }
+                    todo!("Todol");
                 }
                 Item::Var(abs_var) => {
                     _ = self.resolve_var(abs_var, ast_id);
@@ -268,7 +271,6 @@ impl<'a> ConstraintResolver<'a> {
     }
 
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
-        // First borrow starts here
         let scope_id = self
             .compiler
             .extract_scope_id(ScopeType::Var, self.current_mod);
@@ -351,16 +353,45 @@ impl<'a> ConstraintResolver<'a> {
 
         Ok(())
     }
-    //
-    // fn resolve_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) -> Result<(), ()> {
-    //     todo!("Alias resolution")
-    // }
 
-    // Maybe cross module reporting maybe not
+    // Needs:
+    // Check that only known parameters are used in condition expressions.
+    //
+    // Check if it's removable depending on if it ONLY has args.
+    //
+    // Check that all args used align with all function constraints
+    //
+    // Check that only functions that align with the alias's specific type is used if there is a
+    // "Default" expression inside, which just means if all params are not of type `Unknown`
+    fn resolve_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) -> Result<(), ()> {
+        let scope_id = self
+            .compiler
+            .extract_scope_id(ScopeType::Neutral, self.current_mod);
+        let table = &self.compiler.get_scope(scope_id).scope.table;
+        let sym_id = table.ast_to_sym[&ast_id];
+
+        let alias_def = self.compiler.get_alias(sym_id);
+
+        let mut local_vars: Vec<InternedId> = Vec::new();
+
+        for param in &alias_def.params {
+            local_vars.push(param.name_id);
+        }
+
+        dbg!(local_vars);
+
+        dbg!(alias_def);
+
+        todo!("Alias resolution")
+    }
+
     // //NOTE: The reason this would need to look at the struct again would be because it is iterating
     // // through items despite there already being a known struct id, which could be prevented if the
     // // struct id itself was passed, but then the loop would iterate over everything by default
     // // which seems bad if they're just builtins etc.
+
+    // Needs:
+    //
     fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
         let scope_id = self
             .compiler

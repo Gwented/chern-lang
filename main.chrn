@@ -1,11 +1,7 @@
-
-
 @def
-/* Hello I am a comment */   
 import "../../defs.chrn"
-//let x = 3// I am another
 
-alias default(x, y) = [Contains(x = "Defaulting", y = "Forklift")] #warn
+// alias default(x, y) = [Contains(x = "Defaulting", y = "Forklift")] #warn
 
 let input = "Chrn"
 
@@ -17,6 +13,7 @@ var->
         //let r = 3.5// Testing Stuff
 nest->
     enum State {
+        input:  core.BigInt
         Ready: main.Book
         Stopped: nil
     } #scient

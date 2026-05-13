@@ -205,8 +205,6 @@ pub enum Expr {
     Bool(bool),
     /// Variable name, along with optional default type
     Default(InternedId, Box<SpannedExpr>),
-    // TODO: Need to likely carry notation here
-    // Also maybe should be a "literal" type
     Integer(u32, Notation),
     Float(u32, Notation),
     Str(InternedId),
@@ -557,7 +555,6 @@ impl AbstractParam {
     }
 }
 
-//TODO:
 #[derive(Debug)]
 pub struct AbstractFieldDecl {
     pub name_id: InternedId,

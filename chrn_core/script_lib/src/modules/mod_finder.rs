@@ -155,7 +155,7 @@ impl ModuleFinder<'_> {
             let fmtted_diag = reporter::standardize_err(
                 &core_msg,
                 &ln_data,
-                "",
+                None,
                 &self.path_origin,
                 self.settings.can_color,
             );
@@ -164,6 +164,7 @@ impl ModuleFinder<'_> {
                 &self.path_origin,
                 core_msg,
                 Some(path_span),
+                None,
                 fmtted_diag,
                 Area::ConfigLoad,
             );
@@ -185,7 +186,7 @@ impl ModuleFinder<'_> {
                 let fmtted_diag = reporter::standardize_err(
                     &core_msg,
                     &ln_data,
-                    "",
+                    None,
                     &self.path_origin,
                     self.settings.can_color,
                 );
@@ -194,6 +195,7 @@ impl ModuleFinder<'_> {
                     &path_buf,
                     core_msg,
                     Some(path_span),
+                    None,
                     fmtted_diag,
                     Area::ConfigLoad,
                 );
@@ -292,7 +294,7 @@ impl ModuleFinder<'_> {
             let fmtted_diag = reporter::standardize_err(
                 &core_msg,
                 &ln_data,
-                "",
+                None,
                 &self.path_origin,
                 self.settings.can_color,
             );
@@ -300,6 +302,7 @@ impl ModuleFinder<'_> {
             let diag = Diagnostic::new(
                 &self.path_origin,
                 core_msg,
+                None,
                 None,
                 fmtted_diag,
                 Area::ConfigLoad,
@@ -324,7 +327,7 @@ impl ModuleFinder<'_> {
                 let fmtted_diag = reporter::standardize_err(
                     &core_msg,
                     &ln_data,
-                    "",
+                    None,
                     &self.path_origin,
                     self.settings.can_color,
                 );
@@ -333,6 +336,7 @@ impl ModuleFinder<'_> {
                     &self.path_origin,
                     core_msg,
                     Some(path_span),
+                    None,
                     fmtted_diag,
                     Area::ConfigLoad,
                 );

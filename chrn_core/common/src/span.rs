@@ -1,4 +1,3 @@
-//TODO: Should maybe be somewhere else but fine for now
 //Could this be u32?
 /// General purpose span structure
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

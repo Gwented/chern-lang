@@ -1,10 +1,6 @@
-//FIXME: FIX REQUIRES END MESSAGE
-use std::{
-    io::{BufRead, BufReader, Read},
-    path::Path,
-};
+use std::io::{BufRead, BufReader, Read};
 
-use chrn_utils::{id_types::PathId, intern::Intern, keywords::DEFINITION_SIZE, quote_model};
+use chrn_utils::{id_types::PathId, intern::Intern, keywords::DEFINITION_SIZE};
 use common::{
     chrn_settings::ChrnSettings,
     core_error::ConfigLoadError,
@@ -102,36 +98,18 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
 
                         let core_msg = format!("Found unclosed quotes which reached <eof>{}", note);
 
-                        let spans = if double_quotes_seen > 1 {
-                            let start = first_double_quote.expect("Proven to be > 1");
-
-                            let end = if self.pos + READ_LIMIT_OFFSET < self.handle.buffer().len() {
-                                self.pos + READ_LIMIT_OFFSET
-                            } else {
-                                self.handle.buffer().len()
-                            };
-
-                            let search_range = start..end;
-
-                            quote_model::quote_start_probability(
-                                self.handle.buffer(),
-                                quote_type as char,
-                                search_range,
-                            )
-                        } else {
-                            [Span::new(quote_start, quote_start)].to_vec()
-                        };
+                        let q_span = Span::new(quote_start, quote_start);
 
                         let ln_data = reporter::form_err_diag(
                             self.handle.buffer(),
-                            &spans,
+                            &[q_span],
                             self.settings.can_color,
                         );
 
                         let fmtted_diag = reporter::standardize_err(
                             &core_msg,
                             &ln_data,
-                            "",
+                            None,
                             self.interner.search_path(self.path_id.id as usize),
                             self.settings.can_color,
                         );
@@ -139,7 +117,8 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                         let diag = Diagnostic::new(
                             self.interner.search_path(self.path_id.id as usize),
                             core_msg,
-                            Some(common::span::merge_spans(&spans)),
+                            Some(q_span),
+                            None,
                             fmtted_diag,
                             Area::ConfigLoad,
                         );
@@ -168,36 +147,18 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
 
                         let core_msg = format!("Found unclosed quotes which reached <eof>{}", note);
 
-                        let spans = if single_quotes_seen > 1 {
-                            let start = first_single_quote.expect("Proven to be > 1");
-
-                            let end = if self.pos + READ_LIMIT_OFFSET < self.handle.buffer().len() {
-                                self.pos + READ_LIMIT_OFFSET
-                            } else {
-                                self.handle.buffer().len()
-                            };
-
-                            let search_range = start..end;
-
-                            quote_model::quote_start_probability(
-                                self.handle.buffer(),
-                                quote_type as char,
-                                search_range,
-                            )
-                        } else {
-                            [Span::new(quote_start, quote_start)].to_vec()
-                        };
+                        let q_span = Span::new(quote_start, quote_start);
 
                         let ln_data = reporter::form_err_diag(
                             self.handle.buffer(),
-                            &spans,
+                            &[q_span],
                             self.settings.can_color,
                         );
 
                         let fmtted_diag = reporter::standardize_err(
                             &core_msg,
                             &ln_data,
-                            "",
+                            None,
                             self.interner.search_path(self.path_id.id as usize),
                             self.settings.can_color,
                         );
@@ -205,7 +166,8 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                         let diag = Diagnostic::new(
                             self.interner.search_path(self.path_id.id as usize),
                             core_msg,
-                            Some(common::span::merge_spans(&spans)),
+                            Some(q_span),
+                            None,
                             fmtted_diag,
                             Area::ConfigLoad,
                         );
@@ -294,6 +256,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
             // Explicitly declaring this so the end of the file can be pointed at too
 
             // Ensuring an indexable character is the last character
+            // FIX: This is a flaw of the reporter not spanning over EOF
             let eof_pos = if self.pos == self.handle.buffer().len() {
                 self.pos - 1
             } else {
@@ -311,7 +274,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
             let fmtted_diag = reporter::standardize_err(
                 &core_msg,
                 &ln_data,
-                "",
+                None,
                 self.interner.search_path(self.path_id.id as usize),
                 self.settings.can_color,
             );
@@ -320,6 +283,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                 self.interner.search_path(self.path_id.id as usize),
                 core_msg,
                 Some(def_span.merge(eof_span)),
+                None,
                 fmtted_diag,
                 Area::ConfigLoad,
             );
@@ -402,7 +366,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
             let fmtted_diag = reporter::standardize_err(
                 &core_msg,
                 &ln_data,
-                "",
+                None,
                 self.interner.search_path(self.path_id.id as usize),
                 self.settings.can_color,
             );
@@ -411,6 +375,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                 self.interner.search_path(self.path_id.id as usize),
                 core_msg,
                 Some(comment_span.merge(eof_span)),
+                None,
                 fmtted_diag,
                 Area::ConfigLoad,
             );

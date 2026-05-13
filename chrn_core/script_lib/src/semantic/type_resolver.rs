@@ -1,4 +1,4 @@
-//TODO: PRIVACY CHECKING SYMBOLS. IMPORT CHECKING SYMBOLS.
+//TODO: IMPORT CHECKING SYMBOLS.
 pub mod type_context;
 
 use std::collections::HashSet;
@@ -41,7 +41,6 @@ pub struct TypeResolver<'a> {
     current_mod: ModuleId,
     ty_ctx: &'a mut TypeContext,
     reporter: SemanticReporter<'a>,
-    //NOTE: May handle this differently but ok for now
 }
 
 impl TypeResolver<'_> {
@@ -367,12 +366,6 @@ impl TypeResolver<'_> {
             }
             // Not sure if this is reachable since other than the root, there can't another
             // singular variable seen since, "let z = x y" is non-existen syntactically
-            ExprHir::Var(sym_id) => {
-                todo!("What is a varrrble")
-            }
-            ExprHir::Default(sym_id, expr_id) => {
-                todo!("Default not finished")
-            }
             ExprHir::Unary { op, operand } => {
                 // Getting the operand that could be resolved (Might be guarnteed but um..e)
                 let operand_expr = &self.compiler.exprs[operand.id as usize];
@@ -478,7 +471,15 @@ impl TypeResolver<'_> {
                 inner_val.type_id = type_id;
                 inner_val.const_val = const_val_opt;
             }
+            //TODO:
             ExprHir::Call(expr_id, expr_ids) => todo!(),
+            ExprHir::Var(sym_id) => {
+                todo!("What is a varrrble")
+            }
+            // This may not be possibly since it expects a literal which is always const
+            ExprHir::Default(sym_id, expr_id) => {
+                todo!("Default not finished")
+            }
         }
 
         // Traversing up tree
@@ -576,15 +577,16 @@ impl TypeResolver<'_> {
         let mut conds: Vec<ExprId> = Vec::new();
         for spanned_expr in &abs_typedef.conds {
             //FIX: Scope type is a little wrong here since it's a condition
-            let cond = match self.register_expr(
+            let cond_opt = match self.register_expr(
                 sym_id,
                 spanned_expr,
                 self.current_mod,
                 ScopeType::Neutral,
                 &mut vec![sym_id],
             ) {
-                // There is no sym parrent..
-                Ok(c) => c,
+                // For allowing for more diagnostics instead of just leaving the rest of the struct
+                // unfinished upon singular errors
+                Ok(c) => Some(c),
                 Err(sem_err) => {
                     let module = &self.compiler.mods[self.current_mod.id];
                     self.reporter.report_semantic(
@@ -595,13 +597,13 @@ impl TypeResolver<'_> {
                             .expect("core should not be resolved"),
                     );
 
-                    // println!("{}", self.reporter.err_vec[0].fmtted_diag);
-                    // todo!("Errored");
-                    return Err(());
+                    None
                 }
             };
 
-            conds.push(cond);
+            if let Some(cond) = cond_opt {
+                conds.push(cond);
+            }
         }
 
         let type_def = self.compiler.get_typedef_mut(sym_id);
@@ -678,14 +680,14 @@ impl TypeResolver<'_> {
             let mut conds: Vec<ExprId> = Vec::new();
 
             for cond in &abs_field.conds {
-                let cond_expr = match self.register_expr(
+                let cond_opt = match self.register_expr(
                     sym_id,
                     &cond,
                     self.current_mod,
                     ScopeType::Nest,
                     &mut vec![sym_id],
                 ) {
-                    Ok(c) => c,
+                    Ok(c) => Some(c),
                     Err(sem_err) => {
                         let module = &self.compiler.mods[self.current_mod.id];
                         self.reporter.report_semantic(
@@ -696,11 +698,13 @@ impl TypeResolver<'_> {
                                 .expect("core should not be resolved"),
                         );
 
-                        return Err(());
+                        None
                     }
                 };
 
-                conds.push(cond_expr);
+                if let Some(cond) = cond_opt {
+                    conds.push(cond);
+                }
             }
 
             field.conds = conds;
@@ -710,14 +714,14 @@ impl TypeResolver<'_> {
         let mut glob_conds: Vec<ExprId> = Vec::new();
 
         for cond in &abs_struct.glob_conds {
-            let cond = match self.register_expr(
+            let cond_opt = match self.register_expr(
                 sym_id,
                 cond,
                 self.current_mod,
                 ScopeType::Nest,
                 &mut vec![sym_id],
             ) {
-                Ok(c) => c,
+                Ok(c) => Some(c),
                 Err(sem_err) => {
                     let module = &self.compiler.mods[self.current_mod.id];
                     self.reporter.report_semantic(
@@ -728,11 +732,13 @@ impl TypeResolver<'_> {
                             .expect("core should not be resolved"),
                     );
 
-                    return Err(());
+                    None
                 }
             };
 
-            glob_conds.push(cond);
+            if let Some(cond) = cond_opt {
+                glob_conds.push(cond);
+            }
         }
 
         let struct_def = self.compiler.get_struct_mut(sym_id);
@@ -810,14 +816,14 @@ impl TypeResolver<'_> {
             let mut conds: Vec<ExprId> = Vec::new();
 
             for cond in &abs_variant.conds {
-                let cond_expr = match self.register_expr(
+                let cond_opt = match self.register_expr(
                     sym_id,
                     &cond,
                     self.current_mod,
                     ScopeType::Nest,
                     &mut vec![sym_id],
                 ) {
-                    Ok(c) => c,
+                    Ok(c) => Some(c),
                     Err(sem_err) => {
                         let module = &self.compiler.mods[self.current_mod.id];
                         self.reporter.report_semantic(
@@ -828,11 +834,13 @@ impl TypeResolver<'_> {
                                 .expect("core should not be resolved"),
                         );
 
-                        return Err(());
+                        None
                     }
                 };
 
-                conds.push(cond_expr);
+                if let Some(cond) = cond_opt {
+                    conds.push(cond);
+                }
             }
 
             variant.conds = conds;
@@ -841,14 +849,14 @@ impl TypeResolver<'_> {
 
         let mut glob_conds: Vec<ExprId> = Vec::new();
         for cond in &abs_enum.glob_conds {
-            let cond = match self.register_expr(
+            let cond_opt = match self.register_expr(
                 sym_id,
                 cond,
                 self.current_mod,
                 ScopeType::Nest,
                 &mut vec![sym_id],
             ) {
-                Ok(c) => c,
+                Ok(c) => Some(c),
                 Err(sem_err) => {
                     let module = &self.compiler.mods[self.current_mod.id];
                     self.reporter.report_semantic(
@@ -859,11 +867,13 @@ impl TypeResolver<'_> {
                             .expect("core should not be resolved"),
                     );
 
-                    return Err(());
+                    None
                 }
             };
 
-            glob_conds.push(cond);
+            if let Some(cond) = cond_opt {
+                glob_conds.push(cond);
+            }
         }
 
         let enum_def = self.compiler.get_enum_mut(sym_id);
@@ -931,7 +941,7 @@ impl TypeResolver<'_> {
         let mut conds: Vec<ExprId> = Vec::new();
         for spanned_expr in &abs_alias.conds {
             //FIX: Scope type is a little wrong here since it's a condition
-            let cond = match self.register_expr(
+            let cond_opt = match self.register_expr(
                 sym_id,
                 spanned_expr,
                 self.current_mod,
@@ -939,7 +949,7 @@ impl TypeResolver<'_> {
                 &mut vec![sym_id],
             ) {
                 // There is no sym parrent..
-                Ok(c) => c,
+                Ok(c) => Some(c),
                 Err(sem_err) => {
                     let module = &self.compiler.mods[self.current_mod.id];
                     self.reporter.report_semantic(
@@ -950,11 +960,13 @@ impl TypeResolver<'_> {
                             .expect("core should not be resolved"),
                     );
 
-                    return Err(());
+                    None
                 }
             };
 
-            conds.push(cond);
+            if let Some(cond) = cond_opt {
+                conds.push(cond);
+            }
         }
 
         let alias_def = self.compiler.get_alias_mut(sym_id);

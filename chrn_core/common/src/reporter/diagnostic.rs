@@ -46,6 +46,7 @@ pub struct Diagnostic {
     /// The fully formatted error that is attached to the diagnostic which avoids having to in-line
     /// creation outside of one source of internal truth.
     pub fmtted_diag: String,
+    pub help: Option<String>,
     // level: DiagnosticLevel,
     // pub help: Option<String>,
     /// Data for which stage of what compiler the diagnostic was emitted from
@@ -54,12 +55,13 @@ pub struct Diagnostic {
 
 impl Diagnostic {
     // Maybe just req PathBuf
+    // Maybe just require PathBuf PLEASE
     pub fn new(
         path: &Path,
         core_msg: String,
         span: Option<Span>,
+        help: Option<String>,
         fmtted_diag: String,
-        // help: Option<String>,
         area: Area,
     ) -> Diagnostic {
         Diagnostic {
@@ -67,7 +69,7 @@ impl Diagnostic {
             span,
             core_msg,
             fmtted_diag,
-            // help,
+            help,
             area,
         }
     }

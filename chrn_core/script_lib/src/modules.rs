@@ -62,10 +62,6 @@ impl Bind {
     }
 }
 
-// What about OUR name?
-// What?
-// I actually don't know why that's there
-// Still don't know
 //TODO:
 //Maybe, a kind field that says user or builtin,
 //or, a wrapper that has a module that could explicitly represent if it's user or not
@@ -161,7 +157,8 @@ pub fn extract_modules(
     let src = match file_ops::fopen(&path) {
         Ok(f) => f,
         Err(err_msg) => {
-            let diag = Diagnostic::new(path, err_msg.clone(), None, err_msg, Area::ConfigLoad);
+            let diag =
+                Diagnostic::new(path, err_msg.clone(), None, None, err_msg, Area::ConfigLoad);
             return Err(ConfigLoadError::Module(diag));
         }
     };
@@ -180,7 +177,14 @@ pub fn extract_modules(
                 path.display()
             );
 
-            let diag = Diagnostic::new(&path, core_msg.clone(), None, core_msg, Area::ConfigLoad);
+            let diag = Diagnostic::new(
+                &path,
+                core_msg.clone(),
+                None,
+                None,
+                core_msg,
+                Area::ConfigLoad,
+            );
 
             return Err(ConfigLoadError::Module(diag));
         }
@@ -304,7 +308,7 @@ fn resolve_modules(
                 let fmtted_diag = reporter::standardize_err(
                     &core_msg,
                     &ln_data,
-                    "",
+                    None,
                     prev_path,
                     settings.can_color,
                 );
@@ -313,6 +317,7 @@ fn resolve_modules(
                     path,
                     core_msg,
                     Some(import.path_span),
+                    None,
                     fmtted_diag,
                     Area::ConfigLoad,
                 );
@@ -334,7 +339,7 @@ fn resolve_modules(
                 let fmtted_diag = reporter::standardize_err(
                     &core_msg,
                     &ln_data,
-                    "",
+                    None,
                     prev_path,
                     settings.can_color,
                 );
@@ -343,6 +348,7 @@ fn resolve_modules(
                     path,
                     core_msg,
                     Some(import.path_span),
+                    None,
                     fmtted_diag,
                     Area::ConfigLoad,
                 );
@@ -368,8 +374,14 @@ fn resolve_modules(
                         path.display()
                     );
 
-                    let diag =
-                        Diagnostic::new(path, core_msg.clone(), None, core_msg, Area::ConfigLoad);
+                    let diag = Diagnostic::new(
+                        path,
+                        core_msg.clone(),
+                        None,
+                        None,
+                        core_msg,
+                        Area::ConfigLoad,
+                    );
 
                     return Err(ConfigLoadError::Module(diag));
                 }

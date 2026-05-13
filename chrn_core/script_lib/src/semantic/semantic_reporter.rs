@@ -133,7 +133,7 @@ impl<'a> SemanticReporter<'a> {
         let fmt_msg = reporter::standardize_err(
             &core_msg,
             &ln_data,
-            "",
+            None,
             &self.interner.search_path(metadata.path_id.id as usize),
             self.settings.can_color,
         );
@@ -144,6 +144,7 @@ impl<'a> SemanticReporter<'a> {
             path,
             core_msg.to_string(),
             Some(common::span::merge_spans(&spans)),
+            None,
             fmt_msg,
             Area::Script,
         );
@@ -163,16 +164,16 @@ impl<'a> SemanticReporter<'a> {
             reporter::form_err_diag(&metadata.src_bytes, spans, self.settings.can_color);
 
         let help = if let Some(name) = err_name {
-            self.try_help(name).unwrap_or_default()
+            self.try_help(name)
         } else {
-            "".to_string()
+            None
         };
 
         // diag_msg?
         let fmtted_diag = reporter::standardize_err(
             msg,
             &line_data,
-            &help,
+            help.as_ref().map(|s| s.as_str()),
             self.interner.search_path(metadata.path_id.id as usize),
             self.settings.can_color,
         );
@@ -182,6 +183,7 @@ impl<'a> SemanticReporter<'a> {
             path,
             msg.to_string(),
             Some(common::span::merge_spans(&spans)),
+            help,
             fmtted_diag,
             Area::Script,
         );
