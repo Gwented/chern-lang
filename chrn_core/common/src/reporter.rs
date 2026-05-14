@@ -2,13 +2,16 @@
 //collected, so it would need to have some conditionals that just for the token. Fixable.
 //
 //FIX: Needs to handle eof. please.
-use std::path::Path;
+use std::{collections::HashSet, path::Path};
 
 //TODO: ORGANIZE NEW ARCHITECTURE
 // MAKE PARAMS ONLY TAKE SPAN SINCE LINES ARE BUILT ANYWAYS
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::{color, span::Span};
+use crate::{
+    color,
+    span::{self, Span},
+};
 pub mod diagnostic;
 
 const TOTAL_SEPARATORS: usize = 60;
@@ -54,6 +57,7 @@ impl LineGroups {
     /// Inserts and immediately sorts the given span within it's correct line vector.
     /// This method also ensures no duplicates are stored.
     fn insert(&mut self, ln_key: usize, span: &Span) {
+        // Checking if the line key already exists before making a new pair
         if let Some(pair) = self.span_groups.iter_mut().find(|group| group.0 == ln_key) {
             //FIX: Do not insert duplicates
             if pair.1.iter().any(|s| s == span) {
@@ -67,12 +71,59 @@ impl LineGroups {
             self.span_groups.push((ln_key, vec![span.clone()]));
         }
     }
+
+    /// Removes any remaining overlapping spans so that the last_span_start math does not exhibit
+    /// undefined behavior
+    fn curate(&mut self) {
+        // No
+        let mut removable_indices: HashSet<usize> = HashSet::new();
+        for span_group in self.span_groups.iter_mut().map(|group| &mut group.1) {
+            for i in 0..span_group.len() {
+                for j in 0..span_group.len() {
+                    if j < span_group.len() && span_group[i].contains(span_group[j]) {
+                        if j == i {
+                            continue;
+                        }
+
+                        removable_indices.insert(j);
+                    }
+                }
+            }
+
+            // I know. I know.
+            // I. Know.
+            if !removable_indices.is_empty() {
+                let mut filtered_group: Vec<Span> = Vec::new();
+
+                for (i, span) in span_group.iter().enumerate() {
+                    if removable_indices.contains(&i) {
+                        continue;
+                    }
+
+                    filtered_group.push(*span);
+                }
+
+                *span_group = filtered_group;
+
+                removable_indices.clear();
+            }
+        }
+    }
 }
 
 // Ability to choose color when help exists in a better form
 /// Returns the line number, column and red arrows under given spans
 pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineData {
-    // dbg!(str::from_utf8(&src_bytes[..]),);
+    // So it doesn't just explode upon no spans given since diagnostics are not essential to the
+    // program actually emitting other diagnostics. Could also just turn this into Option
+    if spans.is_empty() {
+        return LineData {
+            diag: "".to_string(),
+            ln: 1,
+            col: 1,
+        };
+    }
+
     let start = spans.iter().map(|s| s.start).min().expect("Cannot be < 1");
     let actual_start = get_ln_start_byte(src_bytes, start);
 
@@ -124,6 +175,10 @@ pub fn form_err_diag(src_bytes: &[u8], spans: &[Span], can_color: bool) -> LineD
             }
         }
     }
+
+    // Removes any remaining overlapping spans
+    // This is required due to how the last_span_start variable behaves
+    ln_groups.curate();
 
     // --FOURTH--
     // Giving each group their own diagnostic

@@ -15,7 +15,6 @@ pub enum ArgConstraint {
     DynType,
     MatchingArgumentTypes,
     /// Must be the same type as the type the condition is made for
-    MirroredType,
     Numeric,
     Integer,
     Float,
@@ -32,7 +31,7 @@ impl ArgConstraint {
     /// Takes in a function kind that is built in and returns it's constraints
     pub fn from_builtin(kind: FuncKind) -> Vec<ArgConstraint> {
         match kind {
-            FuncKind::IsEmpty => vec![ArgConstraint::ArgCount(1)],
+            FuncKind::IsEmpty => vec![ArgConstraint::ArgCount(0)],
             FuncKind::StartsW => {
                 // Maybe if we got something like 0x1FF it could StartsW(0x1FF)?
                 vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
@@ -51,9 +50,11 @@ impl ArgConstraint {
                 ]
             }
             FuncKind::Equals => {
-                vec![ArgConstraint::MirroredType, ArgConstraint::Variadic]
+                vec![ArgConstraint::Variadic]
             }
-            FuncKind::IsWhitespace => vec![ArgConstraint::ArgCount(1), ArgConstraint::Str],
+            FuncKind::IsWhitespace => {
+                vec![ArgConstraint::ArgCount(0), ArgConstraint::CharacterMappable]
+            }
         }
     }
 }
@@ -62,19 +63,18 @@ impl Display for ArgConstraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ArgConstraint::DynType => write!(f, "DynamicType"),
-            ArgConstraint::MatchingArgumentTypes => write!(f, "MatchingType"),
+            ArgConstraint::MatchingArgumentTypes => write!(f, "MatchingArgumentType"),
             ArgConstraint::Numeric => write!(f, "Numeric"),
             ArgConstraint::Integer => write!(f, "Integer"),
             ArgConstraint::Float => write!(f, "Float"),
             ArgConstraint::Str => write!(f, "str"),
             ArgConstraint::ArgCount(count) => {
-                if *count > 1 {
+                if *count == 0 || *count > 1 {
                     write!(f, "{count} arguments")
                 } else {
                     write!(f, "{count} argument")
                 }
             }
-            ArgConstraint::MirroredType => write!(f, "MirroredType"),
             ArgConstraint::CharacterMappable => write!(f, "CharacterMappable"),
             ArgConstraint::Variadic => write!(f, "variadic"),
             ArgConstraint::Bool => write!(f, "bool"),

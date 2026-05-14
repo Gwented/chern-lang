@@ -22,6 +22,8 @@ impl Span {
     }
 
     pub fn contains(&self, other: Span) -> bool {
+        dbg!(self, other);
+        dbg!(self.start <= other.start && self.end >= other.end);
         self.start <= other.start && self.end >= other.end
     }
 }

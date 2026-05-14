@@ -308,14 +308,21 @@ impl Formattable for TypeDef {
 #[derive(Debug)]
 pub struct FuncDef {
     pub kind: FuncKind,
+    pub is_callable: bool,
     pub constraints: Vec<ArgConstraint>,
-    pub ret_type: ValueKind,
+    pub ret_type: TypeId,
 }
 
 impl FuncDef {
-    pub fn new(kind: FuncKind, constraints: Vec<ArgConstraint>, ret_type: ValueKind) -> FuncDef {
+    pub fn new(
+        kind: FuncKind,
+        is_callable: bool,
+        constraints: Vec<ArgConstraint>,
+        ret_type: TypeId,
+    ) -> FuncDef {
         FuncDef {
             kind,
+            is_callable,
             constraints,
             ret_type,
         }

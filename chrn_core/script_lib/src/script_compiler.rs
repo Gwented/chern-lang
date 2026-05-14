@@ -254,6 +254,17 @@ impl ScriptCompiler {
         }
     }
 
+    /// Assumes the symbol given has a `TypeId` attached
+    pub(super) fn get_type_id(&self, sym_id: SymbolId) -> TypeId {
+        match &self.symbols[sym_id.id as usize] {
+            sym_info => match &sym_info.kind {
+                SymbolKind::Type(type_id) => *type_id,
+                SymbolKind::Val(val_id) => self.values[val_id.id as usize].type_id,
+                SymbolKind::Unknown => unreachable!(),
+            },
+        }
+    }
+
     /// Returns `ModuleId` which is the module of origin
     pub fn get_owner(&self, sym_id: SymbolId) -> ModuleId {
         self.symbols[sym_id.id as usize].owner
@@ -390,12 +401,9 @@ impl ScriptCompiler {
         let type_id = TypeId::new(compiler.types.len() as u32);
         let func_def = FuncDef::new(
             FuncKind::IsEmpty,
-            vec![
-                ArgConstraint::ArgCount(1),
-                ArgConstraint::CharacterMappable,
-                ArgConstraint::MirroredType,
-            ],
-            ValueKind::Bool,
+            false,
+            vec![ArgConstraint::ArgCount(0), ArgConstraint::CharacterMappable],
+            TypeId::new(CORE_BOOL),
         );
         compiler
             .types
@@ -420,9 +428,11 @@ impl ScriptCompiler {
         let type_id = TypeId::new(compiler.types.len() as u32);
         let func_def = FuncDef::new(
             FuncKind::IsWhitespace,
-            vec![ArgConstraint::ArgCount(1), ArgConstraint::CharacterMappable],
-            ValueKind::Bool,
+            false,
+            vec![ArgConstraint::ArgCount(0), ArgConstraint::CharacterMappable],
+            TypeId::new(CORE_BOOL),
         );
+
         compiler
             .types
             .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
@@ -446,8 +456,9 @@ impl ScriptCompiler {
         let type_id = TypeId::new(compiler.types.len() as u32);
         let func_def = FuncDef::new(
             FuncKind::Contains,
+            true,
             vec![ArgConstraint::ArgCount(1), ArgConstraint::CharacterMappable],
-            ValueKind::Bool,
+            TypeId::new(CORE_BOOL),
         );
 
         compiler
@@ -473,12 +484,13 @@ impl ScriptCompiler {
         let type_id = TypeId::new(compiler.types.len() as u32);
         let func_def = FuncDef::new(
             FuncKind::Range,
+            true,
             vec![
                 ArgConstraint::ArgCount(2),
                 ArgConstraint::Numeric,
                 ArgConstraint::MatchingArgumentTypes,
             ],
-            ValueKind::Bool,
+            TypeId::new(CORE_BOOL),
         );
 
         compiler

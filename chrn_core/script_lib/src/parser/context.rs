@@ -399,8 +399,7 @@ impl<'a> Context<'a> {
             Branch::Neutral(neutral_branch) => match neutral_branch {
                 NeutralBranch::Let => match found.tok {
                     Token::Keyword(kw) if expected == TokenKind::Id => {
-                        let msg =
-                            format!("Was this meant to be escaped with \"e#{}\"?", kw.to_fmt());
+                        let msg = format!("Keywords can be escaped with \"e#{}\"", kw.to_fmt());
                         let help = reporter::standardize_help(&msg, self.settings.can_color);
 
                         Some(help)
@@ -456,8 +455,7 @@ impl<'a> Context<'a> {
                     Token::Keyword(kw)
                         if expected == TokenKind::Id && next_kind == TokenKind::Colon =>
                     {
-                        let msg =
-                            format!("Was this meant to be escaped with \"e#{}\"?", kw.to_fmt());
+                        let msg = format!("Keywords can be escaped with \"e#{}\"", kw.to_fmt());
                         let help = reporter::standardize_help(&msg, self.settings.can_color);
 
                         Some(help)
@@ -472,7 +470,7 @@ impl<'a> Context<'a> {
                         let kw = Keyword::try_from_interned_id(possible_kw_id)?;
 
                         let msg = format!(
-                            "If this was meant to use the statement `{}`, place this within `neutral`, which is the area before any section was used.",
+                            "If this was meant to use the statement `{}`, place this within `neutral`, which is the area before any section is used",
                             kw.to_fmt()
                         );
 
@@ -508,6 +506,22 @@ impl<'a> Context<'a> {
                     _ => None,
                 },
                 SectionBranch::Nest => match found.tok {
+                    // If in `nest->` and found, struct|enum [keyword]
+                    Token::Keyword(kw) if expected == TokenKind::Id => {
+                        if let Token::Keyword(kw) = prev_tok.tok {
+                            if kw == Keyword::Struct || kw == Keyword::Enum {
+                                let msg =
+                                    format!("Keywords can be escaped with \"e#{}\"", kw.to_fmt());
+
+                                let help =
+                                    reporter::standardize_help(&msg, self.settings.can_color);
+
+                                return Some(help);
+                            }
+                        }
+
+                        None
+                    }
                     // This will not be usable until a keyword token is made
                     Token::Id(id) if expected == TokenKind::Id && next_kind == TokenKind::Str => {
                         let Token::Id(possible_kw_id) = prev_tok.tok else {

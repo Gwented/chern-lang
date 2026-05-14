@@ -254,6 +254,9 @@ impl<'a> ConstraintResolver<'a> {
     //
     // Check that only functions that align with the alias's specific type is used if there is a
     // "Default" expression inside, which just means if all params are not of type `Unknown`
+    //
+    // Need constraints to be added if anything like Range, IsEmpty, etc is used which would mean
+    // that the alias must be a number or CharacterMappable
     fn resolve_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) -> Result<(), ()> {
         let scope_id = self
             .compiler
@@ -261,7 +264,9 @@ impl<'a> ConstraintResolver<'a> {
         let table = &self.compiler.get_scope(scope_id).scope.table;
         let sym_id = table.ast_to_sym[&ast_id];
 
+        //TODO: Need to typecheck based off of the conditional expressions found
         let alias_def = self.compiler.get_alias(sym_id);
+        let type_id = self.compiler.get_type_id(sym_id);
 
         let mut local_vars: Vec<InternedId> = Vec::new();
 
@@ -269,11 +274,24 @@ impl<'a> ConstraintResolver<'a> {
             local_vars.push(param.name_id);
         }
 
+        let module = &self.compiler.mods[self.current_mod.id];
+
+        for cond_expr_id in &alias_def.conds {
+            if let Err(sem_err) = self.check_cond(type_id, *cond_expr_id) {
+                self.reporter.report_semantic(
+                    sem_err,
+                    module
+                        .src_metadata
+                        .as_ref()
+                        .expect("core should not be resolved"),
+                );
+            }
+        }
+
         dbg!(local_vars);
 
         dbg!(alias_def);
-
-        todo!("Alias resolution")
+        Ok(())
     }
 
     // //NOTE: The reason this would need to look at the struct again would be because it is iterating
@@ -472,11 +490,19 @@ impl<'a> ConstraintResolver<'a> {
                 let callee = &self.compiler.exprs[callee_expr_id.id as usize];
                 let ty = &self.compiler.types[callee.type_id.id as usize].ty;
                 match ty {
-                    Type::Func(func_def) => self.check_func_constraints(
-                        arg_expr_ids,
-                        &func_def.constraints,
-                        func_def.kind,
-                    ),
+                    Type::Func(func_def) => {
+                        if !func_def.is_callable {
+                            let msg = "Predicate keywords cannot use parameters".to_string();
+                            return Err(SemanticError::General(msg, vec![cond_expr.span]));
+                        }
+
+                        self.check_func_constraints(
+                            cond_expr_id,
+                            arg_expr_ids,
+                            &func_def.constraints,
+                            func_def.kind,
+                        )
+                    }
                     Type::Alias(alias_def) => todo!(),
                     Type::BuiltinType(builtin_type) => todo!(),
                     Type::Struct(struct_def) => todo!(),
@@ -495,7 +521,18 @@ impl<'a> ConstraintResolver<'a> {
                         // IsEmpty
                         // Need to check if the function used is usable for the type given
                         Type::Func(func_def) => {
-                            todo!();
+                            // We need to know if the function was used correctly since this could
+                            // technically be, Contains without parameters
+                            //
+                            // We need to know if it matches the type given, but only if we are
+                            // matching against something that isn't an alias or another function
+                            // since that of course wouldn't match.
+                            self.check_func_constraints(
+                                cond_expr_id,
+                                &[],
+                                &func_def.constraints,
+                                func_def.kind,
+                            )
                         }
                         Type::BuiltinType(builtin_type) => todo!(),
                         Type::Struct(struct_def) => todo!(),
@@ -676,7 +713,6 @@ impl<'a> ConstraintResolver<'a> {
 
                             self.check_arg(*element, active_span, module, spanned_arg, visited)?;
                         }
-                        // todo!("Out of tup");
 
                         Ok(())
                     }
@@ -693,18 +729,12 @@ impl<'a> ConstraintResolver<'a> {
                     }
                 }
             }
-            // Not sure how many of these can be reached
-            //         Type::Func(sym_id) => todo!("Func"),
-            //         // Since aliases have functions, and functions have type restrictions,
-            //         argument be checked with the function's constraints
-            //         Type::Alias(_) | Type::Unknown => {
-            //             unreachable!("Parser and semantic cannot produce these variants. I think.")
-            //         }
-            //         Type::TypeDef(type_def) => todo!("typedef"),
-            Type::Func(func_def) => todo!("Functioned"),
+            // Has constraints if a "default" expression is used
             Type::Alias(alias_def) => todo!("Aliased"),
-            Type::TypeDef(type_def) => todo!("TypeDefed"),
             Type::Unknown => todo!("Unknowned"),
+            Type::TypeDef(_) | Type::Func(_) => {
+                unreachable!("Not syntactically possible")
+            }
         }
     }
 
@@ -716,6 +746,7 @@ impl<'a> ConstraintResolver<'a> {
     // TODO: Can be simplified eventually
     fn check_func_constraints(
         &self,
+        cond_expr_id: ExprId,
         expr_id_args: &[ExprId],
         constraints: &[ArgConstraint],
         kind: FuncKind,
@@ -727,14 +758,18 @@ impl<'a> ConstraintResolver<'a> {
                     let found_arg_count = expr_id_args.len() as u32;
 
                     if found_arg_count != *arg_count_constraint {
-                        let spans: Vec<Span> = expr_id_args
+                        let mut spans: Vec<Span> = expr_id_args
                             .iter()
                             .map(|ex_id| self.compiler.exprs[ex_id.id as usize].span)
                             .collect();
 
+                        if spans.is_empty() {
+                            let cond_span = &self.compiler.exprs[cond_expr_id.id as usize].span;
+                            spans.push(*cond_span);
+                        }
+
                         return Err(SemanticError::ArgCountMismatch(
                             *constraint,
-                            //FIX: Should explicitly take in the type
                             kind,
                             found_arg_count,
                             spans,
@@ -767,7 +802,6 @@ impl<'a> ConstraintResolver<'a> {
                         }
                     }
                 }
-                ArgConstraint::MirroredType => todo!(),
                 ArgConstraint::Numeric => {
                     for expr_id in expr_id_args {
                         let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
