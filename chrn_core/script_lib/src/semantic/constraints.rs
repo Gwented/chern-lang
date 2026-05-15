@@ -1,8 +1,6 @@
 use std::fmt::Display;
 
-use chrn_utils::builtins::{BuiltinType, BuiltinTypeKind};
-
-use crate::semantic::representation::{FuncKind, Type};
+use crate::{parser::ast::BinaryOp, semantic::representation::FuncKind};
 
 // Nat
 // Real
@@ -12,6 +10,7 @@ use crate::semantic::representation::{FuncKind, Type};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArgConstraint {
     ArgCount(u32),
+    // Ordering(OrderingType),
     DynType,
     MatchingArgumentTypes,
     /// Must be the same type as the type the condition is made for
@@ -25,13 +24,21 @@ pub enum ArgConstraint {
     Variadic,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrderingType {
+    Greater,
+    GreaterOrEq,
+    LessThan,
+    LessOrEq,
+    Eq,
+}
+
 impl ArgConstraint {
-    // PLEASE DONT MAKE ME RETURN OPTION
     // TODO: Composable constraints for aliases
     /// Takes in a function kind that is built in and returns it's constraints
     pub fn from_builtin(kind: FuncKind) -> Vec<ArgConstraint> {
         match kind {
-            FuncKind::IsEmpty => vec![ArgConstraint::ArgCount(0)],
+            FuncKind::IsEmpty => vec![ArgConstraint::ArgCount(0), ArgConstraint::Str],
             FuncKind::StartsW => {
                 // Maybe if we got something like 0x1FF it could StartsW(0x1FF)?
                 vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]

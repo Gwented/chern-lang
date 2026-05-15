@@ -1,3 +1,4 @@
+
 @def
 // import "../../defs.chrn"
 
@@ -5,16 +6,25 @@
 
 let input = "Chrn"
 
+let stuff = 3
+
+// Ok please stop
 let ffi = IsEmpty
 
 let a = b
 let b = c
 let c = 3
-let x = true == true
+let x = (2 + 2) == 4
+let f32 = 3
+
+// alias default() = []
 
 var->
-    x: i32 [core.Range(2, "Hallo")] #ignore
-    y: i32
+    x: i32 [IsEmpty] #ignore #warn
+nest->
+    struct Person {
+        p: Person
+    } [IsEmpty] #warn
 @end
                 // Gilber let b = 5
 

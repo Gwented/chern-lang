@@ -90,6 +90,8 @@ pub fn get_sym_id(
 ) -> Option<SymbolId> {
     let current_mod = &compiler.mods[owner_id.id];
 
+    // Avoiding vector allocations right now so it can just use a pointer offset instead based off
+    // of hard-coded truths but will probably just, not do that.
     let accessible_scopes = scope_type.accessible_scopes();
     let accessible_scopes = match lookup_pattern {
         LookupPattern::ModuleOnly if current_mod.src_metadata.is_some() => {

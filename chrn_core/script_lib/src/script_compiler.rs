@@ -480,7 +480,63 @@ impl ScriptCompiler {
         compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
-        // Range(inclusive | Numeric, inclusive | Numeric)
+        // StartsW(Value) | Str
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        let func_def = FuncDef::new(
+            FuncKind::StartsW,
+            true,
+            vec![ArgConstraint::ArgCount(1), ArgConstraint::Str],
+            TypeId::new(CORE_BOOL),
+        );
+
+        compiler
+            .types
+            .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_STARTSW);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
+
+        // EndsW(Value) | Str
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        let func_def = FuncDef::new(
+            FuncKind::EndsW,
+            true,
+            vec![ArgConstraint::ArgCount(1), ArgConstraint::Str],
+            TypeId::new(CORE_BOOL),
+        );
+
+        compiler
+            .types
+            .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_ENDSW);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
+
+        // Range(inclusive, inclusive) | Numeric | Ordering
         let type_id = TypeId::new(compiler.types.len() as u32);
         let func_def = FuncDef::new(
             FuncKind::Range,

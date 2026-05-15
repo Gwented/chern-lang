@@ -94,13 +94,17 @@ impl<'a> ConstraintResolver<'a> {
                 }
                 Item::Alias(abs_alias) => {
                     _ = self.resolve_alias(abs_alias, ast_id);
-                    for err in &self.reporter.err_vec {
-                        println!("{}", err.fmtted_diag);
-                    }
-                    todo!("Todol");
+                    // for err in &self.reporter.err_vec {
+                    //     println!("{}", err.fmtted_diag);
+                    // }
+                    // todo!("Todol");
                 }
                 Item::Var(abs_var) => {
                     _ = self.resolve_var(abs_var, ast_id);
+                    // for err in &self.reporter.err_vec {
+                    //     println!("{}", err.fmtted_diag);
+                    // }
+                    // todo!("Todol");
                 }
             }
         }
@@ -183,7 +187,11 @@ impl<'a> ConstraintResolver<'a> {
             match &ty_info.ty {
                 Type::Struct(_) | Type::Enum(_) => {
                     //NOTE: Would be better as a note
-                    let msg = "Cannot give a `var->` defined variable a condition when it has a `struct` or `enum` type, define\nthis within `nest->`";
+                    // The issue with allowing this is if it were not restricted, and p: Person was
+                    // typed, that would mean that "other_p: Person" inside the same var-> would
+                    // need to align with whatever conditions or arguments given, which would be
+                    // problematic. Hence, it just has to be a shallowly applied argument instead.
+                    let msg = "Cannot give a `var->` defined type a condition when it has a `struct` or `enum` type, define\nthis within `nest->`";
 
                     self.reporter.report_spanned(
                         msg,
@@ -288,9 +296,10 @@ impl<'a> ConstraintResolver<'a> {
             }
         }
 
-        dbg!(local_vars);
-
-        dbg!(alias_def);
+        todo!("No alias");
+        // dbg!(local_vars);
+        //
+        // dbg!(alias_def);
         Ok(())
     }
 
@@ -481,6 +490,7 @@ impl<'a> ConstraintResolver<'a> {
         Ok(())
     }
 
+    // TODO: Type alignment with the used function
     fn check_cond(&self, parent_ty_id: TypeId, cond_expr_id: ExprId) -> Result<(), SemanticError> {
         let ty_info = &self.compiler.types[parent_ty_id.id as usize];
         let cond_expr = &self.compiler.exprs[cond_expr_id.id as usize];
@@ -496,12 +506,21 @@ impl<'a> ConstraintResolver<'a> {
                             return Err(SemanticError::General(msg, vec![cond_expr.span]));
                         }
 
-                        self.check_func_constraints(
-                            cond_expr_id,
-                            arg_expr_ids,
-                            &func_def.constraints,
-                            func_def.kind,
-                        )
+                        // Anything used in a condition must return a boolean
+                        let ret_type = &self.compiler.types[func_def.ret_type.id as usize].ty;
+
+                        if let Type::BuiltinType(BuiltinType::Bool) = ret_type {
+                            self.check_func_constraints(
+                                cond_expr_id,
+                                arg_expr_ids,
+                                &func_def.constraints,
+                                func_def.kind,
+                            )
+                        } else {
+                            let msg =
+                                "Every value within a condition must be a boolean".to_string();
+                            Err(SemanticError::General(msg, vec![cond_expr.span]))
+                        }
                     }
                     Type::Alias(alias_def) => todo!(),
                     Type::BuiltinType(builtin_type) => todo!(),
@@ -520,19 +539,27 @@ impl<'a> ConstraintResolver<'a> {
                         // Case of just finding a single symbol that expands to a function, like
                         // IsEmpty
                         // Need to check if the function used is usable for the type given
+                        // All symbols without a call are predicates so this may be redundant
                         Type::Func(func_def) => {
-                            // We need to know if the function was used correctly since this could
-                            // technically be, Contains without parameters
-                            //
+                            // Anything used in a condition must return a boolean
+                            let ret_type = &self.compiler.types[func_def.ret_type.id as usize].ty;
+
+                            if let Type::BuiltinType(BuiltinType::Bool) = ret_type {
+                                self.check_func_constraints(
+                                    cond_expr_id,
+                                    &[],
+                                    &func_def.constraints,
+                                    func_def.kind,
+                                )
+                            } else {
+                                let msg =
+                                    "Every value within a condition must be a boolean".to_string();
+                                Err(SemanticError::General(msg, vec![cond_expr.span]))
+                            }
+
                             // We need to know if it matches the type given, but only if we are
                             // matching against something that isn't an alias or another function
                             // since that of course wouldn't match.
-                            self.check_func_constraints(
-                                cond_expr_id,
-                                &[],
-                                &func_def.constraints,
-                                func_def.kind,
-                            )
                         }
                         Type::BuiltinType(builtin_type) => todo!(),
                         Type::Struct(struct_def) => todo!(),
@@ -608,8 +635,6 @@ impl<'a> ConstraintResolver<'a> {
                     // the last call stack, possibly a tuple, is self referencing the current
                     // struct.
                     if visited.contains(&field.type_id) {
-                        //FIXME:
-                        //COPY
                         if spanned_arg.arg.has_restrictions() {
                             let name = self.interner.search(symbol.name_id.id as usize);
 
@@ -628,7 +653,6 @@ impl<'a> ConstraintResolver<'a> {
                     }
 
                     visited.push(field.type_id);
-                    //FIXME:
 
                     let arg_res =
                         self.check_arg(field.type_id, active_span, module, spanned_arg, visited);

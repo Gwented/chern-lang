@@ -306,6 +306,7 @@ impl TypeResolver<'_> {
                         let parent_sym_id = pending_sym.pending_exprs[0].parent_sym;
                         let mod_id = self.compiler.get_owner(parent_sym_id);
 
+                        //WARN: Suspicious
                         let module = &self.compiler.mods[mod_id.id];
                         self.reporter.report_semantic(
                             sem_err,
@@ -1625,7 +1626,7 @@ impl TypeResolver<'_> {
 
                             // Misleading error message. Very misleading.
                             let msg = format!(
-                                "Could not find the symbol `{}` inside module `{}` as a value, alias or function within `{scope_type}` searchable scopes",
+                                "Could not find the symbol `{}` inside module `{}` within `{scope_type}` searchable scopes",
                                 self.interner.search(abs_member_access.field.id as usize),
                                 self.interner.search(extern_mod.name_id.id as usize)
                             );
@@ -1804,10 +1805,17 @@ impl TypeResolver<'_> {
 
                 let active_mod = &self.compiler.mods[active_mod_id.id];
                 let active_name = self.interner.search(active_mod.name_id.id as usize);
+                dbg!(mod_origin, active_name);
 
+                // If we have main, that imports def, that imports other, it tries to search for
+                // things in the "other" module even though it's defined in "def".
+                //
+                // Within "def", it tries to search "other" for everything declared even if "other"
+                // is never used.
                 let err_name = self.interner.search(name_id.id as usize);
                 let err_msg =
                     format!("`{err_name}` is not defined as a type within module `{active_name}`");
+                println!("{err_msg}");
 
                 self.reporter.report_spanned(
                     &err_msg,
@@ -1978,7 +1986,10 @@ impl TypeResolver<'_> {
                 }
             }
             // This only allows something like, defs.Thing which can go to at most one type deep,
-            // but no more. Will likely change since something like i32.MAX could be "core.i32.MAX".
+            // but no more. Will need change since something like i32.MAX could be "core.i32.MAX".
+            //
+            // Maybe not though since that would only be usable in expressions anyways which aren't
+            // type expressions
             TypeExpr::Path(spanned_ty_exprs) => {
                 // The parser disallows < 2 type pathing to actually exist so indexing should be
                 // safe here
@@ -2027,6 +2038,8 @@ impl TypeResolver<'_> {
                     }
                     _ => unreachable!("Parser does not pick this up"),
                 };
+
+                //TODO: Import checking
 
                 self.resolve_type_expr(
                     extern_mod.mod_id,

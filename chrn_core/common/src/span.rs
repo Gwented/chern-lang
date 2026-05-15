@@ -22,12 +22,11 @@ impl Span {
     }
 
     pub fn contains(&self, other: Span) -> bool {
-        dbg!(self, other);
-        dbg!(self.start <= other.start && self.end >= other.end);
         self.start <= other.start && self.end >= other.end
     }
 }
 
+// Maybe option maybe not
 /// Takes in an array of spans and merges all of them together. Expects that there is at least 1 span
 /// present.
 //TODO: Should just return option span

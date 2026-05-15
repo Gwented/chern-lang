@@ -213,7 +213,10 @@ pub fn extract_modules(
 
     // Will incur borrowing issues unless the main_mod is put in last since the list of it's
     // imports is needed to start recursive process
-    let mut other_mods: Vec<Module> = Vec::with_capacity(main_mod.imports.len());
+    //
+    // Need to be an Option because a HashMap is not necessary if spots can just be reserved and
+    // filled then UNWRAPPED after since we know they're all resolved
+    let mut other_mods: Vec<Option<Module>> = Vec::with_capacity(main_mod.imports.len());
     resolve_modules(
         &mut seen,
         &mut other_mods,
@@ -225,31 +228,39 @@ pub fn extract_modules(
 
     // May change
     // Please change
+    // NOT yet
     let mut all_mods: Vec<Module> = Vec::new();
     all_mods.push(main_mod);
-    all_mods.append(&mut other_mods);
-    //
+    for mod_opt in other_mods.drain(..) {
+        let known = mod_opt.expect("ModuleId reserving failed");
+        all_mods.push(known);
+    }
+
     // all_mods.iter().for_each(|m| {
     //     println!(
     //         "Module \"{}\" nid = {}\nPath: \"{}\" | ModuleId = {:?}\n{:#?}",
     //         interner.search(m.name_id.id as usize),
     //         m.name_id.id,
-    //         interner.search_path(m.path_id.id as usize).display(),
+    //         interner
+    //             .search_path(m.src_metadata.as_ref().unwrap().path_id.id as usize)
+    //             .display(),
     //         m.mod_id.id,
     //         m.imports
     //     );
     // });
-    //
+
     // for module in &all_mods {
     //     println!(
     //         "Module \"{}\" -> {}",
     //         interner.search(module.name_id.id as usize),
-    //         interner.search_path(module.path_id.id as usize).display()
+    //         interner
+    //             .search_path(module.src_metadata.as_ref().unwrap().path_id.id as usize)
+    //             .display()
     //     );
     //     for import in &module.imports {
     //         println!(
     //             "\tImport -> {}",
-    //             interner.search_path(import.name_id.id as usize).display()
+    //             interner.search_path(import.path_id.id as usize).display()
     //         );
     //     }
     //     println!("_______\n")
@@ -268,7 +279,7 @@ pub fn extract_modules(
 /// `mod_map`: Module interned file name -> ModuleId.
 fn resolve_modules(
     seen: &mut HashSet<PathId>,
-    modules: &mut Vec<Module>,
+    modules: &mut Vec<Option<Module>>,
     prev_mod: &Module,
     mod_map: &mut HashMap<InternedId, ModuleId>,
     settings: &ChrnSettings,
@@ -392,6 +403,8 @@ fn resolve_modules(
 
         let origin = interner.search_path(prev_metadata.path_id.id as usize);
 
+        modules.push(None);
+
         let (_, sub_imports) = ModuleFinder::new(
             &mod_metadata.src_bytes,
             settings,
@@ -414,7 +427,10 @@ fn resolve_modules(
 
         resolve_modules(seen, modules, &sub_mod, mod_map, settings, interner)?;
 
-        modules.push(sub_mod);
+        // Needs - 1 so that it fits inside the temporary Vec before being put into a Vec that has
+        // the "main" module in it, which would be a + 1, which is what the ModuleId with by
+        // default. A, + 1.
+        modules[current_mod_id - 1] = Some(sub_mod);
         mod_map.insert(name_id, ModuleId::new(current_mod_id));
 
         // Modules start off at 0 since the main module can't be inserted before this so + 1 for

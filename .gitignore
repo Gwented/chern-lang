@@ -6,3 +6,5 @@ chrn_core/chrn_tests/gwop
 # chrn_tools
 chrn_tools/target/
 chrn_tools/Cargo.lock
+
+error/

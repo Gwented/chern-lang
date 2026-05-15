@@ -579,9 +579,9 @@ fn get_num_width(num: usize) -> usize {
 
 /// Returns character width count within the given start and end (inclusive, exclusive)
 fn get_chars_width(s: &str, start: usize, end: usize) -> usize {
-    if start > end {
-        dbg!(&s[end..=start]);
-    }
+    // if start > end {
+    //     dbg!(&s[end..=start]);
+    // }
     s[start..end]
         .chars()
         .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))
