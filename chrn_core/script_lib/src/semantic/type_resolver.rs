@@ -1024,6 +1024,7 @@ impl TypeResolver<'_> {
                     active_mod_id,
                     *name_id,
                     scope_type,
+                    // Should this be no restrictions?
                     LookupPattern::NoRestrictions,
                 ) {
                     //WARN: Constant iteration upon seeing any symbol instead of a single check
@@ -1553,6 +1554,7 @@ impl TypeResolver<'_> {
                     seen,
                 )? {
                     PossibleMember::Module(extern_mod_id) => {
+                        let extern_mod = &self.compiler.mods[extern_mod_id.id];
                         //NOTE: Maybe privacy should be checked from this resolver?
                         if let Some(extern_sym_id) = scopes::get_sym_id(
                             self.compiler,
@@ -1562,6 +1564,7 @@ impl TypeResolver<'_> {
                             LookupPattern::ModuleOnly,
                         ) {
                             seen.push(extern_sym_id);
+
                             // Dirtiness to prevent O(n) check of each and every expression in
                             // whatever given symbol was used?
                             self.check_cycle(seen, parent_sym_id, extern_sym_id)?;
@@ -1588,9 +1591,7 @@ impl TypeResolver<'_> {
 
                             let symbol = &self.compiler.symbols[extern_sym_id.id as usize];
 
-                            // symbol kind aware reporting.
-                            // In need of cross-module reporting of where the not exported symbol
-                            // is
+                            // May move this privacy check elsewhere
                             if symbol.owner != self.current_mod && symbol.is_priv {
                                 let name = self.interner.search(symbol.name_id.id as usize);
                                 let msg = format!("The symbol `{name}` is private");
@@ -1607,6 +1608,36 @@ impl TypeResolver<'_> {
                                 );
                             }
 
+                            // Import checking
+                            // TODO: Probably best delegated to a function
+                            let current_module = &self.compiler.mods[self.current_mod.id];
+
+                            let mut has_import = current_module
+                                .imports
+                                .iter()
+                                .any(|i| i.name_id == extern_mod.name_id);
+
+                            // If the import wasn't found then check if the current module is
+                            // referencing itself
+                            if !has_import {
+                                has_import = current_module.mod_id == extern_mod_id;
+                            }
+
+                            if !has_import {
+                                let extern_name =
+                                    self.interner.search(extern_mod.name_id.id as usize);
+                                let current_name =
+                                    self.interner.search(current_module.name_id.id as usize);
+
+                                let msg = format!(
+                                    "The module `{extern_name}` exists but was not imported by `{current_name}`"
+                                );
+
+                                return Err(SemanticError::General(msg, vec![spanned_expr.span]));
+                            }
+
+                            // Turning the field into an expression so that it can be resolved as
+                            // normal
                             // This SEEMS ok?
                             let inline_expr = Expr::Var(abs_member_access.field);
                             let sp_expr = SpannedExpr::new(inline_expr, spanned_expr.span);
@@ -1671,6 +1702,7 @@ impl TypeResolver<'_> {
             if let Some(mod_id) = self.compiler.mod_map.get(&name_id) {
                 return Ok(PossibleMember::Module(*mod_id));
             }
+            panic!();
 
             if let Some(sym_id) = scopes::get_sym_id(
                 self.compiler,
@@ -2039,7 +2071,37 @@ impl TypeResolver<'_> {
                     _ => unreachable!("Parser does not pick this up"),
                 };
 
-                //TODO: Import checking
+                // Checking if the current module actually has the module found imported.
+                //WARN: Using current_mod instead of active_mod here
+                let current_module = &self.compiler.mods[self.current_mod.id];
+                let mut has_import = current_module
+                    .imports
+                    .iter()
+                    .any(|i| i.name_id == extern_mod.name_id);
+
+                if !has_import {
+                    has_import = current_module.mod_id == extern_mod.mod_id;
+                }
+
+                if !has_import {
+                    let extern_name = self.interner.search(extern_mod.name_id.id as usize);
+                    let current_name = self.interner.search(current_module.name_id.id as usize);
+                    let msg = format!(
+                        "The module `{extern_name}` exists but was not imported by `{current_name}`"
+                    );
+
+                    self.reporter.report_spanned(
+                        &msg,
+                        None,
+                        &[spanned_ty_exprs[0].span],
+                        &current_module
+                            .src_metadata
+                            .as_ref()
+                            .expect("core should not be resolved"),
+                    );
+
+                    return Err(());
+                }
 
                 self.resolve_type_expr(
                     extern_mod.mod_id,

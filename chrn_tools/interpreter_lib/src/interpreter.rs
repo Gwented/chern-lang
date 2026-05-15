@@ -25,7 +25,7 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     let mut script_compiler = modules::extract_modules(path, settings, &mut interner)?;
     let mut reporter = Reporter::new();
 
-    //TODO: May have to just make this into a, ModuleId -> AstId hashmap.
+    //TODO: May have to just make this into an Option<AstInfo>
     let mut asts: Vec<AstInfo> = Vec::new();
 
     // Need to separate namespace resolution and type resolver because if the modules namespaces

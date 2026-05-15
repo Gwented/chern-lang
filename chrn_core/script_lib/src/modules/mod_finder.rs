@@ -14,7 +14,7 @@ use common::{
     span::Span,
 };
 
-use crate::modules::{Bind, Import};
+use crate::modules::{Bind, Import, ImportKind};
 
 //being collected from.
 pub struct ModuleFinder<'a> {
@@ -220,7 +220,8 @@ impl ModuleFinder<'_> {
             None
         };
 
-        Ok(Import::new(name_id, path_id, path_span, alias_id))
+        let import_kind = ImportKind::Source(path_id, path_span);
+        Ok(Import::new(name_id, import_kind, alias_id))
     }
 
     //WARN: Will be placed in different module

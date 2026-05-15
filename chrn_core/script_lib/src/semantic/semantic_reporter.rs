@@ -160,8 +160,7 @@ impl<'a> SemanticReporter<'a> {
         spans: &[Span],
         metadata: &ModuleMetadata,
     ) {
-        let line_data =
-            reporter::form_err_diag(&metadata.src_bytes, spans, self.settings.can_color);
+        let ln_data = reporter::form_err_diag(&metadata.src_bytes, spans, self.settings.can_color);
 
         let help = if let Some(name) = err_name {
             self.try_help(name)
@@ -172,7 +171,7 @@ impl<'a> SemanticReporter<'a> {
         // diag_msg?
         let fmtted_diag = reporter::standardize_err(
             msg,
-            &line_data,
+            &ln_data,
             help.as_ref().map(|s| s.as_str()),
             self.interner.search_path(metadata.path_id.id as usize),
             self.settings.can_color,

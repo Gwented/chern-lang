@@ -9,6 +9,7 @@ use tower_lsp::{Client, LanguageServer, jsonrpc};
 
 use crate::analyser::analyze_and_publish_task;
 use crate::state::DocumentCache;
+use crate::state::DocumentState;
 use crate::text::apply_text_change;
 
 // Semantic token support (keyword/string/number highlighting)
@@ -19,7 +20,7 @@ use chrn_utils::intern::Intern;
 use common::chrn_settings::ChrnSettings;
 use common::core_error::ConfigLoadError;
 use script_lib::config_loader::ChrnConfigLoader;
-use script_lib::semantic::representation::{self, SymbolKind, Type};
+use script_lib::semantic::representation::{self, Symbol, SymbolKind, Type};
 use script_lib::token::Token as ScriptToken;
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -37,14 +38,14 @@ fn publish_config_load_error(
         character: 0,
     };
 
-    let diag = match err {
-        ConfigLoadError::Unclosed(diag) | ConfigLoadError::Module(diag) => {
-            let diag_span = diag.span.unwrap_or_default();
+    let diags_vec = match err {
+        ConfigLoadError::Unclosed(core_diag) | ConfigLoadError::Module(core_diag) => {
+            let diag_span = core_diag.span.unwrap_or_default();
 
             let start_pos = crate::text::offset_to_position(text, diag_span.start);
             let end_pos = crate::text::offset_to_position(text, diag_span.end);
 
-            tower_lsp::lsp_types::Diagnostic {
+            let diag = tower_lsp::lsp_types::Diagnostic {
                 range: Range {
                     start: start_pos,
                     end: end_pos,
@@ -53,13 +54,33 @@ fn publish_config_load_error(
                 code: None,
                 code_description: None,
                 source: Some("chrn-config".to_string()),
-                message: diag.core_msg,
+                message: core_diag.core_msg,
                 related_information: None,
                 tags: None,
                 data: None,
+            };
+            let mut diags = vec![diag];
+
+            if let Some(help) = core_diag.help {
+                let help_diag = tower_lsp::lsp_types::Diagnostic {
+                    range: Range {
+                        start: start_pos,
+                        end: end_pos,
+                    },
+                    severity: Some(DiagnosticSeverity::HINT),
+                    code: None,
+                    code_description: None,
+                    source: Some("chrn-config".to_string()),
+                    message: help,
+                    related_information: None,
+                    tags: None,
+                    data: None,
+                };
+                diags.push(help_diag);
             }
+            diags
         }
-        ConfigLoadError::IO(io) => tower_lsp::lsp_types::Diagnostic {
+        ConfigLoadError::IO(io) => vec![tower_lsp::lsp_types::Diagnostic {
             range: Range { start, end: start },
             severity: Some(DiagnosticSeverity::ERROR),
             code: None,
@@ -69,10 +90,8 @@ fn publish_config_load_error(
             related_information: None,
             tags: None,
             data: None,
-        },
+        }],
     };
-
-    let diags_vec = vec![diag];
     let client_clone = client.clone();
     let uri_clone = uri.clone();
     tokio::spawn(async move {
@@ -94,6 +113,7 @@ pub enum SemanticTokenType {
     Variable,
     Property,
     Class,
+    EnumMember,
 }
 
 impl SemanticTokenType {
@@ -109,6 +129,7 @@ impl SemanticTokenType {
             SemanticTokenType::Variable => 7,
             SemanticTokenType::Property => 8,
             SemanticTokenType::Class => 9,
+            SemanticTokenType::EnumMember => 10,
         }
     }
 }
@@ -199,6 +220,70 @@ impl Backend {
 
         Some(state_arc)
     }
+
+    /// Ensures the file where a symbol is defined is analyzed and cached,
+    /// enabling cross-module operations (rename, references) to find
+    /// occurrences in the definition file even when it hasn't been opened.
+    fn ensure_definition_file_analyzed(
+        &self,
+        state: &DocumentState,
+        byte_offset: usize,
+        current_uri: &tower_lsp::lsp_types::Url,
+    ) {
+        if state.offset_in_comment(byte_offset) {
+            return;
+        }
+
+        let entity = match state.get_entity_at_offset(byte_offset) {
+            Some(e) => e,
+            None => return,
+        };
+
+        if matches!(entity, SemanticEntity::Local { .. } | SemanticEntity::Module(_)) {
+            return;
+        }
+
+        if let Some((def_path_str, _, _)) = state.get_definition_location(entity) {
+            let def_path = std::path::Path::new(&def_path_str);
+            if def_path == current_uri.path() {
+                return;
+            }
+            if let Ok(def_uri) = tower_lsp::lsp_types::Url::from_file_path(def_path) {
+                if let Ok(text) = std::fs::read_to_string(def_path) {
+                    self.get_analyzed_state(&def_uri, Arc::new(text));
+                }
+            }
+        }
+    }
+}
+
+fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> CompletionItemKind {
+    match sym.kind {
+        representation::SymbolKind::Type(type_id) => {
+            match &compiler.types[type_id.id as usize].ty {
+                Type::Struct(_) | Type::Enum(_) | Type::TypeDef(_) | Type::BuiltinType(_) => {
+                    CompletionItemKind::STRUCT
+                }
+                Type::Alias(_) => CompletionItemKind::FUNCTION,
+                Type::Func(func_def) if func_def.is_callable => CompletionItemKind::FUNCTION,
+                Type::Func(_) => CompletionItemKind::CONSTANT,
+                Type::Unknown => CompletionItemKind::VARIABLE,
+            }
+        }
+        representation::SymbolKind::Val(val_id) => {
+            let type_id = compiler.values[val_id.id as usize].type_id;
+            match &compiler.types[type_id.id as usize].ty {
+                Type::BuiltinType(_) | Type::Struct(_) | Type::TypeDef(_) | Type::Enum(_) => {
+                    CompletionItemKind::VARIABLE
+                }
+                Type::Alias(_) => CompletionItemKind::FUNCTION,
+                Type::Func(func_def) if func_def.is_callable => CompletionItemKind::FUNCTION,
+                Type::Func(_) => CompletionItemKind::CONSTANT,
+                Type::Unknown => CompletionItemKind::VARIABLE,
+            }
+        }
+        representation::SymbolKind::Unknown => CompletionItemKind::VARIABLE,
+    }
 }
 
 fn classify_id_token(
@@ -221,10 +306,14 @@ fn classify_id_token(
                                 | Type::Enum(_) => {
                                     return Some(SemanticTokenType::Type.as_u32());
                                 }
-                                // IsEmpty and such can keep the same alias, but should just not
-                                // fill the parenthesis
-                                Type::Func(_) | Type::Alias(_) => {
+                                Type::Alias(_) => {
                                     return Some(SemanticTokenType::Function.as_u32());
+                                }
+                                Type::Func(func_def) if func_def.is_callable => {
+                                    return Some(SemanticTokenType::Function.as_u32());
+                                }
+                                Type::Func(_) => {
+                                    return Some(SemanticTokenType::String.as_u32());
                                 }
                                 Type::Unknown => return Some(SemanticTokenType::Type.as_u32()),
                             }
@@ -563,8 +652,16 @@ impl LanguageServer for Backend {
             }
         };
 
-        if self.get_analyzed_state(&uri, text).is_none() {
-            return Ok(None);
+        let state_arc = match self.get_analyzed_state(&uri, text) {
+            Some(s) => s,
+            None => return Ok(None),
+        };
+
+        // Ensure cross-module definition file is analyzed for rename
+        {
+            let state = state_arc.read();
+            let byte_offset = crate::text::position_to_offset(&state.text, pos);
+            self.ensure_definition_file_analyzed(&state, byte_offset, &uri);
         }
 
         let edit = crate::rename::compute_rename(&uri, pos, new_name, &self.doc_cache);
@@ -587,8 +684,16 @@ impl LanguageServer for Backend {
             }
         };
 
-        if self.get_analyzed_state(&uri, text).is_none() {
-            return Ok(None);
+        let state_arc = match self.get_analyzed_state(&uri, text) {
+            Some(s) => s,
+            None => return Ok(None),
+        };
+
+        // Ensure cross-module definition file is analyzed for references
+        {
+            let state = state_arc.read();
+            let byte_offset = crate::text::position_to_offset(&state.text, pos);
+            self.ensure_definition_file_analyzed(&state, byte_offset, &uri);
         }
 
         let refs = crate::references::compute_references(&uri, pos, &self.doc_cache);
@@ -899,12 +1004,16 @@ impl LanguageServer for Backend {
                                                         | Type::BuiltinType(_) => {
                                                             CompletionItemKind::STRUCT
                                                         }
-                                                        // Should probably check if its something
-                                                        // like IsEmpty eventually but no explicit
-                                                        // validation exists yet and FuncKind is
-                                                        // not final as something that exists
-                                                        Type::Alias(_) | Type::Func(_) => {
+                                                        Type::Alias(_) => {
                                                             CompletionItemKind::FUNCTION
+                                                        }
+                                                        Type::Func(func_def)
+                                                            if func_def.is_callable =>
+                                                        {
+                                                            CompletionItemKind::FUNCTION
+                                                        }
+                                                        Type::Func(_) => {
+                                                            CompletionItemKind::CONSTANT
                                                         }
                                                         Type::Unknown => {
                                                             CompletionItemKind::VARIABLE
@@ -921,7 +1030,9 @@ impl LanguageServer for Backend {
                                                         // a value
                                                         Type::TypeDef(_) |
                                                         Type::Enum(_) => CompletionItemKind::VARIABLE,
-                                                        Type::Alias(_) |Type::Func(_) => CompletionItemKind::FUNCTION,
+                                                        Type::Alias(_) => CompletionItemKind::FUNCTION,
+                                                        Type::Func(func_def) if func_def.is_callable => CompletionItemKind::FUNCTION,
+                                                        Type::Func(_) => CompletionItemKind::CONSTANT,
                                                         Type::Unknown => CompletionItemKind::VARIABLE,
                                                     }
                                                 }
@@ -951,8 +1062,16 @@ impl LanguageServer for Backend {
                                                         | Type::BuiltinType(_) => {
                                                             CompletionItemKind::STRUCT
                                                         }
-                                                        Type::Alias(_) | Type::Func(_) => {
+                                                        Type::Alias(_) => {
                                                             CompletionItemKind::FUNCTION
+                                                        }
+                                                        Type::Func(func_def)
+                                                            if func_def.is_callable =>
+                                                        {
+                                                            CompletionItemKind::FUNCTION
+                                                        }
+                                                        Type::Func(_) => {
+                                                            CompletionItemKind::CONSTANT
                                                         }
                                                         Type::Unknown => {
                                                             CompletionItemKind::VARIABLE
@@ -969,7 +1088,9 @@ impl LanguageServer for Backend {
                                                         // in the values vector
                                                         Type::TypeDef(_) |
                                                         Type::Enum(_) => CompletionItemKind::VARIABLE,
-                                                        Type::Alias(_) | Type::Func(_) => CompletionItemKind::FUNCTION,
+                                                        Type::Alias(_) => CompletionItemKind::FUNCTION,
+                                                        Type::Func(func_def) if func_def.is_callable => CompletionItemKind::FUNCTION,
+                                                        Type::Func(_) => CompletionItemKind::CONSTANT,
                                                         Type::Unknown => CompletionItemKind::VARIABLE,
                                                     }
                                                 }
@@ -991,7 +1112,7 @@ impl LanguageServer for Backend {
             return Ok(Some(CompletionResponse::Array(items)));
         }
 
-        // Suggestions for keywords, types, etc
+        // Language keywords and argument annotations (intrinsic types/functions come from core module exports)
         const SUGGESTIONS: &[(&str, CompletionItemKind)] = &[
             ("@def", CompletionItemKind::SNIPPET),
             ("@end", CompletionItemKind::SNIPPET),
@@ -1009,33 +1130,10 @@ impl LanguageServer for Backend {
             ("struct", CompletionItemKind::KEYWORD),
             ("enum", CompletionItemKind::KEYWORD),
             ("change", CompletionItemKind::KEYWORD),
-            ("any", CompletionItemKind::STRUCT),
-            ("BigInt", CompletionItemKind::STRUCT),
-            ("BigFloat", CompletionItemKind::STRUCT),
-            ("bool", CompletionItemKind::STRUCT),
-            ("char", CompletionItemKind::STRUCT),
-            ("f16", CompletionItemKind::STRUCT),
-            ("f32", CompletionItemKind::STRUCT),
-            ("f64", CompletionItemKind::STRUCT),
-            ("f128", CompletionItemKind::STRUCT),
-            ("i16", CompletionItemKind::STRUCT),
-            ("i32", CompletionItemKind::STRUCT),
-            ("i64", CompletionItemKind::STRUCT),
-            ("i8", CompletionItemKind::STRUCT),
-            ("i128", CompletionItemKind::STRUCT),
             ("List", CompletionItemKind::STRUCT),
-            ("Map", CompletionItemKind::STRUCT),
-            ("nil", CompletionItemKind::STRUCT),
             ("Set", CompletionItemKind::STRUCT),
-            ("sized", CompletionItemKind::STRUCT),
-            ("str", CompletionItemKind::STRUCT),
+            ("Map", CompletionItemKind::STRUCT),
             ("Tuple", CompletionItemKind::STRUCT),
-            ("u16", CompletionItemKind::STRUCT),
-            ("u32", CompletionItemKind::STRUCT),
-            ("u64", CompletionItemKind::STRUCT),
-            ("u8", CompletionItemKind::STRUCT),
-            ("u128", CompletionItemKind::STRUCT),
-            ("unsized", CompletionItemKind::STRUCT),
             ("true", CompletionItemKind::CONSTANT),
             ("false", CompletionItemKind::CONSTANT),
             ("#warn", CompletionItemKind::CONSTRUCTOR),
@@ -1055,6 +1153,26 @@ impl LanguageServer for Backend {
                     kind: Some(*kind),
                     ..Default::default()
                 });
+            }
+        }
+
+        //TODO: Should auto-complete any module that has a src of "None"
+        // Add core library exports (types, functions, and constants from the core module)
+        if let Some(compiler) = &state.compiler {
+            if let Some(core_mod) = compiler.mods.get(compiler.core_mod_id.id) {
+                for sym_id in &core_mod.exports {
+                    if let Some(sym) = compiler.symbols.get(sym_id.id as usize) {
+                        let name = state.interner.search(sym.name_id.id as usize);
+                        if prefix.is_empty() || name.starts_with(prefix) {
+                            let kind = symbol_completion_kind(compiler, sym);
+                            items.push(CompletionItem {
+                                label: name.to_string(),
+                                kind: Some(kind),
+                                ..Default::default()
+                            });
+                        }
+                    }
+                }
             }
         }
 

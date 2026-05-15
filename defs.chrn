@@ -3,6 +3,7 @@ export let WRITE = 0b00000001
 export let WRITING = 0b00000001
 export let READ = 0b00000010
 
+import "../../other.chrn"
 // alias default() = [IsEmpty]
 
 // export let WRITE = 0b00000010

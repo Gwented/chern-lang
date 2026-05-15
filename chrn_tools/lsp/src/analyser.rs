@@ -1,5 +1,6 @@
 use parking_lot::RwLock;
 use script_lib::config_loader::ChrnConfigLoader;
+use script_lib::modules::ImportKind;
 use script_lib::modules::Module;
 use serde_json;
 use std::collections::HashMap;
@@ -202,8 +203,8 @@ pub(crate) fn push_diagnostics(
     text: &str,
     source: &str,
 ) {
-    for diag in diags {
-        let (start_byte, end_byte) = match diag.span {
+    for core_diag in diags {
+        let (start_byte, end_byte) = match core_diag.span {
             Some(span) => {
                 let s = span.start.min(doc_len);
                 let e = span.end.saturating_add(1).min(doc_len);
@@ -224,19 +225,37 @@ pub(crate) fn push_diagnostics(
             code: None,
             code_description: None,
             source: Some(source.to_string()),
-            message: diag.core_msg.clone(),
+            message: core_diag.core_msg.clone(),
             related_information: None,
             tags: None,
             data: None,
         };
 
         lsp_diags.push(diag);
+
+        if let Some(help) = &core_diag.help {
+            let help_diag = tower_lsp::lsp_types::Diagnostic {
+                range: Range {
+                    start: start_pos,
+                    end: end_pos,
+                },
+                severity: Some(DiagnosticSeverity::HINT),
+                code: None,
+                code_description: None,
+                source: Some(source.to_string()),
+                message: help.clone(),
+                related_information: None,
+                tags: None,
+                data: None,
+            };
+            lsp_diags.push(help_diag);
+        }
     }
 }
 
 pub(crate) fn resolve_modules_lsp(
     seen: &mut std::collections::HashSet<PathId>,
-    modules: &mut Vec<Module>,
+    modules: &mut Vec<Option<Module>>,
     prev_mod: &Module,
     mod_map: &mut HashMap<InternedId, ModuleId>,
     settings: &ChrnSettings,
@@ -244,16 +263,18 @@ pub(crate) fn resolve_modules_lsp(
     doc_cache: &DocumentCache,
 ) -> Result<(), common::core_error::ConfigLoadError> {
     for import in &prev_mod.imports {
-        if seen.contains(&import.path_id) {
+        let ImportKind::Source(path_id, path_span) = import.kind else {
+            continue;
+        };
+
+        if seen.contains(&path_id) {
             continue;
         }
 
         let current_mod_id = seen.len();
-        seen.insert(import.path_id);
+        seen.insert(path_id);
 
-        let path_owned = interner
-            .search_path(import.path_id.id as usize)
-            .to_path_buf();
+        let path_owned = interner.search_path(path_id.id as usize).to_path_buf();
         let path = path_owned.as_path();
 
         // Try to get from doc_cache first
@@ -271,7 +292,7 @@ pub(crate) fn resolve_modules_lsp(
                         let metadata = prev_mod.src_metadata.as_ref().unwrap();
                         let ln_data = common::reporter::form_err_diag(
                             &metadata.src_bytes,
-                            &[import.path_span],
+                            &[path_span],
                             settings.can_color,
                         );
                         let prev_path = interner.search_path(metadata.path_id.id as usize);
@@ -286,7 +307,7 @@ pub(crate) fn resolve_modules_lsp(
                             common::reporter::diagnostic::Diagnostic::new(
                                 path,
                                 core_msg,
-                                Some(import.path_span),
+                                Some(path_span),
                                 None,
                                 fmtted_diag,
                                 common::reporter::diagnostic::Area::ConfigLoad,
@@ -300,8 +321,7 @@ pub(crate) fn resolve_modules_lsp(
             Err(e) => return Err(e),
         };
 
-        let mod_metadata =
-            ChrnConfigLoader::new(import.path_id, src, settings, interner).load_config()?;
+        let mod_metadata = ChrnConfigLoader::new(path_id, src, settings, interner).load_config()?;
 
         let file_name = match path.file_stem().and_then(|n| n.to_str()) {
             Some(p) => p.to_string(),
@@ -350,11 +370,13 @@ pub(crate) fn resolve_modules_lsp(
             mod_map.insert(alias_id, ModuleId::new(current_mod_id));
         }
 
+        modules.push(None);
+
         resolve_modules_lsp(
             seen, modules, &sub_mod, mod_map, settings, interner, doc_cache,
         )?;
 
-        modules.push(sub_mod);
+        modules[current_mod_id - 1] = Some(sub_mod);
         mod_map.insert(name_id, ModuleId::new(current_mod_id));
     }
 

@@ -1,4 +1,5 @@
-use chrn_utils::keywords::Keyword;
+use chrn_utils::{builtins::BuiltinTypeKind, keywords::Keyword};
+use script_lib::semantic::representation::FuncKind;
 
 /// 60 Dashes
 pub static HOVER_DASHES: &str = "------------------------------------------------------------";
@@ -33,12 +34,14 @@ impl Document {
         &KEYWORD_DOCS[kw as usize]
     }
 
-    /// Looks up documentation by key across directives, predicates, and types.
-    pub fn lookup(key: &str) -> Option<&'static Document> {
-        DIRECTIVE_DOCS
-            .iter()
-            .chain(TYPE_DOCS.iter())
-            .find(|doc| doc.key == key)
+    /// Returns the document for a given builtin type kind.
+    pub fn builtin_type_docs(kind: BuiltinTypeKind) -> &'static Document {
+        &BUILTIN_TYPE_DOCS[kind as usize]
+    }
+
+    /// Returns the document for a given intrinsic function kind.
+    pub fn func_docs(kind: FuncKind) -> &'static Document {
+        &FUNC_DOCS[kind as usize]
     }
 }
 
@@ -127,38 +130,119 @@ pub static KEYWORD_DOCS: [Document; 13] = [
     },
 ];
 
-//  Directives
+//  Builtin types — ordered to match `BuiltinTypeKind` variant discriminants
 
-pub static DIRECTIVE_DOCS: [Document; 4] = [
+pub static BUILTIN_TYPE_DOCS: [Document; 27] = [
     Document {
-        key: "@def",
-        description: "Starts embedded script block",
-        example: Some(
-            "```chrn\n// It is recommended to speak in only comments above @def so that errors like missing quotes\ndo not impact the keyword analysis for @def and @end\n@def\n\tlet x = 1\n\tvar->\n\t\tname: str\n@end\n```",
-        ),
-    },
-    Document {
-        key: "@end",
-        description: "Ends embedded script block",
-        example: Some(
-            "```chrn\n@def\n\tlet x = 1\n@end\n// Everything after this could be serialized data\n```",
-        ),
-    },
-    Document {
-        key: "@",
-        description: "Directive marker (e.g. @def/@end)",
+        key: "i8",
+        description: "8-bit signed integer",
         example: None,
     },
     Document {
-        key: "#",
-        description: "Argument prefix (#warn/#ignore)",
+        key: "u8",
+        description: "8-bit unsigned integer",
         example: None,
     },
-];
-
-//  Types
-
-pub static TYPE_DOCS: [Document; 27] = [
+    Document {
+        key: "i16",
+        description: "16-bit signed integer",
+        example: None,
+    },
+    Document {
+        key: "u16",
+        description: "16-bit unsigned integer",
+        example: None,
+    },
+    Document {
+        key: "f16",
+        description: "16-bit floating point",
+        example: None,
+    },
+    Document {
+        key: "i32",
+        description: "32-bit signed integer",
+        example: None,
+    },
+    Document {
+        key: "u32",
+        description: "32-bit unsigned integer",
+        example: None,
+    },
+    Document {
+        key: "f32",
+        description: "32-bit floating point",
+        example: None,
+    },
+    Document {
+        key: "i64",
+        description: "64-bit signed integer",
+        example: None,
+    },
+    Document {
+        key: "u64",
+        description: "64-bit unsigned integer",
+        example: None,
+    },
+    Document {
+        key: "f64",
+        description: "64-bit floating point",
+        example: None,
+    },
+    Document {
+        key: "i128",
+        description: "128-bit signed integer",
+        example: None,
+    },
+    Document {
+        key: "u128",
+        description: "128-bit unsigned integer",
+        example: None,
+    },
+    Document {
+        key: "f128",
+        description: "128-bit floating point",
+        example: None,
+    },
+    Document {
+        key: "sized",
+        description: "Platform-sized signed integer",
+        example: None,
+    },
+    Document {
+        key: "unsized",
+        description: "Platform-sized unsigned integer",
+        example: None,
+    },
+    Document {
+        key: "str",
+        description: "String type",
+        example: None,
+    },
+    Document {
+        key: "char",
+        description: "Unicode character",
+        example: None,
+    },
+    Document {
+        key: "nil",
+        description: "Representation of a null/nil within a given language if possible",
+        example: None,
+    },
+    Document {
+        key: "bool",
+        description: "Boolean type",
+        example: None,
+    },
+    Document {
+        key: "BigInt",
+        description: "Arbitrary precision integer",
+        example: None,
+    },
+    Document {
+        key: "BigFloat",
+        description: "Arbitrary precision float",
+        example: None,
+    },
     Document {
         key: "List",
         description: "Generic list type",
@@ -184,114 +268,44 @@ pub static TYPE_DOCS: [Document; 27] = [
         description: "Generic type",
         example: None,
     },
+];
+
+//  Intrinsic functions — ordered to match `FuncKind` variant discriminants
+
+pub static FUNC_DOCS: [Document; 7] = [
     Document {
-        key: "str",
-        description: "String type",
+        key: "IsEmpty",
+        description: "Checks if a value is empty",
         example: None,
     },
     Document {
-        key: "bool",
-        description: "Boolean type",
+        key: "IsWhitespace",
+        description: "Checks if a string contains only whitespace characters",
         example: None,
     },
     Document {
-        key: "char",
-        description: "Unicode character",
+        key: "Contains",
+        description: "Checks if a value contains a specified pattern",
         example: None,
     },
     Document {
-        key: "nil",
-        description: "Representation of a null/nil within a given language if possible",
+        key: "Range",
+        description: "Checks if a value falls within a specified range",
         example: None,
     },
     Document {
-        key: "i8",
-        description: "8-bit signed integer",
+        key: "StartsW",
+        description: "Checks if a string starts with a specified prefix",
         example: None,
     },
     Document {
-        key: "u8",
-        description: "8-bit unsigned integer",
+        key: "EndsW",
+        description: "Checks if a string ends with a specified suffix",
         example: None,
     },
     Document {
-        key: "i16",
-        description: "16-bit signed integer",
-        example: None,
-    },
-    Document {
-        key: "u16",
-        description: "16-bit unsigned integer",
-        example: None,
-    },
-    Document {
-        key: "i32",
-        description: "32-bit signed integer",
-        example: None,
-    },
-    Document {
-        key: "u32",
-        description: "32-bit unsigned integer",
-        example: None,
-    },
-    Document {
-        key: "i64",
-        description: "64-bit signed integer",
-        example: None,
-    },
-    Document {
-        key: "u64",
-        description: "64-bit unsigned integer",
-        example: None,
-    },
-    Document {
-        key: "i128",
-        description: "128-bit signed integer",
-        example: None,
-    },
-    Document {
-        key: "u128",
-        description: "128-bit unsigned integer",
-        example: None,
-    },
-    Document {
-        key: "sized",
-        description: "Platform-sized signed integer",
-        example: None,
-    },
-    Document {
-        key: "unsized",
-        description: "Platform-sized unsigned integer",
-        example: None,
-    },
-    Document {
-        key: "f16",
-        description: "16-bit floating point",
-        example: None,
-    },
-    Document {
-        key: "f32",
-        description: "32-bit floating point",
-        example: None,
-    },
-    Document {
-        key: "f64",
-        description: "64-bit floating point",
-        example: None,
-    },
-    Document {
-        key: "f128",
-        description: "128-bit floating point",
-        example: None,
-    },
-    Document {
-        key: "BigInt",
-        description: "Arbitrary precision integer",
-        example: None,
-    },
-    Document {
-        key: "BigFloat",
-        description: "Arbitrary precision float",
+        key: "Equals",
+        description: "Checks if a value equals another value",
         example: None,
     },
 ];

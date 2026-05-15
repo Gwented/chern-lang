@@ -60,10 +60,13 @@ mod tests {
         alias_id: Option<&str>,
         interner: &mut Intern,
     ) -> Import {
-        Import::new(
-            InternedId::new(interner.intern(name)),
+        let kind = ImportKind::Source(
             PathId::new(interner.intern_path(&Path::new(path_name))),
             Default::default(),
+        );
+        Import::new(
+            InternedId::new(interner.intern(name)),
+            kind,
             alias_id.map(|a| InternedId::new(interner.intern(&a))),
         )
     }
@@ -130,7 +133,7 @@ mod tests {
     use crate::{
         config_loader::ChrnConfigLoader,
         lexer::Lexer,
-        modules::{Import, Module},
+        modules::{Import, ImportKind, Module},
         parser::{self, ast::AstInfo},
         script_compiler::ScriptCompiler,
         semantic::{
@@ -839,7 +842,8 @@ mod tests {
         // Doing this first since if modules were identified during the parsing stage any
         // syntax error within another module would not be reportable since the parser failed.
 
-        let sub_import = Import::new(InternedId::new(1), PathId::new(1), Default::default(), None);
+        let kind = ImportKind::Source(PathId::new(1), Default::default());
+        let sub_import = Import::new(InternedId::new(1), kind, None);
 
         let main_mod = Module::new(
             InternedId::new(0),

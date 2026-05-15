@@ -8,7 +8,7 @@ use chrn_utils::{
 };
 
 use crate::{
-    modules::{Bind, Module},
+    modules::{Bind, Import, ImportKind, Module},
     semantic::{
         constraints::ArgConstraint,
         representation::{
@@ -389,8 +389,12 @@ impl ScriptCompiler {
         compiler.mod_map.insert(core_name, core_mod_id);
         compiler.mods.push(core_mod);
 
-        for module in &mut compiler.mods {
-            module.scopes.push(core_scope_id);
+        let core_import = Import::new(core_name, ImportKind::Core, None);
+
+        // Injecting core as an import and pushing it's scope so they can search it
+        for user_module in &mut compiler.mods {
+            user_module.imports.push(core_import.clone());
+            user_module.scopes.push(core_scope_id);
         }
     }
 

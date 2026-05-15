@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use chrn_utils::builtins::BuiltinTypeKind;
 use chrn_utils::id_types::InternedId;
 use chrn_utils::intern::Intern;
 use chrn_utils::values::Value as CValue;
@@ -94,33 +95,39 @@ pub fn compute_hover(
                                             hover_text = format!("**typedef**: {}", t);
                                         }
                                         _ => {
-                                            let is_struct_or_enum =
-                                                t.starts_with("struct ") || t.starts_with("enum ");
-                                            let is_alias = t.starts_with("alias ");
-
-                                            let export_prefix = if !sym.is_priv
-                                                && (is_struct_or_enum || is_alias)
-                                            {
-                                                "export "
+                                            if let script_lib::semantic::representation::Type::BuiltinType(builtin) = &ty_info.ty {
+                                                hover_text = Document::builtin_type_docs(builtin.kind()).compose();
+                                            } else if let script_lib::semantic::representation::Type::Func(func_def) = &ty_info.ty {
+                                                hover_text = Document::func_docs(func_def.kind).compose();
                                             } else {
-                                                ""
-                                            };
+                                                let is_struct_or_enum =
+                                                    t.starts_with("struct ") || t.starts_with("enum ");
+                                                let is_alias = t.starts_with("alias ");
 
-                                            let mut final_text = String::new();
-                                            if is_struct_or_enum || is_alias {
-                                                let module = &compiler.mods[sym.owner.id];
-                                                let raw_mod_name =
-                                                    interner.search(module.name_id.id as usize);
-                                                final_text.push_str(&format!(
-                                                    "module: **{}**\n\n",
-                                                    raw_mod_name
-                                                ));
-                                                final_text
-                                                    .push_str(&format!("{}{}", export_prefix, t));
-                                            } else {
-                                                final_text.push_str(&format!("type: {}", t));
+                                                let export_prefix = if !sym.is_priv
+                                                    && (is_struct_or_enum || is_alias)
+                                                {
+                                                    "export "
+                                                } else {
+                                                    ""
+                                                };
+
+                                                let mut final_text = String::new();
+                                                if is_struct_or_enum || is_alias {
+                                                    let module = &compiler.mods[sym.owner.id];
+                                                    let raw_mod_name =
+                                                        interner.search(module.name_id.id as usize);
+                                                    final_text.push_str(&format!(
+                                                        "module: **{}**\n\n",
+                                                        raw_mod_name
+                                                    ));
+                                                    final_text
+                                                        .push_str(&format!("{}{}", export_prefix, t));
+                                                } else {
+                                                    final_text.push_str(&format!("type: {}", t));
+                                                }
+                                                hover_text = final_text;
                                             }
-                                            hover_text = final_text;
                                         }
                                     }
                                 }
@@ -278,8 +285,9 @@ pub fn compute_hover(
             }
 
             if hover_text.is_empty() {
-                let s = interner.search(id as usize);
-                hover_text = lookup_hover(&s);
+                if let Some(kind) = BuiltinTypeKind::try_from_interned_id(id) {
+                    hover_text = Document::builtin_type_docs(kind).compose();
+                }
             }
 
             (hover_text, Some((span_start, span_end.saturating_add(1))))
@@ -351,13 +359,6 @@ pub fn compute_hover(
         }),
     };
     Some(hover)
-}
-
-pub fn lookup_hover(token: &str) -> String {
-    if let Some(doc) = Document::lookup(token) {
-        return doc.compose();
-    }
-    String::new()
 }
 
 fn format_type(

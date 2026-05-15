@@ -25,29 +25,27 @@ use crate::{
     script_compiler::ScriptCompiler,
 };
 //TEST: Relocate reollacl rreellocrelac
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Import {
     pub name_id: InternedId,
-    pub path_id: PathId,
-    pub path_span: Span,
+    pub kind: ImportKind,
     pub alias_id: Option<InternedId>,
 }
 
 impl Import {
-    pub fn new(
-        name_id: InternedId,
-        path_id: PathId,
-        path_span: Span,
-        alias_id: Option<InternedId>,
-        // Maybe "import as" eventually
-    ) -> Import {
+    pub fn new(name_id: InternedId, kind: ImportKind, alias_id: Option<InternedId>) -> Import {
         Import {
             name_id,
-            path_id,
-            path_span,
+            kind,
             alias_id,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum ImportKind {
+    Source(PathId, Span),
+    Core,
 }
 
 #[derive(Debug, Default)]
@@ -271,8 +269,8 @@ pub fn extract_modules(
     Ok(compiler)
 }
 
-/// This function recursively resolves each import after being given a root module with imports to go off of.
 // Maybe this has gone a little bit too far
+/// This function recursively resolves each import after being given a root module with imports to go off of.
 /// `seen`: All imports seen to perform DFS.
 /// `modules`: Modules to store during recursive process to return and append to main module.
 /// `prev_mod`: The last module so that it's spanning information can be tracked.
@@ -286,13 +284,15 @@ fn resolve_modules(
     interner: &mut Intern,
 ) -> Result<(), ConfigLoadError> {
     for import in &prev_mod.imports {
-        if seen.contains(&import.path_id) {
+        let ImportKind::Source(path_id, path_span) = import.kind else {
+            continue;
+        };
+
+        if seen.contains(&path_id) {
             continue;
         }
-
         // This entire process is performing IO recursively based off of file paths so a failure
-        // here would be either an early detailed error, or deterministic system no longer being
-        // deterministic
+        // here would be either an early detailed error
         let prev_metadata = &prev_mod
             .src_metadata
             .as_ref()
@@ -301,9 +301,9 @@ fn resolve_modules(
         // Tracks the id of the current module by tracking however many imports were seen, which
         // all represent one module
         let current_mod_id = seen.len();
-        seen.insert(import.path_id);
+        seen.insert(path_id);
 
-        let path = interner.search_path(import.path_id.id as usize);
+        let path = interner.search_path(path_id.id as usize);
         let src = match fs::File::open(path) {
             // Why.
             Ok(_) if path.is_dir() => {
@@ -311,7 +311,7 @@ fn resolve_modules(
 
                 let ln_data = reporter::form_err_diag(
                     &prev_metadata.src_bytes,
-                    &[import.path_span],
+                    &[path_span],
                     settings.can_color,
                 );
 
@@ -327,7 +327,7 @@ fn resolve_modules(
                 let diag = Diagnostic::new(
                     path,
                     core_msg,
-                    Some(import.path_span),
+                    Some(path_span),
                     None,
                     fmtted_diag,
                     Area::ConfigLoad,
@@ -342,7 +342,7 @@ fn resolve_modules(
 
                 let ln_data = reporter::form_err_diag(
                     &prev_metadata.src_bytes,
-                    &[import.path_span],
+                    &[path_span],
                     settings.can_color,
                 );
 
@@ -358,7 +358,7 @@ fn resolve_modules(
                 let diag = Diagnostic::new(
                     path,
                     core_msg,
-                    Some(import.path_span),
+                    Some(path_span),
                     None,
                     fmtted_diag,
                     Area::ConfigLoad,
@@ -368,10 +368,9 @@ fn resolve_modules(
             }
         };
 
-        let mod_metadata =
-            ChrnConfigLoader::new(import.path_id, src, settings, interner).load_config()?;
+        let mod_metadata = ChrnConfigLoader::new(path_id, src, settings, interner).load_config()?;
 
-        let path = interner.search_path(import.path_id.id as usize);
+        let path = interner.search_path(path_id.id as usize);
 
         //Oh my
         let file_name = match path.file_prefix().map(|n| n.to_str()) {

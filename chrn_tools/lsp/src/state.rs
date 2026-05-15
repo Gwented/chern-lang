@@ -4,8 +4,8 @@ use script_lib::modules::Module;
 use script_lib::modules::ModuleMetadata;
 use script_lib::script_compiler::ScriptCompiler;
 use script_lib::semantic::name_resolver::NamespaceResolver;
-use script_lib::semantic::type_resolver::TypeResolver;
 use script_lib::semantic::type_resolver::type_context::TypeContext;
+use script_lib::semantic::type_resolver::TypeResolver;
 use script_lib::token::SpannedToken;
 use script_lib::token::Token as ScriptToken;
 use script_lib::trivia::Trivia;
@@ -135,7 +135,7 @@ impl DocumentState {
         let mut seen = std::collections::HashSet::new();
         seen.insert(path_id);
 
-        let mut other_mods = Vec::new();
+        let mut other_mods = Vec::with_capacity(main_mod.imports.len());
         let _ = analyser::resolve_modules_lsp(
             &mut seen,
             &mut other_mods,
@@ -149,7 +149,8 @@ impl DocumentState {
         // Collect imported module URIs for dependency tracking
         let imported_uris: Vec<String> = other_mods
             .iter()
-            .filter_map(|m| {
+            .filter_map(|mod_opt| {
+                let m = mod_opt.as_ref()?;
                 let metadata = m.src_metadata.as_ref()?;
                 let p = self.interner.search_path(metadata.path_id.id as usize);
                 tower_lsp::lsp_types::Url::from_file_path(p)
@@ -160,7 +161,10 @@ impl DocumentState {
 
         let mut all_mods = Vec::with_capacity(other_mods.len() + 1);
         all_mods.push(main_mod);
-        all_mods.append(&mut other_mods);
+        for mod_opt in other_mods.drain(..) {
+            let known = mod_opt.expect("ModuleId reserving failed");
+            all_mods.push(known);
+        }
 
         let mut compiler = ScriptCompiler::new(bind, mod_map, all_mods);
 
