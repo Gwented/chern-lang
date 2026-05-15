@@ -98,6 +98,7 @@ impl Module {
         name_id: InternedId,
         mod_id: ModuleId,
         imports: Vec<Import>,
+        //TODO: Convert to explicit kind
         src_metadata: Option<ModuleMetadata>,
     ) -> Module {
         Module {
@@ -109,13 +110,25 @@ impl Module {
             src_metadata,
         }
     }
+
+    //NOTE: Does not check for alias, but it doesn't change anything since the import with the
+    //module's actual name still exists inside the import, with the alias just being second-hand
+    pub fn contains_import(&self, other: &Module) -> bool {
+        let mut has_import = self.imports.iter().any(|i| i.name_id == other.name_id);
+
+        if !has_import {
+            has_import = self.mod_id == other.mod_id;
+        }
+
+        has_import
+    }
 }
 
 #[derive(Debug)]
 pub struct ModuleMetadata {
     /// Bytes from chrn config file
-    pub src_bytes: Vec<u8>,
     pub path_id: PathId,
+    pub src_bytes: Vec<u8>,
     // / Amount of \n within config file so binary search can be done by error reporter
     // pub new_lines: Vec<usize>,
     /// The script language start which can be different depending on if @def is used
@@ -133,10 +146,10 @@ impl ModuleMetadata {
     ) -> ModuleMetadata {
         ModuleMetadata {
             // new_lines: Vec::new(),
+            path_id,
             src_bytes,
             script_start,
             serial_start,
-            path_id,
             //TODO: Could be env var
         }
     }
@@ -269,6 +282,9 @@ pub fn extract_modules(
     Ok(compiler)
 }
 
+//WARN: mod_map means that if any have the same identifier then the entire module space is broken
+// Need to either error or store differently
+
 // Maybe this has gone a little bit too far
 /// This function recursively resolves each import after being given a root module with imports to go off of.
 /// `seen`: All imports seen to perform DFS.
@@ -276,6 +292,7 @@ pub fn extract_modules(
 /// `prev_mod`: The last module so that it's spanning information can be tracked.
 /// `mod_map`: Module interned file name -> ModuleId.
 fn resolve_modules(
+    // Maybe change to vec
     seen: &mut HashSet<PathId>,
     modules: &mut Vec<Option<Module>>,
     prev_mod: &Module,
@@ -289,6 +306,10 @@ fn resolve_modules(
         };
 
         if seen.contains(&path_id) {
+            if let Some(alias_id) = import.alias_id {
+                mod_map.insert(alias_id, ModuleId::new(seen.len() - 1));
+            }
+
             continue;
         }
         // This entire process is performing IO recursively based off of file paths so a failure

@@ -1,3 +1,0 @@
-export let NUMBER = 3
-nest->
-    export struct Person {}

@@ -464,7 +464,7 @@ fn form_ln_diag(
     // Lines containing only a new line are empty lines that were found by the line view function.
     // This prevents formatting errors by just ignoring new line only lines
     if src_str.as_bytes()[ln.ln_span.start] != b'\n' {
-        // Is an inclusive range since spans are inclusive, exclusive
+        // Is an inclusive range since spans are inclusive, inclusive
         plain_ln.push_str(&src_str[ln.ln_span.start..=ln.ln_span.end]);
     }
 

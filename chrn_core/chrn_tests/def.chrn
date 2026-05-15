@@ -1,0 +1,15 @@
+export let READ = 0b0
+export let WRITE = 0b1
+
+import "../../chrn_core/chrn_tests/other.chrn"
+
+nest->
+    export struct Person {
+        name: str
+        age: u8
+    }
+
+    export enum State {
+        Ready: u8 [] #warn
+        InProgress
+    }

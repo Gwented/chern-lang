@@ -254,6 +254,7 @@ impl ScriptCompiler {
         }
     }
 
+    // Maybe return option?
     /// Assumes the symbol given has a `TypeId` attached
     pub(super) fn get_type_id(&self, sym_id: SymbolId) -> TypeId {
         match &self.symbols[sym_id.id as usize] {

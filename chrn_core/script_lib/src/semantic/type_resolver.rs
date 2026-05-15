@@ -1609,32 +1609,19 @@ impl TypeResolver<'_> {
                             }
 
                             // Import checking
-                            // TODO: Probably best delegated to a function
+
                             let current_module = &self.compiler.mods[self.current_mod.id];
-
-                            let mut has_import = current_module
-                                .imports
-                                .iter()
-                                .any(|i| i.name_id == extern_mod.name_id);
-
-                            // If the import wasn't found then check if the current module is
-                            // referencing itself
-                            if !has_import {
-                                has_import = current_module.mod_id == extern_mod_id;
-                            }
-
-                            if !has_import {
+                            if !current_module.contains_import(extern_mod) {
                                 let extern_name =
                                     self.interner.search(extern_mod.name_id.id as usize);
                                 let current_name =
                                     self.interner.search(current_module.name_id.id as usize);
-
                                 let msg = format!(
                                     "The module `{extern_name}` exists but was not imported by `{current_name}`"
                                 );
 
                                 return Err(SemanticError::General(msg, vec![spanned_expr.span]));
-                            }
+                            };
 
                             // Turning the field into an expression so that it can be resolved as
                             // normal
@@ -2074,16 +2061,8 @@ impl TypeResolver<'_> {
                 // Checking if the current module actually has the module found imported.
                 //WARN: Using current_mod instead of active_mod here
                 let current_module = &self.compiler.mods[self.current_mod.id];
-                let mut has_import = current_module
-                    .imports
-                    .iter()
-                    .any(|i| i.name_id == extern_mod.name_id);
 
-                if !has_import {
-                    has_import = current_module.mod_id == extern_mod.mod_id;
-                }
-
-                if !has_import {
+                if !current_module.contains_import(extern_mod) {
                     let extern_name = self.interner.search(extern_mod.name_id.id as usize);
                     let current_name = self.interner.search(current_module.name_id.id as usize);
                     let msg = format!(
@@ -2101,7 +2080,7 @@ impl TypeResolver<'_> {
                     );
 
                     return Err(());
-                }
+                };
 
                 self.resolve_type_expr(
                     extern_mod.mod_id,
