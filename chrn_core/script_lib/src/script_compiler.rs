@@ -10,7 +10,7 @@ use chrn_utils::{
 use crate::{
     modules::{Bind, Import, ImportKind, Module},
     semantic::{
-        constraints::ArgConstraint,
+        constraints::{ArgConstraint, TypeConstraint},
         representation::{
             AliasDef, EnumDef, FuncDef, FuncKind, Param, ResolvedExpr, StructDef, Symbol,
             SymbolKind, Table, Type, TypeDef, TypeInfo,
@@ -407,6 +407,7 @@ impl ScriptCompiler {
         let func_def = FuncDef::new(
             FuncKind::IsEmpty,
             false,
+            TypeConstraint::Collection,
             vec![ArgConstraint::ArgCount(0), ArgConstraint::CharacterMappable],
             TypeId::new(CORE_BOOL),
         );
@@ -429,11 +430,12 @@ impl ScriptCompiler {
         compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
-        // IsWhitespace
+        // IsWhitespace | CharacterMappable
         let type_id = TypeId::new(compiler.types.len() as u32);
         let func_def = FuncDef::new(
             FuncKind::IsWhitespace,
             false,
+            TypeConstraint::CharacterMappable,
             vec![ArgConstraint::ArgCount(0), ArgConstraint::CharacterMappable],
             TypeId::new(CORE_BOOL),
         );
@@ -457,11 +459,12 @@ impl ScriptCompiler {
         compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
-        // Contains(String | char)
+        // Contains(String | char) CharacterMappable
         let type_id = TypeId::new(compiler.types.len() as u32);
         let func_def = FuncDef::new(
             FuncKind::Contains,
             true,
+            TypeConstraint::CharacterMappable,
             vec![ArgConstraint::ArgCount(1), ArgConstraint::CharacterMappable],
             TypeId::new(CORE_BOOL),
         );
@@ -485,11 +488,12 @@ impl ScriptCompiler {
         compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
-        // StartsW(Value) | Str
+        // StartsW(Value) | CharacterMappable
         let type_id = TypeId::new(compiler.types.len() as u32);
         let func_def = FuncDef::new(
             FuncKind::StartsW,
             true,
+            TypeConstraint::CharacterMappable,
             vec![ArgConstraint::ArgCount(1), ArgConstraint::Str],
             TypeId::new(CORE_BOOL),
         );
@@ -513,11 +517,14 @@ impl ScriptCompiler {
         compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
-        // EndsW(Value) | Str
+        // EndsW(Value) | CharacterMappable
         let type_id = TypeId::new(compiler.types.len() as u32);
         let func_def = FuncDef::new(
             FuncKind::EndsW,
             true,
+            // What about CharacterMappable? Do we really want to be judgemental here?
+            // There we go
+            TypeConstraint::CharacterMappable,
             vec![ArgConstraint::ArgCount(1), ArgConstraint::Str],
             TypeId::new(CORE_BOOL),
         );
@@ -546,6 +553,7 @@ impl ScriptCompiler {
         let func_def = FuncDef::new(
             FuncKind::Range,
             true,
+            TypeConstraint::Numeric,
             vec![
                 ArgConstraint::ArgCount(2),
                 ArgConstraint::Numeric,

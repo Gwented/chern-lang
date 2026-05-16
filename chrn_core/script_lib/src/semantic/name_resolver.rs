@@ -200,6 +200,7 @@ impl NamespaceResolver<'_> {
             module.exports.push(sym_id);
         }
 
+        // Ok ok
         let alias_def = AliasDef::new(sym_id, Vec::new(), None, Vec::new(), Vec::new());
 
         let symbol = Symbol::new(

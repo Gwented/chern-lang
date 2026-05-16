@@ -3,7 +3,10 @@ use common::{fmter::Formatted, span::Span};
 
 use crate::{
     conditions::Cond,
-    semantic::{constraints::ArgConstraint, representation::FuncKind},
+    semantic::{
+        constraints::{ArgConstraint, TypeConstraint},
+        representation::FuncKind,
+    },
 };
 
 //TODO: Change this majorly. Make many mistakes. Hallucinate.
@@ -15,6 +18,8 @@ pub(super) enum SemanticError {
     FuncConstraintMismatch(ArgConstraint, Formatted, FuncKind, Vec<Span>),
     /// Constraint, function type, amount of incorrect params found, spans
     ArgCountMismatch(ArgConstraint, FuncKind, u32, Vec<Span>),
+    /// Constraint, Incorrect type found, spans
+    TypeConstraintMismatch(Formatted, Formatted, Vec<Span>),
     /// Argument failed at, found type, spans
     UnsupportedArg(InnerArgs, Formatted, Vec<Span>),
     /// Args Condition, Wrong type formatted, Spans

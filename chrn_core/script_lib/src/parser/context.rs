@@ -254,10 +254,7 @@ impl<'a> Context<'a> {
             let path = interner.search_path(self.metadata.path_id.id as usize);
 
             let core_msg = if let Some(id_str) = err_ident_opt {
-                format!(
-                    "(in {branch})\n{bmsg}{} \"{id_str}\"{amsg}",
-                    found.tok.kind()
-                )
+                format!("(in {branch})\n{bmsg}{} {id_str}{amsg}", found.tok.kind())
             } else {
                 format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind())
             };

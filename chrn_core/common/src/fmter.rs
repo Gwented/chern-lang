@@ -89,6 +89,11 @@ pub enum Formatted {
     FuncEndsW,
     FuncContains,
     FuncEquals,
+    TypeConstraintMultiple,
+    TypeConstraintCharacterMappable,
+    TypeConstraintHasLen,
+    TypeConstraintNumeric,
+    TypeConstraintCollection,
     ExclamationPoint,
     Cond,
     // Hmm...
@@ -176,6 +181,12 @@ impl Display for Formatted {
             Formatted::Func => write!(f, "function"),
             Formatted::In => write!(f, "in"),
             Formatted::TypeDef => write!(f, "typedef"),
+            Formatted::TypeConstraintMultiple => write!(f, "MultipleConstraints"),
+            Formatted::TypeConstraintCharacterMappable => write!(f, "CharacterMappable"),
+            Formatted::TypeConstraintHasLen => write!(f, "HasLen"),
+            Formatted::TypeConstraintNumeric => write!(f, "Numeric"),
+            // Re-use Integer?
+            Formatted::TypeConstraintCollection => write!(f, "Collection"),
         }
     }
 }

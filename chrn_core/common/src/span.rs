@@ -1,3 +1,5 @@
+use std::ops::{Range, RangeInclusive};
+
 //Could this be u32?
 /// General purpose span structure
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -13,6 +15,16 @@ impl Span {
 
     // Maybe?
     // pub fn curate(&self, other: Span) -> Span {}
+
+    /// Creates an (inclusive, exclusive) ranged span
+    pub fn range_exclusive(&self) -> Range<usize> {
+        self.start..self.end
+    }
+
+    /// Creates an (inclusive, inclusive) ranged span
+    pub fn range_inclusive(&self) -> RangeInclusive<usize> {
+        self.start..=self.end
+    }
 
     /// Creates span that contains the min start and max end of two spans
     pub fn merge(&self, other: Span) -> Span {

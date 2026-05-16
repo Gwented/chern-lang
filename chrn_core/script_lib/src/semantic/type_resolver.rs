@@ -291,7 +291,6 @@ impl TypeResolver<'_> {
                 // Types are known without dependency tracking.
                 // SymbolKind::Unknown is always turned into an expr_id
                 SymbolKind::Type(_) | SymbolKind::Unknown => unreachable!("Not possible"),
-                // Uh is this possible
             }
 
             if let Some(user) = root_expr.user {

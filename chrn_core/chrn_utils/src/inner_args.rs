@@ -42,7 +42,7 @@ impl InnerArgs {
 
     /// This MUST be used after ensuring the type is a primitive, not a data structure.
     // Maybe this is a good time to use kind
-    pub fn supports_builtin_type(&self, builtin_type: &BuiltinType) -> bool {
+    pub fn supports_builtin_ty(&self, builtin_type: &BuiltinType) -> bool {
         match self {
             InnerArgs::Ignore | InnerArgs::Warn => true,
             InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => {

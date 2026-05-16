@@ -1,18 +1,35 @@
 // Import privacy leaking behavior and overwriting tendency is highly suspicious
 
-@def
+// @def invalid toky // hey
+//@end
+//@def
+let /*comment*/ x/* inline*/ = /* last*/ 3 let z =x+3
 
-import "../../chrn_core/chrn_tests/def.chrn" as definitions
-import "../../chrn_core/chrn_tests/other.chrn" as thing
+
+@def
+// import "../../chrn_core/chrn_tests/def.chrn" as defs
 
 export let a = b
 export let b = c
 export let c = d + 3
 let d = 6
+let x = 5
 
+// Also need to check constraint in specific regards to the alias itself
+alias default() = [IsEmpty, Contains('I')]
+
+// "rec" keyword, or just use in?
 var->
-    p: thing.People
+    // Conds need shallow checks too so should err if struct or enum is used
+    // again suggesting that it needs to be applied to the struct directly
+
+    // Just check any for the data struture differences. Smiley face.
+    p: char [default(x)]
+    e: str [default()]
 nest->
-    struct Thingy{}
+    struct Thingy {
+        name: char
+        age: i32
+    } []
 
 @end

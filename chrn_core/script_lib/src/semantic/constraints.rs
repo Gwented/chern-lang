@@ -1,6 +1,176 @@
 use std::fmt::Display;
 
-use crate::{parser::ast::BinaryOp, semantic::representation::FuncKind};
+use chrn_utils::{
+    builtins::{BuiltinType, BuiltinTypeKind},
+    id_types::{SymbolId, TypeId},
+};
+use common::{
+    fmter::{Formattable, Formatted},
+    span::Span,
+};
+
+use crate::{
+    script_compiler::{self, ScriptCompiler},
+    semantic::{
+        error::SemanticError,
+        representation::{FuncKind, Type},
+    },
+};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeConstraint {
+    // Multiple(Vec<TypeConstraint>),
+    Collection,
+    CharacterMappable,
+    HasLen,
+    Numeric,
+    Integer,
+    Float,
+    Bool,
+    Str,
+}
+
+impl Formattable for TypeConstraint {
+    fn to_fmt(&self) -> common::fmter::Formatted {
+        match self {
+            // TypeConstraint::Multiple(_) => Formatted::TypeConstraintMultiple,
+            TypeConstraint::Collection => Formatted::TypeConstraintCollection,
+            TypeConstraint::CharacterMappable => Formatted::TypeConstraintCharacterMappable,
+            TypeConstraint::Numeric => Formatted::TypeConstraintNumeric,
+            TypeConstraint::HasLen => Formatted::TypeConstraintHasLen,
+            TypeConstraint::Integer => Formatted::Integer,
+            TypeConstraint::Float => Formatted::Float,
+            TypeConstraint::Bool => Formatted::Bool,
+            TypeConstraint::Str => Formatted::Str,
+        }
+    }
+}
+
+impl TypeConstraint {
+    /// Will return false by default for data structures given because this is not a deep check
+    fn supports_builtin_ty(&self, builtin: BuiltinTypeKind) -> bool {
+        match self {
+            TypeConstraint::CharacterMappable => builtin.is_character_mappable(),
+            TypeConstraint::Numeric => builtin.is_numeric(),
+            TypeConstraint::Integer => builtin.is_integer(),
+            TypeConstraint::Float => builtin.is_float(),
+            TypeConstraint::Bool => builtin == BuiltinTypeKind::Bool,
+            TypeConstraint::Str => builtin == BuiltinTypeKind::Str,
+            TypeConstraint::Collection => builtin.is_collection(),
+            // TypeConstraint::Multiple(type_constraints) => {
+            //     for constraint in type_constraints {
+            //         if constraint.supports_builtin_ty(builtin) {
+            //             return true;
+            //         }
+            //     }
+            //
+            //     false
+            // }
+            TypeConstraint::HasLen => builtin.has_len(),
+        }
+    }
+}
+
+//TEST:
+pub(super) fn check_type_constraint(
+    script_compiler: &ScriptCompiler,
+    type_id: TypeId,
+    ty_span: Span,
+    cond_span: Span,
+    visited: &mut Vec<TypeId>,
+    constraint: &TypeConstraint,
+) -> Result<(), SemanticError> {
+    let ty = &script_compiler.types[type_id.id as usize].ty;
+    match ty {
+        Type::Struct(struct_def) => {
+            // let symbol = &script_compiler.symbols[struct_def.sym_id.id as usize];
+            // let ast_id = symbol.ast_id.expect("Core should not be resolved");
+            // let abs_struct = &self.ast_info.get_struct(ast_id);
+            visited.push(type_id);
+
+            // No cross module reporting so all messages are shallow in spanning
+            for (i, field) in struct_def.fields.iter().enumerate() {
+                // Not sure if this incurs any errors this time
+                if visited.contains(&field.type_id) {
+                    // if spanned_arg.arg.has_restrictions() {
+                    //     let name = self.interner.search(symbol.name_id.id as usize);
+                    //
+                    //     let msg = format!(
+                    //         "The type `{name}` cannot have `#{}` applied due to recursively relying on itself satisfying the argument",
+                    //         spanned_arg.arg
+                    //     );
+                    //
+                    //     return Err(SemanticError::General(
+                    //         msg,
+                    //         vec![spanned_arg.span, active_span],
+                    //     ));
+                    // }
+
+                    continue;
+                }
+
+                visited.push(field.type_id);
+
+                check_type_constraint(
+                    script_compiler,
+                    field.type_id,
+                    ty_span,
+                    cond_span,
+                    visited,
+                    constraint,
+                )?;
+            }
+
+            Ok(())
+        }
+        Type::Enum(enum_def) => {
+            visited.push(type_id);
+
+            for variant in &enum_def.variants {
+                if let Some(inner_id) = variant.type_id {
+                    visited.push(inner_id);
+
+                    // Checking if one of it's variants are self referencing, or if the type we
+                    // just came from, possibly a tuple, is referring to itself from a
+                    // different context.
+                    if visited.contains(&inner_id) {
+                        continue;
+                    }
+
+                    check_type_constraint(
+                        script_compiler,
+                        inner_id,
+                        ty_span,
+                        cond_span,
+                        visited,
+                        constraint,
+                    )?;
+                }
+            }
+
+            Ok(())
+        }
+        // Both of these don't care so
+        Type::Func(_) | Type::Alias(_) => Ok(()),
+        Type::BuiltinType(builtin_ty) => {
+            //TODO: Allow optionally to choose if a condition should be shallow or not
+            //FIX: IsEmpty needs to disallow "char" somehow
+            if !constraint.supports_builtin_ty(builtin_ty.kind()) {
+                return Err(SemanticError::TypeConstraintMismatch(
+                    // Ok Formattble is is
+                    constraint.to_fmt(),
+                    builtin_ty.kind().to_fmt(),
+                    vec![ty_span, cond_span],
+                ));
+            }
+
+            Ok(())
+        }
+        // Type::TypeDef(type_def) => {},
+        // Type::Unknown => todo!(),
+        _ => unreachable!("Unreachable I think?"),
+    }
+}
 
 // Nat
 // Real
@@ -32,39 +202,39 @@ pub enum OrderingType {
     LessOrEq,
     Eq,
 }
-
-impl ArgConstraint {
-    // TODO: Composable constraints for aliases
-    /// Takes in a function kind that is built in and returns it's constraints
-    pub fn from_builtin(kind: FuncKind) -> Vec<ArgConstraint> {
-        match kind {
-            FuncKind::IsEmpty => vec![ArgConstraint::ArgCount(0), ArgConstraint::Str],
-            FuncKind::StartsW => {
-                // Maybe if we got something like 0x1FF it could StartsW(0x1FF)?
-                vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
-            }
-            FuncKind::EndsW => {
-                vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
-            }
-            FuncKind::Contains => {
-                vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
-            }
-            FuncKind::Range => {
-                vec![
-                    ArgConstraint::ArgCount(2),
-                    ArgConstraint::Numeric,
-                    ArgConstraint::MatchingArgumentTypes,
-                ]
-            }
-            FuncKind::Equals => {
-                vec![ArgConstraint::Variadic]
-            }
-            FuncKind::IsWhitespace => {
-                vec![ArgConstraint::ArgCount(0), ArgConstraint::CharacterMappable]
-            }
-        }
-    }
-}
+//
+// impl ArgConstraint {
+//     // TODO: Composable constraints for aliases
+//     /// Takes in a function kind that is built in and returns it's constraints
+//     pub fn from_builtin(kind: FuncKind) -> Vec<ArgConstraint> {
+//         match kind {
+//             FuncKind::IsEmpty => vec![ArgConstraint::ArgCount(0), ArgConstraint::Str],
+//             FuncKind::StartsW => {
+//                 // Maybe if we got something like 0x1FF it could StartsW(0x1FF)?
+//                 vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
+//             }
+//             FuncKind::EndsW => {
+//                 vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
+//             }
+//             FuncKind::Contains => {
+//                 vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
+//             }
+//             FuncKind::Range => {
+//                 vec![
+//                     ArgConstraint::ArgCount(2),
+//                     ArgConstraint::Numeric,
+//                     ArgConstraint::MatchingArgumentTypes,
+//                 ]
+//             }
+//             FuncKind::Equals => {
+//                 vec![ArgConstraint::Variadic]
+//             }
+//             FuncKind::IsWhitespace => {
+//                 vec![ArgConstraint::ArgCount(0), ArgConstraint::CharacterMappable]
+//             }
+//         }
+//     }
+// }
 
 impl Display for ArgConstraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

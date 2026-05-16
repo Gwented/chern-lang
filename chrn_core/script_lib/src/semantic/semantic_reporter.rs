@@ -122,6 +122,26 @@ impl<'a> SemanticReporter<'a> {
                     todo!();
                 }
             },
+            SemanticError::TypeConstraintMismatch(fmtted_constraint, fmtted_err_ty, spans) => {
+                // let mut constraints = String::new();
+                //
+                // for (i, constraint) in fmtted_constraints.iter().enumerate() {
+                //     constraints.push_str(&format!("`{constraint}`"));
+                //
+                //     if i + 2 == fmtted_constraints.len() {
+                //         constraints.push_str(" or ");
+                //     } else if i + 1 < fmtted_constraints.len() {
+                //         constraints.push_str(", ");
+                //     }
+                // }
+
+                let msg = format!(
+                    "`{fmtted_err_ty}` does not satisfy type constraint `{}`",
+                    fmtted_constraint
+                );
+
+                (msg, spans)
+            }
             SemanticError::UndefinedMember(span) => {
                 let msg = format!("Cannot infer member access");
                 (msg, vec![span])

@@ -1053,7 +1053,7 @@ impl Lexer<'_> {
 
                     let trivia_end = self.pos;
                     self.trivia.push(Trivia::new(
-                        TriviaKind::NewLine,
+                        TriviaKind::Newline,
                         Span::new(trivia_start, trivia_end),
                     ));
 
@@ -1062,7 +1062,7 @@ impl Lexer<'_> {
                 '\n' => {
                     let trivia_end = self.pos;
                     self.trivia.push(Trivia::new(
-                        TriviaKind::NewLine,
+                        TriviaKind::Newline,
                         Span::new(trivia_start, trivia_end),
                     ));
 

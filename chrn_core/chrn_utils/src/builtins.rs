@@ -37,6 +37,8 @@ pub enum BuiltinType {
     Map(TypeId, TypeId),
     Set(TypeId),
     Tuple(Vec<TypeId>),
+    //TODO: any should either disallow all conditions and only take in unrestricted arguments, or
+    //be type inferred, given arguments or conditions
     Any,
 }
 
@@ -225,7 +227,8 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::Sized
             | BuiltinTypeKind::Unsized
             | BuiltinTypeKind::BigInt
-            | BuiltinTypeKind::BigFloat => true,
+            | BuiltinTypeKind::BigFloat
+            | BuiltinTypeKind::Any => true,
             BuiltinTypeKind::Bool
             | BuiltinTypeKind::Nil
             | BuiltinTypeKind::Char
@@ -233,8 +236,7 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::List
             | BuiltinTypeKind::Set
             | BuiltinTypeKind::Map
-            | BuiltinTypeKind::Tuple
-            | BuiltinTypeKind::Any => false,
+            | BuiltinTypeKind::Tuple => false,
         }
     }
 
@@ -252,7 +254,8 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::U128
             | BuiltinTypeKind::Sized
             | BuiltinTypeKind::Unsized
-            | BuiltinTypeKind::BigInt => true,
+            | BuiltinTypeKind::BigInt
+            | BuiltinTypeKind::Any => true,
             _ => false,
         }
     }
@@ -263,14 +266,40 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::F32
             | BuiltinTypeKind::F64
             | BuiltinTypeKind::F128
-            | BuiltinTypeKind::BigFloat => true,
+            | BuiltinTypeKind::BigFloat
+            | BuiltinTypeKind::Any => true,
             _ => false,
         }
     }
 
     pub fn is_character_mappable(&self) -> bool {
         match self {
-            BuiltinTypeKind::Str | BuiltinTypeKind::Char => true,
+            BuiltinTypeKind::Str | BuiltinTypeKind::Char | BuiltinTypeKind::Any => true,
+            _ => false,
+        }
+    }
+
+    pub fn has_len(&self) -> bool {
+        match self {
+            BuiltinTypeKind::Str
+            | BuiltinTypeKind::Char
+            | BuiltinTypeKind::List
+            | BuiltinTypeKind::Set
+            | BuiltinTypeKind::Map
+            | BuiltinTypeKind::Tuple
+            | BuiltinTypeKind::Any => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_collection(&self) -> bool {
+        match self {
+            BuiltinTypeKind::Str
+            | BuiltinTypeKind::List
+            | BuiltinTypeKind::Set
+            | BuiltinTypeKind::Map
+            | BuiltinTypeKind::Tuple
+            | BuiltinTypeKind::Any => true,
             _ => false,
         }
     }

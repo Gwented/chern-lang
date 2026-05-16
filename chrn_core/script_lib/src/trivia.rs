@@ -20,7 +20,7 @@ pub enum TriviaKind {
     MultiComment,
     Tab,
     Whitespace,
-    NewLine,
+    Newline,
 }
 
 impl TriviaKind {
@@ -28,20 +28,20 @@ impl TriviaKind {
     pub fn is_spacing_no_newline(&self) -> bool {
         match self {
             TriviaKind::Tab | TriviaKind::Whitespace => true,
-            TriviaKind::NewLine | TriviaKind::SingleComment | TriviaKind::MultiComment => false,
+            TriviaKind::Newline | TriviaKind::SingleComment | TriviaKind::MultiComment => false,
         }
     }
 
     pub fn is_spacing(&self) -> bool {
         match self {
-            TriviaKind::Tab | TriviaKind::Whitespace | TriviaKind::NewLine => true,
+            TriviaKind::Tab | TriviaKind::Whitespace | TriviaKind::Newline => true,
             TriviaKind::SingleComment | TriviaKind::MultiComment => false,
         }
     }
 
     pub fn is_comment(&self) -> bool {
         match self {
-            TriviaKind::Tab | TriviaKind::Whitespace | TriviaKind::NewLine => false,
+            TriviaKind::Tab | TriviaKind::Whitespace | TriviaKind::Newline => false,
             TriviaKind::SingleComment | TriviaKind::MultiComment => true,
         }
     }

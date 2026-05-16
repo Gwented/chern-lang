@@ -14,7 +14,10 @@ use common::{
 
 use crate::{
     parser::ast::{BinaryOp, UnaryOp},
-    semantic::{constraints::ArgConstraint, scopes::ScopeType},
+    semantic::{
+        constraints::{ArgConstraint, TypeConstraint},
+        scopes::ScopeType,
+    },
 };
 
 // What is a drop? I am new to thinking i have never thought before what is RAII
@@ -309,7 +312,10 @@ impl Formattable for TypeDef {
 pub struct FuncDef {
     pub kind: FuncKind,
     pub is_callable: bool,
-    pub constraints: Vec<ArgConstraint>,
+    //TEST:
+    pub type_constraint: TypeConstraint,
+    //TEST:
+    pub arg_constraints: Vec<ArgConstraint>,
     pub ret_type: TypeId,
 }
 
@@ -317,13 +323,15 @@ impl FuncDef {
     pub fn new(
         kind: FuncKind,
         is_callable: bool,
-        constraints: Vec<ArgConstraint>,
+        type_constraints: TypeConstraint,
+        arg_constraints: Vec<ArgConstraint>,
         ret_type: TypeId,
     ) -> FuncDef {
         FuncDef {
             kind,
             is_callable,
-            constraints,
+            type_constraint: type_constraints,
+            arg_constraints,
             ret_type,
         }
     }
@@ -362,7 +370,7 @@ impl FieldRepre {
 pub struct AliasDef {
     pub sym_id: SymbolId,
     pub params: Vec<Param>,
-    pub constraints: Option<ArgConstraint>,
+    pub ty_constraint: Option<TypeConstraint>,
     pub args: Vec<InnerArgs>,
     pub conds: Vec<ExprId>,
 }
@@ -371,14 +379,14 @@ impl AliasDef {
     pub fn new(
         sym_id: SymbolId,
         params: Vec<Param>,
-        constraints: Option<ArgConstraint>,
+        ty_constraint: Option<TypeConstraint>,
         conds: Vec<ExprId>,
         args: Vec<InnerArgs>,
     ) -> AliasDef {
         AliasDef {
             sym_id,
             params,
-            constraints,
+            ty_constraint,
             conds,
             args,
         }

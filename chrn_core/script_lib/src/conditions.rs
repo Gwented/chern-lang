@@ -38,7 +38,7 @@ impl Cond {
         }
     }
 
-    pub fn supports_builtin_type(&self, kind: BuiltinTypeKind) -> bool {
+    pub fn supports_builtin_ty(&self, kind: BuiltinTypeKind) -> bool {
         match self {
             Cond::IsEmpty | Cond::IsWhitespace => {
                 if kind.is_numeric() {
@@ -47,7 +47,7 @@ impl Cond {
 
                 true
             }
-            Cond::Not(cond) => Self::supports_builtin_type(cond, kind),
+            Cond::Not(cond) => Self::supports_builtin_ty(cond, kind),
             Cond::Func(_, _) => unreachable!("Not a possible variant"),
         }
     }
