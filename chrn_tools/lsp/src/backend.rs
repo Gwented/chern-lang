@@ -31,72 +31,12 @@ fn publish_config_load_error(
     text: &str,
     err: ConfigLoadError,
 ) {
-    use tower_lsp::lsp_types::*;
-
-    let start = Position {
-        line: 0,
-        character: 0,
-    };
-
-    let diags_vec = match err {
-        ConfigLoadError::Unclosed(core_diag) | ConfigLoadError::Module(core_diag) => {
-            let diag_span = core_diag.span.unwrap_or_default();
-
-            let start_pos = crate::text::offset_to_position(text, diag_span.start);
-            let end_pos = crate::text::offset_to_position(text, diag_span.end);
-
-            let diag = tower_lsp::lsp_types::Diagnostic {
-                range: Range {
-                    start: start_pos,
-                    end: end_pos,
-                },
-                severity: Some(DiagnosticSeverity::ERROR),
-                code: None,
-                code_description: None,
-                source: Some("chrn-config".to_string()),
-                message: core_diag.core_msg,
-                related_information: None,
-                tags: None,
-                data: None,
-            };
-            let mut diags = vec![diag];
-
-            if let Some(help) = core_diag.help {
-                let help_diag = tower_lsp::lsp_types::Diagnostic {
-                    range: Range {
-                        start: start_pos,
-                        end: end_pos,
-                    },
-                    severity: Some(DiagnosticSeverity::HINT),
-                    code: None,
-                    code_description: None,
-                    source: Some("chrn-config".to_string()),
-                    message: help,
-                    related_information: None,
-                    tags: None,
-                    data: None,
-                };
-                diags.push(help_diag);
-            }
-            diags
-        }
-        ConfigLoadError::IO(io) => vec![tower_lsp::lsp_types::Diagnostic {
-            range: Range { start, end: start },
-            severity: Some(DiagnosticSeverity::ERROR),
-            code: None,
-            code_description: None,
-            source: Some("chrn-config".to_string()),
-            message: io.to_string(),
-            related_information: None,
-            tags: None,
-            data: None,
-        }],
-    };
+    let diags = crate::analyser::config_load_error_to_diagnostics(err, text);
     let client_clone = client.clone();
     let uri_clone = uri.clone();
     tokio::spawn(async move {
         client_clone
-            .publish_diagnostics(uri_clone, diags_vec, None)
+            .publish_diagnostics(uri_clone, diags, None)
             .await;
     });
 }
@@ -172,7 +112,7 @@ impl Backend {
         if let Some(state_arc) = self.doc_cache.get(&uri_str) {
             let needs_analysis = {
                 let state = state_arc.read();
-                state.compiler.is_none() || state.text.len() != text.len() || *state.text != *text
+                state.compiler.is_none() || *state.text != *text
             };
 
             if !needs_analysis {
@@ -239,7 +179,10 @@ impl Backend {
             None => return,
         };
 
-        if matches!(entity, SemanticEntity::Local { .. } | SemanticEntity::Module(_)) {
+        if matches!(
+            entity,
+            SemanticEntity::Local { .. } | SemanticEntity::Module(_)
+        ) {
             return;
         }
 
@@ -562,7 +505,7 @@ impl LanguageServer for Backend {
             // The Weak won't keep the Arc alive if the rest of the server drops it.
             let pending_tasks_weak = Arc::downgrade(&self.pending_tasks);
             let inner_uri_str = uri_str.clone();
-            let doc_cache_clone = self.doc_cache.clone();
+            let doc_cache = self.doc_cache.clone();
             let handle = tokio::spawn(async move {
                 sleep(Duration::from_millis(DEBOUNCE_MS)).await;
 
@@ -576,7 +519,6 @@ impl LanguageServer for Backend {
                 };
 
                 if still_current {
-                    let doc_cache = doc_cache_clone.clone();
                     let pending_versions = pv.clone();
                     analyze_and_publish_task(
                         client,
@@ -621,18 +563,11 @@ impl LanguageServer for Backend {
             None => return Ok(None),
         };
 
-        // Use a timeout to avoid deadlocking if analysis is stuck holding a write lock
-        let arc_for_hover = Arc::clone(&state_arc);
-        if let Some(hover_opt) = state_arc
-            .try_read_for(Duration::from_millis(500))
-            .map(|_guard| {
-                // Drop our guard and let compute_hover take its own lock (which should succeed now)
-                crate::hover::compute_hover(&uri, pos, arc_for_hover)
-            })
-        {
-            return Ok(hover_opt);
-        }
-        Ok(None)
+        let state = match state_arc.try_read_for(Duration::from_millis(500)) {
+            Some(guard) => guard,
+            None => return Ok(None),
+        };
+        Ok(crate::hover::compute_hover(&uri, pos, &state))
     }
 
     async fn rename(
@@ -995,49 +930,7 @@ impl LanguageServer for Backend {
                                         let sym_name =
                                             state.interner.search(sym.name_id.id as usize);
                                         if prefix.is_empty() || sym_name.starts_with(prefix) {
-                                            let kind = match sym.kind {
-                                                representation::SymbolKind::Type(type_id) => {
-                                                    match &compiler.types[type_id.id as usize].ty {
-                                                        Type::Struct(_)
-                                                        | Type::Enum(_)
-                                                        | Type::TypeDef(_)
-                                                        | Type::BuiltinType(_) => {
-                                                            CompletionItemKind::STRUCT
-                                                        }
-                                                        Type::Alias(_) => {
-                                                            CompletionItemKind::FUNCTION
-                                                        }
-                                                        Type::Func(func_def)
-                                                            if func_def.is_callable =>
-                                                        {
-                                                            CompletionItemKind::FUNCTION
-                                                        }
-                                                        Type::Func(_) => {
-                                                            CompletionItemKind::CONSTANT
-                                                        }
-                                                        Type::Unknown => {
-                                                            CompletionItemKind::VARIABLE
-                                                        }
-                                                    }
-                                                }
-                                                representation::SymbolKind::Val(val_id) => {
-                                                    let type_id =
-                                                        compiler.values[val_id.id as usize].type_id;
-                                                    match &compiler.types[type_id.id as usize].ty {
-                                                        Type::BuiltinType(_)|
-                                                        Type::Struct(_)|
-                                                        // Not actually possible for typedef to be
-                                                        // a value
-                                                        Type::TypeDef(_) |
-                                                        Type::Enum(_) => CompletionItemKind::VARIABLE,
-                                                        Type::Alias(_) => CompletionItemKind::FUNCTION,
-                                                        Type::Func(func_def) if func_def.is_callable => CompletionItemKind::FUNCTION,
-                                                        Type::Func(_) => CompletionItemKind::CONSTANT,
-                                                        Type::Unknown => CompletionItemKind::VARIABLE,
-                                                    }
-                                                }
-                                                _ => CompletionItemKind::PROPERTY,
-                                            };
+                                            let kind = symbol_completion_kind(compiler, sym);
                                             items.push(CompletionItem {
                                                 label: sym_name.to_string(),
                                                 kind: Some(kind),
@@ -1053,49 +946,7 @@ impl LanguageServer for Backend {
                                         let sym_name =
                                             state.interner.search(sym.name_id.id as usize);
                                         if prefix.is_empty() || sym_name.starts_with(prefix) {
-                                            let kind = match sym.kind {
-                                                representation::SymbolKind::Type(type_id) => {
-                                                    match &compiler.types[type_id.id as usize].ty {
-                                                        Type::Struct(_)
-                                                        | Type::Enum(_)
-                                                        | Type::TypeDef(_)
-                                                        | Type::BuiltinType(_) => {
-                                                            CompletionItemKind::STRUCT
-                                                        }
-                                                        Type::Alias(_) => {
-                                                            CompletionItemKind::FUNCTION
-                                                        }
-                                                        Type::Func(func_def)
-                                                            if func_def.is_callable =>
-                                                        {
-                                                            CompletionItemKind::FUNCTION
-                                                        }
-                                                        Type::Func(_) => {
-                                                            CompletionItemKind::CONSTANT
-                                                        }
-                                                        Type::Unknown => {
-                                                            CompletionItemKind::VARIABLE
-                                                        }
-                                                    }
-                                                }
-                                                representation::SymbolKind::Val(val_id) => {
-                                                    let type_id =
-                                                        compiler.values[val_id.id as usize].type_id;
-                                                    match &compiler.types[type_id.id as usize].ty {
-                                                        Type::BuiltinType(_)|
-                                                        Type::Struct(_)|
-                                                        // Not actually possible for typedef to be
-                                                        // in the values vector
-                                                        Type::TypeDef(_) |
-                                                        Type::Enum(_) => CompletionItemKind::VARIABLE,
-                                                        Type::Alias(_) => CompletionItemKind::FUNCTION,
-                                                        Type::Func(func_def) if func_def.is_callable => CompletionItemKind::FUNCTION,
-                                                        Type::Func(_) => CompletionItemKind::CONSTANT,
-                                                        Type::Unknown => CompletionItemKind::VARIABLE,
-                                                    }
-                                                }
-                                                _ => CompletionItemKind::PROPERTY,
-                                            };
+                                            let kind = symbol_completion_kind(compiler, sym);
                                             items.push(CompletionItem {
                                                 label: sym_name.to_string(),
                                                 kind: Some(kind),
@@ -1178,10 +1029,19 @@ impl LanguageServer for Backend {
 
         // Add modules from mod_map (using already-analyzed compiler state)
         if let Some(compiler) = &state.compiler {
-            for (name_id, _) in &compiler.mod_map {
-                // Skip the current module's name to avoid redundant suggestions
-
+            let current_module = &compiler.mods[0];
+            for (name_id, mod_id) in &compiler.mod_map {
                 let name = state.interner.search(name_id.id as usize);
+
+                let is_self = mod_id.id == 0;
+                let is_imported = current_module
+                    .imports
+                    .iter()
+                    .any(|i| i.name_id == *name_id || i.alias_id.map_or(false, |a| a == *name_id));
+
+                if !is_imported && !is_self {
+                    continue;
+                }
 
                 if prefix.is_empty() || name.starts_with(prefix) {
                     items.push(CompletionItem {

@@ -1,4 +1,5 @@
 use tower_lsp::lsp_types::Position;
+use tower_lsp::lsp_types::Range;
 use tower_lsp::lsp_types::TextDocumentContentChangeEvent;
 
 pub fn extract_word_at(line: &str, idx: usize) -> String {
@@ -170,4 +171,40 @@ pub fn offset_to_position(text: &str, offset: usize) -> Position {
     }
 
     Position { line, character }
+}
+
+/// Returns which indices in `ranges` are NOT redundant (i.e. are the most specific non-overlapping ranges).
+/// A range is redundant if another range exists that is strictly contained within it.
+/// For identical ranges, the earliest index wins.
+pub fn deduplicate_range_indices(ranges: &[Range]) -> Vec<usize> {
+    let mut result = Vec::new();
+    for i in 0..ranges.len() {
+        let r1 = &ranges[i];
+        let mut is_redundant = false;
+        for j in 0..ranges.len() {
+            if i == j {
+                continue;
+            }
+            let r2 = &ranges[j];
+
+            let starts_after_or_at = r2.start.line > r1.start.line
+                || (r2.start.line == r1.start.line && r2.start.character >= r1.start.character);
+            let ends_before_or_at = r2.end.line < r1.end.line
+                || (r2.end.line == r1.end.line && r2.end.character <= r1.end.character);
+
+            if starts_after_or_at && ends_before_or_at {
+                if r1.start != r2.start || r1.end != r2.end {
+                    is_redundant = true;
+                    break;
+                } else if j < i {
+                    is_redundant = true;
+                    break;
+                }
+            }
+        }
+        if !is_redundant {
+            result.push(i);
+        }
+    }
+    result
 }

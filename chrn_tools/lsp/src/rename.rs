@@ -79,45 +79,14 @@ pub fn compute_rename(
             }
 
             if !file_edits.is_empty() {
-                // Deduplicate: if we have overlapping ranges for the same definition,
-                // keep only the most specific ones (smallest ranges).
-                // A range is redundant if there exists another range for the same definition
-                // that is entirely contained within it.
+                let ranges: Vec<Range> = file_edits.iter().map(|(r, _)| *r).collect();
                 let mut final_edits = Vec::new();
-                for i in 0..file_edits.len() {
-                    let (r1, _) = &file_edits[i];
-                    let mut is_redundant = false;
-                    for j in 0..file_edits.len() {
-                        if i == j {
-                            continue;
-                        }
-                        let (r2, _) = &file_edits[j];
-
-                        // Check if r2 is strictly contained in r1, or if they are identical (keep first)
-                        let starts_after_or_at = r2.start.line > r1.start.line
-                            || (r2.start.line == r1.start.line
-                                && r2.start.character >= r1.start.character);
-                        let ends_before_or_at = r2.end.line < r1.end.line
-                            || (r2.end.line == r1.end.line && r2.end.character <= r1.end.character);
-
-                        if starts_after_or_at && ends_before_or_at {
-                            if r1.start != r2.start || r1.end != r2.end {
-                                // r2 is strictly smaller than r1
-                                is_redundant = true;
-                                break;
-                            } else if j < i {
-                                // identical range, already processed or will be kept by j
-                                is_redundant = true;
-                                break;
-                            }
-                        }
-                    }
-                    if !is_redundant {
-                        final_edits.push(TextEdit {
-                            range: file_edits[i].0,
-                            new_text: file_edits[i].1.clone(),
-                        });
-                    }
+                for &i in &crate::text::deduplicate_range_indices(&ranges) {
+                    let (range, text) = &file_edits[i];
+                    final_edits.push(TextEdit {
+                        range: *range,
+                        new_text: text.clone(),
+                    });
                 }
 
                 if let Ok(u) = Url::parse(state_uri) {

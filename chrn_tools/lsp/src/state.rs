@@ -50,6 +50,7 @@ pub struct DocumentState {
     pub serial_start: Option<usize>,
     pub compiler: Option<ScriptCompiler>,
     pub asts: Vec<Option<script_lib::parser::ast::AstInfo>>,
+    pub config_errors: Option<Vec<Diagnostic>>,
     pub parse_errors: Option<Vec<Diagnostic>>,
     pub ns_errors: Option<Vec<Diagnostic>>,
     pub ty_errors: Option<Vec<Diagnostic>>,
@@ -77,6 +78,7 @@ impl DocumentState {
             serial_start,
             compiler: None,
             asts: Vec::new(),
+            config_errors: None,
             parse_errors: None,
             ns_errors: None,
             ty_errors: None,
@@ -114,7 +116,10 @@ impl DocumentState {
         .collect_imports(&mut self.interner)
         {
             Ok(res) => res,
-            Err(_) => (None, Vec::new()),
+            Err(e) => {
+                self.config_errors = Some(vec![Self::extract_diag(e)]);
+                (None, Vec::new())
+            }
         };
 
         let main_mod = Module::new(
@@ -136,6 +141,10 @@ impl DocumentState {
         seen.insert(path_id);
 
         let mut other_mods = Vec::with_capacity(main_mod.imports.len());
+        // Errors from resolving imported modules belong to those modules' own documents
+        // and are already recorded in their cached DocumentState. Propagating them into
+        // this document's config_errors would attach byte offsets from the wrong file
+        // (the dependency's), causing diagnostics to appear at random locations.
         let _ = analyser::resolve_modules_lsp(
             &mut seen,
             &mut other_mods,
@@ -584,9 +593,6 @@ impl DocumentState {
             }
         }
 
-        // 5. Module references
-        for (_name_id, _mod_id) in &compiler.mod_map {}
-
         self.symbol_map = map;
     }
 
@@ -601,10 +607,28 @@ impl DocumentState {
             .map(|(_, entity)| entity)
     }
 
+    fn extract_diag(err: common::core_error::ConfigLoadError) -> Diagnostic {
+        match err {
+            common::core_error::ConfigLoadError::Unclosed(diag)
+            | common::core_error::ConfigLoadError::Module(diag) => diag,
+            common::core_error::ConfigLoadError::IO(io) => Diagnostic::new(
+                &std::path::PathBuf::new(),
+                io.to_string(),
+                None,
+                None,
+                io.to_string(),
+                common::reporter::diagnostic::Area::ConfigLoad,
+            ),
+        }
+    }
+
     pub fn get_lsp_diagnostics(&self) -> Vec<tower_lsp::lsp_types::Diagnostic> {
         let mut lsp_diags = Vec::new();
         let doc_len = self.text.len();
 
+        if let Some(diags) = &self.config_errors {
+            analyser::push_diagnostics(&mut lsp_diags, diags, doc_len, &self.text, "chrn-config");
+        }
         if let Some(diags) = &self.parse_errors {
             analyser::push_diagnostics(&mut lsp_diags, diags, doc_len, &self.text, "chrn-parser");
         }
@@ -640,33 +664,6 @@ impl DocumentState {
     pub fn get_identifier_at_offset(&self, byte_offset: usize) -> Option<String> {
         self.get_symbol_at_offset(byte_offset)
             .map(|(id, _, _)| self.interner.search(id as usize).to_string())
-    }
-
-    pub fn find_definition_of_symbol(
-        &self,
-        interned_id: u32,
-    ) -> Option<(String, common::span::Span)> {
-        let compiler = self.compiler.as_ref()?;
-        let interned = InternedId::new(interned_id);
-
-        // Try to find the symbol in the main module first
-        if let Some(sym_id) = compiler.get_sym_id(
-            interned,
-            script_lib::semantic::scopes::ScopeType::Var,
-            ModuleId::new(0),
-        ) {
-            if let Some(sym) = compiler.symbols.get(sym_id.id as usize) {
-                let module = &compiler.mods[sym.owner.id];
-                let ast_info = self.asts.get(sym.owner.id)?.as_ref()?;
-                let ast_id = sym.ast_id?;
-                let span = ast_info.get_sym_span(ast_id);
-
-                let metadata = module.src_metadata.as_ref()?;
-                let path = self.interner.search_path(metadata.path_id.id as usize);
-                return Some((path.to_string_lossy().to_string(), span));
-            }
-        }
-        None
     }
 
     pub fn get_definition_location(
@@ -744,10 +741,6 @@ impl DocumentState {
     /// Uses binary search for O(log n) performance.
     /// Also checks for single-line comments by looking for // before the cursor on the current line.
     pub fn offset_in_comment(&self, byte_offset: usize) -> bool {
-        if self.trivia.is_empty() && self.text.is_empty() {
-            return false;
-        }
-
         let idx = self.trivia.partition_point(|t| t.span.start <= byte_offset);
         if idx > 0 {
             let t = &self.trivia[idx - 1];

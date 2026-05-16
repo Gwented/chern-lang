@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tower_lsp::Client;
-use tower_lsp::lsp_types::*;
+use tower_lsp::lsp_types;
 
 use chrn_utils::id_types::{InternedId, ModuleId, PathId};
 use chrn_utils::intern::Intern;
@@ -49,6 +49,60 @@ fn evict_cache_if_needed(cache: &mut HashMap<String, String>) {
     }
 }
 
+/// Convert a `ConfigLoadError` into LSP diagnostics (error + optional hint).
+pub(crate) fn config_load_error_to_diagnostics(
+    err: common::core_error::ConfigLoadError,
+    text: &str,
+) -> Vec<tower_lsp::lsp_types::Diagnostic> {
+    let start = lsp_types::Position {
+        line: 0,
+        character: 0,
+    };
+
+    match err {
+        common::core_error::ConfigLoadError::Unclosed(diag)
+        | common::core_error::ConfigLoadError::Module(diag) => {
+            let diag_span = diag.span.unwrap_or_default();
+            let start_pos = crate::text::offset_to_position(text, diag_span.start);
+            let end_pos = crate::text::offset_to_position(text, diag_span.end);
+
+            let main_diag = tower_lsp::lsp_types::Diagnostic {
+                range: lsp_types::Range {
+                    start: start_pos,
+                    end: end_pos,
+                },
+                severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+                source: None,
+                message: diag.core_msg,
+                ..Default::default()
+            };
+
+            if let Some(help) = diag.help {
+                let help_diag = tower_lsp::lsp_types::Diagnostic {
+                    range: lsp_types::Range {
+                        start: start_pos,
+                        end: end_pos,
+                    },
+                    severity: Some(lsp_types::DiagnosticSeverity::HINT),
+                    source: None,
+                    message: help,
+                    ..Default::default()
+                };
+                vec![main_diag, help_diag]
+            } else {
+                vec![main_diag]
+            }
+        }
+        common::core_error::ConfigLoadError::IO(io) => vec![tower_lsp::lsp_types::Diagnostic {
+            range: lsp_types::Range { start, end: start },
+            severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+            source: Some("chrn-config".to_string()),
+            message: io.to_string(),
+            ..Default::default()
+        }],
+    }
+}
+
 pub async fn analyze_and_publish_task(
     client: Client,
     uri: Url,
@@ -77,40 +131,11 @@ pub async fn analyze_and_publish_task(
     {
         Ok(m) => m,
         Err(e) => {
-            // Handle config load error (same as before)
-            let start = Position {
-                line: 0,
-                character: 0,
-            };
-            let diag = match e {
-                common::core_error::ConfigLoadError::Unclosed(diag)
-                | common::core_error::ConfigLoadError::Module(diag) => {
-                    let diag_span = diag.span.unwrap_or_default();
-                    let start_pos = crate::text::offset_to_position(&text, diag_span.start);
-                    let end_pos = crate::text::offset_to_position(&text, diag_span.end);
-                    tower_lsp::lsp_types::Diagnostic {
-                        range: Range {
-                            start: start_pos,
-                            end: end_pos,
-                        },
-                        severity: Some(DiagnosticSeverity::ERROR),
-                        source: Some("chrn-config".to_string()),
-                        message: diag.core_msg,
-                        ..Default::default()
-                    }
-                }
-                common::core_error::ConfigLoadError::IO(io) => tower_lsp::lsp_types::Diagnostic {
-                    range: Range { start, end: start },
-                    severity: Some(DiagnosticSeverity::ERROR),
-                    source: Some("chrn-config".to_string()),
-                    message: io.to_string(),
-                    ..Default::default()
-                },
-            };
+            let diags = config_load_error_to_diagnostics(e, &text);
             publish_if_current(
                 &client,
                 &uri,
-                vec![diag],
+                diags,
                 &diags_cache,
                 &pending_versions,
                 version,
@@ -201,7 +226,7 @@ pub(crate) fn push_diagnostics(
     diags: &[common::reporter::diagnostic::Diagnostic],
     doc_len: usize,
     text: &str,
-    source: &str,
+    _source: &str,
 ) {
     for core_diag in diags {
         let (start_byte, end_byte) = match core_diag.span {
@@ -217,36 +242,28 @@ pub(crate) fn push_diagnostics(
         let end_pos = crate::text::offset_to_position(text, end_byte);
 
         let diag = tower_lsp::lsp_types::Diagnostic {
-            range: Range {
+            range: lsp_types::Range {
                 start: start_pos,
                 end: end_pos,
             },
-            severity: Some(DiagnosticSeverity::ERROR),
-            code: None,
-            code_description: None,
-            source: Some(source.to_string()),
+            severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+            source: None,
             message: core_diag.core_msg.clone(),
-            related_information: None,
-            tags: None,
-            data: None,
+            ..Default::default()
         };
 
         lsp_diags.push(diag);
 
         if let Some(help) = &core_diag.help {
             let help_diag = tower_lsp::lsp_types::Diagnostic {
-                range: Range {
+                range: lsp_types::Range {
                     start: start_pos,
                     end: end_pos,
                 },
-                severity: Some(DiagnosticSeverity::HINT),
-                code: None,
-                code_description: None,
-                source: Some(source.to_string()),
+                severity: Some(lsp_types::DiagnosticSeverity::HINT),
+                source: None,
                 message: help.clone(),
-                related_information: None,
-                tags: None,
-                data: None,
+                ..Default::default()
             };
             lsp_diags.push(help_diag);
         }

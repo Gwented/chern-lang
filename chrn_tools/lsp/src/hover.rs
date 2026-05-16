@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use chrn_utils::builtins::BuiltinTypeKind;
 use chrn_utils::id_types::InternedId;
 use chrn_utils::intern::Intern;
@@ -8,19 +6,16 @@ use common::fmter::Formattable;
 use script_lib::script_compiler::ScriptCompiler;
 use script_lib::semantic::representation::Type;
 use script_lib::token::Token as ScriptToken;
-use tower_lsp::lsp_types::*;
+use tower_lsp::lsp_types;
 
 use crate::document::{self, Document};
 use crate::text::position_to_offset;
 
-use parking_lot::RwLock;
-
 pub fn compute_hover(
     _uri: &tower_lsp::lsp_types::Url,
-    pos: Position,
-    state_arc: Arc<RwLock<crate::state::DocumentState>>,
-) -> Option<Hover> {
-    let state = state_arc.read();
+    pos: lsp_types::Position,
+    state: &crate::state::DocumentState,
+) -> Option<lsp_types::Hover> {
     let text = &state.text;
     let offset = position_to_offset(text, pos);
 
@@ -91,8 +86,10 @@ pub fn compute_hover(
                                     let ty_info = &compiler.types[type_id.id as usize];
                                     let t = format_type(&ty_info.ty, &compiler, &interner, false);
                                     match &ty_info.ty {
-                                        script_lib::semantic::representation::Type::TypeDef(_) => {
-                                            hover_text = format!("**typedef**: {}", t);
+                                        script_lib::semantic::representation::Type::TypeDef(type_def) => {
+                                            let inner = &compiler.types[type_def.type_id.id as usize].ty;
+                                            let shallow_t = strip_struct_enum_prefix(&format_type(inner, &compiler, &interner, true));
+                                            hover_text = format!("**typedef**: {}", shallow_t);
                                         }
                                         _ => {
                                             if let script_lib::semantic::representation::Type::BuiltinType(builtin) = &ty_info.ty {
@@ -237,7 +234,7 @@ pub fn compute_hover(
                     }
                     SemanticEntity::Module(mod_id) => {
                         let module = &compiler.mods[mod_id.id];
-                        let raw_mod_name = interner.search(module.name_id.id as usize);
+                        let mod_name = interner.search(module.name_id.id as usize);
                         let mod_path = if let Some(metadata) = &module.src_metadata {
                             interner
                                 .search_path(metadata.path_id.id as usize)
@@ -247,9 +244,20 @@ pub fn compute_hover(
                             "<builtin>".to_string()
                         };
 
+                        let alias_prefix = compiler.mods[0]
+                            .imports
+                            .iter()
+                            .find_map(|i| {
+                                i.alias_id.filter(|a| *a == interned).map(|a| {
+                                    format!("alias **{}** | ", interner.search(a.id as usize))
+                                })
+                            })
+                            .unwrap_or_default();
+
                         hover_text = format!(
-                            "module **{}**\n{}\npath: `{}`",
-                            raw_mod_name,
+                            "{}module **{}**\n{}\npath: `{}`",
+                            alias_prefix,
+                            mod_name,
                             document::HOVER_DASHES,
                             mod_path
                         );
@@ -275,8 +283,19 @@ pub fn compute_hover(
                         "<builtin>".to_string()
                     };
 
+                    let alias_prefix = compiler.mods[0]
+                        .imports
+                        .iter()
+                        .find_map(|i| {
+                            i.alias_id
+                                .filter(|a| *a == interned)
+                                .map(|a| format!("alias **{}** | ", interner.search(a.id as usize)))
+                        })
+                        .unwrap_or_default();
+
                     hover_text = format!(
-                        "module **{}**\n{}\npath: `{}`",
+                        "{}module **{}**\n{}\npath: `{}`",
+                        alias_prefix,
                         raw_mod_name,
                         document::HOVER_DASHES,
                         mod_path
@@ -343,16 +362,16 @@ pub fn compute_hover(
         return None;
     }
 
-    let contents = HoverContents::Markup(MarkupContent {
+    let contents = lsp_types::HoverContents::Markup(lsp_types::MarkupContent {
         value: hover_text,
-        kind: MarkupKind::Markdown,
+        kind: lsp_types::MarkupKind::Markdown,
     });
-    let hover = Hover {
+    let hover = lsp_types::Hover {
         contents,
         range: hover_range.and_then(|(s, e)| {
             let start_pos = crate::text::offset_to_position(text, s);
             let end_pos = crate::text::offset_to_position(text, e);
-            Some(Range {
+            Some(lsp_types::Range {
                 start: start_pos,
                 end: end_pos,
             })

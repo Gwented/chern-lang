@@ -78,41 +78,10 @@ pub fn compute_references(
                 }
             }
 
-            // Deduplicate: prefer smaller ranges
-            let mut deduplicated = Vec::new();
-            for i in 0..file_locations.len() {
-                let loc1 = &file_locations[i];
-                let mut is_redundant = false;
-                for j in 0..file_locations.len() {
-                    if i == j {
-                        continue;
-                    }
-                    let loc2 = &file_locations[j];
-
-                    let r1 = &loc1.range;
-                    let r2 = &loc2.range;
-
-                    let starts_after_or_at = r2.start.line > r1.start.line
-                        || (r2.start.line == r1.start.line
-                            && r2.start.character >= r1.start.character);
-                    let ends_before_or_at = r2.end.line < r1.end.line
-                        || (r2.end.line == r1.end.line && r2.end.character <= r1.end.character);
-
-                    if starts_after_or_at && ends_before_or_at {
-                        if r1.start != r2.start || r1.end != r2.end {
-                            is_redundant = true;
-                            break;
-                        } else if j < i {
-                            is_redundant = true;
-                            break;
-                        }
-                    }
-                }
-                if !is_redundant {
-                    deduplicated.push(loc1.clone());
-                }
+            let ranges: Vec<Range> = file_locations.iter().map(|l| l.range).collect();
+            for &i in &crate::text::deduplicate_range_indices(&ranges) {
+                locations.push(file_locations[i].clone());
             }
-            locations.extend(deduplicated);
         });
     }
 
