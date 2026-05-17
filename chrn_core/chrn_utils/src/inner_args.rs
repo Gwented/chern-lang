@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use common::span::Span;
 
-use crate::builtins::BuiltinType;
+use crate::types::{builtins::BuiltinType, type_constraints::TypeConstraint};
 
 /// If a new argument is added ensure this is updated
 pub static ARGS_ARRAY: [&str; 6] = ["warn", "scient", "hex", "bin", "octal", "ignore"];
@@ -42,7 +42,7 @@ impl InnerArgs {
 
     /// This MUST be used after ensuring the type is a primitive, not a data structure.
     // Maybe this is a good time to use kind
-    pub fn supports_builtin_ty(&self, builtin_type: &BuiltinType) -> bool {
+    pub fn supports_builtin_type(&self, builtin_type: &BuiltinType) -> bool {
         match self {
             InnerArgs::Ignore | InnerArgs::Warn => true,
             InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => {
@@ -78,6 +78,29 @@ impl InnerArgs {
                     _ => false,
                 }
             }
+        }
+    }
+
+    pub fn supports_type_constraint(&self, ty_constraint: &TypeConstraint, is_rec: bool) -> bool {
+        match self {
+            InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => {
+                match ty_constraint {
+                    TypeConstraint::Collection | TypeConstraint::HasLen if is_rec => true,
+                    TypeConstraint::Numeric
+                    | TypeConstraint::Integer
+                    | TypeConstraint::SignedInteger
+                    | TypeConstraint::UnsignedInteger
+                    | TypeConstraint::Float
+                    | TypeConstraint::Any => true,
+                    TypeConstraint::Bool
+                    | TypeConstraint::Collection
+                    | TypeConstraint::HasLen
+                    | TypeConstraint::CharacterMappable
+                    | TypeConstraint::Str => false,
+                    TypeConstraint::Char => todo!(),
+                }
+            }
+            InnerArgs::Ignore | InnerArgs::Warn => true,
         }
     }
 }

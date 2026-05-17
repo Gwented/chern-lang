@@ -1,6 +1,6 @@
-use chrn_utils::builtins::BuiltinTypeKind;
 use chrn_utils::id_types::InternedId;
 use chrn_utils::intern::Intern;
+use chrn_utils::types::builtins::BuiltinTypeKind;
 use chrn_utils::values::Value as CValue;
 use common::fmter::Formattable;
 use script_lib::script_compiler::ScriptCompiler;
@@ -388,21 +388,21 @@ fn format_type(
 ) -> String {
     match ty {
         Type::BuiltinType(builtin_ty) => match builtin_ty {
-            chrn_utils::builtins::BuiltinType::List(type_id) => {
+            chrn_utils::types::builtins::BuiltinType::List(type_id) => {
                 let inner = &compiler.types[type_id.id as usize].ty;
                 format!(
                     "List<{}>",
                     strip_struct_enum_prefix(&format_type(inner, compiler, interner, true))
                 )
             }
-            chrn_utils::builtins::BuiltinType::Set(type_id) => {
+            chrn_utils::types::builtins::BuiltinType::Set(type_id) => {
                 let inner = &compiler.types[type_id.id as usize].ty;
                 format!(
                     "Set<{}>",
                     strip_struct_enum_prefix(&format_type(inner, compiler, interner, true))
                 )
             }
-            chrn_utils::builtins::BuiltinType::Map(kid, vid) => {
+            chrn_utils::types::builtins::BuiltinType::Map(kid, vid) => {
                 let k = &compiler.types[kid.id as usize].ty;
                 let v = &compiler.types[vid.id as usize].ty;
                 format!(
@@ -411,7 +411,7 @@ fn format_type(
                     strip_struct_enum_prefix(&format_type(v, compiler, interner, true))
                 )
             }
-            chrn_utils::builtins::BuiltinType::Tuple(type_ids) => {
+            chrn_utils::types::builtins::BuiltinType::Tuple(type_ids) => {
                 let elems: Vec<String> = type_ids
                     .iter()
                     .map(|type_id| {
@@ -421,7 +421,7 @@ fn format_type(
                     .collect();
                 format!("Tuple<{}>", elems.join(", "))
             }
-            chrn_utils::builtins::BuiltinType::Any => "Any".into(),
+            chrn_utils::types::builtins::BuiltinType::Any => "Any".into(),
             b => b.kind().to_fmt().to_string(),
         },
         Type::Struct(struct_def) => {
@@ -505,12 +505,13 @@ fn format_type(
                 .iter()
                 .map(|p| {
                     let p_name = interner.search(p.name_id.id as usize);
-                    let p_ty = &compiler.types[p.type_id.id as usize].ty;
-                    format!(
-                        "{}: {}",
-                        p_name,
-                        strip_struct_enum_prefix(&format_type(p_ty, compiler, interner, true))
-                    )
+                    let p_constraint = if let Some(constraint) = &p.ty_constraint {
+                        constraint.to_fmt().to_string()
+                    } else {
+                        "None".to_string()
+                    };
+
+                    format!("{}: {}", p_name, p_constraint)
                 })
                 .collect();
 

@@ -1,75 +1,15 @@
 use std::fmt::Display;
 
-use chrn_utils::{
-    builtins::{BuiltinType, BuiltinTypeKind},
-    id_types::{SymbolId, TypeId},
-};
+use chrn_utils::{id_types::TypeId, types::type_constraints::TypeConstraint};
 use common::{
     fmter::{Formattable, Formatted},
     span::Span,
 };
 
 use crate::{
-    script_compiler::{self, ScriptCompiler},
-    semantic::{
-        error::SemanticError,
-        representation::{FuncKind, Type},
-    },
+    script_compiler::ScriptCompiler,
+    semantic::{error::SemanticError, representation::Type},
 };
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TypeConstraint {
-    // Multiple(Vec<TypeConstraint>),
-    Collection,
-    CharacterMappable,
-    HasLen,
-    Numeric,
-    Integer,
-    Float,
-    Bool,
-    Str,
-}
-
-impl Formattable for TypeConstraint {
-    fn to_fmt(&self) -> common::fmter::Formatted {
-        match self {
-            // TypeConstraint::Multiple(_) => Formatted::TypeConstraintMultiple,
-            TypeConstraint::Collection => Formatted::TypeConstraintCollection,
-            TypeConstraint::CharacterMappable => Formatted::TypeConstraintCharacterMappable,
-            TypeConstraint::Numeric => Formatted::TypeConstraintNumeric,
-            TypeConstraint::HasLen => Formatted::TypeConstraintHasLen,
-            TypeConstraint::Integer => Formatted::Integer,
-            TypeConstraint::Float => Formatted::Float,
-            TypeConstraint::Bool => Formatted::Bool,
-            TypeConstraint::Str => Formatted::Str,
-        }
-    }
-}
-
-impl TypeConstraint {
-    /// Will return false by default for data structures given because this is not a deep check
-    fn supports_builtin_ty(&self, builtin: BuiltinTypeKind) -> bool {
-        match self {
-            TypeConstraint::CharacterMappable => builtin.is_character_mappable(),
-            TypeConstraint::Numeric => builtin.is_numeric(),
-            TypeConstraint::Integer => builtin.is_integer(),
-            TypeConstraint::Float => builtin.is_float(),
-            TypeConstraint::Bool => builtin == BuiltinTypeKind::Bool,
-            TypeConstraint::Str => builtin == BuiltinTypeKind::Str,
-            TypeConstraint::Collection => builtin.is_collection(),
-            // TypeConstraint::Multiple(type_constraints) => {
-            //     for constraint in type_constraints {
-            //         if constraint.supports_builtin_ty(builtin) {
-            //             return true;
-            //         }
-            //     }
-            //
-            //     false
-            // }
-            TypeConstraint::HasLen => builtin.has_len(),
-        }
-    }
-}
 
 //TEST:
 pub(super) fn check_type_constraint(

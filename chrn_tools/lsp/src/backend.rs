@@ -14,9 +14,9 @@ use crate::text::apply_text_change;
 
 // Semantic token support (keyword/string/number highlighting)
 use crate::state::SemanticEntity;
-use chrn_utils::builtins::BuiltinTypeKind as ChBuiltinTypeKind;
 use chrn_utils::id_types::PathId;
 use chrn_utils::intern::Intern;
+use chrn_utils::types::builtins::BuiltinTypeKind as ChBuiltinTypeKind;
 use common::chrn_settings::ChrnSettings;
 use common::core_error::ConfigLoadError;
 use script_lib::config_loader::ChrnConfigLoader;
@@ -683,7 +683,7 @@ impl LanguageServer for Backend {
                 ScriptToken::Def | ScriptToken::End => SemanticTokenType::Macro.as_u32(),
                 ScriptToken::Keyword(kw) if kw.is_sect() => SemanticTokenType::Class.as_u32(),
                 ScriptToken::Keyword(_) => SemanticTokenType::Keyword.as_u32(),
-                ScriptToken::Str(_) => SemanticTokenType::String.as_u32(),
+                ScriptToken::Str(_) | ScriptToken::Char(_) => SemanticTokenType::String.as_u32(),
                 ScriptToken::BoolLiteral(_) => SemanticTokenType::String.as_u32(),
                 ScriptToken::Integer(_, _) | ScriptToken::Float(_, _) => {
                     SemanticTokenType::Number.as_u32()

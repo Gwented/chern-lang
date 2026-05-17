@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 
 use chrn_utils::{
-    builtins::BuiltinType,
     id_types::{InternedId, ModuleId, ScopeId, SymbolId, TypeId},
     intern,
+    types::{builtins::BuiltinType, type_constraints::TypeConstraint},
     values::{ValueInfo, ValueKind},
 };
 
 use crate::{
     modules::{Bind, Import, ImportKind, Module},
     semantic::{
-        constraints::{ArgConstraint, TypeConstraint},
+        constraints::ArgConstraint,
         representation::{
             AliasDef, EnumDef, FuncDef, FuncKind, Param, ResolvedExpr, StructDef, Symbol,
             SymbolKind, Table, Type, TypeDef, TypeInfo,

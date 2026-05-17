@@ -29,6 +29,8 @@ pub enum Formatted {
     U128,
     F128,
     Integer,
+    SignedInteger,
+    UnsignedInteger,
     Float,
     Sized,
     Unsized,
@@ -185,8 +187,9 @@ impl Display for Formatted {
             Formatted::TypeConstraintCharacterMappable => write!(f, "CharacterMappable"),
             Formatted::TypeConstraintHasLen => write!(f, "HasLen"),
             Formatted::TypeConstraintNumeric => write!(f, "Numeric"),
-            // Re-use Integer?
             Formatted::TypeConstraintCollection => write!(f, "Collection"),
+            Formatted::SignedInteger => write!(f, "SignedInteger"),
+            Formatted::UnsignedInteger => write!(f, "UnsignedInteger"),
         }
     }
 }

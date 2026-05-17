@@ -1,6 +1,6 @@
 use common::fmter::{Formattable, Formatted};
 
-use crate::id_types::{ExprId, InternedId, SymbolId, TypeId, ValueId};
+use crate::id_types::{ExprId, InternedId, SymbolId, TypeId};
 
 // The value system of script would be simple but the serial does need this too so maybe re-use
 // it?

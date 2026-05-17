@@ -26,12 +26,14 @@ pub const SCOPE_VAR: u8 = 1 << 2;
 pub const SCOPE_NEST: u8 = 1 << 3;
 pub const SCOPE_COMPLEX: u8 = 1 << 4;
 pub const SCOPE_OVERRIDE: u8 = 1 << 5;
+pub const SCOPE_LOCAL: u8 = 1 << 6;
 
 // Bitwise into array of scopes that filters each time a lookup is done?
 pub static SCOPE_CORE_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Core];
 pub static SCOPE_NEUTRAL_ACCESSIBLE: [ScopeType; 2] = [ScopeType::Neutral, ScopeType::Core];
 // For the LSP
-pub static SCOPE_ALL: [ScopeType; 6] = [
+pub static SCOPE_ALL: [ScopeType; 7] = [
+    ScopeType::Local,
     ScopeType::Neutral,
     ScopeType::Var,
     ScopeType::Nest,
@@ -39,6 +41,10 @@ pub static SCOPE_ALL: [ScopeType; 6] = [
     ScopeType::Override,
     ScopeType::Core,
 ];
+
+//WARN: Suspicious accessibility
+pub static SCOPE_LOCAL_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Local];
+
 pub static SCOPE_REST_ACCESSIBLE: [ScopeType; 5] = [
     ScopeType::Neutral,
     ScopeType::Nest,
@@ -54,7 +60,6 @@ pub struct Scope {
     pub table: Table,
     pub scope_id: ScopeId,
     pub scope_type: ScopeType,
-    //FIX: Ok this is not bit-wise food I am scared
     pub accessible_scopes: &'static [ScopeType],
 }
 
@@ -80,7 +85,29 @@ impl Scope {
         }
     }
 }
+/// Locally searches for the given name id. Locally searching in this context means solely
+/// searching the scope given for the identifier due to parent relationships not existing.
+pub fn get_sym_id_local(
+    compiler: &ScriptCompiler,
+    scope_id: ScopeId,
+    target_name_id: InternedId,
+) -> Option<SymbolId> {
+    // There are no parent hierarchiable (Is this a word?) language semantics yet other than single
+    // local scopes so this is just a single scope search.
+    let local_scope = &compiler.scopes[scope_id.id as usize].scope;
 
+    for (current_name_id, current_sym_id) in &local_scope.table.interned_to_sym {
+        if *current_name_id == target_name_id {
+            return Some(*current_sym_id);
+        }
+    }
+
+    None
+}
+
+/// Searches for the given name id given the language semantics of chrn access levels regarding
+/// sections. Does not account for local scopes due to it's differences from how scopes are
+/// normally searched.
 pub fn get_sym_id(
     compiler: &ScriptCompiler,
     owner_id: ModuleId,
@@ -102,7 +129,7 @@ pub fn get_sym_id(
     };
 
     for allowed_scope_type in accessible_scopes.iter().copied() {
-        if let Some(scope_info) = compiler.find_scope(allowed_scope_type, current_mod.mod_id) {
+        if let Some(scope_info) = compiler.find_scope(allowed_scope_type, owner_id) {
             for (current_name_id, current_sym_id) in &scope_info.scope.table.interned_to_sym {
                 if *current_name_id == target_name_id {
                     return Some(*current_sym_id);
@@ -164,6 +191,7 @@ pub fn get_type_id(
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ScopeType {
     Core,
+    Local,
     Neutral,
     Var,
     Nest,
@@ -184,6 +212,7 @@ impl ScopeType {
             ScopeType::Var | ScopeType::Nest | ScopeType::Complex | ScopeType::Override => {
                 &SCOPE_REST_ACCESSIBLE
             }
+            ScopeType::Local => &SCOPE_LOCAL_ACCESSIBLE,
         }
     }
 
@@ -195,6 +224,7 @@ impl ScopeType {
             ScopeType::Nest => SCOPE_NEST,
             ScopeType::Complex => SCOPE_COMPLEX,
             ScopeType::Override => SCOPE_OVERRIDE,
+            ScopeType::Local => SCOPE_LOCAL,
         }
     }
 }
@@ -221,6 +251,7 @@ impl Display for ScopeType {
             ScopeType::Nest => write!(f, "nest"),
             ScopeType::Complex => write!(f, "complex"),
             ScopeType::Override => write!(f, "override"),
+            ScopeType::Local => write!(f, "local"),
         }
     }
 }

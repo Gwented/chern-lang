@@ -5,9 +5,9 @@ mod parser_state;
 
 use crate::modules::{Module, ModuleMetadata};
 use crate::parser::ast::{
-    AbstractAlias, AbstractEnum, AbstractMemberAccess, AbstractStruct, AbstractTypeDef,
-    AbstractVar, AbstractVariant, AstInfo, Expr, Generic, Item, Section, SectionKind, SpannedExpr,
-    SpannedTypeExpr, TypeExpr, Unary, UnaryOp,
+    AbstractAlias, AbstractEnum, AbstractMemberAccess, AbstractParam, AbstractStruct,
+    AbstractTypeDef, AbstractVar, AbstractVariant, AstInfo, Expr, Generic, Item, Section,
+    SectionKind, SpannedExpr, SpannedTypeExpr, TypeExpr, Unary, UnaryOp,
 };
 use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::Context;
@@ -1230,16 +1230,16 @@ fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<SpannedInnerArgs, T
 }
 
 // Alias is this only one that uses this so_+@$_$@
-fn parse_alias_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTypeExpr>, Token> {
-    let mut args: Vec<SpannedTypeExpr> = Vec::new();
+fn parse_alias_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<AbstractParam>, Token> {
+    let mut params: Vec<AbstractParam> = Vec::new();
 
     while ctx.peek_kind() != TokenKind::CParen {
-        let expr = match ctx.peek_tok() {
+        let param = match ctx.peek_tok() {
             Token::Id(id) => {
                 let span = ctx.advance_span();
-                let ty_expr = TypeExpr::Var(InternedId::new(id));
+                let name_id = InternedId::new(id);
 
-                SpannedTypeExpr::new(ty_expr, span)
+                AbstractParam::new(name_id, span)
             }
             Token::EOF => return Err(Token::Poison),
             _ => {
@@ -1251,7 +1251,7 @@ fn parse_alias_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedT
             }
         };
 
-        args.push(expr);
+        params.push(param);
 
         if ctx.peek_kind() == TokenKind::CParen {
             break;
@@ -1274,7 +1274,7 @@ fn parse_alias_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedT
         interner,
     )?;
 
-    Ok(args)
+    Ok(params)
 }
 
 fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>, Token> {

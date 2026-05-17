@@ -1,6 +1,6 @@
 use std::cmp;
 
-use chrn_utils::{builtins, keywords};
+use chrn_utils::{keywords, types::builtins};
 
 pub(crate) enum FuzzyMatch {
     KW,

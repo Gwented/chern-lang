@@ -3,10 +3,14 @@ pub mod type_context;
 
 use std::collections::HashSet;
 
-use chrn_utils::builtins::BuiltinTypeKind;
-use chrn_utils::id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId};
+use chrn_utils::id_types::{
+    AstId, ExprId, InternedId, ModuleId, ScopeId, SymbolId, TypeId, ValueId,
+};
+use chrn_utils::inner_args::SpannedInnerArgs;
+use chrn_utils::intern::Intern;
+use chrn_utils::types::builtins::{BuiltinType, BuiltinTypeKind};
+use chrn_utils::types::type_constraints::TypeConstraint;
 use chrn_utils::values::{Value, ValueInfo};
-use chrn_utils::{builtins::BuiltinType, intern::Intern};
 use common::chrn_settings::ChrnSettings;
 use common::fmter::{Formattable, Formatted};
 use common::{reporter::diagnostic::Diagnostic, span::Span};
@@ -14,7 +18,9 @@ use common::{reporter::diagnostic::Diagnostic, span::Span};
 use crate::parser::ast::{AbstractVar, BinaryOp, Expr, SpannedExpr};
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::error::{MathError, SemanticError};
-use crate::semantic::representation::{ExprHir, Param, PossibleMember, ResolvedExpr, SymbolKind};
+use crate::semantic::representation::{
+    ExprHir, Param, PossibleMember, ResolvedExpr, Symbol, SymbolKind,
+};
 use crate::semantic::scopes::{LookupPattern, ScopeType};
 use crate::semantic::type_resolver::type_context::{PendingExpr, PendingSymbol, TypeContext};
 use crate::semantic::{evaluator, scopes};
@@ -29,6 +35,8 @@ use crate::{
         semantic_reporter::SemanticReporter,
     },
 };
+
+use super::constraints::ArgConstraint;
 
 /// Resolves types and builds the rest of any structs, enums, or expressions that can be const
 /// evaluated. Does so by mutating the compiler given, and maintaining context to retain it's last
@@ -495,6 +503,7 @@ impl TypeResolver<'_> {
         let expr_id = match self.register_expr(
             sym_id,
             &abs_var.spanned_expr,
+            None,
             self.current_mod,
             ScopeType::Neutral,
             &mut vec![sym_id],
@@ -570,6 +579,7 @@ impl TypeResolver<'_> {
             let cond_opt = match self.register_expr(
                 sym_id,
                 spanned_expr,
+                None,
                 self.current_mod,
                 ScopeType::Neutral,
                 &mut vec![sym_id],
@@ -672,6 +682,7 @@ impl TypeResolver<'_> {
                 let cond_opt = match self.register_expr(
                     sym_id,
                     &cond,
+                    None,
                     self.current_mod,
                     ScopeType::Nest,
                     &mut vec![sym_id],
@@ -706,6 +717,7 @@ impl TypeResolver<'_> {
             let cond_opt = match self.register_expr(
                 sym_id,
                 cond,
+                None,
                 self.current_mod,
                 ScopeType::Nest,
                 &mut vec![sym_id],
@@ -808,6 +820,7 @@ impl TypeResolver<'_> {
                 let cond_opt = match self.register_expr(
                     sym_id,
                     &cond,
+                    None,
                     self.current_mod,
                     ScopeType::Nest,
                     &mut vec![sym_id],
@@ -841,6 +854,7 @@ impl TypeResolver<'_> {
             let cond_opt = match self.register_expr(
                 sym_id,
                 cond,
+                None,
                 self.current_mod,
                 ScopeType::Nest,
                 &mut vec![sym_id],
@@ -881,59 +895,68 @@ impl TypeResolver<'_> {
         let table = &self.compiler.get_scope_mut(scope_id).scope.table;
 
         let sym_id = table.ast_to_sym[&ast_id];
+        let local_scope_id = self.compiler.get_alias(sym_id).local_scope_id;
 
         let mut params: Vec<Param> = Vec::new();
         let mut seen: Vec<(usize, InternedId)> = Vec::new();
 
-        for (i, spanned_ty_expr) in abs_alias.params.iter().enumerate() {
-            match &spanned_ty_expr.ty_expr {
-                TypeExpr::Var(interned_id) => {
-                    if let Some(original) = seen.iter().find(|other| *interned_id == other.1) {
-                        let alias_name = self.interner.search(abs_alias.name_id.id as usize);
-                        let dup_name = self.interner.search(interned_id.id as usize);
+        // Just a bit crowded in here..
+        for (i, abs_param) in abs_alias.params.iter().enumerate() {
+            if let Some(original) = seen.iter().find(|other| abs_param.name_id == other.1) {
+                let alias_name = self.interner.search(abs_alias.name_id.id as usize);
+                let dup_name = self.interner.search(abs_param.name_id.id as usize);
 
-                        let orig_span = abs_alias.params[original.0].span;
-                        let field_span = abs_alias.params[i].span;
+                let orig_span = abs_alias.params[original.0].name_span;
 
-                        let msg = format!(
-                            "More than one variable has the identifier \"{dup_name}\" within alias `{alias_name}`"
-                        );
+                let msg = format!(
+                    "More than one variable has the identifier \"{dup_name}\" within alias `{alias_name}`"
+                );
 
-                        let module = &self.compiler.mods[self.current_mod.id];
-                        self.reporter.report_spanned(
-                            &msg,
-                            None,
-                            &[orig_span, field_span],
-                            &module
-                                .src_metadata
-                                .as_ref()
-                                .expect("core should not be resolved"),
-                        );
-                    }
-
-                    seen.push((i, *interned_id));
-
-                    let param = Param::new(
-                        *interned_id,
-                        // spanned_ty_expr.span,
-                        AstId::new(i as u32),
-                        TypeId::new(script_compiler::TYPE_UNKNOWN_IDX),
-                    );
-
-                    params.push(param);
-                }
-                // The parser checks for these so this will probably become just interned ids
-                // to avoid unreachable calls
-                _ => unreachable!("Should maybe change this to ids if possible"),
+                let module = &self.compiler.mods[self.current_mod.id];
+                self.reporter.report_spanned(
+                    &msg,
+                    None,
+                    &[orig_span, abs_param.name_span],
+                    &module
+                        .src_metadata
+                        .as_ref()
+                        .expect("core should not be resolved"),
+                );
             }
+
+            seen.push((i, abs_param.name_id));
+
+            let param_sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+            let param_sym = Symbol::new(
+                abs_param.name_id,
+                param_sym_id,
+                Some(AstId::new(i as u32)),
+                self.current_mod,
+                true,
+                ScopeType::Local,
+                SymbolKind::Unknown,
+            );
+
+            self.compiler.symbols.push(param_sym);
+            let local_scope = &mut self.compiler.get_scope_mut(local_scope_id).scope;
+            local_scope
+                .table
+                .interned_to_sym
+                .insert(abs_param.name_id, param_sym_id);
+
+            let param = Param::new(abs_param.name_id, param_sym_id, AstId::new(i as u32), None);
+            params.push(param);
         }
+
+        // dbg!(&params, &self.compiler.scopes[local_scope_id.id]);
+        // panic!();
 
         let mut conds: Vec<ExprId> = Vec::new();
         for spanned_expr in &abs_alias.conds {
-            //FIX: Scope type is a little wrong here since it's a condition
             let cond_opt = match self.register_expr(
                 sym_id,
                 spanned_expr,
+                Some(local_scope_id),
                 self.current_mod,
                 ScopeType::Neutral,
                 &mut vec![sym_id],
@@ -958,59 +981,44 @@ impl TypeResolver<'_> {
             }
         }
 
+        //TODO: Arg constraint and option tpe constraint.
+        //Could technically happen in constraint resolver since it. Yes.
         let alias_def = self.compiler.get_alias_mut(sym_id);
+        let param_count = params.len() as u32;
+
+        //WARN: Does not yet have constraints of params discovered
         alias_def.params = params;
+        // This could just be an explicit field, but in case of future changes keeping it under the
+        // same layer of arg constraints so it's compatible with the already present checks in
+        // `ConstraintResolver`.
+        alias_def
+            .arg_constraints
+            .push(ArgConstraint::ArgCount(param_count));
+
         alias_def.conds = conds;
+        // May change it so spanning is preserved
         alias_def.args = abs_alias.args.iter().map(|sp_arg| sp_arg.arg).collect();
 
         Ok(())
     }
+    // These params are getting a little inflated so maybe a ctx struct for this environment could
+    // be @()@$_ something
 
-    //WARN: WEAK INFERENCE
-    /// Infers type based off of expression
-    fn type_check(&self, expr_hir: &ExprHir) -> Result<(), SemanticError> {
-        match &expr_hir {
-            ExprHir::Default(sym_id, expr_id) => todo!(),
-            ExprHir::Val(val_id) => {
-                let type_id = self.compiler.values[val_id.id as usize].type_id;
-                todo!("Stop typing");
-                Ok(())
-            }
-            ExprHir::Var(sym_id) => match &self.compiler.symbols[sym_id.id as usize].kind {
-                SymbolKind::Type(type_id) => Ok(()),
-                SymbolKind::Val(val_id) => Ok(()),
-                SymbolKind::Unknown => Ok(()),
-            },
-            ExprHir::Unary { op, operand } => {
-                let operand_expr = &self.compiler.exprs[operand.id as usize];
-                if operand_expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX {
-                    return Ok(());
-                }
-
-                todo!()
-            }
-            ExprHir::BinaryExpr { lhs, op, rhs } => {
-                let lhs_type_id = self.compiler.exprs[lhs.id as usize].type_id;
-                let rhs_type_id = self.compiler.exprs[rhs.id as usize].type_id;
-
-                if lhs_type_id.id == script_compiler::TYPE_UNKNOWN_IDX
-                    || rhs_type_id.id == script_compiler::TYPE_UNKNOWN_IDX
-                {
-                    return Ok(());
-                }
-
-                todo!()
-            }
-            ExprHir::Call(expr_id, expr_ids) => todo!(),
-        }
-    }
-
+    // Must resolve local scopes in a way where it accomodates for a section system
+    // where if we declare x as a param, and x is outside or non-existent,
+    // it'll go for the local parameter. Thinking, give all of said local scope capable entitites,
+    // like a function, a local scope of their own where I carry their local scope id as a scope,
+    // which has their local symbols and such. So the pipeline would be call expression resolution -> check
+    // if we have Some(local scope id), search the local scope to see if the variable exists.
     /// On `Ok`, Creates a HIR expression type and returns the `ExprId` which is either going to be
     /// fully resolved, or marked as pending to be resolved later if possible.
     fn register_expr(
         &mut self,
         parent_sym_id: SymbolId,
         spanned_expr: &SpannedExpr,
+        // Only usable with something like, alias(x) where x is local, not section local overall
+        // like var->
+        local_scope_id: Option<ScopeId>,
         active_mod_id: ModuleId,
         scope_type: ScopeType,
         seen: &mut Vec<SymbolId>,
@@ -1018,6 +1026,35 @@ impl TypeResolver<'_> {
         match &spanned_expr.expr {
             //TODO: Check ownership in constraints
             Expr::Var(name_id) => {
+                if let Some(scope_id) = local_scope_id {
+                    if let Some(local_sym_id) =
+                        scopes::get_sym_id_local(self.compiler, scope_id, *name_id)
+                    {
+                        // Stores it like this because local symbols can only be parameters, and
+                        // parameters are inferred in type, so they are basically just variables
+                        // that have their own process of being resolved
+                        let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+                        let val_id = ValueId::new(self.compiler.values.len() as u32);
+                        let type_id = TypeId::new(script_compiler::TYPE_UNKNOWN_IDX as u32);
+
+                        let expr_hir = ExprHir::Var(local_sym_id);
+                        let resolved_expr = ResolvedExpr::new(
+                            type_id,
+                            expr_hir,
+                            val_id,
+                            spanned_expr.span,
+                            Vec::new(),
+                        );
+
+                        let val_info = ValueInfo::new(type_id, expr_id, None);
+
+                        self.compiler.values.push(val_info);
+                        self.compiler.exprs.push(resolved_expr);
+
+                        return Ok(expr_id);
+                    }
+                }
+
                 if let Some(found_sym_id) = scopes::get_sym_id(
                     self.compiler,
                     active_mod_id,
@@ -1040,6 +1077,7 @@ impl TypeResolver<'_> {
                         let name = self.interner.search(
                             self.compiler.symbols[found_sym_id.id as usize].name_id.id as usize,
                         );
+
                         let msg = format!("Cannot declare symbol `{name}` as itself");
 
                         let parent_ast_id = self.compiler.symbols[parent_sym_id.id as usize].ast_id;
@@ -1159,8 +1197,15 @@ impl TypeResolver<'_> {
                     // SemanticError needs centralization
                     let module = &self.compiler.mods[self.current_mod.id];
                     let mod_name = self.interner.search(module.name_id.id as usize);
+
+                    let and_local = if local_scope_id.is_some() {
+                        " and local"
+                    } else {
+                        ""
+                    };
+
                     let msg = format!(
-                        "The symbol `{ident}` was not found in the module `{mod_name}` within `{scope_type}` searchable scopes"
+                        "The symbol `{ident}` was not found in the module `{mod_name}` within `{scope_type}`{and_local} searchable scopes"
                     );
 
                     Err(SemanticError::General(msg, vec![spanned_expr.span]))
@@ -1224,10 +1269,23 @@ impl TypeResolver<'_> {
                 }
             }
             Expr::BinaryExpr { lhs, op, rhs } => {
-                let lhs_id =
-                    self.register_expr(parent_sym_id, &*lhs, active_mod_id, scope_type, seen)?;
-                let rhs_id =
-                    self.register_expr(parent_sym_id, &*rhs, active_mod_id, scope_type, seen)?;
+                let lhs_id = self.register_expr(
+                    parent_sym_id,
+                    &*lhs,
+                    local_scope_id,
+                    active_mod_id,
+                    scope_type,
+                    seen,
+                )?;
+
+                let rhs_id = self.register_expr(
+                    parent_sym_id,
+                    &*rhs,
+                    local_scope_id,
+                    active_mod_id,
+                    scope_type,
+                    seen,
+                )?;
 
                 let lhs_expr = &self.compiler.exprs[lhs_id.id as usize];
                 let rhs_expr = &self.compiler.exprs[rhs_id.id as usize];
@@ -1366,6 +1424,7 @@ impl TypeResolver<'_> {
                 let default_val_expr_id = self.register_expr(
                     parent_sym_id,
                     &spanned_expr,
+                    local_scope_id,
                     active_mod_id,
                     scope_type,
                     seen,
@@ -1416,6 +1475,7 @@ impl TypeResolver<'_> {
                 let operand_id = self.register_expr(
                     parent_sym_id,
                     &unary.spanned_expr,
+                    local_scope_id,
                     active_mod_id,
                     scope_type,
                     seen,
@@ -1509,8 +1569,15 @@ impl TypeResolver<'_> {
             }
             Expr::Call(caller, arg_exprs) => {
                 // The "Call" in "Call(x, y)"
-                let caller_id =
-                    self.register_expr(parent_sym_id, caller, active_mod_id, scope_type, seen)?;
+                let caller_id = self.register_expr(
+                    parent_sym_id,
+                    caller,
+                    local_scope_id,
+                    active_mod_id,
+                    scope_type,
+                    seen,
+                )?;
+                //WARN: Does this need something?
                 let type_id = self.compiler.exprs[caller_id.id as usize].type_id;
                 let mut call_args: Vec<ExprId> = Vec::new();
 
@@ -1518,6 +1585,7 @@ impl TypeResolver<'_> {
                     let arg = self.register_expr(
                         parent_sym_id,
                         sp_expr,
+                        local_scope_id,
                         active_mod_id,
                         scope_type,
                         seen,
@@ -1548,6 +1616,7 @@ impl TypeResolver<'_> {
                 match self.resolve_member(
                     parent_sym_id,
                     &abs_member_access.base,
+                    local_scope_id,
                     active_mod_id,
                     scope_type,
                     seen,
@@ -1631,6 +1700,7 @@ impl TypeResolver<'_> {
                             self.register_expr(
                                 parent_sym_id,
                                 &sp_expr,
+                                local_scope_id,
                                 extern_mod_id,
                                 scope_type,
                                 seen,
@@ -1673,12 +1743,19 @@ impl TypeResolver<'_> {
         &mut self,
         sym_parent: SymbolId,
         member: &SpannedExpr,
+        local_scope: Option<ScopeId>,
         active_mod_id: ModuleId,
         scope_type: ScopeType,
         seen: &mut Vec<SymbolId>,
     ) -> Result<PossibleMember, SemanticError> {
-        if let Ok(expr_id) = self.register_expr(sym_parent, member, active_mod_id, scope_type, seen)
-        {
+        if let Ok(expr_id) = self.register_expr(
+            sym_parent,
+            member,
+            local_scope,
+            active_mod_id,
+            scope_type,
+            seen,
+        ) {
             let resolved_expr = &self.compiler.exprs[expr_id.id as usize];
 
             todo!();

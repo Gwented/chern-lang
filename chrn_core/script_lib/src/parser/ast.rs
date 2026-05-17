@@ -542,15 +542,18 @@ impl AbstractFuncDecl {
 pub struct AbstractParam {
     pub name_id: InternedId,
     pub name_span: Span,
-    pub ty_expr: SpannedTypeExpr,
+    // pub ty_expr: SpannedTypeExpr,
 }
 
 impl AbstractParam {
-    pub fn new(name_id: InternedId, name_span: Span, ty_expr: SpannedTypeExpr) -> AbstractParam {
+    pub fn new(
+        name_id: InternedId,
+        name_span: Span, /*ty_expr: SpannedTypeExpr*/
+    ) -> AbstractParam {
         AbstractParam {
             name_id,
             name_span,
-            ty_expr,
+            // ty_expr,
         }
     }
 }
@@ -573,7 +576,7 @@ pub struct AbstractAlias {
     pub name_span: Span,
     // Variables only
     // May change to Vec<SpannedInternedId>
-    pub params: Vec<SpannedTypeExpr>,
+    pub params: Vec<AbstractParam>,
     pub conds: Vec<SpannedExpr>,
     pub args: Vec<SpannedInnerArgs>,
     pub is_priv: bool,
@@ -583,7 +586,7 @@ impl AbstractAlias {
     pub fn new(
         name_id: InternedId,
         name_span: Span,
-        params: Vec<SpannedTypeExpr>,
+        params: Vec<AbstractParam>,
         conds: Vec<SpannedExpr>,
         args: Vec<SpannedInnerArgs>,
         is_priv: bool,

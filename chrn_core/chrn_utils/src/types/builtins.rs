@@ -1,6 +1,10 @@
 use common::fmter::{Formattable, Formatted};
 
-use crate::{id_types::TypeId, intern};
+use crate::{
+    id_types::TypeId,
+    intern,
+    types::type_constraints::{self, TypeConstraint},
+};
 
 pub static BUILTIN_TYPE_ARRAY: [&str; 27] = [
     "i8", "u8", "i16", "u16", "f16", "i32", "u32", "f32", "i64", "u64", "f64", "i128", "u128",
@@ -208,6 +212,39 @@ impl Formattable for BuiltinTypeKind {
 }
 
 impl BuiltinTypeKind {
+    /// Retrieves non-recursive constraints associated with type
+    pub fn type_constraint(&self) -> TypeConstraint {
+        match self {
+            BuiltinTypeKind::I8 => todo!(),
+            BuiltinTypeKind::U8 => todo!(),
+            BuiltinTypeKind::I16 => todo!(),
+            BuiltinTypeKind::U16 => todo!(),
+            BuiltinTypeKind::F16 => todo!(),
+            BuiltinTypeKind::I32 => todo!(),
+            BuiltinTypeKind::U32 => todo!(),
+            BuiltinTypeKind::F32 => todo!(),
+            BuiltinTypeKind::I64 => todo!(),
+            BuiltinTypeKind::U64 => todo!(),
+            BuiltinTypeKind::F64 => todo!(),
+            BuiltinTypeKind::I128 => todo!(),
+            BuiltinTypeKind::U128 => todo!(),
+            BuiltinTypeKind::F128 => todo!(),
+            BuiltinTypeKind::Sized => todo!(),
+            BuiltinTypeKind::Unsized => todo!(),
+            BuiltinTypeKind::Str => todo!(),
+            BuiltinTypeKind::Char => todo!(),
+            BuiltinTypeKind::Nil => todo!(),
+            BuiltinTypeKind::Bool => todo!(),
+            BuiltinTypeKind::BigInt => todo!(),
+            BuiltinTypeKind::BigFloat => todo!(),
+            BuiltinTypeKind::List => todo!(),
+            BuiltinTypeKind::Set => todo!(),
+            BuiltinTypeKind::Map => todo!(),
+            BuiltinTypeKind::Tuple => todo!(),
+            BuiltinTypeKind::Any => todo!(),
+        }
+    }
+
     pub fn is_numeric(&self) -> bool {
         match self {
             BuiltinTypeKind::I8
@@ -254,6 +291,35 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::U128
             | BuiltinTypeKind::Sized
             | BuiltinTypeKind::Unsized
+            | BuiltinTypeKind::BigInt
+            | BuiltinTypeKind::Any => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_signed_integer(&self) -> bool {
+        match self {
+            BuiltinTypeKind::I8
+            | BuiltinTypeKind::I16
+            | BuiltinTypeKind::I32
+            | BuiltinTypeKind::I64
+            | BuiltinTypeKind::I128
+            | BuiltinTypeKind::Sized
+            | BuiltinTypeKind::BigInt
+            | BuiltinTypeKind::Any => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_unsigned_integer(&self) -> bool {
+        match self {
+            BuiltinTypeKind::U8
+            | BuiltinTypeKind::U16
+            | BuiltinTypeKind::U32
+            | BuiltinTypeKind::U64
+            | BuiltinTypeKind::U128
+            | BuiltinTypeKind::Unsized
+            // Shoult this be included? UnsignedBigInt? WHAT?
             | BuiltinTypeKind::BigInt
             | BuiltinTypeKind::Any => true,
             _ => false,

@@ -1,4 +1,4 @@
-use chrn_utils::{builtins::BuiltinTypeKind, id_types::SymbolId, intern, keywords::Keyword};
+use chrn_utils::{id_types::SymbolId, intern, types::builtins::BuiltinTypeKind};
 use common::fmter::{Formattable, Formatted};
 
 use crate::semantic::representation::FuncKind;

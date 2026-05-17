@@ -1,4 +1,4 @@
-use chrn_utils::{builtins::BuiltinTypeKind, keywords::Keyword};
+use chrn_utils::{keywords::Keyword, types::builtins::BuiltinTypeKind};
 use script_lib::semantic::representation::FuncKind;
 
 /// 60 Dashes

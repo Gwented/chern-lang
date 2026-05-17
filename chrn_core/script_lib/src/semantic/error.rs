@@ -1,29 +1,22 @@
 use chrn_utils::inner_args::InnerArgs;
 use common::{fmter::Formatted, span::Span};
 
-use crate::{
-    conditions::Cond,
-    semantic::{
-        constraints::{ArgConstraint, TypeConstraint},
-        representation::FuncKind,
-    },
-};
+use crate::semantic::{constraints::ArgConstraint, representation::FuncKind};
 
 //TODO: Change this majorly. Make many mistakes. Hallucinate.
 #[derive(Debug)]
-pub(super) enum SemanticError {
+pub enum SemanticError {
     /// msg, spans
     General(String, Vec<Span>),
-    /// Constraint, found type(builtin or user), function kind, spans
-    FuncConstraintMismatch(ArgConstraint, Formatted, FuncKind, Vec<Span>),
-    /// Constraint, function type, amount of incorrect params found, spans
-    ArgCountMismatch(ArgConstraint, FuncKind, u32, Vec<Span>),
+    /// Constraint, found type(builtin or user), spans
+    FuncConstraintMismatch(ArgConstraint, Formatted, Vec<Span>),
+    /// Constraint, amount of incorrect params found, spans
+    ArgCountMismatch(ArgConstraint, u32, Vec<Span>),
     /// Constraint, Incorrect type found, spans
     TypeConstraintMismatch(Formatted, Formatted, Vec<Span>),
     /// Argument failed at, found type, spans
     UnsupportedArg(InnerArgs, Formatted, Vec<Span>),
     /// Args Condition, Wrong type formatted, Spans
-    UnsupportedCond(Cond, Formatted, Vec<Span>),
     // Interesting name
     VagueArg(InnerArgs, Vec<Span>),
     // CircularRef
@@ -31,7 +24,6 @@ pub(super) enum SemanticError {
     /// The type with a circular reference that has an invalid argument for that reference
     //TODO: Combine
     CircularArg(InnerArgs, Formatted, Vec<Span>),
-    CircularCond(Cond, Formatted, Vec<Span>),
     /// The interned string, type overflown, spans
     //WARN: This technically shouldn't exist since BigInt/BigFloat would exist
     NumericOverflow(u32, Formatted, Vec<Span>),
@@ -41,7 +33,7 @@ pub(super) enum SemanticError {
 }
 
 #[derive(Debug)]
-pub(super) enum MathError {
+pub enum MathError {
     /// Lhs, rhs, Op, spans
     BinaryOpMismatch(Formatted, Formatted, Formatted, Vec<Span>),
     /// operand, op, spans

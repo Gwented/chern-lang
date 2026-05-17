@@ -1,5 +1,15 @@
 use std::ops::{Range, RangeInclusive};
 
+// pub struct SpanArena {
+//     spans: Vec<Span>,
+// }
+//
+// impl SpanArena {
+//     pub fn new(spans: Vec<Span>) -> SpanArena {
+//         SpanArena { spans }
+//     }
+// }
+
 //Could this be u32?
 /// General purpose span structure
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

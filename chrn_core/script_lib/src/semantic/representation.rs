@@ -2,9 +2,9 @@
 use std::{collections::HashMap, fmt::Display};
 
 use chrn_utils::{
-    builtins::{BuiltinType, BuiltinTypeKind},
-    id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
+    id_types::{AstId, ExprId, InternedId, ModuleId, ScopeId, SymbolId, TypeId, ValueId},
     inner_args::InnerArgs,
+    types::{builtins::BuiltinType, type_constraints::TypeConstraint},
     values::ValueKind,
 };
 use common::{
@@ -14,10 +14,7 @@ use common::{
 
 use crate::{
     parser::ast::{BinaryOp, UnaryOp},
-    semantic::{
-        constraints::{ArgConstraint, TypeConstraint},
-        scopes::ScopeType,
-    },
+    semantic::{constraints::ArgConstraint, scopes::ScopeType},
 };
 
 // What is a drop? I am new to thinking i have never thought before what is RAII
@@ -82,6 +79,7 @@ impl Symbol {
         name_id: InternedId,
         sym_id: SymbolId,
         //dbgr
+        // Maybe we can have an id enum instead with it possibility allowing for field types?
         ast_id: Option<AstId>,
         owner: ModuleId,
         is_priv: bool,
@@ -111,16 +109,24 @@ pub enum SymbolKind {
 #[derive(Debug)]
 pub struct Param {
     pub name_id: InternedId,
+    pub sym_id: SymbolId,
     //FIX: More like "FieldId"
     pub ast_id: AstId,
-    pub type_id: TypeId,
+    // May remove since it uses a symbol directly already
+    pub ty_constraint: Option<TypeConstraint>,
 }
 
 impl Param {
-    pub fn new(name_id: InternedId, ast_id: AstId, type_id: TypeId) -> Param {
+    pub fn new(
+        name_id: InternedId,
+        sym_id: SymbolId,
+        ast_id: AstId,
+        ty_constraint: Option<TypeConstraint>,
+    ) -> Param {
         Param {
             name_id,
-            type_id,
+            sym_id,
+            ty_constraint,
             ast_id,
         }
     }
@@ -370,7 +376,8 @@ impl FieldRepre {
 pub struct AliasDef {
     pub sym_id: SymbolId,
     pub params: Vec<Param>,
-    pub ty_constraint: Option<TypeConstraint>,
+    pub arg_constraints: Vec<ArgConstraint>,
+    pub local_scope_id: ScopeId,
     pub args: Vec<InnerArgs>,
     pub conds: Vec<ExprId>,
 }
@@ -379,16 +386,16 @@ impl AliasDef {
     pub fn new(
         sym_id: SymbolId,
         params: Vec<Param>,
-        ty_constraint: Option<TypeConstraint>,
-        conds: Vec<ExprId>,
-        args: Vec<InnerArgs>,
+        arg_constraints: Vec<ArgConstraint>,
+        local_scope_id: ScopeId,
     ) -> AliasDef {
         AliasDef {
             sym_id,
             params,
-            ty_constraint,
-            conds,
-            args,
+            arg_constraints,
+            local_scope_id,
+            conds: Vec::new(),
+            args: Vec::new(),
         }
     }
 }

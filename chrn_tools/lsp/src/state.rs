@@ -4,8 +4,8 @@ use script_lib::modules::Module;
 use script_lib::modules::ModuleMetadata;
 use script_lib::script_compiler::ScriptCompiler;
 use script_lib::semantic::name_resolver::NamespaceResolver;
-use script_lib::semantic::type_resolver::type_context::TypeContext;
 use script_lib::semantic::type_resolver::TypeResolver;
+use script_lib::semantic::type_resolver::type_context::TypeContext;
 use script_lib::token::SpannedToken;
 use script_lib::token::Token as ScriptToken;
 use script_lib::trivia::Trivia;
@@ -503,19 +503,15 @@ impl DocumentState {
                         if let Some(ast_id) = sym.ast_id {
                             let abs_alias = ast.get_alias(ast_id);
                             for (i, _param) in adef.params.iter().enumerate() {
-                                if let Some(sp_ty_expr) = abs_alias.params.get(i) {
-                                    if let script_lib::parser::ast::TypeExpr::Var(name_id) =
-                                        sp_ty_expr.ty_expr
-                                    {
-                                        map.push((
-                                            sp_ty_expr.span,
-                                            SemanticEntity::Local {
-                                                name_id,
-                                                decl_span: sp_ty_expr.span,
-                                                owner_sym_id: Some(adef.sym_id),
-                                            },
-                                        ));
-                                    }
+                                if let Some(abs_param) = abs_alias.params.get(i) {
+                                    map.push((
+                                        abs_param.name_span,
+                                        SemanticEntity::Local {
+                                            name_id: abs_param.name_id,
+                                            decl_span: abs_param.name_span,
+                                            owner_sym_id: Some(adef.sym_id),
+                                        },
+                                    ));
                                 }
                             }
                         }
@@ -582,9 +578,6 @@ impl DocumentState {
                         }
                     }
                     Item::Alias(a) => {
-                        for param in &a.params {
-                            collect_type_refs(compiler, param, &mut map);
-                        }
                         for cond in &a.conds {
                             collect_expr_refs(compiler, cond, &mut map, &self.text, &self.interner);
                         }

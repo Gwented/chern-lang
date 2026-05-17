@@ -53,19 +53,14 @@ impl<'a> SemanticReporter<'a> {
 
                 (msg, spans)
             }
-            SemanticError::FuncConstraintMismatch(constraint, type_kind, func_kind, spans) => {
-                let msg = format!(
-                    "The type `{type_kind}` does not follow constraint `{constraint}` for function `{}`",
-                    func_kind.to_fmt()
-                );
+            SemanticError::FuncConstraintMismatch(constraint, type_kind, spans) => {
+                let msg =
+                    format!("The type `{type_kind}` does not follow constraint `{constraint}`",);
 
                 (msg, spans)
             }
-            SemanticError::ArgCountMismatch(constraint, func_kind, count, spans) => {
-                let msg = format!(
-                    "Expected {constraint} for function `{}`, found {count}",
-                    func_kind.to_fmt()
-                );
+            SemanticError::ArgCountMismatch(constraint, count, spans) => {
+                let msg = format!("Expected {constraint}, found {count}");
 
                 (msg, spans)
             }
@@ -73,21 +68,6 @@ impl<'a> SemanticReporter<'a> {
                 let msg = format!(
                     // Suspicious error message
                     "Cannot give type `{fmted_ty}` the argument `#{arg}` due to the circularly referenced type itself not supporting the argument"
-                );
-
-                (msg, spans)
-            }
-            SemanticError::CircularCond(cond, fmted_ty, spans) => {
-                let msg = format!(
-                    "Cannot give the type `{fmted_ty}` the condition \"{}\" due to the circularly referenced type itself not supporting the condition",
-                    cond.to_fmt()
-                );
-                (msg, spans)
-            }
-            SemanticError::UnsupportedCond(cond, fmted_ty, spans) => {
-                let msg = format!(
-                    "The condition \"{}\" is not supported for type `{fmted_ty}`",
-                    cond.to_fmt()
                 );
 
                 (msg, spans)

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrn_utils::{
-    id_types::{AstId, InternedId, ModuleId, SymbolId, TypeId},
+    id_types::{AstId, InternedId, ModuleId, ScopeId, SymbolId, TypeId},
     intern::Intern,
 };
 use common::{chrn_settings::ChrnSettings, reporter::diagnostic::Diagnostic};
@@ -13,8 +13,9 @@ use crate::{
     script_compiler::ScriptCompiler,
     semantic::{
         representation::{
-            AliasDef, EnumDef, StructDef, Symbol, SymbolKind, Type, TypeDef, TypeInfo,
+            AliasDef, EnumDef, Param, StructDef, Symbol, SymbolKind, Type, TypeDef, TypeInfo,
         },
+        scopes::{Scope, ScopeInfo},
         semantic_reporter::SemanticReporter,
     },
 };
@@ -200,8 +201,26 @@ impl NamespaceResolver<'_> {
             module.exports.push(sym_id);
         }
 
+        //NOTE: Maybe store parameters now?
+        // let params: Vec<Param> = Vec::new();
+        // for param in abs_alias.params {
+        //     param.
+        // }
+
+        // Making local scopes in this way because sections do not emergently allow for
+        // parent hierarchies.
+        let local_scope_id = ScopeId::new(self.compiler.scopes.len());
+        let local_scope = Scope::new(local_scope_id, ScopeType::Local);
+
+        self.compiler
+            .scopes
+            .push(ScopeInfo::new(local_scope, self.current_mod));
+
+        let current_mod = &mut self.compiler.mods[self.current_mod.id];
+        current_mod.scopes.push(local_scope_id);
+
         // Ok ok
-        let alias_def = AliasDef::new(sym_id, Vec::new(), None, Vec::new(), Vec::new());
+        let alias_def = AliasDef::new(sym_id, Vec::new(), Vec::new(), local_scope_id);
 
         let symbol = Symbol::new(
             abs_alias.name_id,

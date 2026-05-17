@@ -9,27 +9,31 @@ let /*comment*/ x/* inline*/ = /* last*/ 3 let z =x+3
 @def
 // import "../../chrn_core/chrn_tests/def.chrn" as defs
 
-export let a = b
+/*export let a = b
 export let b = c
 export let c = d + 3
 let d = 6
-let x = 5
+let x = 5*/
+// let unused = 3
 
-// Also need to check constraint in specific regards to the alias itself
-alias default() = [IsEmpty, Contains('I')]
+// Are duplicate params errors?
+
+// Parameter type constraint not inferred
+// Same name alias and local variable should maybe not be an error?
+alias default(x) = [IsEmpty, Contains(x)]
+alias frosted(used) = [IsEmpty, Contains(used)]
 
 // "rec" keyword, or just use in?
 var->
     // Conds need shallow checks too so should err if struct or enum is used
     // again suggesting that it needs to be applied to the struct directly
 
-    // Just check any for the data struture differences. Smiley face.
-    p: char [default(x)]
+    p: char [default(2, 3)]
     e: str [default()]
 nest->
     struct Thingy {
-        name: char
+        name: unsized
         age: i32
-    } []
+    } [default(1)] #ignore
 
 @end

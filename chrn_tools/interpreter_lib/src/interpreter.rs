@@ -5,6 +5,7 @@ use common::{
     chrn_settings::ChrnSettings,
     core_error::{CoreError, ScriptError},
     reporter::diagnostic::Reporter,
+    span::Span,
 };
 use script_lib::{
     modules::{self},
@@ -19,6 +20,7 @@ use script_lib::{
 // Maybe this shouldn't take metadata externally
 pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), CoreError> {
     let mut interner = Intern::init();
+    // let mut span_arena: Vec<Span> = Vec::new();
 
     // Doing this first since if modules were identified during the parsing stage any
     // syntax error within another module would not be reportable since the parser failed.

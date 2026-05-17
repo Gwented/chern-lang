@@ -4,9 +4,8 @@ use chrn_utils::intern::Intern;
 use common::{chrn_settings::ChrnSettings, core_error::ConfigLoadError};
 use script_lib::modules;
 
-use crate::script_prettifier::ScriptPrettifier;
+use crate::{script_prettifier::ScriptPrettifier, text_builder::TextBuilder};
 
-//TODO: Will be continued after a Token is added to track whitespace and comments within the lexer
 //TODO: Trivia unit tests
 
 //TEST:
@@ -36,11 +35,12 @@ pub fn fmt_script_block(path: &Path, settings: &ChrnSettings) -> Result<String, 
         Err(_) => todo!(),
     };
 
-    let fmtted_script =
-        ScriptPrettifier::new(&src_str, &ast_info, &toks, &interner, &trivia).prettify_script();
+    let all_text_hir = TextBuilder::new(src_str, &ast_info, &toks, &interner, &trivia).form_hir();
+    dbg!(&all_text_hir);
+    panic!("hirring");
 
-    let mut fmtted_script = String::new();
+    let fmtted_script = ScriptPrettifier::new(src_str, &all_text_hir).fmt_script();
+    dbg!(fmtted_script);
 
     todo!("fmt not done");
-    Ok(fmtted_script)
 }
