@@ -2,7 +2,10 @@ use std::fmt::Display;
 
 use common::span::Span;
 
-use crate::types::{builtins::BuiltinType, type_constraints::TypeConstraint};
+use crate::types::{
+    builtins::BuiltinType,
+    type_constraints::{TypeConstraint, TypeConstraintFlags},
+};
 
 /// If a new argument is added ensure this is updated
 pub static ARGS_ARRAY: [&str; 6] = ["warn", "scient", "hex", "bin", "octal", "ignore"];
@@ -81,6 +84,33 @@ impl InnerArgs {
         }
     }
 
+    // pub fn supports_type_constraint(&self, constraint_flags: TypeConstraintFlags) -> bool {
+    //     todo!()
+    // match self {
+    //     InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => {
+    //         match constraint_flags.flags {
+    //             TypeConstraint::Collection | TypeConstraint::HasLen if is_rec => true,
+    //             TypeConstraint::Numeric
+    //             | TypeConstraint::Integer
+    //             | TypeConstraint::SignedInteger
+    //             | TypeConstraint::UnsignedInteger
+    //             | TypeConstraint::Float
+    //             | TypeConstraint::Ordered
+    //             | TypeConstraint::Any => true,
+    //             TypeConstraint::Bool
+    //             | TypeConstraint::Collection
+    //             | TypeConstraint::HasLen
+    //             | TypeConstraint::CharacterMappable
+    //             | TypeConstraint::Char
+    //             | TypeConstraint::Ranged
+    //             | TypeConstraint::Comparable
+    //             | TypeConstraint::Str => false,
+    //         }
+    //     }
+    //     InnerArgs::Ignore | InnerArgs::Warn => true,
+    // }
+    // }
+
     pub fn supports_type_constraint(&self, ty_constraint: &TypeConstraint, is_rec: bool) -> bool {
         match self {
             InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => {
@@ -91,13 +121,16 @@ impl InnerArgs {
                     | TypeConstraint::SignedInteger
                     | TypeConstraint::UnsignedInteger
                     | TypeConstraint::Float
+                    | TypeConstraint::Ordered
                     | TypeConstraint::Any => true,
                     TypeConstraint::Bool
                     | TypeConstraint::Collection
                     | TypeConstraint::HasLen
                     | TypeConstraint::CharacterMappable
+                    | TypeConstraint::Char
+                    | TypeConstraint::Ranged
+                    | TypeConstraint::Comparable
                     | TypeConstraint::Str => false,
-                    TypeConstraint::Char => todo!(),
                 }
             }
             InnerArgs::Ignore | InnerArgs::Warn => true,

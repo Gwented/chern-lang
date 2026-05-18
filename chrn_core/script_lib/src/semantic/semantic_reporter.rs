@@ -126,6 +126,44 @@ impl<'a> SemanticReporter<'a> {
                 let msg = format!("Cannot infer member access");
                 (msg, vec![span])
             }
+            SemanticError::TypeConstraintBoundConflict(
+                current_inferred,
+                conflicting_inferred,
+                spans,
+            ) => {
+                //FIXME: Fear inducing message.
+                let current_bounds = current_inferred.to_type_constraints();
+                let conflicting_bounds = conflicting_inferred.to_type_constraints();
+
+                let mut current_msg = String::new();
+
+                if current_bounds.len() > 1 {
+                    current_msg.push_str("constraints ");
+                } else {
+                    current_msg.push_str("constraint ");
+                }
+
+                for (i, bound) in current_bounds.iter().enumerate() {
+                    current_msg.push_str(&format!("`{}`", bound.to_fmt()));
+                    if i + 1 < current_bounds.len() {
+                        current_msg.push_str(" + ");
+                    }
+                }
+
+                let mut conflicting_msg = String::new();
+                for (i, bound) in conflicting_bounds.iter().enumerate() {
+                    conflicting_msg.push_str(&format!("`{}`", bound.to_fmt()));
+                    if i + 1 < conflicting_bounds.len() {
+                        conflicting_msg.push_str(" + ");
+                    }
+                }
+
+                let msg = format!(
+                    "Inferred {current_msg} conflicts with another expression's constraints of {conflicting_msg}"
+                );
+
+                (msg, spans)
+            }
         };
 
         let ln_data = reporter::form_err_diag(&metadata.src_bytes, &spans, self.settings.can_color);

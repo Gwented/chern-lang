@@ -153,22 +153,6 @@ fn newline_ctx_distance(newline_ctx: &NewlineCtx, class: TextClass, distance: us
     let distance = distance as f32;
     let weight = newline_ctx.weights[class as usize];
 
-    // let weight = match class {
-    //     TextClass::Def => todo!(),
-    //     TextClass::End => todo!(),
-    //     TextClass::KW => todo!(),
-    //     TextClass::Ident => todo!(),
-    //     TextClass::Delimiter => todo!(),
-    //     TextClass::Op => todo!(),
-    //     TextClass::Text => todo!(),
-    //     TextClass::Expr => todo!(),
-    //     TextClass::Whitespace => todo!(),
-    //     TextClass::Newline => todo!(),
-    //     TextClass::CommentInline => todo!(),
-    //     TextClass::CommentTrailing => todo!(),
-    //     TextClass::CommentSingleLine => todo!(),
-    // };
-
     let res = distance * (-0.5 * distance).exp();
     dbg!(res);
     res

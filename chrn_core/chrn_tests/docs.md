@@ -111,7 +111,7 @@ nest->
 
 # Does not exist yet
 
-`Equals(Variadic)`: Checks serialized value for equality against given argument
+`Equals(Thing)`: Checks serialized value for equality against given argument
 
 `Range(inclusive, inclusive)`: Checks if the data being viewed matches the range given. For arrays and strings, this checks the length. For numbers, this checks the numeric value.
 
@@ -231,6 +231,7 @@ nest->
     }
 ```
 
+## Type & Argument constraints
 
 # DOES NOT EXIST YET
 `override`: Most important part of the language which controls things such as possible namespace casing to also look for and setting language type defaults. Language defaults exist but this can change any if needed.

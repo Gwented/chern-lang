@@ -6,7 +6,7 @@ use chrn_utils::{
     intern::Intern,
     types::{
         builtins::{BuiltinType, BuiltinTypeKind},
-        type_constraints::TypeConstraint,
+        type_constraints::{TypeConstraint, TypeConstraintFlags},
     },
 };
 use common::{
@@ -278,55 +278,95 @@ impl<'a> ConstraintResolver<'a> {
 
         //TODO: Need to typecheck based off of the conditional expressions found
 
-        // Ok. At least they're just ids.
-        let alias_type_id = self.compiler.get_type_id(sym_id);
+        // let alias_type_id = self.compiler.get_type_id(sym_id);
         let alias_def = self.compiler.get_alias(sym_id);
+        let alias_type_id = self.compiler.get_type_id(sym_id);
 
         //TODO: Infer constraint of all params
         //Also need method to check if the given type constraint is either higher, or can be made
         //higher, given an other
-        let mut found_constraints: Vec<Option<TypeConstraint>> =
-            Vec::with_capacity(alias_def.params.len());
+        let mut found_constraints: Vec<Option<TypeConstraintFlags>> =
+            vec![None; alias_def.params.len()];
 
         for (i, param) in alias_def.params.iter().enumerate() {
-            let mut ty_constraint: Option<TypeConstraint> = None;
+            let current_constraints_opt = &mut found_constraints[i];
 
-            for (j, cond_expr_id) in alias_def.conds.iter().enumerate() {
-                let param_span = abs_alias.name_span;
-                dbg!("Looped");
+            for cond_expr_id in alias_def.conds.iter().copied() {
+                let param_span = abs_alias.params[i].name_span;
 
-                match self.infer_type_constraint_from_expr(*cond_expr_id, param.name_id, param_span)
-                {
-                    Ok(constraint_opt) => {
-                        if let Some(inner) = constraint_opt {
-                            if !inner.alignes_with(inner) {
-                                found_constraints.push(constraint_opt);
-                                todo!("Ohhh misalignment")
+                let name_id = self.compiler.symbols[param.sym_id.id as usize].name_id;
+                match self.infer_type_constraint_from_expr(cond_expr_id, name_id, param_span) {
+                    // New constraints were found which would need to be lowerable
+                    Some(new_constraints) => {
+                        dbg!(new_constraints.to_type_constraints());
+                        if let Some(current) = current_constraints_opt {
+                            if new_constraints == *current {
+                                continue;
                             }
 
-                            ty_constraint = constraint_opt;
+                            dbg!(&current, new_constraints);
+                            if current.contains_any(*&new_constraints) {
+                                if let Some(lowered) = current.try_lower_to(new_constraints) {
+                                    *current_constraints_opt = Some(lowered);
+                                } else {
+                                    // let msg = format!("Cannot lower `{}` to `{}`");
+                                    // self.reporter.report_spanned(msg, err_name, spans, metadata);
+                                    todo!("Beep");
+                                }
+                            } else {
+                                let cond_expr = &self.compiler.exprs[cond_expr_id.id as usize];
+
+                                let sem_err = SemanticError::TypeConstraintBoundConflict(
+                                    *current,
+                                    new_constraints,
+                                    vec![param_span, cond_expr.span],
+                                );
+
+                                let module = &self.compiler.mods[self.current_mod.id];
+                                self.reporter.report_semantic(
+                                    sem_err,
+                                    &module
+                                        .src_metadata
+                                        .as_ref()
+                                        .expect("core should not be resolved"),
+                                );
+                            }
+                            // There is no previous so it is initialized
+                        } else {
+                            *current_constraints_opt = Some(new_constraints);
+                            // dbg!(new_constraints.to_type_constraints());
                         }
 
-                        dbg!(ty_constraint);
-                        found_constraints.push(ty_constraint);
+                        // No constraint was stored so this one takes precedence
                     }
-                    Err(sem_err) => {
-                        todo!();
-                        // let msg = format!("Found conflicting constraint");
-                        //
-                        // let module = &self.compiler.mods[self.current_mod.id];
-                        // self.reporter.report_semantic(
-                        //     sem_err,
-                        //     &module
-                        //         .src_metadata
-                        //         .as_ref()
-                        //         .expect("core should not be resolved"),
-                        // );
-                        found_constraints.push(None);
-                    }
+                    // No new constraints were found
+                    None => (),
                 }
+                dbg!("Looped");
             }
         }
+
+        // let alias_def = self.compiler.get_alias_mut(sym_id);
+
+        // let var = self.compiler.get_var_mut(sym_id);
+        // dbg!(var);
+        dbg!(found_constraints[0].unwrap().to_type_constraints());
+        panic!();
+        // for (i, found) in found_constraints.iter().enumerate() {
+        //     // let ty = &self.compiler.types[alias_def.params[i].type_id.id as usize].ty;
+        //     match ty {
+        //         Type::BuiltinType(builtin_type) => todo!(),
+        //         Type::Struct(struct_def) => todo!(),
+        //         Type::Enum(enum_def) => todo!(),
+        //         Type::Func(func_def) => todo!(),
+        //         Type::Alias(alias_def) => todo!(),
+        //         Type::TypeDef(type_def) => todo!(),
+        //         Type::Constrained(type_constraint) => todo!(),
+        //         Type::Unknown => todo!(),
+        //     }
+        // }
+
+        dbg!(found_constraints);
         todo!();
 
         // Filter out duplicates!! Exclamation point.
@@ -352,14 +392,9 @@ impl<'a> ConstraintResolver<'a> {
             }
         }
 
-        let mut local_vars: Vec<InternedId> = Vec::new();
-
         let alias_def = self.compiler.get_alias(sym_id);
         // Need a system where it takes a local variable, looks through each expression, sees if
         // it's used, then if so attempts to assign the constraint to the used argument.
-        for param in &alias_def.params {
-            local_vars.push(param.name_id);
-        }
 
         let module = &self.compiler.mods[self.current_mod.id];
 
@@ -380,7 +415,7 @@ impl<'a> ConstraintResolver<'a> {
             }
         }
 
-        todo!("End");
+        // todo!("End");
         Ok(())
     }
 
@@ -389,19 +424,28 @@ impl<'a> ConstraintResolver<'a> {
         expr_id: ExprId,
         param_name_id: InternedId,
         param_span: Span,
-    ) -> Result<Option<TypeConstraint>, SemanticError> {
+    ) -> Option<TypeConstraintFlags> {
         let expr = &self.compiler.exprs[expr_id.id as usize];
         match &expr.expr_hir {
-            ExprHir::Val(_) => Ok(None),
+            ExprHir::Val(val_id) => None,
             ExprHir::Var(sym_id) => match &self.compiler.symbols[sym_id.id as usize].kind {
                 SymbolKind::Type(type_id) => match &self.compiler.types[type_id.id as usize].ty {
-                    Type::BuiltinType(builtin_ty) => Ok(Some(builtin_ty.kind().type_constraint())),
+                    Type::BuiltinType(builtin_ty) => {
+                        Some(builtin_ty.kind().type_constraints(false))
+                    }
                     Type::Struct(struct_def) => todo!(),
                     Type::Enum(enum_def) => todo!(),
-                    Type::Func(func_def) => Ok(Some(func_def.type_constraint.clone())),
+                    Type::Func(func_def) => {
+                        if func_def.is_callable {
+                            Some(func_def.type_constraints)
+                        } else {
+                            None
+                        }
+                    }
                     Type::Alias(alias_def) => todo!(),
                     Type::TypeDef(type_def) => todo!(),
                     Type::Unknown => todo!("Unknown"),
+                    Type::Constrained(constraint) => todo!(),
                 },
                 SymbolKind::Val(val_id) => {
                     let type_id = &self.compiler.values[val_id.id as usize].type_id;
@@ -425,6 +469,7 @@ impl<'a> ConstraintResolver<'a> {
                 }
 
                 if has_param_name {
+                    dbg!("Has name");
                     return self.infer_type_constraint_from_expr(
                         *callee_id,
                         param_name_id,
@@ -432,10 +477,24 @@ impl<'a> ConstraintResolver<'a> {
                     );
                 }
 
-                Ok(None)
+                None
             }
             ExprHir::Unary { op, operand } => todo!(),
-            ExprHir::BinaryExpr { lhs, op, rhs } => todo!(),
+            ExprHir::BinaryExpr { lhs, op, rhs } => {
+                let ty = &self.compiler.types[expr.type_id.id as usize].ty;
+                match ty {
+                    Type::BuiltinType(builtin_ty) => {
+                        Some(builtin_ty.kind().type_constraints(false))
+                    }
+                    Type::Struct(struct_def) => todo!(),
+                    Type::Enum(enum_def) => todo!(),
+                    Type::Func(func_def) => todo!(),
+                    Type::Alias(alias_def) => todo!(),
+                    Type::TypeDef(type_def) => todo!(),
+                    Type::Constrained(constraint) => Some(*constraint),
+                    Type::Unknown => todo!(),
+                }
+            }
         }
     }
 
@@ -696,7 +755,7 @@ impl<'a> ConstraintResolver<'a> {
                                 ty_span,
                                 cond_expr.span,
                                 &mut Vec::new(),
-                                &func_def.type_constraint,
+                                func_def.type_constraints,
                             ) {
                                 Ok(_) => Ok(()),
                                 Err(sem_err) => return Err(vec![sem_err]),
@@ -737,21 +796,31 @@ impl<'a> ConstraintResolver<'a> {
                         // Checking the parameter's type constraints, if present, against the
                         // corresponding argument
                         for (i, param) in alias_def.params.iter().enumerate() {
-                            if let Some(constraint) = &param.ty_constraint {
-                                let arg_expr_id = arg_expr_ids[i];
-                                let arg_ty_id =
-                                    &self.compiler.exprs[arg_expr_id.id as usize].type_id;
+                            let constraint_flags =
+                                match self.compiler.types[param.type_id.id as usize].ty {
+                                    Type::Constrained(constraint) => constraint,
+                                    // Type::BuiltinType(builtin_type) => todo!(),
+                                    // Type::Struct(struct_def) => todo!(),
+                                    // Type::Enum(enum_def) => todo!(),
+                                    // Type::Func(func_def) => todo!(),
+                                    // Type::Alias(alias_def) => todo!(),
+                                    // Type::TypeDef(type_def) => todo!(),
+                                    // Type::Unknown => todo!(),
+                                    _ => unimplemented!("not yet"),
+                                };
 
-                                if let Err(sem_err) = constraints::check_type_constraint(
-                                    self.compiler,
-                                    *arg_ty_id,
-                                    ty_span,
-                                    cond_expr.span,
-                                    &mut Vec::new(),
-                                    constraint,
-                                ) {
-                                    sem_errs.push(sem_err);
-                                }
+                            let arg_expr_id = arg_expr_ids[i];
+                            let arg_ty_id = &self.compiler.exprs[arg_expr_id.id as usize].type_id;
+
+                            if let Err(sem_err) = constraints::check_type_constraint(
+                                self.compiler,
+                                *arg_ty_id,
+                                ty_span,
+                                cond_expr.span,
+                                &mut Vec::new(),
+                                constraint_flags,
+                            ) {
+                                sem_errs.push(sem_err);
                             }
                         }
 
@@ -766,6 +835,7 @@ impl<'a> ConstraintResolver<'a> {
                     Type::Enum(enum_def) => todo!(),
                     Type::TypeDef(type_def) => todo!(),
                     Type::Unknown => todo!(),
+                    Type::Constrained(type_constraint) => todo!(),
                 }
             }
             // Ok
@@ -774,10 +844,6 @@ impl<'a> ConstraintResolver<'a> {
                 match sym.kind {
                     SymbolKind::Type(type_id) => match &self.compiler.types[type_id.id as usize].ty
                     {
-                        // Case of just finding a single symbol that expands to a function, like
-                        // IsEmpty
-                        // Need to check if the function used is usable for the type given
-                        // All symbols without a call are predicates so this may be redundant
                         Type::Func(func_def) => {
                             // Anything used in a condition must return a boolean
                             let ret_type = &self.compiler.types[func_def.ret_type.id as usize].ty;
@@ -796,7 +862,7 @@ impl<'a> ConstraintResolver<'a> {
                                     ty_span,
                                     cond_expr.span,
                                     &mut Vec::new(),
-                                    &func_def.type_constraint,
+                                    func_def.type_constraints,
                                 ) {
                                     Ok(_) => Ok(()),
                                     Err(sem_err) => Err(vec![sem_err]),
@@ -815,9 +881,9 @@ impl<'a> ConstraintResolver<'a> {
                         Type::Struct(struct_def) => todo!(),
                         Type::Unknown => todo!(),
                         Type::Enum(enum_def) => todo!(),
-                        // Should alias build constraints?
                         Type::Alias(alias_def) => todo!(),
                         Type::TypeDef(type_def) => unreachable!("Not syntactically possible"),
+                        Type::Constrained(type_constraint) => todo!(),
                     },
                     // I do not believe unknown is reachable here
                     SymbolKind::Val(_) | SymbolKind::Unknown => {
@@ -1005,11 +1071,25 @@ impl<'a> ConstraintResolver<'a> {
                     }
                 }
             }
-            // Has constraints if a "default" expression is used
             Type::Alias(alias_def) => todo!("Aliased"),
             Type::Unknown => todo!("Unknowned"),
             Type::TypeDef(_) | Type::Func(_) => {
                 unreachable!("Not syntactically possible")
+            }
+            Type::Constrained(type_constraint) => {
+                todo!();
+                // if !spanned_arg
+                //     .arg
+                //     .supports_type_constraint(type_constraint, false)
+                // {
+                //     return Err(SemanticError::UnsupportedArg(
+                //         spanned_arg.arg,
+                //         type_constraint.to_fmt(),
+                //         vec![spanned_arg.span, active_span],
+                //     ));
+                // }
+
+                Ok(())
             }
         }
     }
@@ -1032,7 +1112,6 @@ impl<'a> ConstraintResolver<'a> {
         let mut sem_errs: Vec<SemanticError> = Vec::new();
         for constraint in constraints {
             match constraint {
-                //TODO: Need call site spanning but in a way where it's not weird
                 ArgConstraint::ArgCount(arg_count_constraint) => {
                     let found_arg_count = expr_id_args.len() as u32;
 
@@ -1192,6 +1271,24 @@ impl<'a> ConstraintResolver<'a> {
                     }
                 }
                 ArgConstraint::Variadic | ArgConstraint::DynType => (),
+                ArgConstraint::Comparable => {
+                    for expr_id in expr_id_args {
+                        let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
+                        let ty = &self.compiler.types[type_id.id as usize].ty;
+
+                        if let Type::BuiltinType(builtin_ty) = ty {
+                            if !builtin_ty.kind().is_comparable() {
+                                let span = self.compiler.exprs[expr_id.id as usize].span;
+
+                                sem_errs.push(SemanticError::FuncConstraintMismatch(
+                                    *constraint,
+                                    ty.to_fmt(),
+                                    vec![span],
+                                ));
+                            }
+                        }
+                    }
+                }
             }
         }
 

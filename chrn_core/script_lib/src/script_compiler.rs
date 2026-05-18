@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use chrn_utils::{
     id_types::{InternedId, ModuleId, ScopeId, SymbolId, TypeId},
     intern,
-    types::{builtins::BuiltinType, type_constraints::TypeConstraint},
+    types::{
+        builtins::BuiltinType,
+        type_constraints::{TypeConstraint, TypeConstraintFlags},
+    },
     values::{ValueInfo, ValueKind},
 };
 
@@ -46,9 +49,6 @@ pub struct ScriptCompiler {
     pub core_mod_id: ModuleId,
 }
 
-// Called idx but is u32...
-pub const TYPE_UNKNOWN_IDX: u32 = CORE_ANY + 1;
-
 //NOTE: I think these can be removed
 pub const CORE_I8: u32 = 0;
 pub const CORE_U8: u32 = 1;
@@ -73,10 +73,12 @@ pub const CORE_BOOL: u32 = 19;
 pub const CORE_BIGINT: u32 = 20;
 pub const CORE_BIGFLOAT: u32 = 21;
 pub const CORE_ANY: u32 = 22;
-pub const CORE_LIST: u32 = 23;
-pub const CORE_SET: u32 = 24;
-pub const CORE_MAP: u32 = 25;
-pub const CORE_TUPLE: u32 = 26;
+// pub const CORE_LIST: u32 = 23;
+// pub const CORE_SET: u32 = 24;
+// pub const CORE_MAP: u32 = 25;
+// pub const CORE_TUPLE: u32 = 26;
+// Called idx but is u32...
+pub const TYPE_UNKNOWN_IDX: u32 = CORE_ANY + 1;
 
 // Helper struct
 // struct ScriptStdLib {}
@@ -404,10 +406,12 @@ impl ScriptCompiler {
 
         // IsEmpty
         let type_id = TypeId::new(compiler.types.len() as u32);
+        let is_empty_flags = TypeConstraintFlags::new(TypeConstraint::Collection.to_u64());
+
         let func_def = FuncDef::new(
             FuncKind::IsEmpty,
             false,
-            TypeConstraint::Collection,
+            is_empty_flags,
             vec![ArgConstraint::ArgCount(0), ArgConstraint::CharacterMappable],
             TypeId::new(CORE_BOOL),
         );
@@ -432,10 +436,12 @@ impl ScriptCompiler {
 
         // IsWhitespace | CharacterMappable
         let type_id = TypeId::new(compiler.types.len() as u32);
+        let ws_flags = TypeConstraintFlags::new(TypeConstraint::CharacterMappable.to_u64());
+
         let func_def = FuncDef::new(
             FuncKind::IsWhitespace,
             false,
-            TypeConstraint::CharacterMappable,
+            ws_flags,
             vec![ArgConstraint::ArgCount(0), ArgConstraint::CharacterMappable],
             TypeId::new(CORE_BOOL),
         );
@@ -461,10 +467,12 @@ impl ScriptCompiler {
 
         // Contains(String | char) CharacterMappable
         let type_id = TypeId::new(compiler.types.len() as u32);
+        let contains_flags = TypeConstraintFlags::new(TypeConstraint::CharacterMappable.to_u64());
+
         let func_def = FuncDef::new(
             FuncKind::Contains,
             true,
-            TypeConstraint::CharacterMappable,
+            contains_flags,
             vec![ArgConstraint::ArgCount(1), ArgConstraint::CharacterMappable],
             TypeId::new(CORE_BOOL),
         );
@@ -490,11 +498,13 @@ impl ScriptCompiler {
 
         // StartsW(Value) | CharacterMappable
         let type_id = TypeId::new(compiler.types.len() as u32);
+        let startsw_flags = TypeConstraintFlags::new(TypeConstraint::CharacterMappable.to_u64());
+
         let func_def = FuncDef::new(
             FuncKind::StartsW,
             true,
-            TypeConstraint::CharacterMappable,
-            vec![ArgConstraint::ArgCount(1), ArgConstraint::Str],
+            startsw_flags,
+            vec![ArgConstraint::ArgCount(1), ArgConstraint::CharacterMappable],
             TypeId::new(CORE_BOOL),
         );
 
@@ -519,13 +529,15 @@ impl ScriptCompiler {
 
         // EndsW(Value) | CharacterMappable
         let type_id = TypeId::new(compiler.types.len() as u32);
+        let endsw_flags = TypeConstraintFlags::new(TypeConstraint::CharacterMappable.to_u64());
+
         let func_def = FuncDef::new(
             FuncKind::EndsW,
             true,
             // What about CharacterMappable? Do we really want to be judgemental here?
             // There we go
-            TypeConstraint::CharacterMappable,
-            vec![ArgConstraint::ArgCount(1), ArgConstraint::Str],
+            endsw_flags,
+            vec![ArgConstraint::ArgCount(1), ArgConstraint::CharacterMappable],
             TypeId::new(CORE_BOOL),
         );
 
@@ -550,10 +562,11 @@ impl ScriptCompiler {
 
         // Range(inclusive, inclusive) | Numeric | Ordering
         let type_id = TypeId::new(compiler.types.len() as u32);
+        let range_flags = TypeConstraintFlags::new(TypeConstraint::Ranged.to_u64());
         let func_def = FuncDef::new(
             FuncKind::Range,
             true,
-            TypeConstraint::Numeric,
+            range_flags,
             vec![
                 ArgConstraint::ArgCount(2),
                 ArgConstraint::Numeric,
@@ -568,6 +581,38 @@ impl ScriptCompiler {
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_RANGE);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
+
+        // Equals(any)
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        let eq_flags = TypeConstraintFlags::new(TypeConstraint::Comparable.to_u64());
+
+        let func_def = FuncDef::new(
+            FuncKind::Equals,
+            true,
+            // What constrsaint...
+            eq_flags,
+            vec![ArgConstraint::ArgCount(1), ArgConstraint::Comparable],
+            TypeId::new(CORE_BOOL),
+        );
+
+        compiler
+            .types
+            .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_EQUALS);
         let symbol = Symbol::new(
             interned_id,
             sym_id,

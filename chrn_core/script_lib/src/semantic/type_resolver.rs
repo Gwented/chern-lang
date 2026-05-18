@@ -6,10 +6,9 @@ use std::collections::HashSet;
 use chrn_utils::id_types::{
     AstId, ExprId, InternedId, ModuleId, ScopeId, SymbolId, TypeId, ValueId,
 };
-use chrn_utils::inner_args::SpannedInnerArgs;
 use chrn_utils::intern::Intern;
 use chrn_utils::types::builtins::{BuiltinType, BuiltinTypeKind};
-use chrn_utils::types::type_constraints::TypeConstraint;
+use chrn_utils::types::type_constraints::{TypeConstraint, TypeConstraintFlags};
 use chrn_utils::values::{Value, ValueInfo};
 use common::chrn_settings::ChrnSettings;
 use common::fmter::{Formattable, Formatted};
@@ -901,6 +900,7 @@ impl TypeResolver<'_> {
         let mut seen: Vec<(usize, InternedId)> = Vec::new();
 
         // Just a bit crowded in here..
+        // WARN: Ok this just looks like an inlined function now
         for (i, abs_param) in abs_alias.params.iter().enumerate() {
             if let Some(original) = seen.iter().find(|other| abs_param.name_id == other.1) {
                 let alias_name = self.interner.search(abs_alias.name_id.id as usize);
@@ -926,6 +926,24 @@ impl TypeResolver<'_> {
 
             seen.push((i, abs_param.name_id));
 
+            let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+            let val_id = ValueId::new(self.compiler.values.len() as u32);
+            let type_id = TypeId::new(self.compiler.types.len() as u32);
+
+            let expr_hir = ExprHir::Var(sym_id);
+            let resolved_expr =
+                ResolvedExpr::new(type_id, expr_hir, val_id, abs_param.name_span, Vec::new());
+
+            // Can this be possibly const evaluated if if possible if?
+            //
+            // Not sure about this
+            let ty_info = TypeInfo::new(
+                Type::Constrained(TypeConstraintFlags::any()),
+                self.current_mod,
+            );
+
+            let val_info = ValueInfo::new(type_id, expr_id, None);
+
             let param_sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
             let param_sym = Symbol::new(
                 abs_param.name_id,
@@ -934,19 +952,28 @@ impl TypeResolver<'_> {
                 self.current_mod,
                 true,
                 ScopeType::Local,
-                SymbolKind::Unknown,
+                SymbolKind::Val(val_id),
             );
 
             self.compiler.symbols.push(param_sym);
+
+            self.compiler.exprs.push(resolved_expr);
+            self.compiler.values.push(val_info);
+            self.compiler.types.push(ty_info);
+
             let local_scope = &mut self.compiler.get_scope_mut(local_scope_id).scope;
             local_scope
                 .table
                 .interned_to_sym
                 .insert(abs_param.name_id, param_sym_id);
 
-            let param = Param::new(abs_param.name_id, param_sym_id, AstId::new(i as u32), None);
+            let param = Param::new(param_sym_id, type_id, AstId::new(i as u32));
+
             params.push(param);
         }
+
+        let thing = &self.compiler.types[params[0].type_id.id as usize].ty;
+        dbg!(thing);
 
         // dbg!(&params, &self.compiler.scopes[local_scope_id.id]);
         // panic!();
@@ -1004,12 +1031,6 @@ impl TypeResolver<'_> {
     // These params are getting a little inflated so maybe a ctx struct for this environment could
     // be @()@$_ something
 
-    // Must resolve local scopes in a way where it accomodates for a section system
-    // where if we declare x as a param, and x is outside or non-existent,
-    // it'll go for the local parameter. Thinking, give all of said local scope capable entitites,
-    // like a function, a local scope of their own where I carry their local scope id as a scope,
-    // which has their local symbols and such. So the pipeline would be call expression resolution -> check
-    // if we have Some(local scope id), search the local scope to see if the variable exists.
     /// On `Ok`, Creates a HIR expression type and returns the `ExprId` which is either going to be
     /// fully resolved, or marked as pending to be resolved later if possible.
     fn register_expr(
@@ -1027,29 +1048,36 @@ impl TypeResolver<'_> {
             //TODO: Check ownership in constraints
             Expr::Var(name_id) => {
                 if let Some(scope_id) = local_scope_id {
+                    //FIXME:
                     if let Some(local_sym_id) =
                         scopes::get_sym_id_local(self.compiler, scope_id, *name_id)
                     {
                         // Stores it like this because local symbols can only be parameters, and
                         // parameters are inferred in type, so they are basically just variables
                         // that have their own process of being resolved
+
+                        // Not sure if this should be a known index or not yet depending on what
+                        // the constraint type becomes
                         let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
-                        let val_id = ValueId::new(self.compiler.values.len() as u32);
-                        let type_id = TypeId::new(script_compiler::TYPE_UNKNOWN_IDX as u32);
+                        let expr = match self.compiler.symbols[local_sym_id.id as usize].kind {
+                            SymbolKind::Val(val_id) => {
+                                let val_info = &self.compiler.values[val_id.id as usize];
 
-                        let expr_hir = ExprHir::Var(local_sym_id);
-                        let resolved_expr = ResolvedExpr::new(
-                            type_id,
-                            expr_hir,
-                            val_id,
-                            spanned_expr.span,
-                            Vec::new(),
-                        );
+                                let expr_hir = ExprHir::Var(local_sym_id);
 
-                        let val_info = ValueInfo::new(type_id, expr_id, None);
+                                ResolvedExpr::new(
+                                    val_info.type_id,
+                                    expr_hir,
+                                    val_id,
+                                    spanned_expr.span,
+                                    Vec::new(),
+                                )
+                            }
+                            SymbolKind::Type(type_id) => todo!(),
+                            SymbolKind::Unknown => todo!(),
+                        };
 
-                        self.compiler.values.push(val_info);
-                        self.compiler.exprs.push(resolved_expr);
+                        self.compiler.exprs.push(expr);
 
                         return Ok(expr_id);
                     }
@@ -1104,7 +1132,6 @@ impl TypeResolver<'_> {
                             //TODO: Alias is being looked up and seen as a type, not a
                             //function-like entity
                             match &ty_info.ty {
-                                // I think this is ok?
                                 Type::Func(_) | Type::Alias(_) => {
                                     let val_id = ValueId::new(self.compiler.values.len() as u32);
                                     let val_info = ValueInfo::new(type_id, expr_id, None);
@@ -1120,7 +1147,6 @@ impl TypeResolver<'_> {
                                         Vec::new(),
                                     )
                                 }
-                                // Some of these are unreachable
                                 Type::BuiltinType(_)
                                 | Type::Struct(_)
                                 | Type::Enum(_)
@@ -1133,6 +1159,8 @@ impl TypeResolver<'_> {
                                         vec![spanned_expr.span],
                                     ));
                                 }
+                                // Can only be local right now
+                                Type::Constrained(ty_constraint) => todo!(),
                             }
                         }
                         SymbolKind::Val(val_id) => {
@@ -1290,8 +1318,8 @@ impl TypeResolver<'_> {
                 let lhs_expr = &self.compiler.exprs[lhs_id.id as usize];
                 let rhs_expr = &self.compiler.exprs[rhs_id.id as usize];
 
-                let is_unknown = lhs_expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX
-                    || rhs_expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX;
+                let lhs_is_unknown = lhs_expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX;
+                let rhs_is_unknown = rhs_expr.type_id.id == script_compiler::TYPE_UNKNOWN_IDX;
 
                 // Composing this so it can be matched cleanly for if const eval can be performed
                 let lhs_val_opt = self.compiler.values[lhs_expr.val_id.id as usize]
@@ -1310,7 +1338,8 @@ impl TypeResolver<'_> {
                         // If cannot perform operation and neither are unknown then there is actual
                         // corruption, and not one part just being unresolved
                         if !evaluator::is_compatible_binary(lhs_const, *op, rhs_const)
-                            && !is_unknown
+                            && !lhs_is_unknown
+                            && !rhs_is_unknown
                         {
                             let full_span = lhs.span.merge(rhs.span);
 
@@ -1357,7 +1386,13 @@ impl TypeResolver<'_> {
                     },
                     None => match op {
                         BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mult | BinaryOp::Div => {
-                            lhs_expr.type_id
+                            if lhs_is_unknown && rhs_is_unknown {
+                                TypeId::new(script_compiler::TYPE_UNKNOWN_IDX)
+                            } else if rhs_is_unknown {
+                                lhs_expr.type_id
+                            } else {
+                                rhs_expr.type_id
+                            }
                         }
                         BinaryOp::Greater
                         | BinaryOp::Less

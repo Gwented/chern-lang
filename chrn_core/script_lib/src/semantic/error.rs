@@ -1,4 +1,4 @@
-use chrn_utils::inner_args::InnerArgs;
+use chrn_utils::{inner_args::InnerArgs, types::type_constraints::TypeConstraintFlags};
 use common::{fmter::Formatted, span::Span};
 
 use crate::semantic::{constraints::ArgConstraint, representation::FuncKind};
@@ -14,6 +14,8 @@ pub enum SemanticError {
     ArgCountMismatch(ArgConstraint, u32, Vec<Span>),
     /// Constraint, Incorrect type found, spans
     TypeConstraintMismatch(Formatted, Formatted, Vec<Span>),
+    /// Currently inferred constraints, Conflicting other constraints, spans
+    TypeConstraintBoundConflict(TypeConstraintFlags, TypeConstraintFlags, Vec<Span>),
     /// Argument failed at, found type, spans
     UnsupportedArg(InnerArgs, Formatted, Vec<Span>),
     /// Args Condition, Wrong type formatted, Spans

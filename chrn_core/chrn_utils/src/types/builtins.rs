@@ -3,7 +3,7 @@ use common::fmter::{Formattable, Formatted};
 use crate::{
     id_types::TypeId,
     intern,
-    types::type_constraints::{self, TypeConstraint},
+    types::type_constraints::{self, TypeConstraint, TypeConstraintFlags},
 };
 
 pub static BUILTIN_TYPE_ARRAY: [&str; 27] = [
@@ -112,7 +112,6 @@ impl BuiltinType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u32)]
 pub enum BuiltinTypeKind {
     I8 = 0,
     U8 = 1,
@@ -141,40 +140,6 @@ pub enum BuiltinTypeKind {
     Map,
     Tuple,
     Any,
-}
-
-impl BuiltinTypeKind {
-    pub fn try_from_interned_id(id: u32) -> Option<BuiltinTypeKind> {
-        match id {
-            intern::INTERNED_I8 => Some(BuiltinTypeKind::I8),
-            intern::INTERNED_U8 => Some(BuiltinTypeKind::U8),
-            intern::INTERNED_I16 => Some(BuiltinTypeKind::I16),
-            intern::INTERNED_U16 => Some(BuiltinTypeKind::U16),
-            intern::INTERNED_F16 => Some(BuiltinTypeKind::F16),
-            intern::INTERNED_I32 => Some(BuiltinTypeKind::I32),
-            intern::INTERNED_U32 => Some(BuiltinTypeKind::U32),
-            intern::INTERNED_F32 => Some(BuiltinTypeKind::F32),
-            intern::INTERNED_I64 => Some(BuiltinTypeKind::I64),
-            intern::INTERNED_U64 => Some(BuiltinTypeKind::U64),
-            intern::INTERNED_F64 => Some(BuiltinTypeKind::F64),
-            intern::INTERNED_I128 => Some(BuiltinTypeKind::I128),
-            intern::INTERNED_U128 => Some(BuiltinTypeKind::U128),
-            intern::INTERNED_F128 => Some(BuiltinTypeKind::F128),
-            intern::INTERNED_SIZED => Some(BuiltinTypeKind::Sized),
-            intern::INTERNED_UNSIZED => Some(BuiltinTypeKind::Unsized),
-            intern::INTERNED_BOOL => Some(BuiltinTypeKind::Bool),
-            intern::INTERNED_NIL => Some(BuiltinTypeKind::Nil),
-            intern::INTERNED_CHAR => Some(BuiltinTypeKind::Char),
-            intern::INTERNED_STR => Some(BuiltinTypeKind::Str),
-            intern::INTERNED_BIGINT => Some(BuiltinTypeKind::BigInt),
-            intern::INTERNED_BIGFLOAT => Some(BuiltinTypeKind::BigFloat),
-            intern::INTERNED_LIST => Some(BuiltinTypeKind::List),
-            intern::INTERNED_MAP => Some(BuiltinTypeKind::Map),
-            intern::INTERNED_SET => Some(BuiltinTypeKind::Set),
-            intern::INTERNED_TUPLE => Some(BuiltinTypeKind::Tuple),
-            _ => None,
-        }
-    }
 }
 
 impl Formattable for BuiltinTypeKind {
@@ -212,37 +177,172 @@ impl Formattable for BuiltinTypeKind {
 }
 
 impl BuiltinTypeKind {
-    /// Retrieves non-recursive constraints associated with type
-    pub fn type_constraint(&self) -> TypeConstraint {
-        match self {
-            BuiltinTypeKind::I8 => todo!(),
-            BuiltinTypeKind::U8 => todo!(),
-            BuiltinTypeKind::I16 => todo!(),
-            BuiltinTypeKind::U16 => todo!(),
-            BuiltinTypeKind::F16 => todo!(),
-            BuiltinTypeKind::I32 => todo!(),
-            BuiltinTypeKind::U32 => todo!(),
-            BuiltinTypeKind::F32 => todo!(),
-            BuiltinTypeKind::I64 => todo!(),
-            BuiltinTypeKind::U64 => todo!(),
-            BuiltinTypeKind::F64 => todo!(),
-            BuiltinTypeKind::I128 => todo!(),
-            BuiltinTypeKind::U128 => todo!(),
-            BuiltinTypeKind::F128 => todo!(),
-            BuiltinTypeKind::Sized => todo!(),
-            BuiltinTypeKind::Unsized => todo!(),
-            BuiltinTypeKind::Str => todo!(),
-            BuiltinTypeKind::Char => todo!(),
-            BuiltinTypeKind::Nil => todo!(),
-            BuiltinTypeKind::Bool => todo!(),
-            BuiltinTypeKind::BigInt => todo!(),
-            BuiltinTypeKind::BigFloat => todo!(),
-            BuiltinTypeKind::List => todo!(),
-            BuiltinTypeKind::Set => todo!(),
-            BuiltinTypeKind::Map => todo!(),
-            BuiltinTypeKind::Tuple => todo!(),
-            BuiltinTypeKind::Any => todo!(),
+    pub fn try_from_interned_id(id: u32) -> Option<BuiltinTypeKind> {
+        match id {
+            intern::INTERNED_I8 => Some(BuiltinTypeKind::I8),
+            intern::INTERNED_U8 => Some(BuiltinTypeKind::U8),
+            intern::INTERNED_I16 => Some(BuiltinTypeKind::I16),
+            intern::INTERNED_U16 => Some(BuiltinTypeKind::U16),
+            intern::INTERNED_F16 => Some(BuiltinTypeKind::F16),
+            intern::INTERNED_I32 => Some(BuiltinTypeKind::I32),
+            intern::INTERNED_U32 => Some(BuiltinTypeKind::U32),
+            intern::INTERNED_F32 => Some(BuiltinTypeKind::F32),
+            intern::INTERNED_I64 => Some(BuiltinTypeKind::I64),
+            intern::INTERNED_U64 => Some(BuiltinTypeKind::U64),
+            intern::INTERNED_F64 => Some(BuiltinTypeKind::F64),
+            intern::INTERNED_I128 => Some(BuiltinTypeKind::I128),
+            intern::INTERNED_U128 => Some(BuiltinTypeKind::U128),
+            intern::INTERNED_F128 => Some(BuiltinTypeKind::F128),
+            intern::INTERNED_SIZED => Some(BuiltinTypeKind::Sized),
+            intern::INTERNED_UNSIZED => Some(BuiltinTypeKind::Unsized),
+            intern::INTERNED_BOOL => Some(BuiltinTypeKind::Bool),
+            intern::INTERNED_NIL => Some(BuiltinTypeKind::Nil),
+            intern::INTERNED_CHAR => Some(BuiltinTypeKind::Char),
+            intern::INTERNED_STR => Some(BuiltinTypeKind::Str),
+            intern::INTERNED_BIGINT => Some(BuiltinTypeKind::BigInt),
+            intern::INTERNED_BIGFLOAT => Some(BuiltinTypeKind::BigFloat),
+            intern::INTERNED_LIST => Some(BuiltinTypeKind::List),
+            intern::INTERNED_MAP => Some(BuiltinTypeKind::Map),
+            intern::INTERNED_SET => Some(BuiltinTypeKind::Set),
+            intern::INTERNED_TUPLE => Some(BuiltinTypeKind::Tuple),
+            _ => None,
         }
+    }
+
+    //NOTE: UPDATE WHEN NEW CONSTRAINT IS MADE
+    //No
+    /// Retrieves non-recursive constraints associated with type
+    pub fn type_constraints(&self, is_rec: bool) -> TypeConstraintFlags {
+        let flags = match self {
+            BuiltinTypeKind::I8
+            | BuiltinTypeKind::I16
+            | BuiltinTypeKind::I32
+            | BuiltinTypeKind::I64
+            | BuiltinTypeKind::I128
+            | BuiltinTypeKind::Sized
+            | BuiltinTypeKind::BigInt => {
+                type_constraints::SIGNED_INTEGER
+                    | type_constraints::INTEGER
+                    | type_constraints::RANGED
+                    | type_constraints::NUMERIC
+                    | type_constraints::COMPARABLE
+            }
+            BuiltinTypeKind::U8
+            | BuiltinTypeKind::U16
+            | BuiltinTypeKind::U32
+            | BuiltinTypeKind::U64
+            | BuiltinTypeKind::U128
+            | BuiltinTypeKind::Unsized => {
+                type_constraints::UNSIGNED_INTEGER
+                    | type_constraints::INTEGER
+                    | type_constraints::RANGED
+                    | type_constraints::NUMERIC
+                    | type_constraints::COMPARABLE
+            }
+            BuiltinTypeKind::F16
+            | BuiltinTypeKind::F32
+            | BuiltinTypeKind::F64
+            | BuiltinTypeKind::F128
+            | BuiltinTypeKind::BigFloat => {
+                type_constraints::FLOAT
+                    | type_constraints::RANGED
+                    | type_constraints::NUMERIC
+                    | type_constraints::COMPARABLE
+            }
+            BuiltinTypeKind::Str => {
+                type_constraints::STR
+                    | type_constraints::HAS_LEN
+                    | type_constraints::RANGED
+                    | type_constraints::COMPARABLE
+                    | type_constraints::CHARACTER_MAPPABLE
+            }
+            BuiltinTypeKind::Char => {
+                type_constraints::CHAR
+                    | type_constraints::HAS_LEN
+                    | type_constraints::RANGED
+                    | type_constraints::COMPARABLE
+                    | type_constraints::CHARACTER_MAPPABLE
+            }
+            BuiltinTypeKind::Bool => type_constraints::COMPARABLE,
+            // "non-recursive" because may allow recursive finding of inner of list if labeled
+            // explicitly but not sure
+            BuiltinTypeKind::List | BuiltinTypeKind::Set | BuiltinTypeKind::Tuple => {
+                type_constraints::HAS_LEN
+                    | type_constraints::RANGED
+                    // | type_constraints::COMPARABLE
+                    | type_constraints::CHARACTER_MAPPABLE
+                    | type_constraints::COLLECTION
+            }
+            BuiltinTypeKind::Map => {
+                type_constraints::HAS_LEN
+                    | type_constraints::RANGED
+                    // | type_constraints::COMPARABLE
+                    | type_constraints::COLLECTION
+            }
+            BuiltinTypeKind::Any => {
+                type_constraints::SIGNED_INTEGER
+                    | type_constraints::UNSIGNED_INTEGER
+                    | type_constraints::FLOAT
+                    | type_constraints::BOOL
+                    | type_constraints::STR
+                    | type_constraints::CHAR
+                    | type_constraints::ANY
+                    | type_constraints::COMPARABLE
+                    | type_constraints::CHARACTER_MAPPABLE
+                    | type_constraints::HAS_LEN
+                    | type_constraints::INTEGER
+                    | type_constraints::NUMERIC
+                    | type_constraints::RANGED
+                    | type_constraints::COLLECTION
+                    | type_constraints::ORDERED
+            }
+            BuiltinTypeKind::Nil => 0,
+        };
+
+        TypeConstraintFlags::new(flags)
+        // match self {
+        //     BuiltinTypeKind::I8
+        //     | BuiltinTypeKind::I16
+        //     | BuiltinTypeKind::I32
+        //     | BuiltinTypeKind::I64
+        //     | BuiltinTypeKind::I128
+        //     | BuiltinTypeKind::Sized
+        //     | BuiltinTypeKind::BigInt
+        //     | BuiltinTypeKind::U8
+        //     | BuiltinTypeKind::U16
+        //     | BuiltinTypeKind::F16
+        //     | BuiltinTypeKind::U32
+        //     | BuiltinTypeKind::F32
+        //     | BuiltinTypeKind::U64
+        //     | BuiltinTypeKind::F64
+        //     | BuiltinTypeKind::U128
+        //     | BuiltinTypeKind::F128
+        //     | BuiltinTypeKind::BigFloat
+        //     | BuiltinTypeKind::Unsized => {
+        //         type_constraints::COMPARABLE | type_constraints::RANGED | type_constraints::NUMERIC
+        //     }
+        //     BuiltinTypeKind::Str => {
+        //         type_constraints::CHARACTER_MAPPABLE
+        //             | type_constraints::HAS_LEN
+        //             | type_constraints::RANGED
+        //             | type_constraints::COMPARABLE
+        //             | type_constraints::COLLECTION
+        //     }
+        //     BuiltinTypeKind::Char => {
+        //         type_constraints::CHARACTER_MAPPABLE
+        //             | type_constraints::HAS_LEN
+        //             | type_constraints::RANGED
+        //             | type_constraints::COMPARABLE
+        //     }
+        //     BuiltinTypeKind::Bool => type_constraints::COMPARABLE | type_constraints::BOOL,
+        //     BuiltinTypeKind::List
+        //     | BuiltinTypeKind::Set
+        //     | BuiltinTypeKind::Map
+        //     | BuiltinTypeKind::Tuple => {
+        //         type_constraints::RANGED | type_constraints::HAS_LEN | type_constraints::COLLECTION
+        //     }
+        //     BuiltinTypeKind::Nil | BuiltinTypeKind::Any => 0,
+        // }
     }
 
     pub fn is_numeric(&self) -> bool {
@@ -326,6 +426,69 @@ impl BuiltinTypeKind {
         }
     }
 
+    pub fn is_ranged(&self) -> bool {
+        match self {
+            BuiltinTypeKind::I8
+            | BuiltinTypeKind::U8
+            | BuiltinTypeKind::I16
+            | BuiltinTypeKind::U16
+            | BuiltinTypeKind::F16
+            | BuiltinTypeKind::I32
+            | BuiltinTypeKind::U32
+            | BuiltinTypeKind::F32
+            | BuiltinTypeKind::I64
+            | BuiltinTypeKind::U64
+            | BuiltinTypeKind::F64
+            | BuiltinTypeKind::I128
+            | BuiltinTypeKind::U128
+            | BuiltinTypeKind::F128
+            | BuiltinTypeKind::Sized
+            | BuiltinTypeKind::Unsized
+            | BuiltinTypeKind::Str
+            | BuiltinTypeKind::Char
+            | BuiltinTypeKind::BigInt
+            | BuiltinTypeKind::BigFloat
+            | BuiltinTypeKind::List
+            | BuiltinTypeKind::Set
+            | BuiltinTypeKind::Map
+            | BuiltinTypeKind::Tuple
+            | BuiltinTypeKind::Any => true,
+            BuiltinTypeKind::Nil | BuiltinTypeKind::Bool => false,
+        }
+    }
+
+    pub fn is_comparable(&self) -> bool {
+        match self {
+            BuiltinTypeKind::I8
+            | BuiltinTypeKind::U8
+            | BuiltinTypeKind::I16
+            | BuiltinTypeKind::U16
+            | BuiltinTypeKind::F16
+            | BuiltinTypeKind::I32
+            | BuiltinTypeKind::U32
+            | BuiltinTypeKind::F32
+            | BuiltinTypeKind::I64
+            | BuiltinTypeKind::U64
+            | BuiltinTypeKind::F64
+            | BuiltinTypeKind::I128
+            | BuiltinTypeKind::U128
+            | BuiltinTypeKind::F128
+            | BuiltinTypeKind::Sized
+            | BuiltinTypeKind::Unsized
+            | BuiltinTypeKind::Str
+            | BuiltinTypeKind::Char
+            | BuiltinTypeKind::BigInt
+            | BuiltinTypeKind::BigFloat
+            | BuiltinTypeKind::Nil
+            | BuiltinTypeKind::Bool
+            | BuiltinTypeKind::Any => true,
+            BuiltinTypeKind::List
+            | BuiltinTypeKind::Set
+            | BuiltinTypeKind::Map
+            | BuiltinTypeKind::Tuple => false,
+        }
+    }
+
     pub fn is_float(&self) -> bool {
         match self {
             BuiltinTypeKind::F16
@@ -365,6 +528,31 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::Set
             | BuiltinTypeKind::Map
             | BuiltinTypeKind::Tuple
+            | BuiltinTypeKind::Any => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_ordered(&self) -> bool {
+        match self {
+            BuiltinTypeKind::I8
+            | BuiltinTypeKind::U8
+            | BuiltinTypeKind::I16
+            | BuiltinTypeKind::U16
+            | BuiltinTypeKind::F16
+            | BuiltinTypeKind::I32
+            | BuiltinTypeKind::U32
+            | BuiltinTypeKind::F32
+            | BuiltinTypeKind::I64
+            | BuiltinTypeKind::U64
+            | BuiltinTypeKind::F64
+            | BuiltinTypeKind::I128
+            | BuiltinTypeKind::U128
+            | BuiltinTypeKind::F128
+            | BuiltinTypeKind::Sized
+            | BuiltinTypeKind::Unsized
+            | BuiltinTypeKind::BigInt
+            | BuiltinTypeKind::BigFloat
             | BuiltinTypeKind::Any => true,
             _ => false,
         }

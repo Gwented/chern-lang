@@ -1,6 +1,9 @@
 use std::fmt::Display;
 
-use chrn_utils::{id_types::TypeId, types::type_constraints::TypeConstraint};
+use chrn_utils::{
+    id_types::TypeId,
+    types::type_constraints::{TypeConstraint, TypeConstraintFlags},
+};
 use common::{
     fmter::{Formattable, Formatted},
     span::Span,
@@ -18,7 +21,7 @@ pub(super) fn check_type_constraint(
     ty_span: Span,
     cond_span: Span,
     visited: &mut Vec<TypeId>,
-    constraint: &TypeConstraint,
+    constraint: TypeConstraintFlags,
 ) -> Result<(), SemanticError> {
     let ty = &script_compiler.types[type_id.id as usize].ty;
     match ty {
@@ -95,7 +98,7 @@ pub(super) fn check_type_constraint(
         Type::BuiltinType(builtin_ty) => {
             //TODO: Allow optionally to choose if a condition should be shallow or not
             //FIX: IsEmpty needs to disallow "char" somehow
-            if !constraint.supports_builtin_ty(builtin_ty.kind()) {
+            if !constraint.contains(builtin_ty.kind().type_constraints(false)) {
                 return Err(SemanticError::TypeConstraintMismatch(
                     // Ok Formattble is is
                     constraint.to_fmt(),
@@ -130,6 +133,8 @@ pub enum ArgConstraint {
     CharacterMappable,
     Bool,
     Str,
+    Comparable,
+    // Collection,
     // Suspicious
     Variadic,
 }
@@ -195,6 +200,7 @@ impl Display for ArgConstraint {
             ArgConstraint::CharacterMappable => write!(f, "CharacterMappable"),
             ArgConstraint::Variadic => write!(f, "variadic"),
             ArgConstraint::Bool => write!(f, "bool"),
+            ArgConstraint::Comparable => write!(f, "Comparable"),
         }
     }
 }

@@ -4,7 +4,10 @@ use std::{collections::HashMap, fmt::Display};
 use chrn_utils::{
     id_types::{AstId, ExprId, InternedId, ModuleId, ScopeId, SymbolId, TypeId, ValueId},
     inner_args::InnerArgs,
-    types::{builtins::BuiltinType, type_constraints::TypeConstraint},
+    types::{
+        builtins::BuiltinType,
+        type_constraints::{TypeConstraint, TypeConstraintFlags},
+    },
     values::ValueKind,
 };
 use common::{
@@ -43,6 +46,7 @@ pub enum Type {
     Func(FuncDef),
     Alias(AliasDef),
     TypeDef(TypeDef),
+    Constrained(TypeConstraintFlags),
     Unknown,
 }
 
@@ -56,6 +60,7 @@ impl Formattable for Type {
             Type::Alias(alias_def) => alias_def.to_fmt(),
             Type::TypeDef(type_def) => type_def.to_fmt(),
             Type::Unknown => Formatted::Unknown,
+            Type::Constrained(type_constraint) => type_constraint.to_fmt(),
         }
     }
 }
@@ -108,25 +113,19 @@ pub enum SymbolKind {
 
 #[derive(Debug)]
 pub struct Param {
-    pub name_id: InternedId,
+    // Remove eventually
     pub sym_id: SymbolId,
     //FIX: More like "FieldId"
+    // Should become SpanId
+    pub type_id: TypeId,
     pub ast_id: AstId,
-    // May remove since it uses a symbol directly already
-    pub ty_constraint: Option<TypeConstraint>,
 }
 
 impl Param {
-    pub fn new(
-        name_id: InternedId,
-        sym_id: SymbolId,
-        ast_id: AstId,
-        ty_constraint: Option<TypeConstraint>,
-    ) -> Param {
+    pub fn new(sym_id: SymbolId, type_id: TypeId, ast_id: AstId) -> Param {
         Param {
-            name_id,
             sym_id,
-            ty_constraint,
+            type_id,
             ast_id,
         }
     }
@@ -319,7 +318,7 @@ pub struct FuncDef {
     pub kind: FuncKind,
     pub is_callable: bool,
     //TEST:
-    pub type_constraint: TypeConstraint,
+    pub type_constraints: TypeConstraintFlags,
     //TEST:
     pub arg_constraints: Vec<ArgConstraint>,
     pub ret_type: TypeId,
@@ -329,14 +328,14 @@ impl FuncDef {
     pub fn new(
         kind: FuncKind,
         is_callable: bool,
-        type_constraints: TypeConstraint,
+        type_constraints: TypeConstraintFlags,
         arg_constraints: Vec<ArgConstraint>,
         ret_type: TypeId,
     ) -> FuncDef {
         FuncDef {
             kind,
             is_callable,
-            type_constraint: type_constraints,
+            type_constraints,
             arg_constraints,
             ret_type,
         }
