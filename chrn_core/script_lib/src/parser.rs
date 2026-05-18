@@ -1,3 +1,4 @@
+// FIX: parse_var_sect should not be re-used in the way it is currently
 pub mod ast;
 mod branch;
 mod context;
@@ -160,7 +161,7 @@ pub fn parse(
                             break;
                         }
 
-                        if let Ok(type_def) = parse_var_sect(&mut ctx, interner) {
+                        if let Ok(type_def) = parse_typedef(&mut ctx, interner) {
                             let item = Item::TypeDef(type_def);
                             ast_info.push_item(SectionKind::Var, item);
                         }
@@ -464,7 +465,7 @@ fn check_import(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
     Ok(())
 }
 
-fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDef, Token> {
+fn parse_typedef(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDef, Token> {
     let name_span = ctx.peek_span();
 
     let plain_id = ctx.expect_id_verbose(
@@ -489,29 +490,24 @@ fn parse_var_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDe
         interner,
     )?;
 
-    let ty_res = parse_type(ctx, interner);
+    let ty = parse_type(ctx, interner)?;
 
     // WARN: DO NOT PROPOGATE
-    let conds_res = if ctx.peek_kind() == TokenKind::OBracket {
-        handle_conds(ctx, interner)
+    let conds = if ctx.peek_kind() == TokenKind::OBracket {
+        handle_conds(ctx, interner)?
     } else {
-        Ok(Vec::new())
+        Vec::new()
     };
 
-    let args_res = if ctx.peek_kind() == TokenKind::HashSymbol {
-        handle_args(ctx, interner)
+    let args = if ctx.peek_kind() == TokenKind::HashSymbol {
+        handle_args(ctx, interner)?
     } else {
-        Ok(Vec::new())
+        Vec::new()
     };
 
     if ctx.peek_kind() == TokenKind::Comma {
         ctx.advance_tok();
     }
-
-    //WARN: May this is a little too forgiving
-    let ty = ty_res?;
-    let conds = conds_res?;
-    let args = args_res?;
 
     let abs_typedef = AbstractTypeDef::new(name_id, name_span, ty, args, conds);
 
@@ -771,15 +767,17 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
         }
         Token::Id(id) if ctx.peek_ahead(1).tok == Token::Assign => {
             let name_id = InternedId::new(id);
-            let name_span = ctx.advance_span();
+            let ident_span = ctx.advance_span();
+
+            let ident_expr = SpannedExpr::new(Expr::Var(name_id), ident_span);
 
             ctx.advance_tok();
 
             let expr = parse_expr(ctx, 0, interner)?;
 
-            let span = Span::new(name_span.start, ctx.peek_behind(1).span.end);
+            let span = Span::new(ident_span.start, ctx.peek_behind(1).span.end);
 
-            let default = Expr::Default(name_id, Box::new(expr));
+            let default = Expr::Default(Box::new(ident_expr), Box::new(expr));
 
             Ok(SpannedExpr::new(default, span))
         }
@@ -1088,7 +1086,7 @@ fn handle_struct_fields(
 
     //WARN: Suspicious loop
     while ctx.peek_tok() != Token::CCurlyBracket {
-        let ty = parse_var_sect(ctx, interner)?;
+        let ty = parse_typedef(ctx, interner)?;
         fields.push(ty);
 
         if ctx.peek_tok() == Token::CCurlyBracket {
@@ -1238,6 +1236,7 @@ fn parse_alias_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<Abstract
             Token::Id(id) => {
                 let span = ctx.advance_span();
                 let name_id = InternedId::new(id);
+                dbg!(interner.search(name_id.id as usize));
 
                 AbstractParam::new(name_id, span)
             }

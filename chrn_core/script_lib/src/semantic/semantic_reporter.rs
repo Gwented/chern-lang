@@ -38,7 +38,7 @@ impl<'a> SemanticReporter<'a> {
         let (core_msg, spans) = match sem_err {
             SemanticError::UnsupportedArg(arg, type_kind, spans) => {
                 let msg = format!(
-                    "The argument \"#{}\" is not supported for the type `{}`",
+                    "The argument \"#{}\" is not applicable for the type `{}`",
                     arg, type_kind
                 );
 
@@ -55,7 +55,7 @@ impl<'a> SemanticReporter<'a> {
             }
             SemanticError::FuncConstraintMismatch(constraint, type_kind, spans) => {
                 let msg =
-                    format!("The type `{type_kind}` does not follow constraint `{constraint}`",);
+                    format!("The type `{type_kind}` does not fulfill constraint `{constraint}`",);
 
                 (msg, spans)
             }
@@ -116,7 +116,7 @@ impl<'a> SemanticReporter<'a> {
                 // }
 
                 let msg = format!(
-                    "`{fmtted_err_ty}` does not satisfy type constraint `{}`",
+                    "`{fmtted_err_ty}` does not fulfill type constraint `{}`",
                     fmtted_constraint
                 );
 
@@ -186,6 +186,7 @@ impl<'a> SemanticReporter<'a> {
             fmt_msg,
             Area::Script,
         );
+
         self.err_vec.push(diag);
     }
 

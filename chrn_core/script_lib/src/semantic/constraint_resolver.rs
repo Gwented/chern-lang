@@ -269,6 +269,8 @@ impl<'a> ConstraintResolver<'a> {
     //
     // Need constraints to be added if anything like Range, IsEmpty, etc is used which would mean
     // that the alias must be a number or CharacterMappable
+
+    // Alias should probably be ran first by default
     fn resolve_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) -> Result<(), ()> {
         let scope_id = self
             .compiler
@@ -350,8 +352,8 @@ impl<'a> ConstraintResolver<'a> {
 
         // let var = self.compiler.get_var_mut(sym_id);
         // dbg!(var);
-        dbg!(found_constraints[0].unwrap().to_type_constraints());
-        panic!();
+        // dbg!(found_constraints[0].unwrap().to_type_constraints());
+        // panic!();
         // for (i, found) in found_constraints.iter().enumerate() {
         //     // let ty = &self.compiler.types[alias_def.params[i].type_id.id as usize].ty;
         //     match ty {
@@ -365,9 +367,6 @@ impl<'a> ConstraintResolver<'a> {
         //         Type::Unknown => todo!(),
         //     }
         // }
-
-        dbg!(found_constraints);
-        todo!();
 
         // Filter out duplicates!! Exclamation point.
         let mut ty_constraint: Option<TypeConstraint> = None;
@@ -390,6 +389,16 @@ impl<'a> ConstraintResolver<'a> {
                     );
                 }
             }
+        }
+
+        //TODO:
+        for (i, found) in found_constraints.drain(..).enumerate() {
+            let param_type_id = self.compiler.get_alias_mut(sym_id).params[i].type_id;
+            let ty = &mut self.compiler.types[param_type_id.id as usize].ty;
+            *ty = Type::Constrained(
+                found.expect("Found `None` when expecting `Some` from param constraint checks"),
+            );
+            // Not sure what to do with this yet
         }
 
         let alias_def = self.compiler.get_alias(sym_id);
@@ -419,42 +428,70 @@ impl<'a> ConstraintResolver<'a> {
         Ok(())
     }
 
+    // Not quite sure what to do with this yet since it's only used for alias, if it were used for
+    // more than alias then a recursive check would be needed. But currently, not muc helse needs
+    // to be done with this since most is unerachable
     fn infer_type_constraint_from_expr(
         &self,
         expr_id: ExprId,
+        // Should this be sym_id?
         param_name_id: InternedId,
         param_span: Span,
     ) -> Option<TypeConstraintFlags> {
         let expr = &self.compiler.exprs[expr_id.id as usize];
         match &expr.expr_hir {
-            ExprHir::Val(val_id) => None,
-            ExprHir::Var(sym_id) => match &self.compiler.symbols[sym_id.id as usize].kind {
-                SymbolKind::Type(type_id) => match &self.compiler.types[type_id.id as usize].ty {
-                    Type::BuiltinType(builtin_ty) => {
-                        Some(builtin_ty.kind().type_constraints(false))
-                    }
-                    Type::Struct(struct_def) => todo!(),
-                    Type::Enum(enum_def) => todo!(),
-                    Type::Func(func_def) => {
-                        if func_def.is_callable {
-                            Some(func_def.type_constraints)
-                        } else {
-                            None
-                        }
-                    }
-                    Type::Alias(alias_def) => todo!(),
-                    Type::TypeDef(type_def) => todo!(),
-                    Type::Unknown => todo!("Unknown"),
-                    Type::Constrained(constraint) => todo!(),
-                },
-                SymbolKind::Val(val_id) => {
-                    let type_id = &self.compiler.values[val_id.id as usize].type_id;
-                    let ty = &self.compiler.types[type_id.id as usize].ty;
-                    todo!()
+            ExprHir::Val(val_id) => {
+                panic!("Val id");
+            }
+            ExprHir::Var(sym_id) => {
+                let symbol = &self.compiler.symbols[sym_id.id as usize];
+
+                if symbol.name_id != param_name_id {
+                    return None;
                 }
-                SymbolKind::Unknown => todo!("Unknown"),
-            },
-            ExprHir::Default(interned_id, expr_id) => todo!(),
+
+                match &self.compiler.symbols[sym_id.id as usize].kind {
+                    SymbolKind::Type(type_id) => match &self.compiler.types[type_id.id as usize].ty
+                    {
+                        Type::BuiltinType(builtin_ty) => {
+                            Some(builtin_ty.kind().type_constraints(false))
+                        }
+                        Type::Struct(struct_def) => todo!(),
+                        Type::Enum(enum_def) => todo!(),
+                        Type::Func(func_def) => {
+                            if func_def.is_callable {
+                                Some(func_def.type_constraints)
+                            } else {
+                                None
+                            }
+                        }
+                        Type::Alias(alias_def) => todo!(),
+                        Type::TypeDef(type_def) => todo!(),
+                        Type::Unknown => todo!("Unknown"),
+                        Type::Constrained(constraint) => todo!(),
+                    },
+                    // We don't have names...
+                    SymbolKind::Val(_) => {
+                        // Need a function to get this
+                        let symbol = &self.compiler.symbols[sym_id.id as usize];
+                        if param_name_id == symbol.name_id {
+                            let type_id = self.compiler.exprs[expr_id.id as usize].type_id;
+                            return constraints::get_type_constraints(
+                                self.compiler,
+                                type_id,
+                                param_span,
+                                false,
+                            );
+                        }
+
+                        None
+                    }
+                    SymbolKind::Unknown => todo!("Unknown"),
+                }
+            }
+            ExprHir::Default(sym_expr_id, expr_id) => {
+                todo!()
+            }
             ExprHir::Call(callee_id, arg_ids) => {
                 let mut has_param_name = false;
 
@@ -469,7 +506,6 @@ impl<'a> ConstraintResolver<'a> {
                 }
 
                 if has_param_name {
-                    dbg!("Has name");
                     return self.infer_type_constraint_from_expr(
                         *callee_id,
                         param_name_id,
@@ -479,7 +515,11 @@ impl<'a> ConstraintResolver<'a> {
 
                 None
             }
-            ExprHir::Unary { op, operand } => todo!(),
+            // Maybe operators also need to carry constraints since that does
+            //TODO: Not quite sure what this should do yet
+            ExprHir::Unary { op, operand } => {
+                self.infer_type_constraint_from_expr(*operand, param_name_id, param_span)
+            }
             ExprHir::BinaryExpr { lhs, op, rhs } => {
                 let ty = &self.compiler.types[expr.type_id.id as usize].ty;
                 match ty {

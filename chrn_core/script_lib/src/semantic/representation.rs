@@ -172,7 +172,7 @@ pub enum ExprHir {
     Var(SymbolId),
     /// alias default(x) = [Equals(x = 3)]
     /// x = `SymbolId`, 5 = `ExprId`
-    Default(InternedId, ExprId),
+    Default(ExprId, ExprId),
     // MemberAccess(),
     // Um
     /// Caller, arguments

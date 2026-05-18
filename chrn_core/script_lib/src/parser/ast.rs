@@ -1,6 +1,7 @@
 use chrn_utils::{
     id_types::{AstId, InternedId},
     inner_args::SpannedInnerArgs,
+    types::type_constraints::{self, TypeConstraintFlags},
 };
 //NOTE: MAY MAKE EXPRESSION THAT HELPS RESOLVE SEMANTIC TYPES MORE CLEANLY
 use common::{
@@ -204,7 +205,7 @@ pub enum Expr {
     Var(InternedId),
     Bool(bool),
     /// Variable name, along with optional default type
-    Default(InternedId, Box<SpannedExpr>),
+    Default(Box<SpannedExpr>, Box<SpannedExpr>),
     Integer(u32, Notation),
     Float(u32, Notation),
     Str(InternedId),
@@ -297,7 +298,7 @@ impl Formattable for BinaryOp {
     fn to_fmt(&self) -> common::fmter::Formatted {
         match self {
             BinaryOp::Add => Formatted::OpAdd,
-            BinaryOp::Sub => Formatted::OpSub,
+            BinaryOp::Sub => Formatted::Hyphen,
             BinaryOp::Mult => Formatted::OpMult,
             BinaryOp::Div => Formatted::OpDivide,
             BinaryOp::Greater => Formatted::OpGreater,
@@ -632,11 +633,22 @@ pub enum UnaryOp {
     Negate,
 }
 
+impl UnaryOp {
+    pub fn type_constraints(&self) -> TypeConstraintFlags {
+        let flags = match self {
+            UnaryOp::Not => type_constraints::BOOL,
+            UnaryOp::Negate => type_constraints::NUMERIC,
+        };
+
+        TypeConstraintFlags::new(flags)
+    }
+}
+
 impl Formattable for UnaryOp {
     fn to_fmt(&self) -> Formatted {
         match self {
             UnaryOp::Not => Formatted::ExclamationPoint,
-            UnaryOp::Negate => Formatted::OpSub,
+            UnaryOp::Negate => Formatted::Hyphen,
         }
     }
 }

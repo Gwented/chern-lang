@@ -1451,10 +1451,20 @@ impl TypeResolver<'_> {
 
                 Ok(expr_id)
             }
-            //WARN: Make sure this works
-            Expr::Default(name_id, spanned_expr) => {
+            //WARN: Maybe turn nameid to expr?
+            Expr::Default(ident_expr, spanned_expr) => {
                 let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
                 let val_id = ValueId::new(self.compiler.values.len() as u32);
+
+                //WARN: SUSPICIOUS
+                let default_ident_expr_id = self.register_expr(
+                    parent_sym_id,
+                    &ident_expr,
+                    local_scope_id,
+                    active_mod_id,
+                    scope_type,
+                    seen,
+                )?;
 
                 let default_val_expr_id = self.register_expr(
                     parent_sym_id,
@@ -1471,7 +1481,8 @@ impl TypeResolver<'_> {
                 //Need it's inputs to be the symbol and spanned expression
 
                 // DO NOT QUESTION THIS
-                let expr_hir = ExprHir::Default(*name_id, default_val_expr_id);
+                //WARN: Needs to be a smimbol
+                let expr_hir = ExprHir::Default(default_ident_expr_id, default_val_expr_id);
 
                 // Is the parameter an input if it doesn't have a value?
                 // The issue is, it's not a known input of any sort, it's just an identifier.
@@ -1484,7 +1495,9 @@ impl TypeResolver<'_> {
                     vec![default_val_expr_id],
                 );
 
+                self.compiler.exprs[default_ident_expr_id.id as usize].user = Some(expr_id);
                 self.compiler.exprs[default_val_expr_id.id as usize].user = Some(expr_id);
+
                 self.compiler.exprs.push(resolved_expr);
 
                 Ok(expr_id)
@@ -1729,6 +1742,7 @@ impl TypeResolver<'_> {
                             // Turning the field into an expression so that it can be resolved as
                             // normal
                             // This SEEMS ok?
+                            // WARN: No
                             let inline_expr = Expr::Var(abs_member_access.field);
                             let sp_expr = SpannedExpr::new(inline_expr, spanned_expr.span);
 

@@ -26,7 +26,7 @@ let x = 5*/
 // a number, then those can't be lowered to anything with confidence really.
 
 // SymbolKind local??
-alias default(x) = [Contains(x), x * 3 ]
+alias default(x) = [Equals(x), -x   , StartsW(x) ]
 // alias frosted(used) = [IsEmpty, Contains(used)]
 
 // "rec" keyword, or just use in?
@@ -34,7 +34,7 @@ var->
     // Conds need shallow checks too so should err if struct or enum is used
     // again suggesting that it needs to be applied to the struct directly
 
-    p: Doof 
+    p: i32 [IsWhitespace] 
     // e: str [default()]
 nest->
 enum Doof {}

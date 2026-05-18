@@ -2,10 +2,7 @@ use std::fmt::Display;
 
 use common::span::Span;
 
-use crate::types::{
-    builtins::BuiltinType,
-    type_constraints::{TypeConstraint, TypeConstraintFlags},
-};
+use crate::types::{builtins::BuiltinType, type_constraints::TypeConstraint};
 
 /// If a new argument is added ensure this is updated
 pub static ARGS_ARRAY: [&str; 6] = ["warn", "scient", "hex", "bin", "octal", "ignore"];

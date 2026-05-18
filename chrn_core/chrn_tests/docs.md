@@ -243,6 +243,9 @@ Very descriptive!
 -------------------------------
 
 ## Arguments
+
+- Dictates runtime behavior
+
 `#warn`: Would warn instead of terminating upon seeing a wrongful constraint of any kind.
 
 `#ignore`: Ignores all errors for the type this is applied to for serialized data related errors.

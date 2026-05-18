@@ -97,8 +97,7 @@ pub(super) fn check_type_constraint(
         Type::Func(_) | Type::Alias(_) => Ok(()),
         Type::BuiltinType(builtin_ty) => {
             //TODO: Allow optionally to choose if a condition should be shallow or not
-            //FIX: IsEmpty needs to disallow "char" somehow
-            if !constraint.contains(builtin_ty.kind().type_constraints(false)) {
+            if !constraint.contains_any(builtin_ty.kind().type_constraints(false)) {
                 return Err(SemanticError::TypeConstraintMismatch(
                     // Ok Formattble is is
                     constraint.to_fmt(),
@@ -109,9 +108,35 @@ pub(super) fn check_type_constraint(
 
             Ok(())
         }
+        Type::Constrained(_) => unimplemented!("Hi"),
         // Type::TypeDef(type_def) => {},
         // Type::Unknown => todo!(),
         _ => unreachable!("Unreachable I think?"),
+    }
+}
+
+pub fn get_type_constraints(
+    compiler: &ScriptCompiler,
+    type_id: TypeId,
+    ty_span: Span,
+    is_rec: bool,
+) -> Option<TypeConstraintFlags> {
+    let ty = &compiler.types[type_id.id as usize].ty;
+    match ty {
+        Type::BuiltinType(builtin_ty) => Some(builtin_ty.kind().type_constraints(is_rec)),
+        // Is it?
+        Type::Struct(_) | Type::Enum(_) if !is_rec => None,
+        // Have to check if every field in a given struct or enum is aligned under a constraint
+        Type::Struct(struct_def) => todo!(),
+        Type::Enum(enum_def) => todo!(),
+        Type::Func(func_def) => Some(func_def.type_constraints),
+        Type::Alias(alias_def) => todo!(),
+        Type::Constrained(ty_constraint_flags) => Some(*ty_constraint_flags),
+        // Wait should this?
+        Type::TypeDef(type_def) => {
+            get_type_constraints(compiler, type_def.type_id, ty_span, is_rec)
+        }
+        Type::Unknown => None,
     }
 }
 
@@ -119,7 +144,6 @@ pub(super) fn check_type_constraint(
 // Real
 // Complex
 // Prime
-// TEST:
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArgConstraint {
     ArgCount(u32),
