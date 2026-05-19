@@ -390,7 +390,7 @@ impl<'a> Context<'a> {
             .toks
             .get(self.pos + 1)
             .map(|t| t.tok.kind())
-            .unwrap_or(TokenKind::EOF);
+            .unwrap_or(TokenKind::Poison);
 
         match branch {
             Branch::Neutral(neutral_branch) => match neutral_branch {

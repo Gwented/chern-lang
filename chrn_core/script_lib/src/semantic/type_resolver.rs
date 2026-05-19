@@ -893,8 +893,8 @@ impl TypeResolver<'_> {
             .extract_scope_id(ScopeType::Neutral, self.current_mod);
         let table = &self.compiler.get_scope_mut(scope_id).scope.table;
 
-        let sym_id = table.ast_to_sym[&ast_id];
-        let local_scope_id = self.compiler.get_alias(sym_id).local_scope_id;
+        let alias_sym_id = table.ast_to_sym[&ast_id];
+        let local_scope_id = self.compiler.get_alias(alias_sym_id).local_scope_id;
 
         let mut params: Vec<Param> = Vec::new();
         let mut seen: Vec<(usize, InternedId)> = Vec::new();
@@ -930,7 +930,18 @@ impl TypeResolver<'_> {
             let val_id = ValueId::new(self.compiler.values.len() as u32);
             let type_id = TypeId::new(self.compiler.types.len() as u32);
 
-            let expr_hir = ExprHir::Var(sym_id);
+            let param_sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+            let param_sym = Symbol::new(
+                abs_param.name_id,
+                param_sym_id,
+                Some(AstId::new(i as u32)),
+                self.current_mod,
+                true,
+                ScopeType::Local,
+                SymbolKind::Val(val_id),
+            );
+
+            let expr_hir = ExprHir::Var(param_sym_id);
             let resolved_expr =
                 ResolvedExpr::new(type_id, expr_hir, val_id, abs_param.name_span, Vec::new());
 
@@ -943,17 +954,6 @@ impl TypeResolver<'_> {
             );
 
             let val_info = ValueInfo::new(type_id, expr_id, None);
-
-            let param_sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
-            let param_sym = Symbol::new(
-                abs_param.name_id,
-                param_sym_id,
-                Some(AstId::new(i as u32)),
-                self.current_mod,
-                true,
-                ScopeType::Local,
-                SymbolKind::Val(val_id),
-            );
 
             self.compiler.symbols.push(param_sym);
 
@@ -972,21 +972,17 @@ impl TypeResolver<'_> {
             params.push(param);
         }
 
-        let thing = &self.compiler.types[params[0].type_id.id as usize].ty;
-        dbg!(thing);
-
-        // dbg!(&params, &self.compiler.scopes[local_scope_id.id]);
-        // panic!();
+        dbg!(&params);
 
         let mut conds: Vec<ExprId> = Vec::new();
         for spanned_expr in &abs_alias.conds {
             let cond_opt = match self.register_expr(
-                sym_id,
+                alias_sym_id,
                 spanned_expr,
                 Some(local_scope_id),
                 self.current_mod,
                 ScopeType::Neutral,
-                &mut vec![sym_id],
+                &mut vec![alias_sym_id],
             ) {
                 Ok(c) => Some(c),
                 Err(sem_err) => {
@@ -1010,7 +1006,7 @@ impl TypeResolver<'_> {
 
         //TODO: Arg constraint and option tpe constraint.
         //Could technically happen in constraint resolver since it. Yes.
-        let alias_def = self.compiler.get_alias_mut(sym_id);
+        let alias_def = self.compiler.get_alias_mut(alias_sym_id);
         let param_count = params.len() as u32;
 
         //WARN: Does not yet have constraints of params discovered

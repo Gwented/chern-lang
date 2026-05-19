@@ -15,13 +15,14 @@ use crate::{
 };
 
 //TEST:
+/// Checks given type against the constraints given
 pub(super) fn check_type_constraint(
     script_compiler: &ScriptCompiler,
     type_id: TypeId,
     ty_span: Span,
     cond_span: Span,
     visited: &mut Vec<TypeId>,
-    constraint: TypeConstraintFlags,
+    given_constraints: TypeConstraintFlags,
 ) -> Result<(), SemanticError> {
     let ty = &script_compiler.types[type_id.id as usize].ty;
     match ty {
@@ -60,7 +61,7 @@ pub(super) fn check_type_constraint(
                     ty_span,
                     cond_span,
                     visited,
-                    constraint,
+                    given_constraints,
                 )?;
             }
 
@@ -86,21 +87,34 @@ pub(super) fn check_type_constraint(
                         ty_span,
                         cond_span,
                         visited,
-                        constraint,
+                        given_constraints,
                     )?;
                 }
             }
 
             Ok(())
         }
-        // Both of these don't care so
-        Type::Func(_) | Type::Alias(_) => Ok(()),
+        //WARN: Suspicious
+        Type::Func(_) => todo!(),
+        // Not quite sure about this
+        Type::Alias(alias_def) => {
+            if alias_def.ty_constraints.contains_any(given_constraints) {
+                return Err(SemanticError::TypeConstraintMismatch(
+                    given_constraints.to_fmt(),
+                    alias_def.to_fmt(),
+                    vec![ty_span, cond_span],
+                ));
+            }
+            panic!("Is does not contain given");
+
+            Ok(())
+        }
         Type::BuiltinType(builtin_ty) => {
             //TODO: Allow optionally to choose if a condition should be shallow or not
-            if !constraint.contains_any(builtin_ty.kind().type_constraints(false)) {
+            if !given_constraints.contains_any(builtin_ty.kind().type_constraints(false)) {
                 return Err(SemanticError::TypeConstraintMismatch(
                     // Ok Formattble is is
-                    constraint.to_fmt(),
+                    given_constraints.to_fmt(),
                     builtin_ty.kind().to_fmt(),
                     vec![ty_span, cond_span],
                 ));

@@ -23,11 +23,8 @@ use common::fmter::{Formattable, Formatted};
 use common::reporter::diagnostic::Diagnostic;
 use common::span::Span;
 
-// May be lower
-const MAX_ERRORS: u8 = 3;
-
-/// Returns a completed `AstInfo` on `Ok`. Returns a tuple with unfinished `AstInfo` and `ScriptError` on
-/// `Err`.
+/// Returns a completed `AstInfo` on `Ok`. Returns a tuple with unfinished `AstInfo` and
+/// Diagnostics on `Err`.
 pub fn parse(
     settings: &ChrnSettings,
     metadata: &ModuleMetadata,
@@ -305,7 +302,6 @@ pub fn parse(
                     let fmsg = format!("keyword `{}`", kw.to_fmt());
 
                     if state.is_neutral() {
-                        dbg!(ctx.peek_tok());
                         ctx.report_template(
                             "a statement or section",
                             &fmsg,
@@ -1160,20 +1156,17 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
         None
     };
 
-    let conds_res = if ctx.peek_kind() == TokenKind::OBracket {
-        handle_conds(ctx, interner)
+    let conds = if ctx.peek_kind() == TokenKind::OBracket {
+        handle_conds(ctx, interner)?
     } else {
-        Ok(Vec::new())
+        Vec::new()
     };
 
-    let args_res = if ctx.peek_kind() == TokenKind::HashSymbol {
-        handle_args(ctx, interner)
+    let args = if ctx.peek_kind() == TokenKind::HashSymbol {
+        handle_args(ctx, interner)?
     } else {
-        Ok(Vec::new())
+        Vec::new()
     };
-
-    let conds = conds_res?;
-    let args = args_res?;
 
     let variant = AbstractVariant::new(name_id, name_span, ty_opt, conds, args);
 
@@ -1184,22 +1177,9 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
 fn handle_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedInnerArgs>, Token> {
     let mut args: Vec<SpannedInnerArgs> = Vec::new();
 
-    let mut err_count = 0;
-
     while ctx.peek_kind() == TokenKind::HashSymbol {
         ctx.advance_tok();
-
-        let arg = parse_arg(ctx, interner);
-
-        if let Ok(arg) = arg {
-            args.push(arg);
-        } else {
-            if err_count > MAX_ERRORS {
-                break;
-            }
-
-            err_count += 1;
-        }
+        args.push(parse_arg(ctx, interner)?);
     }
 
     Ok(args)
@@ -1236,7 +1216,6 @@ fn parse_alias_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<Abstract
             Token::Id(id) => {
                 let span = ctx.advance_span();
                 let name_id = InternedId::new(id);
-                dbg!(interner.search(name_id.id as usize));
 
                 AbstractParam::new(name_id, span)
             }
@@ -1279,8 +1258,6 @@ fn parse_alias_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<Abstract
 fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>, Token> {
     let mut conds: Vec<SpannedExpr> = Vec::new();
     // This count cannot end the definition since it would prevent arguments from being viewed
-    let mut err_count = 0;
-
     ctx.expect_verbose(
         TokenKind::OBracket,
         "Expected a '[' to define conditions, found ",
@@ -1296,17 +1273,7 @@ fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>
 
     while ctx.peek_tok() != Token::CBracket {
         let cond = parse_expr(ctx, 0, interner)?;
-
-        // Error reporting behavior is more dangerous the more lenient the reporting is
-        // if let Ok(cond) = new_cond {
         conds.push(cond);
-        // } else {
-        //     if err_count > MAX_ERRORS {
-        //         break;
-        //     }
-        //
-        //     err_count += 1;
-        // }
 
         if ctx.peek_tok() == Token::CBracket {
             break;
@@ -1321,16 +1288,13 @@ fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>
         )?;
     }
 
-    if err_count == 0 {
-        _ = ctx.expect_verbose(
-            TokenKind::CBracket,
-            "Expected ']' at end of condition, found ",
-            "",
-            // Does this set align properly?
-            Branch::Cond,
-            interner,
-        );
-    };
+    _ = ctx.expect_verbose(
+        TokenKind::CBracket,
+        "Expected ']' at end of condition, found ",
+        "",
+        Branch::Cond,
+        interner,
+    );
 
     Ok(conds)
 }

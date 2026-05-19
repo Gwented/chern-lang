@@ -11,7 +11,7 @@ use script_lib::{
     modules::{self},
     parser::ast::AstInfo,
     semantic::{
-        constraint_resolver::{ConstraintResolver, value_context::ValueContext},
+        constraint_resolver::ConstraintResolver,
         name_resolver::NamespaceResolver,
         type_resolver::{TypeResolver, type_context::TypeContext},
     },
@@ -93,9 +93,6 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
         return Err(ScriptError::Semantic(reporter.diags).into());
     }
 
-    // Not sure if this is needed anymore
-    let mut val_ctx = ValueContext::new();
-
     for i in 0..script_compiler.mods.len() {
         let module = &script_compiler.mods[i];
         if module.src_metadata.is_none() {
@@ -107,7 +104,6 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
             &asts[i],
             &interner,
             module.mod_id,
-            &mut val_ctx,
             &mut script_compiler,
         )
         .resolve()

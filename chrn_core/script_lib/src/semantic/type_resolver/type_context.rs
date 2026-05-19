@@ -1,6 +1,6 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
-use chrn_utils::id_types::{ExprId, ModuleId, SymbolId};
+use chrn_utils::id_types::{ExprId, SymbolId};
 
 // The idea here is to store a symbol that points to an expression at the bottom of a tree.
 // So, let y = x + 2 would store x in the symbol queue, and he expression id "x" within this
@@ -9,26 +9,16 @@ use chrn_utils::id_types::{ExprId, ModuleId, SymbolId};
 // When let x = 2 happens, x is searched for in the queue, we see the expression id for the x in
 // y = x + 2, so now it traverses down, sees expression add, resolves the add, then stops whenever
 // there are no more users.
-// HELP
 #[derive(Debug)]
 pub struct TypeContext {
-    // Caches checks each time a queued symbol is resolved
+    /// Whether or not the context should be checked. This is to prevent unconditional checks where
+    /// possible.
     pub(super) needs_check: bool,
     /// Queue of symbols that another symbol depends on which has not been resolved yet.
     /// Example: If we have, "let y = x + 2" we do not know the value of x yet, so x is stored as a
     /// symbol that is unresolved, y is pushed as a symbol that will be resolved later within the
     /// user_queue.
     pub(super) sym_queue: HashMap<SymbolId, PendingSymbol>,
-    /// Queue to allow for actively keeping note of what references are
-    /// still not referenced. This is a cached way of checking if there are any
-    /// symbols left unresolved without checking users directly.
-    // HashMap seems like a lot here but needs O(1) remove and insertion so a quick !is_empty can
-    // be done without spending time re-ordering an array while resolving pending users
-
-    // Possibly will be an ExprDetail structure that holds the span, and a semantic error that
-    // would be given to it so that the expression can be reported
-    pub(super) user_queue: VecDeque<PendingUser>,
-    // Symbol id of a symbol that is unresolved, and what other symbols it depends on
 }
 
 impl TypeContext {
@@ -36,7 +26,6 @@ impl TypeContext {
         TypeContext {
             needs_check: false,
             sym_queue: HashMap::new(),
-            user_queue: VecDeque::new(),
         }
     }
 
@@ -67,25 +56,6 @@ impl PendingSymbol {
             is_resolved: false,
             pending_exprs,
         }
-    }
-}
-
-#[derive(Debug)]
-// Unsure if this is needed entirely since pending symbols would seemingly be the only thing
-// needed? Error reporting is better if this stays here though since- Actually, cache.
-/// Struct to represent a symbol that is awaiting the value of a symbol it is dependent on.
-pub(super) struct PendingUser {
-    /// The user's `SymbolId`
-    pub(super) sym_id: SymbolId,
-    // This seems interweaved and odd maybe this should just go to symbol directly instead of this
-    // exprid misdirection.
-    /// The all symbols the user is waiting on.
-    pub(super) deps: Vec<SymbolId>,
-}
-
-impl PendingUser {
-    pub(super) fn new(sym_id: SymbolId, deps: Vec<SymbolId>) -> PendingUser {
-        PendingUser { sym_id, deps }
     }
 }
 

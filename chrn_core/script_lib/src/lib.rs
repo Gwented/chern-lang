@@ -1,6 +1,5 @@
 // Should this be pub(crate)?
 mod algo;
-pub mod conditions;
 pub mod config_loader;
 mod iyo;
 pub mod lexer;
@@ -137,7 +136,7 @@ mod tests {
         parser::{self, ast::AstInfo},
         script_compiler::ScriptCompiler,
         semantic::{
-            constraint_resolver::{ConstraintResolver, value_context::ValueContext},
+            constraint_resolver::ConstraintResolver,
             name_resolver::NamespaceResolver,
             scopes::ScopeType,
             type_resolver::{TypeResolver, type_context::TypeContext},

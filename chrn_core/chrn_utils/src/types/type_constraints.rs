@@ -134,7 +134,7 @@ impl TypeConstraintFlags {
     }
 
     /// Get's the domain of `self` according to the const value mapping present.
-    fn get_domain(self) -> TypeDomainFlags {
+    pub fn get_domain(self) -> TypeDomainFlags {
         let mut self_flags = self.flags;
         let mut main_domain = ALL_DOMAINS;
 

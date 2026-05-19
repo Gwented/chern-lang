@@ -9,11 +9,7 @@ use common::{
     span::Span,
 };
 
-use crate::{
-    algo,
-    modules::{Module, ModuleMetadata},
-    semantic::error::SemanticError,
-};
+use crate::{algo, modules::ModuleMetadata, semantic::error::SemanticError};
 
 use super::error::MathError;
 
@@ -190,6 +186,7 @@ impl<'a> SemanticReporter<'a> {
         self.err_vec.push(diag);
     }
 
+    // TODO: Old
     /// Draws red arrows under the span given. Option `err_name` represents whether or not a keyword that
     /// could be similar in name should be looked for.
     pub(super) fn report_spanned(

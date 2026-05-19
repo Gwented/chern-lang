@@ -375,6 +375,7 @@ impl FieldRepre {
 pub struct AliasDef {
     pub sym_id: SymbolId,
     pub params: Vec<Param>,
+    pub ty_constraints: TypeConstraintFlags,
     pub arg_constraints: Vec<ArgConstraint>,
     pub local_scope_id: ScopeId,
     pub args: Vec<InnerArgs>,
@@ -391,6 +392,7 @@ impl AliasDef {
         AliasDef {
             sym_id,
             params,
+            ty_constraints: TypeConstraintFlags::any(),
             arg_constraints,
             local_scope_id,
             conds: Vec::new(),
