@@ -136,9 +136,7 @@ mod tests {
         parser::{self, ast::AstInfo},
         script_compiler::ScriptCompiler,
         semantic::{
-            constraint_resolver::ConstraintResolver,
             name_resolver::NamespaceResolver,
-            scopes::ScopeType,
             type_resolver::{TypeResolver, type_context::TypeContext},
         },
         token::{Notation, Token},

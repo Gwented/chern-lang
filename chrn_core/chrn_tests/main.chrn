@@ -38,7 +38,7 @@ var->
     // again suggesting that it needs to be applied to the struct directly
 
     // Does not error if an argument using a type different from the current type is used
-    e: any #scient
+    e: core.Runtime [] #scient
 nest->
     // Arguments correctly error upon being given a self referential type that depends on itself
     // satisfying something like IsEmpty.

@@ -4,7 +4,7 @@ use common::span::Span;
 
 use crate::types::{
     builtins::BuiltinType,
-    type_constraints::{self, TypeConstraint, TypeConstraintFlags},
+    type_constraints::{self, TypeConstraintFlags},
 };
 
 /// If a new argument is added ensure this is updated
@@ -69,7 +69,7 @@ impl InnerArgs {
                     | BuiltinType::BigFloat
                     | BuiltinType::Unsized
                     //NOTE: Checks this at runtime
-                    |BuiltinType::Any => true,
+                    |BuiltinType::Runtime => true,
                     // Maybe this means that it shouldn't be a method, it should be a function that
                     // has access to their inner, which can do the rolving. Rolving.
                     //
@@ -113,7 +113,7 @@ impl InnerArgs {
 
     pub fn type_constraints(self) -> TypeConstraintFlags {
         let flags = match self {
-            InnerArgs::Warn | InnerArgs::Ignore => type_constraints::ANY,
+            InnerArgs::Warn | InnerArgs::Ignore => type_constraints::ALL_DOMAINS,
             InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => {
                 type_constraints::NUMERIC
             }

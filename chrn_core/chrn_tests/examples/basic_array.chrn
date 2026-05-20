@@ -5,7 +5,7 @@ var->
     capacity: unsized
     len: unsized
 /* Could also just be
-   ptr: ?
-   capacity: ?
-   len: ?
+   ptr: Runtime
+   capacity: Runtime
+   len: Runtime
 */

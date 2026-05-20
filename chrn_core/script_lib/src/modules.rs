@@ -74,7 +74,7 @@ pub struct Module {
     /// Imports found in the module
     // What if imports were tagged with bit-wise?
     pub imports: Vec<Import>,
-    /// Represents the 5 existent scopes + Any local
+    /// Represents the 5 existent scopes as well as any local scopes
     pub scopes: Vec<ScopeId>,
     // HashSet maybe
     pub exports: Vec<SymbolId>,

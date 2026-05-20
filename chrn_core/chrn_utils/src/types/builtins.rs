@@ -9,7 +9,7 @@ use crate::{
 pub static BUILTIN_TYPE_ARRAY: [&str; 27] = [
     "i8", "u8", "i16", "u16", "f16", "i32", "u32", "f32", "i64", "u64", "f64", "i128", "u128",
     "f128", "sized", "unsized", "char", "str", "bool", "nil", "BigInt", "BigFloat", "List", "Map",
-    "Set", "Tuple", "any",
+    "Set", "Tuple", "Runtime",
 ];
 
 //TEST: Serial and script interact with this directly so
@@ -43,7 +43,7 @@ pub enum BuiltinType {
     Tuple(Vec<TypeId>),
     //TODO: any should either disallow all conditions and only take in unrestricted arguments, or
     //be type inferred, given arguments or conditions
-    Any,
+    Runtime,
 }
 
 impl BuiltinType {
@@ -73,7 +73,7 @@ impl BuiltinType {
             intern::INTERNED_STR => Some(BuiltinType::Str),
             intern::INTERNED_BIGINT => Some(BuiltinType::BigInt),
             intern::INTERNED_BIGFLOAT => Some(BuiltinType::BigFloat),
-            intern::INTERNED_ANY => Some(BuiltinType::Any),
+            intern::INTERNED_RUNTIME => Some(BuiltinType::Runtime),
             _ => None,
         }
     }
@@ -102,7 +102,7 @@ impl BuiltinType {
             BuiltinType::Str => BuiltinTypeKind::Str,
             BuiltinType::BigInt => BuiltinTypeKind::BigInt,
             BuiltinType::BigFloat => BuiltinTypeKind::BigFloat,
-            BuiltinType::Any => BuiltinTypeKind::Any,
+            BuiltinType::Runtime => BuiltinTypeKind::Runtime,
             BuiltinType::List(_) => BuiltinTypeKind::List,
             BuiltinType::Set(_) => BuiltinTypeKind::Set,
             BuiltinType::Map(_, _) => BuiltinTypeKind::Map,
@@ -139,7 +139,7 @@ pub enum BuiltinTypeKind {
     Set,
     Map,
     Tuple,
-    Any,
+    Runtime,
 }
 
 impl Formattable for BuiltinTypeKind {
@@ -170,7 +170,7 @@ impl Formattable for BuiltinTypeKind {
             BuiltinTypeKind::List => Formatted::List,
             BuiltinTypeKind::Set => Formatted::Set,
             BuiltinTypeKind::Map => Formatted::Map,
-            BuiltinTypeKind::Any => Formatted::Any,
+            BuiltinTypeKind::Runtime => Formatted::Runtime,
             BuiltinTypeKind::Tuple => Formatted::Tuple,
         }
     }
@@ -279,24 +279,25 @@ impl BuiltinTypeKind {
                     // | type_constraints::COMPARABLE
                     | type_constraints::COLLECTION
             }
-            BuiltinTypeKind::Any => {
-                type_constraints::SIGNED_INTEGER
-                    | type_constraints::UNSIGNED_INTEGER
-                    | type_constraints::FLOAT
-                    | type_constraints::BOOL
-                    | type_constraints::STR
-                    | type_constraints::CHAR
-                    | type_constraints::ANY
-                    | type_constraints::COMPARABLE
-                    | type_constraints::CHARACTER_MAPPABLE
-                    | type_constraints::HAS_LEN
-                    | type_constraints::INTEGER
-                    | type_constraints::NUMERIC
-                    | type_constraints::RANGED
-                    | type_constraints::COLLECTION
-                    | type_constraints::ORDERED
-            }
-            BuiltinTypeKind::Nil => 0,
+            // Maybe make this a 0
+            // type_constraints::SIGNED_INTEGER
+            //     | type_constraints::UNSIGNED_INTEGER
+            //     | type_constraints::FLOAT
+            //     | type_constraints::BOOL
+            //     | type_constraints::STR
+            //     | type_constraints::CHAR
+            //     | type_constraints::ANY
+            //     | type_constraints::COMPARABLE
+            //     | type_constraints::CHARACTER_MAPPABLE
+            //     | type_constraints::HAS_LEN
+            //     | type_constraints::INTEGER
+            //     | type_constraints::NUMERIC
+            //     | type_constraints::RANGED
+            //     | type_constraints::COLLECTION
+            //     | type_constraints::ORDERED
+            // Not sure about this
+            BuiltinTypeKind::Nil => type_constraints::NIL,
+            BuiltinTypeKind::Runtime => type_constraints::RUNTIME,
         };
 
         TypeConstraintFlags::new(flags)
@@ -322,7 +323,7 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::Unsized
             | BuiltinTypeKind::BigInt
             | BuiltinTypeKind::BigFloat
-            | BuiltinTypeKind::Any => true,
+            | BuiltinTypeKind::Runtime => true,
             BuiltinTypeKind::Bool
             | BuiltinTypeKind::Nil
             | BuiltinTypeKind::Char
@@ -349,7 +350,7 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::Sized
             | BuiltinTypeKind::Unsized
             | BuiltinTypeKind::BigInt
-            | BuiltinTypeKind::Any => true,
+            | BuiltinTypeKind::Runtime => true,
             _ => false,
         }
     }
@@ -363,7 +364,7 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::I128
             | BuiltinTypeKind::Sized
             | BuiltinTypeKind::BigInt
-            | BuiltinTypeKind::Any => true,
+            | BuiltinTypeKind::Runtime => true,
             _ => false,
         }
     }
@@ -378,7 +379,7 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::Unsized
             // Shoult this be included? UnsignedBigInt? WHAT?
             | BuiltinTypeKind::BigInt
-            | BuiltinTypeKind::Any => true,
+            | BuiltinTypeKind::Runtime => true,
             _ => false,
         }
     }
@@ -409,7 +410,7 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::Set
             | BuiltinTypeKind::Map
             | BuiltinTypeKind::Tuple
-            | BuiltinTypeKind::Any => true,
+            | BuiltinTypeKind::Runtime => true,
             BuiltinTypeKind::Nil | BuiltinTypeKind::Bool => false,
         }
     }
@@ -438,7 +439,7 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::BigFloat
             | BuiltinTypeKind::Nil
             | BuiltinTypeKind::Bool
-            | BuiltinTypeKind::Any => true,
+            | BuiltinTypeKind::Runtime => true,
             BuiltinTypeKind::List
             | BuiltinTypeKind::Set
             | BuiltinTypeKind::Map
@@ -453,14 +454,14 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::F64
             | BuiltinTypeKind::F128
             | BuiltinTypeKind::BigFloat
-            | BuiltinTypeKind::Any => true,
+            | BuiltinTypeKind::Runtime => true,
             _ => false,
         }
     }
 
     pub fn is_character_mappable(&self) -> bool {
         match self {
-            BuiltinTypeKind::Str | BuiltinTypeKind::Char | BuiltinTypeKind::Any => true,
+            BuiltinTypeKind::Str | BuiltinTypeKind::Char | BuiltinTypeKind::Runtime => true,
             _ => false,
         }
     }
@@ -473,7 +474,7 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::Set
             | BuiltinTypeKind::Map
             | BuiltinTypeKind::Tuple
-            | BuiltinTypeKind::Any => true,
+            | BuiltinTypeKind::Runtime => true,
             _ => false,
         }
     }
@@ -485,7 +486,7 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::Set
             | BuiltinTypeKind::Map
             | BuiltinTypeKind::Tuple
-            | BuiltinTypeKind::Any => true,
+            | BuiltinTypeKind::Runtime => true,
             _ => false,
         }
     }
@@ -510,7 +511,7 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::Unsized
             | BuiltinTypeKind::BigInt
             | BuiltinTypeKind::BigFloat
-            | BuiltinTypeKind::Any => true,
+            | BuiltinTypeKind::Runtime => true,
             _ => false,
         }
     }

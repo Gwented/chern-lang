@@ -967,6 +967,7 @@ impl<'a> ConstraintResolver<'a> {
         }
     }
 
+    // This should really send signals
     fn check_type_arg(
         &self,
         type_id: TypeId,
@@ -1022,13 +1023,13 @@ impl<'a> ConstraintResolver<'a> {
                 visited.push(type_id);
 
                 for variant in &enum_def.variants {
-                    if let Some(id) = variant.type_id {
-                        visited.push(id);
+                    if let Some(inner) = variant.type_id {
+                        visited.push(inner);
 
                         // Checking if one of it's variants are self referencing, or if the type we
                         // just came from, possibly a tuple, is referring to itself from a
                         // different context.
-                        if visited.contains(&id) {
+                        if visited.contains(&inner) {
                             if spanned_arg.arg.has_restrictions() {
                                 let name = self.interner.search(symbol.name_id.id as usize);
 
@@ -1046,7 +1047,7 @@ impl<'a> ConstraintResolver<'a> {
                             continue;
                         }
 
-                        self.check_type_arg(id, active_span, module, spanned_arg, visited)?;
+                        self.check_type_arg(inner, active_span, module, spanned_arg, visited)?;
                     }
                 }
 
@@ -1061,15 +1062,6 @@ impl<'a> ConstraintResolver<'a> {
                         // This looks weird...
                         self.check_type_arg(*key_id, active_span, module, spanned_arg, visited)?;
                         self.check_type_arg(*val_id, active_span, module, spanned_arg, visited)
-                    }
-                    BuiltinType::Any => {
-                        let msg =
-                            "Only type arguments with no restrictions can be applied to the type `any`"
-                                .to_string();
-                        Err(SemanticError::General(
-                            msg,
-                            vec![spanned_arg.span, active_span],
-                        ))
                     }
                     BuiltinType::Tuple(elements) => {
                         visited.push(type_id);
@@ -1120,8 +1112,14 @@ impl<'a> ConstraintResolver<'a> {
             }
             Type::Alias(alias_def) => todo!("Aliased"),
             Type::Unknown => todo!("Unknowned"),
+            // Need to tell it should terminate
+            Type::Func(_) => {
+                // VAGUE
+                let msg = "Functions can only be placed within type constraint blocks".to_string();
+                Err(SemanticError::General(msg, vec![active_span]))
+            }
             // Function.
-            Type::TypeDef(_) | Type::Func(_) => {
+            Type::TypeDef(_) => {
                 unreachable!("Not syntactically possible")
             }
             Type::Constrained(inferred_constraints) => {
@@ -1371,7 +1369,6 @@ impl<'a> ConstraintResolver<'a> {
 
                         if parent_ty_id != other_type_id {
                             let other_span = self.compiler.exprs[expr_id.id as usize].span;
-
                             let msg = "Must be the same type as `self`".to_string();
 
                             sem_errs

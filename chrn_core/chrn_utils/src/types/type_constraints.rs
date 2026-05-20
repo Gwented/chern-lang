@@ -20,7 +20,8 @@ pub enum TypeConstraint {
     Bool,
     Str,
     Char,
-    Any,
+    Runtime,
+    Nil,
 }
 
 impl Formattable for TypeConstraint {
@@ -37,11 +38,11 @@ impl Formattable for TypeConstraint {
             TypeConstraint::SignedInteger => Formatted::SignedInteger,
             TypeConstraint::UnsignedInteger => Formatted::UnsignedInteger,
             TypeConstraint::Char => Formatted::Char,
-            TypeConstraint::Any => Formatted::Any,
+            TypeConstraint::Runtime => Formatted::Runtime,
             TypeConstraint::Ranged => Formatted::Ranged,
-            // Not sure about this type constraint header...
             TypeConstraint::Comparable => Formatted::Comparable,
             TypeConstraint::Ordered => Formatted::Ordered,
+            TypeConstraint::Nil => Formatted::Nil,
         }
     }
 }
@@ -57,7 +58,7 @@ impl TypeDomainFlags {
         TypeDomainFlags { flags }
     }
 
-    pub fn to_type_constraints(self) -> Vec<TypeConstraint> {
+    pub fn to_type_constraints_vec(self) -> Vec<TypeConstraint> {
         let mut constraints = Vec::new();
         let mut flags = self.flags;
 
@@ -85,8 +86,8 @@ impl TypeConstraintFlags {
         TypeConstraintFlags { flags }
     }
 
-    pub fn any() -> TypeConstraintFlags {
-        TypeConstraintFlags { flags: ANY }
+    pub fn runtime() -> TypeConstraintFlags {
+        TypeConstraintFlags { flags: RUNTIME }
     }
 
     /// Turns bit-flags into a `TypeConstraint` enum vector by going through each of it's active
@@ -125,6 +126,12 @@ impl TypeConstraintFlags {
     /// Get's the domain of `self` according to the const value mapping present.
     pub fn get_domain(self) -> TypeDomainFlags {
         let mut self_flags = self.flags;
+
+        //TEST:
+        if self_flags == ALL_DOMAINS {
+            return TypeDomainFlags::new(ALL_DOMAINS);
+        }
+
         let mut main_domain = ALL_DOMAINS;
 
         while self_flags != 0 {
@@ -199,7 +206,7 @@ pub fn to_idx(flag: u64) -> usize {
         BOOL => 3,
         STR => 4,
         CHAR => 5,
-        ANY => 6,
+        RUNTIME => 6,
         COMPARABLE => 7,
         CHARACTER_MAPPABLE => 8,
         HAS_LEN => 9,
@@ -208,6 +215,7 @@ pub fn to_idx(flag: u64) -> usize {
         RANGED => 12,
         COLLECTION => 13,
         ORDERED => 14,
+        NIL => 15,
         _ => unreachable!(),
     }
 }
@@ -243,7 +251,7 @@ pub const FLOAT: u64 = 1 << 2;
 pub const BOOL: u64 = 1 << 3;
 pub const STR: u64 = 1 << 4;
 pub const CHAR: u64 = 1 << 5;
-pub const ANY: u64 = 1 << 6;
+pub const RUNTIME: u64 = 1 << 6;
 pub const COMPARABLE: u64 = 1 << 7;
 pub const CHARACTER_MAPPABLE: u64 = 1 << 8;
 pub const HAS_LEN: u64 = 1 << 9;
@@ -252,6 +260,7 @@ pub const NUMERIC: u64 = 1 << 11;
 pub const RANGED: u64 = 1 << 12;
 pub const COLLECTION: u64 = 1 << 13;
 pub const ORDERED: u64 = 1 << 14;
+pub const NIL: u64 = 1 << 15;
 
 // Domains of constraints
 
@@ -277,23 +286,24 @@ pub const ALL_DOMAINS: u64 = STR
     | UNSIGNED_INTEGER
     | FLOAT
     | BOOL
-    | ANY
+    | RUNTIME
     | INTEGER
     | NUMERIC
     | RANGED
     | CHARACTER_MAPPABLE
     | COLLECTION
     | COMPARABLE
-    | ORDERED;
+    | ORDERED
+    | NIL;
 
-pub static TYPE_CONSTRAINTS_ARRAY: [TypeConstraint; 15] = [
+pub static TYPE_CONSTRAINTS_ARRAY: [TypeConstraint; 16] = [
     TypeConstraint::SignedInteger,
     TypeConstraint::UnsignedInteger,
     TypeConstraint::Float,
     TypeConstraint::Bool,
     TypeConstraint::Str,
     TypeConstraint::Char,
-    TypeConstraint::Any,
+    TypeConstraint::Runtime,
     TypeConstraint::Comparable,
     TypeConstraint::CharacterMappable,
     TypeConstraint::HasLen,
@@ -302,6 +312,7 @@ pub static TYPE_CONSTRAINTS_ARRAY: [TypeConstraint; 15] = [
     TypeConstraint::Ranged,
     TypeConstraint::Collection,
     TypeConstraint::Ordered,
+    TypeConstraint::Nil,
 ];
 
 impl TypeConstraint {
@@ -341,11 +352,6 @@ impl TypeConstraint {
         // }
     }
 
-    /// Checks if `self` is within the set of `other`
-    pub fn aligns_with(&self, other: TypeConstraint) -> bool {
-        (self.to_u64() & other.to_u64()) != 0
-    }
-
     pub fn to_u64(&self) -> u64 {
         match self {
             TypeConstraint::Collection => COLLECTION,
@@ -359,10 +365,11 @@ impl TypeConstraint {
             TypeConstraint::Str => STR,
             TypeConstraint::Char => CHAR,
             TypeConstraint::UnsignedInteger => UNSIGNED_INTEGER,
-            TypeConstraint::Any => ANY,
+            TypeConstraint::Runtime => RUNTIME,
             TypeConstraint::Ranged => RANGED,
             TypeConstraint::Comparable => COMPARABLE,
             TypeConstraint::Ordered => ORDERED,
+            TypeConstraint::Nil => NIL,
         }
     }
 
@@ -379,11 +386,11 @@ impl TypeConstraint {
             TypeConstraint::Str => STR,
             TypeConstraint::Char => CHAR,
             TypeConstraint::UnsignedInteger => UNSIGNED_INTEGER,
-            //WARN: I don't know about this one
-            TypeConstraint::Any => ALL_DOMAINS,
+            TypeConstraint::Runtime => RUNTIME,
             TypeConstraint::Ranged => RANGED_DOMAIN,
             TypeConstraint::Comparable => COMPARABLE_DOMAIN,
             TypeConstraint::Ordered => ORDERED_DOMAIN,
+            TypeConstraint::Nil => NIL,
         }
     }
 }
@@ -405,10 +412,11 @@ impl TryFrom<u64> for TypeConstraint {
             STR => Ok(TypeConstraint::Str),
             CHAR => Ok(TypeConstraint::Char),
             UNSIGNED_INTEGER => Ok(TypeConstraint::UnsignedInteger),
-            ANY => Ok(TypeConstraint::Any),
+            RUNTIME => Ok(TypeConstraint::Runtime),
             RANGED => Ok(TypeConstraint::Ranged),
             COMPARABLE => Ok(TypeConstraint::Comparable),
             ORDERED => Ok(TypeConstraint::Ordered),
+            NIL => Ok(TypeConstraint::Nil),
             _ => unreachable!("try_from failed to turn u64 constraint into enum `TypeConstraint`"),
         }
     }

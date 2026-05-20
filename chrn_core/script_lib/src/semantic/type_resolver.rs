@@ -8,7 +8,7 @@ use chrn_utils::id_types::{
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::types::builtins::{BuiltinType, BuiltinTypeKind};
-use chrn_utils::types::type_constraints::{TypeConstraint, TypeConstraintFlags};
+use chrn_utils::types::type_constraints::TypeConstraintFlags;
 use chrn_utils::values::{Value, ValueInfo};
 use common::chrn_settings::ChrnSettings;
 use common::fmter::{Formattable, Formatted};
@@ -558,6 +558,7 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
+    // Should this typecheck in-case a type of function was given to a typedef?
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
         let type_id = self.resolve_type_expr(
             self.current_mod,
@@ -949,7 +950,7 @@ impl TypeResolver<'_> {
             //
             // Not sure about this
             let ty_info = TypeInfo::new(
-                Type::Constrained(TypeConstraintFlags::any()),
+                Type::Constrained(TypeConstraintFlags::runtime()),
                 self.current_mod,
             );
 

@@ -72,13 +72,13 @@ pub const CORE_NIL: u32 = 18;
 pub const CORE_BOOL: u32 = 19;
 pub const CORE_BIGINT: u32 = 20;
 pub const CORE_BIGFLOAT: u32 = 21;
-pub const CORE_ANY: u32 = 22;
+pub const CORE_RUNTIME: u32 = 22;
 // pub const CORE_LIST: u32 = 23;
 // pub const CORE_SET: u32 = 24;
 // pub const CORE_MAP: u32 = 25;
 // pub const CORE_TUPLE: u32 = 26;
 // Called idx but is u32...
-pub const TYPE_UNKNOWN_IDX: u32 = CORE_ANY + 1;
+pub const TYPE_UNKNOWN_IDX: u32 = CORE_RUNTIME + 1;
 
 // Helper struct
 // struct ScriptStdLib {}
@@ -1086,12 +1086,12 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::Any),
+            Type::BuiltinType(BuiltinType::Runtime),
             core_mod_id,
         ));
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_ANY);
+        let interned_id = InternedId::new(intern::INTERNED_RUNTIME);
         let symbol = Symbol::new(
             interned_id,
             sym_id,

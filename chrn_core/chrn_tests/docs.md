@@ -51,7 +51,7 @@ char, bool, str, struct, enum, nil, BigInt, BigFloat, List, Map, Set, Tuple
 `struct`: For defining a structure of data.
 `enum`: For defining an enum type which can also hold enumerations with types.
 
-`any`: Infers type and expects type consistency throughout entire given serialized data file type.
+`Runtime`: Infers type and expects type consistency throughout entire given serialized data file type.
 
 ## Prefix/Unary Operations
 `!`: NOT
@@ -318,9 +318,9 @@ var->
 bind "serialized_data.chrn"
 
 var-> // #ignore <---- Maybe allow for this to be global if next to a section
-    ptr: any #ignore
-    capacity: any #ignore
-    len: any #ignore
+    ptr: Runtime #ignore
+    capacity: Runtime #ignore
+    len: Runtime #ignore
 ```
 
 ## FORGOT ABOUT UNICODE

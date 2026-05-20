@@ -403,7 +403,7 @@ impl AliasDef {
         AliasDef {
             sym_id,
             params,
-            ty_constraints: TypeConstraintFlags::any(),
+            ty_constraints: TypeConstraintFlags::runtime(),
             arg_constraints,
             local_scope_id,
             conds: Vec::new(),
