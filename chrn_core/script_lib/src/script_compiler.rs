@@ -413,6 +413,7 @@ impl ScriptCompiler {
             false,
             is_empty_flags,
             vec![ArgConstraint::ArgCount(0), ArgConstraint::CharacterMappable],
+            true,
             TypeId::new(CORE_BOOL),
         );
         compiler
@@ -443,6 +444,7 @@ impl ScriptCompiler {
             false,
             ws_flags,
             vec![ArgConstraint::ArgCount(0), ArgConstraint::CharacterMappable],
+            true,
             TypeId::new(CORE_BOOL),
         );
 
@@ -474,6 +476,7 @@ impl ScriptCompiler {
             true,
             contains_flags,
             vec![ArgConstraint::ArgCount(1), ArgConstraint::CharacterMappable],
+            true,
             TypeId::new(CORE_BOOL),
         );
 
@@ -505,6 +508,7 @@ impl ScriptCompiler {
             true,
             startsw_flags,
             vec![ArgConstraint::ArgCount(1), ArgConstraint::CharacterMappable],
+            true,
             TypeId::new(CORE_BOOL),
         );
 
@@ -538,6 +542,7 @@ impl ScriptCompiler {
             // There we go
             endsw_flags,
             vec![ArgConstraint::ArgCount(1), ArgConstraint::CharacterMappable],
+            true,
             TypeId::new(CORE_BOOL),
         );
 
@@ -571,7 +576,9 @@ impl ScriptCompiler {
                 ArgConstraint::ArgCount(2),
                 ArgConstraint::Numeric,
                 ArgConstraint::MatchingArgumentTypes,
+                ArgConstraint::SameTypeAsSelf,
             ],
+            true,
             TypeId::new(CORE_BOOL),
         );
 
@@ -594,16 +601,20 @@ impl ScriptCompiler {
         compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
-        // Equals(any)
+        // Equals(Comparable)
         let type_id = TypeId::new(compiler.types.len() as u32);
         let eq_flags = TypeConstraintFlags::new(TypeConstraint::Comparable.to_u64());
 
         let func_def = FuncDef::new(
             FuncKind::Equals,
             true,
-            // What constrsaint...
             eq_flags,
-            vec![ArgConstraint::ArgCount(1), ArgConstraint::Comparable],
+            vec![
+                ArgConstraint::ArgCount(1),
+                ArgConstraint::Comparable,
+                ArgConstraint::SameTypeAsSelf,
+            ],
+            true,
             TypeId::new(CORE_BOOL),
         );
 

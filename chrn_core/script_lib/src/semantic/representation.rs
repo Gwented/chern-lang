@@ -60,7 +60,9 @@ impl Formattable for Type {
             Type::Alias(alias_def) => alias_def.to_fmt(),
             Type::TypeDef(type_def) => type_def.to_fmt(),
             Type::Unknown => Formatted::Unknown,
-            Type::Constrained(type_constraint) => type_constraint.to_fmt(),
+            Type::Constrained(_) => {
+                unimplemented!("Type constrains cannot be formatted through `Type`")
+            }
         }
     }
 }
@@ -316,7 +318,14 @@ impl Formattable for TypeDef {
 #[derive(Debug)]
 pub struct FuncDef {
     pub kind: FuncKind,
+    // May be separate structure
     pub is_callable: bool,
+    /// Given:
+    /// x: i32 \[IsEmpty\]
+    /// IsEmpty's usage in this example directly depends on the type of self.
+    /// But given "Log(x)", it would not be dependent on self, meaning it should be ignored in
+    /// regards to
+    pub affects_type_constraint: bool,
     //TEST:
     pub type_constraints: TypeConstraintFlags,
     //TEST:
@@ -330,11 +339,13 @@ impl FuncDef {
         is_callable: bool,
         type_constraints: TypeConstraintFlags,
         arg_constraints: Vec<ArgConstraint>,
+        affects_type_constraint: bool,
         ret_type: TypeId,
     ) -> FuncDef {
         FuncDef {
             kind,
             is_callable,
+            affects_type_constraint,
             type_constraints,
             arg_constraints,
             ret_type,

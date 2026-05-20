@@ -1,4 +1,6 @@
 // Import privacy leaking behavior and overwriting tendency is highly suspicious
+//
+// Oh I'm sure it's FINE. COMPLETELY, FINE.
 
 // @def invalid toky // hey
 //@end
@@ -27,7 +29,7 @@ let x = 5*/
 
 // SymbolKind local??
 // alias y() = [IsEmpty]
-alias default(x, y) = [Equals(x), StartsW(y), IsEmpty]
+// alias default(x, y) = [Equals(x), StartsW(y), IsEmpty]
 // alias frosted(used) = [IsEmpty, Contains(used)]
 
 // "rec" keyword, or just use in?
@@ -35,13 +37,18 @@ var->
     // Conds need shallow checks too so should err if struct or enum is used
     // again suggesting that it needs to be applied to the struct directly
 
-    p: str [IsWhitespace] 
-    // e: str [default()]
+    // Does not error if an argument using a type different from the current type is used
+    e: any #scient
 nest->
-enum Doof {}
-    /*struct Thingy {
+    // Arguments correctly error upon being given a self referential type that depends on itself
+    // satisfying something like IsEmpty.
+    /*struct Doof {
+        a: Doof [IsWhitespace]
+    } [IsWhitespace]*/
+
+    struct Thingy {
         name: unsized
-        age: i32
-    } [default(1)] #ignore*/
+        age: str
+    } []
 
 @end

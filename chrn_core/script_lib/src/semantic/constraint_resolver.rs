@@ -102,23 +102,7 @@ impl<'a> ConstraintResolver<'a> {
                 }
             }
         }
-        //
-        // //NOTE: Subject to change
-        //
-        // // Starts jobs upon resolving everything from all modules
-        // if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 1].mod_id {
-        //     match self.resolve_leftover_jobs() {
-        //         Ok(_) => (),
-        //         Err(_) => {
-        //             let mut jobs: VecDeque<Job> = VecDeque::new();
-        //             jobs.append(&mut self.val_ctx.jobs);
-        //             for job in jobs {
-        //                 self.report_job(job);
-        //             }
-        //         }
-        //     };
-        // }
-        //
+
         if !self.reporter.err_vec.is_empty() {
             let mut diags = Vec::new();
             diags.append(&mut self.reporter.err_vec);
@@ -128,14 +112,6 @@ impl<'a> ConstraintResolver<'a> {
 
         Ok(())
     }
-
-    // fn resolve_expr(
-    //     &mut self,
-    //     spanned_expr: &SpannedExpr,
-    //     scope_type: ScopeType,
-    // ) -> Result<ValueResult, SemanticError> {
-    //     todo!();
-    // }
 
     // Needs:
     //
@@ -233,9 +209,13 @@ impl<'a> ConstraintResolver<'a> {
                 _ => (),
             }
 
-            if let Err(sem_err) =
-                self.check_arg(type_def.type_id, ty_span, module, &spanned_arg, &mut vec![])
-            {
+            if let Err(sem_err) = self.check_type_arg(
+                type_def.type_id,
+                ty_span,
+                module,
+                &spanned_arg,
+                &mut Vec::new(),
+            ) {
                 self.reporter.report_semantic(
                     sem_err,
                     module
@@ -293,14 +273,14 @@ impl<'a> ConstraintResolver<'a> {
                 // New constraints were found which would need to be lowerable
                 match self.infer_type_constraint_from_expr(cond_expr_id, name_id, param_span) {
                     Some(new_constraints) => {
-                        dbg!(new_constraints.to_type_constraints());
+                        dbg!(new_constraints.to_type_constraint_vec());
                         if let Some(current) = current_constraints_opt {
                             if new_constraints == *current {
                                 continue;
                             }
 
                             dbg!(&current, new_constraints);
-                            if current.contains_any(*&new_constraints) {
+                            if current.contains(*&new_constraints) {
                                 if let Some(lowered) = current.try_lower_to(new_constraints) {
                                     *current_constraints_opt = Some(lowered);
                                 } else {
@@ -368,7 +348,7 @@ impl<'a> ConstraintResolver<'a> {
         // Only the type of functions used matter if they depend on self.
         let alias_def = self.compiler.get_alias_mut(sym_id);
         // alias_def.ty_constraints = found_constraints.iter().filter_map(|c| c.is_some());
-        let thigns = alias_def.ty_constraints.to_type_constraints();
+        let thigns = alias_def.ty_constraints.to_type_constraint_vec();
         // panic!();
 
         // Currently assuming that if we see none here it's fine since technically, you could
@@ -387,6 +367,7 @@ impl<'a> ConstraintResolver<'a> {
         // it's used, then if so attempts to assign the constraint to the used argument.
 
         let module = &self.compiler.mods[self.current_mod.id];
+        panic!("Heu");
 
         // NOTE: Small issue here is that when we check an alias, and it has an error, it's
         // emitted. But then if we have something that USES the alias, it also gets that error.
@@ -443,7 +424,7 @@ impl<'a> ConstraintResolver<'a> {
                                 return None;
                             }
 
-                            Some(builtin_ty.kind().type_constraints(false))
+                            Some(builtin_ty.kind().type_constraints())
                         }
                         // rec check
                         Type::Struct(struct_def) => todo!(),
@@ -519,9 +500,7 @@ impl<'a> ConstraintResolver<'a> {
             ExprHir::BinaryExpr { lhs, op, rhs } => {
                 let ty = &self.compiler.types[expr.type_id.id as usize].ty;
                 match ty {
-                    Type::BuiltinType(builtin_ty) => {
-                        Some(builtin_ty.kind().type_constraints(false))
-                    }
+                    Type::BuiltinType(builtin_ty) => Some(builtin_ty.kind().type_constraints()),
                     Type::Struct(struct_def) => todo!(),
                     Type::Enum(enum_def) => todo!(),
                     Type::Func(func_def) => todo!(),
@@ -605,7 +584,7 @@ impl<'a> ConstraintResolver<'a> {
             let ty_span = abs_struct.fields[i].spanned_ty_expr.span;
             for spanned_arg in &abs_struct.glob_args {
                 if let Err(sem_err) =
-                    self.check_arg(field.type_id, ty_span, module, spanned_arg, &mut vec![])
+                    self.check_type_arg(field.type_id, ty_span, module, spanned_arg, &mut vec![])
                 {
                     self.reporter.report_semantic(
                         sem_err,
@@ -624,7 +603,7 @@ impl<'a> ConstraintResolver<'a> {
             let ty_span = abs_field.spanned_ty_expr.span;
             for spanned_arg in &abs_field.args {
                 if let Err(sem_err) =
-                    self.check_arg(field.type_id, ty_span, module, spanned_arg, &mut vec![])
+                    self.check_type_arg(field.type_id, ty_span, module, spanned_arg, &mut vec![])
                 {
                     self.reporter.report_semantic(
                         sem_err,
@@ -712,7 +691,7 @@ impl<'a> ConstraintResolver<'a> {
 
                 for spanned_arg in &abs_enum.glob_args {
                     if let Err(sem_err) =
-                        self.check_arg(inner_id, ty_span, module, spanned_arg, &mut vec![])
+                        self.check_type_arg(inner_id, ty_span, module, spanned_arg, &mut vec![])
                     {
                         self.reporter.report_semantic(
                             sem_err,
@@ -734,7 +713,7 @@ impl<'a> ConstraintResolver<'a> {
 
                 for spanned_arg in &abs_variant.args {
                     if let Err(sem_err) =
-                        self.check_arg(inner_id, ty_span, module, spanned_arg, &mut vec![])
+                        self.check_type_arg(inner_id, ty_span, module, spanned_arg, &mut vec![])
                     {
                         self.reporter.report_semantic(
                             sem_err,
@@ -755,11 +734,25 @@ impl<'a> ConstraintResolver<'a> {
     fn check_cond(
         &self,
         parent_ty_id: TypeId,
-        ty_span: Span,
+        parent_span: Span,
         cond_expr_id: ExprId,
     ) -> Result<(), Vec<SemanticError>> {
         let cond_expr = &self.compiler.exprs[cond_expr_id.id as usize];
 
+        // if visited.contains(&field.type_id) {
+        //     if spanned_arg.arg.has_restrictions() {
+        //         let name = self.interner.search(symbol.name_id.id as usize);
+        //
+        //         let msg = format!(
+        //             "The type `{name}` cannot have `#{}` applied due to recursively relying on itself satisfying the argument",
+        //             spanned_arg.arg
+        //         );
+        //
+        //         return Err(SemanticError::General(
+        //             msg,
+        //             vec![spanned_arg.span, active_span],
+        //         ));
+        //     }
         match &cond_expr.expr_hir {
             ExprHir::Call(callee_expr_id, arg_expr_ids) => {
                 let callee = &self.compiler.exprs[callee_expr_id.id as usize];
@@ -772,12 +765,15 @@ impl<'a> ConstraintResolver<'a> {
                             return Err(vec![SemanticError::General(msg, vec![cond_expr.span])]);
                         }
 
-                        // Anything used in a condition must return a boolean
+                        // Top level functions or predicates used within type constraints must
+                        // evaluate to a boolean
                         let ret_type = &self.compiler.types[func_def.ret_type.id as usize].ty;
 
                         if let Type::BuiltinType(BuiltinType::Bool) = ret_type {
                             // Maybbe tturrnrn in tot a fucntinson
                             if let Err(sem_err) = self.check_arg_constraints(
+                                parent_ty_id,
+                                parent_span,
                                 cond_expr_id,
                                 arg_expr_ids,
                                 &func_def.arg_constraints,
@@ -788,7 +784,7 @@ impl<'a> ConstraintResolver<'a> {
                             match constraints::check_type_constraint(
                                 self.compiler,
                                 parent_ty_id,
-                                ty_span,
+                                parent_span,
                                 cond_expr.span,
                                 &mut Vec::new(),
                                 func_def.type_constraints,
@@ -797,7 +793,7 @@ impl<'a> ConstraintResolver<'a> {
                                 Err(sem_err) => return Err(vec![sem_err]),
                             }
                         } else {
-                            let msg = "Every value within a condition mut evaluate to a boolean"
+                            let msg = "Top level functions or predicates used within type constraint blocks must evaluate to a boolean"
                                 .to_string();
                             Err(vec![SemanticError::General(msg, vec![cond_expr.span])])
                         }
@@ -808,6 +804,8 @@ impl<'a> ConstraintResolver<'a> {
                         // Checking the arguments given in the call against the arg constraints of
                         // the alias
                         if let Err(sem_err) = self.check_arg_constraints(
+                            parent_ty_id,
+                            parent_span,
                             cond_expr_id,
                             arg_expr_ids,
                             &alias_def.arg_constraints,
@@ -823,7 +821,7 @@ impl<'a> ConstraintResolver<'a> {
                         //WARN: I think this is wrong
                         for inner_cond_expr_id in &alias_def.conds {
                             if let Err(mut sem_err) =
-                                self.check_cond(parent_ty_id, ty_span, *inner_cond_expr_id)
+                                self.check_cond(parent_ty_id, parent_span, *inner_cond_expr_id)
                             {
                                 sem_errs.append(&mut sem_err);
                             }
@@ -854,7 +852,7 @@ impl<'a> ConstraintResolver<'a> {
                             if let Err(sem_err) = constraints::check_type_constraint(
                                 self.compiler,
                                 *arg_ty_id,
-                                ty_span,
+                                parent_span,
                                 cond_expr.span,
                                 &mut Vec::new(),
                                 constraint_flags,
@@ -898,7 +896,7 @@ impl<'a> ConstraintResolver<'a> {
                                 match constraints::check_type_constraint(
                                     self.compiler,
                                     parent_ty_id,
-                                    ty_span,
+                                    parent_span,
                                     cond_expr.span,
                                     &mut Vec::new(),
                                     func_def.type_constraints,
@@ -932,7 +930,8 @@ impl<'a> ConstraintResolver<'a> {
                         if let Type::BuiltinType(BuiltinType::Bool) = ty {
                             Ok(())
                         } else {
-                            let msg = "Expressions within constraints must evaluate to a boolean"
+                            // Confusing?
+                            let msg = "Top level values used within type constraint blocks must evaluate to a boolean"
                                 .to_string();
                             Err(vec![SemanticError::General(msg, vec![cond_expr.span])])
                         }
@@ -948,7 +947,7 @@ impl<'a> ConstraintResolver<'a> {
                     Ok(())
                 } else {
                     Err(vec![SemanticError::General(
-                        "Expressions within constraints must evaluate to a boolean".to_string(),
+                        "Top level expressions used within type constraint blocks must evaluate to a boolean".to_string(),
                         vec![cond_expr.span],
                     )])
                 }
@@ -961,14 +960,14 @@ impl<'a> ConstraintResolver<'a> {
                     Ok(())
                 } else {
                     let msg =
-                        "Expressions within constraints must evaluate to a boolean".to_string();
+                        "Top level values used within type constraint blocks must evaluate to a boolean".to_string();
                     Err(vec![SemanticError::General(msg, vec![cond_expr.span])])
                 }
             }
         }
     }
 
-    fn check_arg(
+    fn check_type_arg(
         &self,
         type_id: TypeId,
         active_span: Span,
@@ -1011,12 +1010,7 @@ impl<'a> ConstraintResolver<'a> {
 
                     visited.push(field.type_id);
 
-                    let arg_res =
-                        self.check_arg(field.type_id, active_span, module, spanned_arg, visited);
-
-                    if arg_res.is_err() {
-                        return arg_res;
-                    }
+                    self.check_type_arg(field.type_id, active_span, module, spanned_arg, visited)?;
                 }
 
                 Ok(())
@@ -1052,11 +1046,7 @@ impl<'a> ConstraintResolver<'a> {
                             continue;
                         }
 
-                        let arg_res = self.check_arg(id, active_span, module, spanned_arg, visited);
-
-                        if arg_res.is_err() {
-                            return arg_res;
-                        }
+                        self.check_type_arg(id, active_span, module, spanned_arg, visited)?;
                     }
                 }
 
@@ -1064,15 +1054,23 @@ impl<'a> ConstraintResolver<'a> {
             }
             Type::BuiltinType(builtin_type) => {
                 match builtin_type {
-                    BuiltinType::Set(type_id) | BuiltinType::List(type_id) => {
-                        self.check_arg(*type_id, active_span, module, spanned_arg, visited)
+                    BuiltinType::List(type_id) | BuiltinType::Set(type_id) => {
+                        self.check_type_arg(*type_id, active_span, module, spanned_arg, visited)
                     }
                     BuiltinType::Map(key_id, val_id) => {
                         // This looks weird...
-                        self.check_arg(*key_id, active_span, module, spanned_arg, visited)?;
-                        self.check_arg(*val_id, active_span, module, spanned_arg, visited)
+                        self.check_type_arg(*key_id, active_span, module, spanned_arg, visited)?;
+                        self.check_type_arg(*val_id, active_span, module, spanned_arg, visited)
                     }
-                    BuiltinType::Any => Ok(()),
+                    BuiltinType::Any => {
+                        let msg =
+                            "Only type arguments with no restrictions can be applied to the type `any`"
+                                .to_string();
+                        Err(SemanticError::General(
+                            msg,
+                            vec![spanned_arg.span, active_span],
+                        ))
+                    }
                     BuiltinType::Tuple(elements) => {
                         visited.push(type_id);
                         for element in elements {
@@ -1092,16 +1090,26 @@ impl<'a> ConstraintResolver<'a> {
                                 _ => visited.push(*element),
                             }
 
-                            self.check_arg(*element, active_span, module, spanned_arg, visited)?;
+                            self.check_type_arg(
+                                *element,
+                                active_span,
+                                module,
+                                spanned_arg,
+                                visited,
+                            )?;
                         }
 
                         Ok(())
                     }
-                    builtin_type => {
-                        if !spanned_arg.arg.supports_builtin_type(&builtin_type) {
+                    // Need a function where it obtains type constraints given the recursive types
+                    // since shallow checks accept more than proven
+                    builtin_ty => {
+                        let constraints = builtin_ty.kind().type_constraints();
+                        let arg_constraints = spanned_arg.arg.type_constraints();
+
+                        if !arg_constraints.contains(constraints) {
                             return Err(SemanticError::UnsupportedArg(
                                 spanned_arg.arg,
-                                builtin_type.kind().to_fmt(),
                                 vec![spanned_arg.span, active_span],
                             ));
                         }
@@ -1112,21 +1120,21 @@ impl<'a> ConstraintResolver<'a> {
             }
             Type::Alias(alias_def) => todo!("Aliased"),
             Type::Unknown => todo!("Unknowned"),
+            // Function.
             Type::TypeDef(_) | Type::Func(_) => {
                 unreachable!("Not syntactically possible")
             }
-            Type::Constrained(type_constraint) => {
-                todo!();
-                // if !spanned_arg
-                //     .arg
-                //     .supports_type_constraint(type_constraint, false)
-                // {
-                //     return Err(SemanticError::UnsupportedArg(
-                //         spanned_arg.arg,
-                //         type_constraint.to_fmt(),
-                //         vec![spanned_arg.span, active_span],
-                //     ));
-                // }
+            Type::Constrained(inferred_constraints) => {
+                let arg_constraints = spanned_arg.arg.type_constraints();
+
+                if !arg_constraints.contains(*inferred_constraints) {
+                    return Err(SemanticError::TypeConstraintBoundConflict(
+                        *inferred_constraints,
+                        arg_constraints,
+                        vec![spanned_arg.span, active_span],
+                    ));
+                }
+                panic!("Hi");
 
                 Ok(())
             }
@@ -1143,6 +1151,8 @@ impl<'a> ConstraintResolver<'a> {
     // Need to redo this so that it accounts for the constraints, not just builtin types
     fn check_arg_constraints(
         &self,
+        parent_ty_id: TypeId,
+        parent_span: Span,
         cond_expr_id: ExprId,
         expr_id_args: &[ExprId],
         arg_constraints: &[ArgConstraint],
@@ -1329,6 +1339,7 @@ impl<'a> ConstraintResolver<'a> {
                         ) {
                             sem_errs.push(sem_err);
                         };
+                        todo!("TOdol");
 
                         // dbg!(ty);
                         // match ty {
@@ -1351,6 +1362,21 @@ impl<'a> ConstraintResolver<'a> {
                         //     Type::Constrained(type_constraint_flags) => todo!(),
                         //     Type::Unknown => todo!(),
                         // }
+                    }
+                }
+                // Should be more constrsaint based
+                ArgConstraint::SameTypeAsSelf => {
+                    for expr_id in expr_id_args.iter().skip(1) {
+                        let other_type_id = self.compiler.exprs[expr_id.id as usize].type_id;
+
+                        if parent_ty_id != other_type_id {
+                            let other_span = self.compiler.exprs[expr_id.id as usize].span;
+
+                            let msg = "Must be the same type as `self`".to_string();
+
+                            sem_errs
+                                .push(SemanticError::General(msg, vec![parent_span, other_span]));
+                        }
                     }
                 }
             }

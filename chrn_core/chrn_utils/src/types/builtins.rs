@@ -212,7 +212,7 @@ impl BuiltinTypeKind {
     //NOTE: UPDATE WHEN NEW CONSTRAINT IS MADE
     //No
     /// Retrieves non-recursive constraints associated with type
-    pub fn type_constraints(&self, is_rec: bool) -> TypeConstraintFlags {
+    pub fn type_constraints(self) -> TypeConstraintFlags {
         let flags = match self {
             BuiltinTypeKind::I8
             | BuiltinTypeKind::I16
@@ -300,49 +300,6 @@ impl BuiltinTypeKind {
         };
 
         TypeConstraintFlags::new(flags)
-        // match self {
-        //     BuiltinTypeKind::I8
-        //     | BuiltinTypeKind::I16
-        //     | BuiltinTypeKind::I32
-        //     | BuiltinTypeKind::I64
-        //     | BuiltinTypeKind::I128
-        //     | BuiltinTypeKind::Sized
-        //     | BuiltinTypeKind::BigInt
-        //     | BuiltinTypeKind::U8
-        //     | BuiltinTypeKind::U16
-        //     | BuiltinTypeKind::F16
-        //     | BuiltinTypeKind::U32
-        //     | BuiltinTypeKind::F32
-        //     | BuiltinTypeKind::U64
-        //     | BuiltinTypeKind::F64
-        //     | BuiltinTypeKind::U128
-        //     | BuiltinTypeKind::F128
-        //     | BuiltinTypeKind::BigFloat
-        //     | BuiltinTypeKind::Unsized => {
-        //         type_constraints::COMPARABLE | type_constraints::RANGED | type_constraints::NUMERIC
-        //     }
-        //     BuiltinTypeKind::Str => {
-        //         type_constraints::CHARACTER_MAPPABLE
-        //             | type_constraints::HAS_LEN
-        //             | type_constraints::RANGED
-        //             | type_constraints::COMPARABLE
-        //             | type_constraints::COLLECTION
-        //     }
-        //     BuiltinTypeKind::Char => {
-        //         type_constraints::CHARACTER_MAPPABLE
-        //             | type_constraints::HAS_LEN
-        //             | type_constraints::RANGED
-        //             | type_constraints::COMPARABLE
-        //     }
-        //     BuiltinTypeKind::Bool => type_constraints::COMPARABLE | type_constraints::BOOL,
-        //     BuiltinTypeKind::List
-        //     | BuiltinTypeKind::Set
-        //     | BuiltinTypeKind::Map
-        //     | BuiltinTypeKind::Tuple => {
-        //         type_constraints::RANGED | type_constraints::HAS_LEN | type_constraints::COLLECTION
-        //     }
-        //     BuiltinTypeKind::Nil | BuiltinTypeKind::Any => 0,
-        // }
     }
 
     pub fn is_numeric(&self) -> bool {

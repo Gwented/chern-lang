@@ -32,10 +32,22 @@ impl<'a> SemanticReporter<'a> {
     //WARN: Could be better looking
     pub(super) fn report_semantic(&mut self, sem_err: SemanticError, metadata: &ModuleMetadata) {
         let (core_msg, spans) = match sem_err {
-            SemanticError::UnsupportedArg(arg, type_kind, spans) => {
+            SemanticError::UnsupportedArg(arg, spans) => {
+                let arg_constraints = arg.type_constraints().to_type_constraint_vec();
+
+                let mut constraints_str = String::new();
+
+                for (i, constraint) in arg_constraints.iter().enumerate() {
+                    constraints_str.push_str(&format!("`{}`", constraint.to_fmt()));
+
+                    if i + 1 < arg_constraints.len() {
+                        constraints_str.push_str(", ");
+                    }
+                }
+
                 let msg = format!(
-                    "The argument \"#{}\" is not applicable for the type `{}`",
-                    arg, type_kind
+                    "Only types that satisfy {} can use the argument `#{}`",
+                    constraints_str, arg
                 );
 
                 (msg, spans)
@@ -51,7 +63,7 @@ impl<'a> SemanticReporter<'a> {
             }
             SemanticError::FuncConstraintMismatch(constraint, type_kind, spans) => {
                 let msg =
-                    format!("The type `{type_kind}` does not fulfill constraint `{constraint}`",);
+                    format!("The type `{type_kind}` does not satisfy constraint `{constraint}`",);
 
                 (msg, spans)
             }
@@ -98,22 +110,22 @@ impl<'a> SemanticReporter<'a> {
                     todo!();
                 }
             },
-            SemanticError::TypeConstraintMismatch(fmtted_constraint, fmtted_err_ty, spans) => {
-                // let mut constraints = String::new();
-                //
-                // for (i, constraint) in fmtted_constraints.iter().enumerate() {
-                //     constraints.push_str(&format!("`{constraint}`"));
-                //
-                //     if i + 2 == fmtted_constraints.len() {
-                //         constraints.push_str(" or ");
-                //     } else if i + 1 < fmtted_constraints.len() {
-                //         constraints.push_str(", ");
-                //     }
-                // }
+            // Maybe a type version too?
+            SemanticError::TypeConstraintMismatch(given_constraints, fmtted_found_ty, spans) => {
+                let given_vec = given_constraints.to_type_constraint_vec();
+                let mut given_str = String::new();
+
+                for (i, constraint) in given_vec.iter().enumerate() {
+                    given_str.push_str(&format!("`{}`", constraint.to_fmt()));
+
+                    if i + 1 < given_vec.len() {
+                        given_str.push_str(", ");
+                    }
+                }
 
                 let msg = format!(
-                    "`{fmtted_err_ty}` does not fulfill type constraint `{}`",
-                    fmtted_constraint
+                    "`{}` does not satisfy constraint {}",
+                    fmtted_found_ty, given_str
                 );
 
                 (msg, spans)
@@ -128,8 +140,8 @@ impl<'a> SemanticReporter<'a> {
                 spans,
             ) => {
                 //FIXME: Fear inducing message.
-                let current_bounds = current_inferred.to_type_constraints();
-                let conflicting_bounds = conflicting_inferred.to_type_constraints();
+                let current_bounds = current_inferred.to_type_constraint_vec();
+                let conflicting_bounds = conflicting_inferred.to_type_constraint_vec();
 
                 let mut current_msg = String::new();
 

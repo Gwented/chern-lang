@@ -26,7 +26,7 @@ pub enum TypeConstraint {
 impl Formattable for TypeConstraint {
     fn to_fmt(&self) -> common::fmter::Formatted {
         match self {
-            TypeConstraint::Collection => Formatted::TypeConstraintCollection,
+            TypeConstraint::Collection => Formatted::Collection,
             TypeConstraint::CharacterMappable => Formatted::CharacterMappable,
             TypeConstraint::Numeric => Formatted::Numeric,
             TypeConstraint::HasLen => Formatted::HasLen,
@@ -91,7 +91,7 @@ impl TypeConstraintFlags {
 
     /// Turns bit-flags into a `TypeConstraint` enum vector by going through each of it's active
     /// bits.
-    pub fn to_type_constraints(self) -> Vec<TypeConstraint> {
+    pub fn to_type_constraint_vec(self) -> Vec<TypeConstraint> {
         let mut constraints = Vec::new();
         let mut flags = self.flags;
 
@@ -111,24 +111,13 @@ impl TypeConstraintFlags {
         todo!()
     }
 
-    /// Returns true if any raw flag bit in `other` is also set in `self`.
-    pub fn contains(self, other: TypeConstraintFlags) -> bool {
-        (self.flags & other.flags) != 0
-    }
-
     /// Returns true if any concrete member of `other` falls within the domain of `self`.
     /// Unlike `contains`, this expands both sides into their concrete domains before testing.
-    pub fn contains_any(self, other: TypeConstraintFlags) -> bool {
+    pub fn contains(self, other: TypeConstraintFlags) -> bool {
         let self_domain = self.get_domain();
         let other_domain = other.get_domain();
         let filtered_domains = TypeDomainFlags::new(self_domain.flags & other_domain.flags);
-
-        if self_domain.flags == 0 {
-            panic!(
-                "contains_any: self domain resolved to zero — flags: {:b}",
-                self.flags
-            );
-        }
+        dbg!(filtered_domains);
 
         filtered_domains.flags != 0
     }
@@ -223,28 +212,29 @@ pub fn to_idx(flag: u64) -> usize {
     }
 }
 
-impl Formattable for TypeConstraintFlags {
-    fn to_fmt(&self) -> Formatted {
-        match self.flags {
-            COLLECTION => Formatted::TypeConstraintCollection,
-            CHARACTER_MAPPABLE => Formatted::CharacterMappable,
-            HAS_LEN => Formatted::HasLen,
-            NUMERIC => Formatted::Numeric,
-            INTEGER => Formatted::Integer,
-            SIGNED_INTEGER => Formatted::SignedInteger,
-            FLOAT => Formatted::Float,
-            BOOL => Formatted::Bool,
-            STR => Formatted::Str,
-            CHAR => Formatted::Char,
-            UNSIGNED_INTEGER => Formatted::UnsignedInteger,
-            ANY => Formatted::Any,
-            RANGED => Formatted::Ranged,
-            COMPARABLE => Formatted::Comparable,
-            ORDERED => Formatted::Ordered,
-            _ => unreachable!("Constraint assignment failed"),
-        }
-    }
-}
+// impl Formattable for TypeConstraintFlags {
+//     fn to_fmt(&self) -> Formatted {
+//         dbg!(self);
+//         match self.flags {
+//             COLLECTION => Formatted::Collection,
+//             CHARACTER_MAPPABLE => Formatted::CharacterMappable,
+//             HAS_LEN => Formatted::HasLen,
+//             NUMERIC => Formatted::Numeric,
+//             INTEGER => Formatted::Integer,
+//             SIGNED_INTEGER => Formatted::SignedInteger,
+//             FLOAT => Formatted::Float,
+//             BOOL => Formatted::Bool,
+//             STR => Formatted::Str,
+//             CHAR => Formatted::Char,
+//             UNSIGNED_INTEGER => Formatted::UnsignedInteger,
+//             ANY => Formatted::Any,
+//             RANGED => Formatted::Ranged,
+//             COMPARABLE => Formatted::Comparable,
+//             ORDERED => Formatted::Ordered,
+//             _ => unreachable!("Constraint assignment failed"),
+//         }
+//     }
+// }
 
 // Constraints alone
 pub const SIGNED_INTEGER: u64 = 1 << 0; // 0 
@@ -277,9 +267,6 @@ pub const COMPARABLE_DOMAIN: u64 = COMPARABLE | NUMERIC_DOMAIN | CHARACTER_MAPPA
 pub const HAS_LEN_DOMAIN: u64 = HAS_LEN | CHARACTER_MAPPABLE_DOMAIN | COLLECTION_DOMAIN;
 pub const COLLECTION_DOMAIN: u64 = COLLECTION | STR;
 
-// Str and Char both implement Ranged (confirmed by BuiltinTypeKind::is_ranged and their
-// type_constraints flags). CHARACTER_MAPPABLE_DOMAIN must be included so that
-// CHARACTER_MAPPABLE ⊆ RANGED is correctly detected during domain subset checks.
 pub const RANGED_DOMAIN: u64 =
     RANGED | NUMERIC_DOMAIN | COLLECTION_DOMAIN | CHARACTER_MAPPABLE_DOMAIN;
 
@@ -426,9 +413,3 @@ impl TryFrom<u64> for TypeConstraint {
         }
     }
 }
-
-// Nat
-// Real
-// Complex
-// Prime
-// TEST:

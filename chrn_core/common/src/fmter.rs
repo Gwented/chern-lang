@@ -98,7 +98,7 @@ pub enum Formatted {
     CharacterMappable,
     HasLen,
     Numeric,
-    TypeConstraintCollection,
+    Collection,
     ExclamationPoint,
     Cond,
     // Hmm...
@@ -190,7 +190,7 @@ impl Display for Formatted {
             Formatted::CharacterMappable => write!(f, "CharacterMappable"),
             Formatted::HasLen => write!(f, "HasLen"),
             Formatted::Numeric => write!(f, "Numeric"),
-            Formatted::TypeConstraintCollection => write!(f, "Collection"),
+            Formatted::Collection => write!(f, "Collection"),
             Formatted::SignedInteger => write!(f, "SignedInteger"),
             Formatted::UnsignedInteger => write!(f, "UnsignedInteger"),
             Formatted::Ranged => write!(f, "Ranged"),

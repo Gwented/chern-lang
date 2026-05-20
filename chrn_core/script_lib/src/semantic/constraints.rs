@@ -98,10 +98,11 @@ pub(super) fn check_type_constraint(
         Type::Func(_) => todo!(),
         // Not quite sure about this
         Type::Alias(alias_def) => {
-            if alias_def.ty_constraints.contains_any(given_constraints) {
-                return Err(SemanticError::TypeConstraintMismatch(
-                    given_constraints.to_fmt(),
-                    alias_def.to_fmt(),
+            // Misleading error message
+            if given_constraints.contains(alias_def.ty_constraints) {
+                return Err(SemanticError::TypeConstraintBoundConflict(
+                    given_constraints,
+                    alias_def.ty_constraints,
                     vec![ty_span, cond_span],
                 ));
             }
@@ -111,10 +112,12 @@ pub(super) fn check_type_constraint(
         }
         Type::BuiltinType(builtin_ty) => {
             //TODO: Allow optionally to choose if a condition should be shallow or not
-            if !given_constraints.contains_any(builtin_ty.kind().type_constraints(false)) {
+
+            let constraints = builtin_ty.kind().type_constraints();
+
+            if !given_constraints.contains(constraints) {
                 return Err(SemanticError::TypeConstraintMismatch(
-                    // Ok Formattble is is
-                    given_constraints.to_fmt(),
+                    given_constraints,
                     builtin_ty.kind().to_fmt(),
                     vec![ty_span, cond_span],
                 ));
@@ -122,7 +125,17 @@ pub(super) fn check_type_constraint(
 
             Ok(())
         }
-        Type::Constrained(_) => unimplemented!("Hi"),
+        Type::Constrained(constraints) => {
+            if !given_constraints.contains(*constraints) {
+                return Err(SemanticError::TypeConstraintBoundConflict(
+                    given_constraints,
+                    *constraints,
+                    vec![ty_span, cond_span],
+                ));
+            }
+
+            Ok(())
+        }
         // Type::TypeDef(type_def) => {},
         // Type::Unknown => todo!(),
         _ => unreachable!("Unreachable I think?"),
@@ -137,7 +150,7 @@ pub fn get_type_constraints(
 ) -> Option<TypeConstraintFlags> {
     let ty = &compiler.types[type_id.id as usize].ty;
     match ty {
-        Type::BuiltinType(builtin_ty) => Some(builtin_ty.kind().type_constraints(is_rec)),
+        Type::BuiltinType(builtin_ty) => Some(builtin_ty.kind().type_constraints()),
         // Is it?
         Type::Struct(_) | Type::Enum(_) if !is_rec => None,
         // Have to check if every field in a given struct or enum is aligned under a constraint
@@ -172,6 +185,8 @@ pub enum ArgConstraint {
     Bool,
     Str,
     Comparable,
+    // Ok?
+    SameTypeAsSelf,
     // Collection,
     // Suspicious
     Variadic,
@@ -239,6 +254,7 @@ impl Display for ArgConstraint {
             ArgConstraint::Variadic => write!(f, "variadic"),
             ArgConstraint::Bool => write!(f, "bool"),
             ArgConstraint::Comparable => write!(f, "Comparable"),
+            ArgConstraint::SameTypeAsSelf => write!(f, "Same type as self"),
         }
     }
 }

@@ -2,7 +2,10 @@ use std::fmt::Display;
 
 use common::span::Span;
 
-use crate::types::{builtins::BuiltinType, type_constraints::TypeConstraint};
+use crate::types::{
+    builtins::BuiltinType,
+    type_constraints::{self, TypeConstraint, TypeConstraintFlags},
+};
 
 /// If a new argument is added ensure this is updated
 pub static ARGS_ARRAY: [&str; 6] = ["warn", "scient", "hex", "bin", "octal", "ignore"];
@@ -33,7 +36,7 @@ impl InnerArgs {
     // has_restrictions?
     /// Returns true if the given argument is applicable to every type, such as `#warn`, otherwise
     /// returns false
-    pub fn has_restrictions(&self) -> bool {
+    pub fn has_restrictions(self) -> bool {
         match self {
             InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => true,
             InnerArgs::Ignore | InnerArgs::Warn => false,
@@ -42,7 +45,7 @@ impl InnerArgs {
 
     /// This MUST be used after ensuring the type is a primitive, not a data structure.
     // Maybe this is a good time to use kind
-    pub fn supports_builtin_type(&self, builtin_type: &BuiltinType) -> bool {
+    pub fn supports_builtin_type(self, builtin_type: &BuiltinType) -> bool {
         match self {
             InnerArgs::Ignore | InnerArgs::Warn => true,
             InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => {
@@ -108,30 +111,15 @@ impl InnerArgs {
     // }
     // }
 
-    pub fn supports_type_constraint(&self, ty_constraint: &TypeConstraint, is_rec: bool) -> bool {
-        match self {
+    pub fn type_constraints(self) -> TypeConstraintFlags {
+        let flags = match self {
+            InnerArgs::Warn | InnerArgs::Ignore => type_constraints::ANY,
             InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => {
-                match ty_constraint {
-                    TypeConstraint::Collection | TypeConstraint::HasLen if is_rec => true,
-                    TypeConstraint::Numeric
-                    | TypeConstraint::Integer
-                    | TypeConstraint::SignedInteger
-                    | TypeConstraint::UnsignedInteger
-                    | TypeConstraint::Float
-                    | TypeConstraint::Ordered
-                    | TypeConstraint::Any => true,
-                    TypeConstraint::Bool
-                    | TypeConstraint::Collection
-                    | TypeConstraint::HasLen
-                    | TypeConstraint::CharacterMappable
-                    | TypeConstraint::Char
-                    | TypeConstraint::Ranged
-                    | TypeConstraint::Comparable
-                    | TypeConstraint::Str => false,
-                }
+                type_constraints::NUMERIC
             }
-            InnerArgs::Ignore | InnerArgs::Warn => true,
-        }
+        };
+
+        TypeConstraintFlags::new(flags)
     }
 }
 

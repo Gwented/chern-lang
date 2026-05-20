@@ -13,11 +13,11 @@ pub enum SemanticError {
     /// Constraint, amount of incorrect params found, spans
     ArgCountMismatch(ArgConstraint, u32, Vec<Span>),
     /// Constraint, Incorrect type found, spans
-    TypeConstraintMismatch(Formatted, Formatted, Vec<Span>),
+    TypeConstraintMismatch(TypeConstraintFlags, Formatted, Vec<Span>),
     /// Currently inferred constraints, Conflicting other constraints, spans
     TypeConstraintBoundConflict(TypeConstraintFlags, TypeConstraintFlags, Vec<Span>),
-    /// Argument failed at, found type, spans
-    UnsupportedArg(InnerArgs, Formatted, Vec<Span>),
+    /// Argument failed at, spans
+    UnsupportedArg(InnerArgs, Vec<Span>),
     /// Args Condition, Wrong type formatted, Spans
     // Interesting name
     VagueArg(InnerArgs, Vec<Span>),
