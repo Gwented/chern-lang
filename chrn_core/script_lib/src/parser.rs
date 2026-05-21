@@ -1,10 +1,9 @@
-// FIX: parse_var_sect should not be re-used in the way it is currently
 pub mod ast;
 mod branch;
 mod context;
 mod parser_state;
 
-use crate::modules::{Module, ModuleMetadata};
+use crate::modules::ModuleMetadata;
 use crate::parser::ast::{
     AbstractAlias, AbstractEnum, AbstractMemberAccess, AbstractParam, AbstractStruct,
     AbstractTypeDef, AbstractVar, AbstractVariant, AstInfo, Expr, Generic, Item, Section,
@@ -414,7 +413,6 @@ fn parse_alias_stmt(
     };
 
     // TODO: The case of "alias x() = " should maybe be an error..?
-    // Probably not since that would be a useless Go-level error
     // if conds.is_empty() && args.is_empty() {
     //     ctx.report_verbose("", Branch::Neutral(NeutralBranch::Alias), interner);
     // }
@@ -864,6 +862,12 @@ fn parse_call_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedEx
             break;
         }
 
+        if ctx.peek_tok() == Token::Comma && ctx.peek_ahead(1).tok == Token::CParen {
+            ctx.advance_tok();
+            ctx.advance_tok();
+            break;
+        }
+
         ctx.expect_verbose(
             TokenKind::Comma,
             "Expected ',' to separate arguments or ')' to close, found ",
@@ -1217,7 +1221,17 @@ fn parse_alias_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<Abstract
                 let span = ctx.advance_span();
                 let name_id = InternedId::new(id);
 
-                AbstractParam::new(name_id, span)
+                ctx.expect_verbose(
+                    TokenKind::Colon,
+                    "Expected a ':' to define a type or type boundary, found ",
+                    "",
+                    Branch::Neutral(NeutralBranch::Alias),
+                    interner,
+                )?;
+
+                let ty_expr = parse_type(ctx, interner)?;
+
+                AbstractParam::new(name_id, span, ty_expr)
             }
             Token::EOF => return Err(Token::Poison),
             _ => {

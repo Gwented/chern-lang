@@ -257,69 +257,69 @@ impl<'a> ConstraintResolver<'a> {
         let alias_def = self.compiler.get_alias(sym_id);
         let alias_type_id = self.compiler.get_type_id(sym_id);
 
-        //TODO: Infer constraint of all params
-        //Also need method to check if the given type constraint is either higher, or can be made
-        //higher, given an other
-        let mut found_constraints: Vec<Option<TypeConstraintFlags>> =
-            vec![None; alias_def.params.len()];
+        // TODO: This should now just check instead of infer
 
-        for (i, param) in alias_def.params.iter().enumerate() {
-            let current_constraints_opt = &mut found_constraints[i];
-
-            for cond_expr_id in alias_def.conds.iter().copied() {
-                let param_span = abs_alias.params[i].name_span;
-
-                let name_id = self.compiler.symbols[param.sym_id.id as usize].name_id;
-                // New constraints were found which would need to be lowerable
-                match self.infer_type_constraint_from_expr(cond_expr_id, name_id, param_span) {
-                    Some(new_constraints) => {
-                        dbg!(new_constraints.to_type_constraint_vec());
-                        if let Some(current) = current_constraints_opt {
-                            if new_constraints == *current {
-                                continue;
-                            }
-
-                            dbg!(&current, new_constraints);
-                            if current.contains(*&new_constraints) {
-                                if let Some(lowered) = current.try_lower_to(new_constraints) {
-                                    *current_constraints_opt = Some(lowered);
-                                } else {
-                                    // let msg = format!("Cannot lower `{}` to `{}`");
-                                    // self.reporter.report_spanned(msg, err_name, spans, metadata);
-                                    todo!("Beep");
-                                }
-                            } else {
-                                let cond_expr = &self.compiler.exprs[cond_expr_id.id as usize];
-
-                                let sem_err = SemanticError::TypeConstraintBoundConflict(
-                                    *current,
-                                    new_constraints,
-                                    vec![param_span, cond_expr.span],
-                                );
-
-                                let module = &self.compiler.mods[self.current_mod.id];
-                                self.reporter.report_semantic(
-                                    sem_err,
-                                    &module
-                                        .src_metadata
-                                        .as_ref()
-                                        .expect("core should not be resolved"),
-                                );
-                            }
-                            // There is no previous so it is initialized
-                        } else {
-                            *current_constraints_opt = Some(new_constraints);
-                            // dbg!(new_constraints.to_type_constraints());
-                        }
-
-                        // No constraint was stored so this one takes precedence
-                    }
-                    // No new constraints were found
-                    None => (),
-                }
-                dbg!("Looped");
-            }
-        }
+        // let mut found_constraints: Vec<Option<TypeConstraintFlags>> =
+        //     vec![None; alias_def.params.len()];
+        //
+        // for (i, param) in alias_def.params.iter().enumerate() {
+        //     let current_constraints_opt = &mut found_constraints[i];
+        //
+        //     for cond_expr_id in alias_def.conds.iter().copied() {
+        //         let param_span = abs_alias.params[i].name_span;
+        //
+        //         let name_id = self.compiler.symbols[param.sym_id.id as usize].name_id;
+        //         // New constraints were found which would need to be lowerable
+        //         match self.infer_type_constraint_from_expr(cond_expr_id, name_id, param_span) {
+        //             Some(new_constraints) => {
+        //                 dbg!(new_constraints.to_type_constraint_vec());
+        //                 if let Some(current) = current_constraints_opt {
+        //                     if new_constraints == *current {
+        //                         continue;
+        //                     }
+        //
+        //                     dbg!(&current, new_constraints);
+        //                     if current.contains(*&new_constraints) {
+        //                         if let Some(lowered) = current.try_lower_to(new_constraints) {
+        //                             *current_constraints_opt = Some(lowered);
+        //                         } else {
+        //                             // let msg = format!("Cannot lower `{}` to `{}`");
+        //                             // self.reporter.report_spanned(msg, err_name, spans, metadata);
+        //                             todo!("Beep");
+        //                         }
+        //                     } else {
+        //                         let cond_expr = &self.compiler.exprs[cond_expr_id.id as usize];
+        //
+        //                         let sem_err = SemanticError::TypeConstraintBoundConflict(
+        //                             *current,
+        //                             new_constraints,
+        //                             vec![param_span, cond_expr.span],
+        //                         );
+        //
+        //                         let module = &self.compiler.mods[self.current_mod.id];
+        //                         self.reporter.report_semantic(
+        //                             sem_err,
+        //                             &module
+        //                                 .src_metadata
+        //                                 .as_ref()
+        //                                 .expect("core should not be resolved"),
+        //                         );
+        //                     }
+        //                     // There is no previous so it is initialized
+        //                 } else {
+        //                     *current_constraints_opt = Some(new_constraints);
+        //                     // dbg!(new_constraints.to_type_constraints());
+        //                 }
+        //
+        //                 // No constraint was stored so this one takes precedence
+        //             }
+        //             // No new constraints were found
+        //             None => (),
+        //         }
+        //         dbg!("Looped");
+        //     }
+        // }
+        // panic!("Paraming");
 
         // Filter out duplicates in the type resolver!!
         let mut ty_constraint: Option<TypeConstraint> = None;
@@ -353,14 +353,6 @@ impl<'a> ConstraintResolver<'a> {
 
         // Currently assuming that if we see none here it's fine since technically, you could
         // declare a parameter and have it just not be used and never face any type errors.
-        for (i, found) in found_constraints.drain(..).enumerate() {
-            let param_type_id = self.compiler.get_alias(sym_id).params[i].type_id;
-            let ty = &mut self.compiler.types[param_type_id.id as usize].ty;
-
-            if let Some(inner) = found {
-                *ty = Type::Constrained(inner);
-            }
-        }
 
         let alias_def = self.compiler.get_alias(sym_id);
         // Need a system where it takes a local variable, looks through each expression, sees if
@@ -1110,9 +1102,22 @@ impl<'a> ConstraintResolver<'a> {
                     }
                 }
             }
-            Type::Alias(alias_def) => todo!("Aliased"),
+            Type::Alias(alias_def) => {
+                let alias_constraints = alias_def.ty_constraints;
+                let arg_constraints = spanned_arg.arg.type_constraints();
+
+                if !arg_constraints.contains(alias_constraints) {
+                    return Err(SemanticError::TypeConstraintBoundConflict(
+                        alias_constraints,
+                        arg_constraints,
+                        vec![spanned_arg.span, active_span],
+                    ));
+                }
+
+                Ok(())
+            }
+            // Uhhhhhhh.
             Type::Unknown => todo!("Unknowned"),
-            // Need to tell it should terminate
             Type::Func(_) => {
                 // VAGUE
                 let msg = "Functions can only be placed within type constraint blocks".to_string();
@@ -1122,12 +1127,12 @@ impl<'a> ConstraintResolver<'a> {
             Type::TypeDef(_) => {
                 unreachable!("Not syntactically possible")
             }
-            Type::Constrained(inferred_constraints) => {
+            Type::Constrained(current_constraints) => {
                 let arg_constraints = spanned_arg.arg.type_constraints();
 
-                if !arg_constraints.contains(*inferred_constraints) {
+                if !arg_constraints.contains(*current_constraints) {
                     return Err(SemanticError::TypeConstraintBoundConflict(
-                        *inferred_constraints,
+                        *current_constraints,
                         arg_constraints,
                         vec![spanned_arg.span, active_span],
                     ));
@@ -1364,10 +1369,15 @@ impl<'a> ConstraintResolver<'a> {
                 }
                 // Should be more constrsaint based
                 ArgConstraint::SameTypeAsSelf => {
+                    let parent_ty = &self.compiler.types[parent_ty_id.id as usize];
                     for expr_id in expr_id_args.iter().skip(1) {
-                        let other_type_id = self.compiler.exprs[expr_id.id as usize].type_id;
+                        let other_ty_id = self.compiler.exprs[expr_id.id as usize].type_id;
+                        let types = &self.compiler.types;
+                        let ty = &types[parent_ty_id.id as usize];
+                        dbg!(ty);
 
-                        if parent_ty_id != other_type_id {
+                        panic!();
+                        if parent_ty_id != other_ty_id {
                             let other_span = self.compiler.exprs[expr_id.id as usize].span;
                             let msg = "Must be the same type as `self`".to_string();
 

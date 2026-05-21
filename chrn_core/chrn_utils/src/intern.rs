@@ -56,7 +56,31 @@ pub const INTERNED_TUPLE: u32 = 48;
 pub const INTERNED_RUNTIME: u32 = 49;
 pub const INTERNED_CORE: u32 = 50;
 pub const INTERNED_IN: u32 = 51;
+pub const INTERNED_RANGED: u32 = 52;
+pub const INTERNED_CHARACTER_MAPPABLE: u32 = 53;
+pub const INTERNED_COLLECTION: u32 = 54;
+pub const INTERNED_HAS_LEN: u32 = 55;
+pub const INTERNED_INTEGER: u32 = 56;
+pub const INTERNED_NUMERIC: u32 = 57;
+pub const INTERNED_SIGNED_INTEGER: u32 = 58;
+pub const INTERNED_UNSIGNED_INTEGER: u32 = 59;
+pub const INTERNED_FLOAT: u32 = 60;
+pub const INTERNED_ORDERED: u32 = 61;
+pub const INTERNED_COMPARABLE: u32 = 62;
 
+// Collection,
+// CharacterMappable,
+// HasLen,
+// Ranged,
+// Ordered,
+// Comparable,
+// Numeric,
+// Integer,
+// Float,
+// Bool,
+// Str,
+// Char,
+// Nil,
 // MAKE THE MACRO PLEASE
 // What macro. What is a macro? What is hygiene?
 
@@ -221,6 +245,48 @@ impl Intern {
         interner.stored_strs.push("core".to_string());
         interner.id_map.insert("in".to_string(), INTERNED_IN);
         interner.stored_strs.push("in".to_string());
+        interner
+            .id_map
+            .insert("Ranged".to_string(), INTERNED_RANGED);
+        interner.stored_strs.push("Ranged".to_string());
+        interner
+            .id_map
+            .insert("CharacterMappable".to_string(), INTERNED_CHARACTER_MAPPABLE);
+        interner.stored_strs.push("CharacterMappable".to_string());
+        interner
+            .id_map
+            .insert("Collection".to_string(), INTERNED_COLLECTION);
+        interner.stored_strs.push("Collection".to_string());
+        interner
+            .id_map
+            .insert("HasLen".to_string(), INTERNED_HAS_LEN);
+        interner.stored_strs.push("HasLen".to_string());
+        interner
+            .id_map
+            .insert("Integer".to_string(), INTERNED_INTEGER);
+        interner.stored_strs.push("Integer".to_string());
+        interner
+            .id_map
+            .insert("Numeric".to_string(), INTERNED_NUMERIC);
+        interner.stored_strs.push("Numeric".to_string());
+        interner
+            .id_map
+            .insert("SignedInteger".to_string(), INTERNED_SIGNED_INTEGER);
+        interner.stored_strs.push("SignedInteger".to_string());
+        interner
+            .id_map
+            .insert("UnsignedInteger".to_string(), INTERNED_UNSIGNED_INTEGER);
+        interner.stored_strs.push("UnsignedInteger".to_string());
+        interner.id_map.insert("Float".to_string(), INTERNED_FLOAT);
+        interner.stored_strs.push("Float".to_string());
+        interner
+            .id_map
+            .insert("Ordered".to_string(), INTERNED_ORDERED);
+        interner.stored_strs.push("Ordered".to_string());
+        interner
+            .id_map
+            .insert("Comparable".to_string(), INTERNED_COMPARABLE);
+        interner.stored_strs.push("Comparable".to_string());
 
         interner.pos = interner.stored_strs.len();
 
@@ -265,6 +331,7 @@ impl Intern {
         id
     }
 
+    // Should just be interned id
     pub fn search(&self, index: usize) -> &str {
         &self.stored_strs[index]
     }

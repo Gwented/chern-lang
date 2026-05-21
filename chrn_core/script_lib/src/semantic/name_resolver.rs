@@ -97,6 +97,7 @@ impl NamespaceResolver<'_> {
         let type_id = TypeId::new(self.compiler.types.len() as u32);
 
         //WARN: Why was Alan Wake even here???
+        //WHAT?
         let type_def_repre = TypeDef::new(sym_id, type_id);
 
         let symbol = Symbol::new(
@@ -201,12 +202,6 @@ impl NamespaceResolver<'_> {
             module.exports.push(sym_id);
         }
 
-        //NOTE: Maybe store parameters now?
-        // let params: Vec<Param> = Vec::new();
-        // for param in abs_alias.params {
-        //     param.
-        // }
-
         // Making local scopes in this way because sections do not emergently allow for
         // parent hierarchies.
         let local_scope_id = ScopeId::new(self.compiler.scopes.len());
@@ -282,12 +277,8 @@ impl NamespaceResolver<'_> {
 
         // Searching if there are any duplicates with respect to the scope
         for scope_id in &module.scopes {
-            let scope_info = &self.compiler.scopes[scope_id.id];
-            for (ast_id, name_id) in &self.compiler.scopes[scope_id.id]
-                .scope
-                .table
-                .ast_to_interned
-            {
+            let scope = &self.compiler.get_scope(*scope_id).scope;
+            for (ast_id, name_id) in &scope.table.ast_to_interned {
                 // Why is it not true if it exists false otherwise...seems backwards
                 let ast_opt = seen.insert(*name_id, *ast_id);
 
@@ -316,7 +307,7 @@ impl NamespaceResolver<'_> {
 
                     let msg = format!(
                         "Found more than one symbol with identifier \"{dup_name}\" in the section `{}`",
-                        &scope_info.scope.scope_type
+                        &scope.scope_type
                     );
 
                     let module = &self.compiler.mods[self.current_mod.id];

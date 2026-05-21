@@ -1,7 +1,10 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    ops::{Index, IndexMut},
+};
 
 use chrn_utils::{
-    id_types::{InternedId, ModuleId, ScopeId, SymbolId, TypeId},
+    id_types::{ExprId, InternedId, ModuleId, ScopeId, SymbolId, TypeId, ValueId},
     intern,
     types::{
         builtins::BuiltinType,
@@ -73,12 +76,13 @@ pub const CORE_BOOL: u32 = 19;
 pub const CORE_BIGINT: u32 = 20;
 pub const CORE_BIGFLOAT: u32 = 21;
 pub const CORE_RUNTIME: u32 = 22;
+pub const TYPE_UNKNOWN_IDX: u32 = 23;
+// pub const CORE_CHARACTER_MAPPABLE: u32 = 24;
 // pub const CORE_LIST: u32 = 23;
 // pub const CORE_SET: u32 = 24;
 // pub const CORE_MAP: u32 = 25;
 // pub const CORE_TUPLE: u32 = 26;
 // Called idx but is u32...
-pub const TYPE_UNKNOWN_IDX: u32 = CORE_RUNTIME + 1;
 
 // Helper struct
 // struct ScriptStdLib {}
@@ -364,6 +368,8 @@ impl ScriptCompiler {
         None
     }
 
+    // Helpers to type enforce indexing
+
     fn load_core(compiler: &mut ScriptCompiler) {
         let mut table = Table::new();
 
@@ -412,7 +418,7 @@ impl ScriptCompiler {
             FuncKind::IsEmpty,
             false,
             is_empty_flags,
-            vec![ArgConstraint::ArgCount(0), ArgConstraint::CharacterMappable],
+            vec![ArgConstraint::ArgCount(0)],
             true,
             TypeId::new(CORE_BOOL),
         );
@@ -641,6 +647,8 @@ impl ScriptCompiler {
     // --- Beep
     fn load_core_types(compiler: &mut ScriptCompiler, core_mod: &mut Module, table: &mut Table) {
         let core_mod_id = core_mod.mod_id;
+
+        // -- Concrete types --
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
@@ -1104,8 +1112,252 @@ impl ScriptCompiler {
 
         compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
+
         compiler
             .types
             .push(TypeInfo::new(Type::Unknown, core_mod_id));
+
+        // -- Type constraints --
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        compiler.types.push(TypeInfo::new(
+            Type::Constrained(TypeConstraintFlags::new(TypeConstraint::Ranged.to_u64())),
+            core_mod_id,
+        ));
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_RANGED);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
+
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        compiler.types.push(TypeInfo::new(
+            Type::Constrained(TypeConstraintFlags::new(
+                TypeConstraint::CharacterMappable.to_u64(),
+            )),
+            core_mod_id,
+        ));
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_CHARACTER_MAPPABLE);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
+
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        compiler.types.push(TypeInfo::new(
+            Type::Constrained(TypeConstraintFlags::new(
+                TypeConstraint::Collection.to_u64(),
+            )),
+            core_mod_id,
+        ));
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_COLLECTION);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
+
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        compiler.types.push(TypeInfo::new(
+            Type::Constrained(TypeConstraintFlags::new(TypeConstraint::HasLen.to_u64())),
+            core_mod_id,
+        ));
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_HAS_LEN);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
+
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        compiler.types.push(TypeInfo::new(
+            Type::Constrained(TypeConstraintFlags::new(TypeConstraint::Integer.to_u64())),
+            core_mod_id,
+        ));
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_INTEGER);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
+
+        // Numeric
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        compiler.types.push(TypeInfo::new(
+            Type::Constrained(TypeConstraintFlags::new(TypeConstraint::Numeric.to_u64())),
+            core_mod_id,
+        ));
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_NUMERIC);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
+
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        compiler.types.push(TypeInfo::new(
+            Type::Constrained(TypeConstraintFlags::new(
+                TypeConstraint::SignedInteger.to_u64(),
+            )),
+            core_mod_id,
+        ));
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_SIGNED_INTEGER);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
+
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        compiler.types.push(TypeInfo::new(
+            Type::Constrained(TypeConstraintFlags::new(
+                TypeConstraint::UnsignedInteger.to_u64(),
+            )),
+            core_mod_id,
+        ));
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_UNSIGNED_INTEGER);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
+
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        compiler.types.push(TypeInfo::new(
+            Type::Constrained(TypeConstraintFlags::new(TypeConstraint::Float.to_u64())),
+            core_mod_id,
+        ));
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_FLOAT);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
+
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        compiler.types.push(TypeInfo::new(
+            Type::Constrained(TypeConstraintFlags::new(TypeConstraint::Ordered.to_u64())),
+            core_mod_id,
+        ));
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_ORDERED);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
+
+        let type_id = TypeId::new(compiler.types.len() as u32);
+        compiler.types.push(TypeInfo::new(
+            Type::Constrained(TypeConstraintFlags::new(
+                TypeConstraint::Comparable.to_u64(),
+            )),
+            core_mod_id,
+        ));
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_COMPARABLE);
+        let symbol = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            ScopeType::Core,
+            SymbolKind::Type(type_id),
+        );
+
+        compiler.symbols.push(symbol);
+        table.interned_to_sym.insert(interned_id, sym_id);
     }
 }

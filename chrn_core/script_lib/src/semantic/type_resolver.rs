@@ -558,7 +558,6 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
-    // Should this typecheck in-case a type of function was given to a typedef?
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
         let type_id = self.resolve_type_expr(
             self.current_mod,
@@ -929,7 +928,13 @@ impl TypeResolver<'_> {
 
             let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
             let val_id = ValueId::new(self.compiler.values.len() as u32);
-            let type_id = TypeId::new(self.compiler.types.len() as u32);
+
+            let type_id = self.resolve_type_expr(
+                self.current_mod,
+                &abs_param.ty_expr,
+                ScopeType::Neutral,
+                LookupPattern::NoRestrictions,
+            )?;
 
             let param_sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
             let param_sym = Symbol::new(
@@ -949,10 +954,6 @@ impl TypeResolver<'_> {
             // Can this be possibly const evaluated if if possible if?
             //
             // Not sure about this
-            let ty_info = TypeInfo::new(
-                Type::Constrained(TypeConstraintFlags::runtime()),
-                self.current_mod,
-            );
 
             let val_info = ValueInfo::new(type_id, expr_id, None);
 
@@ -960,7 +961,6 @@ impl TypeResolver<'_> {
 
             self.compiler.exprs.push(resolved_expr);
             self.compiler.values.push(val_info);
-            self.compiler.types.push(ty_info);
 
             let local_scope = &mut self.compiler.get_scope_mut(local_scope_id).scope;
             local_scope
@@ -972,8 +972,6 @@ impl TypeResolver<'_> {
 
             params.push(param);
         }
-
-        dbg!(&params);
 
         let mut conds: Vec<ExprId> = Vec::new();
         for spanned_expr in &abs_alias.conds {
@@ -1883,8 +1881,12 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
-    // Need some way to tell this method how to search for things so that it knows if it should be
-    // able to default to core, or if it should just search for a symbol in one scope.
+    /// - active_mod_id: The target module to search which is only altered if an external module is
+    /// used within a member access
+    /// - spanned_ty_expr: The type expression to be resolved
+    /// - scope_type: The scope which determines how much of a module can be searched.
+    /// - lookup_pattern: The type of lookup which is recursively changed depending on if a direct
+    /// member access is being searched, or if a library such as core can be searched externally.
     fn resolve_type_expr(
         &mut self,
         // Module that is actively being searched within, not the source. Source remains
@@ -1946,7 +1948,6 @@ impl TypeResolver<'_> {
 
                 let active_mod = &self.compiler.mods[active_mod_id.id];
                 let active_name = self.interner.search(active_mod.name_id.id as usize);
-                dbg!(mod_origin, active_name);
 
                 // If we have main, that imports def, that imports other, it tries to search for
                 // things in the "other" module even though it's defined in "def".

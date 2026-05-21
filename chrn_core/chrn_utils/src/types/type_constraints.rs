@@ -108,7 +108,10 @@ impl TypeConstraintFlags {
         constraints
     }
 
-    pub fn supports_inner_arg(&self, arg: InnerArgs) -> bool {
+    pub fn contains_specific(self, ty_constraint: TypeConstraint) -> bool {
+        let other_constraints = TypeConstraintFlags::new(ty_constraint.to_u64());
+
+        self.contains(other_constraints);
         todo!()
     }
 

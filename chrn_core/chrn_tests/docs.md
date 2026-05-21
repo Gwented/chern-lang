@@ -74,12 +74,12 @@ char, bool, str, struct, enum, nil, BigInt, BigFloat, List, Map, Set, Tuple
 `_`: Match all for ignoring parameters
 
 ```chrn
-alias gopher(x, y) = [!IsEmpty, Range(x = 0.0, y = 5.2), StartsW("ch") EndsW("ern") Contains("chrn")]
+alias gopher(x: Numeric, y: Numeric) = [!IsEmpty, Range(x = 0, y = 5), StartsW("ch") EndsW("ern") Contains("chrn")]
 
 var->
-    special_stir: str [gopher(0.5, _)] // defaults to (0.5, 5.2) 
+    special_stir: str [gopher(2, _)] // defaults to (2, 5)
 
-    stirring: str [gopher(2.0, 5.0)] // Works as normal
+    stirring: str [gopher(3, 15)] // Works as normal
 ```
 
 `e#`: Name bypass for treating a keyword as an identifier.
@@ -143,7 +143,7 @@ This can be applied to `struct`, `enum`, `let`, and `alias`.
 ```chrn
 alias ShortDefault() = [IsWhitespace]
 
-alias LongDefault(x, y) = [!IsEmpty, Range(x, y), StartsW("ch") EndsW("ern") Contains("chrn")] #warn
+alias LongDefault(x: UnsignedInteger, y: UnsignedInteger) = [!IsEmpty, Range(x, y), StartsW("ch") EndsW("ern") Contains("chrn")] #warn
 
 var->
     special_string: str [LongDefault(0, 5)]
@@ -317,7 +317,7 @@ var->
 ```chrn
 bind "serialized_data.chrn"
 
-var-> // #ignore <---- Maybe allow for this to be global if next to a section
+var->
     ptr: Runtime #ignore
     capacity: Runtime #ignore
     len: Runtime #ignore

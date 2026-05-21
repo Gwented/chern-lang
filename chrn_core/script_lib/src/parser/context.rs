@@ -37,7 +37,7 @@ const C_BRANCH_TYPE_SET: u64 = C_BASE_EXIT_SET | token::O_BRACKET | token::HASH_
 const A_BRANCH_TYPE_SET: u64 = A_BASE_EXIT_SET | token::COLON;
 
 // Probably shouldn't account for hash symbol since it is not apart of the loop
-const C_BRANCH_COND_SET: u64 = C_BASE_EXIT_SET | token::HASH_SYMBOL | token::C_CURLY_BRACKET;
+const C_BRANCH_COND_SET: u64 = C_BASE_EXIT_SET | token::C_CURLY_BRACKET;
 const A_BRANCH_COND_SET: u64 = A_BASE_EXIT_SET | token::COLON;
 
 const C_BRANCH_TYPE_ARGS_SET: u64 = C_BASE_EXIT_SET | token::HASH_SYMBOL;

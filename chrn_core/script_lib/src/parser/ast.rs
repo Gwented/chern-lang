@@ -543,18 +543,15 @@ impl AbstractFuncDecl {
 pub struct AbstractParam {
     pub name_id: InternedId,
     pub name_span: Span,
-    // pub ty_expr: SpannedTypeExpr,
+    pub ty_expr: SpannedTypeExpr,
 }
 
 impl AbstractParam {
-    pub fn new(
-        name_id: InternedId,
-        name_span: Span, /*ty_expr: SpannedTypeExpr*/
-    ) -> AbstractParam {
+    pub fn new(name_id: InternedId, name_span: Span, ty_expr: SpannedTypeExpr) -> AbstractParam {
         AbstractParam {
             name_id,
             name_span,
-            // ty_expr,
+            ty_expr,
         }
     }
 }
