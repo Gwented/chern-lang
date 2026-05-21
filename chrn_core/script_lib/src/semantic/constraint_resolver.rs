@@ -348,8 +348,6 @@ impl<'a> ConstraintResolver<'a> {
         // Only the type of functions used matter if they depend on self.
         let alias_def = self.compiler.get_alias_mut(sym_id);
         // alias_def.ty_constraints = found_constraints.iter().filter_map(|c| c.is_some());
-        let thigns = alias_def.ty_constraints.to_type_constraint_vec();
-        // panic!();
 
         // Currently assuming that if we see none here it's fine since technically, you could
         // declare a parameter and have it just not be used and never face any type errors.
@@ -359,7 +357,8 @@ impl<'a> ConstraintResolver<'a> {
         // it's used, then if so attempts to assign the constraint to the used argument.
 
         let module = &self.compiler.mods[self.current_mod.id];
-        panic!("Heu");
+        // NO
+        unimplemented!("Stop using the alias please");
 
         // NOTE: Small issue here is that when we check an alias, and it has an error, it's
         // emitted. But then if we have something that USES the alias, it also gets that error.

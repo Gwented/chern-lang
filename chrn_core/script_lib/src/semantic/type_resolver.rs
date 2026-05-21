@@ -8,7 +8,6 @@ use chrn_utils::id_types::{
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::types::builtins::{BuiltinType, BuiltinTypeKind};
-use chrn_utils::types::type_constraints::TypeConstraintFlags;
 use chrn_utils::values::{Value, ValueInfo};
 use common::chrn_settings::ChrnSettings;
 use common::fmter::{Formattable, Formatted};
@@ -943,6 +942,7 @@ impl TypeResolver<'_> {
                 Some(AstId::new(i as u32)),
                 self.current_mod,
                 true,
+                None,
                 ScopeType::Local,
                 SymbolKind::Val(val_id),
             );

@@ -106,6 +106,7 @@ impl NamespaceResolver<'_> {
             Some(ast_id),
             self.current_mod,
             true,
+            None,
             ScopeType::Var,
             SymbolKind::Type(type_id),
         );
@@ -140,6 +141,7 @@ impl NamespaceResolver<'_> {
             Some(ast_id),
             self.current_mod,
             abs_struct.is_priv,
+            None,
             ScopeType::Nest,
             SymbolKind::Type(type_id),
         );
@@ -174,6 +176,7 @@ impl NamespaceResolver<'_> {
             Some(ast_id),
             self.current_mod,
             abs_enum.is_priv,
+            None,
             ScopeType::Nest,
             SymbolKind::Type(type_id),
         );
@@ -223,6 +226,7 @@ impl NamespaceResolver<'_> {
             Some(ast_id),
             self.current_mod,
             abs_alias.is_priv,
+            None,
             ScopeType::Neutral,
             SymbolKind::Type(type_id),
         );
@@ -258,6 +262,7 @@ impl NamespaceResolver<'_> {
             Some(ast_id),
             self.current_mod,
             abs_var.is_priv,
+            None,
             ScopeType::Neutral,
             SymbolKind::Unknown,
         );

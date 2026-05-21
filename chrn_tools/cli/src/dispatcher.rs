@@ -26,7 +26,7 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
 
     match interpreter::interpret_chrn_cfg(&check_cmd.path, &settings) {
         Ok(_) => {
-            let msg = format!("No errors found within file");
+            let msg = format!("No errors found");
             Ok(msg)
         }
         Err(core_err) => match core_err {

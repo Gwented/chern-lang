@@ -1,6 +1,4 @@
 // Import privacy leaking behavior and overwriting tendency is highly suspicious
-//
-// Oh I'm sure it's FINE. COMPLETELY, FINE.
 
 // @def invalid toky // hey
 //@end
@@ -27,7 +25,7 @@ let x = 5*/
 // Ranged probably can't really work here because, if a string can be ranged along with 
 // a number, then those can't be lowered to anything with confidence really.
 
-// alias default() = []
+alias default(x: i32.MAX.SUPER<T>) = []
 // alias frosted(used) = [IsEmpty, Contains(used)]
 
 // How shoulud aliasses infer their own constraints?
@@ -35,8 +33,9 @@ let x = 5*/
 // In this scenario, it should see that equals x is used, meaning it's numeric.
 // It sees y is startsW, filters, Numeric is all that's left since that's all they have in common.
 // IsEmpty is entirely only usable for CharacterMappable, so it would just error.
-alias default(x: Numeric, y: Ranged) = [Equals(x), StartsW(y), IsEmpty]
+// alias default(x: Numeric, y: Ranged) = [Equals(x), StartsW(y), IsEmpty]
 
+@end
 var->
     // Conds need shallow checks too so should err if struct or enum is used
     // again suggesting that it needs to be applied to the struct directly
@@ -46,12 +45,62 @@ nest->
     // Arguments correctly error upon being given a self referential type that depends on itself
     // satisfying something like IsEmpty.
     struct Doof {
-        a: i32 [Range(0, 9)]
-        b: i32
-    } [Range(0, 8)]
+        snake_case: i32 []
+        b: i32 []
+    } []
 
     struct Thingy {
         name: unsized
         age: str
     } []
+@end
+// Syntax test
+complex->
+    Doof {
+        cases: snake_case
+    }
+    Doof.a {
+        identifiers: SnakeCase, snakeCase, SNAKE_CASE, Snake_Case, #snake_case (For auto-generating?)
+        OR separate?
+        cases: snake_case, camelCase, UpperCamelCase
+        default_value: 5
+    }
+    Doof.b {
+
+    }
+
+    OR
+
+    Thingy {
+        identifiers: help
+        a->
+            cases: UpperCamelCase
+        b->
+    }
+
+override->
+    in RUST {
+        change i32 = rust.str
+        change u8 = rust.i16
+    }
+
+    in JAVA {
+        .types {
+            // Since Java has internal bottlenecks in regards to 32-bit and below it would probably
+            // default to int even if it's i8 can be a `byte`
+
+            // So this could be done
+            change u8, i8 = i8 (It would be removing the override of `short` which is of course i8)
+            OR
+            change u8, i8 = java.short OR self.short
+        }
+    }
+
+    in PYTHON {
+        .types {
+            // Would also be default
+            change i8, u8, i16, u16, i32, u32, i64, u64, i128, u128 = python.int
+            change f16, f32, f64, f128 = python.float
+        }
+    }
 @end

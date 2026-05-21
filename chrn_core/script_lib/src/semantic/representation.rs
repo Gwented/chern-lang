@@ -76,7 +76,9 @@ pub struct Symbol {
     pub ast_id: Option<AstId>,
     pub kind: SymbolKind,
     pub owner: ModuleId,
-    pub scope_type: ScopeType,
+    pub scope_origin: ScopeType,
+    // For something such as member access
+    pub associated_scope: Option<ScopeId>,
     pub is_priv: bool,
 }
 
@@ -90,7 +92,8 @@ impl Symbol {
         ast_id: Option<AstId>,
         owner: ModuleId,
         is_priv: bool,
-        scope_type: ScopeType,
+        associated_scope: Option<ScopeId>,
+        scope_origin: ScopeType,
         kind: SymbolKind,
     ) -> Symbol {
         Symbol {
@@ -98,7 +101,8 @@ impl Symbol {
             sym_id,
             ast_id,
             kind,
-            scope_type,
+            scope_origin,
+            associated_scope,
             owner,
             is_priv,
         }

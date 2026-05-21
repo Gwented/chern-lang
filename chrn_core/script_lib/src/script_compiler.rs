@@ -381,6 +381,8 @@ impl ScriptCompiler {
 
         Self::load_core_types(compiler, &mut core_mod, &mut table);
         Self::load_core_funcs(compiler, &core_mod, &mut table);
+        // Self::load_complex_constants(compiler, &mut core_mod, &mut table);
+        // Self::load_override_constants(compiler, &mut core_mod, &mut table);
 
         // Exporting all creates symbols from core
         for sym_id in table.interned_to_sym.values().copied() {
@@ -405,6 +407,18 @@ impl ScriptCompiler {
             user_module.imports.push(core_import.clone());
             user_module.scopes.push(core_scope_id);
         }
+    }
+
+    fn load_complex_constants(compiler: &mut ScriptCompiler, core_mod: &Module, table: &mut Table) {
+        todo!()
+    }
+
+    fn load_override_constants(
+        compiler: &mut ScriptCompiler,
+        core_mod: &Module,
+        table: &mut Table,
+    ) {
+        todo!()
     }
 
     fn load_core_funcs(compiler: &mut ScriptCompiler, core_mod: &Module, table: &mut Table) {
@@ -434,6 +448,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -466,6 +481,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -498,6 +514,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -530,6 +547,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -564,6 +582,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -600,6 +619,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -636,6 +656,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -664,6 +685,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -685,6 +707,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -706,6 +729,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -726,6 +750,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -746,6 +771,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -766,6 +792,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -786,6 +813,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -806,6 +834,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -826,6 +855,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -846,6 +876,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -866,6 +897,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -886,6 +918,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -906,6 +939,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -926,6 +960,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -946,6 +981,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -966,6 +1002,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -986,6 +1023,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1006,6 +1044,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1026,6 +1065,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1046,6 +1086,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1066,6 +1107,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1086,6 +1128,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1106,6 +1149,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1132,6 +1176,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1155,6 +1200,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1178,6 +1224,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1199,6 +1246,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1220,6 +1268,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1242,6 +1291,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1265,6 +1315,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1288,6 +1339,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1309,6 +1361,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1330,6 +1383,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1353,6 +1407,7 @@ impl ScriptCompiler {
             None,
             core_mod_id,
             false,
+            None,
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );

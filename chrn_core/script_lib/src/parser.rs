@@ -658,7 +658,7 @@ fn parse_let(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Result<Abst
     Ok(abs_var)
 }
 
-/// Pratt Parser main entry-point
+/// Pratt Parser for all expression kinds except type expressions
 fn parse_expr(ctx: &mut Context, min_bp: u8, interner: &Intern) -> Result<SpannedExpr, Token> {
     let mut lhs = parse_unary(ctx, interner)?;
 
@@ -810,11 +810,7 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
         t if t.kind().is_terminator() => {
             ctx.advance_tok();
 
-            let terminator = if t.kind() == TokenKind::EOF {
-                "<eof>"
-            } else {
-                "`@end`"
-            };
+            let terminator = if t == Token::EOF { "<eof>" } else { "`@end`" };
 
             ctx.report_verbose(
                 &format!("Expected an expression, found {terminator}"),
@@ -922,7 +918,23 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
             let span = Span::new(start, end);
 
             let ty_expr = TypeExpr::Generic(generic);
-            Ok(SpannedTypeExpr::new(ty_expr, span))
+            let spanned_ty_expr = SpannedTypeExpr::new(ty_expr, span);
+
+            if ctx.peek_tok() == Token::Dot {
+                ctx.advance_tok();
+
+                let mut ty_path = vec![spanned_ty_expr];
+                let mut rest = parse_type_path(ctx, interner)?;
+
+                ty_path.append(&mut rest);
+
+                let path_end = ctx.peek_behind(1).span.end;
+                let path_span = Span::new(start, path_end);
+
+                Ok(SpannedTypeExpr::new(TypeExpr::Path(ty_path), path_span))
+            } else {
+                Ok(spanned_ty_expr)
+            }
         }
         Token::Id(id) if ctx.peek_ahead(1).tok.kind() == TokenKind::Dot => {
             let start = ctx.peek_span().start;
@@ -933,7 +945,6 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
 
             Ok(SpannedTypeExpr::new(TypeExpr::Path(ty_path), span))
         }
-        // Token::OParen => parse_tuple(ctx, interner),
         Token::Id(id) => {
             let span = ctx.advance_span();
 
@@ -980,7 +991,6 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
         let is_generic = ctx.peek_ahead(1).tok == Token::OAngleBracket;
         let is_dot = ctx.peek_ahead(1).tok == Token::Dot;
 
-        // There cannot be "List<i32>.something" so this breaks
         if is_generic {
             let start = ctx.peek_span().start;
             let base_id = ctx.expect_id_verbose(
@@ -1001,7 +1011,12 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
             let spanned_ty_expr = SpannedTypeExpr::new(ty_expr, span);
 
             ty_path.push(spanned_ty_expr);
-            break;
+
+            if ctx.peek_tok() == Token::Dot {
+                ctx.advance_tok();
+            } else {
+                break;
+            }
         // This is just the normal case of an identifier after a dot
         } else if is_dot {
             let span = ctx.peek_span();
@@ -1138,7 +1153,7 @@ fn handle_enum_variants(
     Ok(variants)
 }
 
-// This COULD re-use parse_var_sect but not sure yet
+/// Variant-specific parser that account for if there is a type declared with the variant or not
 fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant, Token> {
     let name_span = ctx.peek_span();
 
