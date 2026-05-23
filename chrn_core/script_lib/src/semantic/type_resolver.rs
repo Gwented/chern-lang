@@ -19,7 +19,7 @@ use crate::semantic::error::{MathError, SemanticError};
 use crate::semantic::representation::{
     ExprHir, Param, PossibleMember, ResolvedExpr, Symbol, SymbolKind,
 };
-use crate::semantic::scopes::{LookupPattern, ScopeType};
+use crate::semantic::scopes::{AssociatedScopeKind, LookupPattern, ScopeType};
 use crate::semantic::type_resolver::type_context::{PendingExpr, PendingSymbol, TypeContext};
 use crate::semantic::{evaluator, scopes};
 
@@ -129,6 +129,7 @@ impl TypeResolver<'_> {
                     SymbolKind::Type(type_id) => type_id,
                     SymbolKind::Val(val_id) => self.compiler.values[val_id.id as usize].type_id,
                     SymbolKind::Unknown => TypeId::new(script_compiler::TYPE_UNKNOWN_IDX),
+                    SymbolKind::Module(module_id) => unreachable!("Should be unreachable?"),
                 };
 
                 // The reason for some index checks, some deep checks, is because core should
@@ -294,9 +295,9 @@ impl TypeResolver<'_> {
                     inner_val.type_id = type_id;
                     inner_val.const_val = const_val_opt;
                 }
-                // Types are known without dependency tracking.
-                // SymbolKind::Unknown is always turned into an expr_id
-                SymbolKind::Type(_) | SymbolKind::Unknown => unreachable!("Not possible"),
+                SymbolKind::Type(_) | SymbolKind::Module(_) | SymbolKind::Unknown => {
+                    unreachable!("Not possible")
+                }
             }
 
             if let Some(user) = root_expr.user {
@@ -495,6 +496,7 @@ impl TypeResolver<'_> {
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
         let sym_id = table.ast_to_sym[&ast_id];
+        let associated_scope = AssociatedScopeKind::Module(self.current_mod);
 
         //NOTE: Pipeline where expressions are always returned, just that some may have
         //unresolved parts, which are put into the queue, not the variable itself.
@@ -502,7 +504,7 @@ impl TypeResolver<'_> {
             sym_id,
             &abs_var.spanned_expr,
             None,
-            self.current_mod,
+            associated_scope,
             ScopeType::Neutral,
             &mut vec![sym_id],
         ) {
@@ -559,7 +561,7 @@ impl TypeResolver<'_> {
 
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
         let type_id = self.resolve_type_expr(
-            self.current_mod,
+            AssociatedScopeKind::Module(self.current_mod),
             &abs_typedef.spanned_ty_expr,
             ScopeType::Var,
             LookupPattern::NoRestrictions,
@@ -570,6 +572,7 @@ impl TypeResolver<'_> {
             .extract_scope_id(ScopeType::Var, self.current_mod);
         let table = &self.compiler.get_scope(scope_id).scope.table;
         let sym_id = table.ast_to_sym[&ast_id];
+        let associated_scope = AssociatedScopeKind::Module(self.current_mod);
 
         let mut conds: Vec<ExprId> = Vec::new();
         for spanned_expr in &abs_typedef.conds {
@@ -578,7 +581,7 @@ impl TypeResolver<'_> {
                 sym_id,
                 spanned_expr,
                 None,
-                self.current_mod,
+                associated_scope,
                 ScopeType::Neutral,
                 &mut vec![sym_id],
             ) {
@@ -632,11 +635,12 @@ impl TypeResolver<'_> {
         //same for enums.
 
         let sym_id = table.ast_to_sym[&ast_id];
+        let associated_scope = AssociatedScopeKind::Module(self.current_mod);
 
         // Checking if there are duplicate name ids within the same struct along with resolution
         for (i, field_typedef) in abs_struct.fields.iter().enumerate() {
             let type_id = self.resolve_type_expr(
-                self.current_mod,
+                AssociatedScopeKind::Module(self.current_mod),
                 &field_typedef.spanned_ty_expr,
                 ScopeType::Nest,
                 LookupPattern::NoRestrictions,
@@ -681,7 +685,7 @@ impl TypeResolver<'_> {
                     sym_id,
                     &cond,
                     None,
-                    self.current_mod,
+                    associated_scope,
                     ScopeType::Nest,
                     &mut vec![sym_id],
                 ) {
@@ -716,7 +720,7 @@ impl TypeResolver<'_> {
                 sym_id,
                 cond,
                 None,
-                self.current_mod,
+                associated_scope,
                 ScopeType::Nest,
                 &mut vec![sym_id],
             ) {
@@ -763,6 +767,7 @@ impl TypeResolver<'_> {
         let table = &self.compiler.get_scope(scope_id).scope.table;
 
         let sym_id = table.ast_to_sym[&ast_id];
+        let associated_scope = AssociatedScopeKind::Module(self.current_mod);
 
         // (ast variant idx, name_id)
         let mut seen: Vec<(usize, InternedId)> = Vec::new();
@@ -797,7 +802,7 @@ impl TypeResolver<'_> {
 
             let variant_repre = if let Some(spanned_ty_expr) = &variant.ty_expr {
                 let type_id = self.resolve_type_expr(
-                    self.current_mod,
+                    AssociatedScopeKind::Module(self.current_mod),
                     &spanned_ty_expr,
                     ScopeType::Nest,
                     LookupPattern::NoRestrictions,
@@ -819,7 +824,7 @@ impl TypeResolver<'_> {
                     sym_id,
                     &cond,
                     None,
-                    self.current_mod,
+                    associated_scope,
                     ScopeType::Nest,
                     &mut vec![sym_id],
                 ) {
@@ -853,7 +858,7 @@ impl TypeResolver<'_> {
                 sym_id,
                 cond,
                 None,
-                self.current_mod,
+                associated_scope,
                 ScopeType::Nest,
                 &mut vec![sym_id],
             ) {
@@ -893,6 +898,8 @@ impl TypeResolver<'_> {
         let table = &self.compiler.get_scope_mut(scope_id).scope.table;
 
         let alias_sym_id = table.ast_to_sym[&ast_id];
+        let associated_scope = AssociatedScopeKind::Module(self.current_mod);
+
         let local_scope_id = self.compiler.get_alias(alias_sym_id).local_scope_id;
 
         let mut params: Vec<Param> = Vec::new();
@@ -929,7 +936,7 @@ impl TypeResolver<'_> {
             let val_id = ValueId::new(self.compiler.values.len() as u32);
 
             let type_id = self.resolve_type_expr(
-                self.current_mod,
+                AssociatedScopeKind::Module(self.current_mod),
                 &abs_param.ty_expr,
                 ScopeType::Neutral,
                 LookupPattern::NoRestrictions,
@@ -979,7 +986,8 @@ impl TypeResolver<'_> {
                 alias_sym_id,
                 spanned_expr,
                 Some(local_scope_id),
-                self.current_mod,
+                //NOTE: Could this change?
+                associated_scope,
                 ScopeType::Neutral,
                 &mut vec![alias_sym_id],
             ) {
@@ -1035,7 +1043,7 @@ impl TypeResolver<'_> {
         // Only usable with something like, alias(x) where x is local, not section local overall
         // like var->
         local_scope_id: Option<ScopeId>,
-        active_mod_id: ModuleId,
+        associated_scope: AssociatedScopeKind,
         scope_type: ScopeType,
         seen: &mut Vec<SymbolId>,
     ) -> Result<ExprId, SemanticError> {
@@ -1070,6 +1078,7 @@ impl TypeResolver<'_> {
                             }
                             SymbolKind::Type(type_id) => todo!(),
                             SymbolKind::Unknown => todo!(),
+                            SymbolKind::Module(mod_id) => todo!(),
                         };
 
                         self.compiler.exprs.push(expr);
@@ -1080,7 +1089,7 @@ impl TypeResolver<'_> {
 
                 if let Some(found_sym_id) = scopes::get_sym_id(
                     self.compiler,
-                    active_mod_id,
+                    associated_scope,
                     *name_id,
                     scope_type,
                     // Should this be no restrictions?
@@ -1176,6 +1185,17 @@ impl TypeResolver<'_> {
                                 spanned_expr.span,
                                 Vec::new(),
                             )
+                        }
+                        // "." only or "::"
+                        //
+                        // Should type constraints be removed?
+                        SymbolKind::Module(_) => {
+                            let err_mod_name = self.interner.search(name_id.id as usize);
+                            let msg = format!(
+                                "The symbol `{err_mod_name}` is a module, which cannot be assigned as an expression value"
+                            );
+
+                            return Err(SemanticError::General(msg, vec![spanned_expr.span]));
                         }
                         SymbolKind::Unknown => {
                             let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
@@ -1296,7 +1316,7 @@ impl TypeResolver<'_> {
                     parent_sym_id,
                     &*lhs,
                     local_scope_id,
-                    active_mod_id,
+                    associated_scope,
                     scope_type,
                     seen,
                 )?;
@@ -1305,7 +1325,7 @@ impl TypeResolver<'_> {
                     parent_sym_id,
                     &*rhs,
                     local_scope_id,
-                    active_mod_id,
+                    associated_scope,
                     scope_type,
                     seen,
                 )?;
@@ -1456,7 +1476,7 @@ impl TypeResolver<'_> {
                     parent_sym_id,
                     &ident_expr,
                     local_scope_id,
-                    active_mod_id,
+                    associated_scope,
                     scope_type,
                     seen,
                 )?;
@@ -1465,7 +1485,7 @@ impl TypeResolver<'_> {
                     parent_sym_id,
                     &spanned_expr,
                     local_scope_id,
-                    active_mod_id,
+                    associated_scope,
                     scope_type,
                     seen,
                 )?;
@@ -1519,7 +1539,7 @@ impl TypeResolver<'_> {
                     parent_sym_id,
                     &unary.spanned_expr,
                     local_scope_id,
-                    active_mod_id,
+                    associated_scope,
                     scope_type,
                     seen,
                 )?;
@@ -1616,7 +1636,7 @@ impl TypeResolver<'_> {
                     parent_sym_id,
                     caller,
                     local_scope_id,
-                    active_mod_id,
+                    associated_scope,
                     scope_type,
                     seen,
                 )?;
@@ -1629,7 +1649,7 @@ impl TypeResolver<'_> {
                         parent_sym_id,
                         sp_expr,
                         local_scope_id,
-                        active_mod_id,
+                        associated_scope,
                         scope_type,
                         seen,
                     )?;
@@ -1654,13 +1674,12 @@ impl TypeResolver<'_> {
                 Ok(expr_id)
             }
             // Maybe having "::" exist could help..
-            // FIX: Need to reduce code re-usage since this
             Expr::MemberAccess(abs_member_access) => {
                 match self.resolve_member(
                     parent_sym_id,
                     &abs_member_access.base,
                     local_scope_id,
-                    active_mod_id,
+                    associated_scope,
                     scope_type,
                     seen,
                 )? {
@@ -1669,10 +1688,10 @@ impl TypeResolver<'_> {
                         //NOTE: Maybe privacy should be checked from this resolver?
                         if let Some(extern_sym_id) = scopes::get_sym_id(
                             self.compiler,
-                            extern_mod_id,
+                            todo!(),
                             abs_member_access.field,
                             scope_type,
-                            LookupPattern::ModuleOnly,
+                            LookupPattern::NamespaceOnly,
                         ) {
                             seen.push(extern_sym_id);
 
@@ -1745,7 +1764,7 @@ impl TypeResolver<'_> {
                                 parent_sym_id,
                                 &sp_expr,
                                 local_scope_id,
-                                extern_mod_id,
+                                todo!(),
                                 scope_type,
                                 seen,
                             )
@@ -1788,15 +1807,26 @@ impl TypeResolver<'_> {
         sym_parent: SymbolId,
         member: &SpannedExpr,
         local_scope: Option<ScopeId>,
-        active_mod_id: ModuleId,
+        associated_scope: AssociatedScopeKind,
         scope_type: ScopeType,
         seen: &mut Vec<SymbolId>,
     ) -> Result<PossibleMember, SemanticError> {
+        let res = self.register_expr(
+            sym_parent,
+            member,
+            local_scope,
+            associated_scope,
+            scope_type,
+            seen,
+        )?;
+        dbg!(res);
+        panic!();
+
         if let Ok(expr_id) = self.register_expr(
             sym_parent,
             member,
             local_scope,
-            active_mod_id,
+            associated_scope,
             scope_type,
             seen,
         ) {
@@ -1813,7 +1843,7 @@ impl TypeResolver<'_> {
 
             if let Some(sym_id) = scopes::get_sym_id(
                 self.compiler,
-                self.current_mod,
+                todo!(),
                 name_id,
                 scope_type,
                 LookupPattern::NoRestrictions,
@@ -1891,7 +1921,7 @@ impl TypeResolver<'_> {
         &mut self,
         // Module that is actively being searched within, not the source. Source remains
         // current_mod
-        active_mod_id: ModuleId,
+        associated_scope: AssociatedScopeKind,
         spanned_ty_expr: &SpannedTypeExpr,
         scope_type: ScopeType,
         lookup_pattern: LookupPattern,
@@ -1901,10 +1931,12 @@ impl TypeResolver<'_> {
             //error from the external module instead of the actual module of origin.
             TypeExpr::Var(name_id) => {
                 // Searching symbols because otherwise, the type of a variable would be valid
-                // which is not a favorable allowable syntax
+                // since it would just be looking at it's type, which is not a favorable allowable syntax
+                // So, let x = 3, var-> field: x, would be valid if this weren't handled at the
+                // symbol level here
                 match scopes::get_sym_id(
                     self.compiler,
-                    active_mod_id,
+                    associated_scope,
                     *name_id,
                     scope_type,
                     lookup_pattern,
@@ -1914,21 +1946,21 @@ impl TypeResolver<'_> {
                             // NOTE: Will probably error later in resolution but fine for now
                             let symbol = &self.compiler.symbols[sym_id.id as usize];
                             if symbol.is_priv && symbol.owner != self.current_mod {
-                                let active_mod = &self.compiler.mods[active_mod_id.id];
-                                let active_name =
-                                    self.interner.search(active_mod.name_id.id as usize);
+                                //FIX: Would need changes
+                                let current_mod = &self.compiler.mods[self.current_mod.id];
+                                let current_mod_name =
+                                    self.interner.search(current_mod.name_id.id as usize);
                                 let sym_name = self.interner.search(symbol.name_id.id as usize);
 
                                 let msg = format!(
-                                    "The type `{sym_name}` is private within module `{active_name}`"
+                                    "The type `{sym_name}` is private within namespace `{current_mod_name}`"
                                 );
 
-                                let mod_origin = &self.compiler.mods[self.current_mod.id];
                                 self.reporter.report_spanned(
                                     &msg,
                                     None,
                                     &[spanned_ty_expr.span],
-                                    &mod_origin
+                                    &current_mod
                                         .src_metadata
                                         .as_ref()
                                         .expect("core should not be resolved"),
@@ -1939,15 +1971,13 @@ impl TypeResolver<'_> {
 
                             return Ok(type_id);
                         }
+                        // Ok but what about, "core is a MODULE which is NOT a type?"
+                        SymbolKind::Module(mod_id) => (),
                         SymbolKind::Val(_) | SymbolKind::Unknown => (),
                     },
                     None => (),
                 }
-
-                let mod_origin = &self.compiler.mods[self.current_mod.id];
-
-                let active_mod = &self.compiler.mods[active_mod_id.id];
-                let active_name = self.interner.search(active_mod.name_id.id as usize);
+                //FIX:
 
                 // If we have main, that imports def, that imports other, it tries to search for
                 // things in the "other" module even though it's defined in "def".
@@ -1955,15 +1985,37 @@ impl TypeResolver<'_> {
                 // Within "def", it tries to search "other" for everything declared even if "other"
                 // is never used.
                 let err_name = self.interner.search(name_id.id as usize);
-                let err_msg =
-                    format!("`{err_name}` is not defined as a type within module `{active_name}`");
-                println!("{err_msg}");
+                let err_msg = match associated_scope {
+                    AssociatedScopeKind::Module(mod_id) => {
+                        let err_mod = &self.compiler.mods[mod_id.id];
+                        let err_mod_name = self.interner.search(err_mod.name_id.id as usize);
 
+                        format!(
+                            "`{err_name}` is not defined as a type within the module `{err_mod_name}`"
+                        )
+                    }
+                    AssociatedScopeKind::Scope(scope_id) => {
+                        let scope_info = &self.compiler.scopes[scope_id.id];
+                        // This is infailable because an associated scope having a scope variant
+                        // means that the current search was performed by a namespace within a
+                        // module, not a module directly.
+                        let sym_owner = scope_info
+                            .sym_owner
+                            .expect("resolve_type_expr control flow broke");
+                        let sym_name_id = self.compiler.symbols[sym_owner.id as usize].name_id;
+                        let sym_name = self.interner.search(sym_name_id.id as usize);
+                        format!(
+                            "The symbol `{sym_name}` does not contain a type with the the identifier `{err_name}`"
+                        )
+                    }
+                };
+
+                let current_mod = &self.compiler.mods[self.current_mod.id];
                 self.reporter.report_spanned(
                     &err_msg,
                     Some(err_name),
                     &[spanned_ty_expr.span],
-                    &mod_origin
+                    &current_mod
                         .src_metadata
                         .as_ref()
                         .expect("core should not be resolved"),
@@ -1999,7 +2051,7 @@ impl TypeResolver<'_> {
                             }
 
                             let inner = self.resolve_type_expr(
-                                self.current_mod,
+                                associated_scope,
                                 &generic.args[0],
                                 scope_type,
                                 LookupPattern::NoRestrictions,
@@ -2026,7 +2078,7 @@ impl TypeResolver<'_> {
 
                             for arg in &generic.args {
                                 elements.push(self.resolve_type_expr(
-                                    self.current_mod,
+                                    associated_scope,
                                     arg,
                                     scope_type,
                                     LookupPattern::NoRestrictions,
@@ -2039,7 +2091,7 @@ impl TypeResolver<'_> {
                             let ty_info = TypeInfo::new(tuple, self.compiler.core_mod_id);
                             self.compiler.types.push(ty_info);
 
-                            Ok(type_id)
+                            return Ok(type_id);
                         }
                         BuiltinTypeKind::Map => {
                             if generic.args.len() != 2 {
@@ -2059,15 +2111,16 @@ impl TypeResolver<'_> {
                                 return Err(());
                             }
 
+                            // Should it reset to current module if it has a new sesarch started?
                             let key = self.resolve_type_expr(
-                                self.current_mod,
+                                AssociatedScopeKind::Module(self.current_mod),
                                 &generic.args[0],
                                 scope_type,
                                 LookupPattern::NoRestrictions,
                             )?;
 
                             let val = self.resolve_type_expr(
-                                self.current_mod,
+                                AssociatedScopeKind::Module(self.current_mod),
                                 &generic.args[1],
                                 scope_type,
                                 LookupPattern::NoRestrictions,
@@ -2079,53 +2132,32 @@ impl TypeResolver<'_> {
                             let ty_info = TypeInfo::new(map, self.compiler.core_mod_id);
                             self.compiler.types.push(ty_info);
 
-                            Ok(TypeId::new(map_id))
+                            return Ok(TypeId::new(map_id));
                         }
-                        // I'm sure this can be done better...
-                        _ => {
-                            let err_name = self.interner.search(generic.base.id as usize);
-                            //WARN: Questionablly phrased error message
-                            //This COULD change so this will not be upheld at the parsing stage
-                            let err_msg = format!(
-                                "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, `Map`, and `Tuple` are valid data structures"
-                            );
-
-                            let mod_origin = &self.compiler.mods[self.current_mod.id];
-                            self.reporter.report_spanned(
-                                &err_msg,
-                                Some(err_name),
-                                &[spanned_ty_expr.span],
-                                &mod_origin
-                                    .src_metadata
-                                    .as_ref()
-                                    .expect("core should not be resolved"),
-                            );
-
-                            Err(())
-                        }
+                        // Returns nothing since both have the same error handling
+                        _ => (),
                     },
-                    None => {
-                        // 2004 dog 2004 television
-                        let err_name = self.interner.search(generic.base.id as usize);
-
-                        let err_msg = format!(
-                            "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, `Map`, and `Tuple` are valid data structures"
-                        );
-
-                        let mod_origin = &self.compiler.mods[self.current_mod.id];
-                        self.reporter.report_spanned(
-                            &err_msg,
-                            Some(err_name),
-                            &[spanned_ty_expr.span],
-                            &mod_origin
-                                .src_metadata
-                                .as_ref()
-                                .expect("core should not be resolved"),
-                        );
-
-                        Err(())
-                    }
+                    None => (),
                 }
+
+                let err_name = self.interner.search(generic.base.id as usize);
+
+                let err_msg = format!(
+                    "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, `Map`, and `Tuple` are valid data structures"
+                );
+
+                let mod_origin = &self.compiler.mods[self.current_mod.id];
+                self.reporter.report_spanned(
+                    &err_msg,
+                    Some(err_name),
+                    &[spanned_ty_expr.span],
+                    &mod_origin
+                        .src_metadata
+                        .as_ref()
+                        .expect("core should not be resolved"),
+                );
+
+                Err(())
             }
             // This only allows something like, defs.Thing which can go to at most one type deep,
             // but no more. Will need change since something like i32.MAX could be "core.i32.MAX".
@@ -2133,84 +2165,112 @@ impl TypeResolver<'_> {
             // Maybe not though since that would only be usable in expressions anyways which aren't
             // type expressions
             TypeExpr::Path(spanned_ty_exprs) => {
-                // The parser disallows < 2 type pathing to actually exist so indexing should be
-                // safe here
-                if spanned_ty_exprs.len() != 2 {
-                    let msg = format!("Only 1 member access can be used for types");
+                // maybe active_mod can be removed?
+                let mut current_scope = AssociatedScopeKind::Module(self.current_mod);
+                let module = &self.compiler.mods[self.current_mod.id];
 
-                    let spans: Vec<Span> = spanned_ty_exprs
-                        .iter()
-                        .skip(1)
-                        .map(|expr| expr.span)
-                        .collect();
+                for (i, sp_ty_expr) in spanned_ty_exprs.iter().enumerate() {
+                    match &sp_ty_expr.ty_expr {
+                        TypeExpr::Var(interned_id) => {
+                            if let Some(sym_id) = scopes::get_sym_id(
+                                self.compiler,
+                                current_scope,
+                                *interned_id,
+                                scope_type,
+                                LookupPattern::NamespaceOnly,
+                            ) {
+                                match self.compiler.symbols[sym_id.id as usize].associated_scope {
+                                    Some(new_scope) => current_scope = new_scope,
+                                    // meaning the search is DONE
+                                    None => break,
+                                }
+                                // Symbol not found
+                            } else {
+                                let current_member_name =
+                                    self.interner.search(interned_id.id as usize);
 
-                    let module = &self.compiler.mods[self.current_mod.id];
-                    self.reporter.report_spanned(
-                        &msg,
-                        None,
-                        &spans,
-                        &module
-                            .src_metadata
-                            .as_ref()
-                            .expect("core should not be resolved"),
-                    );
+                                let prev_member_opt = if i > 0 {
+                                    Some(&spanned_ty_exprs[i - 1])
+                                } else {
+                                    None
+                                };
+
+                                // Different error message depending on if at least the first
+                                // member was resolved or not
+                                let (msg, span) = if let Some(prev) = prev_member_opt {
+                                    let prev_member_name = match &prev.ty_expr {
+                                        TypeExpr::Var(prev_name_id) => {
+                                            self.interner.search(prev_name_id.id as usize)
+                                        }
+                                        TypeExpr::Generic(generic) => {
+                                            // Represents "module.Generic<T>.stuff" where the middle
+                                            // generic has the ability to access members
+                                            unimplemented!(
+                                                "Generics may never exist in this form."
+                                            );
+                                            self.interner.search(generic.base.id as usize);
+                                        }
+                                        TypeExpr::Path(_) => unreachable!(),
+                                    };
+
+                                    let msg = format!(
+                                        "Could not find the symbol `{}` in the namespace `{}`",
+                                        current_member_name, prev_member_name
+                                    );
+
+                                    let merged_span = prev.span.merge(sp_ty_expr.span);
+
+                                    (msg, merged_span)
+                                } else {
+                                    // Specific scope mention?
+                                    let msg = format!(
+                                        "The symbol `{current_member_name}` was not found in all `{scope_type}` searchable scopes"
+                                    );
+
+                                    (msg, sp_ty_expr.span)
+                                };
+
+                                self.reporter.report_spanned(
+                                    &msg,
+                                    None,
+                                    &[span],
+                                    &module
+                                        .src_metadata
+                                        .as_ref()
+                                        .expect("core should not be resolved"),
+                                );
+
+                                return Err(());
+                            };
+                        }
+                        //TODO:
+                        TypeExpr::Generic(_) => {
+                            // Still disallows something like, core.List<i32>.other_thing
+                            if i + 1 != spanned_ty_exprs.len() {
+                                let msg = "Generics cannot use any form of member access";
+                                self.reporter.report_spanned(
+                                    msg,
+                                    None,
+                                    &[sp_ty_expr.span],
+                                    &module
+                                        .src_metadata
+                                        .as_ref()
+                                        .expect("core should not be resolved"),
+                                );
+
+                                return Err(());
+                            }
+
+                            break;
+                        }
+                        // The path cannot recursively have itself
+                        TypeExpr::Path(_) => unreachable!(),
+                    }
                 }
 
-                let extern_mod = match &spanned_ty_exprs[0].ty_expr {
-                    TypeExpr::Var(name_id) => {
-                        if let Some(mod_id) = self.compiler.mod_map.get(name_id) {
-                            &self.compiler.mods[mod_id.id]
-                        } else {
-                            let err_name = self.interner.search(name_id.id as usize);
-                            let msg = format!("The module `{err_name}` does not exist");
+                let last_ty_expr = &spanned_ty_exprs[spanned_ty_exprs.len() - 1];
 
-                            let module = &self.compiler.mods[self.current_mod.id];
-                            self.reporter.report_spanned(
-                                &msg,
-                                None,
-                                &[spanned_ty_exprs[0].span],
-                                &module
-                                    .src_metadata
-                                    .as_ref()
-                                    .expect("core should not be resolved"),
-                            );
-
-                            return Err(());
-                        }
-                    }
-                    _ => unreachable!("Parser does not pick this up"),
-                };
-
-                // Checking if the current module actually has the module found imported.
-                //WARN: Using current_mod instead of active_mod here
-                let current_module = &self.compiler.mods[self.current_mod.id];
-
-                if !current_module.contains_import(extern_mod) {
-                    let extern_name = self.interner.search(extern_mod.name_id.id as usize);
-                    let current_name = self.interner.search(current_module.name_id.id as usize);
-                    let msg = format!(
-                        "The module `{extern_name}` exists but was not imported by `{current_name}`"
-                    );
-
-                    self.reporter.report_spanned(
-                        &msg,
-                        None,
-                        &[spanned_ty_exprs[0].span],
-                        &current_module
-                            .src_metadata
-                            .as_ref()
-                            .expect("core should not be resolved"),
-                    );
-
-                    return Err(());
-                };
-
-                self.resolve_type_expr(
-                    extern_mod.mod_id,
-                    &spanned_ty_exprs[1],
-                    scope_type,
-                    LookupPattern::ModuleOnly,
-                )
+                self.resolve_type_expr(current_scope, last_ty_expr, scope_type, lookup_pattern)
             }
         }
     }

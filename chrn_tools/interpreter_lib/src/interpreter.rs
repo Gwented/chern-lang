@@ -5,7 +5,6 @@ use common::{
     chrn_settings::ChrnSettings,
     core_error::{CoreError, ScriptError},
     reporter::diagnostic::Reporter,
-    span::Span,
 };
 use script_lib::{
     modules::{self},
@@ -92,6 +91,8 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     if !reporter.diags.is_empty() {
         return Err(ScriptError::Semantic(reporter.diags).into());
     }
+
+    todo!("Constraints");
 
     for i in 0..script_compiler.mods.len() {
         let module = &script_compiler.mods[i];

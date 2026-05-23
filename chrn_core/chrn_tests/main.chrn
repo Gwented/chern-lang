@@ -7,7 +7,7 @@ let /*comment*/ x/* inline*/ = /* last*/ 3 let z =x+3
 
 
 @def
-// import "../../chrn_core/chrn_tests/def.chrn" as defs
+import "../../chrn_core/chrn_tests/def.chrn" as defs
 
 /*export let a = b
 export let b = c
@@ -25,9 +25,15 @@ let x = 5*/
 // Ranged probably can't really work here because, if a string can be ranged along with 
 // a number, then those can't be lowered to anything with confidence really.
 
-alias default(x: i32.MAX.SUPER<T>) = []
+// alias default(x: i32.MAX.SUPER<T>) = []
 // alias frosted(used) = [IsEmpty, Contains(used)]
 
+let x = def::WRITE
+
+var->
+    x: core.List<str>
+nest->
+    enum Perbon {}
 // How shoulud aliasses infer their own constraints?
 
 // In this scenario, it should see that equals x is used, meaning it's numeric.

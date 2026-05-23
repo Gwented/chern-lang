@@ -4,19 +4,27 @@ use chrn_utils::id_types::{InternedId, ModuleId, ScopeId, SymbolId, TypeId};
 
 use crate::{
     script_compiler::ScriptCompiler,
-    semantic::representation::{SymbolKind, Table},
+    semantic::representation::{Symbol, SymbolKind, Table},
 };
 
 //TODO: Maybe this is the point where the scope wrapper comes in
+/// Structure that holds scope data
 #[derive(Debug)]
 pub struct ScopeInfo {
     pub scope: Scope,
-    pub owner: ModuleId,
+    /// For debugging purposes so that the symbol of origin is known for where a namespace lookup
+    /// occured, beyond just the module or origin.
+    pub sym_owner: Option<SymbolId>,
+    pub mod_owner: ModuleId,
 }
 
 impl ScopeInfo {
-    pub fn new(scope: Scope, owner: ModuleId) -> ScopeInfo {
-        ScopeInfo { scope, owner }
+    pub fn new(scope: Scope, sym_owner: Option<SymbolId>, owner: ModuleId) -> ScopeInfo {
+        ScopeInfo {
+            scope,
+            sym_owner,
+            mod_owner: owner,
+        }
     }
 }
 
@@ -31,16 +39,6 @@ pub const SCOPE_LOCAL: u8 = 1 << 6;
 // Bitwise into array of scopes that filters each time a lookup is done?
 pub static SCOPE_CORE_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Core];
 pub static SCOPE_NEUTRAL_ACCESSIBLE: [ScopeType; 2] = [ScopeType::Neutral, ScopeType::Core];
-// For the LSP
-pub static SCOPE_ALL: [ScopeType; 7] = [
-    ScopeType::Local,
-    ScopeType::Neutral,
-    ScopeType::Var,
-    ScopeType::Nest,
-    ScopeType::Complex,
-    ScopeType::Override,
-    ScopeType::Core,
-];
 
 //WARN: Suspicious accessibility
 pub static SCOPE_LOCAL_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Local];
@@ -105,44 +103,44 @@ pub fn get_sym_id_local(
     None
 }
 
-/// Searches for the given name id given the language semantics of chrn access levels regarding
-/// sections. Does not account for local scopes due to it's differences from how scopes are
-/// normally searched.
-pub fn get_sym_id(
-    compiler: &ScriptCompiler,
-    owner_id: ModuleId,
-    target_name_id: InternedId,
-    scope_type: ScopeType,
-    lookup_pattern: LookupPattern,
-) -> Option<SymbolId> {
-    let current_mod = &compiler.mods[owner_id.id];
-
-    // Avoiding vector allocations right now so it can just use a pointer offset instead based off
-    // of hard-coded truths but will probably just, not do that.
-    let accessible_scopes = scope_type.accessible_scopes();
-    let accessible_scopes = match lookup_pattern {
-        LookupPattern::ModuleOnly if current_mod.src_metadata.is_some() => {
-            &accessible_scopes[..accessible_scopes.len() - 1]
-        }
-        // If it's core then it'll only have access to core anyways so this is fine
-        LookupPattern::NoRestrictions | LookupPattern::ModuleOnly => accessible_scopes,
-    };
-
-    for allowed_scope_type in accessible_scopes.iter().copied() {
-        if let Some(scope_info) = compiler.find_scope(allowed_scope_type, owner_id) {
-            for (current_name_id, current_sym_id) in &scope_info.scope.table.interned_to_sym {
-                if *current_name_id == target_name_id {
-                    return Some(*current_sym_id);
-                }
-            }
-        }
-    }
-
-    None
-}
+// /// Searches for the given name id given the language semantics of chrn access levels regarding
+// /// sections. Does not account for local scopes due to it's differences from how scopes are
+// /// normally searched.
+// pub fn get_sym_id(
+//     compiler: &ScriptCompiler,
+//     owner_id: ModuleId,
+//     target_name_id: InternedId,
+//     scope_type: ScopeType,
+//     lookup_pattern: LookupPattern,
+// ) -> Option<SymbolId> {
+//     let current_mod = &compiler.mods[owner_id.id];
+//
+//     // Avoiding vector allocations right now so it can just use a pointer offset instead based off
+//     // of hard-coded truths but will probably just, not do that.
+//     let accessible_scopes = scope_type.accessible_scopes();
+//     let accessible_scopes = match lookup_pattern {
+//         LookupPattern::NamespaceOnly if current_mod.src_metadata.is_some() => {
+//             &accessible_scopes[..accessible_scopes.len() - 1]
+//         }
+//         // If it's core then it'll only have access to core anyways so this is fine
+//         LookupPattern::NoRestrictions | LookupPattern::NamespaceOnly => accessible_scopes,
+//     };
+//
+//     for allowed_scope_type in accessible_scopes.iter().copied() {
+//         if let Some(scope_info) = compiler.find_scope(allowed_scope_type, owner_id) {
+//             for (current_name_id, current_sym_id) in &scope_info.scope.table.interned_to_sym {
+//                 if *current_name_id == target_name_id {
+//                     return Some(*current_sym_id);
+//                 }
+//             }
+//         }
+//     }
+//
+//     None
+// }
 
 //NOTE: Exists for separation reasons due to the compiler becoming bloated in many forms
-/// Get's `TypeId` associated with the `NameId` given if possible
+/// Get's `TypeId` associated with the `InternedId` given if possible
 pub fn get_type_id(
     compiler: &ScriptCompiler,
     owner_id: ModuleId,
@@ -155,11 +153,11 @@ pub fn get_type_id(
     //May change
     let accessible_scopes = scope_type.accessible_scopes();
     let accessible_scopes = match lookup_pattern {
-        LookupPattern::ModuleOnly if current_mod.src_metadata.is_some() => {
+        LookupPattern::NamespaceOnly if current_mod.src_metadata.is_some() => {
             &accessible_scopes[..accessible_scopes.len() - 1]
         }
         // If it's core then it'll only have access to core anyways so this is fine
-        LookupPattern::NoRestrictions | LookupPattern::ModuleOnly => accessible_scopes,
+        LookupPattern::NoRestrictions | LookupPattern::NamespaceOnly => accessible_scopes,
     };
     // I don't think this can fail. Should maybe expect for clarity.
     //     let scope = &compiler.scopes[scope_id.id].scope;
@@ -178,7 +176,7 @@ pub fn get_type_id(
                         SymbolKind::Val(val_id) => {
                             return Some(compiler.values[val_id.id as usize].type_id);
                         }
-                        SymbolKind::Unknown => return None,
+                        SymbolKind::Unknown | SymbolKind::Module(_) => return None,
                     }
                 }
             }
@@ -188,6 +186,68 @@ pub fn get_type_id(
     None
 }
 
+pub fn find_scope(
+    compiler: &ScriptCompiler,
+    scope_type: ScopeType,
+    owner_id: ModuleId,
+) -> Option<&ScopeInfo> {
+    let mod_owner = &compiler.mods[owner_id.id];
+    for scope_id in &mod_owner.scopes {
+        let scope_info = &compiler.scopes[scope_id.id];
+        if scope_info.scope.scope_type == scope_type {
+            return Some(scope_info);
+        }
+    }
+
+    None
+}
+
+// TEST:
+pub fn get_sym_id(
+    compiler: &ScriptCompiler,
+    associated_scope: AssociatedScopeKind,
+    target_name_id: InternedId,
+    scope_type: ScopeType,
+    lookup_pattern: LookupPattern,
+) -> Option<SymbolId> {
+    // Avoiding vector allocations right now so it can just use a pointer offset instead based off
+    // of hard-coded truths but will probably just, not do that.
+    //TEST:
+    match associated_scope {
+        AssociatedScopeKind::Module(mod_id) => {
+            let current_mod = &compiler.mods[mod_id.id];
+
+            let accessible_scopes = scope_type.accessible_scopes();
+            let accessible_scopes = match lookup_pattern {
+                LookupPattern::NamespaceOnly if current_mod.src_metadata.is_some() => {
+                    &accessible_scopes[..accessible_scopes.len() - 1]
+                }
+                // If it's core then it'll only have access to core anyways so this is fine
+                LookupPattern::NoRestrictions | LookupPattern::NamespaceOnly => accessible_scopes,
+            };
+
+            for allowed_scope_type in accessible_scopes.iter() {
+                if let Some(scope_info) = compiler.find_scope(*allowed_scope_type, mod_id) {
+                    if let Some(sym_id) =
+                        scope_info.scope.table.interned_to_sym.get(&target_name_id)
+                    {
+                        return Some(*sym_id);
+                    }
+                }
+            }
+        }
+        AssociatedScopeKind::Scope(scope_id) => {
+            let scope = &compiler.scopes[scope_id.id].scope;
+            if let Some(sym_id) = scope.table.interned_to_sym.get(&target_name_id) {
+                return Some(*sym_id);
+            }
+        }
+    }
+
+    None
+}
+
+/// Enum representing all kinds of scopes usable in chrn
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ScopeType {
     Core,
@@ -237,8 +297,13 @@ impl ScopeType {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LookupPattern {
     // The naming please
+    /// Applies no restriction to lookups. Meaning, core is auto-matically searched since it's
+    /// intrinsic, any scope's accessible scopes can be searched with no restriction.
     NoRestrictions,
-    ModuleOnly,
+    // WHat
+    /// Restricts lookup to only search what is within the given namespace, which restricts modules
+    /// such as core, or anything not declared within the symbol's scope containment?
+    NamespaceOnly,
 }
 
 // TODO: Formattable
@@ -254,4 +319,12 @@ impl Display for ScopeType {
             ScopeType::Local => write!(f, "local"),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Scope type specifically for if a symbol has an associated scope tied to it
+pub enum AssociatedScopeKind {
+    // A bit redundant since odules already hold themselves as a scope
+    Module(ModuleId),
+    Scope(ScopeId),
 }

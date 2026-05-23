@@ -322,25 +322,25 @@ impl<'a> ConstraintResolver<'a> {
         // panic!("Paraming");
 
         // Filter out duplicates in the type resolver!!
-        let mut ty_constraint: Option<TypeConstraint> = None;
-        for (i, sp_arg) in abs_alias.args.iter().enumerate() {
-            let param_span = abs_alias.params[i].name_span;
-            match self.infer_type_constraint_from_arg(sp_arg, param_span) {
-                Ok(constraint_opt) => {
-                    todo!("Constraining contraint check of cocnsctraint");
-                }
-                Err(sem_err) => {
-                    let module = &self.compiler.mods[self.current_mod.id];
-                    self.reporter.report_semantic(
-                        sem_err,
-                        &module
-                            .src_metadata
-                            .as_ref()
-                            .expect("core should not be resolved"),
-                    );
-                }
-            }
-        }
+        // let mut ty_constraint: Option<TypeConstraint> = None;
+        // for (i, sp_arg) in abs_alias.args.iter().enumerate() {
+        //     let param_span = abs_alias.params[i].name_span;
+        //     match self.infer_type_constraint_from_arg(sp_arg, param_span) {
+        //         Ok(constraint_opt) => {
+        //             todo!("Constraining contraint check of cocnsctraint");
+        //         }
+        //         Err(sem_err) => {
+        //             let module = &self.compiler.mods[self.current_mod.id];
+        //             self.reporter.report_semantic(
+        //                 sem_err,
+        //                 &module
+        //                     .src_metadata
+        //                     .as_ref()
+        //                     .expect("core should not be resolved"),
+        //             );
+        //         }
+        //     }
+        // }
 
         // FIX: Ok so maybe we can keep both systems to where, if it's constrained, check
         // constraints, otherwise, keep the same concrete type checks with builtins
@@ -381,136 +381,136 @@ impl<'a> ConstraintResolver<'a> {
         Ok(())
     }
 
-    // Not quite sure what to do with this yet since it's only used for alias, if it were used for
-    // more than alias then a recursive check would be needed. But currently, not muc helse needs
-    // to be done with this since most is unerachable
-    fn infer_type_constraint_from_expr(
-        &self,
-        expr_id: ExprId,
-        // Should this be sym_id?
-        // Can't really do that right now because expressions aren't symbols, but x usage
-        // represents the x symbol in the local scope
-        param_name_id: InternedId,
-        param_span: Span,
-    ) -> Option<TypeConstraintFlags> {
-        let expr = &self.compiler.exprs[expr_id.id as usize];
-        match &expr.expr_hir {
-            ExprHir::Val(val_id) => {
-                panic!("Val id");
-            }
-            ExprHir::Var(sym_id) => {
-                let symbol = &self.compiler.symbols[sym_id.id as usize];
-
-                match &self.compiler.symbols[sym_id.id as usize].kind {
-                    SymbolKind::Type(type_id) => match &self.compiler.types[type_id.id as usize].ty
-                    {
-                        Type::BuiltinType(builtin_ty) => {
-                            // If we go from symbol -> Type, that means the previous symbol can be
-                            // checked for same identifier/symbol id since we are looking at
-                            // something that looks like, x: SomeType, rather than Func(x) where
-                            // the symbol represents the function, not the inner x.
-                            //
-                            // Not final in how this works.
-                            if symbol.name_id != param_name_id {
-                                return None;
-                            }
-
-                            Some(builtin_ty.kind().type_constraints())
-                        }
-                        // rec check
-                        Type::Struct(struct_def) => todo!(),
-                        Type::Enum(enum_def) => todo!(),
-                        Type::Func(func_def) => {
-                            if func_def.is_callable {
-                                Some(func_def.type_constraints)
-                            } else {
-                                None
-                            }
-                        }
-                        Type::Alias(alias_def) => todo!(),
-                        Type::TypeDef(type_def) => todo!(),
-                        Type::Unknown => todo!("Unknown"),
-                        Type::Constrained(constraint) => {
-                            if symbol.name_id != param_name_id {
-                                return None;
-                            }
-
-                            Some(*constraint)
-                        }
-                    },
-                    // We don't have names...
-                    SymbolKind::Val(_) => {
-                        // Need a function to get this
-                        let symbol = &self.compiler.symbols[sym_id.id as usize];
-                        if param_name_id == symbol.name_id {
-                            let type_id = self.compiler.exprs[expr_id.id as usize].type_id;
-                            return constraints::get_type_constraints(
-                                self.compiler,
-                                type_id,
-                                param_span,
-                                false,
-                            );
-                        }
-
-                        None
-                    }
-                    SymbolKind::Unknown => todo!("Unknown"),
-                }
-            }
-            ExprHir::Default(sym_expr_id, expr_id) => {
-                todo!()
-            }
-            ExprHir::Call(callee_id, arg_ids) => {
-                let mut has_param_name = false;
-
-                for arg_expr_id in arg_ids {
-                    let expr_hir = &self.compiler.exprs[arg_expr_id.id as usize].expr_hir;
-                    if let ExprHir::Var(sym_id) = expr_hir {
-                        let sym = &self.compiler.symbols[sym_id.id as usize];
-                        if sym.name_id == param_name_id {
-                            has_param_name = true;
-                        }
-                    }
-                }
-
-                if has_param_name {
-                    return self.infer_type_constraint_from_expr(
-                        *callee_id,
-                        param_name_id,
-                        param_span,
-                    );
-                }
-
-                None
-            }
-            // Maybe operators also need to carry constraints since that does
-            //TODO: Not quite sure what this should do yet
-            ExprHir::Unary { op, operand } => {
-                self.infer_type_constraint_from_expr(*operand, param_name_id, param_span)
-            }
-            ExprHir::BinaryExpr { lhs, op, rhs } => {
-                let ty = &self.compiler.types[expr.type_id.id as usize].ty;
-                match ty {
-                    Type::BuiltinType(builtin_ty) => Some(builtin_ty.kind().type_constraints()),
-                    Type::Struct(struct_def) => todo!(),
-                    Type::Enum(enum_def) => todo!(),
-                    Type::Func(func_def) => todo!(),
-                    Type::Alias(alias_def) => todo!(),
-                    Type::TypeDef(type_def) => todo!(),
-                    Type::Constrained(constraint) => Some(*constraint),
-                    Type::Unknown => todo!(),
-                }
-            }
-        }
-    }
-
-    fn infer_type_constraint_from_arg(
-        &self,
-        sp_arg: &SpannedInnerArgs,
-        param_span: Span,
-    ) -> Result<Option<TypeConstraint>, SemanticError> {
-        todo!()
-    }
+    // // Not quite sure what to do with this yet since it's only used for alias, if it were used for
+    // // more than alias then a recursive check would be needed. But currently, not muc helse needs
+    // // to be done with this since most is unerachable
+    // fn infer_type_constraint_from_expr(
+    //     &self,
+    //     expr_id: ExprId,
+    //     // Should this be sym_id?
+    //     // Can't really do that right now because expressions aren't symbols, but x usage
+    //     // represents the x symbol in the local scope
+    //     param_name_id: InternedId,
+    //     param_span: Span,
+    // ) -> Option<TypeConstraintFlags> {
+    //     let expr = &self.compiler.exprs[expr_id.id as usize];
+    //     match &expr.expr_hir {
+    //         ExprHir::Val(val_id) => {
+    //             panic!("Val id");
+    //         }
+    //         ExprHir::Var(sym_id) => {
+    //             let symbol = &self.compiler.symbols[sym_id.id as usize];
+    //
+    //             match &self.compiler.symbols[sym_id.id as usize].kind {
+    //                 SymbolKind::Type(type_id) => match &self.compiler.types[type_id.id as usize].ty
+    //                 {
+    //                     Type::BuiltinType(builtin_ty) => {
+    //                         // If we go from symbol -> Type, that means the previous symbol can be
+    //                         // checked for same identifier/symbol id since we are looking at
+    //                         // something that looks like, x: SomeType, rather than Func(x) where
+    //                         // the symbol represents the function, not the inner x.
+    //                         //
+    //                         // Not final in how this works.
+    //                         if symbol.name_id != param_name_id {
+    //                             return None;
+    //                         }
+    //
+    //                         Some(builtin_ty.kind().type_constraints())
+    //                     }
+    //                     // rec check
+    //                     Type::Struct(struct_def) => todo!(),
+    //                     Type::Enum(enum_def) => todo!(),
+    //                     Type::Func(func_def) => {
+    //                         if func_def.is_callable {
+    //                             Some(func_def.type_constraints)
+    //                         } else {
+    //                             None
+    //                         }
+    //                     }
+    //                     Type::Alias(alias_def) => todo!(),
+    //                     Type::TypeDef(type_def) => todo!(),
+    //                     Type::Unknown => todo!("Unknown"),
+    //                     Type::Constrained(constraint) => {
+    //                         if symbol.name_id != param_name_id {
+    //                             return None;
+    //                         }
+    //
+    //                         Some(*constraint)
+    //                     }
+    //                 },
+    //                 SymbolKind::Val(_) => {
+    //                     // Need a function to get this
+    //                     let symbol = &self.compiler.symbols[sym_id.id as usize];
+    //                     if param_name_id == symbol.name_id {
+    //                         let type_id = self.compiler.exprs[expr_id.id as usize].type_id;
+    //                         return constraints::get_type_constraints(
+    //                             self.compiler,
+    //                             type_id,
+    //                             param_span,
+    //                             false,
+    //                         );
+    //                     }
+    //
+    //                     None
+    //                 }
+    //                 SymbolKind::Module(mod_id) => todo!("I'm a module"),
+    //                 SymbolKind::Unknown => todo!("Unknown"),
+    //             }
+    //         }
+    //         ExprHir::Default(sym_expr_id, expr_id) => {
+    //             todo!()
+    //         }
+    //         ExprHir::Call(callee_id, arg_ids) => {
+    //             let mut has_param_name = false;
+    //
+    //             for arg_expr_id in arg_ids {
+    //                 let expr_hir = &self.compiler.exprs[arg_expr_id.id as usize].expr_hir;
+    //                 if let ExprHir::Var(sym_id) = expr_hir {
+    //                     let sym = &self.compiler.symbols[sym_id.id as usize];
+    //                     if sym.name_id == param_name_id {
+    //                         has_param_name = true;
+    //                     }
+    //                 }
+    //             }
+    //
+    //             if has_param_name {
+    //                 return self.infer_type_constraint_from_expr(
+    //                     *callee_id,
+    //                     param_name_id,
+    //                     param_span,
+    //                 );
+    //             }
+    //
+    //             None
+    //         }
+    //         // Maybe operators also need to carry constraints since that does
+    //         //TODO: Not quite sure what this should do yet
+    //         ExprHir::Unary { op, operand } => {
+    //             self.infer_type_constraint_from_expr(*operand, param_name_id, param_span)
+    //         }
+    //         ExprHir::BinaryExpr { lhs, op, rhs } => {
+    //             let ty = &self.compiler.types[expr.type_id.id as usize].ty;
+    //             match ty {
+    //                 Type::BuiltinType(builtin_ty) => Some(builtin_ty.kind().type_constraints()),
+    //                 Type::Struct(struct_def) => todo!(),
+    //                 Type::Enum(enum_def) => todo!(),
+    //                 Type::Func(func_def) => todo!(),
+    //                 Type::Alias(alias_def) => todo!(),
+    //                 Type::TypeDef(type_def) => todo!(),
+    //                 Type::Constrained(constraint) => Some(*constraint),
+    //                 Type::Unknown => todo!(),
+    //             }
+    //         }
+    //     }
+    // }
+    //
+    // fn infer_type_constraint_from_arg(
+    //     &self,
+    //     sp_arg: &SpannedInnerArgs,
+    //     param_span: Span,
+    // ) -> Result<Option<TypeConstraint>, SemanticError> {
+    //     todo!()
+    // }
 
     // //NOTE: The reason this would need to look at the struct again would be because it is iterating
     // // through items despite there already being a known struct id, which could be prevented if the
@@ -728,234 +728,235 @@ impl<'a> ConstraintResolver<'a> {
         parent_span: Span,
         cond_expr_id: ExprId,
     ) -> Result<(), Vec<SemanticError>> {
-        let cond_expr = &self.compiler.exprs[cond_expr_id.id as usize];
-
-        // if visited.contains(&field.type_id) {
-        //     if spanned_arg.arg.has_restrictions() {
-        //         let name = self.interner.search(symbol.name_id.id as usize);
+        // let cond_expr = &self.compiler.exprs[cond_expr_id.id as usize];
         //
-        //         let msg = format!(
-        //             "The type `{name}` cannot have `#{}` applied due to recursively relying on itself satisfying the argument",
-        //             spanned_arg.arg
-        //         );
+        // // if visited.contains(&field.type_id) {
+        // //     if spanned_arg.arg.has_restrictions() {
+        // //         let name = self.interner.search(symbol.name_id.id as usize);
+        // //
+        // //         let msg = format!(
+        // //             "The type `{name}` cannot have `#{}` applied due to recursively relying on itself satisfying the argument",
+        // //             spanned_arg.arg
+        // //         );
+        // //
+        // //         return Err(SemanticError::General(
+        // //             msg,
+        // //             vec![spanned_arg.span, active_span],
+        // //         ));
+        // //     }
+        // match &cond_expr.expr_hir {
+        //     ExprHir::Call(callee_expr_id, arg_expr_ids) => {
+        //         let callee = &self.compiler.exprs[callee_expr_id.id as usize];
+        //         let ty = &self.compiler.types[callee.type_id.id as usize].ty;
         //
-        //         return Err(SemanticError::General(
-        //             msg,
-        //             vec![spanned_arg.span, active_span],
-        //         ));
+        //         match ty {
+        //             Type::Func(func_def) => {
+        //                 if !func_def.is_callable {
+        //                     let msg = "Predicate keywords cannot use parameters".to_string();
+        //                     return Err(vec![SemanticError::General(msg, vec![cond_expr.span])]);
+        //                 }
+        //
+        //                 // Top level functions or predicates used within type constraints must
+        //                 // evaluate to a boolean
+        //                 let ret_type = &self.compiler.types[func_def.ret_type.id as usize].ty;
+        //
+        //                 if let Type::BuiltinType(BuiltinType::Bool) = ret_type {
+        //                     // Maybbe tturrnrn in tot a fucntinson
+        //                     if let Err(sem_err) = self.check_arg_constraints(
+        //                         parent_ty_id,
+        //                         parent_span,
+        //                         cond_expr_id,
+        //                         arg_expr_ids,
+        //                         &func_def.arg_constraints,
+        //                     ) {
+        //                         return Err(sem_err);
+        //                     };
+        //
+        //                     match constraints::check_type_constraint(
+        //                         self.compiler,
+        //                         parent_ty_id,
+        //                         parent_span,
+        //                         cond_expr.span,
+        //                         &mut Vec::new(),
+        //                         func_def.type_constraints,
+        //                     ) {
+        //                         Ok(_) => Ok(()),
+        //                         Err(sem_err) => return Err(vec![sem_err]),
+        //                     }
+        //                 } else {
+        //                     let msg = "Top level functions or predicates used within type constraint blocks must evaluate to a boolean"
+        //                         .to_string();
+        //                     Err(vec![SemanticError::General(msg, vec![cond_expr.span])])
+        //                 }
+        //             }
+        //             Type::Alias(alias_def) => {
+        //                 let mut sem_errs: Vec<SemanticError> = Vec::new();
+        //
+        //                 // Checking the arguments given in the call against the arg constraints of
+        //                 // the alias
+        //                 if let Err(sem_err) = self.check_arg_constraints(
+        //                     parent_ty_id,
+        //                     parent_span,
+        //                     cond_expr_id,
+        //                     arg_expr_ids,
+        //                     &alias_def.arg_constraints,
+        //                 ) {
+        //                     return Err(sem_err);
+        //                 };
+        //
+        //                 // Checking if say, ch: char, aligns with each condition given. Where, is
+        //                 // IsEmpty was used it would not be a `Collection` type, but if
+        //                 // `IsWhitespace` was used it would be fine
+        //                 // for inner_cond_expr_id in &alias_def.conds {
+        //
+        //                 //WARN: I think this is wrong
+        //                 for inner_cond_expr_id in &alias_def.conds {
+        //                     if let Err(mut sem_err) =
+        //                         self.check_cond(parent_ty_id, parent_span, *inner_cond_expr_id)
+        //                     {
+        //                         sem_errs.append(&mut sem_err);
+        //                     }
+        //                 }
+        //
+        //                 // Checking the parameter's type constraints, if present, against the
+        //                 // corresponding argument
+        //                 for (i, param) in alias_def.params.iter().enumerate() {
+        //                     let constraint_flags =
+        //                         match self.compiler.types[param.type_id.id as usize].ty {
+        //                             Type::Constrained(constraint) => constraint,
+        //                             // Type::BuiltinType(builtin_type) => todo!(),
+        //                             // Type::Struct(struct_def) => todo!(),
+        //                             // Type::Enum(enum_def) => todo!(),
+        //                             // Type::Func(func_def) => todo!(),
+        //                             // Type::Alias(alias_def) => todo!(),
+        //                             // Type::TypeDef(type_def) => todo!(),
+        //                             // Type::Unknown => todo!(),
+        //                             _ => unimplemented!("not yet"),
+        //                         };
+        //
+        //                     let arg_expr_id = arg_expr_ids[i];
+        //                     let arg_ty_id = &self.compiler.exprs[arg_expr_id.id as usize].type_id;
+        //
+        //                     dbg!(&self.compiler.types[arg_ty_id.id as usize]);
+        //                     panic!();
+        //
+        //                     if let Err(sem_err) = constraints::check_type_constraint(
+        //                         self.compiler,
+        //                         *arg_ty_id,
+        //                         parent_span,
+        //                         cond_expr.span,
+        //                         &mut Vec::new(),
+        //                         constraint_flags,
+        //                     ) {
+        //                         sem_errs.push(sem_err);
+        //                     }
+        //                 }
+        //
+        //                 if !sem_errs.is_empty() {
+        //                     return Err(sem_errs);
+        //                 }
+        //
+        //                 Ok(())
+        //             }
+        //             Type::BuiltinType(builtin_type) => todo!(),
+        //             Type::Struct(struct_def) => todo!(),
+        //             Type::Enum(enum_def) => todo!(),
+        //             Type::TypeDef(type_def) => todo!(),
+        //             Type::Unknown => todo!(),
+        //             Type::Constrained(type_constraint) => todo!(),
+        //         }
         //     }
-        match &cond_expr.expr_hir {
-            ExprHir::Call(callee_expr_id, arg_expr_ids) => {
-                let callee = &self.compiler.exprs[callee_expr_id.id as usize];
-                let ty = &self.compiler.types[callee.type_id.id as usize].ty;
-
-                match ty {
-                    Type::Func(func_def) => {
-                        if !func_def.is_callable {
-                            let msg = "Predicate keywords cannot use parameters".to_string();
-                            return Err(vec![SemanticError::General(msg, vec![cond_expr.span])]);
-                        }
-
-                        // Top level functions or predicates used within type constraints must
-                        // evaluate to a boolean
-                        let ret_type = &self.compiler.types[func_def.ret_type.id as usize].ty;
-
-                        if let Type::BuiltinType(BuiltinType::Bool) = ret_type {
-                            // Maybbe tturrnrn in tot a fucntinson
-                            if let Err(sem_err) = self.check_arg_constraints(
-                                parent_ty_id,
-                                parent_span,
-                                cond_expr_id,
-                                arg_expr_ids,
-                                &func_def.arg_constraints,
-                            ) {
-                                return Err(sem_err);
-                            };
-
-                            match constraints::check_type_constraint(
-                                self.compiler,
-                                parent_ty_id,
-                                parent_span,
-                                cond_expr.span,
-                                &mut Vec::new(),
-                                func_def.type_constraints,
-                            ) {
-                                Ok(_) => Ok(()),
-                                Err(sem_err) => return Err(vec![sem_err]),
-                            }
-                        } else {
-                            let msg = "Top level functions or predicates used within type constraint blocks must evaluate to a boolean"
-                                .to_string();
-                            Err(vec![SemanticError::General(msg, vec![cond_expr.span])])
-                        }
-                    }
-                    Type::Alias(alias_def) => {
-                        let mut sem_errs: Vec<SemanticError> = Vec::new();
-
-                        // Checking the arguments given in the call against the arg constraints of
-                        // the alias
-                        if let Err(sem_err) = self.check_arg_constraints(
-                            parent_ty_id,
-                            parent_span,
-                            cond_expr_id,
-                            arg_expr_ids,
-                            &alias_def.arg_constraints,
-                        ) {
-                            return Err(sem_err);
-                        };
-
-                        // Checking if say, ch: char, aligns with each condition given. Where, is
-                        // IsEmpty was used it would not be a `Collection` type, but if
-                        // `IsWhitespace` was used it would be fine
-                        // for inner_cond_expr_id in &alias_def.conds {
-
-                        //WARN: I think this is wrong
-                        for inner_cond_expr_id in &alias_def.conds {
-                            if let Err(mut sem_err) =
-                                self.check_cond(parent_ty_id, parent_span, *inner_cond_expr_id)
-                            {
-                                sem_errs.append(&mut sem_err);
-                            }
-                        }
-
-                        // Checking the parameter's type constraints, if present, against the
-                        // corresponding argument
-                        for (i, param) in alias_def.params.iter().enumerate() {
-                            let constraint_flags =
-                                match self.compiler.types[param.type_id.id as usize].ty {
-                                    Type::Constrained(constraint) => constraint,
-                                    // Type::BuiltinType(builtin_type) => todo!(),
-                                    // Type::Struct(struct_def) => todo!(),
-                                    // Type::Enum(enum_def) => todo!(),
-                                    // Type::Func(func_def) => todo!(),
-                                    // Type::Alias(alias_def) => todo!(),
-                                    // Type::TypeDef(type_def) => todo!(),
-                                    // Type::Unknown => todo!(),
-                                    _ => unimplemented!("not yet"),
-                                };
-
-                            let arg_expr_id = arg_expr_ids[i];
-                            let arg_ty_id = &self.compiler.exprs[arg_expr_id.id as usize].type_id;
-
-                            dbg!(&self.compiler.types[arg_ty_id.id as usize]);
-                            panic!();
-
-                            if let Err(sem_err) = constraints::check_type_constraint(
-                                self.compiler,
-                                *arg_ty_id,
-                                parent_span,
-                                cond_expr.span,
-                                &mut Vec::new(),
-                                constraint_flags,
-                            ) {
-                                sem_errs.push(sem_err);
-                            }
-                        }
-
-                        if !sem_errs.is_empty() {
-                            return Err(sem_errs);
-                        }
-
-                        Ok(())
-                    }
-                    Type::BuiltinType(builtin_type) => todo!(),
-                    Type::Struct(struct_def) => todo!(),
-                    Type::Enum(enum_def) => todo!(),
-                    Type::TypeDef(type_def) => todo!(),
-                    Type::Unknown => todo!(),
-                    Type::Constrained(type_constraint) => todo!(),
-                }
-            }
-            // Ok
-            ExprHir::Var(sym_id) => {
-                let sym = &self.compiler.symbols[sym_id.id as usize];
-                match sym.kind {
-                    SymbolKind::Type(type_id) => match &self.compiler.types[type_id.id as usize].ty
-                    {
-                        Type::Func(func_def) => {
-                            // Anything used in a condition must return a boolean
-                            let ret_type = &self.compiler.types[func_def.ret_type.id as usize].ty;
-
-                            if let Type::BuiltinType(BuiltinType::Bool) = ret_type {
-                                // self.check_arg_constraints(
-                                //     cond_expr_id,
-                                //     &[],
-                                //     &func_def.arg_constraints,
-                                //     func_def.kind,
-                                // )?;
-
-                                match constraints::check_type_constraint(
-                                    self.compiler,
-                                    parent_ty_id,
-                                    parent_span,
-                                    cond_expr.span,
-                                    &mut Vec::new(),
-                                    func_def.type_constraints,
-                                ) {
-                                    Ok(_) => Ok(()),
-                                    Err(sem_err) => Err(vec![sem_err]),
-                                }
-                            } else {
-                                let msg =
-                                    "Every value within a condition must be a boolean".to_string();
-                                Err(vec![SemanticError::General(msg, vec![cond_expr.span])])
-                            }
-
-                            // We need to know if it matches the type given, but only if we are
-                            // matching against something that isn't an alias or another function
-                            // since that of course wouldn't match.
-                        }
-                        Type::BuiltinType(builtin_type) => todo!(),
-                        Type::Struct(struct_def) => todo!(),
-                        Type::Unknown => todo!(),
-                        Type::Enum(enum_def) => todo!(),
-                        Type::Alias(alias_def) => todo!(),
-                        Type::TypeDef(type_def) => unreachable!("Not syntactically possible"),
-                        Type::Constrained(type_constraint) => todo!(),
-                    },
-                    // I do not believe unknown is reachable here
-                    SymbolKind::Val(_) | SymbolKind::Unknown => {
-                        let type_id = &self.compiler.values[cond_expr.val_id.id as usize].type_id;
-                        let ty = &self.compiler.types[type_id.id as usize].ty;
-
-                        if let Type::BuiltinType(BuiltinType::Bool) = ty {
-                            Ok(())
-                        } else {
-                            // Confusing?
-                            let msg = "Top level values used within type constraint blocks must evaluate to a boolean"
-                                .to_string();
-                            Err(vec![SemanticError::General(msg, vec![cond_expr.span])])
-                        }
-                    }
-                }
-            }
-            // Only `BinaryExpr` can actually evaluate to a boolean here, just re-using the logic
-            ExprHir::BinaryExpr { .. } | ExprHir::Unary { .. } | ExprHir::Default(..) => {
-                let type_id = &self.compiler.values[cond_expr.val_id.id as usize].type_id;
-                let ty = &self.compiler.types[type_id.id as usize].ty;
-
-                if let Type::BuiltinType(BuiltinType::Bool) = ty {
-                    Ok(())
-                } else {
-                    Err(vec![SemanticError::General(
-                        "Top level expressions used within type constraint blocks must evaluate to a boolean".to_string(),
-                        vec![cond_expr.span],
-                    )])
-                }
-            }
-            ExprHir::Val(_) => {
-                let type_id = &self.compiler.values[cond_expr.val_id.id as usize].type_id;
-                let ty = &self.compiler.types[type_id.id as usize].ty;
-
-                if let Type::BuiltinType(BuiltinType::Bool) = ty {
-                    Ok(())
-                } else {
-                    let msg =
-                        "Top level values used within type constraint blocks must evaluate to a boolean".to_string();
-                    Err(vec![SemanticError::General(msg, vec![cond_expr.span])])
-                }
-            }
-        }
+        //     // Ok
+        //     ExprHir::Var(sym_id) => {
+        //         let sym = &self.compiler.symbols[sym_id.id as usize];
+        //         match sym.kind {
+        //             SymbolKind::Type(type_id) => match &self.compiler.types[type_id.id as usize].ty
+        //             {
+        //                 Type::Func(func_def) => {
+        //                     // Anything used in a condition must return a boolean
+        //                     let ret_type = &self.compiler.types[func_def.ret_type.id as usize].ty;
+        //
+        //                     if let Type::BuiltinType(BuiltinType::Bool) = ret_type {
+        //                         // self.check_arg_constraints(
+        //                         //     cond_expr_id,
+        //                         //     &[],
+        //                         //     &func_def.arg_constraints,
+        //                         //     func_def.kind,
+        //                         // )?;
+        //
+        //                         match constraints::check_type_constraint(
+        //                             self.compiler,
+        //                             parent_ty_id,
+        //                             parent_span,
+        //                             cond_expr.span,
+        //                             &mut Vec::new(),
+        //                             func_def.type_constraints,
+        //                         ) {
+        //                             Ok(_) => Ok(()),
+        //                             Err(sem_err) => Err(vec![sem_err]),
+        //                         }
+        //                     } else {
+        //                         let msg =
+        //                             "Every value within a condition must be a boolean".to_string();
+        //                         Err(vec![SemanticError::General(msg, vec![cond_expr.span])])
+        //                     }
+        //
+        //                     // We need to know if it matches the type given, but only if we are
+        //                     // matching against something that isn't an alias or another function
+        //                     // since that of course wouldn't match.
+        //                 }
+        //                 Type::BuiltinType(builtin_type) => todo!(),
+        //                 Type::Struct(struct_def) => todo!(),
+        //                 Type::Unknown => todo!(),
+        //                 Type::Enum(enum_def) => todo!(),
+        //                 Type::Alias(alias_def) => todo!(),
+        //                 Type::TypeDef(type_def) => unreachable!("Not syntactically possible"),
+        //                 Type::Constrained(type_constraint) => todo!(),
+        //             },
+        //             SymbolKind::Val(_) | SymbolKind::Unknown => {
+        //                 let type_id = &self.compiler.values[cond_expr.val_id.id as usize].type_id;
+        //                 let ty = &self.compiler.types[type_id.id as usize].ty;
+        //
+        //                 if let Type::BuiltinType(BuiltinType::Bool) = ty {
+        //                     Ok(())
+        //                 } else {
+        //                     // Confusing?
+        //                     let msg = "Top level values used within type constraint blocks must evaluate to a boolean"
+        //                         .to_string();
+        //                     Err(vec![SemanticError::General(msg, vec![cond_expr.span])])
+        //                 }
+        //             }
+        //             SymbolKind::Module(module_id) => {}
+        //         }
+        //     }
+        //     // Only `BinaryExpr` can actually evaluate to a boolean here, just re-using the logic
+        //     ExprHir::BinaryExpr { .. } | ExprHir::Unary { .. } | ExprHir::Default(..) => {
+        //         let type_id = &self.compiler.values[cond_expr.val_id.id as usize].type_id;
+        //         let ty = &self.compiler.types[type_id.id as usize].ty;
+        //
+        //         if let Type::BuiltinType(BuiltinType::Bool) = ty {
+        //             Ok(())
+        //         } else {
+        //             Err(vec![SemanticError::General(
+        //                 "Top level expressions used within type constraint blocks must evaluate to a boolean".to_string(),
+        //                 vec![cond_expr.span],
+        //             )])
+        //         }
+        //     }
+        //     ExprHir::Val(_) => {
+        //         let type_id = &self.compiler.values[cond_expr.val_id.id as usize].type_id;
+        //         let ty = &self.compiler.types[type_id.id as usize].ty;
+        //
+        //         if let Type::BuiltinType(BuiltinType::Bool) = ty {
+        //             Ok(())
+        //         } else {
+        //             let msg =
+        //                 "Top level values used within type constraint blocks must evaluate to a boolean".to_string();
+        //             Err(vec![SemanticError::General(msg, vec![cond_expr.span])])
+        //         }
+        //     }
+        // }
+        todo!()
     }
 
     // This should really send signals

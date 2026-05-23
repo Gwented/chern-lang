@@ -1,16 +1,13 @@
-use std::{
-    collections::HashMap,
-    ops::{Index, IndexMut},
-};
+use std::collections::HashMap;
 
 use chrn_utils::{
-    id_types::{ExprId, InternedId, ModuleId, ScopeId, SymbolId, TypeId, ValueId},
+    id_types::{InternedId, ModuleId, ScopeId, SymbolId, TypeId, ValueId},
     intern,
     types::{
         builtins::BuiltinType,
         type_constraints::{TypeConstraint, TypeConstraintFlags},
     },
-    values::{ValueInfo, ValueKind},
+    values::ValueInfo,
 };
 
 use crate::{
@@ -21,7 +18,7 @@ use crate::{
             AliasDef, EnumDef, FuncDef, FuncKind, Param, ResolvedExpr, StructDef, Symbol,
             SymbolKind, Table, Type, TypeDef, TypeInfo,
         },
-        scopes::{Scope, ScopeInfo, ScopeType},
+        scopes::{AssociatedScopeKind, Scope, ScopeInfo, ScopeType},
     },
 };
 
@@ -95,7 +92,7 @@ pub const VALUE_UNKNOWN: usize = 0;
 impl ScriptCompiler {
     //FIX: Arbitrary ordering of pushes tied to the actual order of the enums. Should not be tied
     //to anything, similar to the interner's constants.
-    /// Loads std and builds script specific compiler with parameters given
+    /// Loads core library and builds script specific compiler with parameters given
     pub fn new(
         bind: Option<Bind>,
         mod_map: HashMap<InternedId, ModuleId>,
@@ -117,9 +114,109 @@ impl ScriptCompiler {
         };
 
         Self::load_core(&mut script_compiler);
+        Self::create_module_symbols(&mut script_compiler);
 
         script_compiler
     }
+
+    /// Creates the symbols needed for modules to be able to access to access their imports
+    fn create_module_symbols(compiler: &mut ScriptCompiler) {
+        // Loops through all modules, registering themselves as a symbol to themselves, iterating
+        // through their imports to then inject those symbols as modules that can be looked up
+
+        // So, if we have main AND other
+        // It registers "main" as a module symbol so usage such as "main.MainType" can be used
+        // It then registers a symbol for "other" so that the same "other.OtherType" semantics can
+        // be done
+        // If there is an alias, that is also ensured to be pushed as a symbol connected to the
+        // module "other"
+        for i in 0..compiler.mods.len() {
+            let module = &compiler.mods[i];
+
+            // Avoiding borrow issues by just storing the ids earlier
+            let current_mod_name_id = module.name_id;
+            let current_mod_id = module.mod_id;
+
+            let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+            let symbol = Symbol::new(
+                current_mod_name_id,
+                sym_id,
+                None,
+                current_mod_id,
+                true,
+                Some(AssociatedScopeKind::Module(current_mod_id)),
+                ScopeType::Neutral,
+                SymbolKind::Module(current_mod_id),
+            );
+
+            // Module symbols go into the neutral scope because, uh
+            // Um
+            let scope_id = compiler.push_scope(ScopeType::Neutral, current_mod_id);
+            let scope = &mut compiler.get_scope_mut(scope_id).scope;
+            scope
+                .table
+                .interned_to_sym
+                .insert(current_mod_name_id, sym_id);
+            compiler.symbols.push(symbol);
+
+            // Re-borrowing for iteration
+            let module = &compiler.mods[i];
+
+            // Clone..
+            for import in module.imports.clone() {
+                let import_sym_id = SymbolId::new(compiler.symbols.len() as u32);
+                let import_mod_id = compiler.mod_map[&import.name_id];
+
+                let symbol = Symbol::new(
+                    import.name_id,
+                    import_sym_id,
+                    None,
+                    current_mod_id,
+                    true,
+                    Some(AssociatedScopeKind::Module(import_mod_id)),
+                    ScopeType::Neutral,
+                    SymbolKind::Module(import_mod_id),
+                );
+
+                // Module symbols go into the neutral scope because, uh
+                // Um
+                let scope_id = compiler.push_scope(ScopeType::Neutral, current_mod_id);
+
+                let scope = &mut compiler.get_scope_mut(scope_id).scope;
+                scope
+                    .table
+                    .interned_to_sym
+                    .insert(import.name_id, import_sym_id);
+                compiler.symbols.push(symbol);
+
+                // Maybe it can just point to the import directly instead of needing it's own
+                // symbol?
+                if let Some(alias_name_id) = import.alias_id {
+                    let alias_sym_id = SymbolId::new(compiler.symbols.len() as u32);
+
+                    let symbol = Symbol::new(
+                        alias_name_id,
+                        alias_sym_id,
+                        None,
+                        current_mod_id,
+                        true,
+                        Some(AssociatedScopeKind::Module(import_mod_id)),
+                        ScopeType::Neutral,
+                        SymbolKind::Module(import_mod_id),
+                    );
+
+                    let scope = &mut compiler.get_scope_mut(scope_id).scope;
+                    scope
+                        .table
+                        .interned_to_sym
+                        .insert(alias_name_id, alias_sym_id);
+
+                    compiler.symbols.push(symbol);
+                }
+            }
+        }
+    }
+
     pub(super) fn get_typedef(&self, sym_id: SymbolId) -> &TypeDef {
         match &self.symbols[sym_id.id as usize] {
             sym_info => match &sym_info.kind {
@@ -267,7 +364,7 @@ impl ScriptCompiler {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => *type_id,
                 SymbolKind::Val(val_id) => self.values[val_id.id as usize].type_id,
-                SymbolKind::Unknown => unreachable!(),
+                SymbolKind::Unknown | SymbolKind::Module(_) => unreachable!(),
             },
         }
     }
@@ -316,7 +413,7 @@ impl ScriptCompiler {
 
         let scope_id = ScopeId::new(self.scopes.len());
         let scope = Scope::new(scope_id, scope_type);
-        let scope_info = ScopeInfo::new(scope, owner_id);
+        let scope_info = ScopeInfo::new(scope, None, owner_id);
         self.scopes.push(scope_info);
 
         let owner_mod = &mut self.mods[owner_id.id];
@@ -354,7 +451,7 @@ impl ScriptCompiler {
         None
     }
 
-    /// Returns Some scope if it exists, None otherwise
+    /// Returns `Some` scope under the given kind if it exists, `None` otherwise
     //NOTE: May opt for indices similarly to the ast's way of making sections
     pub fn find_scope(&self, scope_type: ScopeType, owner_id: ModuleId) -> Option<&ScopeInfo> {
         let mod_owner = &self.mods[owner_id.id];
@@ -368,16 +465,45 @@ impl ScriptCompiler {
         None
     }
 
-    // Helpers to type enforce indexing
+    // //TEST:
+    // pub fn find_scope(
+    //     &self,
+    //     scope_type: ScopeType,
+    //     associated_scope: AssociatedScopeKind,
+    // ) -> Option<&ScopeInfo> {
+    //     match associated_scope {
+    //         AssociatedScopeKind::Module(mod_id) => {
+    //             let mod_owner = &self.mods[mod_id.id];
+    //
+    //             for scope_id in &mod_owner.scopes {
+    //                 let scope_info = &self.scopes[scope_id.id];
+    //                 if scope_info.scope.scope_type == scope_type {
+    //                     return Some(scope_info);
+    //                 }
+    //             }
+    //         }
+    //         // Seems a little odd
+    //         // Probably shouldn't account for it's type here
+    //         AssociatedScopeKind::Scope(scope_id) => {
+    //             let scope_info = &self.scopes[scope_id.id];
+    //             if scope_info.scope.scope_type == scope_type {
+    //                 return Some(scope_info);
+    //             }
+    //         }
+    //     }
+    //
+    //     None
+    // }
 
+    /// Loads the entirety of the core module
     fn load_core(compiler: &mut ScriptCompiler) {
         let mut table = Table::new();
 
         //TODO: If namespace core exists as a module then should error earlier
-        let core_name = InternedId::new(intern::INTERNED_CORE);
+        let core_name_id = InternedId::new(intern::INTERNED_CORE);
         let core_mod_id = ModuleId::new(compiler.mods.len());
         let core_scope_id = ScopeId::new(compiler.scopes.len());
-        let mut core_mod = Module::new(core_name, core_mod_id, Vec::new(), None);
+        let mut core_mod = Module::new(core_name_id, core_mod_id, Vec::new(), None);
 
         Self::load_core_types(compiler, &mut core_mod, &mut table);
         Self::load_core_funcs(compiler, &core_mod, &mut table);
@@ -392,20 +518,25 @@ impl ScriptCompiler {
         // Done adding all of core
         let scope_id = ScopeId::new(compiler.scopes.len());
         let scope = Scope::with_table(scope_id, ScopeType::Core, table);
-        let scope_info = ScopeInfo::new(scope, core_mod_id);
+        let scope_info = ScopeInfo::new(scope, None, core_mod_id);
 
         compiler.scopes.push(scope_info);
         core_mod.scopes.push(scope_id);
 
-        compiler.mod_map.insert(core_name, core_mod_id);
+        compiler.mod_map.insert(core_name_id, core_mod_id);
         compiler.mods.push(core_mod);
 
-        let core_import = Import::new(core_name, ImportKind::Core, None);
+        let core_import = Import::new(core_name_id, ImportKind::Core, None);
 
-        // Injecting core as an import and pushing it's scope so they can search it
-        for user_module in &mut compiler.mods {
-            user_module.imports.push(core_import.clone());
-            user_module.scopes.push(core_scope_id);
+        // Injecting core as an import and pushing it's scope so user modules can search it
+        for user_mod in &mut compiler.mods {
+            if user_mod.name_id == core_name_id {
+                continue;
+            }
+            dbg!("huh");
+
+            user_mod.imports.push(core_import.clone());
+            user_mod.scopes.push(core_scope_id);
         }
     }
 
@@ -421,6 +552,7 @@ impl ScriptCompiler {
         todo!()
     }
 
+    /// Helper to load all of core's functions and predicates
     fn load_core_funcs(compiler: &mut ScriptCompiler, core_mod: &Module, table: &mut Table) {
         let core_mod_id = core_mod.mod_id;
 
@@ -666,6 +798,7 @@ impl ScriptCompiler {
     }
 
     // --- Beep
+    /// Helper to load all of core's types
     fn load_core_types(compiler: &mut ScriptCompiler, core_mod: &mut Module, table: &mut Table) {
         let core_mod_id = core_mod.mod_id;
 
@@ -1157,6 +1290,7 @@ impl ScriptCompiler {
         compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
+        // HAS NO IDENTIFIER, IS INTERNALLY RECOGNOLOLIZED BY COMPILER
         compiler
             .types
             .push(TypeInfo::new(Type::Unknown, core_mod_id));

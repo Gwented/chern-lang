@@ -212,7 +212,7 @@ impl NamespaceResolver<'_> {
 
         self.compiler
             .scopes
-            .push(ScopeInfo::new(local_scope, self.current_mod));
+            .push(ScopeInfo::new(local_scope, Some(sym_id), self.current_mod));
 
         let current_mod = &mut self.compiler.mods[self.current_mod.id];
         current_mod.scopes.push(local_scope_id);

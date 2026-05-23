@@ -17,7 +17,10 @@ use common::{
 
 use crate::{
     parser::ast::{BinaryOp, UnaryOp},
-    semantic::{constraints::ArgConstraint, scopes::ScopeType},
+    semantic::{
+        constraints::ArgConstraint,
+        scopes::{AssociatedScopeKind, ScopeType},
+    },
 };
 
 // What is a drop? I am new to thinking i have never thought before what is RAII
@@ -78,7 +81,7 @@ pub struct Symbol {
     pub owner: ModuleId,
     pub scope_origin: ScopeType,
     // For something such as member access
-    pub associated_scope: Option<ScopeId>,
+    pub associated_scope: Option<AssociatedScopeKind>,
     pub is_priv: bool,
 }
 
@@ -92,7 +95,7 @@ impl Symbol {
         ast_id: Option<AstId>,
         owner: ModuleId,
         is_priv: bool,
-        associated_scope: Option<ScopeId>,
+        associated_scope: Option<AssociatedScopeKind>,
         scope_origin: ScopeType,
         kind: SymbolKind,
     ) -> Symbol {
@@ -112,8 +115,13 @@ impl Symbol {
 /// Maps to a `TypeId`, `ValueId`, or `Unknown`
 #[derive(Debug, Clone, Copy)]
 pub enum SymbolKind {
+    /// Represents a type symbol
     Type(TypeId),
+    /// Represents a variable symbol
     Val(ValueId),
+    /// Represents a module symbol
+    Module(ModuleId),
+    /// Represents a symbol that at no point had a declaration of any kind
     Unknown,
 }
 
