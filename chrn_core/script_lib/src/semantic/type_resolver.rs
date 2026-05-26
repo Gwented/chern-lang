@@ -83,19 +83,6 @@ impl TypeResolver<'_> {
             }
         }
 
-        // This can maybe be removed if the cam_remove logic is changed to be more meaningful but
-        // works for now
-        let mut last_resolved_count: u32 = 0;
-        let mut current_resolved_count: u32 = 0;
-        // FIX: In the current example, the issue is that !is_resolved pending symbols are not
-        // being notified correctly. c should notify any pending expression that it's resolved,
-        // then c should check if any of it's roots were a pending symbol, which should lead it to
-        // b, which then does the same and notifies a.
-        //
-        // FIX:Right now, try to use the parent sym and just check if the parent is resolved or not or
-        // something adjacent.
-        //
-
         // This is a system of tracking to where it dynamically through knowing the result
         // of the expression incremental resolution, and accounting for stale caching in regards
         // to not setting it's parent to resolved multiple times.
@@ -110,6 +97,12 @@ impl TypeResolver<'_> {
         // b would have it's parent's info that it's fully const and resolved, we then check if b is
         // dependended on, a depends on b, so now b has it's expressions attempted to be resolved, which
         // leads to a realizing it has 2 const values, which makes a resolved.
+
+        // These variables are the sole determining factors as to how long the expression context
+        // is looped, given any new information.
+
+        let mut last_resolved_count: u32 = 0;
+        let mut current_resolved_count: u32 = 0;
         while self.ty_ctx.needs_check {
             // let sym = &self.compiler.symbols[44];
             // let name = self.interner.search(sym.name_id.id as usize);
@@ -122,7 +115,7 @@ impl TypeResolver<'_> {
             pending_syms.extend(self.ty_ctx.sym_queue.drain());
 
             // TODO: Should actually check if any pending symbol has only stale expressions
-            // let mut removable_syms: Vec<SymbolId> = Vec::new();
+            let mut removable_syms: Vec<SymbolId> = Vec::new();
 
             for (sym_id, pending_sym) in &mut pending_syms {
                 // If there is no resolved type then there cannot exist a const value
@@ -130,14 +123,16 @@ impl TypeResolver<'_> {
                     continue;
                 }
 
-                //TODO: Not sure what do here yet
                 match self.try_resolve_pending(*sym_id, pending_sym) {
-                    Ok(_) => {
+                    //TODO: Can something be done with these?
+                    //Succeeding just means no errors ocurred, not that new information was found,
+                    //so maybe we can check here for removable symbols, say, if queue is empty?
+                    //Is removing even worth it?
+                    Ok(can_remove) => {
                         // Not sure about this yet
-                        // if can_remove {
-                        //     removable_syms.push(*sym_id);
-                        //     current_resolved_count += 1;
-                        // }
+                        if can_remove {
+                            removable_syms.push(*sym_id);
+                        }
                     }
                     // Not sure if anything more can be done here since the diagnostic is already
                     // made
@@ -155,10 +150,11 @@ impl TypeResolver<'_> {
             // The actual parent's info to fill in.
             let mut resolved_parents: Vec<(SymbolId, usize, ParentInfo)> = Vec::new();
 
-            // The expression needs to be set to stale too...
-            //
             // Also needs to check if there exists a pending symbol which has ONLY stale
             // expressions inside, meaning it should be removed.
+
+            // Finding all parents that recieved new information by checking if a pending expr has
+            // the `Resolved` variant.
             for (pending_sym_id, pending_sym) in &self.ty_ctx.sym_queue {
                 for (i, pending_expr) in pending_sym.pending_exprs.iter().enumerate() {
                     if let ParentState::Resolved(has_resolved_ty, has_const_val) =
@@ -177,6 +173,10 @@ impl TypeResolver<'_> {
                 }
             }
 
+            // Integral loop that sets whatever resolution information regarding the parent to
+            // true, so that it can actually be accounted for as a resolved pending symbol. Pending
+            // symbol's expressions are never attempted for resolution unless they are marked to at
+            // least have a resolved type.
             for (pending_sym_id, pending_expr_idx, parent_info) in resolved_parents {
                 // Setting expr to stale
                 let pending_sym = self
@@ -189,7 +189,6 @@ impl TypeResolver<'_> {
                     ParentState::Notified(parent_info.has_resolved_ty, parent_info.has_const_val);
 
                 // Allowing for parent to be searched in resolution
-
                 let parent = self
                     .ty_ctx
                     .sym_queue
@@ -200,9 +199,11 @@ impl TypeResolver<'_> {
                 parent.has_const_val = parent_info.has_const_val;
             }
 
-            // for sym_id in removable_syms {
-            //     self.ty_ctx.sym_queue.remove(&sym_id);
-            // }
+            //WARN: By logic this seems fine since if the queue is empty then that means everything
+            //found in pending_expr has a fully resolved parent.
+            for sym_id in removable_syms {
+                self.ty_ctx.sym_queue.remove(&sym_id);
+            }
 
             if current_resolved_count == last_resolved_count {
                 break;
@@ -232,7 +233,7 @@ impl TypeResolver<'_> {
         // if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
         //     dbg!(&self.ty_ctx);
         //     for symbol in &self.compiler.symbols {
-        //         if self.interner.search(symbol.name_id.id as usize) == "b" {
+        //         if self.interner.search(symbol.name_id.id as usize) == "a" {
         //             let name = self.interner.search(symbol.name_id.id as usize);
         //             dbg!(name);
         //             match symbol.kind {
@@ -280,7 +281,7 @@ impl TypeResolver<'_> {
         //         dbg!(val);
         //     }
         // }
-        //
+
         if !self.reporter.err_vec.is_empty() {
             let mut diags = Vec::new();
             diags.append(&mut self.reporter.err_vec);
@@ -296,27 +297,23 @@ impl TypeResolver<'_> {
         resolved_sym_id: SymbolId,
         pending_sym: &mut PendingSymbol,
         // Eyes
-    ) -> Result<(), ()> {
+    ) -> Result<bool, ()> {
         // Tells the caller if the given pending symbol is fully resolved to where it can be
         // removed as a pending symbol
-        // let mut can_remove = false;
+        let mut can_remove = false;
         let mut queue: Vec<ExprId> = Vec::new();
-
-        // Tracking how many were resolved so it knows whether to remove or not
-        let mut resolved_count: u32 = 0;
 
         //Suspicious
         for pending_expr in &pending_sym.pending_exprs {
-            //TODO: Filter correctly if possible
-            //
-            // Brain not working yet
             if let ParentState::Notified(true, true) = pending_expr.parent_state {
                 continue;
             }
-            //
-            // if !is_solvable {
-            //     continue;
-            // }
+
+            // Error being treated the same as a resolved expression since it can't be mutated
+            // further
+            if pending_expr.parent_state == ParentState::Error {
+                continue;
+            }
 
             queue.push(pending_expr.pending_id);
         }
@@ -375,8 +372,12 @@ impl TypeResolver<'_> {
                     // which would mangle the resolved symbol itself even though we just want the
                     // const value if present.
                 }
-                // Are we sure?
-                SymbolKind::Type(_) | SymbolKind::Module(_) | SymbolKind::ReservedTypeSlot(_) => {
+                // NOTE: Since expressions are initialized as `ReservedTypeSlot`, if there is say,
+                // a cyclic dependency error, the error will exist and emit later, but this
+                // technically still exists and needs to be ignored. Not currently aware of any
+                // direct issues with this. Maybe an Error tag on a pending expression could help?
+                SymbolKind::ReservedTypeSlot(_) => continue,
+                SymbolKind::Type(_) | SymbolKind::Module(_) => {
                     unreachable!("Not possible")
                 }
             }
@@ -389,15 +390,15 @@ impl TypeResolver<'_> {
 
                         let has_new_info = match pending_expr.parent_state {
                             ParentState::Unresolved => true,
-                            ParentState::Notified(old_ty, old_val)
-                            | ParentState::Resolved(old_ty, old_val) => {
-                                (has_resolved_ty && !old_ty) || (has_const_val && !old_val)
-                            }
+                            // Only value matters here since being resolved previous means there at
+                            // least is a resolved type present.
+                            ParentState::Resolved(_, old_val)
+                            | ParentState::Notified(_, old_val) => has_const_val && !old_val,
+                            ParentState::Error => false,
                         };
 
                         if has_new_info {
                             if has_resolved_ty {
-                                resolved_count += 1;
                                 pending_expr.parent_state =
                                     ParentState::Resolved(has_resolved_ty, has_const_val);
                             }
@@ -433,24 +434,30 @@ impl TypeResolver<'_> {
                 let has_resolved_ty = pending_sym.has_resolved_ty;
                 let has_const_val = pending_sym.has_const_val;
 
-                let is_new_info = match pending_expr.parent_state {
+                let has_new_info = match pending_expr.parent_state {
                     ParentState::Unresolved => true,
-                    ParentState::Notified(old_ty, old_val)
-                    | ParentState::Resolved(old_ty, old_val) => {
-                        (has_resolved_ty && !old_ty) || (has_const_val && !old_val)
+                    // Only value matters here since being resolved previous means there at
+                    // least is a resolved type present.
+                    ParentState::Notified(_, old_val) | ParentState::Resolved(_, old_val) => {
+                        has_const_val && !old_val
                     }
+                    ParentState::Error => false,
                 };
 
-                if is_new_info {
-                    resolved_count += 1;
+                if has_new_info {
                     pending_expr.parent_state =
                         ParentState::Resolved(has_resolved_ty, has_const_val);
                 }
+
                 break;
             }
         }
 
-        Ok(())
+        if queue.is_empty() {
+            can_remove = true;
+        }
+
+        Ok(can_remove)
     }
 
     /// Returns an `Ok(true)` upon fully resolving a tree of expressions.

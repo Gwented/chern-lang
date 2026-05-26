@@ -80,14 +80,15 @@ impl PendingExpr {
     }
 }
 
-//TODO: MAKE STALENESS MEANINGFUL PLEASE
-// Sure.
+/// State of parent expression intended guide resolution and be changed by the child expression's
+/// themselves
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum ParentState {
     Unresolved,
     /// has_resolved_ty, has_const_val
     Resolved(bool, bool),
     Notified(bool, bool),
+    Error,
 }
 
 /// Helper struct to use for transporting parent-related data rather than using an unnamed tuple.
