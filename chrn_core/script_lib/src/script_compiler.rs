@@ -80,7 +80,7 @@ pub const CORE_BOOL: u32 = 19;
 pub const CORE_BIGINT: u32 = 20;
 pub const CORE_BIGFLOAT: u32 = 21;
 pub const CORE_RUNTIME: u32 = 22;
-// pub const TYPE_UNKNOWN_IDX: u32 = 23;
+pub const CORE_UNKNOWN: u32 = 23;
 // pub const CORE_CHARACTER_MAPPABLE: u32 = 24;
 // pub const CORE_LIST: u32 = 23;
 // pub const CORE_SET: u32 = 24;
@@ -1309,12 +1309,9 @@ impl ScriptCompiler {
         compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
-        // HAS NO IDENTIFIER, IS INTERNALLY RECOGNOLOLIZED BY COMPILER
-        //
-        // NO LONGER PUSHED
-        // compiler
-        //     .types
-        //     .push(TypeInfo::new(Type::Unknown, core_mod_id));
+        compiler
+            .types
+            .push(TypeInfo::new(Type::Unknown, core_mod_id));
 
         // -- Type constraints --
         let type_id = TypeId::new(compiler.types.len() as u32);

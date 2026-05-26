@@ -80,6 +80,7 @@ impl<'a> SemanticReporter<'a> {
 
                 (msg, spans)
             }
+            // Should have the data type's cap shown as well
             SemanticError::NumericOverflow(id, fmtted_ty, spans) => {
                 let overflown_num = self.interner.search(id as usize);
                 let msg = format!(

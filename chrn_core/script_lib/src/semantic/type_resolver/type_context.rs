@@ -80,12 +80,14 @@ impl PendingExpr {
     }
 }
 
+//TODO: MAKE STALENESS MEANINGFUL PLEASE
+// Sure.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum ParentState {
     Unresolved,
     /// has_resolved_ty, has_const_val
     Resolved(bool, bool),
-    Stale,
+    Notified(bool, bool),
 }
 
 /// Helper struct to use for transporting parent-related data rather than using an unnamed tuple.

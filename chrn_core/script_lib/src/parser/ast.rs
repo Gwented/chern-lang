@@ -1,5 +1,5 @@
 use chrn_utils::{
-    id_types::{AstId, InternedId, SpannedInternedId},
+    id_types::{AstId, InternedId},
     inner_args::SpannedInnerArgs,
     types::type_constraints::{self, TypeConstraintFlags},
 };
@@ -204,7 +204,7 @@ impl SpannedExpr {
 pub enum Expr {
     Var(InternedId),
     /// \`::\`
-    StaticAccess(Vec<SpannedInternedId>),
+    StaticAccess(Vec<SpannedPathSegment>),
     Bool(bool),
     /// Variable name, along with optional default type
     Default(Box<SpannedExpr>, Box<SpannedExpr>),
@@ -337,7 +337,7 @@ impl Call {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpannedTypeExpr {
     pub ty_expr: TypeExpr,
     pub span: Span,
@@ -349,11 +349,28 @@ impl SpannedTypeExpr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TypeExpr {
     Var(InternedId),
-    Path(Vec<SpannedTypeExpr>),
-    //FIX: Remove this
+    Path(Vec<SpannedPathSegment>),
+    Generic(Generic),
+}
+
+#[derive(Debug, Clone)]
+pub struct SpannedPathSegment {
+    pub kind: PathSegment,
+    pub span: Span,
+}
+
+impl SpannedPathSegment {
+    pub fn new(kind: PathSegment, span: Span) -> Self {
+        SpannedPathSegment { kind, span }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum PathSegment {
+    Ident(InternedId),
     Generic(Generic),
 }
 
@@ -652,7 +669,7 @@ impl Formattable for UnaryOp {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Generic {
     pub base: InternedId,
     // Change to tuple or something alike since max 2?

@@ -6,8 +6,9 @@ mod parser_state;
 use crate::modules::ModuleMetadata;
 use crate::parser::ast::{
     AbstractAlias, AbstractEnum, AbstractMemberAccess, AbstractParam, AbstractStruct,
-    AbstractTypeDef, AbstractVar, AbstractVariant, AstInfo, Expr, Generic, Item, Section,
-    SectionKind, SpannedExpr, SpannedTypeExpr, TypeExpr, Unary, UnaryOp,
+    AbstractTypeDef, AbstractVar, AbstractVariant, AstInfo, Expr, Generic, Item, PathSegment,
+    Section, SectionKind, SpannedExpr, SpannedPathSegment, SpannedTypeExpr, TypeExpr, Unary,
+    UnaryOp,
 };
 use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::Context;
@@ -776,7 +777,7 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
             Ok(SpannedExpr::new(default, span))
         }
         Token::Id(id) if ctx.peek_ahead(1).tok == Token::StaticAccess => {
-            let mut access_path: Vec<SpannedInternedId> = Vec::new();
+            let mut access_path: Vec<SpannedPathSegment> = Vec::new();
 
             // Catching the final pathed namespace which is not accounted for in the loop
             let span = ctx.peek_span();
@@ -790,7 +791,7 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
             )?;
 
             let name_id = InternedId::new(plain_id);
-            access_path.push(SpannedInternedId::new(name_id, span));
+            access_path.push(SpannedPathSegment::new(PathSegment::Ident(name_id), span));
 
             while ctx.peek_tok() == Token::StaticAccess {
                 // Skipping "::"
@@ -806,7 +807,7 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
                 )?;
 
                 let name_id = InternedId::new(plain_id);
-                access_path.push(SpannedInternedId::new(name_id, span));
+                access_path.push(SpannedPathSegment::new(PathSegment::Ident(name_id), span));
             }
 
             let start = access_path[0].span.start;
@@ -961,13 +962,11 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
             let end = ctx.peek_behind(1).span.end;
             let span = Span::new(start, end);
 
-            let ty_expr = TypeExpr::Generic(generic);
-            let spanned_ty_expr = SpannedTypeExpr::new(ty_expr, span);
-
             if ctx.peek_tok() == Token::StaticAccess {
                 ctx.advance_tok();
 
-                let mut ty_path = vec![spanned_ty_expr];
+                let mut ty_path =
+                    vec![SpannedPathSegment::new(PathSegment::Generic(generic), span)];
                 let mut rest = parse_type_path(ctx, interner)?;
 
                 ty_path.append(&mut rest);
@@ -977,6 +976,8 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
 
                 Ok(SpannedTypeExpr::new(TypeExpr::Path(ty_path), path_span))
             } else {
+                let ty_expr = TypeExpr::Generic(generic);
+                let spanned_ty_expr = SpannedTypeExpr::new(ty_expr, span);
                 Ok(spanned_ty_expr)
             }
         }
@@ -1028,8 +1029,8 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
 
 /// Assumes this function was called after a token of identifier type was found with a dot after
 /// it.
-fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTypeExpr>, Token> {
-    let mut ty_path: Vec<SpannedTypeExpr> = Vec::new();
+fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedPathSegment>, Token> {
+    let mut ty_path: Vec<SpannedPathSegment> = Vec::new();
 
     loop {
         let is_generic = ctx.peek_ahead(1).tok == Token::OAngleBracket;
@@ -1050,11 +1051,10 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
 
             let generic = Generic::new(InternedId::new(base_id), args);
 
-            let ty_expr = TypeExpr::Generic(generic);
             let span = Span::new(start, end);
-            let spanned_ty_expr = SpannedTypeExpr::new(ty_expr, span);
+            let segment = SpannedPathSegment::new(PathSegment::Generic(generic), span);
 
-            ty_path.push(spanned_ty_expr);
+            ty_path.push(segment);
 
             if ctx.peek_tok() == Token::StaticAccess {
                 ctx.advance_tok();
@@ -1074,9 +1074,9 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
 
             ctx.advance_tok();
 
-            let spanned_ty_expr =
-                SpannedTypeExpr::new(TypeExpr::Var(InternedId::new(name_id)), span);
-            ty_path.push(spanned_ty_expr);
+            let segment =
+                SpannedPathSegment::new(PathSegment::Ident(InternedId::new(name_id)), span);
+            ty_path.push(segment);
         }
 
         // If there's no dot then that means that the current token must be an identifier that is
@@ -1091,10 +1091,9 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
                 interner,
             )?;
 
-            let ty_expr = TypeExpr::Var(InternedId::new(final_id));
-
-            let final_expr = SpannedTypeExpr::new(ty_expr, span);
-            ty_path.push(final_expr);
+            let segment =
+                SpannedPathSegment::new(PathSegment::Ident(InternedId::new(final_id)), span);
+            ty_path.push(segment);
             break;
         }
     }

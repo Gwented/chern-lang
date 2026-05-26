@@ -7,7 +7,7 @@ let /*comment*/ x/* inline*/ = /* last*/ 3 let z =x+3
 
 
 @def
-// import "../../chrn_core/chrn_tests/def.chrn" as defs
+import "../../chrn_core/chrn_tests/def.chrn" as defs
 
 /*export let a = b
 export let b = c
@@ -34,16 +34,13 @@ let x = 5*/
 // let d = e
 // let e = 4
 
-let a = b
-let b = c
-let c = d + 2
-let d = 3
+// alias default(x: i8) = []
 
 var->
-//     x: core::List<str>
+    x: core::List<str>
 nest->
     enum Perbon {}
-// How shoulud aliasses infer their own constraints?
+// How should aliasses infer their own constraints?
 
 // In this scenario, it should see that equals x is used, meaning it's numeric.
 // It sees y is startsW, filters, Numeric is all that's left since that's all they have in common.

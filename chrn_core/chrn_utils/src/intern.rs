@@ -84,6 +84,7 @@ pub const INTERNED_COMPARABLE: u32 = 62;
 // MAKE THE MACRO PLEASE
 // What macro. What is a macro? What is hygiene?
 
+/// Simple interner used for the chrn language
 #[derive(Debug)]
 pub struct Intern {
     // Um
@@ -336,7 +337,23 @@ impl Intern {
         &self.stored_strs[index]
     }
 
+    pub fn search_str(&self, s: &str) -> Option<&str> {
+        if let Some(id) = self.id_map.get(s) {
+            return Some(self.search(*id as usize));
+        }
+
+        None
+    }
+
     pub fn search_path(&self, index: usize) -> &Path {
         &self.stored_paths[index]
+    }
+
+    pub fn search_path_str(&self, path: &Path) -> Option<&Path> {
+        if let Some(id) = self.path_map.get(path) {
+            return Some(self.search_path(*id as usize));
+        }
+
+        None
     }
 }

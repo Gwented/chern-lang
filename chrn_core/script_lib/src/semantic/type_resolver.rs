@@ -1,7 +1,5 @@
-//TODO: IMPORT CHECKING SYMBOLS.
+//TODO: SHOULD IMPORT CHECKING HAPPEN HERE??
 pub mod type_context;
-
-use std::collections::HashSet;
 
 use chrn_utils::id_types::{
     AstId, ExprId, InternedId, ModuleId, ScopeId, SymbolId, TypeId, ValueId,
@@ -13,7 +11,7 @@ use common::chrn_settings::ChrnSettings;
 use common::fmter::{Formattable, Formatted};
 use common::{reporter::diagnostic::Diagnostic, span::Span};
 
-use crate::parser::ast::{AbstractVar, BinaryOp, Expr, SpannedExpr};
+use crate::parser::ast::{AbstractVar, BinaryOp, Expr, SpannedExpr, SpannedPathSegment};
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::error::{MathError, SemanticError};
 use crate::semantic::representation::{
@@ -27,7 +25,7 @@ use crate::semantic::{evaluator, scopes};
 
 use crate::{
     parser::ast::{
-        AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Item,
+        AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AstInfo, Item, PathSegment,
         SpannedTypeExpr, TypeExpr,
     },
     semantic::{
@@ -98,19 +96,6 @@ impl TypeResolver<'_> {
         // something adjacent.
         //
 
-        // 48 = e
-        // 47 = d
-        // 46 = c
-        // 45 = b
-        // 44 = a
-
-        // TODO: Should const evaluation be an entirely separate step?
-        // The issue is, the inference was weaker before which meant is_unknown actually did mean
-        // it wasn't resolved at all. But now, there needs to be a separation of, JUST the type was
-        // found, and just the value. This is now an entirely different class of tracking to where
-        // it may be over-doing it putting it all in one type resolution stage, just for the sake
-        // of not re-traversing.
-
         // This is a system of tracking to where it dynamically through knowing the result
         // of the expression incremental resolution, and accounting for stale caching in regards
         // to not setting it's parent to resolved multiple times.
@@ -125,11 +110,7 @@ impl TypeResolver<'_> {
         // b would have it's parent's info that it's fully const and resolved, we then check if b is
         // dependended on, a depends on b, so now b has it's expressions attempted to be resolved, which
         // leads to a realizing it has 2 const values, which makes a resolved.
-        let mut loops = 0;
         while self.ty_ctx.needs_check {
-            dbg!("looped");
-            loops += 1;
-            dbg!(current_resolved_count, loops, &self.ty_ctx);
             // let sym = &self.compiler.symbols[44];
             // let name = self.interner.search(sym.name_id.id as usize);
             // dbg!(name);
@@ -140,8 +121,8 @@ impl TypeResolver<'_> {
             let mut pending_syms: Vec<(SymbolId, PendingSymbol)> = Vec::new();
             pending_syms.extend(self.ty_ctx.sym_queue.drain());
 
-            // Should probably be a vec
-            let mut removable_syms: Vec<SymbolId> = Vec::new();
+            // TODO: Should actually check if any pending symbol has only stale expressions
+            // let mut removable_syms: Vec<SymbolId> = Vec::new();
 
             for (sym_id, pending_sym) in &mut pending_syms {
                 // If there is no resolved type then there cannot exist a const value
@@ -164,37 +145,8 @@ impl TypeResolver<'_> {
                 };
             }
 
-            //TEST: Not confident in how well this works
-            // The intent of this is to check if the symbol itself was resolved during the
-            // traverse_expr innately but did not send a signal
-            // for (sym_id, pending_sym) in self.ty_ctx.sym_queue.iter_mut() {
-            //     // If the pending symbol was already set to resolved then it was already checked
-            //     if pending_sym.is_resolved {
-            //         continue;
-            //     }
-            //
-            //     let type_id = match self.compiler.symbols[sym_id.id as usize].kind {
-            //         SymbolKind::Val(val_id) => self.compiler.values[val_id.id as usize].type_id,
-            //         // Is this ok?
-            //         SymbolKind::Type(type_id) => unreachable!("Is this unreachable?"),
-            //         SymbolKind::ReservedTypeSlot(_) => unreachable!(
-            //             "`register_expr` did not correctly set all reserved type slots into `SymbolKind::Val`"
-            //         ),
-            //         SymbolKind::Module(mod_id) => unreachable!("Should be unreachable?"),
-            //     };
-            //
-            //     if self.compiler.check_unknown(type_id) {
-            //         continue;
-            //     }
-            //
-            //     pending_sym.is_resolved = true;
-            //     current_resolved_count += 1;
-            // }
-
             // Giving self back the data
             self.ty_ctx.sym_queue.extend(pending_syms);
-
-            // let mut resolved_parents: Vec<(SymbolId, ParentInfo)> = Vec::new();
 
             // Not changing this right now.
             //
@@ -207,8 +159,6 @@ impl TypeResolver<'_> {
             //
             // Also needs to check if there exists a pending symbol which has ONLY stale
             // expressions inside, meaning it should be removed.
-            //
-            // Ok Rust!
             for (pending_sym_id, pending_sym) in &self.ty_ctx.sym_queue {
                 for (i, pending_expr) in pending_sym.pending_exprs.iter().enumerate() {
                     if let ParentState::Resolved(has_resolved_ty, has_const_val) =
@@ -235,7 +185,8 @@ impl TypeResolver<'_> {
                     .get_mut(&pending_sym_id)
                     .expect("Previous loop failed");
 
-                pending_sym.pending_exprs[pending_expr_idx].parent_state = ParentState::Stale;
+                pending_sym.pending_exprs[pending_expr_idx].parent_state =
+                    ParentState::Notified(parent_info.has_resolved_ty, parent_info.has_const_val);
 
                 // Allowing for parent to be searched in resolution
 
@@ -249,17 +200,10 @@ impl TypeResolver<'_> {
                 parent.has_const_val = parent_info.has_const_val;
             }
 
-            println!("----------------------------");
-
-            println!("AFTER PARENT:");
-            dbg!(current_resolved_count, loops, &self.ty_ctx);
-
-            println!("----------------------------");
             // for sym_id in removable_syms {
             //     self.ty_ctx.sym_queue.remove(&sym_id);
             // }
 
-            // dbg!("Looped");
             if current_resolved_count == last_resolved_count {
                 break;
             } else {
@@ -268,7 +212,6 @@ impl TypeResolver<'_> {
             }
         }
 
-        //
         // let symbol = &self.compiler.symbols[&SymbolId::new(0)];
         // match symbol.kind {
         //     SymbolKind::Type(type_id) => {
@@ -286,58 +229,58 @@ impl TypeResolver<'_> {
         //     _ => todo!(),
         // };
 
-        if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
-            dbg!(&self.ty_ctx);
-            for symbol in &self.compiler.symbols {
-                if self.interner.search(symbol.name_id.id as usize) == "c" {
-                    let name = self.interner.search(symbol.name_id.id as usize);
-                    dbg!(name);
-                    match symbol.kind {
-                        SymbolKind::Val(value_id) => {
-                            let val = &self.compiler.values[value_id.id as usize];
-                            let expr = &self.compiler.exprs[val.expr_id.id as usize];
-                            // dbg!(expr.val_id, expr);
-                            dbg!(expr, val);
-                        }
-                        SymbolKind::Type(type_id) => {
-                            let ty_info = &self.compiler.types[type_id.id as usize];
-                            match &ty_info.ty {
-                                Type::BuiltinType(builtin_type) => {
-                                    dbg!(builtin_type);
-                                }
-                                Type::Struct(struct_def) => todo!(),
-                                Type::Enum(enum_def) => todo!(),
-                                Type::Func(func_def) => todo!(),
-                                Type::Alias(alias_def) => todo!(),
-                                Type::TypeDef(type_def) => {
-                                    let ty = &self.compiler.types[type_def.type_id.id as usize];
-                                    dbg!(ty);
-                                }
-                                Type::Unknown => todo!(),
-                                _ => todo!(),
-                            }
-                        }
-                        _ => todo!(),
-                    }
-                    panic!("Done");
-                }
-                // dbg!(self.interner.search(symbol.name_id.id as usize));
-                // dbg!(symbol);
-            }
-
-            // for ty in &self.compiler.types {
-            //     dbg!(ty);
-            // }
-            //
-            // for expr_thing in &self.compiler.exprs {
-            //     dbg!(expr_thing);
-            // }
-            //
-            // for val in &self.compiler.values {
-            //     dbg!(val);
-            // }
-        }
-
+        // if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
+        //     dbg!(&self.ty_ctx);
+        //     for symbol in &self.compiler.symbols {
+        //         if self.interner.search(symbol.name_id.id as usize) == "b" {
+        //             let name = self.interner.search(symbol.name_id.id as usize);
+        //             dbg!(name);
+        //             match symbol.kind {
+        //                 SymbolKind::Val(value_id) => {
+        //                     let val = &self.compiler.values[value_id.id as usize];
+        //                     let expr = &self.compiler.exprs[val.expr_id.id as usize];
+        //                     // dbg!(expr.val_id, expr);
+        //                     dbg!(expr, val);
+        //                 }
+        //                 SymbolKind::Type(type_id) => {
+        //                     let ty_info = &self.compiler.types[type_id.id as usize];
+        //                     match &ty_info.ty {
+        //                         Type::BuiltinType(builtin_type) => {
+        //                             dbg!(builtin_type);
+        //                         }
+        //                         Type::Struct(struct_def) => todo!(),
+        //                         Type::Enum(enum_def) => todo!(),
+        //                         Type::Func(func_def) => todo!(),
+        //                         Type::Alias(alias_def) => todo!(),
+        //                         Type::TypeDef(type_def) => {
+        //                             let ty = &self.compiler.types[type_def.type_id.id as usize];
+        //                             dbg!(ty);
+        //                         }
+        //                         Type::Unknown => todo!(),
+        //                         _ => todo!(),
+        //                     }
+        //                 }
+        //                 _ => todo!(),
+        //             }
+        //             panic!("Done");
+        //         }
+        //         // dbg!(self.interner.search(symbol.name_id.id as usize));
+        //         // dbg!(symbol);
+        //     }
+        //
+        //     for ty in &self.compiler.types {
+        //         dbg!(ty);
+        //     }
+        //
+        //     for expr_thing in &self.compiler.exprs {
+        //         dbg!(expr_thing);
+        //     }
+        //
+        //     for val in &self.compiler.values {
+        //         dbg!(val);
+        //     }
+        // }
+        //
         if !self.reporter.err_vec.is_empty() {
             let mut diags = Vec::new();
             diags.append(&mut self.reporter.err_vec);
@@ -359,13 +302,17 @@ impl TypeResolver<'_> {
         // let mut can_remove = false;
         let mut queue: Vec<ExprId> = Vec::new();
 
+        // Tracking how many were resolved so it knows whether to remove or not
+        let mut resolved_count: u32 = 0;
+
         //Suspicious
         for pending_expr in &pending_sym.pending_exprs {
-            // let expr = &self.compiler.exprs[pending_expr.pending_id.id as usize];
-            // let is_solvable = expr.inputs.iter().all(|inner_expr_id| {
-            //     let inner_type_id = self.compiler.exprs[inner_expr_id.id as usize].type_id;
-            //     self.compiler.check_unknown(inner_type_id)
-            // });
+            //TODO: Filter correctly if possible
+            //
+            // Brain not working yet
+            if let ParentState::Notified(true, true) = pending_expr.parent_state {
+                continue;
+            }
             //
             // if !is_solvable {
             //     continue;
@@ -384,9 +331,6 @@ impl TypeResolver<'_> {
         // root_expr = x
         // So, it needs to go x -> x + 2 -> None
         //
-
-        // Tracking how many were resolved so it knows whether to remove or not
-        let mut resolved_count = 0;
 
         // Needs to resolve first root
         for (i, root_id) in queue.iter().copied().enumerate() {
@@ -443,7 +387,15 @@ impl TypeResolver<'_> {
                     Ok((has_resolved_ty, has_const_val)) => {
                         let pending_expr = &mut pending_sym.pending_exprs[i];
 
-                        if pending_expr.parent_state != ParentState::Stale {
+                        let has_new_info = match pending_expr.parent_state {
+                            ParentState::Unresolved => true,
+                            ParentState::Notified(old_ty, old_val)
+                            | ParentState::Resolved(old_ty, old_val) => {
+                                (has_resolved_ty && !old_ty) || (has_const_val && !old_val)
+                            }
+                        };
+
+                        if has_new_info {
                             if has_resolved_ty {
                                 resolved_count += 1;
                                 pending_expr.parent_state =
@@ -477,21 +429,23 @@ impl TypeResolver<'_> {
                 // Also sending signal that the parent of this is resolved since it's a root.
 
                 // But WOULD this always mean const value? Right now it does.
-                resolved_count += 1;
                 let pending_expr = &mut pending_sym.pending_exprs[i];
+                let has_resolved_ty = pending_sym.has_resolved_ty;
+                let has_const_val = pending_sym.has_const_val;
 
-                if pending_expr.parent_state != ParentState::Stale {
-                    pending_expr.parent_state = ParentState::Resolved(true, true);
+                let is_new_info = match pending_expr.parent_state {
+                    ParentState::Unresolved => true,
+                    ParentState::Notified(old_ty, old_val)
+                    | ParentState::Resolved(old_ty, old_val) => {
+                        (has_resolved_ty && !old_ty) || (has_const_val && !old_val)
+                    }
+                };
+
+                if is_new_info {
+                    resolved_count += 1;
+                    pending_expr.parent_state =
+                        ParentState::Resolved(has_resolved_ty, has_const_val);
                 }
-                // let parent =
-                //     &self.compiler.symbols[pending_sym.pending_exprs[i].parent_sym.id as usize];
-                // let val = match parent.kind {
-                //     SymbolKind::Val(val_id) => &self.compiler.values[val_id.id as usize],
-                //     _ => unreachable!(),
-                // };
-                // dbg!(parent, val);
-                // let name = self.interner.search(parent.name_id.id as usize);
-                // dbg!(name);
                 break;
             }
         }
@@ -508,6 +462,7 @@ impl TypeResolver<'_> {
     fn traverse_expr(&mut self, current_expr_id: ExprId) -> Result<(bool, bool), SemanticError> {
         let mut has_resolved_ty = false;
         let mut has_const_val = false;
+
         match &self.compiler.exprs[current_expr_id.id as usize].expr_hir {
             ExprHir::Val(val_id) => {
                 // This is unreachable
@@ -707,10 +662,9 @@ impl TypeResolver<'_> {
         let expr = &self.compiler.exprs[expr_id.id as usize];
         let val = &self.compiler.values[expr.val_id.id as usize];
 
-        //                      NOT
+        //                      NOT unknown
         let has_resolved_ty = !self.compiler.check_unknown(expr.type_id);
         let has_const_val = val.const_val.is_some();
-        dbg!(&self.compiler.types[expr.type_id.id as usize]);
 
         // let inferred_type_id = match self.type_check(&expr.expr_hir) {
         //     Ok(type_id) => type_id,
@@ -740,24 +694,37 @@ impl TypeResolver<'_> {
         // If the symbol that was just examined is a pending symbol AND it was actually resolved,
         // then it'll be marked as resolved
         if let Some(pending_sym) = self.ty_ctx.sym_queue.get_mut(&sym_id) {
+            // Three flags for resolver use
             pending_sym.has_resolved_ty = has_resolved_ty;
             pending_sym.has_const_val = has_const_val;
 
             self.ty_ctx.needs_check = true;
-            dbg!(name);
-            // Two caches
         }
 
         Ok(())
     }
 
     fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
-        let type_id = self.resolve_type_expr(
+        let type_id = match self.resolve_type_expr(
             AssociatedScopeKind::Module(self.current_mod),
             &abs_typedef.spanned_ty_expr,
             ScopeType::Var,
             LookupPattern::NoRestrictions,
-        )?;
+        ) {
+            Ok(tid) => tid,
+            Err(sem_err) => {
+                let module = &self.compiler.mods[self.current_mod.id];
+                self.reporter.report_semantic(
+                    sem_err,
+                    &module
+                        .src_metadata
+                        .as_ref()
+                        .expect("core should not be resolved"),
+                );
+
+                return Err(());
+            }
+        };
 
         let scope_id = self
             .compiler
@@ -831,12 +798,26 @@ impl TypeResolver<'_> {
 
         // Checking if there are duplicate name ids within the same struct along with resolution
         for (i, field_typedef) in abs_struct.fields.iter().enumerate() {
-            let type_id = self.resolve_type_expr(
+            let type_id = match self.resolve_type_expr(
                 AssociatedScopeKind::Module(self.current_mod),
                 &field_typedef.spanned_ty_expr,
                 ScopeType::Nest,
                 LookupPattern::NoRestrictions,
-            )?;
+            ) {
+                Ok(tid) => tid,
+                Err(sem_err) => {
+                    let module = &self.compiler.mods[self.current_mod.id];
+                    self.reporter.report_semantic(
+                        sem_err,
+                        &module
+                            .src_metadata
+                            .as_ref()
+                            .expect("core should not be resolved"),
+                    );
+
+                    return Err(());
+                }
+            };
 
             if let Some(original) = seen.iter().find(|other| field_typedef.name_id == other.1) {
                 let struct_name = self.interner.search(abs_struct.name_id.id as usize);
@@ -993,12 +974,26 @@ impl TypeResolver<'_> {
             seen.push((i, variant.name_id));
 
             let variant_repre = if let Some(spanned_ty_expr) = &variant.ty_expr {
-                let type_id = self.resolve_type_expr(
+                let type_id = match self.resolve_type_expr(
                     AssociatedScopeKind::Module(self.current_mod),
                     &spanned_ty_expr,
                     ScopeType::Nest,
                     LookupPattern::NoRestrictions,
-                )?;
+                ) {
+                    Ok(tid) => tid,
+                    Err(sem_err) => {
+                        let module = &self.compiler.mods[self.current_mod.id];
+                        self.reporter.report_semantic(
+                            sem_err,
+                            &module
+                                .src_metadata
+                                .as_ref()
+                                .expect("core should not be resolved"),
+                        );
+
+                        TypeId::new(script_compiler::CORE_UNKNOWN)
+                    }
+                };
                 VariantRepre::new(variant.name_id, Some(type_id), AstId::new(i as u32))
             } else {
                 VariantRepre::new(variant.name_id, None, AstId::new(i as u32))
@@ -1127,12 +1122,26 @@ impl TypeResolver<'_> {
             let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
             let val_id = ValueId::new(self.compiler.values.len() as u32);
 
-            let type_id = self.resolve_type_expr(
+            let type_id = match self.resolve_type_expr(
                 AssociatedScopeKind::Module(self.current_mod),
                 &abs_param.ty_expr,
                 ScopeType::Neutral,
                 LookupPattern::NoRestrictions,
-            )?;
+            ) {
+                Ok(tid) => tid,
+                Err(sem_err) => {
+                    let module = &self.compiler.mods[self.current_mod.id];
+                    self.reporter.report_semantic(
+                        sem_err,
+                        &module
+                            .src_metadata
+                            .as_ref()
+                            .expect("core should not be resolved"),
+                    );
+
+                    return Err(());
+                }
+            };
 
             let param_sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
             let param_sym = Symbol::new(
@@ -1951,66 +1960,141 @@ impl TypeResolver<'_> {
                     PossibleMember::Nothing => todo!("Unresolved"),
                 }
             }
-            Expr::StaticAccess(spanned_interned_ids) => {
-                let mut current_scope = associated_scope;
+            // Should probably be delegated to a function so that it asks for spanned interned ids
+            // in general
+            Expr::StaticAccess(spanned_segments) => {
+                let last_scope = self.resolve_static_access(
+                    spanned_segments,
+                    associated_scope,
+                    scope_type,
+                    false,
+                )?;
 
-                for (i, sp_interned_id) in spanned_interned_ids.iter().enumerate() {
+                let last_seg = &spanned_segments[spanned_segments.len() - 1];
+
+                // This is a little odd, but it technically isn't different from if it were
+                // classified as an expr in the first place. This is done since, making paths take
+                // in a generic "Expr" would be an insanely large amount of possibilites for
+                // something that is enforced at parse-time, making it more confusing. But,
+                // creating inline expressions is also confusing so, not sure.
+                let inline_expr = match &last_seg.kind {
+                    PathSegment::Ident(interned_id) => {
+                        SpannedExpr::new(Expr::Var(*interned_id), last_seg.span)
+                    }
+                    PathSegment::Generic(_) => {
+                        let msg = "Generics are not valid in expressions".to_string();
+                        return Err(SemanticError::General(msg, vec![last_seg.span]));
+                    }
+                };
+
+                self.register_expr(
+                    parent_sym_id,
+                    &inline_expr,
+                    local_scope_id,
+                    last_scope,
+                    scope_type,
+                    seen,
+                )
+            }
+        }
+    }
+
+    // Ok maybe this should be separated a bit more
+    /// Method so that code can be re-used for traversing scopes in a static access.
+    ///
+    /// Takes in the segments to traverse, scope to start in, scope type for scoping rules, and
+    /// whether or not type expression restrictions should be applied.
+    ///
+    /// Returns an `Ok` with the last scope found so that wherever this was called from can use the
+    /// last segment for it's correct use-case.
+    /// Returns an `Err` upon any errors, given whether or not a type expression was the caller.
+    fn resolve_static_access(
+        &mut self,
+        spanned_path_segs: &[SpannedPathSegment],
+        mut current_scope: AssociatedScopeKind,
+        scope_type: ScopeType,
+        in_ty_expr: bool,
+    ) -> Result<AssociatedScopeKind, SemanticError> {
+        for (i, sp_path_seg) in spanned_path_segs.iter().enumerate() {
+            match &sp_path_seg.kind {
+                PathSegment::Ident(interned_id) => {
                     if let Some(sym_id) = scopes::get_sym_id(
                         self.compiler,
                         current_scope,
-                        sp_interned_id.interned_id,
+                        *interned_id,
                         scope_type,
                         LookupPattern::NamespaceOnly,
                     ) {
-                        let sym = &self.compiler.symbols[sym_id.id as usize];
-                        match sym.associated_scope {
+                        match self.compiler.symbols[sym_id.id as usize].associated_scope {
                             Some(new_scope) => current_scope = new_scope,
+                            // meaning the search is DONE
                             None => {
-                                // Symbol does not have associated scope
-                                if i + 1 != spanned_interned_ids.len() {
-                                    todo!("should errr owti hsame concept from tyyp expr")
+                                if i + 1 < spanned_path_segs.len() {
+                                    panic!("Woah");
                                 }
-
-                                match sym.kind {
-                                    SymbolKind::Module(_) => {
-                                        let msg = "Module symbols cannot be assigned as types or values plainly".to_string();
-                                        return Err(SemanticError::General(msg, vec![]));
-                                    }
-                                    SymbolKind::Type(_)
-                                    | SymbolKind::Val(_)
-                                    | SymbolKind::ReservedTypeSlot(_) => (),
-                                }
-
-                                // Succeeded
-                                let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
-                                let val_id = ValueId::new(self.compiler.values.len() as u32);
-
-                                // Validate symbol?
-                                let type_id = self.compiler.get_type_id(sym_id);
-                                let expr_hir = ExprHir::Var(sym_id);
-
-                                // Are the arguments inputs if they are the expression itself?
-                                let resolved_expr = ResolvedExpr::new(
-                                    type_id,
-                                    expr_hir,
-                                    val_id,
-                                    sp_interned_id.span,
-                                    Vec::new(),
-                                );
-                                let val_info = ValueInfo::new(type_id, expr_id, None);
-
-                                todo!("Check symbol")
                             }
                         }
+                        // Symbol not found
                     } else {
-                        dbg!(self.interner.search(sp_interned_id.interned_id.id as usize));
-                        todo!("Symbol not found");
+                        let current_namespace = self.interner.search(interned_id.id as usize);
+
+                        let prev_namespace_opt = if i > 0 {
+                            Some(&spanned_path_segs[i - 1])
+                        } else {
+                            None
+                        };
+
+                        // Different error message depending on if at least the first
+                        // member was resolved or not
+                        let msg = if let Some(prev) = prev_namespace_opt {
+                            let prev_namespace = match &prev.kind {
+                                PathSegment::Ident(prev_name_id) => {
+                                    self.interner.search(prev_name_id.id as usize)
+                                }
+                                PathSegment::Generic(_) => {
+                                    // Represents "module::Generic<T>::stuff" where the middle
+                                    // generic has the ability to access members.
+                                    // Which is not possible right now.
+                                    unimplemented!("Generics may never exist in this form.");
+                                }
+                            };
+
+                            let msg = format!(
+                                "Could not find the symbol `{}` in the namespace `{}`",
+                                current_namespace, prev_namespace
+                            );
+
+                            msg
+                        } else {
+                            // Specific scope mention?
+                            let msg = format!(
+                                "The symbol `{current_namespace}` was not found in all `{scope_type}` searchable scopes"
+                            );
+
+                            msg
+                        };
+
+                        return Err(SemanticError::General(msg, vec![sp_path_seg.span]));
                     };
                 }
+                PathSegment::Generic(_) if in_ty_expr => {
+                    // Still disallows something like, core.List<i32>.other_thing
+                    if i + 1 != spanned_path_segs.len() {
+                        let msg = "Generics cannot use \"::\" pathing at any point".to_string();
+                        return Err(SemanticError::General(msg, vec![sp_path_seg.span]));
+                    }
 
-                todo!()
+                    break;
+                }
+                PathSegment::Generic(_) => {
+                    unreachable!("The parser does not pick this up in `parse_expr`");
+                    let msg = "Generics cannot be used inside of expressions".to_string();
+                    return Err(SemanticError::General(msg, vec![sp_path_seg.span]));
+                }
             }
         }
+
+        Ok(current_scope)
     }
 
     fn resolve_member(
@@ -2205,7 +2289,7 @@ impl TypeResolver<'_> {
         spanned_ty_expr: &SpannedTypeExpr,
         scope_type: ScopeType,
         lookup_pattern: LookupPattern,
-    ) -> Result<TypeId, ()> {
+    ) -> Result<TypeId, SemanticError> {
         match &spanned_ty_expr.ty_expr {
             //FIXME: If an error occurs while self.current_mod = extern_mod, it tries to report the
             //error from the external module instead of the actual module of origin.
@@ -2236,17 +2320,10 @@ impl TypeResolver<'_> {
                                     "The type `{sym_name}` is private within namespace `{current_mod_name}`"
                                 );
 
-                                self.reporter.report_spanned(
-                                    &msg,
-                                    None,
-                                    &[spanned_ty_expr.span],
-                                    &current_mod
-                                        .src_metadata
-                                        .as_ref()
-                                        .expect("core should not be resolved"),
-                                );
-
-                                return Err(());
+                                return Err(SemanticError::General(
+                                    msg,
+                                    vec![spanned_ty_expr.span],
+                                ));
                             }
 
                             return Ok(type_id);
@@ -2265,7 +2342,7 @@ impl TypeResolver<'_> {
                 // Within "def", it tries to search "other" for everything declared even if "other"
                 // is never used.
                 let err_name = self.interner.search(name_id.id as usize);
-                let err_msg = match associated_scope {
+                let msg = match associated_scope {
                     AssociatedScopeKind::Module(mod_id) => {
                         let err_mod = &self.compiler.mods[mod_id.id];
                         let err_mod_name = self.interner.search(err_mod.name_id.id as usize);
@@ -2290,18 +2367,7 @@ impl TypeResolver<'_> {
                     }
                 };
 
-                let current_mod = &self.compiler.mods[self.current_mod.id];
-                self.reporter.report_spanned(
-                    &err_msg,
-                    Some(err_name),
-                    &[spanned_ty_expr.span],
-                    &current_mod
-                        .src_metadata
-                        .as_ref()
-                        .expect("core should not be resolved"),
-                );
-
-                Err(())
+                Err(SemanticError::General(msg, vec![spanned_ty_expr.span]))
             }
             // Generics can only be these types so this can stay for now
             TypeExpr::Generic(generic) => {
@@ -2316,18 +2382,10 @@ impl TypeResolver<'_> {
                                 let msg =
                                     format!("Expected only 1 type within `{}`", kind.to_fmt());
 
-                                let mod_origin = &self.compiler.mods[self.current_mod.id];
-                                self.reporter.report_spanned(
-                                    &msg,
-                                    None,
-                                    &[spanned_ty_expr.span],
-                                    &mod_origin
-                                        .src_metadata
-                                        .as_ref()
-                                        .expect("core should not be resolved"),
-                                );
-
-                                return Err(());
+                                return Err(SemanticError::General(
+                                    msg,
+                                    vec![spanned_ty_expr.span],
+                                ));
                             }
 
                             let inner = self.resolve_type_expr(
@@ -2377,18 +2435,10 @@ impl TypeResolver<'_> {
                             if generic.args.len() != 2 {
                                 let msg = format!("Expected only 2 types within `Map`",);
 
-                                let mod_origin = &self.compiler.mods[self.current_mod.id];
-                                self.reporter.report_spanned(
-                                    &msg,
-                                    None,
-                                    &[spanned_ty_expr.span],
-                                    &mod_origin
-                                        .src_metadata
-                                        .as_ref()
-                                        .expect("core should not be resolved"),
-                                );
-
-                                return Err(());
+                                return Err(SemanticError::General(
+                                    msg,
+                                    vec![spanned_ty_expr.span],
+                                ));
                             }
 
                             // Should it reset to current module if it has a new sesarch started?
@@ -2422,135 +2472,136 @@ impl TypeResolver<'_> {
 
                 let err_name = self.interner.search(generic.base.id as usize);
 
-                let err_msg = format!(
+                let msg = format!(
                     "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, `Map`, and `Tuple` are valid data structures"
                 );
 
-                let mod_origin = &self.compiler.mods[self.current_mod.id];
-                self.reporter.report_spanned(
-                    &err_msg,
-                    Some(err_name),
-                    &[spanned_ty_expr.span],
-                    &mod_origin
-                        .src_metadata
-                        .as_ref()
-                        .expect("core should not be resolved"),
-                );
-
-                Err(())
+                Err(SemanticError::General(msg, vec![spanned_ty_expr.span]))
             }
             // This only allows something like, defs.Thing which can go to at most one type deep,
             // but no more. Will need change since something like i32.MAX could be "core.i32.MAX".
             //
             // Maybe not though since that would only be usable in expressions anyways which aren't
             // type expressions
-            TypeExpr::Path(spanned_ty_exprs) => {
+            TypeExpr::Path(sp_path_segs) => {
                 // maybe active_mod can be removed?
-                let mut current_scope = AssociatedScopeKind::Module(self.current_mod);
-                let module = &self.compiler.mods[self.current_mod.id];
-
-                for (i, sp_ty_expr) in spanned_ty_exprs.iter().enumerate() {
-                    match &sp_ty_expr.ty_expr {
-                        TypeExpr::Var(interned_id) => {
-                            if let Some(sym_id) = scopes::get_sym_id(
-                                self.compiler,
-                                current_scope,
-                                *interned_id,
-                                scope_type,
-                                LookupPattern::NamespaceOnly,
-                            ) {
-                                match self.compiler.symbols[sym_id.id as usize].associated_scope {
-                                    Some(new_scope) => current_scope = new_scope,
-                                    // meaning the search is DONE
-                                    None => break,
-                                }
-                                // Symbol not found
-                            } else {
-                                let current_member_name =
-                                    self.interner.search(interned_id.id as usize);
-
-                                let prev_member_opt = if i > 0 {
-                                    Some(&spanned_ty_exprs[i - 1])
-                                } else {
-                                    None
-                                };
-
-                                // Different error message depending on if at least the first
-                                // member was resolved or not
-                                let (msg, span) = if let Some(prev) = prev_member_opt {
-                                    let prev_member_name = match &prev.ty_expr {
-                                        TypeExpr::Var(prev_name_id) => {
-                                            self.interner.search(prev_name_id.id as usize)
-                                        }
-                                        TypeExpr::Generic(generic) => {
-                                            // Represents "module.Generic<T>.stuff" where the middle
-                                            // generic has the ability to access members
-                                            unimplemented!(
-                                                "Generics may never exist in this form."
-                                            );
-                                            self.interner.search(generic.base.id as usize);
-                                        }
-                                        TypeExpr::Path(_) => unreachable!(),
-                                    };
-
-                                    let msg = format!(
-                                        "Could not find the symbol `{}` in the namespace `{}`",
-                                        current_member_name, prev_member_name
-                                    );
-
-                                    let merged_span = prev.span.merge(sp_ty_expr.span);
-
-                                    (msg, merged_span)
-                                } else {
-                                    // Specific scope mention?
-                                    let msg = format!(
-                                        "The symbol `{current_member_name}` was not found in all `{scope_type}` searchable scopes"
-                                    );
-
-                                    (msg, sp_ty_expr.span)
-                                };
-
-                                self.reporter.report_spanned(
-                                    &msg,
-                                    None,
-                                    &[span],
-                                    &module
-                                        .src_metadata
-                                        .as_ref()
-                                        .expect("core should not be resolved"),
-                                );
-
-                                return Err(());
-                            };
-                        }
-                        //TODO:
-                        TypeExpr::Generic(_) => {
-                            // Still disallows something like, core.List<i32>.other_thing
-                            if i + 1 != spanned_ty_exprs.len() {
-                                let msg = "Generics cannot use any form of member access";
-                                self.reporter.report_spanned(
-                                    msg,
-                                    None,
-                                    &[sp_ty_expr.span],
-                                    &module
-                                        .src_metadata
-                                        .as_ref()
-                                        .expect("core should not be resolved"),
-                                );
-
-                                return Err(());
-                            }
-
-                            break;
-                        }
-                        // The path cannot recursively have itself
-                        TypeExpr::Path(_) => unreachable!(),
+                let last_scope =
+                    self.resolve_static_access(&sp_path_segs, associated_scope, scope_type, true)?;
+                // for (i, sp_path_seg) in sp_path_segs.iter().enumerate() {
+                //     let interned_id = match &sp_path_seg.kind {
+                //         PathSegment::Ident(id) => *id,
+                //         PathSegment::Generic(generic) => todo!(),
+                //     };
+                //
+                //     todo!("Hi");
+                //     match &sp_path_seg.kind {
+                //         PathSegment::Ident(interned_id) => {
+                //             if let Some(sym_id) = scopes::get_sym_id(
+                //                 self.compiler,
+                //                 current_scope,
+                //                 *interned_id,
+                //                 scope_type,
+                //                 LookupPattern::NamespaceOnly,
+                //             ) {
+                //                 match self.compiler.symbols[sym_id.id as usize].associated_scope {
+                //                     Some(new_scope) => current_scope = new_scope,
+                //                     // meaning the search is DONE
+                //                     None => break,
+                //                 }
+                //                 // Symbol not found
+                //             } else {
+                //                 let current_member_name =
+                //                     self.interner.search(interned_id.id as usize);
+                //
+                //                 let prev_member_opt = if i > 0 {
+                //                     Some(&sp_path_segs[i - 1])
+                //                 } else {
+                //                     None
+                //                 };
+                //
+                //                 // Different error message depending on if at least the first
+                //                 // member was resolved or not
+                //                 let (msg, span) = if let Some(prev) = prev_member_opt {
+                //                     let prev_member_name = match &prev.kind {
+                //                         PathSegment::Ident(prev_name_id) => {
+                //                             self.interner.search(prev_name_id.id as usize)
+                //                         }
+                //                         PathSegment::Generic(generic) => {
+                //                             // Represents "module.Generic<T>.stuff" where the middle
+                //                             // generic has the ability to access members
+                //                             unimplemented!(
+                //                                 "Generics may never exist in this form."
+                //                             );
+                //                         }
+                //                     };
+                //
+                //                     let msg = format!(
+                //                         "Could not find the symbol `{}` in the namespace `{}`",
+                //                         current_member_name, prev_member_name
+                //                     );
+                //
+                //                     let merged_span = prev.span.merge(sp_path_seg.span);
+                //
+                //                     (msg, merged_span)
+                //                 } else {
+                //                     // Specific scope mention?
+                //                     let msg = format!(
+                //                         "The symbol `{current_member_name}` was not found in all `{scope_type}` searchable scopes"
+                //                     );
+                //
+                //                     (msg, sp_path_seg.span)
+                //                 };
+                //
+                //                 self.reporter.report_spanned(
+                //                     &msg,
+                //                     None,
+                //                     &[span],
+                //                     &module
+                //                         .src_metadata
+                //                         .as_ref()
+                //                         .expect("core should not be resolved"),
+                //                 );
+                //
+                //                 return Err(());
+                //             };
+                //         }
+                //         //TODO:
+                //         PathSegment::Generic(_) => {
+                //             // Still disallows something like, core.List<i32>.other_thing
+                //             if i + 1 != sp_path_segs.len() {
+                //                 let msg = "Generics cannot use any form of member access";
+                //                 self.reporter.report_spanned(
+                //                     msg,
+                //                     None,
+                //                     &[sp_path_seg.span],
+                //                     &module
+                //                         .src_metadata
+                //                         .as_ref()
+                //                         .expect("core should not be resolved"),
+                //                 );
+                //
+                //                 return Err(());
+                //             }
+                //
+                //             break;
+                //         } // The path cannot recursively have itself
+                //     }
+                // }
+                //
+                let last_segment = &sp_path_segs[sp_path_segs.len() - 1];
+                let inline_ty_expr = match &last_segment.kind {
+                    PathSegment::Ident(interned_id) => {
+                        SpannedTypeExpr::new(TypeExpr::Var(*interned_id), last_segment.span)
                     }
-                }
+                    PathSegment::Generic(generic) => {
+                        //FIXME: EVIL CLONING.
+                        //Would need to a compability layer to allow for referenced inners, rather
+                        //than only owned.
+                        SpannedTypeExpr::new(TypeExpr::Generic(generic.clone()), last_segment.span)
+                    }
+                };
 
-                let last_ty_expr = &spanned_ty_exprs[spanned_ty_exprs.len() - 1];
-
-                self.resolve_type_expr(current_scope, last_ty_expr, scope_type, lookup_pattern)
+                self.resolve_type_expr(last_scope, &inline_ty_expr, scope_type, lookup_pattern)
             }
         }
     }

@@ -436,7 +436,9 @@ impl Formattable for AliasDef {
 
 //TEST:
 pub(crate) enum PossibleMember {
+    // Would be removed
     Module(ModuleId),
+    // Would be removed
     Type(TypeId),
     Var(ValueId),
     Nothing,
