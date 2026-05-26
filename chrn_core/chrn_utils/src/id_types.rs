@@ -1,3 +1,18 @@
+use common::span::Span;
+
+//TEST:
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SpannedInternedId {
+    pub interned_id: InternedId,
+    pub span: Span,
+}
+
+impl SpannedInternedId {
+    pub fn new(interned_id: InternedId, span: Span) -> SpannedInternedId {
+        SpannedInternedId { interned_id, span }
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InternedId {
     pub id: u32,

@@ -36,7 +36,7 @@ pub enum SemanticError {
 
 #[derive(Debug)]
 pub enum MathError {
-    /// Lhs, rhs, Op, spans
+    /// Lhs, rhs, op, spans
     BinaryOpMismatch(Formatted, Formatted, Formatted, Vec<Span>),
     /// operand, op, spans
     UnaryOpMismatch(Formatted, Formatted, Vec<Span>),

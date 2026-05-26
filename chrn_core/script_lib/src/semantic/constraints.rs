@@ -1,13 +1,7 @@
 use std::fmt::Display;
 
-use chrn_utils::{
-    id_types::TypeId,
-    types::type_constraints::{TypeConstraint, TypeConstraintFlags},
-};
-use common::{
-    fmter::{Formattable, Formatted},
-    span::Span,
-};
+use chrn_utils::{id_types::TypeId, types::type_constraints::TypeConstraintFlags};
+use common::{fmter::Formattable, span::Span};
 
 use crate::{
     script_compiler::ScriptCompiler,
@@ -162,6 +156,9 @@ pub fn get_type_constraints(
         // Wait should this?
         Type::TypeDef(type_def) => {
             get_type_constraints(compiler, type_def.type_id, ty_span, is_rec)
+        }
+        Type::Deferred(deferred_ty_id) => {
+            get_type_constraints(compiler, *deferred_ty_id, ty_span, is_rec)
         }
         Type::Unknown => None,
     }

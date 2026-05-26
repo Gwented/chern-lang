@@ -13,7 +13,7 @@ use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::Context;
 use crate::parser::parser_state::ParserState;
 use crate::token::{SpannedToken, Token, TokenKind};
-use chrn_utils::id_types::{AstId, InternedId};
+use chrn_utils::id_types::{AstId, InternedId, SpannedInternedId};
 use chrn_utils::inner_args::{InnerArgs, SpannedInnerArgs};
 use chrn_utils::intern::Intern;
 use chrn_utils::keywords::Keyword;
@@ -775,6 +775,50 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
 
             Ok(SpannedExpr::new(default, span))
         }
+        Token::Id(id) if ctx.peek_ahead(1).tok == Token::StaticAccess => {
+            let mut access_path: Vec<SpannedInternedId> = Vec::new();
+
+            // Catching the final pathed namespace which is not accounted for in the loop
+            let span = ctx.peek_span();
+            // Infailable since the match statement of course already checks this
+            let plain_id = ctx.expect_id_verbose(
+                TokenKind::Id,
+                "Expected an identifier after `::`, found ",
+                "",
+                Branch::Expr,
+                interner,
+            )?;
+
+            let name_id = InternedId::new(plain_id);
+            access_path.push(SpannedInternedId::new(name_id, span));
+
+            while ctx.peek_tok() == Token::StaticAccess {
+                // Skipping "::"
+                ctx.advance_tok();
+
+                let span = ctx.peek_span();
+                let plain_id = ctx.expect_id_verbose(
+                    TokenKind::Id,
+                    "Expected an identifier after `::`, found ",
+                    "",
+                    Branch::Expr,
+                    interner,
+                )?;
+
+                let name_id = InternedId::new(plain_id);
+                access_path.push(SpannedInternedId::new(name_id, span));
+            }
+
+            let start = access_path[0].span.start;
+            let end = access_path[access_path.len() - 1].span.end;
+
+            let static_access_expr = Expr::StaticAccess(access_path);
+            let static_span = Span::new(start, end);
+
+            let sp_expr = SpannedExpr::new(static_access_expr, static_span);
+
+            Ok(sp_expr)
+        }
         Token::BoolLiteral(boolean) => {
             let span = ctx.advance_span();
             Ok(SpannedExpr::new(Expr::Bool(boolean), span))
@@ -920,7 +964,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
             let ty_expr = TypeExpr::Generic(generic);
             let spanned_ty_expr = SpannedTypeExpr::new(ty_expr, span);
 
-            if ctx.peek_tok() == Token::Dot {
+            if ctx.peek_tok() == Token::StaticAccess {
                 ctx.advance_tok();
 
                 let mut ty_path = vec![spanned_ty_expr];
@@ -936,7 +980,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
                 Ok(spanned_ty_expr)
             }
         }
-        Token::Id(id) if ctx.peek_ahead(1).tok.kind() == TokenKind::Dot => {
+        Token::Id(id) if ctx.peek_ahead(1).tok.kind() == TokenKind::StaticAccess => {
             let start = ctx.peek_span().start;
             let ty_path = parse_type_path(ctx, interner)?;
             let end = ctx.peek_behind(1).span.end;
@@ -989,13 +1033,13 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
 
     loop {
         let is_generic = ctx.peek_ahead(1).tok == Token::OAngleBracket;
-        let is_dot = ctx.peek_ahead(1).tok == Token::Dot;
+        let is_static_access = ctx.peek_ahead(1).tok == Token::StaticAccess;
 
         if is_generic {
             let start = ctx.peek_span().start;
             let base_id = ctx.expect_id_verbose(
                 TokenKind::Id,
-                "Expected an identifier after '.', found ",
+                "Expected an identifier after '::', found ",
                 "",
                 Branch::Type,
                 interner,
@@ -1012,17 +1056,17 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
 
             ty_path.push(spanned_ty_expr);
 
-            if ctx.peek_tok() == Token::Dot {
+            if ctx.peek_tok() == Token::StaticAccess {
                 ctx.advance_tok();
             } else {
                 break;
             }
         // This is just the normal case of an identifier after a dot
-        } else if is_dot {
+        } else if is_static_access {
             let span = ctx.peek_span();
             let name_id = ctx.expect_id_verbose(
                 TokenKind::Id,
-                "Expected an identifier after '.', found ",
+                "Expected an identifier after '::', found ",
                 "",
                 Branch::Type,
                 interner,
@@ -1037,7 +1081,7 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTy
 
         // If there's no dot then that means that the current token must be an identifier that is
         // the field to access
-        if !is_dot {
+        if !is_static_access {
             let span = ctx.peek_span();
             let final_id = ctx.expect_id_verbose(
                 TokenKind::Id,

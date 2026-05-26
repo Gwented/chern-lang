@@ -19,11 +19,11 @@ pub struct ScopeInfo {
 }
 
 impl ScopeInfo {
-    pub fn new(scope: Scope, sym_owner: Option<SymbolId>, owner: ModuleId) -> ScopeInfo {
+    pub fn new(scope: Scope, sym_owner: Option<SymbolId>, mod_owner: ModuleId) -> ScopeInfo {
         ScopeInfo {
             scope,
             sym_owner,
-            mod_owner: owner,
+            mod_owner,
         }
     }
 }
@@ -176,7 +176,8 @@ pub fn get_type_id(
                         SymbolKind::Val(val_id) => {
                             return Some(compiler.values[val_id.id as usize].type_id);
                         }
-                        SymbolKind::Unknown | SymbolKind::Module(_) => return None,
+                        SymbolKind::ReservedTypeSlot(type_id) => return Some(*type_id),
+                        SymbolKind::Module(_) => return None,
                     }
                 }
             }
@@ -203,6 +204,12 @@ pub fn find_scope(
 }
 
 // TEST:
+/// - compiler: The environment to seaerch in
+/// - associated_scope: The type of scope to search which could differ depending on if the scope
+/// belongs to a module, symbol, etc.
+/// - target_name_id: The identifier to search for in the given scope
+/// - scope_type: The type of scope this search was started from
+/// - lookup_pattern: How much access the lookup should have
 pub fn get_sym_id(
     compiler: &ScriptCompiler,
     associated_scope: AssociatedScopeKind,

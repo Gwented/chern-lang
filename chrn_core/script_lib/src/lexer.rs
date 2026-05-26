@@ -83,6 +83,12 @@ impl Lexer<'_> {
                         self.advance();
 
                         Token::Walrus
+                    } else if self.peek_ahead(1) == b':' {
+                        self.advance();
+                        end = self.pos;
+                        self.advance();
+
+                        Token::StaticAccess
                     } else {
                         self.advance();
                         Token::Colon

@@ -1127,6 +1127,9 @@ impl<'a> ConstraintResolver<'a> {
             Type::TypeDef(_) => {
                 unreachable!("Not syntactically possible")
             }
+            Type::Deferred(deferred_ty_id) => {
+                self.check_type_arg(*deferred_ty_id, active_span, module, spanned_arg, visited)
+            }
             Type::Constrained(current_constraints) => {
                 let arg_constraints = spanned_arg.arg.type_constraints();
 

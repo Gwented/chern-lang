@@ -45,6 +45,7 @@ pub enum Token {
     CParen,
     OBracket,
     CBracket,
+    StaticAccess,
     OCurlyBracket,
     CCurlyBracket,
     OAngleBracket,
@@ -129,6 +130,7 @@ impl Token {
             Token::Def => TokenKind::Def,
             Token::End => TokenKind::End,
             Token::EOF => TokenKind::EOF,
+            Token::StaticAccess => TokenKind::StaticAccess,
         }
     }
 
@@ -181,6 +183,7 @@ pub enum TokenKind {
     CAngleBracket,
     Comma,
     SlimArrow,
+    StaticAccess,
     Slash,
     HashSymbol,
     DotRange,
@@ -266,6 +269,7 @@ impl Display for TokenKind {
             TokenKind::Poison => write!(f, "<poisoned>"),
             TokenKind::Caret => write!(f, "^"),
             TokenKind::Bool => write!(f, "bool"),
+            TokenKind::StaticAccess => write!(f, "::"),
             TokenKind::Keyword => write!(f, "keyword"),
             TokenKind::Def => write!(f, "@def"),
             TokenKind::End => write!(f, "@end"),
@@ -319,10 +323,10 @@ pub(crate) const CARET: u64 = 39;
 pub(crate) const POISON: u64 = 1 << 40;
 pub(crate) const KEYWORD: u64 = 1 << 41;
 pub(crate) const BOOL: u64 = 1 << 42;
-pub(crate) const DEF: u64 = 1 << 43;
-pub(crate) const END: u64 = 1 << 44;
-pub(crate) const EOF: u64 = 1 << 45;
-// pub(crate) const COMMENT: u64 = 1 << 46;
+pub(crate) const STATIC_ACCESS: u64 = 1 << 43;
+pub(crate) const DEF: u64 = 1 << 44;
+pub(crate) const END: u64 = 1 << 45;
+pub(crate) const EOF: u64 = 1 << 46;
 
 //FIX: PLEASE ASSERT THIS THING
 impl TokenKind {
@@ -372,6 +376,7 @@ impl TokenKind {
             TokenKind::Ampersand => AMPERSAND,
             TokenKind::Keyword => KEYWORD,
             TokenKind::Bool => BOOL,
+            TokenKind::StaticAccess => STATIC_ACCESS,
             TokenKind::Def => DEF,
             TokenKind::End => END,
             TokenKind::EOF => EOF,

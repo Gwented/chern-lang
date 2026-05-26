@@ -1,5 +1,5 @@
 use chrn_utils::{
-    id_types::{AstId, InternedId},
+    id_types::{AstId, InternedId, SpannedInternedId},
     inner_args::SpannedInnerArgs,
     types::type_constraints::{self, TypeConstraintFlags},
 };
@@ -203,6 +203,8 @@ impl SpannedExpr {
 #[derive(Debug)]
 pub enum Expr {
     Var(InternedId),
+    /// \`::\`
+    StaticAccess(Vec<SpannedInternedId>),
     Bool(bool),
     /// Variable name, along with optional default type
     Default(Box<SpannedExpr>, Box<SpannedExpr>),
@@ -251,7 +253,6 @@ impl BinaryOp {
             | BinaryOp::Sub
             | BinaryOp::Mult
             | BinaryOp::Div
-            | BinaryOp::Greater
             | BinaryOp::BitOr
             | BinaryOp::BitAnd
             | BinaryOp::BitNot
@@ -261,6 +262,7 @@ impl BinaryOp {
             | BinaryOp::Mod => true,
             BinaryOp::Less
             | BinaryOp::GreaterOrEq
+            | BinaryOp::Greater
             | BinaryOp::LessOrEq
             | BinaryOp::And
             | BinaryOp::Or
@@ -277,17 +279,17 @@ impl BinaryOp {
             | BinaryOp::And
             | BinaryOp::Or
             | BinaryOp::EqTo
+            | BinaryOp::NotEq => true,
+            BinaryOp::Add
+            | BinaryOp::Sub
+            | BinaryOp::Mult
+            | BinaryOp::Div
             | BinaryOp::BitOr
             | BinaryOp::BitAnd
             | BinaryOp::BitNot
             | BinaryOp::BitRightShift
             | BinaryOp::BitLeftShift
             | BinaryOp::BitXor
-            | BinaryOp::NotEq => true,
-            BinaryOp::Add
-            | BinaryOp::Sub
-            | BinaryOp::Mult
-            | BinaryOp::Div
             | BinaryOp::Greater
             | BinaryOp::Mod => false,
         }

@@ -45,7 +45,8 @@ impl TypeContext {
 /// "is_resolved" can be cached as opposed to giving it to individual expressions
 #[derive(Debug)]
 pub(super) struct PendingSymbol {
-    pub(super) is_resolved: bool,
+    pub(super) has_const_val: bool,
+    pub(super) has_resolved_ty: bool,
     /// All symbols the user is waiting on.
     pub(super) pending_exprs: Vec<PendingExpr>,
 }
@@ -53,7 +54,8 @@ pub(super) struct PendingSymbol {
 impl PendingSymbol {
     pub(super) fn new(pending_exprs: Vec<PendingExpr>) -> PendingSymbol {
         PendingSymbol {
-            is_resolved: false,
+            has_const_val: false,
+            has_resolved_ty: false,
             pending_exprs,
         }
     }
@@ -64,6 +66,7 @@ impl PendingSymbol {
 /// be resolved.
 pub(super) struct PendingExpr {
     pub(super) pending_id: ExprId,
+    pub(super) parent_state: ParentState,
     pub(super) parent_sym: SymbolId,
 }
 
@@ -71,7 +74,39 @@ impl PendingExpr {
     pub(super) fn new(pending_id: ExprId, parent_sym: SymbolId) -> PendingExpr {
         PendingExpr {
             pending_id,
+            parent_state: ParentState::Unresolved,
             parent_sym,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) enum ParentState {
+    Unresolved,
+    /// has_resolved_ty, has_const_val
+    Resolved(bool, bool),
+    Stale,
+}
+
+/// Helper struct to use for transporting parent-related data rather than using an unnamed tuple.
+#[derive(Debug)]
+pub(super) struct ParentInfo {
+    /// The parent's `SymbolId` that is stored as pending
+    pub pending_sym_id: SymbolId,
+    pub has_resolved_ty: bool,
+    pub has_const_val: bool,
+}
+
+impl ParentInfo {
+    pub(super) fn new(
+        pending_sym_id: SymbolId,
+        has_resolved_ty: bool,
+        has_const_val: bool,
+    ) -> ParentInfo {
+        ParentInfo {
+            pending_sym_id,
+            has_resolved_ty,
+            has_const_val,
         }
     }
 }

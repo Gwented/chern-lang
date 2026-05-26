@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrn_utils::{
-    id_types::{AstId, InternedId, ModuleId, ScopeId, SymbolId, TypeId},
+    id_types::{AstId, InternedId, ModuleId, ScopeId, SymbolId, TypeId, ValueId},
     intern::Intern,
 };
 use common::{chrn_settings::ChrnSettings, reporter::diagnostic::Diagnostic};
@@ -132,7 +132,6 @@ impl NamespaceResolver<'_> {
         }
 
         let type_id = TypeId::new(self.compiler.types.len() as u32);
-
         let struct_def = StructDef::new(sym_id, Vec::new());
 
         let symbol = Symbol::new(
@@ -253,7 +252,8 @@ impl NamespaceResolver<'_> {
             module.exports.push(sym_id);
         }
 
-        //TODO: PLACEHOLDER USED EXPR ID DOESNT EXIST YET
+        let type_id = TypeId::new(self.compiler.types.len() as u32);
+        let ty_info = TypeInfo::new(Type::Unknown, self.current_mod);
 
         // No information that this is a variable other than the fact that AstId -> SymbolId
         let symbol = Symbol::new(
@@ -264,10 +264,12 @@ impl NamespaceResolver<'_> {
             abs_var.is_priv,
             None,
             ScopeType::Neutral,
-            SymbolKind::Unknown,
+            // Will be SymbolKind::Defer
+            SymbolKind::ReservedTypeSlot(type_id),
         );
 
         self.compiler.symbols.push(symbol);
+        self.compiler.types.push(ty_info);
     }
 
     // Cannot check for this since the type is not known

@@ -30,7 +30,6 @@ use crate::{
 #[derive(Debug)]
 pub struct TypeInfo {
     pub ty: Type,
-    // May turn owner back into option since unknown isn't really owned, but uhhhhhhh
     pub owner: ModuleId,
 }
 
@@ -50,6 +49,9 @@ pub enum Type {
     Alias(AliasDef),
     TypeDef(TypeDef),
     Constrained(TypeConstraintFlags),
+    /// Preserved stable handle so that anything defined before a type was defined can still point
+    /// to the correct type which prevents duplicating different definitions.
+    Deferred(TypeId),
     Unknown,
 }
 
@@ -62,6 +64,7 @@ impl Formattable for Type {
             Type::Func(func_def) => func_def.to_fmt(),
             Type::Alias(alias_def) => alias_def.to_fmt(),
             Type::TypeDef(type_def) => type_def.to_fmt(),
+            Type::Deferred(_) => todo!("This should probably be a function"),
             Type::Unknown => Formatted::Unknown,
             Type::Constrained(_) => {
                 unimplemented!("Type constrains cannot be formatted through `Type`")
@@ -119,10 +122,11 @@ pub enum SymbolKind {
     Type(TypeId),
     /// Represents a variable symbol
     Val(ValueId),
+    /// Represents a reserved type id which allows for symbols such as unresolved variables to have
+    /// a stable type id associated with it even if it isn't resolved yet.
+    ReservedTypeSlot(TypeId),
     /// Represents a module symbol
     Module(ModuleId),
-    /// Represents a symbol that at no point had a declaration of any kind
-    Unknown,
 }
 
 #[derive(Debug)]

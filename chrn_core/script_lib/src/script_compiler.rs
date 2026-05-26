@@ -22,20 +22,27 @@ use crate::{
     },
 };
 
-//TODO: Intrinsic scope that holds value, type, etc. tables that is just a scope that is innate by
-//default, which can be explicitly referenced. Like, intrinsic.str is just the default str
-//identification, so no escape needed anymore for that
-#[derive(Debug)]
+//TODO: A type state control flow where the TypeState is stored inside of types so that all types
+//have a stable handle, whether or not their handle exists yet, so that variables can have their
+//type id slot mutated into whatever type it needs so that static accessibility can assign it's
+//expression a type handle even if the type of the end of the variable in the namespace hasn't been
+//resolved yet.
+//
+// So in the case of: "module::NUMBER" where NUMBER is a valid static namespace, but hasn't been
+// resolved yet, it'll store the possibly, "TypeState::Unresolved" index, which is notified later
+// on.
 pub struct ScriptCompiler {
     /// Optional bind statement that is obtained from the main module
     // Maybe the module should keep it's bind info rather than give it to the compiler so that the
     // information isn't lossy and contextual
     pub bind: Option<Bind>,
     /// Module name to module id mapping to index module array. import `as` aliases are also stored here
+    // This feels out of place
+    // Can this be removed?
     pub mod_map: HashMap<InternedId, ModuleId>,
-    /// All modules that were found by `module_finder`
+    /// All modules found during compilation
     pub mods: Vec<Module>,
-    /// Type table which contains every module's seen types
+    /// Type table which contains every module's stored types
     pub types: Vec<TypeInfo>,
     /// All values that were cached
     pub values: Vec<ValueInfo>,
@@ -43,9 +50,9 @@ pub struct ScriptCompiler {
     pub exprs: Vec<ResolvedExpr>,
     /// All symbols that were found
     pub symbols: Vec<Symbol>,
-    ///
+    /// Scope arena
     pub scopes: Vec<ScopeInfo>,
-    /// Module id for core which is always pre-loaded
+    /// `ModuleId` for core which is always pre-loaded
     pub core_mod_id: ModuleId,
 }
 
@@ -73,7 +80,7 @@ pub const CORE_BOOL: u32 = 19;
 pub const CORE_BIGINT: u32 = 20;
 pub const CORE_BIGFLOAT: u32 = 21;
 pub const CORE_RUNTIME: u32 = 22;
-pub const TYPE_UNKNOWN_IDX: u32 = 23;
+// pub const TYPE_UNKNOWN_IDX: u32 = 23;
 // pub const CORE_CHARACTER_MAPPABLE: u32 = 24;
 // pub const CORE_LIST: u32 = 23;
 // pub const CORE_SET: u32 = 24;
@@ -358,13 +365,15 @@ impl ScriptCompiler {
     }
 
     // Maybe return option?
-    /// Assumes the symbol given has a `TypeId` attached
+    /// Assumes the symbol given has a `TypeId` attached. Will return a `TypeId` of `Unknown` if
+    /// the `SymbolKind` is unknown.
     pub(super) fn get_type_id(&self, sym_id: SymbolId) -> TypeId {
         match &self.symbols[sym_id.id as usize] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => *type_id,
                 SymbolKind::Val(val_id) => self.values[val_id.id as usize].type_id,
-                SymbolKind::Unknown | SymbolKind::Module(_) => unreachable!(),
+                SymbolKind::ReservedTypeSlot(type_id) => *type_id,
+                SymbolKind::Module(_) => unreachable!(),
             },
         }
     }
@@ -495,7 +504,7 @@ impl ScriptCompiler {
     //     None
     // }
 
-    /// Loads the entirety of the core module
+    /// Loads the core module
     fn load_core(compiler: &mut ScriptCompiler) {
         let mut table = Table::new();
 
@@ -533,10 +542,20 @@ impl ScriptCompiler {
             if user_mod.name_id == core_name_id {
                 continue;
             }
-            dbg!("huh");
 
             user_mod.imports.push(core_import.clone());
             user_mod.scopes.push(core_scope_id);
+        }
+    }
+
+    /// Returns `true` if the type is unknown, false otherwise
+    pub fn check_unknown(&self, type_id: TypeId) -> bool {
+        let ty = &self.types[type_id.id as usize].ty;
+        match ty {
+            //NOTE: DANGEROUS
+            Type::Deferred(type_id) => return self.check_unknown(*type_id),
+            Type::Unknown => true,
+            _ => false,
         }
     }
 
@@ -1291,9 +1310,11 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         // HAS NO IDENTIFIER, IS INTERNALLY RECOGNOLOLIZED BY COMPILER
-        compiler
-            .types
-            .push(TypeInfo::new(Type::Unknown, core_mod_id));
+        //
+        // NO LONGER PUSHED
+        // compiler
+        //     .types
+        //     .push(TypeInfo::new(Type::Unknown, core_mod_id));
 
         // -- Type constraints --
         let type_id = TypeId::new(compiler.types.len() as u32);
