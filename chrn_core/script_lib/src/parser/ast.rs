@@ -129,6 +129,7 @@ impl AstInfo {
             Item::Enum(abs_enum) => abs_enum.name_span,
             Item::Alias(abs_alias) => abs_alias.name_span,
             Item::Var(abs_var) => abs_var.name_span,
+            Item::Config(abs_cfg) => abs_cfg.name_span,
         }
     }
 }
@@ -137,11 +138,13 @@ impl AstInfo {
 pub enum Item {
     //                                                 name: str [!IsEmpty, Range(0,5)]
     // Should these have spans? Do we REALLY want      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    // No, we do not.
     TypeDef(AbstractTypeDef),
     Struct(AbstractStruct),
     Enum(AbstractEnum),
     Alias(AbstractAlias),
     Var(AbstractVar),
+    Config(AbstractConfig),
     // Func(AbstractFunc),
 }
 
@@ -221,6 +224,7 @@ pub enum Expr {
         op: BinaryOp,
         rhs: Box<SpannedExpr>,
     },
+    Array(ArrayExpr),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -323,17 +327,28 @@ impl Formattable for BinaryOp {
 }
 
 #[derive(Debug)]
-pub(crate) struct Call {
+pub(crate) struct CallExpr {
     pub(crate) name_id: InternedId,
     pub(crate) spanned_expr: Vec<SpannedExpr>,
 }
 
-impl Call {
-    pub(crate) fn new(name_id: InternedId, spanned_expr: Vec<SpannedExpr>) -> Call {
-        Call {
+impl CallExpr {
+    pub(crate) fn new(name_id: InternedId, spanned_expr: Vec<SpannedExpr>) -> CallExpr {
+        CallExpr {
             name_id,
             spanned_expr,
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct ArrayExpr {
+    elements: Vec<SpannedExpr>,
+}
+
+impl ArrayExpr {
+    pub fn new(elements: Vec<SpannedExpr>) -> ArrayExpr {
+        ArrayExpr { elements }
     }
 }
 
@@ -558,6 +573,61 @@ impl AbstractFuncDecl {
     }
 }
 
+// Maybe allow for ComplexDetails with ComplexDetails inside of it
+// outer { /*assignments*/ }
+#[derive(Debug)]
+pub struct AbstractConfig {
+    // In regards to "var->" defined variables, I think just allowing for, "var.inner" would be the
+    // best in regards to accessing and changing fields
+    // Could be a "Outer.a { }" where it is defining it's fields config specifically
+    /// Name of structural type to configure
+    pub name_id: InternedId,
+    pub name_span: Span,
+    /// Configuration for the current parent to apply
+    pub field_assignments: Vec<AbstractFieldAssignment>,
+    /// Configuration for inner fields to define recursively
+    pub inner_field_cfg: Vec<AbstractConfig>,
+}
+
+impl AbstractConfig {
+    pub fn new(
+        name_id: InternedId,
+        name_span: Span,
+        field_assignments: Vec<AbstractFieldAssignment>,
+        inner_field_cfg: Vec<AbstractConfig>,
+    ) -> AbstractConfig {
+        AbstractConfig {
+            name_id,
+            name_span,
+            field_assignments,
+            inner_field_cfg,
+        }
+    }
+}
+
+// outer { .inner = Expr }
+#[derive(Debug)]
+pub struct AbstractFieldAssignment {
+    /// Name of structural type to configure
+    pub name_id: InternedId,
+    pub name_span: Span,
+    pub array_expr: ArrayExpr,
+}
+
+impl AbstractFieldAssignment {
+    pub fn new(
+        name_id: InternedId,
+        name_span: Span,
+        array_expr: ArrayExpr,
+    ) -> AbstractFieldAssignment {
+        AbstractFieldAssignment {
+            name_id,
+            name_span,
+            array_expr,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct AbstractParam {
     pub name_id: InternedId,
@@ -591,8 +661,6 @@ pub struct AbstractFieldDecl {
 pub struct AbstractAlias {
     pub name_id: InternedId,
     pub name_span: Span,
-    // Variables only
-    // May change to Vec<SpannedInternedId>
     pub params: Vec<AbstractParam>,
     pub conds: Vec<SpannedExpr>,
     pub args: Vec<SpannedInnerArgs>,

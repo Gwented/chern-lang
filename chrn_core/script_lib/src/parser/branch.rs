@@ -54,7 +54,7 @@ impl Display for Branch {
                 SectionBranch::Nest => write!(f, "nest"),
                 SectionBranch::NestType => write!(f, "[type]"),
                 SectionBranch::NestEnum => write!(f, "[enum]"),
-                SectionBranch::Complex => write!(f, "complex_rules"),
+                SectionBranch::Complex => write!(f, "complex"),
                 SectionBranch::Override => write!(f, "override"),
             },
             Branch::Expr => write!(f, "[expr]"),

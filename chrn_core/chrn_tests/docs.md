@@ -67,8 +67,13 @@ char, bool, str, struct, enum, nil, BigInt, BigFloat, List, Map, Set, Tuple
 `==` Equal to
 `!=` Not Equal to
 
+
+## Modules
+
+`::`
+
 ## Workspace
-- NOT FOR COMPLEXITY, JUST FOR AN ENFORCED CONVENTION. I WANT BINARY. Make binary
+- NOT FOR COMPLEXITY, JUST FOR AN ENFORCED CONVENTION. I WANT BINARY. Make binary. Binary.
 
 ### DOES NOT EXIST YET
 `_`: Match all for ignoring parameters
@@ -95,6 +100,10 @@ nest->
         capacity: unsized
     }
 ```
+
+`"::"`: Namespace pathing operator for accessing modules and types
+
+`"."`: Member access operator for accessing fields
 
 ### DOES NOT EXIST YET
 // Maybe remove this entirely
@@ -282,10 +291,10 @@ Very descriptive!
 import "definitions.chrn" as defs
 import "invalid_utf8_name.chrn" as valid_name
 
-export let VALUE = defs.MAGIC_NUMBER + valid_name.OTHER_MAGICAL_NUMBER
+export let VALUE = defs::MAGIC_NUMBER + valid_name::OTHER_MAGICAL_NUMBER
 
 var->
-    thing: defs.Thingy
+    thing: defs::Thingy
 ```
 
 #### Full example of language
@@ -295,13 +304,13 @@ var->
     import "chrn.chrn" as cherning
     import "definitions.chrn"
 
-    let stuff = cherning.MAGIC_NUMBER * 2
+    let stuff = cherning::MAGIC_NUMBER * 2
 
     var->
         name: str
         age: u8 #warn #bin
         pets: List<Pet> [!IsEmpty, Range(5, 15)]
-        opinionated_c: definitions.e#i32
+        opinionated_c: core::i32
     nest->
         struct Pet {
             name: str [!IsWhitespace]

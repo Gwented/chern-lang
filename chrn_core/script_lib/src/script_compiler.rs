@@ -38,7 +38,7 @@ pub struct ScriptCompiler {
     pub bind: Option<Bind>,
     /// Module name to module id mapping to index module array. import `as` aliases are also stored here
     // This feels out of place
-    // Can this be removed?
+    // Can this be removed? Probably.
     pub mod_map: HashMap<InternedId, ModuleId>,
     /// All modules found during compilation
     pub mods: Vec<Module>,
@@ -552,14 +552,37 @@ impl ScriptCompiler {
     pub fn check_unknown(&self, type_id: TypeId) -> bool {
         let ty = &self.types[type_id.id as usize].ty;
         match ty {
-            //NOTE: DANGEROUS
+            //WARN: DANGEROUS
             Type::Deferred(type_id) => return self.check_unknown(*type_id),
             Type::Unknown => true,
             _ => false,
         }
     }
 
+    //TODO: There is an issue with how scopes are consumed right now which makes giving specific
+    //scopes known constants difficult. Since there is no one source of data for a section to get
+    //it's constants, it isn't possible to make it so if we are in a `complex->` section, it shows
+    //language specific constants like RUST or JAVA which all for specifying behavior. All
+    //scopes are locally owned and don't separate what declared can be used for all other scopes,
+    //and which are just local.
+    //
+    // There should be more percise access level rules to where a variable declaration will allow
+    // all other scopes to use it, but also have where it's declaration occurred be tied to it,
+    // while also allowing for a section like `complex` to show the `RUST` constant only in it's
+    // own scope.
+    //
+    // This would probably require pro-loading section symbols on-demand to where their
+    // associated_scope is immediately attached to all the resolver stages. So maybe a
+    // ScopeType::Global is needed.
     fn load_complex_constants(compiler: &mut ScriptCompiler, core_mod: &Module, table: &mut Table) {
+        let core_mod_id = core_mod.mod_id;
+
+        let scope_type = ScopeType::Complex;
+        let scope_id = ScopeId::new(compiler.scopes.len());
+
+        let scope = Scope::new(scope_id, scope_type);
+        // There WOULD be a java symbol though detected after "in" usage
+        let java_scope = ScopeInfo::new(scope, None, core_mod_id);
         todo!()
     }
 
@@ -568,6 +591,10 @@ impl ScriptCompiler {
         core_mod: &Module,
         table: &mut Table,
     ) {
+        let scope_type = ScopeType::Override;
+        let scope_id = ScopeId::new(compiler.scopes.len());
+
+        let scope = Scope::new(scope_id, scope_type);
         todo!()
     }
 

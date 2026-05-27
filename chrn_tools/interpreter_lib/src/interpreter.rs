@@ -92,8 +92,6 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
         return Err(ScriptError::Semantic(reporter.diags).into());
     }
 
-    todo!("Constraints");
-
     for i in 0..script_compiler.mods.len() {
         let module = &script_compiler.mods[i];
         if module.src_metadata.is_none() {

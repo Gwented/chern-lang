@@ -5,8 +5,8 @@
 //@def
 let /*comment*/ x/* inline*/ = /* last*/ 3 let z =x+3
 
+// @def
 
-@def
 import "../../chrn_core/chrn_tests/def.chrn" as defs
 
 /*export let a = b
@@ -28,16 +28,18 @@ let x = 5*/
 // alias default(x: i32.MAX.SUPER<T>) = []
 // alias frosted(used) = [IsEmpty, Contains(used)]
 
- let a = b
- let b = c
- let c = d + 3
- let d = e - 2
- let e = 4
+let a = b
+let b = c
+let c = d + 3
+let d = e - 2
+let e = 4
 
 // alias default(x: i8) = []
 
 var->
-    x: core::List<str>
+    x: core::i32
+    // Ok this should probably be a hard error
+    // x: core::CharacterMappable
 nest->
     enum Perbon {}
 // How should aliasses infer their own constraints?
@@ -47,7 +49,7 @@ nest->
 // IsEmpty is entirely only usable for CharacterMappable, so it would just error.
 // alias default(x: Numeric, y: Ranged) = [Equals(x), StartsW(y), IsEmpty]
 
-@end
+@def
 var->
     // Conds need shallow checks too so should err if struct or enum is used
     // again suggesting that it needs to be applied to the struct directly
@@ -57,43 +59,38 @@ nest->
     // Arguments correctly error upon being given a self referential type that depends on itself
     // satisfying something like IsEmpty.
     struct Doof {
-        snake_case: i32 []
+        lang_inner: i32 []
         b: i32 []
-    } []
+    }
 
     struct Thingy {
         name: unsized
         age: str
     } []
-@end
-// Syntax test
+// What if complex stored the constraints instead?
 complex->
     Doof {
-        cases: snake_case
-    }
-    Doof.a {
-        identifiers: SnakeCase, snakeCase, SNAKE_CASE, Snake_Case, #snake_case (For auto-generating?)
-        OR separate?
-        cases: snake_case, camelCase, UpperCamelCase
-        default_value: 5
-    }
-    Doof.b {
+        .cases = [snake_case, mammal_case]
 
-    }
+        // Should these be strings?
+        lang_inner {
+            // Other identifiers to search for if the initial identifier fails
+            .idents = [rust_inner, java_inner, py_inner]
 
-    OR
+            // Other cases to search for if the initial casing fails
+            .cases = [snake_case, camelCase, UpperCamelCase, Upper_Snake_Case]
 
-    Thingy {
-        identifiers: help
-        a->
-            cases: UpperCamelCase
-        b->
+            // Default value if um...wait
+            .default_value = [5]
+        }
+        .mazes = [snake_case, mammal_case]
     }
+@end
 
 override->
     in RUST {
-        change i32 = rust.str
-        change u8 = rust.i16
+        change i32 = self.str
+        change u8 = self.i16
     }
 
     in JAVA {

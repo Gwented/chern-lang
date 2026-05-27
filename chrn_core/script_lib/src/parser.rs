@@ -5,10 +5,10 @@ mod parser_state;
 
 use crate::modules::ModuleMetadata;
 use crate::parser::ast::{
-    AbstractAlias, AbstractEnum, AbstractMemberAccess, AbstractParam, AbstractStruct,
-    AbstractTypeDef, AbstractVar, AbstractVariant, AstInfo, Expr, Generic, Item, PathSegment,
-    Section, SectionKind, SpannedExpr, SpannedPathSegment, SpannedTypeExpr, TypeExpr, Unary,
-    UnaryOp,
+    AbstractAlias, AbstractConfig, AbstractEnum, AbstractFieldAssignment, AbstractMemberAccess,
+    AbstractParam, AbstractStruct, AbstractTypeDef, AbstractVar, AbstractVariant, ArrayExpr,
+    AstInfo, Expr, Generic, Item, PathSegment, Section, SectionKind, SpannedExpr,
+    SpannedPathSegment, SpannedTypeExpr, TypeExpr, Unary, UnaryOp,
 };
 use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::Context;
@@ -218,7 +218,6 @@ pub fn parse(
                         report_export(&mut ctx, Formatted::SectNest, Branch::Searching, interner);
                     }
 
-                    todo!("Complex not done");
                     ctx.advance_tok();
 
                     if state.has_complex() {
@@ -248,7 +247,9 @@ pub fn parse(
                             break;
                         }
 
-                        _ = parse_complex_sect(&mut ctx, interner);
+                        if let Ok(abs_cfg) = parse_complex_sect(&mut ctx, interner) {
+                            ast_info.push_item(SectionKind::Nest, Item::Config(abs_cfg));
+                        }
                     }
                 }
                 Keyword::Override => {
@@ -621,9 +622,143 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
     Ok(item)
 }
 
-//TODO:
-fn parse_complex_sect(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
-    todo!()
+//TODO: Better complex branching tracking so that help messages can be made
+//
+//No other branches exist right now so it just parses expecting uh, stuff.
+fn parse_complex_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractConfig, Token> {
+    let name_span = ctx.peek_span();
+
+    let plain_id = ctx.expect_id_verbose(
+        TokenKind::Id,
+        "Expected an identifier to describe configuration for, found ",
+        "",
+        Branch::Section(SectionBranch::Complex),
+        interner,
+    )?;
+
+    let name_id = InternedId::new(plain_id);
+
+    ctx.expect_verbose(
+        TokenKind::OCurlyBracket,
+        "Expected a '{' to define configuration expression, found ",
+        "",
+        Branch::Section(SectionBranch::Complex),
+        interner,
+    )?;
+
+    let mut field_assignments: Vec<AbstractFieldAssignment> = Vec::new();
+    let mut inner_field_cfg: Vec<AbstractConfig> = Vec::new();
+
+    loop {
+        if ctx.peek_tok() == Token::Dot {
+            let field_assignment = parse_field_assignment(ctx, interner)?;
+            field_assignments.push(field_assignment);
+        } else if ctx.peek_kind() == TokenKind::Id {
+            let abs_cfg = parse_complex_sect(ctx, interner)?;
+            inner_field_cfg.push(abs_cfg);
+        } else {
+            ctx.expect_verbose(
+                TokenKind::CCurlyBracket,
+                "Expected a '}' or more declarations, found ",
+                "",
+                Branch::Section(SectionBranch::Complex),
+                interner,
+            )?;
+
+            break;
+        }
+    }
+
+    Ok(AbstractConfig::new(
+        name_id,
+        name_span,
+        field_assignments,
+        inner_field_cfg,
+    ))
+}
+
+// The field assignments could be ANYWHERE as long as it's in a valid scope with the parent it's
+// defining, so it's probably best to just keep this one by one in control flow to avoid allocating
+// and appending vecs just because a field assignment was after a nested config.
+fn parse_field_assignment(
+    ctx: &mut Context,
+    interner: &Intern,
+) -> Result<AbstractFieldAssignment, Token> {
+    ctx.expect_verbose(
+        TokenKind::Dot,
+        "Expected a '.' to select available configuration, found ",
+        "",
+        Branch::Section(SectionBranch::Complex),
+        interner,
+    )?;
+
+    let name_span = ctx.peek_span();
+
+    let plain_id = ctx.expect_id_verbose(
+        TokenKind::Id,
+        "Expected an identifier for configuration field access, found ",
+        "",
+        Branch::Section(SectionBranch::Complex),
+        interner,
+    )?;
+
+    let name_id = InternedId::new(plain_id);
+
+    ctx.expect_verbose(
+        TokenKind::Assign,
+        "Expected '=' to assign value to configuration, found ",
+        "",
+        Branch::Section(SectionBranch::Complex),
+        interner,
+    )?;
+
+    // Should maybe have a clearer error message if no '[' is seen
+
+    let array_expr = parse_array(ctx, interner)?;
+
+    Ok(AbstractFieldAssignment::new(name_id, name_span, array_expr))
+}
+
+//NOTE: May add parse_array to parse_expr eventually
+fn parse_array(ctx: &mut Context, interner: &Intern) -> Result<ArrayExpr, Token> {
+    ctx.expect_verbose(
+        TokenKind::OBracket,
+        "Expected a '[' to declare array, found ",
+        "",
+        Branch::Expr,
+        interner,
+    )?;
+
+    let mut elements: Vec<SpannedExpr> = Vec::new();
+
+    while ctx.peek_tok() != Token::CBracket {
+        let sp_expr = parse_expr(ctx, 0, interner)?;
+        elements.push(sp_expr);
+
+        if ctx.peek_tok() == Token::CBracket {
+            break;
+        }
+
+        ctx.expect_verbose(
+            TokenKind::Comma,
+            "Expected a comma to separate elements, found ",
+            "",
+            Branch::Expr,
+            interner,
+        )?;
+    }
+
+    ctx.expect_verbose(
+        TokenKind::CBracket,
+        "Expected a ']' to close array, found ",
+        "",
+        Branch::Expr,
+        interner,
+    )?;
+
+    let array_expr = ArrayExpr::new(elements);
+
+    Ok(array_expr)
 }
 
 //TODO:
@@ -776,47 +911,13 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
 
             Ok(SpannedExpr::new(default, span))
         }
-        Token::Id(id) if ctx.peek_ahead(1).tok == Token::StaticAccess => {
-            let mut access_path: Vec<SpannedPathSegment> = Vec::new();
+        Token::Id(_) if ctx.peek_ahead(1).tok == Token::StaticAccess => {
+            let start = ctx.peek_span().start;
+            let access_path = parse_static_path(ctx, interner)?;
+            let end = ctx.peek_behind(1).span.end;
 
-            // Catching the final pathed namespace which is not accounted for in the loop
-            let span = ctx.peek_span();
-            // Infailable since the match statement of course already checks this
-            let plain_id = ctx.expect_id_verbose(
-                TokenKind::Id,
-                "Expected an identifier after `::`, found ",
-                "",
-                Branch::Expr,
-                interner,
-            )?;
-
-            let name_id = InternedId::new(plain_id);
-            access_path.push(SpannedPathSegment::new(PathSegment::Ident(name_id), span));
-
-            while ctx.peek_tok() == Token::StaticAccess {
-                // Skipping "::"
-                ctx.advance_tok();
-
-                let span = ctx.peek_span();
-                let plain_id = ctx.expect_id_verbose(
-                    TokenKind::Id,
-                    "Expected an identifier after `::`, found ",
-                    "",
-                    Branch::Expr,
-                    interner,
-                )?;
-
-                let name_id = InternedId::new(plain_id);
-                access_path.push(SpannedPathSegment::new(PathSegment::Ident(name_id), span));
-            }
-
-            let start = access_path[0].span.start;
-            let end = access_path[access_path.len() - 1].span.end;
-
-            let static_access_expr = Expr::StaticAccess(access_path);
             let static_span = Span::new(start, end);
-
-            let sp_expr = SpannedExpr::new(static_access_expr, static_span);
+            let sp_expr = SpannedExpr::new(Expr::StaticAccess(access_path), static_span);
 
             Ok(sp_expr)
         }
@@ -967,7 +1068,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
 
                 let mut ty_path =
                     vec![SpannedPathSegment::new(PathSegment::Generic(generic), span)];
-                let mut rest = parse_type_path(ctx, interner)?;
+                let mut rest = parse_static_path(ctx, interner)?;
 
                 ty_path.append(&mut rest);
 
@@ -983,7 +1084,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
         }
         Token::Id(id) if ctx.peek_ahead(1).tok.kind() == TokenKind::StaticAccess => {
             let start = ctx.peek_span().start;
-            let ty_path = parse_type_path(ctx, interner)?;
+            let ty_path = parse_static_path(ctx, interner)?;
             let end = ctx.peek_behind(1).span.end;
 
             let span = Span::new(start, end);
@@ -1027,10 +1128,14 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
     }
 }
 
-/// Assumes this function was called after a token of identifier type was found with a dot after
-/// it.
-fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedPathSegment>, Token> {
-    let mut ty_path: Vec<SpannedPathSegment> = Vec::new();
+/// Parses a `::` separated static access path into a list of `SpannedPathSegment`s.
+/// Handles both plain identifiers and generic segments, and is shared between expression
+/// and type-expression contexts.
+fn parse_static_path(
+    ctx: &mut Context,
+    interner: &Intern,
+) -> Result<Vec<SpannedPathSegment>, Token> {
+    let mut static_path: Vec<SpannedPathSegment> = Vec::new();
 
     loop {
         let is_generic = ctx.peek_ahead(1).tok == Token::OAngleBracket;
@@ -1054,7 +1159,7 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedPa
             let span = Span::new(start, end);
             let segment = SpannedPathSegment::new(PathSegment::Generic(generic), span);
 
-            ty_path.push(segment);
+            static_path.push(segment);
 
             if ctx.peek_tok() == Token::StaticAccess {
                 ctx.advance_tok();
@@ -1076,7 +1181,7 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedPa
 
             let segment =
                 SpannedPathSegment::new(PathSegment::Ident(InternedId::new(name_id)), span);
-            ty_path.push(segment);
+            static_path.push(segment);
         }
 
         // If there's no dot then that means that the current token must be an identifier that is
@@ -1093,12 +1198,12 @@ fn parse_type_path(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedPa
 
             let segment =
                 SpannedPathSegment::new(PathSegment::Ident(InternedId::new(final_id)), span);
-            ty_path.push(segment);
+            static_path.push(segment);
             break;
         }
     }
 
-    Ok(ty_path)
+    Ok(static_path)
 }
 
 /// Parses assuming that within "List<i32>" the "List" part was skipped, which would leave <i32>

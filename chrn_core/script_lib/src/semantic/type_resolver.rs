@@ -80,6 +80,7 @@ impl TypeResolver<'_> {
                 Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum, ast_id),
                 Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias, ast_id),
                 Item::Var(abs_var) => _ = self.resolve_var(abs_var, ast_id),
+                Item::Config(abs_cfg) => todo!(),
             }
         }
 
@@ -1423,6 +1424,8 @@ impl TypeResolver<'_> {
                         }
                         SymbolKind::Module(_) => {
                             let err_mod_name = self.interner.search(name_id.id as usize);
+                            // TODO: Should send help, which should be done after re-doing how
+                            // errors are rendered
                             let msg = format!(
                                 "The symbol `{err_mod_name}` is a module, which cannot be assigned as an expression value"
                             );
@@ -1851,107 +1854,6 @@ impl TypeResolver<'_> {
                     scope_type,
                     seen,
                 )? {
-                    PossibleMember::Module(extern_mod_id) => {
-                        let extern_mod = &self.compiler.mods[extern_mod_id.id];
-                        //NOTE: Maybe privacy should be checked from this resolver?
-                        if let Some(extern_sym_id) = scopes::get_sym_id(
-                            self.compiler,
-                            todo!(),
-                            abs_member_access.field,
-                            scope_type,
-                            LookupPattern::NamespaceOnly,
-                        ) {
-                            seen.push(extern_sym_id);
-
-                            // Dirtiness to prevent O(n) check of each and every expression in
-                            // whatever given symbol was used?
-                            self.check_cycle(seen, parent_sym_id, extern_sym_id)?;
-
-                            if extern_sym_id == parent_sym_id {
-                                let name = self.interner.search(
-                                    self.compiler.symbols[extern_sym_id.id as usize].name_id.id
-                                        as usize,
-                                );
-                                let msg = format!("Cannot declare symbol `{name}` as itself");
-
-                                let parent_ast_id =
-                                    self.compiler.symbols[parent_sym_id.id as usize].ast_id;
-                                let mut spans = Vec::new();
-                                spans.push(spanned_expr.span);
-
-                                if let Some(ast_id) = parent_ast_id {
-                                    let ast_span = self.ast_info.get_sym_span(ast_id);
-                                    spans.push(ast_span);
-                                };
-
-                                return Err(SemanticError::General(msg, spans));
-                            }
-
-                            let symbol = &self.compiler.symbols[extern_sym_id.id as usize];
-
-                            // May move this privacy check elsewhere
-                            if symbol.owner != self.current_mod && symbol.is_priv {
-                                let name = self.interner.search(symbol.name_id.id as usize);
-                                let msg = format!("The symbol `{name}` is private");
-
-                                let mod_origin = &self.compiler.mods[self.current_mod.id];
-                                self.reporter.report_spanned(
-                                    &msg,
-                                    None,
-                                    &[spanned_expr.span],
-                                    &mod_origin
-                                        .src_metadata
-                                        .as_ref()
-                                        .expect("core should not be resolved"),
-                                );
-                            }
-
-                            // Import checking
-
-                            let current_module = &self.compiler.mods[self.current_mod.id];
-                            if !current_module.contains_import(extern_mod) {
-                                let extern_name =
-                                    self.interner.search(extern_mod.name_id.id as usize);
-                                let current_name =
-                                    self.interner.search(current_module.name_id.id as usize);
-                                let msg = format!(
-                                    "The module `{extern_name}` exists but was not imported by `{current_name}`"
-                                );
-
-                                return Err(SemanticError::General(msg, vec![spanned_expr.span]));
-                            };
-
-                            // Turning the field into an expression so that it can be resolved as
-                            // normal
-                            // This SEEMS ok?
-                            // WARN: No
-                            let inline_expr = Expr::Var(abs_member_access.field);
-                            let sp_expr = SpannedExpr::new(inline_expr, spanned_expr.span);
-
-                            self.register_expr(
-                                parent_sym_id,
-                                &sp_expr,
-                                local_scope_id,
-                                todo!(),
-                                scope_type,
-                                seen,
-                            )
-                        } else {
-                            // TODO: Should also show what scopes were searched or just in some
-                            // form at all state why a symbol that exists wasn't seen
-                            // Find similar symbols
-                            let extern_mod = &self.compiler.mods[extern_mod_id.id];
-
-                            // Misleading error message. Very misleading.
-                            let msg = format!(
-                                "Could not find the symbol `{}` inside module `{}` within `{scope_type}` searchable scopes",
-                                self.interner.search(abs_member_access.field.id as usize),
-                                self.interner.search(extern_mod.name_id.id as usize)
-                            );
-
-                            return Err(SemanticError::General(msg, vec![spanned_expr.span]));
-                        }
-                    }
                     // Maybe this shouldn't be allowed here since parsing types is different from
                     // parinsg expressions within this resolver, meaning this should be an error
                     //
@@ -1967,8 +1869,6 @@ impl TypeResolver<'_> {
                     PossibleMember::Nothing => todo!("Unresolved"),
                 }
             }
-            // Should probably be delegated to a function so that it asks for spanned interned ids
-            // in general
             Expr::StaticAccess(spanned_segments) => {
                 let last_scope = self.resolve_static_access(
                     spanned_segments,
@@ -2003,6 +1903,7 @@ impl TypeResolver<'_> {
                     seen,
                 )
             }
+            Expr::Array(exprs) => todo!("Array expr not done yet"),
         }
     }
 
@@ -2036,8 +1937,19 @@ impl TypeResolver<'_> {
                             Some(new_scope) => current_scope = new_scope,
                             // meaning the search is DONE
                             None => {
+                                // If not at end AND there is no namespace associated with the
+                                // current symbol
                                 if i + 1 < spanned_path_segs.len() {
-                                    panic!("Woah");
+                                    let current_namespace =
+                                        self.interner.search(interned_id.id as usize);
+
+                                    let msg =
+                                        format!("No namespace found in `{current_namespace}`");
+
+                                    return Err(SemanticError::General(
+                                        msg,
+                                        vec![sp_path_seg.span],
+                                    ));
                                 }
                             }
                         }
@@ -2062,7 +1974,7 @@ impl TypeResolver<'_> {
                                     // Represents "module::Generic<T>::stuff" where the middle
                                     // generic has the ability to access members.
                                     // Which is not possible right now.
-                                    unimplemented!("Generics may never exist in this form.");
+                                    unreachable!("Generics may never exist in this form.");
                                 }
                             };
 
@@ -2138,11 +2050,6 @@ impl TypeResolver<'_> {
         }
 
         if let Expr::Var(name_id) = member.expr {
-            if let Some(mod_id) = self.compiler.mod_map.get(&name_id) {
-                return Ok(PossibleMember::Module(*mod_id));
-            }
-            panic!();
-
             if let Some(sym_id) = scopes::get_sym_id(
                 self.compiler,
                 todo!(),

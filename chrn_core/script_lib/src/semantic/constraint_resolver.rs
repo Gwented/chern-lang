@@ -100,6 +100,7 @@ impl<'a> ConstraintResolver<'a> {
                     // }
                     // todo!("Todol");
                 }
+                Item::Config(abs_cfg) => todo!(),
             }
         }
 
