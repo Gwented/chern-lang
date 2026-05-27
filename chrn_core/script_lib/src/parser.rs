@@ -247,8 +247,8 @@ pub fn parse(
                             break;
                         }
 
-                        if let Ok(abs_cfg) = parse_complex_sect(&mut ctx, interner) {
-                            ast_info.push_item(SectionKind::Nest, Item::Config(abs_cfg));
+                        if let Ok(abs_cfg) = parse_config_expr(&mut ctx, interner) {
+                            ast_info.push_item(SectionKind::Complex, Item::Config(abs_cfg));
                         }
                     }
                 }
@@ -261,6 +261,8 @@ pub fn parse(
                             interner,
                         );
                     }
+
+                    todo!("Override not done yet");
 
                     ctx.advance_tok();
 
@@ -625,7 +627,7 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
 //TODO: Better complex branching tracking so that help messages can be made
 //
 //No other branches exist right now so it just parses expecting uh, stuff.
-fn parse_complex_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractConfig, Token> {
+fn parse_config_expr(ctx: &mut Context, interner: &Intern) -> Result<AbstractConfig, Token> {
     let name_span = ctx.peek_span();
 
     let plain_id = ctx.expect_id_verbose(
@@ -650,13 +652,16 @@ fn parse_complex_sect(ctx: &mut Context, interner: &Intern) -> Result<AbstractCo
     let mut inner_field_cfg: Vec<AbstractConfig> = Vec::new();
 
     loop {
+        // for ".cases = [snake_case]"
         if ctx.peek_tok() == Token::Dot {
             let field_assignment = parse_field_assignment(ctx, interner)?;
             field_assignments.push(field_assignment);
+        // for "inner {/*assignments*/}"
         } else if ctx.peek_kind() == TokenKind::Id {
-            let abs_cfg = parse_complex_sect(ctx, interner)?;
+            let abs_cfg = parse_config_expr(ctx, interner)?;
             inner_field_cfg.push(abs_cfg);
         } else {
+            // If no consumable token for this branch is seen
             ctx.expect_verbose(
                 TokenKind::CCurlyBracket,
                 "Expected a '}' or more declarations, found ",
@@ -712,13 +717,18 @@ fn parse_field_assignment(
         interner,
     )?;
 
-    // Should maybe have a clearer error message if no '[' is seen
-
-    let array_expr = parse_array(ctx, interner)?;
+    let array_expr = if ctx.peek_tok() == Token::OBracket {
+        parse_array(ctx, interner)?
+    } else {
+        // Assumes it's a single value assignment if no OBracket is present
+        let only_element = parse_expr(ctx, 0, interner)?;
+        ArrayExpr::new(vec![only_element])
+    };
 
     Ok(AbstractFieldAssignment::new(name_id, name_span, array_expr))
 }
 
+// Should this just return elements similar to how call_args does?
 //NOTE: May add parse_array to parse_expr eventually
 fn parse_array(ctx: &mut Context, interner: &Intern) -> Result<ArrayExpr, Token> {
     ctx.expect_verbose(
@@ -1079,6 +1089,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
             } else {
                 let ty_expr = TypeExpr::Generic(generic);
                 let spanned_ty_expr = SpannedTypeExpr::new(ty_expr, span);
+
                 Ok(spanned_ty_expr)
             }
         }

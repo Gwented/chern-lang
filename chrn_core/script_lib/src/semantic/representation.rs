@@ -205,6 +205,7 @@ pub enum ExprHir {
         op: BinaryOp,
         rhs: ExprId,
     },
+    Array(Vec<ExprId>),
 }
 
 #[derive(Debug)]

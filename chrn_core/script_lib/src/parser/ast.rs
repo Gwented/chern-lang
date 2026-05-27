@@ -343,7 +343,7 @@ impl CallExpr {
 
 #[derive(Debug)]
 pub struct ArrayExpr {
-    elements: Vec<SpannedExpr>,
+    pub elements: Vec<SpannedExpr>,
 }
 
 impl ArrayExpr {

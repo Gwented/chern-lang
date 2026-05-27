@@ -9,9 +9,9 @@ use chrn_utils::types::builtins::{BuiltinType, BuiltinTypeKind};
 use chrn_utils::values::{Value, ValueInfo};
 use common::chrn_settings::ChrnSettings;
 use common::fmter::{Formattable, Formatted};
-use common::{reporter::diagnostic::Diagnostic, span::Span};
+use common::reporter::diagnostic::Diagnostic;
 
-use crate::parser::ast::{AbstractVar, BinaryOp, Expr, SpannedExpr, SpannedPathSegment};
+use crate::parser::ast::{AbstractVar, Expr, SpannedExpr, SpannedPathSegment};
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::error::{MathError, SemanticError};
 use crate::semantic::representation::{
@@ -21,7 +21,7 @@ use crate::semantic::scopes::{AssociatedScopeKind, LookupPattern, ScopeType};
 use crate::semantic::type_resolver::type_context::{
     ParentInfo, ParentState, PendingExpr, PendingSymbol, TypeContext,
 };
-use crate::semantic::{evaluator, scopes};
+use crate::semantic::{evaluator, inference, scopes};
 
 use crate::{
     parser::ast::{
@@ -232,44 +232,44 @@ impl TypeResolver<'_> {
         // };
 
         // if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
-        //     dbg!(&self.ty_ctx);
-        //     for symbol in &self.compiler.symbols {
-        //         if self.interner.search(symbol.name_id.id as usize) == "a" {
-        //             let name = self.interner.search(symbol.name_id.id as usize);
-        //             dbg!(name);
-        //             match symbol.kind {
-        //                 SymbolKind::Val(value_id) => {
-        //                     let val = &self.compiler.values[value_id.id as usize];
-        //                     let expr = &self.compiler.exprs[val.expr_id.id as usize];
-        //                     // dbg!(expr.val_id, expr);
-        //                     dbg!(expr, val);
-        //                 }
-        //                 SymbolKind::Type(type_id) => {
-        //                     let ty_info = &self.compiler.types[type_id.id as usize];
-        //                     match &ty_info.ty {
-        //                         Type::BuiltinType(builtin_type) => {
-        //                             dbg!(builtin_type);
-        //                         }
-        //                         Type::Struct(struct_def) => todo!(),
-        //                         Type::Enum(enum_def) => todo!(),
-        //                         Type::Func(func_def) => todo!(),
-        //                         Type::Alias(alias_def) => todo!(),
-        //                         Type::TypeDef(type_def) => {
-        //                             let ty = &self.compiler.types[type_def.type_id.id as usize];
-        //                             dbg!(ty);
-        //                         }
-        //                         Type::Unknown => todo!(),
-        //                         _ => todo!(),
-        //                     }
-        //                 }
-        //                 _ => todo!(),
+        // dbg!(&self.ty_ctx);
+        // for symbol in &self.compiler.symbols {
+        //     if self.interner.search(symbol.name_id.id as usize) == "d" {
+        //         let name = self.interner.search(symbol.name_id.id as usize);
+        //         dbg!(name);
+        //         match symbol.kind {
+        //             SymbolKind::Val(value_id) => {
+        //                 let val = &self.compiler.values[value_id.id as usize];
+        //                 let expr = &self.compiler.exprs[val.expr_id.id as usize];
+        //                 // dbg!(expr.val_id, expr);
+        //                 dbg!(expr, val);
         //             }
-        //             panic!("Done");
+        //             SymbolKind::Type(type_id) => {
+        //                 let ty_info = &self.compiler.types[type_id.id as usize];
+        //                 match &ty_info.ty {
+        //                     Type::BuiltinType(builtin_type) => {
+        //                         dbg!(builtin_type);
+        //                     }
+        //                     Type::Struct(struct_def) => todo!(),
+        //                     Type::Enum(enum_def) => todo!(),
+        //                     Type::Func(func_def) => todo!(),
+        //                     Type::Alias(alias_def) => todo!(),
+        //                     Type::TypeDef(type_def) => {
+        //                         let ty = &self.compiler.types[type_def.type_id.id as usize];
+        //                         dbg!(ty);
+        //                     }
+        //                     Type::Unknown => todo!(),
+        //                     _ => todo!(),
+        //                 }
+        //             }
+        //             _ => todo!(),
         //         }
-        //         // dbg!(self.interner.search(symbol.name_id.id as usize));
-        //         // dbg!(symbol);
+        //         panic!("Done");
         //     }
-        //
+        // dbg!(self.interner.search(symbol.name_id.id as usize));
+        // dbg!(symbol);
+        // }
+
         //     for ty in &self.compiler.types {
         //         dbg!(ty);
         //     }
@@ -336,8 +336,6 @@ impl TypeResolver<'_> {
             let root_expr = &mut self.compiler.exprs[root_id.id as usize];
             match self.compiler.symbols[resolved_sym_id.id as usize].kind {
                 SymbolKind::Val(val_id) => {
-                    // Brain starting working now it works
-
                     if pending_sym.has_resolved_ty {
                         let val_info = &self.compiler.values[val_id.id as usize];
                         let other_type_id = val_info.type_id;
@@ -357,21 +355,6 @@ impl TypeResolver<'_> {
                         let inner_val = &mut self.compiler.values[root_expr.val_id.id as usize];
                         inner_val.const_val = const_val_opt;
                     }
-
-                    // The question is, why is a root already assigned to a type anyways?
-                    //
-                    // Are roots re-assigned everytime?
-                    //
-                    // Mutating location so that it points to the canonical type id
-                    // let pending = &self.compiler.symbols[resolved_sym_id.id as usize];
-                    // let name = self.interner.search(pending.name_id.id as usize);
-                    // dbg!(name);
-                    // dbg!(&const_val_opt);
-
-                    // Not sure if clone can be avoided here since mutating val_id so that it
-                    // points to the current expr would mutate the symbol it was gotten from,
-                    // which would mangle the resolved symbol itself even though we just want the
-                    // const value if present.
                 }
                 // NOTE: Since expressions are initialized as `ReservedTypeSlot`, if there is say,
                 // a cyclic dependency error, the error will exist and emit later, but this
@@ -430,7 +413,6 @@ impl TypeResolver<'_> {
 
                 // Also sending signal that the parent of this is resolved since it's a root.
 
-                // But WOULD this always mean const value? Right now it does.
                 let pending_expr = &mut pending_sym.pending_exprs[i];
                 let has_resolved_ty = pending_sym.has_resolved_ty;
                 let has_const_val = pending_sym.has_const_val;
@@ -454,6 +436,7 @@ impl TypeResolver<'_> {
             }
         }
 
+        // Meaning every pending_expr are impossible to be resolved further
         if queue.is_empty() {
             can_remove = true;
         }
@@ -467,10 +450,23 @@ impl TypeResolver<'_> {
     /// Method to recursively mutate tree of unresolved expression
     /// This works as root -> user -> user -> ... -> None
     // This needs to go from x -> x + 2 -> y recursively however long needed
-    fn traverse_expr(&mut self, current_expr_id: ExprId) -> Result<(bool, bool), SemanticError> {
-        let mut has_resolved_ty = false;
-        let mut has_const_val = false;
 
+    // A bit concerned that these are cloning themselves constantly to an extent
+    fn traverse_expr(&mut self, current_expr_id: ExprId) -> Result<(bool, bool), SemanticError> {
+        let expr = &self.compiler.exprs[current_expr_id.id as usize];
+        let val_info = &self.compiler.values[expr.val_id.id as usize];
+
+        //TEST:
+        // Maybe types could always be inferred better? Although that doesn't really make sense
+        // since if there is a type already inferred, if the types don't match then that's going to
+        // error anyways depending on if the operation is applied
+        let mut has_resolved_ty = !self.compiler.check_unknown(expr.type_id);
+        let mut has_const_val = val_info.const_val.is_some();
+
+        // But doesn't the queue disallow expressions that are resolved fully anyways? Wouldn't
+        // this only need a const value check? Maybe.
+
+        //TODO: Should use the booleans to prevent costly traversal operations
         match &self.compiler.exprs[current_expr_id.id as usize].expr_hir {
             ExprHir::Val(val_id) => {
                 // This is unreachable
@@ -598,8 +594,20 @@ impl TypeResolver<'_> {
 
                 //WARN: Suspicious
                 // Should this account for I$@)($$*#%)$?
-                let new_type_id =
-                    self.infer_type_from_binary_op(*lhs, *rhs, false, *op, false, &const_val_opt);
+
+                let new_type_id: TypeId = if let Some(const_val) = &const_val_opt {
+                    inference::infer_type_from_val(self.compiler, const_val)
+                } else {
+                    // The is_unknown params are a bit odd
+                    inference::infer_type_from_binary_op(
+                        lhs_expr.type_id,
+                        rhs_expr.type_id,
+                        false,
+                        *op,
+                        false,
+                    )
+                }
+                .expect("Infailable since unknown is checked before this");
 
                 //NOTE: Only the type of the expression is altered here, the rest is the inner
                 //value
@@ -620,6 +628,60 @@ impl TypeResolver<'_> {
             }
             ExprHir::Default(sym_id, expr_id) => {
                 todo!("Default not finished")
+            }
+            // Hallucinating severely here.
+            ExprHir::Array(expr_ids) => {
+                let array = &self.compiler.exprs[current_expr_id.id as usize];
+                let array_len = expr_ids.len();
+
+                let mut type_id_opt: Option<TypeId> = None;
+                let mut found_const_vals = 0;
+
+                // If unknown then try to find an element that has a type inferred
+                if self.compiler.check_unknown(array.type_id) {
+                    for expr_id in expr_ids {
+                        let expr = &self.compiler.exprs[expr_id.id as usize];
+
+                        //WARN: Need to typecheck this too later
+                        if !self.compiler.check_unknown(expr.type_id) && type_id_opt.is_none() {
+                            type_id_opt = Some(expr.type_id);
+                        }
+
+                        let val_info = &self.compiler.values[expr.val_id.id as usize];
+                        if val_info.const_val.is_some() {
+                            found_const_vals += 1;
+                        }
+                    }
+                }
+
+                if !has_const_val && found_const_vals == array_len {
+                    has_const_val = true;
+
+                    let mut values: Vec<Value> = Vec::new();
+                    for expr_id in expr_ids {
+                        let val_id = &self.compiler.exprs[expr_id.id as usize].val_id;
+                        let val = self.compiler.values[val_id.id as usize]
+                            .const_val
+                            .as_ref()
+                            .expect("Previous loop failed")
+                            .clone();
+
+                        values.push(val);
+                    }
+
+                    let array_expr = &mut self.compiler.exprs[current_expr_id.id as usize];
+                    let array_val = &mut self.compiler.values[array_expr.val_id.id as usize];
+                    array_val.const_val = Some(Value::Array(values));
+                }
+
+                // This is setting a type id everytime. May be concerning.
+                if !has_resolved_ty {
+                    if let Some(new_type_id) = type_id_opt {
+                        let array = &mut self.compiler.exprs[current_expr_id.id as usize];
+                        array.type_id = new_type_id;
+                        has_resolved_ty = true;
+                    }
+                }
             }
         }
 
@@ -1586,15 +1648,34 @@ impl TypeResolver<'_> {
                     rhs: rhs_id,
                 };
 
+                let lhs_type_id = self.compiler.exprs[lhs_id.id as usize].type_id;
+                let rhs_type_id = self.compiler.exprs[lhs_id.id as usize].type_id;
                 // Maybe apply BinaryOp shouuld account for unknowns and return unknowns
-                let type_id = self.infer_type_from_binary_op(
-                    lhs_id,
-                    rhs_id,
-                    lhs_is_unknown,
-                    *op,
-                    rhs_is_unknown,
-                    &const_val_opt,
-                );
+
+                // Tries two levels of inference before allocating an unknown type id
+                let type_id_opt: Option<TypeId> = if let Some(const_val) = &const_val_opt {
+                    inference::infer_type_from_val(self.compiler, const_val)
+                } else {
+                    // The is_unknown params are a bit odd
+                    inference::infer_type_from_binary_op(
+                        lhs_type_id,
+                        rhs_type_id,
+                        lhs_is_unknown,
+                        *op,
+                        rhs_is_unknown,
+                    )
+                };
+
+                // If a type was inferred then we will use that, otherwise unknown is allocated
+                let type_id = if let Some(inner_type_id) = type_id_opt {
+                    inner_type_id
+                } else {
+                    let type_id = TypeId::new(self.compiler.types.len() as u32);
+
+                    let ty_info = TypeInfo::new(Type::Unknown, self.current_mod);
+                    self.compiler.types.push(ty_info);
+                    type_id
+                };
 
                 // Assigning the user so that if unresolved, the expression can later go up a tree
                 // of all expressions that use it and have them be resolved alongside it where
@@ -1903,7 +1984,103 @@ impl TypeResolver<'_> {
                     seen,
                 )
             }
-            Expr::Array(exprs) => todo!("Array expr not done yet"),
+            Expr::Array(array_expr) => {
+                let mut array: Vec<ExprId> = Vec::new();
+
+                let mut found_const_vals = 0;
+                let mut type_id_opt = None;
+
+                for sp_expr in &array_expr.elements {
+                    // register as inputs?
+                    let expr_id = self.register_expr(
+                        parent_sym_id,
+                        sp_expr,
+                        local_scope_id,
+                        associated_scope,
+                        scope_type,
+                        seen,
+                    )?;
+
+                    let expr = &self.compiler.exprs[expr_id.id as usize];
+                    let val_info = &self.compiler.values[expr.val_id.id as usize];
+
+                    if val_info.const_val.is_some() {
+                        found_const_vals += 1;
+                    }
+
+                    //WARN: Need to typecheck this too later
+                    if type_id_opt.is_none() && !self.compiler.check_unknown(expr.type_id) {
+                        type_id_opt = Some(expr.type_id);
+                    }
+
+                    array.push(expr_id);
+                }
+
+                let inputs = array.clone();
+
+                let array_expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+
+                // Connecting all expressions to the array for resolution propagation purposes.
+                //
+                // Doing this loop AFTER pushing into the array because the registering of
+                // expression ids would make it so the array indexes to the first element of the
+                // array, rather than it's own position.
+                for expr_id in &array {
+                    let expr = &mut self.compiler.exprs[expr_id.id as usize];
+                    expr.user = Some(array_expr_id);
+                }
+
+                let array_type_id = if let Some(inner_type_id) = type_id_opt {
+                    inner_type_id
+                } else {
+                    let type_id = TypeId::new(self.compiler.types.len() as u32);
+                    let ty_info = TypeInfo::new(Type::Unknown, self.current_mod);
+                    self.compiler.types.push(ty_info);
+
+                    type_id
+                };
+
+                let const_val_opt = if found_const_vals == array.len() {
+                    let mut values: Vec<Value> = Vec::new();
+
+                    for expr_id in &array {
+                        let expr = &self.compiler.exprs[expr_id.id as usize];
+                        let val_info = &self.compiler.values[expr.val_id.id as usize];
+                        let val = val_info
+                            .const_val
+                            .as_ref()
+                            .expect("Const value counting failed")
+                            .clone();
+
+                        values.push(val);
+                    }
+
+                    Some(Value::Array(values))
+                } else {
+                    None
+                };
+
+                // Um?
+                let array_val_id = ValueId::new(self.compiler.values.len() as u32);
+                let val_info = ValueInfo::new(array_type_id, array_expr_id, const_val_opt);
+
+                let array_expr_hir = ExprHir::Array(array);
+
+                let resolved_expr = ResolvedExpr::new(
+                    array_type_id,
+                    array_expr_hir,
+                    array_val_id,
+                    spanned_expr.span,
+                    inputs,
+                );
+
+                self.compiler.values.push(val_info);
+                self.compiler.exprs.push(resolved_expr);
+
+                todo!("Make sure this works");
+
+                Ok(array_expr_id)
+            }
         }
     }
 
@@ -2071,75 +2248,6 @@ impl TypeResolver<'_> {
         }
 
         Err(SemanticError::UndefinedMember(member.span))
-    }
-
-    // Ok
-    // NOTE: Temp helper
-    fn infer_type_from_binary_op(
-        &mut self,
-        lhs_expr_id: ExprId,
-        rhs_expr_id: ExprId,
-        lhs_is_unknown: bool,
-        op: BinaryOp,
-        rhs_is_unknown: bool,
-        const_val_opt: &Option<Value>,
-    ) -> TypeId {
-        let lhs_expr = &self.compiler.exprs[lhs_expr_id.id as usize];
-        let rhs_expr = &self.compiler.exprs[rhs_expr_id.id as usize];
-        match &const_val_opt {
-            Some(val) => match val {
-                Value::I64(_) => TypeId::new(script_compiler::CORE_I64),
-                Value::F64(_) => TypeId::new(script_compiler::CORE_F64),
-                Value::Bool(_) => TypeId::new(script_compiler::CORE_BOOL),
-                Value::Char(_) => TypeId::new(script_compiler::CORE_CHAR),
-                Value::Func(func_sym) => {
-                    let func_def = self.compiler.get_func(*func_sym);
-                    func_def.ret_type
-                }
-                Value::InternedStr(_) => TypeId::new(script_compiler::CORE_STR),
-                // Both of these are not possible as of right now from an operation
-                // since there are no runtime values RIGHT NOW, and unknown is not a comptaible
-                // binary op so it can't acually be produced.
-                // Tuples also are not used outside of expressing type constraints.
-                //
-                // Value::RuntimeStr(_) => TypeId::new(script_compiler::CORE_STR),
-                // Value::Tuple(_) => TypeId::new(script_compiler::CORE_TUPLE),
-                // Value::Unknown => TypeId::new(script_compiler::TYPE_UNKNOWN_IDX),
-                Value::Tuple(_) | Value::RuntimeStr(_) | Value::Unknown => unreachable!(),
-            },
-            None => match op {
-                // Maybe this can still point to unknown?
-                BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mult | BinaryOp::Div | BinaryOp::Mod => {
-                    // Makes new reserved type which represents unknown
-                    if lhs_is_unknown && rhs_is_unknown {
-                        let type_id = TypeId::new(self.compiler.types.len() as u32);
-                        let ty_info = TypeInfo::new(Type::Unknown, self.current_mod);
-                        self.compiler.types.push(ty_info);
-
-                        type_id
-                    } else if rhs_is_unknown {
-                        lhs_expr.type_id
-                    } else {
-                        rhs_expr.type_id
-                    }
-                }
-                BinaryOp::Greater
-                | BinaryOp::Less
-                | BinaryOp::GreaterOrEq
-                | BinaryOp::And
-                | BinaryOp::Or
-                | BinaryOp::EqTo
-                | BinaryOp::NotEq
-                | BinaryOp::LessOrEq => TypeId::new(script_compiler::CORE_BOOL),
-                // Bitwise doesn't exist yet
-                BinaryOp::BitOr => todo!(),
-                BinaryOp::BitAnd => todo!(),
-                BinaryOp::BitNot => todo!(),
-                BinaryOp::BitRightShift => todo!(),
-                BinaryOp::BitLeftShift => todo!(),
-                BinaryOp::BitXor => todo!(),
-            },
-        }
     }
 
     // Helper
@@ -2401,108 +2509,8 @@ impl TypeResolver<'_> {
                 // maybe active_mod can be removed?
                 let last_scope =
                     self.resolve_static_access(&sp_path_segs, associated_scope, scope_type, true)?;
-                // for (i, sp_path_seg) in sp_path_segs.iter().enumerate() {
-                //     let interned_id = match &sp_path_seg.kind {
-                //         PathSegment::Ident(id) => *id,
-                //         PathSegment::Generic(generic) => todo!(),
-                //     };
-                //
-                //     todo!("Hi");
-                //     match &sp_path_seg.kind {
-                //         PathSegment::Ident(interned_id) => {
-                //             if let Some(sym_id) = scopes::get_sym_id(
-                //                 self.compiler,
-                //                 current_scope,
-                //                 *interned_id,
-                //                 scope_type,
-                //                 LookupPattern::NamespaceOnly,
-                //             ) {
-                //                 match self.compiler.symbols[sym_id.id as usize].associated_scope {
-                //                     Some(new_scope) => current_scope = new_scope,
-                //                     // meaning the search is DONE
-                //                     None => break,
-                //                 }
-                //                 // Symbol not found
-                //             } else {
-                //                 let current_member_name =
-                //                     self.interner.search(interned_id.id as usize);
-                //
-                //                 let prev_member_opt = if i > 0 {
-                //                     Some(&sp_path_segs[i - 1])
-                //                 } else {
-                //                     None
-                //                 };
-                //
-                //                 // Different error message depending on if at least the first
-                //                 // member was resolved or not
-                //                 let (msg, span) = if let Some(prev) = prev_member_opt {
-                //                     let prev_member_name = match &prev.kind {
-                //                         PathSegment::Ident(prev_name_id) => {
-                //                             self.interner.search(prev_name_id.id as usize)
-                //                         }
-                //                         PathSegment::Generic(generic) => {
-                //                             // Represents "module.Generic<T>.stuff" where the middle
-                //                             // generic has the ability to access members
-                //                             unimplemented!(
-                //                                 "Generics may never exist in this form."
-                //                             );
-                //                         }
-                //                     };
-                //
-                //                     let msg = format!(
-                //                         "Could not find the symbol `{}` in the namespace `{}`",
-                //                         current_member_name, prev_member_name
-                //                     );
-                //
-                //                     let merged_span = prev.span.merge(sp_path_seg.span);
-                //
-                //                     (msg, merged_span)
-                //                 } else {
-                //                     // Specific scope mention?
-                //                     let msg = format!(
-                //                         "The symbol `{current_member_name}` was not found in all `{scope_type}` searchable scopes"
-                //                     );
-                //
-                //                     (msg, sp_path_seg.span)
-                //                 };
-                //
-                //                 self.reporter.report_spanned(
-                //                     &msg,
-                //                     None,
-                //                     &[span],
-                //                     &module
-                //                         .src_metadata
-                //                         .as_ref()
-                //                         .expect("core should not be resolved"),
-                //                 );
-                //
-                //                 return Err(());
-                //             };
-                //         }
-                //         //TODO:
-                //         PathSegment::Generic(_) => {
-                //             // Still disallows something like, core.List<i32>.other_thing
-                //             if i + 1 != sp_path_segs.len() {
-                //                 let msg = "Generics cannot use any form of member access";
-                //                 self.reporter.report_spanned(
-                //                     msg,
-                //                     None,
-                //                     &[sp_path_seg.span],
-                //                     &module
-                //                         .src_metadata
-                //                         .as_ref()
-                //                         .expect("core should not be resolved"),
-                //                 );
-                //
-                //                 return Err(());
-                //             }
-                //
-                //             break;
-                //         } // The path cannot recursively have itself
-                //     }
-                // }
-                //
                 let last_segment = &sp_path_segs[sp_path_segs.len() - 1];
+
                 let inline_ty_expr = match &last_segment.kind {
                     PathSegment::Ident(interned_id) => {
                         SpannedTypeExpr::new(TypeExpr::Var(*interned_id), last_segment.span)

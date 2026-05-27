@@ -2,6 +2,7 @@ pub mod constraint_resolver;
 pub mod constraints;
 mod error;
 mod evaluator;
+mod inference;
 pub mod name_resolver;
 pub mod representation;
 pub mod scopes;

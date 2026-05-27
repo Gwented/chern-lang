@@ -28,10 +28,11 @@ let x = 5*/
 // alias default(x: i32.MAX.SUPER<T>) = []
 // alias frosted(used) = [IsEmpty, Contains(used)]
 
+@def
 let a = b
 let b = c
 let c = d + 3
-let d = e - 2
+let d = -e
 let e = 4
 
 // alias default(x: i8) = []
@@ -49,7 +50,8 @@ nest->
 // IsEmpty is entirely only usable for CharacterMappable, so it would just error.
 // alias default(x: Numeric, y: Ranged) = [Equals(x), StartsW(y), IsEmpty]
 
-@def
+@end
+// @def
 var->
     // Conds need shallow checks too so should err if struct or enum is used
     // again suggesting that it needs to be applied to the struct directly
@@ -68,7 +70,9 @@ nest->
         age: str
     } []
 // What if complex stored the constraints instead?
+@end
 complex->
+    // How would completion for this even work?
     Doof {
         .cases = [snake_case, mammal_case]
 
@@ -81,19 +85,28 @@ complex->
             .cases = [snake_case, camelCase, UpperCamelCase, Upper_Snake_Case]
 
             // Default value if um...wait
+            //
+            // I don't know about removing the brackets for single value cases.
+            // Maybe.
             .default_value = [5]
         }
         .mazes = [snake_case, mammal_case]
     }
 @end
 
+// Should definitely be able to re-use complex related parsing
 override->
-    in RUST {
-        change i32 = self.str
-        change u8 = self.i16
+    // Is there usage that could possibly be relevant enough to keep `in` and `change` as keywords?
+
+    // HELP LINTER
+    RUST {
+        .types {
+            .i32 = self.str,
+            .u8 = self.i16
+        }
     }
 
-    in JAVA {
+    JAVA {
         .types {
             // Since Java has internal bottlenecks in regards to 32-bit and below it would probably
             // default to int even if it's i8 can be a `byte`
@@ -105,7 +118,7 @@ override->
         }
     }
 
-    in PYTHON {
+    PYTHON {
         .types {
             // Would also be default
             change i8, u8, i16, u16, i32, u32, i64, u64, i128, u128 = python.int
