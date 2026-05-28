@@ -244,7 +244,7 @@ impl ModuleFinder<'_> {
             //     return Ok(PathBuf::from(slice));
             // }
             match str::from_utf8(slice) {
-                Ok(s) => return Ok(PathBuf::from_str(&s).expect("Infailable")),
+                Ok(s) => return Ok(PathBuf::from_str(&s).expect("Unwrap")),
                 Err(_) => {
                     todo!()
                 }
@@ -252,7 +252,7 @@ impl ModuleFinder<'_> {
         }
 
         match str::from_utf8(slice) {
-            Ok(s) => Ok(PathBuf::from_str(&s).expect("Infailable")),
+            Ok(s) => Ok(PathBuf::from_str(&s).expect("Unwrapped twice")),
             Err(_) => {
                 todo!()
             }

@@ -18,7 +18,7 @@ use crate::{
             AliasDef, EnumDef, FuncDef, FuncKind, Param, ResolvedExpr, StructDef, Symbol,
             SymbolKind, Table, Type, TypeDef, TypeInfo,
         },
-        scopes::{AssociatedScopeKind, Scope, ScopeInfo, ScopeType},
+        scopes::{AssociatedScopeKind, IntrinsicRegistry, Scope, ScopeInfo, ScopeType},
     },
 };
 
@@ -53,7 +53,7 @@ pub struct ScriptCompiler {
     /// Scope arena
     pub scopes: Vec<ScopeInfo>,
     /// `ModuleId` for core which is always pre-loaded
-    pub core_mod_id: ModuleId,
+    pub intrinsic_registry: IntrinsicRegistry,
 }
 
 //NOTE: I think these can be removed
@@ -106,7 +106,8 @@ impl ScriptCompiler {
         mods: Vec<Module>,
     ) -> ScriptCompiler {
         //TEST:
-        let core_mod_id = mods.len();
+        let core_mod_id = ModuleId::new(mods.len());
+        let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None, None);
         let mut script_compiler = ScriptCompiler {
             bind,
             mod_map,
@@ -117,9 +118,10 @@ impl ScriptCompiler {
             symbols: Vec::new(),
             scopes: Vec::new(),
             //TEST:
-            core_mod_id: ModuleId::new(core_mod_id),
+            intrinsic_registry,
         };
 
+        // Should this lazy load the section intrinsics though?
         Self::load_core(&mut script_compiler);
         Self::create_module_symbols(&mut script_compiler);
 
@@ -421,7 +423,32 @@ impl ScriptCompiler {
         }
 
         let scope_id = ScopeId::new(self.scopes.len());
-        let scope = Scope::new(scope_id, scope_type);
+        // Beep
+        let intrinsic_scope: Option<ScopeId> = match scope_type {
+            ScopeType::Complex => {
+                if let Some(scope_id) = self.intrinsic_registry.complex {
+                    Some(scope_id)
+                } else {
+                    let scope_id = self.load_complex_constants();
+                    Some(scope_id)
+                }
+            }
+            ScopeType::Override => {
+                if let Some(scope_id) = self.intrinsic_registry.overrid {
+                    Some(scope_id)
+                } else {
+                    let scope_id = self.load_override_constants();
+                    Some(scope_id)
+                }
+            }
+            ScopeType::Local
+            | ScopeType::Neutral
+            | ScopeType::Var
+            | ScopeType::Nest
+            | ScopeType::Core => None,
+        };
+
+        let scope = Scope::new(scope_id, scope_type, false, intrinsic_scope);
         let scope_info = ScopeInfo::new(scope, None, owner_id);
         self.scopes.push(scope_info);
 
@@ -433,34 +460,7 @@ impl ScriptCompiler {
         scope_id
     }
 
-    //TODO: Remove then change lsp to use lookups accordingly
-    /// Checks if the name id corresponds to a `SymbolId` within the given `ScopeType` within the
-    /// owner module. Returns `Some` `SymbolId` if a symbol was found. Returns None if
-    /// no accessible scopes contain the given `NameId`.
-    pub fn get_sym_id(
-        &self,
-        name_id: InternedId,
-        scope_type: ScopeType,
-        owner_id: ModuleId,
-    ) -> Option<SymbolId> {
-        let accessible_scopes = scope_type.accessible_scopes();
-
-        for allowed_scope_type in accessible_scopes.iter().copied() {
-            // In this scenario the scope may or may not exist since this could be used from
-            // another module
-            if let Some(scope_info) = self.find_scope(allowed_scope_type, owner_id) {
-                for (current_name_id, current_sym_id) in &scope_info.scope.table.interned_to_sym {
-                    if *current_name_id == name_id {
-                        return Some(*current_sym_id);
-                    }
-                }
-            }
-        }
-
-        None
-    }
-
-    /// Returns `Some` scope under the given kind if it exists, `None` otherwise
+    /// Returns `Some` scope under the given kind if it exists, `None` otherwise.
     //NOTE: May opt for indices similarly to the ast's way of making sections
     pub fn find_scope(&self, scope_type: ScopeType, owner_id: ModuleId) -> Option<&ScopeInfo> {
         let mod_owner = &self.mods[owner_id.id];
@@ -519,14 +519,14 @@ impl ScriptCompiler {
         // Self::load_complex_constants(compiler, &mut core_mod, &mut table);
         // Self::load_override_constants(compiler, &mut core_mod, &mut table);
 
-        // Exporting all creates symbols from core
+        // Exporting all created symbols from core
         for sym_id in table.interned_to_sym.values().copied() {
             core_mod.exports.push(sym_id);
         }
 
         // Done adding all of core
         let scope_id = ScopeId::new(compiler.scopes.len());
-        let scope = Scope::with_table(scope_id, ScopeType::Core, table);
+        let scope = Scope::with_table(scope_id, ScopeType::Core, None, true, table);
         let scope_info = ScopeInfo::new(scope, None, core_mod_id);
 
         compiler.scopes.push(scope_info);
@@ -553,7 +553,16 @@ impl ScriptCompiler {
         let ty = &self.types[type_id.id as usize].ty;
         match ty {
             //WARN: DANGEROUS
-            Type::Deferred(type_id) => return self.check_unknown(*type_id),
+            Type::Deferred(deferred_type_id) => {
+                let deferred_ty = &self.types[deferred_type_id.id as usize].ty;
+                match deferred_ty {
+                    Type::Unknown => true,
+                    Type::Deferred(_) => panic!(
+                        "Internal misusage of deferred type which would be infinitely recursive"
+                    ),
+                    _ => false,
+                }
+            }
             Type::Unknown => true,
             _ => false,
         }
@@ -571,30 +580,62 @@ impl ScriptCompiler {
     // while also allowing for a section like `complex` to show the `RUST` constant only in it's
     // own scope.
     //
-    // This would probably require pro-loading section symbols on-demand to where their
+    // This would probably require pre-loading section symbols on-demand to where their
     // associated_scope is immediately attached to all the resolver stages. So maybe a
     // ScopeType::Global is needed.
-    fn load_complex_constants(compiler: &mut ScriptCompiler, core_mod: &Module, table: &mut Table) {
-        let core_mod_id = core_mod.mod_id;
-
+    //
+    // First lets focus on how pre-loading would work
+    //
+    // Ok what about, if not found in normal scope, search intrinsic, where now scopes carry
+    // Option<ScopeId's> which allow for their intrinsics to be searched
+    /// Creates scope with the constants needed for a `complex` section to function then returns
+    /// it's `ScopeId`
+    fn load_complex_constants(&mut self) -> ScopeId {
+        // IS it from core? The semantics are getting a little lost
+        let core_mod_id = self.intrinsic_registry.core_mod_id;
         let scope_type = ScopeType::Complex;
-        let scope_id = ScopeId::new(compiler.scopes.len());
+        let complex_scope_id = ScopeId::new(self.scopes.len());
 
-        let scope = Scope::new(scope_id, scope_type);
-        // There WOULD be a java symbol though detected after "in" usage
+        let mut table = Table::new();
+
+        todo!()
+    }
+
+    /// Creates scope with the constants needed for an `override` section to function then returns
+    /// it's `ScopeId`
+    fn load_override_constants(&mut self) -> ScopeId {
+        // IS it from core? The semantics are getting a little lost
+        let core_mod_id = self.intrinsic_registry.core_mod_id;
+        let scope_type = ScopeType::Override;
+        let override_scope_id = ScopeId::new(self.scopes.len());
+
+        let mut table = Table::new();
+        self.load_override_java_symbols(&mut table, override_scope_id, core_mod_id);
+
+        let scope = Scope::with_table(override_scope_id, scope_type, None, true, table);
         let java_scope = ScopeInfo::new(scope, None, core_mod_id);
         todo!()
     }
 
-    fn load_override_constants(
-        compiler: &mut ScriptCompiler,
-        core_mod: &Module,
+    fn load_override_java_symbols(
+        &mut self,
         table: &mut Table,
+        complex_scope_id: ScopeId,
+        core_mod_id: ModuleId,
     ) {
-        let scope_type = ScopeType::Override;
-        let scope_id = ScopeId::new(compiler.scopes.len());
+        let name_id = InternedId::new(intern::INTERNED_JAVA_UPPER);
+        let sym_id = SymbolId::new(self.symbols.len() as u32);
+        let java_symbol = Symbol::new(
+            name_id,
+            sym_id,
+            None,
+            core_mod_id,
+            false,
+            None,
+            ScopeType::Complex,
+            SymbolKind::Module(todo!()),
+        );
 
-        let scope = Scope::new(scope_id, scope_type);
         todo!()
     }
 

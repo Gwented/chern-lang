@@ -3,9 +3,13 @@
 // @def invalid toky // hey
 //@end
 //@def
-let /*comment*/ x/* inline*/ = /* last*/ 3 let z =x+3
+// How should aliasses infer their own constraints?
 
-// @def
+// In this scenario, it should see that equals x is used, meaning it's numeric.
+// It sees y is startsW, filters, Numeric is all that's left since that's all they have in common.
+// IsEmpty is entirely only usable for CharacterMappable, so it would just error.
+// alias default(x: Numeric, y: Ranged) = [Equals(x), StartsW(y), IsEmpty]
+let /*comment*/ x/* inline*/ = /* last*/ 3 let z =x+3
 
 import "../../chrn_core/chrn_tests/def.chrn" as defs
 
@@ -28,30 +32,23 @@ let x = 5*/
 // alias default(x: i32.MAX.SUPER<T>) = []
 // alias frosted(used) = [IsEmpty, Contains(used)]
 
-@def
-let a = b
+/*let a = b
 let b = c
 let c = d + 3
-let d = -e
-let e = 4
+let d = e - 2
+let e = 4*/
 
 // alias default(x: i8) = []
 
 var->
-    x: core::i32
+    x: Runtime
     // Ok this should probably be a hard error
     // x: core::CharacterMappable
 nest->
     enum Perbon {}
-// How should aliasses infer their own constraints?
 
-// In this scenario, it should see that equals x is used, meaning it's numeric.
-// It sees y is startsW, filters, Numeric is all that's left since that's all they have in common.
-// IsEmpty is entirely only usable for CharacterMappable, so it would just error.
-// alias default(x: Numeric, y: Ranged) = [Equals(x), StartsW(y), IsEmpty]
-
-@end
-// @def
+// @end
+@def
 var->
     // Conds need shallow checks too so should err if struct or enum is used
     // again suggesting that it needs to be applied to the struct directly
@@ -65,15 +62,18 @@ nest->
         b: i32 []
     }
 
-    struct Thingy {
-        name: unsized
-        age: str
-    } []
+    struct Person {
+        name: str
+        age: u8
+    } [] #warn
 // What if complex stored the constraints instead?
-@end
+// @end
 complex->
-    // How would completion for this even work?
-    Doof {
+    Person {
+        .cases = []
+    }
+
+    /*Doof {
         .cases = [snake_case, mammal_case]
 
         // Should these be strings?
@@ -84,14 +84,10 @@ complex->
             // Other cases to search for if the initial casing fails
             .cases = [snake_case, camelCase, UpperCamelCase, Upper_Snake_Case]
 
-            // Default value if um...wait
-            //
-            // I don't know about removing the brackets for single value cases.
-            // Maybe.
-            .default_value = [5]
+            .default_value = 5
         }
         .mazes = [snake_case, mammal_case]
-    }
+    }*/
 @end
 
 // Should definitely be able to re-use complex related parsing

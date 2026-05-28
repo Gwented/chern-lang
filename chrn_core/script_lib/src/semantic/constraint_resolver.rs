@@ -131,9 +131,9 @@ impl<'a> ConstraintResolver<'a> {
         let val_info = self.compiler.get_var(sym_id);
         let ty = &self.compiler.types[val_info.type_id.id as usize].ty;
 
-        // Not currently syntactically possible to make runtime expressions
+        // Not sure what to do with this yet
         if let Type::Unknown = ty {
-            todo!("Unknowned");
+            return Err(());
         }
 
         Ok(())

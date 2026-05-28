@@ -67,6 +67,7 @@ pub const INTERNED_UNSIGNED_INTEGER: u32 = 59;
 pub const INTERNED_FLOAT: u32 = 60;
 pub const INTERNED_ORDERED: u32 = 61;
 pub const INTERNED_COMPARABLE: u32 = 62;
+pub const INTERNED_JAVA_UPPER: u32 = 63;
 
 // Collection,
 // CharacterMappable,
@@ -288,6 +289,10 @@ impl Intern {
             .id_map
             .insert("Comparable".to_string(), INTERNED_COMPARABLE);
         interner.stored_strs.push("Comparable".to_string());
+        interner
+            .id_map
+            .insert("JAVA".to_string(), INTERNED_JAVA_UPPER);
+        interner.stored_strs.push("JAVA".to_string());
 
         interner.pos = interner.stored_strs.len();
 

@@ -121,7 +121,6 @@ impl TypeConstraintFlags {
         let self_domain = self.get_domain();
         let other_domain = other.get_domain();
         let filtered_domains = TypeDomainFlags::new(self_domain.flags & other_domain.flags);
-        dbg!(filtered_domains);
 
         filtered_domains.flags != 0
     }

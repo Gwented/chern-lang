@@ -13,7 +13,7 @@ use crate::{
 pub struct ScopeInfo {
     pub scope: Scope,
     /// For debugging purposes so that the symbol of origin is known for where a namespace lookup
-    /// occured, beyond just the module or origin.
+    /// occured, beyond just the module or scope of origin.
     pub sym_owner: Option<SymbolId>,
     pub mod_owner: ModuleId,
 }
@@ -58,27 +58,44 @@ pub struct Scope {
     pub table: Table,
     pub scope_id: ScopeId,
     pub scope_type: ScopeType,
+    pub intrinsic_scope: Option<ScopeId>,
+    pub is_intrinsic: bool,
     pub accessible_scopes: &'static [ScopeType],
 }
 
 impl Scope {
-    pub(crate) fn new(scope_id: ScopeId, scope_type: ScopeType) -> Scope {
+    pub(crate) fn new(
+        scope_id: ScopeId,
+        scope_type: ScopeType,
+        is_intrinsic: bool,
+        intrinsic_scope: Option<ScopeId>,
+    ) -> Scope {
         let accessible_scopes = scope_type.accessible_scopes();
         Scope {
             table: Table::new(),
             scope_id,
             scope_type,
+            intrinsic_scope,
             accessible_scopes,
+            is_intrinsic,
             // pub visible_scopes: Vec<ScopeId>,
         }
     }
 
-    pub(crate) fn with_table(scope_id: ScopeId, scope_type: ScopeType, table: Table) -> Scope {
+    pub(crate) fn with_table(
+        scope_id: ScopeId,
+        scope_type: ScopeType,
+        intrinsic_scope: Option<ScopeId>,
+        is_intrinsic: bool,
+        table: Table,
+    ) -> Scope {
         let accessible_scopes = scope_type.accessible_scopes();
         Scope {
             table,
             scope_id,
             scope_type,
+            is_intrinsic,
+            intrinsic_scope,
             accessible_scopes,
         }
     }
@@ -102,42 +119,6 @@ pub fn get_sym_id_local(
 
     None
 }
-
-// /// Searches for the given name id given the language semantics of chrn access levels regarding
-// /// sections. Does not account for local scopes due to it's differences from how scopes are
-// /// normally searched.
-// pub fn get_sym_id(
-//     compiler: &ScriptCompiler,
-//     owner_id: ModuleId,
-//     target_name_id: InternedId,
-//     scope_type: ScopeType,
-//     lookup_pattern: LookupPattern,
-// ) -> Option<SymbolId> {
-//     let current_mod = &compiler.mods[owner_id.id];
-//
-//     // Avoiding vector allocations right now so it can just use a pointer offset instead based off
-//     // of hard-coded truths but will probably just, not do that.
-//     let accessible_scopes = scope_type.accessible_scopes();
-//     let accessible_scopes = match lookup_pattern {
-//         LookupPattern::NamespaceOnly if current_mod.src_metadata.is_some() => {
-//             &accessible_scopes[..accessible_scopes.len() - 1]
-//         }
-//         // If it's core then it'll only have access to core anyways so this is fine
-//         LookupPattern::NoRestrictions | LookupPattern::NamespaceOnly => accessible_scopes,
-//     };
-//
-//     for allowed_scope_type in accessible_scopes.iter().copied() {
-//         if let Some(scope_info) = compiler.find_scope(allowed_scope_type, owner_id) {
-//             for (current_name_id, current_sym_id) in &scope_info.scope.table.interned_to_sym {
-//                 if *current_name_id == target_name_id {
-//                     return Some(*current_sym_id);
-//                 }
-//             }
-//         }
-//     }
-//
-//     None
-// }
 
 //NOTE: Exists for separation reasons due to the compiler becoming bloated in many forms
 /// Get's `TypeId` associated with the `InternedId` given if possible
@@ -240,6 +221,21 @@ pub fn get_sym_id(
                     {
                         return Some(*sym_id);
                     }
+
+                    //TODO: Make sure this works as intended
+                    if let Some(intrinsic_scope_id) = scope_info.scope.intrinsic_scope {
+                        let intrinsic_scope = &compiler.scopes[intrinsic_scope_id.id].scope;
+
+                        // So if in override, but searching complex, it will not try to look at the
+                        // intrinsic scope unless it's looking at it's own scope
+                        if scope_type == *allowed_scope_type {
+                            if let Some(sym_id) =
+                                intrinsic_scope.table.interned_to_sym.get(&target_name_id)
+                            {
+                                return Some(*sym_id);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -247,6 +243,15 @@ pub fn get_sym_id(
             let scope = &compiler.scopes[scope_id.id].scope;
             if let Some(sym_id) = scope.table.interned_to_sym.get(&target_name_id) {
                 return Some(*sym_id);
+            }
+
+            //TODO: Make sure this works as intended
+            if let Some(intrinsic_scope_id) = scope.intrinsic_scope {
+                let intrinsic_scope = &compiler.scopes[intrinsic_scope_id.id].scope;
+
+                if let Some(sym_id) = intrinsic_scope.table.interned_to_sym.get(&target_name_id) {
+                    return Some(*sym_id);
+                }
             }
         }
     }
@@ -269,7 +274,7 @@ pub enum ScopeType {
 impl ScopeType {
     /// Direct representation of how the language views scope accessibility.
     /// `needs_global` purely exists for all scope accessibility reasons
-    pub fn accessible_scopes(&self) -> &'static [ScopeType] {
+    pub fn accessible_scopes(self) -> &'static [ScopeType] {
         match self {
             ScopeType::Core => &SCOPE_CORE_ACCESSIBLE,
             // Mainly for internal usage, not an actual program recognizable scope
@@ -283,7 +288,7 @@ impl ScopeType {
         }
     }
 
-    pub(crate) fn to_u8(&self) -> u8 {
+    pub(crate) fn to_u8(self) -> u8 {
         match self {
             ScopeType::Core => SCOPE_CORE,
             ScopeType::Neutral => SCOPE_NEUTRAL,
@@ -292,6 +297,17 @@ impl ScopeType {
             ScopeType::Complex => SCOPE_COMPLEX,
             ScopeType::Override => SCOPE_OVERRIDE,
             ScopeType::Local => SCOPE_LOCAL,
+        }
+    }
+
+    pub(crate) fn has_intrinsic_scope(self) -> bool {
+        match self {
+            ScopeType::Complex | ScopeType::Override => true,
+            ScopeType::Core
+            | ScopeType::Local
+            | ScopeType::Neutral
+            | ScopeType::Nest
+            | ScopeType::Var => false,
         }
     }
 }
@@ -303,8 +319,7 @@ impl ScopeType {
 /// wrong since the namespace "main" owns no such thing.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LookupPattern {
-    // The naming please
-    /// Applies no restriction to lookups. Meaning, core is auto-matically searched since it's
+    /// Applies no restriction to lookups. Meaning, core is automatically searched since it's
     /// intrinsic, any scope's accessible scopes can be searched with no restriction.
     NoRestrictions,
     // WHat
@@ -332,6 +347,28 @@ impl Display for ScopeType {
 /// Scope type specifically for if a symbol has an associated scope tied to it
 pub enum AssociatedScopeKind {
     // A bit redundant since odules already hold themselves as a scope
+    /// Meaning the scope is inside of a module's vector of `ScopeId`
     Module(ModuleId),
+    /// Meaning the scope is just attached to a symbol's namespace
     Scope(ScopeId),
+}
+
+pub struct IntrinsicRegistry {
+    pub core_mod_id: ModuleId,
+    pub complex: Option<ScopeId>,
+    pub overrid: Option<ScopeId>,
+}
+
+impl IntrinsicRegistry {
+    pub fn new(
+        core_mod_id: ModuleId,
+        complex: Option<ScopeId>,
+        overrid: Option<ScopeId>,
+    ) -> IntrinsicRegistry {
+        IntrinsicRegistry {
+            core_mod_id,
+            complex,
+            overrid,
+        }
+    }
 }

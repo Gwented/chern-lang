@@ -2428,7 +2428,8 @@ impl TypeResolver<'_> {
                             // TODO: Technically it's a structure owned by core, but it wasn't
                             // defined as core, but this can't be referenced directly anyways so it
                             // doesn't really make a difference
-                            let ty_info = TypeInfo::new(ty, self.compiler.core_mod_id);
+                            let ty_info =
+                                TypeInfo::new(ty, self.compiler.intrinsic_registry.core_mod_id);
                             self.compiler.types.push(ty_info);
 
                             return Ok(type_id);
@@ -2448,7 +2449,8 @@ impl TypeResolver<'_> {
                             let type_id = TypeId::new(self.compiler.types.len() as u32);
                             let tuple = Type::BuiltinType(BuiltinType::Tuple(elements));
 
-                            let ty_info = TypeInfo::new(tuple, self.compiler.core_mod_id);
+                            let ty_info =
+                                TypeInfo::new(tuple, self.compiler.intrinsic_registry.core_mod_id);
                             self.compiler.types.push(ty_info);
 
                             return Ok(type_id);
@@ -2481,7 +2483,8 @@ impl TypeResolver<'_> {
                             let map = Type::BuiltinType(BuiltinType::Map(key, val));
                             let map_id = self.compiler.types.len() as u32;
 
-                            let ty_info = TypeInfo::new(map, self.compiler.core_mod_id);
+                            let ty_info =
+                                TypeInfo::new(map, self.compiler.intrinsic_registry.core_mod_id);
                             self.compiler.types.push(ty_info);
 
                             return Ok(TypeId::new(map_id));

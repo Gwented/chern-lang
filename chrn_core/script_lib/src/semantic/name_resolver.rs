@@ -8,7 +8,8 @@ use common::{chrn_settings::ChrnSettings, reporter::diagnostic::Diagnostic};
 
 use crate::{
     parser::ast::{
-        AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Item,
+        AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
+        AstInfo, Item,
     },
     script_compiler::ScriptCompiler,
     semantic::{
@@ -60,7 +61,7 @@ impl NamespaceResolver<'_> {
                 Item::Enum(abs_enum) => self.register_enum(abs_enum, ast_id),
                 Item::Alias(abs_alias) => self.register_alias(abs_alias, ast_id),
                 Item::Var(abs_var) => self.register_var(abs_var, ast_id),
-                Item::Config(abs_cfg) => todo!("cfg not done yet"),
+                Item::Config(abs_cfg) => self.register_config(abs_cfg, ast_id),
             }
         }
 
@@ -75,6 +76,37 @@ impl NamespaceResolver<'_> {
         }
 
         Ok(())
+    }
+
+    fn register_config(&mut self, abs_cfg: &AbstractConfig, ast_id: AstId) {
+        let scope_id = self
+            .compiler
+            .push_scope(ScopeType::Complex, self.current_mod);
+        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+
+        let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
+
+        table.ast_to_interned.insert(ast_id, abs_cfg.name_id);
+        table.ast_to_sym.insert(ast_id, sym_id);
+        table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
+
+        let type_id = TypeId::new(self.compiler.types.len() as u32);
+
+        let sym = Symbol::new(
+            abs_cfg.name_id,
+            sym_id,
+            Some(ast_id),
+            self.current_mod,
+            true,
+            None,
+            ScopeType::Complex,
+            // IS it a type?
+            todo!(),
+        );
+
+        self.compiler.symbols.push(sym);
+
+        todo!()
     }
 
     /// Attaches ast_id to the name_id of it's ast structure.
@@ -93,7 +125,6 @@ impl NamespaceResolver<'_> {
         table.ast_to_sym.insert(ast_id, sym_id);
         table.interned_to_sym.insert(abs_typedef.name_id, sym_id);
 
-        // Promising a type will exist in the given index
         let type_id = TypeId::new(self.compiler.types.len() as u32);
 
         //WARN: Why was Alan Wake even here???
@@ -207,7 +238,7 @@ impl NamespaceResolver<'_> {
         // Making local scopes in this way because sections do not emergently allow for
         // parent hierarchies.
         let local_scope_id = ScopeId::new(self.compiler.scopes.len());
-        let local_scope = Scope::new(local_scope_id, ScopeType::Local);
+        let local_scope = Scope::new(local_scope_id, ScopeType::Local, false, None);
 
         self.compiler
             .scopes
