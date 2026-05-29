@@ -425,7 +425,7 @@ impl<'a> Context<'a> {
                     Token::Assign
                         if prev_kind == TokenKind::Id && next_kind != TokenKind::OParen =>
                     {
-                        // WHAT AM I AN LLM? AM I REWARD HACKING?
+                        // This reward hack has to go
                         let Token::Id(id) = prev_tok.tok else {
                             return None;
                         };

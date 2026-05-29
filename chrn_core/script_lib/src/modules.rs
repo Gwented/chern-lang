@@ -1,3 +1,4 @@
+// TODO: This should be split but not sure what would be best since it is fairly local and small
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -8,7 +9,7 @@ pub mod mod_finder;
 
 use chrn_utils::{
     id_types::{InternedId, ModuleId, PathId, ScopeId, SymbolId},
-    intern::Intern,
+    intern::{self, Intern},
 };
 use common::{
     chrn_settings::ChrnSettings,
@@ -24,6 +25,9 @@ use crate::{
     config_loader::ChrnConfigLoader, iyo::file_ops, modules::mod_finder::ModuleFinder,
     script_compiler::ScriptCompiler,
 };
+
+const RESERVED_INTERNED_MODULE_IDENTS: [u32; 1] = [intern::INTERNED_CORE];
+
 //TEST: Relocate reollacl rreellocrelac
 #[derive(Debug, Clone)]
 pub struct Import {
@@ -84,6 +88,7 @@ pub struct Module {
 }
 
 //TEST:
+// Kind of what registry is doing right now
 // pub struct SectionIndices {
 //     neutral: Option<usize>,
 //     var: Option<usize>,
@@ -158,7 +163,7 @@ impl ModuleMetadata {
 //TEST: Lets depending on self recursively as a module happen for now
 /// Takes in a path to a `chrn` config file, then recursively resolved all imports associated with
 /// the path given in separate modules.
-/// THIS IMPLICITLY LOADS STD
+/// THIS IMPLICITLY LOADS CORE
 pub fn extract_modules(
     // Does this get canonicalized here or earlier..
     path: &Path,
@@ -276,6 +281,25 @@ pub fn extract_modules(
     //     }
     //     println!("_______\n")
     // }
+
+    for mod_name_id in mod_map.keys() {
+        if RESERVED_INTERNED_MODULE_IDENTS.contains(&mod_name_id.id) {
+            let found_mod_id = mod_map[&mod_name_id];
+            let found_mod = &all_mods[found_mod_id.id];
+
+            let path_id = found_mod
+                .src_metadata
+                .as_ref()
+                .expect("Should not have loaded libraries of any kind yet")
+                .path_id;
+            let path = interner.search_path(path_id.id as usize);
+            let mod_name = interner.search(mod_name_id.id as usize);
+
+            let msg = format!("`{mod_name}` is a reserved module identifier");
+            let diag = Diagnostic::new(path, msg.clone(), None, None, msg, Area::ConfigLoad);
+            return Err(ConfigLoadError::General(diag));
+        }
+    }
 
     let compiler = ScriptCompiler::new(bind, mod_map, all_mods);
 

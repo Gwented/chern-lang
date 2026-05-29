@@ -115,7 +115,7 @@ impl Symbol {
     }
 }
 
-/// Maps to a `TypeId`, `ValueId`, or `Unknown`
+/// Maps to different notable symbols which index into their respectful vectors
 #[derive(Debug, Clone, Copy)]
 pub enum SymbolKind {
     /// Represents a type symbol
@@ -127,6 +127,8 @@ pub enum SymbolKind {
     ReservedTypeSlot(TypeId),
     /// Represents a module symbol
     Module(ModuleId),
+    // Maybe for "JAVA {}" or "PYTHON {}" specifics
+    // Section(),
 }
 
 #[derive(Debug)]

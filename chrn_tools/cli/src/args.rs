@@ -22,8 +22,8 @@ pub enum Commands {
     /// Formats `.chrn` file for highest readability. Changes with behavior with arguments.
     Fmt(FmtCmd),
     Gen(GenCmd),
-    #[command(name = "details", alias = "d")]
-    Details(DetailsCmd),
+    #[command(name = "query", alias = "q")]
+    Query(QueryCmd),
 }
 
 #[derive(Args)]
@@ -52,7 +52,7 @@ pub struct FmtCmd {
 }
 
 #[derive(Args)]
-pub struct DetailsCmd {
+pub struct QueryCmd {
     /// Path of `.chrn` file to display the structural details of
     pub(crate) path: PathBuf,
 }

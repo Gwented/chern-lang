@@ -208,7 +208,23 @@ impl ModuleFinder<'_> {
         //TODO:
         let file_name = match import_path.file_prefix().map(|n| n.to_str()) {
             Some(Some(n)) => n,
-            e => todo!("{e:?}"),
+            _ => {
+                let msg = format!(
+                    "Failed to extract file name for path \"{}\"",
+                    import_path.display()
+                );
+
+                let diag = Diagnostic::new(
+                    &self.path_origin,
+                    msg.clone(),
+                    None,
+                    None,
+                    msg,
+                    Area::ConfigLoad,
+                );
+
+                return Err(ConfigLoadError::General(diag));
+            }
         };
 
         let name_id = InternedId::new(interner.intern(&file_name));
@@ -244,9 +260,19 @@ impl ModuleFinder<'_> {
             //     return Ok(PathBuf::from(slice));
             // }
             match str::from_utf8(slice) {
-                Ok(s) => return Ok(PathBuf::from_str(&s).expect("Unwrap")),
+                Ok(s) => return Ok(PathBuf::from_str(&s).expect("Infailable")),
                 Err(_) => {
-                    todo!()
+                    let msg = "Invalid UTF-8 found within file".to_string();
+                    let diag = Diagnostic::new(
+                        &self.path_origin,
+                        msg.clone(),
+                        None,
+                        None,
+                        msg,
+                        Area::ConfigLoad,
+                    );
+
+                    return Err(ConfigLoadError::General(diag));
                 }
             }
         }
@@ -254,7 +280,17 @@ impl ModuleFinder<'_> {
         match str::from_utf8(slice) {
             Ok(s) => Ok(PathBuf::from_str(&s).expect("Unwrapped twice")),
             Err(_) => {
-                todo!()
+                let msg = "Invalid UTF-8 found within file".to_string();
+                let diag = Diagnostic::new(
+                    &self.path_origin,
+                    msg.clone(),
+                    None,
+                    None,
+                    msg,
+                    Area::ConfigLoad,
+                );
+
+                return Err(ConfigLoadError::General(diag));
             }
         }
     }

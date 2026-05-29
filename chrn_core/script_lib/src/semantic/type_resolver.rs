@@ -10,6 +10,7 @@ use chrn_utils::values::{Value, ValueInfo};
 use common::chrn_settings::ChrnSettings;
 use common::fmter::{Formattable, Formatted};
 use common::reporter::diagnostic::Diagnostic;
+use common::span::Span;
 
 use crate::parser::ast::{AbstractVar, Expr, SpannedExpr, SpannedPathSegment};
 use crate::script_compiler::{self, ScriptCompiler};
@@ -1357,7 +1358,7 @@ impl TypeResolver<'_> {
                     }
                 }
 
-                if let Some(found_sym_id) = scopes::get_sym_id(
+                if let Some((found_sym_id, _)) = scopes::get_sym_id(
                     self.compiler,
                     associated_scope,
                     *name_id,
@@ -2103,7 +2104,7 @@ impl TypeResolver<'_> {
         for (i, sp_path_seg) in spanned_path_segs.iter().enumerate() {
             match &sp_path_seg.kind {
                 PathSegment::Ident(interned_id) => {
-                    if let Some(sym_id) = scopes::get_sym_id(
+                    if let Some((sym_id, _)) = scopes::get_sym_id(
                         self.compiler,
                         current_scope,
                         *interned_id,
@@ -2111,7 +2112,11 @@ impl TypeResolver<'_> {
                         LookupPattern::NamespaceOnly,
                     ) {
                         match self.compiler.symbols[sym_id.id as usize].associated_scope {
-                            Some(new_scope) => current_scope = new_scope,
+                            // Modules have their own symbol id for their given namespace so they
+                            // can't be symbol checked..
+                            Some(new_scope) => {
+                                current_scope = new_scope;
+                            }
                             // meaning the search is DONE
                             None => {
                                 // If not at end AND there is no namespace associated with the
@@ -2128,6 +2133,9 @@ impl TypeResolver<'_> {
                                         vec![sp_path_seg.span],
                                     ));
                                 }
+                                // Success case where the last symbol has no scope and the end was
+                                // reached
+                                // --------------------------------
                             }
                         }
                         // Symbol not found
@@ -2176,7 +2184,7 @@ impl TypeResolver<'_> {
                 PathSegment::Generic(_) if in_ty_expr => {
                     // Still disallows something like, core.List<i32>.other_thing
                     if i + 1 != spanned_path_segs.len() {
-                        let msg = "Generics cannot use \"::\" pathing at any point".to_string();
+                        let msg = "Generics cannot use `::` pathing at any point".to_string();
                         return Err(SemanticError::General(msg, vec![sp_path_seg.span]));
                     }
 
@@ -2327,7 +2335,7 @@ impl TypeResolver<'_> {
                     scope_type,
                     lookup_pattern,
                 ) {
-                    Some(sym_id) => match self.compiler.symbols[sym_id.id as usize].kind {
+                    Some((sym_id, _)) => match self.compiler.symbols[sym_id.id as usize].kind {
                         SymbolKind::Type(type_id) => {
                             // NOTE: Will probably error later in resolution but fine for now
                             let symbol = &self.compiler.symbols[sym_id.id as usize];

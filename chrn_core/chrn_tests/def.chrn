@@ -1,7 +1,7 @@
 export let READ = 0b0
 export let WRITE = 0b1
 
-// import "../../chrn_core/chrn_tests/other.chrn"
+import "../../chrn_core/chrn_tests/other.chrn"
 
 nest->
     export struct Person {

@@ -34,7 +34,8 @@ impl From<SerialError> for CoreError {
 // More like startup error now
 #[derive(Debug)]
 pub enum ConfigLoadError {
-    Unclosed(Diagnostic),
+    // Is this separation really needed?
+    General(Diagnostic),
     Module(Diagnostic),
     IO(std::io::Error),
 }

@@ -191,13 +191,16 @@ pub fn find_scope(
 /// - target_name_id: The identifier to search for in the given scope
 /// - scope_type: The type of scope this search was started from
 /// - lookup_pattern: How much access the lookup should have
+///
+/// - On `Some`: Returns Symbol found and the `ScopeId` from the scope it was found in
 pub fn get_sym_id(
     compiler: &ScriptCompiler,
     associated_scope: AssociatedScopeKind,
     target_name_id: InternedId,
     scope_type: ScopeType,
     lookup_pattern: LookupPattern,
-) -> Option<SymbolId> {
+    // Named struct maybe
+) -> Option<(SymbolId, ScopeId)> {
     // Avoiding vector allocations right now so it can just use a pointer offset instead based off
     // of hard-coded truths but will probably just, not do that.
     //TEST:
@@ -219,7 +222,7 @@ pub fn get_sym_id(
                     if let Some(sym_id) =
                         scope_info.scope.table.interned_to_sym.get(&target_name_id)
                     {
-                        return Some(*sym_id);
+                        return Some((*sym_id, scope_info.scope.scope_id));
                     }
 
                     //TODO: Make sure this works as intended
@@ -232,7 +235,7 @@ pub fn get_sym_id(
                             if let Some(sym_id) =
                                 intrinsic_scope.table.interned_to_sym.get(&target_name_id)
                             {
-                                return Some(*sym_id);
+                                return Some((*sym_id, scope_info.scope.scope_id));
                             }
                         }
                     }
@@ -242,7 +245,7 @@ pub fn get_sym_id(
         AssociatedScopeKind::Scope(scope_id) => {
             let scope = &compiler.scopes[scope_id.id].scope;
             if let Some(sym_id) = scope.table.interned_to_sym.get(&target_name_id) {
-                return Some(*sym_id);
+                return Some((*sym_id, scope_id));
             }
 
             //TODO: Make sure this works as intended
@@ -250,7 +253,7 @@ pub fn get_sym_id(
                 let intrinsic_scope = &compiler.scopes[intrinsic_scope_id.id].scope;
 
                 if let Some(sym_id) = intrinsic_scope.table.interned_to_sym.get(&target_name_id) {
-                    return Some(*sym_id);
+                    return Some((*sym_id, intrinsic_scope_id));
                 }
             }
         }

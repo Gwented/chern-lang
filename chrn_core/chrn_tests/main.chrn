@@ -32,6 +32,9 @@ let x = 5*/
 // alias default(x: i32.MAX.SUPER<T>) = []
 // alias frosted(used) = [IsEmpty, Contains(used)]
 
+@def
+import "../../chrn_core/chrn_tests/def.chrn" as defs
+import "../../chrn_core/chrn_tests/core.chrn"
 /*let a = b
 let b = c
 let c = d + 3
@@ -40,15 +43,16 @@ let e = 4*/
 
 // alias default(x: i8) = []
 
+let x = 3
 var->
-    x: Runtime
+    x: main::def::core::str
     // Ok this should probably be a hard error
     // x: core::CharacterMappable
 nest->
     enum Perbon {}
 
-// @end
-@def
+@end
+// @def
 var->
     // Conds need shallow checks too so should err if struct or enum is used
     // again suggesting that it needs to be applied to the struct directly

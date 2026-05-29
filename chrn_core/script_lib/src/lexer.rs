@@ -28,8 +28,8 @@ pub struct Lexer<'a> {
 }
 
 impl Lexer<'_> {
-    /// Returns lexed tokens using a tuple with the tokens lexed, along with the trivia if needed
-    /// for tooling
+    /// Returns a tuple with the lexed tokens and with the trivia which contains data regarding
+    /// trailing whitespace, newlines, and others ok `Ok`.
     // WARN: The file is fully dependent on being able to lex from a certain point so the @ confirmation
     // here should MAYBE be removed
     pub fn new(src: &[u8], script_start: usize) -> Lexer<'_> {
@@ -43,6 +43,8 @@ impl Lexer<'_> {
         }
     }
 
+    // Maybe this should just return Result since it'd take extra work to know if there are illegal
+    // tokens and if it failed in any form
     pub fn tokenize(&mut self, interner: &mut Intern) -> (Vec<SpannedToken>, Vec<Trivia>) {
         let mut toks: Vec<SpannedToken> = Vec::new();
 

@@ -97,7 +97,7 @@ pub struct Intern {
     pos: usize,
 }
 
-pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_CORE + 1) as usize;
+pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_JAVA_UPPER + 1) as usize;
 
 impl Intern {
     /// Creates interner that pre-loads itself with all defined interned string literals.
@@ -313,6 +313,20 @@ impl Intern {
         self.stored_strs.push(new_str);
 
         id
+    }
+
+    /// Method for `self` to intern all of `other`'s stored strings and paths
+    pub fn append(&mut self, other: &Intern) {
+        // Is this supposed to be inclusive?
+        for i in INTERNER_PRELOAD_SIZE..=other.stored_strs.len() {
+            let current = &other.stored_strs[i];
+            self.intern(current);
+        }
+
+        for i in 0..other.stored_paths.len() {
+            let current = &other.stored_paths[i];
+            self.intern_path(current);
+        }
     }
 
     // I'm scared of you

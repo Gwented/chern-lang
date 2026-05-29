@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chrn_utils::{id_types::ModuleId, intern::Intern};
+use chrn_utils::intern::Intern;
 use common::{
     chrn_settings::ChrnSettings,
     core_error::{CoreError, ScriptError},
@@ -9,12 +9,27 @@ use common::{
 use script_lib::{
     modules::{self},
     parser::ast::AstInfo,
+    script_compiler::ScriptCompiler,
     semantic::{
         constraint_resolver::ConstraintResolver,
         name_resolver::NamespaceResolver,
         type_resolver::{TypeResolver, type_context::TypeContext},
     },
+    token::SpannedToken,
+    trivia::Trivia,
 };
+
+//ScriptContext? CompilerContext? AbstractCompilerManager?
+
+//TEST:
+// 9 MB struct
+pub struct ScriptCompilerManager {
+    interner: Intern,
+    toks: Vec<SpannedToken>,
+    trivias: Vec<Trivia>,
+    asts: Vec<Option<AstInfo>>,
+    compiler: ScriptCompiler,
+}
 
 // Maybe this shouldn't take metadata externally
 pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), CoreError> {

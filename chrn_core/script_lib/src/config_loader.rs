@@ -79,6 +79,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                 b'"' => {
                     let quote_start = self.pos;
                     // Even though this can't fail
+                    // Reward hacking
                     let quote_type = self.advance().unwrap_or(b'\0');
 
                     if quote_type == b'\'' {
@@ -123,7 +124,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                             Area::ConfigLoad,
                         );
 
-                        return Err(ConfigLoadError::Unclosed(diag));
+                        return Err(ConfigLoadError::General(diag));
                     }
 
                     if double_quotes_seen == 1 {
@@ -172,7 +173,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                             Area::ConfigLoad,
                         );
 
-                        return Err(ConfigLoadError::Unclosed(diag));
+                        return Err(ConfigLoadError::General(diag));
                     }
 
                     if single_quotes_seen == 1 {
@@ -288,7 +289,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                 Area::ConfigLoad,
             );
 
-            Err(ConfigLoadError::Unclosed(diag))
+            Err(ConfigLoadError::General(diag))
         }
     }
 
@@ -380,7 +381,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                 Area::ConfigLoad,
             );
 
-            return Err(ConfigLoadError::Unclosed(diag));
+            return Err(ConfigLoadError::General(diag));
         }
 
         Ok(())

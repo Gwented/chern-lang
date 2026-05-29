@@ -573,8 +573,6 @@ impl AbstractFuncDecl {
     }
 }
 
-// Maybe allow for ComplexDetails with ComplexDetails inside of it
-// outer { /*assignments*/ }
 #[derive(Debug)]
 pub struct AbstractConfig {
     // In regards to "var->" defined variables, I think just allowing for, "var.inner" would be the

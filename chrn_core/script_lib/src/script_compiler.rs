@@ -31,6 +31,7 @@ use crate::{
 // So in the case of: "module::NUMBER" where NUMBER is a valid static namespace, but hasn't been
 // resolved yet, it'll store the possibly, "TypeState::Unresolved" index, which is notified later
 // on.
+/// "chrn" script compiler that holds all essential data for incremental updates through resolution
 pub struct ScriptCompiler {
     /// Optional bind statement that is obtained from the main module
     // Maybe the module should keep it's bind info rather than give it to the compiler so that the
@@ -52,11 +53,12 @@ pub struct ScriptCompiler {
     pub symbols: Vec<Symbol>,
     /// Scope arena
     pub scopes: Vec<ScopeInfo>,
-    /// `ModuleId` for core which is always pre-loaded
+    // em-dash
+    /// Information regarding intrinsic data such as core's `ModuleId`
     pub intrinsic_registry: IntrinsicRegistry,
 }
 
-//NOTE: I think these can be removed
+//NOTE: I think these can be removed. Maybe.
 pub const CORE_I8: u32 = 0;
 pub const CORE_U8: u32 = 1;
 pub const CORE_I16: u32 = 2;
@@ -87,9 +89,6 @@ pub const CORE_UNKNOWN: u32 = 23;
 // pub const CORE_MAP: u32 = 25;
 // pub const CORE_TUPLE: u32 = 26;
 // Called idx but is u32...
-
-// Helper struct
-// struct ScriptStdLib {}
 
 // ----
 // NOTE: May turn this into an innate option type inside of HIR
@@ -146,6 +145,8 @@ impl ScriptCompiler {
             let current_mod_name_id = module.name_id;
             let current_mod_id = module.mod_id;
 
+            // Pushing the module symbol inside of itself. So if we're indexing module `main`, we
+            // would be pushing `main` inside of itself, once, as a known symbol.
             let sym_id = SymbolId::new(compiler.symbols.len() as u32);
             let symbol = Symbol::new(
                 current_mod_name_id,
@@ -176,6 +177,7 @@ impl ScriptCompiler {
                 let import_sym_id = SymbolId::new(compiler.symbols.len() as u32);
                 let import_mod_id = compiler.mod_map[&import.name_id];
 
+                // Pushing any imports found within the given module
                 let symbol = Symbol::new(
                     import.name_id,
                     import_sym_id,
@@ -203,6 +205,7 @@ impl ScriptCompiler {
                 if let Some(alias_name_id) = import.alias_id {
                     let alias_sym_id = SymbolId::new(compiler.symbols.len() as u32);
 
+                    // Pushing the alias associated with the import symbol if present
                     let symbol = Symbol::new(
                         alias_name_id,
                         alias_sym_id,
@@ -424,7 +427,7 @@ impl ScriptCompiler {
 
         let scope_id = ScopeId::new(self.scopes.len());
         // Beep
-        let intrinsic_scope: Option<ScopeId> = match scope_type {
+        let intrinsic_scope_opt: Option<ScopeId> = match scope_type {
             ScopeType::Complex => {
                 if let Some(scope_id) = self.intrinsic_registry.complex {
                     Some(scope_id)
@@ -448,7 +451,7 @@ impl ScriptCompiler {
             | ScopeType::Core => None,
         };
 
-        let scope = Scope::new(scope_id, scope_type, false, intrinsic_scope);
+        let scope = Scope::new(scope_id, scope_type, false, intrinsic_scope_opt);
         let scope_info = ScopeInfo::new(scope, None, owner_id);
         self.scopes.push(scope_info);
 
@@ -514,7 +517,7 @@ impl ScriptCompiler {
         let core_scope_id = ScopeId::new(compiler.scopes.len());
         let mut core_mod = Module::new(core_name_id, core_mod_id, Vec::new(), None);
 
-        Self::load_core_types(compiler, &mut core_mod, &mut table);
+        Self::load_core_types(compiler, &core_mod, &mut table);
         Self::load_core_funcs(compiler, &core_mod, &mut table);
         // Self::load_complex_constants(compiler, &mut core_mod, &mut table);
         // Self::load_override_constants(compiler, &mut core_mod, &mut table);
@@ -557,9 +560,9 @@ impl ScriptCompiler {
                 let deferred_ty = &self.types[deferred_type_id.id as usize].ty;
                 match deferred_ty {
                     Type::Unknown => true,
-                    Type::Deferred(_) => panic!(
-                        "Internal misusage of deferred type which would be infinitely recursive"
-                    ),
+                    Type::Deferred(_) => {
+                        panic!("Encountered infinitely recursive deferred type in `check_unknown`")
+                    }
                     _ => false,
                 }
             }
@@ -886,7 +889,7 @@ impl ScriptCompiler {
 
     // --- Beep
     /// Helper to load all of core's types
-    fn load_core_types(compiler: &mut ScriptCompiler, core_mod: &mut Module, table: &mut Table) {
+    fn load_core_types(compiler: &mut ScriptCompiler, core_mod: &Module, table: &mut Table) {
         let core_mod_id = core_mod.mod_id;
 
         // -- Concrete types --

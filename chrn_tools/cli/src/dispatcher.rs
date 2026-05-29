@@ -7,7 +7,7 @@ use common::{
 use interpreter_lib::interpreter;
 
 use crate::{
-    args::{CheckCmd, Cli, Commands, DetailsCmd, FmtCmd},
+    args::{CheckCmd, Cli, Commands, FmtCmd, QueryCmd},
     config::CliConfig,
 };
 
@@ -16,7 +16,7 @@ pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
         Commands::Check(check_cmd) => exec_check(&check_cmd, &cli_cfg),
         Commands::Fmt(fmt_cmd) => exec_fmt(&fmt_cmd, &cli_cfg),
         Commands::Gen(gen_cmd) => todo!(),
-        Commands::Details(details_cmd) => exec_details(&details_cmd, &cli_cfg),
+        Commands::Query(query_cmd) => exec_query(&query_cmd, &cli_cfg),
     }
 }
 
@@ -31,8 +31,16 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
         }
         Err(core_err) => match core_err {
             CoreError::Config(cfg_load_err) => match cfg_load_err {
-                ConfigLoadError::Unclosed(diag) | ConfigLoadError::Module(diag) => {
-                    eprintln!("{}", diag.fmtted_diag);
+                ConfigLoadError::General(diag) | ConfigLoadError::Module(diag) => {
+                    // A bit heuristic.. but better than internally assuming a particular
+                    // formatting is wanted. Probably.
+                    let path = if diag.span.is_none() {
+                        format!("path => \"{}\"\n", diag.path.display())
+                    } else {
+                        "".into()
+                    };
+
+                    eprintln!("{path}{}", diag.fmtted_diag);
                     return Err("Failed to parse configuration file".to_string());
                 }
                 ConfigLoadError::IO(e) => match e.kind() {
@@ -69,14 +77,15 @@ fn exec_fmt(fmt_cmd: &FmtCmd, cli_cfg: &CliConfig) -> Result<String, String> {
     };
 }
 
-fn exec_details(details_cmd: &DetailsCmd, cli_cfg: &CliConfig) -> Result<String, String> {
+// Object!
+fn exec_query(query_cmd: &QueryCmd, cli_cfg: &CliConfig) -> Result<String, String> {
     let settings = ChrnSettings::new(cli_cfg.can_color);
 
-    match interpreter::interpret_chrn_cfg(&details_cmd.path, &settings) {
+    match interpreter::interpret_chrn_cfg(&query_cmd.path, &settings) {
         Ok(c) => c,
         Err(core_err) => match core_err {
             CoreError::Config(cfg_load_err) => match cfg_load_err {
-                ConfigLoadError::Unclosed(diag) | ConfigLoadError::Module(diag) => {
+                ConfigLoadError::General(diag) | ConfigLoadError::Module(diag) => {
                     eprintln!("{}", diag.fmtted_diag);
                     return Err("Failed to parse configuration file".to_string());
                 }
