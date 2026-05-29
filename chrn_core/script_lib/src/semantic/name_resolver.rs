@@ -1,10 +1,14 @@
 use std::collections::HashMap;
 
 use chrn_utils::{
-    id_types::{AstId, InternedId, ModuleId, ScopeId, SymbolId, TypeId, ValueId},
+    chrn_settings::ChrnSettings,
+    id_types::{AstId, InternedId, ModuleId, ScopeId, SymbolId, TypeId},
     intern::Intern,
+    source_map::{
+        source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
+        source_region_data::SourceRegion,
+    },
 };
-use common::{chrn_settings::ChrnSettings, reporter::diagnostic::Diagnostic};
 
 use crate::{
     parser::ast::{
@@ -14,7 +18,7 @@ use crate::{
     script_compiler::ScriptCompiler,
     semantic::{
         representation::{
-            AliasDef, EnumDef, Param, StructDef, Symbol, SymbolKind, Type, TypeDef, TypeInfo,
+            AliasDef, EnumDef, StructDef, Symbol, SymbolKind, Type, TypeDef, TypeInfo,
         },
         scopes::{Scope, ScopeInfo},
         semantic_reporter::SemanticReporter,
@@ -25,6 +29,7 @@ use super::scopes::ScopeType;
 
 pub struct NamespaceResolver<'a> {
     ast_info: &'a AstInfo,
+    current_region: &'a SourceRegion,
     interner: &'a Intern,
     compiler: &'a mut ScriptCompiler,
     current_mod: ModuleId,
@@ -36,21 +41,23 @@ impl NamespaceResolver<'_> {
     pub fn new<'a>(
         settings: &'a ChrnSettings,
         ast_info: &'a AstInfo,
+        current_region: &'a SourceRegion,
         interner: &'a Intern,
         current_mod: ModuleId,
         compiler: &'a mut ScriptCompiler,
     ) -> NamespaceResolver<'a> {
         NamespaceResolver {
             ast_info,
+            current_region,
             interner,
             compiler,
             current_mod,
-            reporter: SemanticReporter::new(settings, interner),
+            reporter: SemanticReporter::new(settings, current_region, interner),
             //TODO: This will be different
         }
     }
 
-    pub fn resolve(&mut self) -> Result<(), Vec<Diagnostic>> {
+    pub fn resolve(&mut self) -> Result<(), Vec<SourceDiagnostic>> {
         // Registering namespaces
         for (id, item) in self.ast_info.items.iter().enumerate() {
             let ast_id = AstId::new(id as u32);
@@ -341,23 +348,27 @@ impl NamespaceResolver<'_> {
                         Item::Config(abs_cfg) => abs_cfg.name_span,
                     };
 
-                    let dup_name = self.interner.search(name_id.id as usize);
+                    let dup_name = self.interner.search(*name_id);
 
-                    let msg = format!(
+                    let core_msg = format!(
                         "Found more than one symbol with identifier \"{dup_name}\" in the section `{}`",
                         &scope.scope_type
                     );
 
-                    let module = &self.compiler.mods[self.current_mod.id];
-                    self.reporter.report_spanned(
-                        &msg,
-                        None,
-                        &[orig_span, dup_span],
-                        &module
-                            .src_metadata
-                            .as_ref()
-                            .expect("core should not be resolved"),
-                    );
+                    let src_diag = SourceDiagnostic::builder(
+                        DiagnosticLevel::Error,
+                        core_msg,
+                        self.current_region.path_id,
+                    )
+                    .add_annotation(
+                        orig_span,
+                        AnnotationKind::Secondary,
+                        format!("`{dup_name}` first seen here").into(),
+                    )
+                    .add_annotation(dup_span, AnnotationKind::Primary, None)
+                    .build();
+
+                    self.reporter.err_vec.push(src_diag);
                 }
             }
 

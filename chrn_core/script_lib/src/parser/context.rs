@@ -1,18 +1,18 @@
-use chrn_utils::{intern::Intern, keywords::Keyword};
-
-use common::{
+use chrn_utils::{
     chrn_settings::ChrnSettings,
     fmter::Formattable,
-    reporter::{
-        self,
-        diagnostic::{Area, Diagnostic},
+    id_types::InternedId,
+    intern::Intern,
+    keywords::Keyword,
+    source_map::{
+        source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
+        source_region_data::SourceRegion,
+        source_span::SourceSpan,
     },
-    span::Span,
 };
 
 use crate::{
     algo,
-    modules::ModuleMetadata,
     parser::{NeutralBranch, SectionBranch, branch::Branch},
     token::{self, SpannedToken, Token, TokenKind},
 };
@@ -52,21 +52,21 @@ const A_BRANCH_FUNC_SET: u64 = A_BASE_EXIT_SET | token::C_BRACKET;
 #[derive(Debug)]
 pub(super) struct Context<'a> {
     settings: &'a ChrnSettings,
-    metadata: &'a ModuleMetadata,
+    pub(super) region: &'a SourceRegion,
     toks: &'a [SpannedToken],
     pos: usize,
-    pub(super) err_vec: Vec<Diagnostic>,
+    pub(super) err_vec: Vec<SourceDiagnostic>,
 }
 
 impl<'a> Context<'a> {
     pub(super) fn new(
         settings: &'a ChrnSettings,
-        metadata: &'a ModuleMetadata,
+        metadata: &'a SourceRegion,
         toks: &'a [SpannedToken],
     ) -> Context<'a> {
         Context {
             settings,
-            metadata,
+            region: metadata,
             toks,
             pos: 0,
             err_vec: Vec::new(),
@@ -81,7 +81,7 @@ impl<'a> Context<'a> {
         amsg: &str,
         branch: Branch,
         interner: &Intern,
-    ) -> Result<u32, Token> {
+    ) -> Result<InternedId, Token> {
         // WARN: IF ANYTHING GOES WRONG ADD THE IF STATEMENTS BACK FOR EOF
         let found = self.advance();
 
@@ -98,39 +98,53 @@ impl<'a> Context<'a> {
 
         let help = self.try_help(expected, &found, branch, interner);
 
-        let spans = self.safely_handle_span(&found);
-
-        let ln_data =
-            reporter::form_err_diag(&self.metadata.src_bytes, &spans, self.settings.can_color);
-
-        let path = interner.search_path(self.metadata.path_id.id as usize);
-
         let core_msg = if let Some(name) = err_ident_opt {
             format!("(in {branch})\n{bmsg}{name}{amsg}")
         } else {
             format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind())
         };
 
-        let fmtted_diag = reporter::standardize_err(
-            &core_msg,
-            &ln_data,
-            help.as_ref().map(|s| s.as_str()),
-            interner.search_path(self.metadata.path_id.id as usize),
-            self.settings.can_color,
-        );
-
-        self.err_vec.push(Diagnostic::new(
-            path,
-            core_msg,
-            Some(common::span::merge_spans(&spans)),
-            help,
-            fmtted_diag,
-            Area::Script,
-        ));
+        self.push_src_diag(&found, core_msg, help);
 
         self.recover(branch);
 
         Err(found.tok)
+    }
+
+    pub(super) fn push_src_diag(
+        &mut self,
+        found: &SpannedToken,
+        core_msg: String,
+        help_opt: Option<String>,
+    ) {
+        let spans = self.safely_handle_span(&found);
+
+        let is_eof_err = spans.len() == 2;
+
+        let label = if is_eof_err {
+            "Token before <eof>".to_string().into()
+        } else {
+            None
+        };
+
+        let mut diag_builder =
+            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
+                .add_annotation(spans[0], AnnotationKind::Secondary, label);
+
+        // Meaning EOF error
+        if spans.len() == 2 {
+            diag_builder = diag_builder.add_annotation(
+                spans[1],
+                AnnotationKind::Primary,
+                "Unexpected <eof>".to_string().into(),
+            );
+        }
+
+        if let Some(inner_help) = help_opt {
+            diag_builder = diag_builder.add_help(inner_help);
+        }
+
+        self.err_vec.push(diag_builder.build());
     }
 
     /// Returns an interned name id on success and the failed token on error.
@@ -153,35 +167,13 @@ impl<'a> Context<'a> {
 
         let help = self.try_help(TokenKind::Keyword, &found, branch, interner);
 
-        let spans = self.safely_handle_span(&found);
-
-        let ln_data =
-            reporter::form_err_diag(&self.metadata.src_bytes, &spans, self.settings.can_color);
-
-        let path = interner.search_path(self.metadata.path_id.id as usize);
-
         let core_msg = if let Some(ident) = err_ident_opt {
             format!("(in {branch})\n{bmsg}{ident}{amsg}")
         } else {
             format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind())
         };
 
-        let fmtted_diag = reporter::standardize_err(
-            &core_msg,
-            &ln_data,
-            help.as_ref().map(|s| s.as_str()),
-            interner.search_path(self.metadata.path_id.id as usize),
-            self.settings.can_color,
-        );
-
-        self.err_vec.push(Diagnostic::new(
-            path,
-            core_msg,
-            Some(common::span::merge_spans(&spans)),
-            help,
-            fmtted_diag,
-            Area::Script,
-        ));
+        self.push_src_diag(&found, core_msg, help);
 
         self.recover(branch);
 
@@ -197,35 +189,11 @@ impl<'a> Context<'a> {
 
         let help = self.try_help(TokenKind::Poison, &found, branch, interner);
 
-        let spans = self.safely_handle_span(&found);
-
-        let ln_data =
-            reporter::form_err_diag(&self.metadata.src_bytes, &spans, self.settings.can_color);
-
         let core_msg = format!("(in {branch})\n{msg}");
 
-        let path = interner.search_path(self.metadata.path_id.id as usize);
-
-        let fmtted_msg = reporter::standardize_err(
-            &core_msg,
-            &ln_data,
-            help.as_ref().map(|s| s.as_str()),
-            interner.search_path(self.metadata.path_id.id as usize),
-            self.settings.can_color,
-        );
+        self.push_src_diag(&found, core_msg, help);
 
         self.recover(branch);
-
-        let diag = Diagnostic::new(
-            path,
-            core_msg,
-            Some(common::span::merge_spans(&spans)),
-            help,
-            fmtted_msg,
-            Area::Script,
-        );
-
-        self.err_vec.push(diag);
     }
 
     /// Returns the found token on success and failure.
@@ -244,14 +212,7 @@ impl<'a> Context<'a> {
         if found.tok.kind() != expected {
             let err_ident_opt = self.get_err_ident(found.tok, interner);
 
-            let spans = self.safely_handle_span(&found);
-
-            let ln_data =
-                reporter::form_err_diag(&self.metadata.src_bytes, &spans, self.settings.can_color);
-
             let help = self.try_help(expected, &found, branch, interner);
-
-            let path = interner.search_path(self.metadata.path_id.id as usize);
 
             let core_msg = if let Some(id_str) = err_ident_opt {
                 format!("(in {branch})\n{bmsg}{} {id_str}{amsg}", found.tok.kind())
@@ -259,22 +220,7 @@ impl<'a> Context<'a> {
                 format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind())
             };
 
-            let fmtted_msg = reporter::standardize_err(
-                &core_msg,
-                &ln_data,
-                help.as_ref().map(|s| s.as_str()),
-                interner.search_path(self.metadata.path_id.id as usize),
-                self.settings.can_color,
-            );
-
-            self.err_vec.push(Diagnostic::new(
-                path,
-                core_msg,
-                Some(common::span::merge_spans(&spans)),
-                help,
-                fmtted_msg,
-                Area::Script,
-            ));
+            self.push_src_diag(&found, core_msg, help);
 
             self.recover(branch);
 
@@ -299,35 +245,11 @@ impl<'a> Context<'a> {
 
         let help = self.try_help(TokenKind::Poison, &found, branch, interner);
 
-        let spans = self.safely_handle_span(found);
-
-        let ln_data =
-            reporter::form_err_diag(&self.metadata.src_bytes, &spans, self.settings.can_color);
-
         let core_msg = format!("(in {branch})\nExpected {emsg}, found {fmsg}");
 
-        let path = interner.search_path(self.metadata.path_id.id as usize);
-
-        let fmtted_diag = reporter::standardize_err(
-            &core_msg,
-            &ln_data,
-            help.as_ref().map(|s| s.as_str()),
-            interner.search_path(self.metadata.path_id.id as usize),
-            self.settings.can_color,
-        );
+        self.push_src_diag(&found, core_msg, help);
 
         self.recover(branch);
-
-        let diag = Diagnostic::new(
-            path,
-            core_msg,
-            Some(common::span::merge_spans(&spans)),
-            help,
-            fmtted_diag,
-            Area::Script,
-        );
-
-        self.err_vec.push(diag);
     }
 
     fn recover(&mut self, branch: Branch) {
@@ -396,25 +318,22 @@ impl<'a> Context<'a> {
             Branch::Neutral(neutral_branch) => match neutral_branch {
                 NeutralBranch::Let => match found.tok {
                     Token::Keyword(kw) if expected == TokenKind::Id => {
-                        let msg = format!("Keywords can be escaped with \"e#{}\"", kw.to_fmt());
-                        let help = reporter::standardize_help(&msg, self.settings.can_color);
-
+                        let help = format!("Keywords can be escaped with \"e#{}\"", kw.to_fmt());
                         Some(help)
                     }
                     _ => None,
                 },
                 NeutralBranch::Searching => match found.tok {
                     // Found stray unrecognizable identifier in neutral
-                    Token::Id(id) | Token::Illegal(id) => {
-                        let found_bytes = interner.search(id as usize).as_bytes();
+                    Token::Id(name_id) | Token::Illegal(name_id) => {
+                        let found_bytes = interner.search(name_id).as_bytes();
 
                         // Statements and sections are possible so both are tried
                         let similar = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Stmt)
                             .is_none()
                             .then_some(algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect))??;
 
-                        let msg = format!("Found similar \"{similar}\"");
-                        let help = reporter::standardize_help(&msg, self.settings.can_color);
+                        let help = format!("Found similar \"{similar}\"");
 
                         Some(help)
                     }
@@ -426,22 +345,23 @@ impl<'a> Context<'a> {
                         if prev_kind == TokenKind::Id && next_kind != TokenKind::OParen =>
                     {
                         // This reward hack has to go
-                        let Token::Id(id) = prev_tok.tok else {
-                            return None;
-                        };
+                        // let Token::Id(id) = prev_tok.tok else {
+                        //     return None;
+                        // };
+                        //
+                        // let name = interner.search(id as usize);
 
-                        let name = interner.search(id as usize);
+                        // let help_diag = reporter::help_transform(
+                        //     name,
+                        //     &format!("{name}()"),
+                        //     self.settings.can_color,
+                        // );
+                        //
+                        // // It looks weird now
+                        // let help = reporter::standardize_help(&help_diag, self.settings.can_color);
 
-                        let help_diag = reporter::help_transform(
-                            name,
-                            &format!("{name}()"),
-                            self.settings.can_color,
-                        );
-
-                        // It looks weird now
-                        let help = reporter::standardize_help(&help_diag, self.settings.can_color);
-
-                        Some(help)
+                        // Some(help)
+                        None
                     }
                     _ => None,
                 },
@@ -452,9 +372,7 @@ impl<'a> Context<'a> {
                     Token::Keyword(kw)
                         if expected == TokenKind::Id && next_kind == TokenKind::Colon =>
                     {
-                        let msg = format!("Keywords can be escaped with \"e#{}\"", kw.to_fmt());
-                        let help = reporter::standardize_help(&msg, self.settings.can_color);
-
+                        let help = format!("Keywords can be escaped with \"e#{}\"", kw.to_fmt());
                         Some(help)
                     }
                     Token::Str(id)
@@ -466,12 +384,10 @@ impl<'a> Context<'a> {
 
                         let kw = Keyword::try_from_interned_id(possible_kw_id)?;
 
-                        let msg = format!(
+                        let help = format!(
                             "If this was meant to use the statement `{}`, place this within `neutral`, which is the area before any section is used",
                             kw.to_fmt()
                         );
-
-                        let help = reporter::standardize_help(&msg, self.settings.can_color);
 
                         Some(help)
                     }
@@ -483,7 +399,7 @@ impl<'a> Context<'a> {
                         None
                         // let msg = "Is this missing '[' to define conditions?";
                         //
-                        // let span = Span::new(prev_tok.span.start, found.span.end);
+                        // let span = SourceSpan::new(prev_tok.span.start, found.span.end);
                         //
                         // let fmt_help = reporter::form_suggest_diag(
                         //     &self.metadata.src_bytes,
@@ -507,11 +423,8 @@ impl<'a> Context<'a> {
                     Token::Keyword(kw) if expected == TokenKind::Id => {
                         if let Token::Keyword(kw) = prev_tok.tok {
                             if kw == Keyword::Struct || kw == Keyword::Enum {
-                                let msg =
-                                    format!("Keywords can be escaped with \"e#{}\"", kw.to_fmt());
-
                                 let help =
-                                    reporter::standardize_help(&msg, self.settings.can_color);
+                                    format!("Keywords can be escaped with \"e#{}\"", kw.to_fmt());
 
                                 return Some(help);
                             }
@@ -527,12 +440,10 @@ impl<'a> Context<'a> {
 
                         let kw = Keyword::try_from_interned_id(possible_kw_id)?;
 
-                        let msg = format!(
+                        let help = format!(
                             "If this was meant to use the statement `{}`, place this within `neutral`, which is the area before any section was used.",
                             kw.to_fmt()
                         );
-
-                        let help = reporter::standardize_help(&msg, self.settings.can_color);
 
                         Some(help)
                     }
@@ -543,16 +454,14 @@ impl<'a> Context<'a> {
                 // SectionBranch::Complex => todo!(),
                 // SectionBranch::Override => todo!(),
                 _ => match found.tok {
-                    Token::Id(id) | Token::Illegal(id) => {
-                        let found_bytes = interner.search(id as usize).as_bytes();
+                    Token::Id(ident_id) | Token::Illegal(ident_id) => {
+                        let found_bytes = interner.search(ident_id).as_bytes();
 
                         // Maybe this should return None if it directly IS a direct match since it is
                         // just a range check
                         let similar_sect = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect)?;
 
-                        let msg = format!("Found similar section \"{similar_sect}\"");
-                        let help = reporter::standardize_help(&msg, self.settings.can_color);
-
+                        let help = format!("Found similar section \"{similar_sect}\"");
                         Some(help)
                     }
                     _ => None,
@@ -561,39 +470,28 @@ impl<'a> Context<'a> {
             // Branch::Expr => todo!(),
             Branch::Cond => match found.tok {
                 Token::Id(id) if expected == TokenKind::CBracket => {
-                    let msg = "Is there a missing comma to separate conditions?";
-                    let help = reporter::standardize_help(msg, self.settings.can_color);
-
+                    let help = "Is there a missing comma to separate conditions?".to_string();
                     Some(help)
                 }
                 Token::CBracket if prev_kind == TokenKind::Comma => {
-                    let msg = "Remove trailing ',' or add a condition";
-                    let help = reporter::standardize_help(msg, self.settings.can_color);
-
+                    let help = "Remove trailing ',' or add a condition".to_string();
                     Some(help)
                 }
                 _ => None,
             },
             Branch::Type => match found.tok {
                 Token::CAngleBracket if prev_kind == TokenKind::Comma => {
-                    let msg = "Was there a trailing ',' ?";
-                    let help = reporter::standardize_help(msg, self.settings.can_color);
-
+                    let help = "Was there a trailing ',' ?".to_string();
                     Some(help)
                 }
                 _ => None,
             },
             // Branch::FuncArgs => todo!(),
             Branch::TypeArgs => match found.tok {
-                Token::Id(id) => {
-                    let found_bytes = interner.search(id as usize).as_bytes();
-
+                Token::Id(name_id) => {
+                    let found_bytes = interner.search(name_id).as_bytes();
                     let similar_arg = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Arg)?;
-
-                    let help = reporter::standardize_help(
-                        &format!("Found similar argument \"{similar_arg}\"",),
-                        self.settings.can_color,
-                    );
+                    let help = format!("Found similar argument \"{similar_arg}\"");
 
                     Some(help)
                 }
@@ -608,13 +506,16 @@ impl<'a> Context<'a> {
         match tok {
             Token::Def => Some("`@def`".to_string()),
             Token::End => Some("`@end`".to_string()),
-            Token::Id(id) | Token::Str(id) | Token::Integer(id, _) | Token::Float(id, _) => {
-                let ident = interner.search(id as usize);
+            Token::Id(name_id)
+            | Token::Str(name_id)
+            | Token::Integer(name_id, _)
+            | Token::Float(name_id, _) => {
+                let ident = interner.search(name_id);
                 Some(format!("\"{ident}\""))
             }
             Token::Keyword(kw) => Some(format!("`{}`", kw.to_fmt().to_string())),
-            Token::Illegal(id) => {
-                let illegal_msg = interner.search(id as usize);
+            Token::Illegal(name_id) => {
+                let illegal_msg = interner.search(name_id);
                 let new_msg = format!("invalid token \"{illegal_msg}\"");
                 Some(new_msg)
             }
@@ -625,7 +526,7 @@ impl<'a> Context<'a> {
 
     /// Intended to handle the case where EOF is reached due to errors likely wanting to show the
     /// last token TO EOF, rather than just EOF
-    fn safely_handle_span(&self, found: &SpannedToken) -> Vec<Span> {
+    fn safely_handle_span(&self, found: &SpannedToken) -> Vec<SourceSpan> {
         if found.tok.kind().is_terminator() {
             // Minus 2 since we advanced at the beginning
             let start_span = self.toks.get(self.pos - 2).unwrap_or(found).span.clone();
@@ -652,11 +553,8 @@ impl<'a> Context<'a> {
         self.toks
             .get(self.pos + dest)
             .map(|st| st.clone())
-            .unwrap_or(SpannedToken {
-                tok: Token::EOF,
-                span: Span::new(self.pos, self.pos),
-                leading_trivia_indices: Span::new(self.pos, self.pos),
-            })
+            // But what if the final token isn't EOF..
+            .unwrap_or(self.toks[self.toks.len() - 1].clone())
     }
 
     //FIX: I don't like these defaults
@@ -664,11 +562,7 @@ impl<'a> Context<'a> {
         self.toks
             .get(self.pos - dest)
             .map(|st| st.clone())
-            .unwrap_or(SpannedToken {
-                tok: Token::EOF,
-                span: Span::new(self.pos, self.pos),
-                leading_trivia_indices: Span::new(self.pos, self.pos),
-            })
+            .unwrap_or(self.toks[self.toks.len() - 1].clone())
     }
 
     pub(super) fn advance_tok(&mut self) -> Token {
@@ -681,12 +575,12 @@ impl<'a> Context<'a> {
         t
     }
 
-    pub(super) fn peek_span(&self) -> Span {
+    pub(super) fn peek_span(&self) -> SourceSpan {
         let t = self.toks[self.pos].span.clone();
         t
     }
 
-    pub(super) fn advance_span(&mut self) -> Span {
+    pub(super) fn advance_span(&mut self) -> SourceSpan {
         if self.pos >= self.toks.len() {
             return self.toks[self.toks.len() - 1].span;
         }

@@ -1,10 +1,10 @@
 use std::path::Path;
 
-use chrn_utils::intern::Intern;
-use common::{
+use chrn_utils::{
     chrn_settings::ChrnSettings,
     core_error::{CoreError, ScriptError},
-    reporter::diagnostic::Reporter,
+    intern::Intern,
+    source_map::source_diagnostic::Reporter,
 };
 use script_lib::{
     modules::{self},
@@ -22,7 +22,9 @@ use script_lib::{
 //ScriptContext? CompilerContext? AbstractCompilerManager?
 
 //TEST:
-// 9 MB struct
+// 15 MB struct
+
+// Should check imports if more is needed to cache
 pub struct ScriptCompilerManager {
     interner: Intern,
     toks: Vec<SpannedToken>,
@@ -34,11 +36,12 @@ pub struct ScriptCompilerManager {
 // Maybe this shouldn't take metadata externally
 pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), CoreError> {
     let mut interner = Intern::init();
-    // let mut span_arena: Vec<Span> = Vec::new();
+    // let mut span_arena: Vec<SourceSpan> = Vec::new();
 
     // Doing this first since if modules were identified during the parsing stage any
     // syntax error within another module would not be reportable since the parser failed.
-    let mut script_compiler = modules::extract_modules(path, settings, &mut interner)?;
+    let (mut script_compiler, src_region_arena) =
+        modules::extract_modules(path, settings, &mut interner)?;
     let mut reporter = Reporter::new();
 
     //TODO: May have to just make this into an Option<AstInfo>
@@ -50,12 +53,16 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     for mod_idx in 0..script_compiler.mods.len() {
         let module = &script_compiler.mods[mod_idx];
         let metadata = match &module.src_metadata {
-            Some(m) => m,
+            Some(region_id) => &src_region_arena.regions[region_id.id as usize],
             None => continue,
         };
 
-        let (toks, _) = script_lib::lexer::Lexer::new(&metadata.src_bytes, metadata.script_start)
-            .tokenize(&mut interner);
+        let (toks, _) = script_lib::lexer::Lexer::new(
+            metadata.region_id,
+            &metadata.src_bytes,
+            metadata.script_start,
+        )
+        .tokenize(&mut interner);
 
         let ast_info = match script_lib::parser::parse(settings, &metadata, &toks, &mut interner) {
             Ok(info) => info,
@@ -68,6 +75,7 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
         NamespaceResolver::new(
             settings,
             &ast_info,
+            metadata,
             &interner,
             module.mod_id,
             &mut script_compiler,
@@ -86,14 +94,16 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     let mut ty_ctx = TypeContext::new();
     for i in 0..script_compiler.mods.len() {
         let module = &script_compiler.mods[i];
-        if module.src_metadata.is_none() {
-            continue;
-        }
+        let metadata = match &module.src_metadata {
+            Some(region_id) => &src_region_arena.regions[region_id.id as usize],
+            None => continue,
+        };
 
         // NOTE: Brain not on yet
         TypeResolver::new(
             settings,
             &asts[i],
+            metadata,
             module.mod_id,
             &mut ty_ctx,
             &interner,
@@ -109,13 +119,15 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
 
     for i in 0..script_compiler.mods.len() {
         let module = &script_compiler.mods[i];
-        if module.src_metadata.is_none() {
-            continue;
-        }
+        let metadata = match &module.src_metadata {
+            Some(region_id) => &src_region_arena.regions[region_id.id as usize],
+            None => continue,
+        };
 
         ConstraintResolver::new(
             settings,
             &asts[i],
+            metadata,
             &interner,
             module.mod_id,
             &mut script_compiler,

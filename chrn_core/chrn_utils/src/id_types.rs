@@ -1,14 +1,14 @@
-use common::span::Span;
+use crate::source_map::source_span::SourceSpan;
 
 //TEST:
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SpannedInternedId {
     pub interned_id: InternedId,
-    pub span: Span,
+    pub span: SourceSpan,
 }
 
 impl SpannedInternedId {
-    pub fn new(interned_id: InternedId, span: Span) -> SpannedInternedId {
+    pub fn new(interned_id: InternedId, span: SourceSpan) -> SpannedInternedId {
         SpannedInternedId { interned_id, span }
     }
 }
@@ -21,6 +21,17 @@ pub struct InternedId {
 impl InternedId {
     pub fn new(id: u32) -> InternedId {
         InternedId { id }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct SourceRegionId {
+    pub id: u32,
+}
+
+impl SourceRegionId {
+    pub fn new(id: u32) -> SourceRegionId {
+        SourceRegionId { id }
     }
 }
 

@@ -1,7 +1,9 @@
 use std::fmt::Display;
 
-use chrn_utils::{id_types::TypeId, types::type_constraints::TypeConstraintFlags};
-use common::{fmter::Formattable, span::Span};
+use chrn_utils::{
+    fmter::Formattable, id_types::TypeId, source_map::source_span::SourceSpan,
+    types::type_constraints::TypeConstraintFlags,
+};
 
 use crate::{
     script_compiler::ScriptCompiler,
@@ -13,8 +15,8 @@ use crate::{
 pub(super) fn check_type_constraint(
     script_compiler: &ScriptCompiler,
     type_id: TypeId,
-    ty_span: Span,
-    cond_span: Span,
+    ty_span: SourceSpan,
+    cond_span: SourceSpan,
     visited: &mut Vec<TypeId>,
     given_constraints: TypeConstraintFlags,
 ) -> Result<(), SemanticError> {
@@ -139,7 +141,7 @@ pub(super) fn check_type_constraint(
 pub fn get_type_constraints(
     compiler: &ScriptCompiler,
     type_id: TypeId,
-    ty_span: Span,
+    ty_span: SourceSpan,
     is_rec: bool,
 ) -> Option<TypeConstraintFlags> {
     let ty = &compiler.types[type_id.id as usize].ty;

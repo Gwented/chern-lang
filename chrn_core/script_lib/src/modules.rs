@@ -8,23 +8,19 @@ use std::{
 pub mod mod_finder;
 
 use chrn_utils::{
-    id_types::{InternedId, ModuleId, PathId, ScopeId, SymbolId},
-    intern::{self, Intern},
-};
-use common::{
     chrn_settings::ChrnSettings,
+    config_loader::ChrnConfigLoader,
     core_error::{self, ConfigLoadError},
-    reporter::{
-        self,
-        diagnostic::{Area, Diagnostic},
+    id_types::{InternedId, ModuleId, PathId, ScopeId, SourceRegionId, SymbolId},
+    intern::{self, Intern},
+    source_map::{
+        source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
+        source_region_data::{SourceRegion, SourceRegionArena},
+        source_span::SourceSpan,
     },
-    span::Span,
 };
 
-use crate::{
-    config_loader::ChrnConfigLoader, iyo::file_ops, modules::mod_finder::ModuleFinder,
-    script_compiler::ScriptCompiler,
-};
+use crate::{iyo::file_ops, modules::mod_finder::ModuleFinder, script_compiler::ScriptCompiler};
 
 const RESERVED_INTERNED_MODULE_IDENTS: [u32; 1] = [intern::INTERNED_CORE];
 
@@ -48,18 +44,18 @@ impl Import {
 
 #[derive(Debug, Clone)]
 pub enum ImportKind {
-    Source(PathId, Span),
+    Source(PathId, SourceSpan),
     Core,
 }
 
 #[derive(Debug, Default)]
 pub struct Bind {
     pub path_id: PathId,
-    pub path_span: Span,
+    pub path_span: SourceSpan,
 }
 
 impl Bind {
-    pub fn new(path_id: PathId, path_span: Span) -> Bind {
+    pub fn new(path_id: PathId, path_span: SourceSpan) -> Bind {
         Bind { path_id, path_span }
     }
 }
@@ -84,7 +80,7 @@ pub struct Module {
     pub exports: Vec<SymbolId>,
     /// Metadata that exists if the module contains a source file
     // As of right now this represents the difference between a pre-loaded and user space module
-    pub src_metadata: Option<ModuleMetadata>,
+    pub src_metadata: Option<SourceRegionId>,
 }
 
 //TEST:
@@ -104,7 +100,7 @@ impl Module {
         mod_id: ModuleId,
         imports: Vec<Import>,
         //TODO: Convert to explicit kind
-        src_metadata: Option<ModuleMetadata>,
+        src_metadata: Option<SourceRegionId>,
     ) -> Module {
         Module {
             name_id,
@@ -129,37 +125,6 @@ impl Module {
     }
 }
 
-#[derive(Debug)]
-pub struct ModuleMetadata {
-    /// Bytes from chrn config file
-    pub path_id: PathId,
-    pub src_bytes: Vec<u8>,
-    // / Amount of \n within config file so binary search can be done by error reporter
-    // pub new_lines: Vec<usize>,
-    /// The script language start which can be different depending on if @def is used
-    pub script_start: usize,
-    /// The serial start which can be None if there is no serialized file within the config file
-    pub serial_start: Option<usize>,
-}
-
-impl ModuleMetadata {
-    pub fn new(
-        src_bytes: Vec<u8>,
-        path_id: PathId,
-        script_start: usize,
-        serial_start: Option<usize>,
-    ) -> ModuleMetadata {
-        ModuleMetadata {
-            // new_lines: Vec::new(),
-            path_id,
-            src_bytes,
-            script_start,
-            serial_start,
-            //TODO: Could be env var
-        }
-    }
-}
-
 //TEST: Lets depending on self recursively as a module happen for now
 /// Takes in a path to a `chrn` config file, then recursively resolved all imports associated with
 /// the path given in separate modules.
@@ -169,20 +134,34 @@ pub fn extract_modules(
     path: &Path,
     settings: &ChrnSettings,
     interner: &mut Intern,
-) -> Result<ScriptCompiler, ConfigLoadError> {
+) -> Result<(ScriptCompiler, SourceRegionArena), ConfigLoadError> {
     let src = match file_ops::fopen(&path) {
         Ok(f) => f,
         Err(err_msg) => {
-            let diag =
-                Diagnostic::new(path, err_msg.clone(), None, None, err_msg, Area::ConfigLoad);
-            return Err(ConfigLoadError::Module(diag));
+            // Interning mangled path id so it can still go into the diagnostic
+            let path_id = interner.intern_path(path);
+            let src_diag =
+                SourceDiagnostic::builder(DiagnosticLevel::Error, err_msg, path_id).build();
+            return Err(ConfigLoadError::Module(src_diag));
         }
     };
 
     let path = path.canonicalize()?;
-    let path_id = PathId::new(interner.intern_path(&path));
+    let path_id = interner.intern_path(&path);
 
-    let main_metadata = ChrnConfigLoader::new(path_id, src, settings, interner).load_config()?;
+    let mut region_arena: SourceRegionArena = SourceRegionArena::new(Default::default());
+    let main_region_id = SourceRegionId::new(0);
+
+    // Using region id before pushing
+    let main_region =
+        ChrnConfigLoader::new(main_region_id, src, path_id, settings, interner).load_config()?;
+
+    // let region = SourceRegion::new(
+    //     self.handle.buffer()[..self.pos + DEFINITION_SIZE].to_vec(),
+    //     self.region_id,
+    //     lex_start,
+    //     Some(serial_start),
+    // );
 
     // FIX: Aliasing?
     let file_name = match path.file_prefix().map(|n| n.to_str()) {
@@ -193,39 +172,36 @@ pub fn extract_modules(
                 path.display()
             );
 
-            let diag = Diagnostic::new(
-                &path,
-                core_msg.clone(),
-                None,
-                None,
-                core_msg,
-                Area::ConfigLoad,
-            );
+            let src_diag =
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id).build();
 
-            return Err(ConfigLoadError::Module(diag));
+            return Err(ConfigLoadError::Module(src_diag));
         }
     };
 
-    let name_id = InternedId::new(interner.intern(&file_name));
+    let name_id = interner.intern(&file_name);
 
     // dbg!(str::from_utf8(&main_metadata.src_bytes[..]));
     let (bind, main_imports) = ModuleFinder::new(
-        &main_metadata.src_bytes,
+        &main_region.src_bytes,
         settings,
-        path,
-        main_metadata.script_start,
-        main_metadata.serial_start,
+        &main_region,
+        main_region.script_start,
+        main_region.serial_start,
     )
     .collect_imports(interner)?;
 
     let mod_id = ModuleId::new(0);
-    let main_mod = Module::new(name_id, mod_id, main_imports, Some(main_metadata));
+    let main_mod = Module::new(name_id, mod_id, main_imports, Some(main_region_id));
 
     let mut mod_map: HashMap<InternedId, ModuleId> = HashMap::new();
     mod_map.insert(main_mod.name_id, mod_id);
 
-    let mut seen: HashSet<PathId> = HashSet::new();
-    seen.insert(path_id);
+    // Vec
+    let mut seen: Vec<PathId> = Vec::new();
+    seen.push(path_id);
+
+    region_arena.regions.push(main_region);
 
     // Will incur borrowing issues unless the main_mod is put in last since the list of it's
     // imports is needed to start recursive process
@@ -237,6 +213,7 @@ pub fn extract_modules(
         &mut seen,
         &mut other_mods,
         &main_mod,
+        &mut region_arena,
         &mut mod_map,
         settings,
         interner,
@@ -287,23 +264,18 @@ pub fn extract_modules(
             let found_mod_id = mod_map[&mod_name_id];
             let found_mod = &all_mods[found_mod_id.id];
 
-            let path_id = found_mod
-                .src_metadata
-                .as_ref()
-                .expect("Should not have loaded libraries of any kind yet")
-                .path_id;
-            let path = interner.search_path(path_id.id as usize);
-            let mod_name = interner.search(mod_name_id.id as usize);
+            let mod_name = interner.search(*mod_name_id);
 
-            let msg = format!("`{mod_name}` is a reserved module identifier");
-            let diag = Diagnostic::new(path, msg.clone(), None, None, msg, Area::ConfigLoad);
-            return Err(ConfigLoadError::General(diag));
+            let core_msg = format!("`{mod_name}` is a reserved module identifier");
+            let src_diag =
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id).build();
+            return Err(ConfigLoadError::General(src_diag));
         }
     }
 
-    let compiler = ScriptCompiler::new(bind, mod_map, all_mods);
+    let compiler = ScriptCompiler::init(bind, mod_map, all_mods);
 
-    Ok(compiler)
+    Ok((compiler, region_arena))
 }
 
 //WARN: mod_map means that if any have the same identifier then the entire module space is broken
@@ -317,9 +289,10 @@ pub fn extract_modules(
 /// `mod_map`: Module interned file name -> ModuleId.
 fn resolve_modules(
     // Maybe change to vec
-    seen: &mut HashSet<PathId>,
+    seen: &mut Vec<PathId>,
     modules: &mut Vec<Option<Module>>,
     prev_mod: &Module,
+    region_arena: &mut SourceRegionArena,
     mod_map: &mut HashMap<InternedId, ModuleId>,
     settings: &ChrnSettings,
     interner: &mut Intern,
@@ -338,144 +311,128 @@ fn resolve_modules(
         }
         // This entire process is performing IO recursively based off of file paths so a failure
         // here would be either an early detailed error
-        let prev_metadata = &prev_mod
-            .src_metadata
-            .as_ref()
-            .expect("Infailable currently");
+        // let prev_region_id = &prev_mod
+        //     .src_metadata
+        //     .as_ref()
+        //     .expect("Infailable currently");
 
         // Tracks the id of the current module by tracking however many imports were seen, which
         // all represent one module
         let current_mod_id = seen.len();
-        seen.insert(path_id);
+        seen.push(path_id);
 
-        let path = interner.search_path(path_id.id as usize);
+        let path = interner.search_path(path_id);
         let src = match fs::File::open(path) {
             // Why.
             Ok(_) if path.is_dir() => {
                 let core_msg = format!("The path \"{}\" is a directory", path.display());
 
-                let ln_data = reporter::form_err_diag(
-                    &prev_metadata.src_bytes,
-                    &[path_span],
-                    settings.can_color,
-                );
+                let src_diag = SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
+                    .add_annotation(
+                        path_span,
+                        AnnotationKind::Primary,
+                        "Caused by this import".to_string().into(),
+                    )
+                    .build();
 
-                let prev_path = interner.search_path(prev_metadata.path_id.id as usize);
-                let fmtted_diag = reporter::standardize_err(
-                    &core_msg,
-                    &ln_data,
-                    None,
-                    prev_path,
-                    settings.can_color,
-                );
-
-                let diag = Diagnostic::new(
-                    path,
-                    core_msg,
-                    Some(path_span),
-                    None,
-                    fmtted_diag,
-                    Area::ConfigLoad,
-                );
-
-                return Err(ConfigLoadError::Module(diag));
+                return Err(ConfigLoadError::Module(src_diag));
             }
             Ok(f) => f,
             Err(e) => {
                 let core_msg =
                     core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
 
-                let ln_data = reporter::form_err_diag(
-                    &prev_metadata.src_bytes,
-                    &[path_span],
-                    settings.can_color,
-                );
+                let src_diag = SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
+                    .add_annotation(
+                        path_span,
+                        AnnotationKind::Primary,
+                        "Caused by this import".to_string().into(),
+                    )
+                    .build();
 
-                let prev_path = interner.search_path(prev_metadata.path_id.id as usize);
-                let fmtted_diag = reporter::standardize_err(
-                    &core_msg,
-                    &ln_data,
-                    None,
-                    prev_path,
-                    settings.can_color,
-                );
-
-                let diag = Diagnostic::new(
-                    path,
-                    core_msg,
-                    Some(path_span),
-                    None,
-                    fmtted_diag,
-                    Area::ConfigLoad,
-                );
-
-                return Err(ConfigLoadError::Module(diag));
+                return Err(ConfigLoadError::Module(src_diag));
             }
         };
 
-        let mod_metadata = ChrnConfigLoader::new(path_id, src, settings, interner).load_config()?;
+        let sub_region_id = SourceRegionId::new(region_arena.regions.len() as u32);
 
-        let path = interner.search_path(path_id.id as usize);
+        let path = interner.search_path(path_id);
 
         //Oh my
         let file_name = match path.file_prefix().map(|n| n.to_str()) {
             Some(Some(p)) => p.to_string(),
             _ => {
                 if let Some(name_id) = import.alias_id {
-                    interner.search(name_id.id as usize).to_string()
+                    interner.search(name_id).to_string()
                 } else {
                     let core_msg = format!(
                         "The path \"{}\" does not have a valid UTF-8 file name usable within the program. Consider using 'as' to give it an alias if a file name change is not possible.",
                         path.display()
                     );
 
-                    let diag = Diagnostic::new(
-                        path,
-                        core_msg.clone(),
-                        None,
-                        None,
-                        core_msg,
-                        Area::ConfigLoad,
-                    );
+                    //WARN: This didn't use a span before so could be an issue
+                    let src_diag =
+                        SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
+                            .add_annotation(
+                                path_span,
+                                AnnotationKind::Primary,
+                                "Caused by this import".to_string().into(),
+                            )
+                            .build();
 
-                    return Err(ConfigLoadError::Module(diag));
+                    return Err(ConfigLoadError::Module(src_diag));
                 }
             }
         };
 
-        let name_id = InternedId::new(interner.intern(&file_name));
+        let sub_mod_name_id = interner.intern(&file_name);
 
-        let origin = interner.search_path(prev_metadata.path_id.id as usize);
-
-        modules.push(None);
+        // Using region id before pushing
+        let sub_region =
+            ChrnConfigLoader::new(sub_region_id, src, path_id, settings, interner).load_config()?;
 
         let (_, sub_imports) = ModuleFinder::new(
-            &mod_metadata.src_bytes,
+            &sub_region.src_bytes,
             settings,
-            origin.to_path_buf(),
-            mod_metadata.script_start,
-            mod_metadata.serial_start,
+            &sub_region,
+            sub_region.script_start,
+            sub_region.serial_start,
         )
         .collect_imports(interner)?;
 
+        // As opposed to how modules are pushed, regions are pushed before recursively descending
+        // so no special cases needed for indexing it
+        region_arena.regions.push(sub_region);
+
         let sub_mod = Module::new(
-            name_id,
+            sub_mod_name_id,
             ModuleId::new(current_mod_id),
             sub_imports,
-            Some(mod_metadata),
+            Some(sub_region_id),
         );
+
+        // Filling in this module's spot
+        modules.push(None);
 
         if let Some(alias_id) = import.alias_id {
             mod_map.insert(alias_id, ModuleId::new(current_mod_id));
         }
 
-        resolve_modules(seen, modules, &sub_mod, mod_map, settings, interner)?;
+        resolve_modules(
+            seen,
+            modules,
+            &sub_mod,
+            region_arena,
+            mod_map,
+            settings,
+            interner,
+        )?;
 
         // Needs - 1 so that it fits inside the temporary Vec before being put into a Vec that has
         // the "main" module in it, which would be a + 1, which is what the ModuleId with by
         // default. A, + 1.
         modules[current_mod_id - 1] = Some(sub_mod);
-        mod_map.insert(name_id, ModuleId::new(current_mod_id));
+        mod_map.insert(sub_mod_name_id, ModuleId::new(current_mod_id));
 
         // Modules start off at 0 since the main module can't be inserted before this so + 1 for
         // correct indexing in the final vector

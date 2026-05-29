@@ -1,24 +1,25 @@
 use std::fmt::Display;
 
-use common::span::Span;
-
-use crate::types::{
-    builtins::BuiltinType,
-    type_constraints::{self, TypeConstraintFlags},
+use crate::{
+    source_map::source_span::SourceSpan,
+    types::{
+        builtins::BuiltinType,
+        type_constraints::{self, TypeConstraintFlags},
+    },
 };
 
 /// If a new argument is added ensure this is updated
 pub static ARGS_ARRAY: [&str; 6] = ["warn", "scient", "hex", "bin", "octal", "ignore"];
 
-#[derive(Debug, Clone)]
-pub struct SpannedInnerArgs {
+#[derive(Debug, Copy, Clone)]
+pub struct SpannedInnerArg {
     pub arg: InnerArgs,
-    pub span: Span,
+    pub span: SourceSpan,
 }
 
-impl SpannedInnerArgs {
-    pub fn new(arg: InnerArgs, span: Span) -> SpannedInnerArgs {
-        SpannedInnerArgs { arg, span }
+impl SpannedInnerArg {
+    pub fn new(arg: InnerArgs, span: SourceSpan) -> SpannedInnerArg {
+        SpannedInnerArg { arg, span }
     }
 }
 
@@ -121,6 +122,18 @@ impl InnerArgs {
 
         TypeConstraintFlags::new(flags)
     }
+
+    pub fn try_from_str(val: &str) -> Option<InnerArgs> {
+        match val {
+            "warn" => Some(InnerArgs::Warn),
+            "scient" => Some(InnerArgs::Scientific),
+            "hex" => Some(InnerArgs::Hex),
+            "bin" => Some(InnerArgs::Binary),
+            "octal" => Some(InnerArgs::Octal),
+            "ignore" => Some(InnerArgs::Ignore),
+            _ => None,
+        }
+    }
 }
 
 impl Display for InnerArgs {
@@ -132,23 +145,6 @@ impl Display for InnerArgs {
             InnerArgs::Binary => write!(f, "bin"),
             InnerArgs::Octal => write!(f, "octal"),
             InnerArgs::Ignore => write!(f, "ignore"),
-        }
-    }
-}
-
-//TODO: Should be some or none
-impl<'a> TryFrom<&'a str> for InnerArgs {
-    type Error = &'a str;
-
-    fn try_from(v: &'a str) -> Result<Self, Self::Error> {
-        match v {
-            "warn" => Ok(InnerArgs::Warn),
-            "scient" => Ok(InnerArgs::Scientific),
-            "hex" => Ok(InnerArgs::Hex),
-            "bin" => Ok(InnerArgs::Binary),
-            "octal" => Ok(InnerArgs::Octal),
-            "ignore" => Ok(InnerArgs::Ignore),
-            v => Err(v),
         }
     }
 }

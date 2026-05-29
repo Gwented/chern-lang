@@ -1,17 +1,18 @@
 use chrn_utils::{
+    chrn_settings::ChrnSettings,
+    fmter::{Formatted, SpannedFormatted},
     id_types::{AstId, ExprId, InternedId, ModuleId, SymbolId, TypeId, ValueId},
-    inner_args::{InnerArgs, SpannedInnerArgs},
+    inner_args::{InnerArgs, SpannedInnerArg},
     intern::Intern,
+    source_map::{
+        source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
+        source_region_data::SourceRegion,
+        source_span::SourceSpan,
+    },
     types::{
         builtins::{BuiltinType, BuiltinTypeKind},
         type_constraints::{TypeConstraint, TypeConstraintFlags},
     },
-};
-use common::{
-    chrn_settings::ChrnSettings,
-    fmter::{Formattable, Formatted},
-    reporter::diagnostic::Diagnostic,
-    span::Span,
 };
 
 use crate::{
@@ -37,6 +38,7 @@ use crate::{
 pub struct ConstraintResolver<'a> {
     ast_info: &'a AstInfo,
     interner: &'a Intern,
+    current_region: &'a SourceRegion,
     compiler: &'a mut ScriptCompiler,
     // We reward hack here
     /// If module and ast ids are not the same, this will break. (Will change(Right?))
@@ -48,6 +50,7 @@ impl<'a> ConstraintResolver<'a> {
     pub fn new(
         settings: &'a ChrnSettings,
         ast_info: &'a AstInfo,
+        current_region: &'a SourceRegion,
         interner: &'a Intern,
         current_mod: ModuleId,
         compiler: &'a mut ScriptCompiler,
@@ -55,13 +58,14 @@ impl<'a> ConstraintResolver<'a> {
         ConstraintResolver {
             ast_info,
             interner,
+            current_region,
             current_mod,
             compiler,
-            reporter: SemanticReporter::new(settings, interner),
+            reporter: SemanticReporter::new(settings, current_region, interner),
         }
     }
 
-    pub fn resolve(&mut self) -> Result<(), Vec<Diagnostic>> {
+    pub fn resolve(&mut self) -> Result<(), Vec<SourceDiagnostic>> {
         // I don't think dependency tracking can be avoided here
         for (id, item) in self.ast_info.items.iter().enumerate() {
             let ast_id = AstId::new(id as u32);
@@ -163,48 +167,33 @@ impl<'a> ConstraintResolver<'a> {
                     // typed, that would mean that "other_p: Person" inside the same var-> would
                     // need to align with whatever conditions or arguments given, which would be
                     // problematic. Hence, it just has to be a shallowly applied argument instead.
-                    let msg = "Cannot give a `var->` defined type a condition when it has a `struct` or `enum` type, define\nthis within `nest->`";
+                    let core_msg = "Cannot give a `var->` defined type a condition when it has a `struct` or `enum` type, define\nthis within `nest->`".to_string();
 
-                    self.reporter.report_spanned(
-                        msg,
-                        None,
-                        &[ast_span.clone()],
-                        &self.compiler.mods[self.current_mod.id as usize]
-                            .src_metadata
-                            .as_ref()
-                            .expect("core should not be resolved"),
+                    let src_diag = SourceDiagnostic::basic(
+                        DiagnosticLevel::Error,
+                        core_msg,
+                        self.current_region.path_id,
+                        *ast_span,
                     );
+                    self.reporter.err_vec.push(src_diag);
                 }
                 _ => (),
             }
 
             if let Err(sem_errs) = self.check_cond(type_def.type_id, ty_span, *cond_expr) {
                 for err in sem_errs {
-                    self.reporter.report_semantic(
-                        err,
-                        module
-                            .src_metadata
-                            .as_ref()
-                            .expect("core should not be resolved"),
-                    );
+                    self.reporter.report_semantic(err);
                 }
             }
         }
 
-        for spanned_arg in &abs_typedef.args {
+        for sp_arg in &abs_typedef.args {
             match &ty_info.ty {
                 Type::Struct(_) | Type::Enum(_) => {
-                    if spanned_arg.arg.has_restrictions() {
-                        let sem_err =
-                            SemanticError::VagueArg(spanned_arg.arg, vec![spanned_arg.span]);
+                    if sp_arg.arg.has_restrictions() {
+                        let sem_err = SemanticError::VagueArg(*sp_arg);
 
-                        self.reporter.report_semantic(
-                            sem_err,
-                            &self.compiler.mods[self.current_mod.id as usize]
-                                .src_metadata
-                                .as_ref()
-                                .expect("core should not be resolved"),
-                        );
+                        self.reporter.report_semantic(sem_err);
                     }
                 }
                 _ => (),
@@ -212,18 +201,13 @@ impl<'a> ConstraintResolver<'a> {
 
             if let Err(sem_err) = self.check_type_arg(
                 type_def.type_id,
+                abs_typedef.name_span,
                 ty_span,
                 module,
-                &spanned_arg,
+                &sp_arg,
                 &mut Vec::new(),
             ) {
-                self.reporter.report_semantic(
-                    sem_err,
-                    module
-                        .src_metadata
-                        .as_ref()
-                        .expect("core should not be resolved"),
-                );
+                self.reporter.report_semantic(sem_err);
             }
         }
 
@@ -367,13 +351,7 @@ impl<'a> ConstraintResolver<'a> {
         for cond_expr_id in &alias_def.conds {
             if let Err(sem_errs) = self.check_cond(alias_type_id, sym_span, *cond_expr_id) {
                 for err in sem_errs {
-                    self.reporter.report_semantic(
-                        err,
-                        module
-                            .src_metadata
-                            .as_ref()
-                            .expect("core should not be resolved"),
-                    );
+                    self.reporter.report_semantic(err);
                 }
             }
         }
@@ -392,7 +370,7 @@ impl<'a> ConstraintResolver<'a> {
     //     // Can't really do that right now because expressions aren't symbols, but x usage
     //     // represents the x symbol in the local scope
     //     param_name_id: InternedId,
-    //     param_span: Span,
+    //     param_span: SourceSpan,
     // ) -> Option<TypeConstraintFlags> {
     //     let expr = &self.compiler.exprs[expr_id.id as usize];
     //     match &expr.expr_hir {
@@ -508,7 +486,7 @@ impl<'a> ConstraintResolver<'a> {
     // fn infer_type_constraint_from_arg(
     //     &self,
     //     sp_arg: &SpannedInnerArgs,
-    //     param_span: Span,
+    //     param_span: SourceSpan,
     // ) -> Result<Option<TypeConstraint>, SemanticError> {
     //     todo!()
     // }
@@ -541,13 +519,7 @@ impl<'a> ConstraintResolver<'a> {
             for cond_expr in &struct_def.glob_conds {
                 if let Err(sem_errs) = self.check_cond(field.type_id, ty_span, *cond_expr) {
                     for err in sem_errs {
-                        self.reporter.report_semantic(
-                            err,
-                            module
-                                .src_metadata
-                                .as_ref()
-                                .expect("core should not be resolved"),
-                        );
+                        self.reporter.report_semantic(err);
                     }
                 }
             }
@@ -559,13 +531,7 @@ impl<'a> ConstraintResolver<'a> {
             for cond_expr in &field.conds {
                 if let Err(sem_errs) = self.check_cond(field.type_id, ty_span, *cond_expr) {
                     for err in sem_errs {
-                        self.reporter.report_semantic(
-                            err,
-                            module
-                                .src_metadata
-                                .as_ref()
-                                .expect("core should not be resolved"),
-                        );
+                        self.reporter.report_semantic(err);
                     }
                 }
             }
@@ -575,16 +541,15 @@ impl<'a> ConstraintResolver<'a> {
         for (i, field) in struct_def.fields.iter().enumerate() {
             let ty_span = abs_struct.fields[i].spanned_ty_expr.span;
             for spanned_arg in &abs_struct.glob_args {
-                if let Err(sem_err) =
-                    self.check_type_arg(field.type_id, ty_span, module, spanned_arg, &mut vec![])
-                {
-                    self.reporter.report_semantic(
-                        sem_err,
-                        module
-                            .src_metadata
-                            .as_ref()
-                            .expect("core should not be resolved"),
-                    );
+                if let Err(sem_err) = self.check_type_arg(
+                    field.type_id,
+                    abs_struct.name_span,
+                    ty_span,
+                    module,
+                    spanned_arg,
+                    &mut vec![],
+                ) {
+                    self.reporter.report_semantic(sem_err);
                 }
             }
         }
@@ -594,16 +559,15 @@ impl<'a> ConstraintResolver<'a> {
             let abs_field = &abs_struct.fields[i];
             let ty_span = abs_field.spanned_ty_expr.span;
             for spanned_arg in &abs_field.args {
-                if let Err(sem_err) =
-                    self.check_type_arg(field.type_id, ty_span, module, spanned_arg, &mut vec![])
-                {
-                    self.reporter.report_semantic(
-                        sem_err,
-                        module
-                            .src_metadata
-                            .as_ref()
-                            .expect("core should not be resolved"),
-                    );
+                if let Err(sem_err) = self.check_type_arg(
+                    field.type_id,
+                    abs_struct.name_span,
+                    ty_span,
+                    module,
+                    spanned_arg,
+                    &mut vec![],
+                ) {
+                    self.reporter.report_semantic(sem_err);
                 }
             }
         }
@@ -634,13 +598,7 @@ impl<'a> ConstraintResolver<'a> {
                 for cond_expr in &enum_def.glob_conds {
                     if let Err(sem_errs) = self.check_cond(inner_id, ty_span, *cond_expr) {
                         for err in sem_errs {
-                            self.reporter.report_semantic(
-                                err,
-                                module
-                                    .src_metadata
-                                    .as_ref()
-                                    .expect("core should not be resolved"),
-                            );
+                            self.reporter.report_semantic(err);
                         }
                     }
                 }
@@ -659,13 +617,7 @@ impl<'a> ConstraintResolver<'a> {
                 for cond_expr in &variant.conds {
                     if let Err(sem_errs) = self.check_cond(inner_id, ty_span, *cond_expr) {
                         for err in sem_errs {
-                            self.reporter.report_semantic(
-                                err,
-                                module
-                                    .src_metadata
-                                    .as_ref()
-                                    .expect("core should not be resolved"),
-                            );
+                            self.reporter.report_semantic(err);
                         }
                     }
                 }
@@ -682,16 +634,15 @@ impl<'a> ConstraintResolver<'a> {
                     .span;
 
                 for spanned_arg in &abs_enum.glob_args {
-                    if let Err(sem_err) =
-                        self.check_type_arg(inner_id, ty_span, module, spanned_arg, &mut vec![])
-                    {
-                        self.reporter.report_semantic(
-                            sem_err,
-                            module
-                                .src_metadata
-                                .as_ref()
-                                .expect("core should not be resolved"),
-                        );
+                    if let Err(sem_err) = self.check_type_arg(
+                        inner_id,
+                        abs_enum.name_span,
+                        ty_span,
+                        module,
+                        spanned_arg,
+                        &mut vec![],
+                    ) {
+                        self.reporter.report_semantic(sem_err);
                     }
                 }
             }
@@ -704,16 +655,15 @@ impl<'a> ConstraintResolver<'a> {
                 let ty_span = abs_variant.ty_expr.as_ref().expect("Just checked").span;
 
                 for spanned_arg in &abs_variant.args {
-                    if let Err(sem_err) =
-                        self.check_type_arg(inner_id, ty_span, module, spanned_arg, &mut vec![])
-                    {
-                        self.reporter.report_semantic(
-                            sem_err,
-                            module
-                                .src_metadata
-                                .as_ref()
-                                .expect("core should not be resolved"),
-                        );
+                    if let Err(sem_err) = self.check_type_arg(
+                        inner_id,
+                        abs_enum.name_span,
+                        ty_span,
+                        module,
+                        spanned_arg,
+                        &mut vec![],
+                    ) {
+                        self.reporter.report_semantic(sem_err);
                     }
                 }
             }
@@ -726,7 +676,7 @@ impl<'a> ConstraintResolver<'a> {
     fn check_cond(
         &self,
         parent_ty_id: TypeId,
-        parent_span: Span,
+        parent_span: SourceSpan,
         cond_expr_id: ExprId,
     ) -> Result<(), Vec<SemanticError>> {
         // let cond_expr = &self.compiler.exprs[cond_expr_id.id as usize];
@@ -964,9 +914,10 @@ impl<'a> ConstraintResolver<'a> {
     fn check_type_arg(
         &self,
         type_id: TypeId,
-        active_span: Span,
+        parent_span: SourceSpan,
+        active_span: SourceSpan,
         module: &Module,
-        spanned_arg: &SpannedInnerArgs,
+        spanned_arg: &SpannedInnerArg,
         visited: &mut Vec<TypeId>,
         // Making this vec makes error messages painful depending on which message failed, so it
         // needs some signal to say to stop going.
@@ -974,8 +925,8 @@ impl<'a> ConstraintResolver<'a> {
         match &self.compiler.types[type_id.id as usize].ty {
             Type::Struct(struct_def) => {
                 let symbol = &self.compiler.symbols[struct_def.sym_id.id as usize];
-                // let ast_id = symbol.ast_id.expect("Core should not be resolved");
-                // let abs_struct = &self.ast_info.get_struct(ast_id);
+                let ast_id = symbol.ast_id.expect("Core should not be resolved");
+                let abs_struct = &self.ast_info.get_struct(ast_id);
                 visited.push(type_id);
 
                 // No cross module reporting so all messages are shallow in spanning
@@ -986,17 +937,28 @@ impl<'a> ConstraintResolver<'a> {
                     // struct.
                     if visited.contains(&field.type_id) {
                         if spanned_arg.arg.has_restrictions() {
-                            let name = self.interner.search(symbol.name_id.id as usize);
+                            let name = self.interner.search(symbol.name_id);
 
-                            let msg = format!(
+                            let core_msg = format!(
                                 "The type `{name}` cannot have `#{}` applied due to recursively relying on itself satisfying the argument",
                                 spanned_arg.arg
                             );
 
-                            return Err(SemanticError::General(
-                                msg,
-                                vec![spanned_arg.span, active_span],
-                            ));
+                            //TODO: Will use CircularArg after the type spanning issues are fixed
+                            let src_diag = SourceDiagnostic::builder(
+                                DiagnosticLevel::Error,
+                                core_msg,
+                                self.current_region.path_id,
+                            )
+                            .add_annotation(
+                                spanned_arg.span,
+                                AnnotationKind::Secondary,
+                                "Conflicting argument here".to_string().into(),
+                            )
+                            .add_annotation(active_span, AnnotationKind::Primary, None)
+                            .build();
+
+                            return Err(SemanticError::General(src_diag));
                         }
 
                         continue;
@@ -1004,15 +966,22 @@ impl<'a> ConstraintResolver<'a> {
 
                     visited.push(field.type_id);
 
-                    self.check_type_arg(field.type_id, active_span, module, spanned_arg, visited)?;
+                    self.check_type_arg(
+                        field.type_id,
+                        abs_struct.name_span,
+                        active_span,
+                        module,
+                        spanned_arg,
+                        visited,
+                    )?;
                 }
 
                 Ok(())
             }
             Type::Enum(enum_def) => {
                 let symbol = &self.compiler.symbols[enum_def.sym_id.id as usize];
-                // let ast_id = symbol.ast_id.expect("Core should not be resolved");
-                // let abs_struct = &self.ast_info.get_enum(ast_id);
+                let ast_id = symbol.ast_id.expect("Core should not be resolved");
+                let abs_enum = &self.ast_info.get_enum(ast_id);
                 visited.push(type_id);
 
                 for variant in &enum_def.variants {
@@ -1024,23 +993,40 @@ impl<'a> ConstraintResolver<'a> {
                         // different context.
                         if visited.contains(&inner) {
                             if spanned_arg.arg.has_restrictions() {
-                                let name = self.interner.search(symbol.name_id.id as usize);
+                                let name = self.interner.search(symbol.name_id);
 
-                                let msg = format!(
+                                let core_msg = format!(
                                     "The type `{name}` cannot have `#{}` applied due to recursively relying on itself satisfying the argument",
                                     spanned_arg.arg
                                 );
 
-                                return Err(SemanticError::General(
-                                    msg,
-                                    vec![spanned_arg.span, active_span],
-                                ));
+                                let src_diag = SourceDiagnostic::builder(
+                                    DiagnosticLevel::Error,
+                                    core_msg,
+                                    self.current_region.path_id,
+                                )
+                                .add_annotation(
+                                    spanned_arg.span,
+                                    AnnotationKind::Secondary,
+                                    "Conflicting argument here".to_string().into(),
+                                )
+                                .add_annotation(active_span, AnnotationKind::Primary, None)
+                                .build();
+
+                                return Err(SemanticError::General(src_diag));
                             }
 
                             continue;
                         }
 
-                        self.check_type_arg(inner, active_span, module, spanned_arg, visited)?;
+                        self.check_type_arg(
+                            inner,
+                            abs_enum.name_span,
+                            active_span,
+                            module,
+                            spanned_arg,
+                            visited,
+                        )?;
                     }
                 }
 
@@ -1048,13 +1034,32 @@ impl<'a> ConstraintResolver<'a> {
             }
             Type::BuiltinType(builtin_type) => {
                 match builtin_type {
-                    BuiltinType::List(type_id) | BuiltinType::Set(type_id) => {
-                        self.check_type_arg(*type_id, active_span, module, spanned_arg, visited)
-                    }
+                    BuiltinType::List(type_id) | BuiltinType::Set(type_id) => self.check_type_arg(
+                        *type_id,
+                        parent_span,
+                        active_span,
+                        module,
+                        spanned_arg,
+                        visited,
+                    ),
                     BuiltinType::Map(key_id, val_id) => {
                         // This looks weird...
-                        self.check_type_arg(*key_id, active_span, module, spanned_arg, visited)?;
-                        self.check_type_arg(*val_id, active_span, module, spanned_arg, visited)
+                        self.check_type_arg(
+                            *key_id,
+                            parent_span,
+                            active_span,
+                            module,
+                            spanned_arg,
+                            visited,
+                        )?;
+                        self.check_type_arg(
+                            *val_id,
+                            parent_span,
+                            active_span,
+                            module,
+                            spanned_arg,
+                            visited,
+                        )
                     }
                     BuiltinType::Tuple(elements) => {
                         visited.push(type_id);
@@ -1062,9 +1067,9 @@ impl<'a> ConstraintResolver<'a> {
                             if visited.contains(&*element) {
                                 if spanned_arg.arg.has_restrictions() {
                                     return Err(SemanticError::CircularArg(
-                                        spanned_arg.arg,
-                                        Formatted::Tuple,
-                                        vec![spanned_arg.span, active_span],
+                                        parent_span,
+                                        *spanned_arg,
+                                        SpannedFormatted::new(Formatted::Tuple, active_span),
                                     ));
                                 }
                             }
@@ -1078,6 +1083,7 @@ impl<'a> ConstraintResolver<'a> {
                             self.check_type_arg(
                                 *element,
                                 active_span,
+                                parent_span,
                                 module,
                                 spanned_arg,
                                 visited,
@@ -1094,8 +1100,8 @@ impl<'a> ConstraintResolver<'a> {
 
                         if !arg_constraints.contains(constraints) {
                             return Err(SemanticError::UnsupportedArg(
-                                spanned_arg.arg,
-                                vec![spanned_arg.span, active_span],
+                                spanned_arg.clone(),
+                                active_span,
                             ));
                         }
 
@@ -1120,17 +1126,28 @@ impl<'a> ConstraintResolver<'a> {
             // Uhhhhhhh.
             Type::Unknown => todo!("Unknowned"),
             Type::Func(_) => {
-                // VAGUE
-                let msg = "Functions can only be placed within type constraint blocks".to_string();
-                Err(SemanticError::General(msg, vec![active_span]))
+                let core_msg = "Functions can only be placed within type constraints".to_string();
+
+                let src_diag = SourceDiagnostic::basic(
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    self.current_region.path_id,
+                    active_span,
+                );
+                Err(SemanticError::General(src_diag))
             }
             // Function.
             Type::TypeDef(_) => {
                 unreachable!("Not syntactically possible")
             }
-            Type::Deferred(deferred_ty_id) => {
-                self.check_type_arg(*deferred_ty_id, active_span, module, spanned_arg, visited)
-            }
+            Type::Deferred(deferred_ty_id) => self.check_type_arg(
+                *deferred_ty_id,
+                parent_span,
+                active_span,
+                module,
+                spanned_arg,
+                visited,
+            ),
             Type::Constrained(current_constraints) => {
                 let arg_constraints = spanned_arg.arg.type_constraints();
 
@@ -1159,7 +1176,7 @@ impl<'a> ConstraintResolver<'a> {
     fn check_arg_constraints(
         &self,
         parent_ty_id: TypeId,
-        parent_span: Span,
+        parent_span: SourceSpan,
         cond_expr_id: ExprId,
         expr_id_args: &[ExprId],
         arg_constraints: &[ArgConstraint],
@@ -1167,236 +1184,237 @@ impl<'a> ConstraintResolver<'a> {
         // eventually or at least a wrapper
     ) -> Result<(), Vec<SemanticError>> {
         let mut sem_errs: Vec<SemanticError> = Vec::new();
-        for constraint in arg_constraints {
-            match constraint {
-                ArgConstraint::ArgCount(arg_count_constraint) => {
-                    let found_arg_count = expr_id_args.len() as u32;
-
-                    if found_arg_count != *arg_count_constraint {
-                        let mut spans: Vec<Span> = expr_id_args
-                            .iter()
-                            .map(|ex_id| self.compiler.exprs[ex_id.id as usize].span)
-                            .collect();
-
-                        if spans.is_empty() {
-                            let cond_span = &self.compiler.exprs[cond_expr_id.id as usize].span;
-                            spans.push(*cond_span);
-                        }
-
-                        sem_errs.push(SemanticError::ArgCountMismatch(
-                            *constraint,
-                            found_arg_count,
-                            spans,
-                        ));
-
-                        // Going further would likely lead to misleading errors
-                        return Err(sem_errs);
-                    }
-                }
-                ArgConstraint::MatchingArgumentTypes => {
-                    // If no arguments then it innately succeeds
-                    let req_expr_id = match expr_id_args.first() {
-                        Some(id) => id,
-                        None => continue,
-                    };
-
-                    let req_type_id = self.compiler.exprs[req_expr_id.id as usize].type_id;
-
-                    for expr_id in expr_id_args.iter().skip(1) {
-                        let other_type_id = self.compiler.exprs[expr_id.id as usize].type_id;
-
-                        if req_type_id != other_type_id {
-                            let req_span = self.compiler.exprs[req_expr_id.id as usize].span;
-                            let other_span = self.compiler.exprs[expr_id.id as usize].span;
-
-                            let ty = &self.compiler.types[req_type_id.id as usize].ty;
-
-                            sem_errs.push(SemanticError::FuncConstraintMismatch(
-                                *constraint,
-                                ty.to_fmt(),
-                                vec![req_span, other_span],
-                            ));
-                        }
-                    }
-                }
-                ArgConstraint::Numeric => {
-                    for expr_id in expr_id_args {
-                        let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
-                        let ty = &self.compiler.types[type_id.id as usize].ty;
-
-                        if let Type::BuiltinType(builtin_ty) = ty {
-                            if !builtin_ty.kind().is_numeric() {
-                                let span = self.compiler.exprs[expr_id.id as usize].span;
-
-                                sem_errs.push(SemanticError::FuncConstraintMismatch(
-                                    *constraint,
-                                    ty.to_fmt(),
-                                    vec![span],
-                                ));
-                            }
-                        }
-                    }
-                }
-                ArgConstraint::Integer => {
-                    for expr_id in expr_id_args {
-                        let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
-                        let ty = &self.compiler.types[type_id.id as usize].ty;
-
-                        if let Type::BuiltinType(builtin_ty) = ty {
-                            if !builtin_ty.kind().is_integer() {
-                                let span = self.compiler.exprs[expr_id.id as usize].span;
-
-                                sem_errs.push(SemanticError::FuncConstraintMismatch(
-                                    *constraint,
-                                    ty.to_fmt(),
-                                    vec![span],
-                                ));
-                            }
-                        }
-                    }
-                }
-                ArgConstraint::Float => {
-                    for expr_id in expr_id_args {
-                        let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
-                        let ty = &self.compiler.types[type_id.id as usize].ty;
-
-                        if let Type::BuiltinType(builtin_ty) = ty {
-                            if !builtin_ty.kind().is_float() {
-                                let span = self.compiler.exprs[expr_id.id as usize].span;
-
-                                sem_errs.push(SemanticError::FuncConstraintMismatch(
-                                    *constraint,
-                                    ty.to_fmt(),
-                                    vec![span],
-                                ));
-                            }
-                        }
-                    }
-                }
-                ArgConstraint::Str => {
-                    for expr_id in expr_id_args {
-                        let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
-                        let ty = &self.compiler.types[type_id.id as usize].ty;
-
-                        if let Type::BuiltinType(builtin_ty) = ty {
-                            if builtin_ty.kind() != BuiltinTypeKind::Str {
-                                let span = self.compiler.exprs[expr_id.id as usize].span;
-
-                                sem_errs.push(SemanticError::FuncConstraintMismatch(
-                                    *constraint,
-                                    ty.to_fmt(),
-                                    vec![span],
-                                ));
-                            }
-                        }
-                    }
-                }
-                ArgConstraint::CharacterMappable => {
-                    for expr_id in expr_id_args {
-                        let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
-                        let ty = &self.compiler.types[type_id.id as usize].ty;
-
-                        if let Type::BuiltinType(builtin_ty) = ty {
-                            if !builtin_ty.kind().is_character_mappable() {
-                                let span = self.compiler.exprs[expr_id.id as usize].span;
-
-                                sem_errs.push(SemanticError::FuncConstraintMismatch(
-                                    *constraint,
-                                    ty.to_fmt(),
-                                    vec![span],
-                                ));
-                            }
-                        }
-                    }
-                }
-                ArgConstraint::Bool => {
-                    for expr_id in expr_id_args {
-                        let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
-                        let ty = &self.compiler.types[type_id.id as usize].ty;
-
-                        if let Type::BuiltinType(builtin_ty) = ty {
-                            if builtin_ty.kind() != BuiltinTypeKind::Bool {
-                                let span = self.compiler.exprs[expr_id.id as usize].span;
-
-                                sem_errs.push(SemanticError::FuncConstraintMismatch(
-                                    *constraint,
-                                    ty.to_fmt(),
-                                    vec![span],
-                                ));
-                            }
-                        }
-                    }
-                }
-                ArgConstraint::Variadic | ArgConstraint::DynType => (),
-                ArgConstraint::Comparable => {
-                    for expr_id in expr_id_args {
-                        let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
-                        // let ty = &self.compiler.types[type_id.id as usize].ty;
-
-                        let expr_span = self.compiler.exprs[expr_id.id as usize].span;
-                        let cond_span = self.compiler.exprs[cond_expr_id.id as usize].span;
-
-                        if let Err(sem_err) = constraints::check_type_constraint(
-                            self.compiler,
-                            *type_id,
-                            expr_span,
-                            cond_span,
-                            &mut Vec::new(),
-                            TypeConstraintFlags::new(TypeConstraint::Comparable.to_u64()),
-                        ) {
-                            sem_errs.push(sem_err);
-                        };
-                        todo!("TOdol");
-
-                        // dbg!(ty);
-                        // match ty {
-                        //     Type::BuiltinType(builtin_ty) => {
-                        //         if !builtin_ty.kind().is_comparable() {
-                        //             let span = self.compiler.exprs[expr_id.id as usize].span;
-                        //
-                        //             sem_errs.push(SemanticError::FuncConstraintMismatch(
-                        //                 *constraint,
-                        //                 ty.to_fmt(),
-                        //                 vec![span],
-                        //             ));
-                        //         }
-                        //     }
-                        //     Type::Struct(struct_def) => todo!(),
-                        //     Type::Enum(enum_def) => todo!(),
-                        //     Type::Func(func_def) => todo!(),
-                        //     Type::Alias(alias_def) => todo!(),
-                        //     Type::TypeDef(type_def) => todo!(),
-                        //     Type::Constrained(type_constraint_flags) => todo!(),
-                        //     Type::Unknown => todo!(),
-                        // }
-                    }
-                }
-                // Should be more constrsaint based
-                ArgConstraint::SameTypeAsSelf => {
-                    let parent_ty = &self.compiler.types[parent_ty_id.id as usize];
-                    for expr_id in expr_id_args.iter().skip(1) {
-                        let other_ty_id = self.compiler.exprs[expr_id.id as usize].type_id;
-                        let types = &self.compiler.types;
-                        let ty = &types[parent_ty_id.id as usize];
-                        dbg!(ty);
-
-                        panic!();
-                        if parent_ty_id != other_ty_id {
-                            let other_span = self.compiler.exprs[expr_id.id as usize].span;
-                            let msg = "Must be the same type as `self`".to_string();
-
-                            sem_errs
-                                .push(SemanticError::General(msg, vec![parent_span, other_span]));
-                        }
-                    }
-                }
-            }
-        }
-
-        if !sem_errs.is_empty() {
-            return Err(sem_errs);
-        }
-
-        Ok(())
+        todo!();
+        // for constraint in arg_constraints {
+        //     match constraint {
+        //         ArgConstraint::ArgCount(arg_count_constraint) => {
+        //             let found_arg_count = expr_id_args.len() as u32;
+        //
+        //             if found_arg_count != *arg_count_constraint {
+        //                 let mut spans: Vec<SourceSpan> = expr_id_args
+        //                     .iter()
+        //                     .map(|ex_id| self.compiler.exprs[ex_id.id as usize].span)
+        //                     .collect();
+        //
+        //                 if spans.is_empty() {
+        //                     let cond_span = &self.compiler.exprs[cond_expr_id.id as usize].span;
+        //                     spans.push(*cond_span);
+        //                 }
+        //
+        //                 sem_errs.push(SemanticError::ArgCountMismatch(
+        //                     *constraint,
+        //                     found_arg_count,
+        //                     spans,
+        //                 ));
+        //
+        //                 // Going further would likely lead to misleading errors
+        //                 return Err(sem_errs);
+        //             }
+        //         }
+        //         ArgConstraint::MatchingArgumentTypes => {
+        //             // If no arguments then it innately succeeds
+        //             let req_expr_id = match expr_id_args.first() {
+        //                 Some(id) => id,
+        //                 None => continue,
+        //             };
+        //
+        //             let req_type_id = self.compiler.exprs[req_expr_id.id as usize].type_id;
+        //
+        //             for expr_id in expr_id_args.iter().skip(1) {
+        //                 let other_type_id = self.compiler.exprs[expr_id.id as usize].type_id;
+        //
+        //                 if req_type_id != other_type_id {
+        //                     let req_span = self.compiler.exprs[req_expr_id.id as usize].span;
+        //                     let other_span = self.compiler.exprs[expr_id.id as usize].span;
+        //
+        //                     let ty = &self.compiler.types[req_type_id.id as usize].ty;
+        //
+        //                     sem_errs.push(SemanticError::FuncConstraintMismatch(
+        //                         *constraint,
+        //                         ty.to_fmt(),
+        //                         vec![req_span, other_span],
+        //                     ));
+        //                 }
+        //             }
+        //         }
+        //         ArgConstraint::Numeric => {
+        //             for expr_id in expr_id_args {
+        //                 let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
+        //                 let ty = &self.compiler.types[type_id.id as usize].ty;
+        //
+        //                 if let Type::BuiltinType(builtin_ty) = ty {
+        //                     if !builtin_ty.kind().is_numeric() {
+        //                         let span = self.compiler.exprs[expr_id.id as usize].span;
+        //
+        //                         sem_errs.push(SemanticError::FuncConstraintMismatch(
+        //                             *constraint,
+        //                             ty.to_fmt(),
+        //                             vec![span],
+        //                         ));
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //         ArgConstraint::Integer => {
+        //             for expr_id in expr_id_args {
+        //                 let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
+        //                 let ty = &self.compiler.types[type_id.id as usize].ty;
+        //
+        //                 if let Type::BuiltinType(builtin_ty) = ty {
+        //                     if !builtin_ty.kind().is_integer() {
+        //                         let span = self.compiler.exprs[expr_id.id as usize].span;
+        //
+        //                         sem_errs.push(SemanticError::FuncConstraintMismatch(
+        //                             *constraint,
+        //                             ty.to_fmt(),
+        //                             vec![span],
+        //                         ));
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //         ArgConstraint::Float => {
+        //             for expr_id in expr_id_args {
+        //                 let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
+        //                 let ty = &self.compiler.types[type_id.id as usize].ty;
+        //
+        //                 if let Type::BuiltinType(builtin_ty) = ty {
+        //                     if !builtin_ty.kind().is_float() {
+        //                         let span = self.compiler.exprs[expr_id.id as usize].span;
+        //
+        //                         sem_errs.push(SemanticError::FuncConstraintMismatch(
+        //                             *constraint,
+        //                             ty.to_fmt(),
+        //                             vec![span],
+        //                         ));
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //         ArgConstraint::Str => {
+        //             for expr_id in expr_id_args {
+        //                 let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
+        //                 let ty = &self.compiler.types[type_id.id as usize].ty;
+        //
+        //                 if let Type::BuiltinType(builtin_ty) = ty {
+        //                     if builtin_ty.kind() != BuiltinTypeKind::Str {
+        //                         let span = self.compiler.exprs[expr_id.id as usize].span;
+        //
+        //                         sem_errs.push(SemanticError::FuncConstraintMismatch(
+        //                             *constraint,
+        //                             ty.to_fmt(),
+        //                             vec![span],
+        //                         ));
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //         ArgConstraint::CharacterMappable => {
+        //             for expr_id in expr_id_args {
+        //                 let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
+        //                 let ty = &self.compiler.types[type_id.id as usize].ty;
+        //
+        //                 if let Type::BuiltinType(builtin_ty) = ty {
+        //                     if !builtin_ty.kind().is_character_mappable() {
+        //                         let span = self.compiler.exprs[expr_id.id as usize].span;
+        //
+        //                         sem_errs.push(SemanticError::FuncConstraintMismatch(
+        //                             *constraint,
+        //                             ty.to_fmt(),
+        //                             vec![span],
+        //                         ));
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //         ArgConstraint::Bool => {
+        //             for expr_id in expr_id_args {
+        //                 let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
+        //                 let ty = &self.compiler.types[type_id.id as usize].ty;
+        //
+        //                 if let Type::BuiltinType(builtin_ty) = ty {
+        //                     if builtin_ty.kind() != BuiltinTypeKind::Bool {
+        //                         let span = self.compiler.exprs[expr_id.id as usize].span;
+        //
+        //                         sem_errs.push(SemanticError::FuncConstraintMismatch(
+        //                             *constraint,
+        //                             ty.to_fmt(),
+        //                             vec![span],
+        //                         ));
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //         ArgConstraint::Variadic | ArgConstraint::DynType => (),
+        //         ArgConstraint::Comparable => {
+        //             for expr_id in expr_id_args {
+        //                 let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
+        //                 // let ty = &self.compiler.types[type_id.id as usize].ty;
+        //
+        //                 let expr_span = self.compiler.exprs[expr_id.id as usize].span;
+        //                 let cond_span = self.compiler.exprs[cond_expr_id.id as usize].span;
+        //
+        //                 if let Err(sem_err) = constraints::check_type_constraint(
+        //                     self.compiler,
+        //                     *type_id,
+        //                     expr_span,
+        //                     cond_span,
+        //                     &mut Vec::new(),
+        //                     TypeConstraintFlags::new(TypeConstraint::Comparable.to_u64()),
+        //                 ) {
+        //                     sem_errs.push(sem_err);
+        //                 };
+        //                 todo!("TOdol");
+        //
+        //                 // dbg!(ty);
+        //                 // match ty {
+        //                 //     Type::BuiltinType(builtin_ty) => {
+        //                 //         if !builtin_ty.kind().is_comparable() {
+        //                 //             let span = self.compiler.exprs[expr_id.id as usize].span;
+        //                 //
+        //                 //             sem_errs.push(SemanticError::FuncConstraintMismatch(
+        //                 //                 *constraint,
+        //                 //                 ty.to_fmt(),
+        //                 //                 vec![span],
+        //                 //             ));
+        //                 //         }
+        //                 //     }
+        //                 //     Type::Struct(struct_def) => todo!(),
+        //                 //     Type::Enum(enum_def) => todo!(),
+        //                 //     Type::Func(func_def) => todo!(),
+        //                 //     Type::Alias(alias_def) => todo!(),
+        //                 //     Type::TypeDef(type_def) => todo!(),
+        //                 //     Type::Constrained(type_constraint_flags) => todo!(),
+        //                 //     Type::Unknown => todo!(),
+        //                 // }
+        //             }
+        //         }
+        //         // Should be more constrsaint based
+        //         ArgConstraint::SameTypeAsSelf => {
+        //             let parent_ty = &self.compiler.types[parent_ty_id.id as usize];
+        //             for expr_id in expr_id_args.iter().skip(1) {
+        //                 let other_ty_id = self.compiler.exprs[expr_id.id as usize].type_id;
+        //                 let types = &self.compiler.types;
+        //                 let ty = &types[parent_ty_id.id as usize];
+        //                 dbg!(ty);
+        //
+        //                 panic!();
+        //                 if parent_ty_id != other_ty_id {
+        //                     let other_span = self.compiler.exprs[expr_id.id as usize].span;
+        //                     let msg = "Must be the same type as `self`".to_string();
+        //
+        //                     sem_errs
+        //                         .push(SemanticError::General(msg, vec![parent_span, other_span]));
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+        //
+        // if !sem_errs.is_empty() {
+        //     return Err(sem_errs);
+        // }
+        //
+        // Ok(())
     }
 }

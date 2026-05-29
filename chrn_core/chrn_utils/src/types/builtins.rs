@@ -1,6 +1,5 @@
-use common::fmter::{Formattable, Formatted};
-
 use crate::{
+    fmter::{Formattable, Formatted},
     id_types::TypeId,
     intern,
     types::type_constraints::{self, TypeConstraint, TypeConstraintFlags},

@@ -1,6 +1,5 @@
 // Should this be pub(crate)?
 mod algo;
-pub mod config_loader;
 mod iyo;
 pub mod lexer;
 pub mod linter;
@@ -13,908 +12,925 @@ pub mod trivia;
 
 #[cfg(test)]
 mod tests {
-    // -- Helpers --
-    /// Creates fake strings for the amounts given
-    fn mock_interner(str_amt: usize, path_amt: usize) -> Intern {
-        let mut interner = Intern::init();
-
-        for idx in 0..str_amt {
-            let s = format!("dummyname{idx}");
-            interner.intern(&s);
-        }
-
-        for idx in 0..path_amt {
-            let p = format!("dummyimport{idx}");
-            let p = Path::new(&p);
-            interner.intern_path(&p);
-        }
-
-        interner
-    }
-
-    fn mock_single_module_compiler(text: &str) -> (Intern, ChrnSettings, ScriptCompiler) {
-        let mut interner = mock_interner(0, 1);
-        let settings = ChrnSettings::default();
-
-        let metadata =
-            ChrnConfigLoader::new(PathId::new(0), text.as_bytes(), &settings, &mut interner)
-                .load_config()
-                .unwrap();
-
-        let module = Module::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-            Some(metadata),
-        );
-
-        let compiler = ScriptCompiler::new(None, HashMap::default(), vec![module]);
-
-        (interner, settings, compiler)
-    }
-
-    fn mock_import(
-        name: &str,
-        path_name: &str,
-        alias_id: Option<&str>,
-        interner: &mut Intern,
-    ) -> Import {
-        let kind = ImportKind::Source(
-            PathId::new(interner.intern_path(&Path::new(path_name))),
-            Default::default(),
-        );
-        Import::new(
-            InternedId::new(interner.intern(name)),
-            kind,
-            alias_id.map(|a| InternedId::new(interner.intern(&a))),
-        )
-    }
-
-    fn mock_single_module(
-        name: &str,
-        path_name: &str,
-        imports: Vec<Import>,
-        mod_id: usize,
-        text: &str,
-        interner: &mut Intern,
-    ) -> Module {
-        let settings = ChrnSettings::default();
-        let path_id = PathId::new(interner.intern_path(Path::new(path_name)));
-        let metadata = ChrnConfigLoader::new(path_id, text.as_bytes(), &settings, interner)
-            .load_config()
-            .unwrap();
-
-        Module::new(
-            InternedId::new(interner.intern(name)),
-            ModuleId::new(mod_id),
-            imports,
-            Some(metadata),
-        )
-    }
-
-    fn mock_multiple_module_compiler(
-        modules: Vec<Module>,
-    ) -> (Intern, ChrnSettings, ScriptCompiler) {
-        let interner = mock_interner(0, modules.len());
-        let settings = ChrnSettings::default();
-
-        let mut mod_map = HashMap::new();
-
-        for module in &modules {
-            mod_map.insert(module.name_id, module.mod_id);
-        }
-
-        for i in 0..modules.len() {
-            for import in modules.iter().flat_map(|m| &m.imports) {
-                if let Some(alias_id) = import.alias_id {
-                    mod_map.insert(alias_id, ModuleId::new(i));
-                }
-            }
-        }
-
-        let compiler = ScriptCompiler::new(None, mod_map, modules);
-
-        (interner, settings, compiler)
-    }
-    // Builder?
-    //fn setup_multiple_modules(text: &str, ) -> (Intern, ChrnSettings, ScriptCompiler) {}
-
-    use std::{collections::HashMap, path::Path};
-
-    use chrn_utils::{
-        id_types::{InternedId, ModuleId, PathId},
-        intern::Intern,
-        keywords,
-        values::Value,
-    };
-    use common::chrn_settings::ChrnSettings;
-
-    use crate::{
-        config_loader::ChrnConfigLoader,
-        lexer::Lexer,
-        modules::{Import, ImportKind, Module},
-        parser::{self, ast::AstInfo},
-        script_compiler::ScriptCompiler,
-        semantic::{
-            name_resolver::NamespaceResolver,
-            type_resolver::{TypeResolver, type_context::TypeContext},
-        },
-        token::{Notation, Token},
-    };
-
-    #[test]
-    fn lex_tok_test() {
-        let text = r#"bind "./some/path""#;
-
-        let mut interner = Intern::init();
-        let path_id = PathId::new(interner.intern_path(Path::new("")));
-        let metadata = ChrnConfigLoader::new(
-            path_id,
-            text.as_bytes(),
-            &ChrnSettings::default(),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(
-            None, metadata.serial_start,
-            "start_offset without `@def` failed"
-        );
-        assert_eq!(3, toks.len(), "Token length exceeded 3 in lex_tok_test");
-    }
-
-    #[test]
-    fn lex_tok_test_rev() {
-        // Properly closed @def and @end
-        let correct = r#"@defbind "./some/path"@end"#;
-
-        let mut interner = mock_interner(1, 1);
-        let path_id = PathId::new(interner.intern_path(Path::new("")));
-        let opt = ChrnConfigLoader::new(
-            path_id,
-            correct.as_bytes(),
-            &ChrnSettings::default(),
-            &mut interner,
-        )
-        .load_config();
-
-        assert_eq!(true, opt.is_ok());
-
-        // Improper @def without an @end
-        // This type of error is more likely to break the diagnostic reporting but is fixed for
-        // now.
-        let wrong = r#"@defbind "./some/path""#;
-
-        let opt = ChrnConfigLoader::new(
-            path_id,
-            wrong.as_bytes(),
-            &ChrnSettings::default(),
-            &mut interner,
-        )
-        .load_config();
-
-        assert_eq!(true, opt.is_err());
-    }
-
-    #[test]
-    fn char_literal_test() {
-        // Valid single character
-        let text = "'a'";
-        let mut interner = Intern::init();
-
-        let path_id = PathId::new(interner.intern_path(Path::new("")));
-
-        let metadata = ChrnConfigLoader::new(
-            path_id,
-            text.as_bytes(),
-            &ChrnSettings::default(),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(2, toks.len());
-        assert!(
-            matches!(toks[0].tok, Token::Char(_),),
-            "Expected char token, got {:?}",
-            toks[0].tok
-        );
-
-        // Valid escaped character
-        let text = "'\\n'";
-        let mut interner = Intern::init();
-
-        let path_id = PathId::new(interner.intern_path(Path::new("")));
-
-        let metadata = ChrnConfigLoader::new(
-            path_id,
-            text.as_bytes(),
-            &ChrnSettings::default(),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(2, toks.len());
-        assert!(
-            matches!(toks[0].tok, Token::Char(_),),
-            "Expected char token, got {:?}",
-            toks[0].tok
-        );
-
-        // Valid hex escape
-        let text = "'\\x2F'";
-
-        let mut interner = Intern::init();
-        let path_id = PathId::new(interner.intern_path(Path::new("")));
-
-        let metadata = ChrnConfigLoader::new(
-            path_id,
-            text.as_bytes(),
-            &ChrnSettings::default(),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(2, toks.len());
-        assert!(
-            matches!(toks[0].tok, Token::Char(_),),
-            "Expected char token, got {:?}",
-            toks[0].tok
-        );
-
-        // Invalid character
-        let text = "'aa'";
-        let mut interner = Intern::init();
-        let path_id = PathId::new(interner.intern_path(Path::new("")));
-        let metadata = ChrnConfigLoader::new(
-            path_id,
-            text.as_bytes(),
-            &ChrnSettings::default(),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(2, toks.len());
-        assert!(
-            matches!(toks[0].tok, Token::Illegal(_),),
-            "Expected Illegal token, got {:?}",
-            toks[0].tok
-        );
-
-        // Invalid hex escape
-        let text = "'\\x2'";
-        let mut interner = Intern::init();
-        let path_id = PathId::new(interner.intern_path(Path::new("")));
-        let metadata = ChrnConfigLoader::new(
-            path_id,
-            text.as_bytes(),
-            &ChrnSettings::default(),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(2, toks.len());
-        assert!(
-            matches!(toks[0].tok, Token::Illegal(_),),
-            "Expected Illegal token, got {:?}",
-            toks[0].tok
-        );
-
-        // I can't actually read hex
-        // Invalid hex digits
-        let text = "'\\x255'";
-        let mut interner = Intern::init();
-        let path_id = PathId::new(interner.intern_path(Path::new("")));
-        let metadata = ChrnConfigLoader::new(
-            path_id,
-            text.as_bytes(),
-            &ChrnSettings::new(false),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(2, toks.len());
-        assert!(
-            matches!(toks[0].tok, Token::Illegal(_),),
-            "Expected Illegal token, got {:?}",
-            toks[0].tok
-        );
-
-        // Unknown escape
-        let text = "'\\q'";
-        let mut interner = Intern::init();
-        let path_id = PathId::new(interner.intern_path(Path::new("")));
-        let metadata = ChrnConfigLoader::new(
-            path_id,
-            text.as_bytes(),
-            &ChrnSettings::new(false),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(2, toks.len());
-        assert!(
-            matches!(toks[0].tok, Token::Illegal(_),),
-            "Expected Illegal token, got {:?}",
-            toks[0].tok
-        );
-
-        // Out of range escape
-        let text = "'\\x1Y'";
-        let mut interner = Intern::init();
-        let path_id = PathId::new(interner.intern_path(Path::new("")));
-        let metadata = ChrnConfigLoader::new(
-            path_id,
-            text.as_bytes(),
-            &ChrnSettings::new(false),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(2, toks.len());
-        assert!(
-            matches!(toks[0].tok, Token::Illegal(_),),
-            "Expected Illegal token, got {:?}",
-            toks[0].tok
-        );
-    }
-
-    #[test]
-    fn multi_line_comment_test() {
-        // Properly closed multi-line comment
-        let correct = "
-                /* /* */ */
-            "
-        .as_bytes();
-
-        // Unclosed multi-line comment
-        let wrong = "
-                /* /* */
-            "
-        .as_bytes();
-
-        let mut interner = mock_interner(0, 2);
-
-        let correct = ChrnConfigLoader::new(
-            PathId::default(),
-            correct,
-            &ChrnSettings::default(),
-            &mut interner,
-        )
-        .load_config();
-
-        let wrong = ChrnConfigLoader::new(
-            PathId::default(),
-            wrong,
-            &ChrnSettings::default(),
-            &mut interner,
-        )
-        .load_config();
-
-        assert_eq!(true, correct.is_ok());
-        assert_eq!(true, wrong.is_err());
-    }
-
-    #[test]
-    fn start_and_serial_offset_test() {
-        let text = format!("adwh@def var-> int: i32 @endhi");
-        let mut interner = mock_interner(0, 1);
-
-        let metadata = ChrnConfigLoader::new(
-            PathId::default(),
-            text.as_bytes(),
-            &ChrnSettings::default(),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-        dbg!(metadata.serial_start);
-
-        assert_eq!(&text[4..], &text[metadata.script_start..]);
-        assert_eq!("hi", &text[metadata.serial_start.unwrap()..]);
-        assert_eq!(28, metadata.serial_start.unwrap());
-    }
-
-    #[test]
-    fn lex_notation_test() {
-        // Hex Test (Hex Text (Hex Test))
-        let text = "0xff";
-        let mut interner = mock_interner(1, 1);
-
-        let metadata = ChrnConfigLoader::new(
-            Default::default(),
-            text.as_bytes(),
-            &Default::default(),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(2, toks.len());
-        match toks[0].tok {
-            Token::Integer(id, Notation::Hex) => {
-                assert_eq!("255", interner.search(id as usize));
-            }
-            _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
-        }
-
-        // Binary
-        let text = "0b1010";
-        let metadata = ChrnConfigLoader::new(
-            Default::default(),
-            text.as_bytes(),
-            &Default::default(),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(2, toks.len());
-        match toks[0].tok {
-            Token::Integer(id, Notation::Bin) => {
-                assert_eq!("10", interner.search(id as usize));
-            }
-            _ => panic!("Expected Integer with Binary, found {:?}", toks[0].tok),
-        }
-
-        // Octal
-        let text = "0o77";
-        let metadata = ChrnConfigLoader::new(
-            Default::default(),
-            text.as_bytes(),
-            &Default::default(),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(2, toks.len());
-        match toks[0].tok {
-            Token::Integer(id, Notation::Octal) => {
-                assert_eq!("63", interner.search(id as usize));
-            }
-            _ => panic!("Expected Integer with Octal, found {:?}", toks[0].tok),
-        }
-
-        // Decimal
-        let text = "42";
-        let metadata = ChrnConfigLoader::new(
-            Default::default(),
-            text.as_bytes(),
-            &Default::default(),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(2, toks.len());
-        match toks[0].tok {
-            Token::Integer(id, Notation::Decimal) => {
-                assert_eq!("42", interner.search(id as usize));
-            }
-            _ => panic!("Expected Integer of Decimal, found {:?}", toks[0].tok),
-        }
-
-        // Float with decimal
-        let text = "3.14";
-        let metadata = ChrnConfigLoader::new(
-            Default::default(),
-            text.as_bytes(),
-            &Default::default(),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(2, toks.len());
-        match toks[0].tok {
-            Token::Float(id, Notation::Decimal) => {
-                assert_eq!("3.14", interner.search(id as usize));
-            }
-            _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
-        }
-
-        // Positive Scientific Notation
-        let text = "1e+23";
-        let metadata = ChrnConfigLoader::new(
-            Default::default(),
-            text.as_bytes(),
-            &Default::default(),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(2, toks.len());
-        match toks[0].tok {
-            Token::Float(id, Notation::Decimal) => {
-                assert_eq!("1e+23", interner.search(id as usize));
-            }
-            _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
-        }
-
-        // Negative Scientific Notation
-        let text = "1e-23";
-        let metadata = ChrnConfigLoader::new(
-            Default::default(),
-            text.as_bytes(),
-            &Default::default(),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(2, toks.len());
-        match toks[0].tok {
-            Token::Float(id, Notation::Decimal) => {
-                assert_eq!("1e-23", interner.search(id as usize));
-            }
-            _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
-        }
-
-        // Underscored Numbers
-        let text = "1_000_000";
-        let metadata = ChrnConfigLoader::new(
-            Default::default(),
-            text.as_bytes(),
-            &Default::default(),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(2, toks.len());
-        match toks[0].tok {
-            Token::Integer(id, Notation::Decimal) => {
-                assert_eq!("1000000", interner.search(id as usize));
-            }
-            _ => panic!("Expected Integer with Decimal, found {:?}", toks[0].tok),
-        }
-
-        // Underscored Hex
-        let text = "0x_ff_ff";
-        let metadata = ChrnConfigLoader::new(
-            Default::default(),
-            text.as_bytes(),
-            &Default::default(),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        assert_eq!(2, toks.len());
-        match toks[0].tok {
-            Token::Integer(id, Notation::Hex) => {
-                assert_eq!("65535", interner.search(id as usize));
-            }
-            _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
-        }
-    }
-
-    #[test]
-    fn nameresolver_duplicate_simple_test() {
-        // -- NEUTRAL --
-        let wrong = "
-                let DUPLICATE = 3
-                let DUPLICATE = \"Hi\"
-                ";
-
-        let (mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
-
-        let module = &compiler.mods[0];
-
-        let metadata = module.src_metadata.as_ref().unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
-
-        // Calls `reporter` internally but the path is fake so this fails
-        let res = NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve();
-
-        assert_eq!(res.is_err(), true);
-
-        let correct = "
-                    let ORIGINAL = 2 + 2
-                    let NEW = \"Hallo\"
-                ";
-
-        let (mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
-
-        let module = &compiler.mods[0];
-
-        let metadata = module.src_metadata.as_ref().unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
-
-        // Calls `reporter` internally but the path is fake so this fails
-        let res = NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve();
-
-        assert_eq!(res.is_ok(), true);
-
-        // -- VAR --
-        let wrong = "
-                var->
-                    duplicate: i32
-                    duplicate: i8
-                ";
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-        let (mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
-
-        let module = &compiler.mods[0];
-
-        let metadata = module.src_metadata.as_ref().unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
-
-        // Calls `reporter` internally but the path is fake so this fails
-        let res = NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve();
-
-        assert_eq!(res.is_err(), true);
-
-        let correct = "
-                var->
-                    original: u32
-                    new: i8
-                ";
-
-        let (mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
-
-        let module = &compiler.mods[0];
-
-        let metadata = module.src_metadata.as_ref().unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
-
-        // Calls `reporter` internally but the path is fake so this fails
-        let res = NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve();
-
-        assert_eq!(res.is_ok(), true);
-
-        // -- NEST --
-
-        let wrong = "
-                nest->
-                    struct Duplicate {}
-                    struct Duplicate {}
-                ";
-
-        let (mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
-
-        let module = &compiler.mods[0];
-
-        let metadata = module.src_metadata.as_ref().unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
-
-        // Calls `reporter` internally but the path is fake so this fails
-        let res = NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve();
-
-        assert_eq!(res.is_err(), true);
-
-        let correct = "
-                nest->
-                    struct Original {}
-                    struct New {}
-                ";
-
-        let (mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
-
-        let module = &compiler.mods[0];
-
-        let metadata = module.src_metadata.as_ref().unwrap();
-        let (toks, _) =
-            Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-        let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
-
-        // Calls `reporter` internally but the path is fake so this fails
-        let res = NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve();
-
-        assert_eq!(res.is_ok(), true);
-        //TEST: -- COMPLEX --
-
-        //TEST: -- OVERRIDE --
-    }
-
-    #[test]
-    fn module_simple_test() {
-        // -- NEUTRAL --
-        let mut interner = mock_interner(0, 2);
-        let settings = ChrnSettings::default();
-
-        let main_txt = "
-                let CONSTANT = 3
-            ";
-
-        let main_meta = ChrnConfigLoader::new(
-            Default::default(),
-            main_txt.as_bytes(),
-            &Default::default(),
-            &mut interner,
-        )
-        .load_config()
-        .unwrap();
-
-        // Doing this first since if modules were identified during the parsing stage any
-        // syntax error within another module would not be reportable since the parser failed.
-
-        let kind = ImportKind::Source(PathId::new(1), Default::default());
-        let sub_import = Import::new(InternedId::new(1), kind, None);
-
-        let main_mod = Module::new(
-            InternedId::new(0),
-            ModuleId::new(0),
-            vec![sub_import],
-            Some(main_meta),
-        );
-
-        let sub_txt = "
-                let OTHER_CONSTANT = 5
-            ";
-
-        let sub_meta =
-            ChrnConfigLoader::new(PathId::new(1), sub_txt.as_bytes(), &settings, &mut interner)
-                .load_config()
-                .unwrap();
-
-        let sub_mod = Module::new(
-            InternedId::new(1),
-            ModuleId::new(1),
-            Default::default(),
-            Some(sub_meta),
-        );
-
-        let mut compiler = ScriptCompiler::new(None, HashMap::default(), vec![main_mod, sub_mod]);
-
-        let mut asts: Vec<AstInfo> = Vec::new();
-
-        for mod_idx in 0..compiler.mods.len() {
-            let module = &compiler.mods[mod_idx];
-            let metadata = match &module.src_metadata {
-                Some(m) => m,
-                None => continue,
-            };
-
-            let (toks, _) =
-                Lexer::new(&metadata.src_bytes, metadata.script_start).tokenize(&mut interner);
-
-            let ast_info = parser::parse(&settings, metadata, &toks, &mut interner).unwrap();
-
-            NamespaceResolver::new(
-                &settings,
-                &ast_info,
-                &interner,
-                module.mod_id,
-                &mut compiler,
-            )
-            .resolve()
-            .unwrap();
-
-            asts.push(ast_info);
-        }
-
-        let mut ty_ctx = TypeContext::new();
-        for i in 0..compiler.mods.len() {
-            let mod_id = ModuleId::new(i);
-            let metadata = &compiler.mods[mod_id.id].src_metadata;
-
-            if metadata.is_none() {
-                continue;
-            }
-
-            TypeResolver::new(
-                &settings,
-                &asts[i],
-                mod_id,
-                &mut ty_ctx,
-                &interner,
-                &mut compiler,
-            )
-            .resolve()
-            .unwrap();
-        }
-    }
+    // // -- Helpers --
+    // /// Creates fake strings for the amounts given
+    // fn mock_interner(str_amt: usize, path_amt: usize) -> Intern {
+    //     let mut interner = Intern::init();
+    //
+    //     for idx in 0..str_amt {
+    //         let s = format!("dummyname{idx}");
+    //         interner.intern(&s);
+    //     }
+    //
+    //     for idx in 0..path_amt {
+    //         let p = format!("dummyimport{idx}");
+    //         let p = Path::new(&p);
+    //         interner.intern_path(&p);
+    //     }
+    //
+    //     interner
+    // }
+    //
+    // fn mock_single_module_compiler(text: &str) -> (Intern, ChrnSettings, ScriptCompiler) {
+    //     let mut interner = mock_interner(0, 1);
+    //     let settings = ChrnSettings::default();
+    //
+    //     let metadata =
+    //         ChrnConfigLoader::new(PathId::new(0), text.as_bytes(), &settings, &mut interner)
+    //             .load_config()
+    //             .unwrap();
+    //
+    //     let module = Module::new(
+    //         Default::default(),
+    //         Default::default(),
+    //         Default::default(),
+    //         Some(metadata),
+    //     );
+    //
+    //     let compiler = ScriptCompiler::init(None, HashMap::default(), vec![module]);
+    //
+    //     (interner, settings, compiler)
+    // }
+    //
+    // fn mock_import(
+    //     name: &str,
+    //     path_name: &str,
+    //     alias_id: Option<&str>,
+    //     interner: &mut Intern,
+    // ) -> Import {
+    //     let kind = ImportKind::Source(
+    //         PathId::new(interner.intern_path(&Path::new(path_name))),
+    //         Default::default(),
+    //     );
+    //     Import::new(
+    //         InternedId::new(interner.intern(name)),
+    //         kind,
+    //         alias_id.map(|a| InternedId::new(interner.intern(&a))),
+    //     )
+    // }
+    //
+    // fn mock_single_module(
+    //     name: &str,
+    //     path_name: &str,
+    //     imports: Vec<Import>,
+    //     mod_id: usize,
+    //     text: &str,
+    //     interner: &mut Intern,
+    // ) -> Module {
+    //     let settings = ChrnSettings::default();
+    //     let path_id = PathId::new(interner.intern_path(Path::new(path_name)));
+    //     let metadata = ChrnConfigLoader::new(path_id, text.as_bytes(), &settings, interner)
+    //         .load_config()
+    //         .unwrap();
+    //
+    //     Module::new(
+    //         InternedId::new(interner.intern(name)),
+    //         ModuleId::new(mod_id),
+    //         imports,
+    //         Some(metadata),
+    //     )
+    // }
+    //
+    // fn mock_multiple_module_compiler(
+    //     modules: Vec<Module>,
+    // ) -> (Intern, ChrnSettings, ScriptCompiler) {
+    //     let interner = mock_interner(0, modules.len());
+    //     let settings = ChrnSettings::default();
+    //
+    //     let mut mod_map = HashMap::new();
+    //
+    //     for module in &modules {
+    //         mod_map.insert(module.name_id, module.mod_id);
+    //     }
+    //
+    //     for i in 0..modules.len() {
+    //         for import in modules.iter().flat_map(|m| &m.imports) {
+    //             if let Some(alias_id) = import.alias_id {
+    //                 mod_map.insert(alias_id, ModuleId::new(i));
+    //             }
+    //         }
+    //     }
+    //
+    //     let compiler = ScriptCompiler::init(None, mod_map, modules);
+    //
+    //     (interner, settings, compiler)
+    // }
+    // // Builder?
+    // //fn setup_multiple_modules(text: &str, ) -> (Intern, ChrnSettings, ScriptCompiler) {}
+    //
+    // use std::{collections::HashMap, path::Path};
+    //
+    // use chrn_utils::{
+    //     chrn_settings::ChrnSettings,
+    //     id_types::{InternedId, ModuleId, PathId},
+    //     intern::Intern,
+    //     keywords,
+    //     values::Value,
+    // };
+    //
+    // use crate::{
+    //     config_loader::ChrnConfigLoader,
+    //     lexer::Lexer,
+    //     modules::{Import, ImportKind, Module},
+    //     parser::{self, ast::AstInfo},
+    //     script_compiler::ScriptCompiler,
+    //     semantic::{
+    //         name_resolver::NamespaceResolver,
+    //         type_resolver::{TypeResolver, type_context::TypeContext},
+    //     },
+    //     token::{Notation, Token},
+    // };
+    //
+    // #[test]
+    // fn lex_tok_test() {
+    //     let text = r#"bind "./some/path""#;
+    //
+    //     let mut interner = Intern::init();
+    //     let path_id = PathId::new(interner.intern_path(Path::new("")));
+    //     let metadata = ChrnConfigLoader::new(
+    //         path_id,
+    //         text.as_bytes(),
+    //         &ChrnSettings::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(
+    //         None, metadata.serial_start,
+    //         "start_offset without `@def` failed"
+    //     );
+    //     assert_eq!(3, toks.len(), "Token length exceeded 3 in lex_tok_test");
+    // }
+    //
+    // #[test]
+    // fn lex_tok_test_rev() {
+    //     // Properly closed @def and @end
+    //     let correct = r#"@defbind "./some/path"@end"#;
+    //
+    //     let mut interner = mock_interner(1, 1);
+    //     let path_id = PathId::new(interner.intern_path(Path::new("")));
+    //     let opt = ChrnConfigLoader::new(
+    //         path_id,
+    //         correct.as_bytes(),
+    //         &ChrnSettings::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config();
+    //
+    //     assert_eq!(true, opt.is_ok());
+    //
+    //     // Improper @def without an @end
+    //     // This type of error is more likely to break the diagnostic reporting but is fixed for
+    //     // now.
+    //     let wrong = r#"@defbind "./some/path""#;
+    //
+    //     let opt = ChrnConfigLoader::new(
+    //         path_id,
+    //         wrong.as_bytes(),
+    //         &ChrnSettings::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config();
+    //
+    //     assert_eq!(true, opt.is_err());
+    // }
+    //
+    // #[test]
+    // fn char_literal_test() {
+    //     // Valid single character
+    //     let text = "'a'";
+    //     let mut interner = Intern::init();
+    //
+    //     let path_id = PathId::new(interner.intern_path(Path::new("")));
+    //
+    //     let metadata = ChrnConfigLoader::new(
+    //         path_id,
+    //         text.as_bytes(),
+    //         &ChrnSettings::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(2, toks.len());
+    //     assert!(
+    //         matches!(toks[0].tok, Token::Char(_),),
+    //         "Expected char token, got {:?}",
+    //         toks[0].tok
+    //     );
+    //
+    //     // Valid escaped character
+    //     let text = "'\\n'";
+    //     let mut interner = Intern::init();
+    //
+    //     let path_id = PathId::new(interner.intern_path(Path::new("")));
+    //
+    //     let metadata = ChrnConfigLoader::new(
+    //         path_id,
+    //         text.as_bytes(),
+    //         &ChrnSettings::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(2, toks.len());
+    //     assert!(
+    //         matches!(toks[0].tok, Token::Char(_),),
+    //         "Expected char token, got {:?}",
+    //         toks[0].tok
+    //     );
+    //
+    //     // Valid hex escape
+    //     let text = "'\\x2F'";
+    //
+    //     let mut interner = Intern::init();
+    //     let path_id = PathId::new(interner.intern_path(Path::new("")));
+    //
+    //     let metadata = ChrnConfigLoader::new(
+    //         path_id,
+    //         text.as_bytes(),
+    //         &ChrnSettings::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(2, toks.len());
+    //     assert!(
+    //         matches!(toks[0].tok, Token::Char(_),),
+    //         "Expected char token, got {:?}",
+    //         toks[0].tok
+    //     );
+    //
+    //     // Invalid character
+    //     let text = "'aa'";
+    //     let mut interner = Intern::init();
+    //     let path_id = PathId::new(interner.intern_path(Path::new("")));
+    //     let metadata = ChrnConfigLoader::new(
+    //         path_id,
+    //         text.as_bytes(),
+    //         &ChrnSettings::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(2, toks.len());
+    //     assert!(
+    //         matches!(toks[0].tok, Token::Illegal(_),),
+    //         "Expected Illegal token, got {:?}",
+    //         toks[0].tok
+    //     );
+    //
+    //     // Invalid hex escape
+    //     let text = "'\\x2'";
+    //     let mut interner = Intern::init();
+    //     let path_id = PathId::new(interner.intern_path(Path::new("")));
+    //     let metadata = ChrnConfigLoader::new(
+    //         path_id,
+    //         text.as_bytes(),
+    //         &ChrnSettings::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(2, toks.len());
+    //     assert!(
+    //         matches!(toks[0].tok, Token::Illegal(_),),
+    //         "Expected Illegal token, got {:?}",
+    //         toks[0].tok
+    //     );
+    //
+    //     // I can't actually read hex
+    //     // Invalid hex digits
+    //     let text = "'\\x255'";
+    //     let mut interner = Intern::init();
+    //     let path_id = PathId::new(interner.intern_path(Path::new("")));
+    //     let metadata = ChrnConfigLoader::new(
+    //         path_id,
+    //         text.as_bytes(),
+    //         &ChrnSettings::new(false),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(2, toks.len());
+    //     assert!(
+    //         matches!(toks[0].tok, Token::Illegal(_),),
+    //         "Expected Illegal token, got {:?}",
+    //         toks[0].tok
+    //     );
+    //
+    //     // Unknown escape
+    //     let text = "'\\q'";
+    //     let mut interner = Intern::init();
+    //     let path_id = PathId::new(interner.intern_path(Path::new("")));
+    //     let metadata = ChrnConfigLoader::new(
+    //         path_id,
+    //         text.as_bytes(),
+    //         &ChrnSettings::new(false),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(2, toks.len());
+    //     assert!(
+    //         matches!(toks[0].tok, Token::Illegal(_),),
+    //         "Expected Illegal token, got {:?}",
+    //         toks[0].tok
+    //     );
+    //
+    //     // Out of range escape
+    //     let text = "'\\x1Y'";
+    //     let mut interner = Intern::init();
+    //     let path_id = PathId::new(interner.intern_path(Path::new("")));
+    //     let metadata = ChrnConfigLoader::new(
+    //         path_id,
+    //         text.as_bytes(),
+    //         &ChrnSettings::new(false),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(2, toks.len());
+    //     assert!(
+    //         matches!(toks[0].tok, Token::Illegal(_),),
+    //         "Expected Illegal token, got {:?}",
+    //         toks[0].tok
+    //     );
+    // }
+    //
+    // #[test]
+    // fn multi_line_comment_test() {
+    //     // Properly closed multi-line comment
+    //     let correct = "
+    //             /* /* */ */
+    //         "
+    //     .as_bytes();
+    //
+    //     // Unclosed multi-line comment
+    //     let wrong = "
+    //             /* /* */
+    //         "
+    //     .as_bytes();
+    //
+    //     let mut interner = mock_interner(0, 2);
+    //
+    //     let correct = ChrnConfigLoader::new(
+    //         PathId::default(),
+    //         correct,
+    //         &ChrnSettings::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config();
+    //
+    //     let wrong = ChrnConfigLoader::new(
+    //         PathId::default(),
+    //         wrong,
+    //         &ChrnSettings::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config();
+    //
+    //     assert_eq!(true, correct.is_ok());
+    //     assert_eq!(true, wrong.is_err());
+    // }
+    //
+    // #[test]
+    // fn start_and_serial_offset_test() {
+    //     let text = format!("adwh@def var-> int: i32 @endhi");
+    //     let mut interner = mock_interner(0, 1);
+    //
+    //     let metadata = ChrnConfigLoader::new(
+    //         PathId::default(),
+    //         text.as_bytes(),
+    //         &ChrnSettings::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //     dbg!(metadata.serial_start);
+    //
+    //     assert_eq!(&text[4..], &text[metadata.script_start..]);
+    //     assert_eq!("hi", &text[metadata.serial_start.unwrap()..]);
+    //     assert_eq!(28, metadata.serial_start.unwrap());
+    // }
+    //
+    // #[test]
+    // fn lex_notation_test() {
+    //     // Hex Test (Hex Text (Hex Test))
+    //     let text = "0xff";
+    //     let mut interner = mock_interner(1, 1);
+    //
+    //     let metadata = ChrnConfigLoader::new(
+    //         Default::default(),
+    //         text.as_bytes(),
+    //         &Default::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //
+    //     let path_id = PathId::new(0);
+    //
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(2, toks.len());
+    //     match toks[0].tok {
+    //         Token::Integer(id, Notation::Hex) => {
+    //             assert_eq!("255", interner.search(id as usize));
+    //         }
+    //         _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
+    //     }
+    //
+    //     // Binary
+    //     let text = "0b1010";
+    //     let metadata = ChrnConfigLoader::new(
+    //         Default::default(),
+    //         text.as_bytes(),
+    //         &Default::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(2, toks.len());
+    //     match toks[0].tok {
+    //         Token::Integer(id, Notation::Bin) => {
+    //             assert_eq!("10", interner.search(id as usize));
+    //         }
+    //         _ => panic!("Expected Integer with Binary, found {:?}", toks[0].tok),
+    //     }
+    //
+    //     // Octal
+    //     let text = "0o77";
+    //     let metadata = ChrnConfigLoader::new(
+    //         Default::default(),
+    //         text.as_bytes(),
+    //         &Default::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(2, toks.len());
+    //     match toks[0].tok {
+    //         Token::Integer(id, Notation::Octal) => {
+    //             assert_eq!("63", interner.search(id as usize));
+    //         }
+    //         _ => panic!("Expected Integer with Octal, found {:?}", toks[0].tok),
+    //     }
+    //
+    //     // Decimal
+    //     let text = "42";
+    //     let metadata = ChrnConfigLoader::new(
+    //         Default::default(),
+    //         text.as_bytes(),
+    //         &Default::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(2, toks.len());
+    //     match toks[0].tok {
+    //         Token::Integer(id, Notation::Decimal) => {
+    //             assert_eq!("42", interner.search(id as usize));
+    //         }
+    //         _ => panic!("Expected Integer of Decimal, found {:?}", toks[0].tok),
+    //     }
+    //
+    //     // Float with decimal
+    //     let text = "3.14";
+    //     let metadata = ChrnConfigLoader::new(
+    //         Default::default(),
+    //         text.as_bytes(),
+    //         &Default::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(2, toks.len());
+    //     match toks[0].tok {
+    //         Token::Float(id, Notation::Decimal) => {
+    //             assert_eq!("3.14", interner.search(id as usize));
+    //         }
+    //         _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
+    //     }
+    //
+    //     // Positive Scientific Notation
+    //     let text = "1e+23";
+    //     let metadata = ChrnConfigLoader::new(
+    //         Default::default(),
+    //         text.as_bytes(),
+    //         &Default::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(2, toks.len());
+    //     match toks[0].tok {
+    //         Token::Float(id, Notation::Decimal) => {
+    //             assert_eq!("1e+23", interner.search(id as usize));
+    //         }
+    //         _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
+    //     }
+    //
+    //     // Negative Scientific Notation
+    //     let text = "1e-23";
+    //     let metadata = ChrnConfigLoader::new(
+    //         Default::default(),
+    //         text.as_bytes(),
+    //         &Default::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(2, toks.len());
+    //     match toks[0].tok {
+    //         Token::Float(id, Notation::Decimal) => {
+    //             assert_eq!("1e-23", interner.search(id as usize));
+    //         }
+    //         _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
+    //     }
+    //
+    //     // Underscored Numbers
+    //     let text = "1_000_000";
+    //     let metadata = ChrnConfigLoader::new(
+    //         Default::default(),
+    //         text.as_bytes(),
+    //         &Default::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(2, toks.len());
+    //     match toks[0].tok {
+    //         Token::Integer(id, Notation::Decimal) => {
+    //             assert_eq!("1000000", interner.search(id as usize));
+    //         }
+    //         _ => panic!("Expected Integer with Decimal, found {:?}", toks[0].tok),
+    //     }
+    //
+    //     // Underscored Hex
+    //     let text = "0x_ff_ff";
+    //     let metadata = ChrnConfigLoader::new(
+    //         Default::default(),
+    //         text.as_bytes(),
+    //         &Default::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     assert_eq!(2, toks.len());
+    //     match toks[0].tok {
+    //         Token::Integer(id, Notation::Hex) => {
+    //             assert_eq!("65535", interner.search(id as usize));
+    //         }
+    //         _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
+    //     }
+    // }
+    //
+    // #[test]
+    // fn nameresolver_duplicate_simple_test() {
+    //     // -- NEUTRAL --
+    //     let wrong = "
+    //             let DUPLICATE = 3
+    //             let DUPLICATE = \"Hi\"
+    //             ";
+    //
+    //     let (mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
+    //
+    //     let module = &compiler.mods[0];
+    //
+    //     let path_id = PathId::new(0);
+    //
+    //     let metadata = module.src_metadata.as_ref().unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
+    //
+    //     // Calls `reporter` internally but the path is fake so this fails
+    //     let res = NamespaceResolver::new(
+    //         &settings,
+    //         &ast_info,
+    //         &interner,
+    //         module.mod_id,
+    //         &mut compiler,
+    //     )
+    //     .resolve();
+    //
+    //     assert_eq!(res.is_err(), true);
+    //
+    //     let correct = "
+    //                 let ORIGINAL = 2 + 2
+    //                 let NEW = \"Hallo\"
+    //             ";
+    //
+    //     let (mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
+    //
+    //     let module = &compiler.mods[0];
+    //
+    //     let metadata = module.src_metadata.as_ref().unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
+    //
+    //     // Calls `reporter` internally but the path is fake so this fails
+    //     let res = NamespaceResolver::new(
+    //         &settings,
+    //         &ast_info,
+    //         &interner,
+    //         module.mod_id,
+    //         &mut compiler,
+    //     )
+    //     .resolve();
+    //
+    //     assert_eq!(res.is_ok(), true);
+    //
+    //     // -- VAR --
+    //     let wrong = "
+    //             var->
+    //                 duplicate: i32
+    //                 duplicate: i8
+    //             ";
+    //
+    //     // Doing this first since if modules were identified during the parsing stage any
+    //     // syntax error within another module would not be reportable since the parser failed.
+    //     let (mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
+    //
+    //     let module = &compiler.mods[0];
+    //
+    //     let metadata = module.src_metadata.as_ref().unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
+    //
+    //     // Calls `reporter` internally but the path is fake so this fails
+    //     let res = NamespaceResolver::new(
+    //         &settings,
+    //         &ast_info,
+    //         &interner,
+    //         module.mod_id,
+    //         &mut compiler,
+    //     )
+    //     .resolve();
+    //
+    //     assert_eq!(res.is_err(), true);
+    //
+    //     let correct = "
+    //             var->
+    //                 original: u32
+    //                 new: i8
+    //             ";
+    //
+    //     let (mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
+    //
+    //     let module = &compiler.mods[0];
+    //
+    //     let metadata = module.src_metadata.as_ref().unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
+    //
+    //     // Calls `reporter` internally but the path is fake so this fails
+    //     let res = NamespaceResolver::new(
+    //         &settings,
+    //         &ast_info,
+    //         &interner,
+    //         module.mod_id,
+    //         &mut compiler,
+    //     )
+    //     .resolve();
+    //
+    //     assert_eq!(res.is_ok(), true);
+    //
+    //     // -- NEST --
+    //
+    //     let wrong = "
+    //             nest->
+    //                 struct Duplicate {}
+    //                 struct Duplicate {}
+    //             ";
+    //
+    //     let (mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
+    //
+    //     let module = &compiler.mods[0];
+    //
+    //     let metadata = module.src_metadata.as_ref().unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
+    //
+    //     // Calls `reporter` internally but the path is fake so this fails
+    //     let res = NamespaceResolver::new(
+    //         &settings,
+    //         &ast_info,
+    //         &interner,
+    //         module.mod_id,
+    //         &mut compiler,
+    //     )
+    //     .resolve();
+    //
+    //     assert_eq!(res.is_err(), true);
+    //
+    //     let correct = "
+    //             nest->
+    //                 struct Original {}
+    //                 struct New {}
+    //             ";
+    //
+    //     let (mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
+    //
+    //     let module = &compiler.mods[0];
+    //
+    //     let metadata = module.src_metadata.as_ref().unwrap();
+    //     let (toks, _) =
+    //         Lexer::new(&metadata.src_bytes, path_id, metadata.script_start).tokenize(&mut interner);
+    //
+    //     let ast_info = parser::parse(&settings, &metadata, &toks, &mut interner).unwrap();
+    //
+    //     // Calls `reporter` internally but the path is fake so this fails
+    //     let res = NamespaceResolver::new(
+    //         &settings,
+    //         &ast_info,
+    //         &interner,
+    //         module.mod_id,
+    //         &mut compiler,
+    //     )
+    //     .resolve();
+    //
+    //     assert_eq!(res.is_ok(), true);
+    //     //TEST: -- COMPLEX --
+    //
+    //     //TEST: -- OVERRIDE --
+    // }
+    //
+    // #[test]
+    // fn module_simple_test() {
+    //     // -- NEUTRAL --
+    //     let mut interner = mock_interner(2, 2);
+    //     let settings = ChrnSettings::default();
+    //
+    //     let main_txt = "
+    //             let CONSTANT = 3
+    //         ";
+    //
+    //     let main_meta = ChrnConfigLoader::new(
+    //         Default::default(),
+    //         main_txt.as_bytes(),
+    //         &Default::default(),
+    //         &mut interner,
+    //     )
+    //     .load_config()
+    //     .unwrap();
+    //
+    //     // Doing this first since if modules were identified during the parsing stage any
+    //     // syntax error within another module would not be reportable since the parser failed.
+    //
+    //     let import_path_id = PathId::new(1);
+    //     let import_name_id = InternedId::new(1);
+    //     let kind = ImportKind::Source(import_path_id, Default::default());
+    //     let sub_import = Import::new(import_name_id, kind, None);
+    //
+    //     let main_mod_name_id = InternedId::new(0);
+    //     let main_mod_id = ModuleId::new(0);
+    //
+    //     let main_mod = Module::new(
+    //         main_mod_name_id,
+    //         main_mod_id,
+    //         vec![sub_import],
+    //         Some(main_meta),
+    //     );
+    //
+    //     let sub_txt = "
+    //             let OTHER_CONSTANT = 5
+    //         ";
+    //
+    //     let sub_meta =
+    //         ChrnConfigLoader::new(import_path_id, sub_txt.as_bytes(), &settings, &mut interner)
+    //             .load_config()
+    //             .unwrap();
+    //
+    //     let sub_mod_name_id = InternedId::new(1);
+    //     let sub_mod_id = ModuleId::new(1);
+    //
+    //     let sub_mod = Module::new(
+    //         sub_mod_name_id,
+    //         sub_mod_id,
+    //         Default::default(),
+    //         Some(sub_meta),
+    //     );
+    //
+    //     let mut mod_map = HashMap::new();
+    //     mod_map.insert(main_mod_name_id, main_mod_id);
+    //     mod_map.insert(sub_mod_name_id, sub_mod_id);
+    //
+    //     let mut compiler = ScriptCompiler::init(None, mod_map, vec![main_mod, sub_mod]);
+    //
+    //     let mut asts: Vec<AstInfo> = Vec::new();
+    //
+    //     for mod_idx in 0..compiler.mods.len() {
+    //         let module = &compiler.mods[mod_idx];
+    //         let metadata = match &module.src_metadata {
+    //             Some(m) => m,
+    //             None => continue,
+    //         };
+    //
+    //         let (toks, _) =
+    //             Lexer::new(&metadata.src_bytes, metadata.path_id, metadata.script_start)
+    //                 .tokenize(&mut interner);
+    //
+    //         let ast_info = parser::parse(&settings, metadata, &toks, &mut interner).unwrap();
+    //
+    //         NamespaceResolver::new(
+    //             &settings,
+    //             &ast_info,
+    //             &interner,
+    //             module.mod_id,
+    //             &mut compiler,
+    //         )
+    //         .resolve()
+    //         .unwrap();
+    //
+    //         asts.push(ast_info);
+    //     }
+    //
+    //     let mut ty_ctx = TypeContext::new();
+    //     for i in 0..compiler.mods.len() {
+    //         let mod_id = ModuleId::new(i);
+    //         let metadata = &compiler.mods[mod_id.id].src_metadata;
+    //
+    //         if metadata.is_none() {
+    //             continue;
+    //         }
+    //
+    //         TypeResolver::new(
+    //             &settings,
+    //             &asts[i],
+    //             mod_id,
+    //             &mut ty_ctx,
+    //             &interner,
+    //             &mut compiler,
+    //         )
+    //         .resolve()
+    //         .unwrap();
+    //     }
+    // }
     //
     // #[test]
     // fn module_alias_test() {

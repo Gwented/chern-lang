@@ -35,10 +35,10 @@ impl ScriptPrettifier<'_> {
             dbg!(&fmtted_script);
             match text_hir.kind {
                 TextType::Def(span) | TextType::End(span) => {
-                    fmtted_script.push_str(&self.src_str[span.range_inclusive()]);
+                    fmtted_script.push_str(&self.src_str[span.range_inclusive_usize()]);
                 }
                 TextType::KW(span) => {
-                    fmtted_script.push_str(&self.src_str[span.range_inclusive()]);
+                    fmtted_script.push_str(&self.src_str[span.range_inclusive_usize()]);
                 }
                 TextType::Ident(span) => todo!(),
                 TextType::Delimiter(span) => todo!(),
@@ -58,7 +58,7 @@ impl ScriptPrettifier<'_> {
                     }
                 },
                 TextType::Comment(_, span) => {
-                    fmtted_script.push_str(&self.src_str[span.range_inclusive()])
+                    fmtted_script.push_str(&self.src_str[span.range_inclusive_usize()])
                 }
             }
         }

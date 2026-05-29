@@ -22,14 +22,14 @@ pub(crate) struct NewlineCtx {
     weights: [f32; 13],
 }
 
-// Def(Span),
-// End(Span),
-// Keyword(Span),
-// Ident(Span),
-// Delimiter(Span),
-// Operator(Span),
-// Text(Span),
-// Expr(Span),
+// Def(SourceSpan),
+// End(SourceSpan),
+// Keyword(SourceSpan),
+// Ident(SourceSpan),
+// Delimiter(SourceSpan),
+// Operator(SourceSpan),
+// Text(SourceSpan),
+// Expr(SourceSpan),
 // Whitespace,
 // NewLine,
 // Comment(Inline)

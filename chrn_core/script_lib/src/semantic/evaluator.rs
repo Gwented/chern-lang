@@ -368,6 +368,6 @@ pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, 
     }
 }
 
-// pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value, spans: Vec<Span>) -> Result<Value, SemanticError> {
+// pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value, spans: Vec<SourceSpan>) -> Result<Value, SemanticError> {
 //     todo!();
 // }

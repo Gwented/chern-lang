@@ -3,6 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::id_types::{InternedId, PathId};
+
 // Um
 pub const INTERNED_SELF: u32 = 0;
 pub const INTERNED_STRUCT: u32 = 1;
@@ -299,9 +301,9 @@ impl Intern {
         interner
     }
 
-    pub fn intern(&mut self, s: &str) -> u32 {
+    pub fn intern(&mut self, s: &str) -> InternedId {
         if let Some(id) = self.id_map.get(s) {
-            return *id;
+            return InternedId::new(*id);
         }
 
         let id = self.stored_strs.len() as u32;
@@ -312,7 +314,7 @@ impl Intern {
         self.id_map.insert(new_str.clone(), id);
         self.stored_strs.push(new_str);
 
-        id
+        InternedId::new(id)
     }
 
     /// Method for `self` to intern all of `other`'s stored strings and paths
@@ -335,9 +337,9 @@ impl Intern {
     }
 
     //
-    pub fn intern_path(&mut self, s: &Path) -> u32 {
+    pub fn intern_path(&mut self, s: &Path) -> PathId {
         if let Some(id) = self.path_map.get(s) {
-            return *id;
+            return PathId::new(*id);
         }
 
         let id = self.stored_paths.len() as u32;
@@ -348,29 +350,33 @@ impl Intern {
         self.path_map.insert(new_path.clone(), id);
         self.stored_paths.push(new_path);
 
-        id
+        PathId::new(id)
     }
 
-    // Should just be interned id
-    pub fn search(&self, index: usize) -> &str {
-        &self.stored_strs[index]
+    pub fn search(&self, interned_id: InternedId) -> &str {
+        &self.stored_strs[interned_id.id as usize]
     }
 
-    pub fn search_str(&self, s: &str) -> Option<&str> {
+    pub fn search_idx(&self, idx: usize) -> &str {
+        &self.stored_strs[idx]
+    }
+
+    // Interesting name decision
+    pub fn search_direct_str(&self, s: &str) -> Option<&str> {
         if let Some(id) = self.id_map.get(s) {
-            return Some(self.search(*id as usize));
+            return Some(self.search(InternedId::new(*id)));
         }
 
         None
     }
 
-    pub fn search_path(&self, index: usize) -> &Path {
-        &self.stored_paths[index]
+    pub fn search_path(&self, path_id: PathId) -> &Path {
+        &self.stored_paths[path_id.id as usize]
     }
 
-    pub fn search_path_str(&self, path: &Path) -> Option<&Path> {
+    pub fn search_direct_path(&self, path: &Path) -> Option<&Path> {
         if let Some(id) = self.path_map.get(path) {
-            return Some(self.search_path(*id as usize));
+            return Some(self.search_path(PathId::new(*id)));
         }
 
         None

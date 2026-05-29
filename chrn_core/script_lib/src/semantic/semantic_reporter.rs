@@ -1,39 +1,45 @@
-use chrn_utils::intern::Intern;
-use common::{
+use chrn_utils::{
     chrn_settings::ChrnSettings,
     fmter::Formattable,
-    reporter::{
-        self,
-        diagnostic::{Area, Diagnostic},
+    intern::Intern,
+    source_map::{
+        source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
+        source_region_data::SourceRegion,
     },
-    span::Span,
 };
 
-use crate::{algo, modules::ModuleMetadata, semantic::error::SemanticError};
+use crate::semantic::error::SemanticError;
 
 use super::error::MathError;
 
 #[derive(Debug)]
 pub(super) struct SemanticReporter<'a> {
-    pub(super) err_vec: Vec<Diagnostic>,
+    pub(super) err_vec: Vec<SourceDiagnostic>,
+    pub(super) region: &'a SourceRegion,
     pub(super) settings: &'a ChrnSettings,
     pub(super) interner: &'a Intern,
 }
 
 impl<'a> SemanticReporter<'a> {
-    pub(super) fn new(settings: &'a ChrnSettings, interner: &'a Intern) -> SemanticReporter<'a> {
+    pub(super) fn new(
+        settings: &'a ChrnSettings,
+        current_region: &'a SourceRegion,
+        interner: &'a Intern,
+    ) -> SemanticReporter<'a> {
         SemanticReporter {
             settings,
+            region: current_region,
             interner,
             err_vec: Vec::new(),
         }
     }
 
     //WARN: Could be better looking
-    pub(super) fn report_semantic(&mut self, sem_err: SemanticError, metadata: &ModuleMetadata) {
-        let (core_msg, spans) = match sem_err {
-            SemanticError::UnsupportedArg(arg, spans) => {
-                let arg_constraints = arg.type_constraints().to_type_constraint_vec();
+    pub(super) fn report_semantic(&mut self, sem_err: SemanticError) {
+        let src_diag = match sem_err {
+            // Need to know which spans exactly now
+            SemanticError::UnsupportedArg(sp_arg, sym_span) => {
+                let arg_constraints = sp_arg.arg.type_constraints().to_type_constraint_vec();
 
                 let mut constraints_str = String::new();
 
@@ -45,66 +51,113 @@ impl<'a> SemanticReporter<'a> {
                     }
                 }
 
-                let msg = format!(
+                let core_msg = format!(
                     "Only types that satisfy {} can use the argument `#{}`",
-                    constraints_str, arg
+                    constraints_str, sp_arg.arg
                 );
 
-                (msg, spans)
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
+                    .add_annotation(
+                        sp_arg.span,
+                        AnnotationKind::Secondary,
+                        "Constraints required by this argument".to_string().into(),
+                    )
+                    .add_annotation(sym_span, AnnotationKind::Primary, None)
+                    .build()
             }
-            SemanticError::VagueArg(inner_arg, spans) => {
-                let msg = format!(
+            SemanticError::VagueArg(sp_arg) => {
+                let core_msg = format!(
                     //FIXME: Still vague
                     "The argument \"#{}\" cannot be used for a `var->` defined variable that holds a \"struct\" or \"enum\"",
-                    inner_arg
+                    sp_arg.arg
                 );
 
-                (msg, spans)
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
+                    .add_annotation(sp_arg.span, AnnotationKind::Primary, None)
+                    .add_note("This is not allowed since it would overlap with any specifics arguments given to a defined type from `nest->`".into())
+                    .build()
             }
             SemanticError::FuncConstraintMismatch(constraint, type_kind, spans) => {
-                let msg =
-                    format!("The type `{type_kind}` does not satisfy constraint `{constraint}`",);
-
-                (msg, spans)
+                todo!();
+                // let msg =
+                //     format!("The type `{type_kind}` does not satisfy constraint `{constraint}`",);
+                //
+                // SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg)
+                //     .add_annotation(sp_arg.span, AnnotationKind::Primary, None)
+                //     .build()
             }
             SemanticError::ArgCountMismatch(constraint, count, spans) => {
-                let msg = format!("Expected {constraint}, found {count}");
-
-                (msg, spans)
+                todo!();
+                // let msg = format!("Expected {constraint}, found {count}");
+                //
+                // (msg, spans)
             }
-            SemanticError::CircularArg(arg, fmted_ty, spans) => {
-                let msg = format!(
+            SemanticError::CircularArg(parent_span, sp_arg, sp_fmtted_ty) => {
+                let core_msg = format!(
                     // Suspicious error message
-                    "Cannot give type `{fmted_ty}` the argument `#{arg}` due to the circularly referenced type itself not supporting the argument"
+                    "Cannot give type `{}` the argument `#{}` due to the circularly referenced type itself not supporting the argument",
+                    sp_fmtted_ty.fmtted, sp_arg.arg
                 );
 
-                (msg, spans)
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
+                    .add_annotation(
+                        parent_span,
+                        AnnotationKind::Secondary,
+                        format!("{} defined here", sp_fmtted_ty.fmtted).into(),
+                    )
+                    .add_annotation(sp_fmtted_ty.span, AnnotationKind::Primary, None)
+                    .add_annotation(
+                        sp_arg.span,
+                        AnnotationKind::Secondary,
+                        "Conflicting argument".to_string().into(),
+                    )
+                    .build()
             }
             // Should have the data type's cap shown as well
-            SemanticError::NumericOverflow(id, fmtted_ty, spans) => {
-                let overflown_num = self.interner.search(id as usize);
-                let msg = format!(
+            SemanticError::NumericOverflow(sp_interned_num, fmtted_ty) => {
+                let overflown_num = self.interner.search(sp_interned_num.interned_id);
+                let core_msg = format!(
                     "The type `{fmtted_ty}` had an overflow with the value \"{}\" ",
                     overflown_num
                 );
 
-                (msg, spans)
+                SourceDiagnostic::basic(
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    self.region.path_id,
+                    sp_interned_num.span,
+                )
             }
-            SemanticError::General(msg, spans) => (msg, spans),
+            SemanticError::General(src_diag) => src_diag,
             SemanticError::Math(math_error) => match math_error {
-                MathError::BinaryOpMismatch(fmtted_lhs, fmtted_rhs, fmtted_op, spans) => {
-                    let msg = format!(
-                        "The type `{fmtted_lhs}` cannot apply `{fmtted_op}` to type `{fmtted_rhs}`",
+                MathError::BinaryOpMismatch(sp_fmtted_lhs, sp_fmtted_rhs, fmtted_op) => {
+                    let core_msg = format!(
+                        "The type `{}` cannot apply `{fmtted_op}` to type `{}`",
+                        sp_fmtted_lhs.fmtted, sp_fmtted_rhs.fmtted,
                     );
 
-                    (msg, spans)
+                    SourceDiagnostic::basic_multiple(
+                        DiagnosticLevel::Error,
+                        core_msg,
+                        self.region.path_id,
+                        &[sp_fmtted_lhs.span, sp_fmtted_rhs.span],
+                    )
                 }
-                MathError::UnaryOpMismatch(fmtted_operand, fmtted_op, spans) => {
-                    let msg = format!("Cannot apply `{fmtted_op}` to type `{fmtted_operand}`",);
+                MathError::UnaryOpMismatch(fmtted_operand, fmtted_op) => {
+                    let core_msg = format!(
+                        "Cannot apply `{}` to type `{}`",
+                        fmtted_op, fmtted_operand.fmtted
+                    );
 
-                    (msg, spans)
+                    SourceDiagnostic::basic(
+                        DiagnosticLevel::Error,
+                        core_msg,
+                        self.region.path_id,
+                        fmtted_operand.span,
+                    )
                 }
                 MathError::DivideByZero(_, spans) => {
+                    todo!("Need to fix inner of evaluator functions");
                     let msg = format!("Cannot divide by zero");
 
                     (msg, spans);
@@ -129,11 +182,20 @@ impl<'a> SemanticReporter<'a> {
                     fmtted_found_ty, given_str
                 );
 
-                (msg, spans)
+                todo!();
             }
+            //TODO: Not done
             SemanticError::UndefinedMember(span) => {
-                let msg = format!("Cannot infer member access");
-                (msg, vec![span])
+                let core_msg = format!("Cannot infer member access");
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
+                    .add_annotation(
+                        span,
+                        AnnotationKind::Primary,
+                        "Nothing is inferred to match this member"
+                            .to_string()
+                            .into(),
+                    )
+                    .build()
             }
             SemanticError::TypeConstraintBoundConflict(
                 current_inferred,
@@ -171,82 +233,21 @@ impl<'a> SemanticReporter<'a> {
                     "Inferred {current_msg} conflicts with another expression's constraints of {conflicting_msg}"
                 );
 
-                (msg, spans)
+                todo!()
             }
         };
 
-        let ln_data = reporter::form_err_diag(&metadata.src_bytes, &spans, self.settings.can_color);
-
-        let fmt_msg = reporter::standardize_err(
-            &core_msg,
-            &ln_data,
-            None,
-            &self.interner.search_path(metadata.path_id.id as usize),
-            self.settings.can_color,
-        );
-
-        let path = self.interner.search_path(metadata.path_id.id as usize);
-
-        let diag = Diagnostic::new(
-            path,
-            core_msg.to_string(),
-            Some(common::span::merge_spans(&spans)),
-            None,
-            fmt_msg,
-            Area::Script,
-        );
-
-        self.err_vec.push(diag);
-    }
-
-    // TODO: Old
-    /// Draws red arrows under the span given. Option `err_name` represents whether or not a keyword that
-    /// could be similar in name should be looked for.
-    pub(super) fn report_spanned(
-        &mut self,
-        msg: &str,
-        err_name: Option<&str>,
-        spans: &[Span],
-        metadata: &ModuleMetadata,
-    ) {
-        let ln_data = reporter::form_err_diag(&metadata.src_bytes, spans, self.settings.can_color);
-
-        let help = if let Some(name) = err_name {
-            self.try_help(name)
-        } else {
-            None
-        };
-
-        // diag_msg?
-        let fmtted_diag = reporter::standardize_err(
-            msg,
-            &ln_data,
-            help.as_ref().map(|s| s.as_str()),
-            self.interner.search_path(metadata.path_id.id as usize),
-            self.settings.can_color,
-        );
-
-        let path = self.interner.search_path(metadata.path_id.id as usize);
-        let diag = Diagnostic::new(
-            path,
-            msg.to_string(),
-            Some(common::span::merge_spans(&spans)),
-            help,
-            fmtted_diag,
-            Area::Script,
-        );
-
-        self.err_vec.push(diag);
+        self.err_vec.push(src_diag);
     }
 
     //TODO: Needs many changes
-    fn try_help(&self, err_name: &str) -> Option<String> {
-        let found_kw = algo::fuzzy_match(err_name.as_bytes(), algo::FuzzyMatch::KW)?;
-
-        let msg = format!("Found similar keyword \"{}\"", found_kw);
-
-        let help = reporter::standardize_help(&msg, self.settings.can_color);
-
-        Some(help)
-    }
+    // fn try_help(&self, err_name: &str) -> Option<String> {
+    //     let found_kw = algo::fuzzy_match(err_name.as_bytes(), algo::FuzzyMatch::KW)?;
+    //
+    //     let msg = format!("Found similar keyword \"{}\"", found_kw);
+    //
+    //     let help = reporter::standardize_help(&msg, self.settings.can_color);
+    //
+    //     Some(help)
+    // }
 }

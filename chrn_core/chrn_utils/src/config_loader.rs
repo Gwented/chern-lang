@@ -1,27 +1,27 @@
 use std::io::{BufRead, BufReader, Read};
 
-use chrn_utils::{id_types::PathId, intern::Intern, keywords::DEFINITION_SIZE};
-use common::{
+use crate::{
     chrn_settings::ChrnSettings,
     core_error::ConfigLoadError,
-    reporter::{
-        self,
-        diagnostic::{Area, Diagnostic},
+    id_types::{PathId, SourceRegionId},
+    intern::Intern,
+    keywords::DEFINITION_SIZE,
+    source_map::{
+        source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
+        source_region_data::SourceRegion,
+        source_span::SourceSpan,
     },
-    span::Span,
 };
-
-use crate::modules::ModuleMetadata;
 
 const READ_LIMIT_OFFSET: usize = 500;
 
-// More inclusive name
 pub struct ChrnConfigLoader<'a, R: Read> {
     // Configuration file path
-    path_id: PathId,
+    current_region_id: SourceRegionId,
+    current_path_id: PathId,
     handle: BufReader<R>,
     settings: &'a ChrnSettings,
-    interner: &'a mut Intern,
+    interner: &'a Intern,
     pos: usize,
 }
 
@@ -30,15 +30,17 @@ pub struct ChrnConfigLoader<'a, R: Read> {
 impl<R: Read> ChrnConfigLoader<'_, R> {
     /// Uses `PathId` for error location reporting purposes
     pub fn new<'a>(
-        path_id: PathId,
+        current_region_id: SourceRegionId,
         handle: R,
+        path_id: PathId,
         settings: &'a ChrnSettings,
-        interner: &'a mut Intern,
+        interner: &'a Intern,
     ) -> ChrnConfigLoader<'a, R> {
         ChrnConfigLoader {
-            path_id,
+            current_region_id,
             settings,
             interner,
+            current_path_id: path_id,
             handle: BufReader::new(handle),
             pos: 0,
         }
@@ -48,7 +50,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
     /// `@def` is present, and the offset of where to start reading the serialized data if an
     /// `@def` and `@end` is present. Returns a `ConfigLoadError` upon failure that has internal
     /// error details.
-    pub fn load_config(&mut self) -> Result<ModuleMetadata, ConfigLoadError> {
+    pub fn load_config(&mut self) -> Result<SourceRegion, ConfigLoadError> {
         // Doesn't NEED definition but will error if declared and not closed
         let mut requires_end = false;
 
@@ -60,9 +62,9 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
         let mut double_quotes_seen = 0;
         let mut single_quotes_seen = 0;
 
-        let mut lex_start = 0;
+        let mut script_start = 0;
 
-        let mut def_span: Option<Span> = None;
+        let mut def_span: Option<SourceSpan> = None;
 
         self.handle.fill_buf()?;
 
@@ -82,49 +84,36 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                     // Reward hacking
                     let quote_type = self.advance().unwrap_or(b'\0');
 
-                    if quote_type == b'\'' {
-                        single_quotes_seen += 1;
-                    } else {
-                        double_quotes_seen += 1;
-                    };
+                    double_quotes_seen += 1;
 
                     // Is there a reason for lines_read to be printed if there are multiple quotes?
                     // When are there ever NOT multiple quotes if it's in a serialized file?
                     if self.read_quotes(quote_type).is_err() {
-                        let note = if double_quotes_seen > 1 || single_quotes_seen > 1 {
-                            "\nnote: There are other quotes within the file so the line given could be incorrect"
-                        } else {
-                            ""
+                        let core_msg = "Found unclosed quotes which reached <eof>".to_string();
+
+                        let quote_start = quote_start as u32;
+                        let q_span =
+                            SourceSpan::new(self.current_region_id, quote_start, quote_start);
+
+                        let mut diag_builder = SourceDiagnostic::builder(
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            self.current_path_id,
+                        )
+                        .add_annotation(
+                            q_span,
+                            AnnotationKind::Primary,
+                            "Possible unclosed quotes".to_string().into(),
+                        );
+
+                        if double_quotes_seen > 1 {
+                            let note = "There are other quotes within the file so the line given could be incorrect".to_string();
+                            diag_builder = diag_builder.add_note(note);
                         };
 
-                        let core_msg = format!("Found unclosed quotes which reached <eof>{}", note);
+                        let src_diag = diag_builder.build();
 
-                        let q_span = Span::new(quote_start, quote_start);
-
-                        let ln_data = reporter::form_err_diag(
-                            self.handle.buffer(),
-                            &[q_span],
-                            self.settings.can_color,
-                        );
-
-                        let fmtted_diag = reporter::standardize_err(
-                            &core_msg,
-                            &ln_data,
-                            None,
-                            self.interner.search_path(self.path_id.id as usize),
-                            self.settings.can_color,
-                        );
-
-                        let diag = Diagnostic::new(
-                            self.interner.search_path(self.path_id.id as usize),
-                            core_msg,
-                            Some(q_span),
-                            None,
-                            fmtted_diag,
-                            Area::ConfigLoad,
-                        );
-
-                        return Err(ConfigLoadError::General(diag));
+                        return Err(ConfigLoadError::General(src_diag));
                     }
 
                     if double_quotes_seen == 1 {
@@ -148,32 +137,31 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
 
                         let core_msg = format!("Found unclosed quotes which reached <eof>{}", note);
 
-                        let q_span = Span::new(quote_start, quote_start);
-
-                        let ln_data = reporter::form_err_diag(
-                            self.handle.buffer(),
-                            &[q_span],
-                            self.settings.can_color,
+                        let q_span = SourceSpan::new(
+                            self.current_region_id,
+                            quote_start as u32,
+                            quote_start as u32,
                         );
 
-                        let fmtted_diag = reporter::standardize_err(
-                            &core_msg,
-                            &ln_data,
-                            None,
-                            self.interner.search_path(self.path_id.id as usize),
-                            self.settings.can_color,
-                        );
-
-                        let diag = Diagnostic::new(
-                            self.interner.search_path(self.path_id.id as usize),
+                        let mut diag_builder = SourceDiagnostic::builder(
+                            DiagnosticLevel::Error,
                             core_msg,
-                            Some(q_span),
-                            None,
-                            fmtted_diag,
-                            Area::ConfigLoad,
+                            self.current_path_id,
+                        )
+                        .add_annotation(
+                            q_span,
+                            AnnotationKind::Primary,
+                            "Possible unclosed quotes".to_string().into(),
                         );
 
-                        return Err(ConfigLoadError::General(diag));
+                        if single_quotes_seen > 1 {
+                            let note = "There are other quotes within the file so the line given could be incorrect".to_string();
+                            diag_builder = diag_builder.add_note(note);
+                        };
+
+                        let src_diag = diag_builder.build();
+
+                        return Err(ConfigLoadError::General(src_diag));
                     }
 
                     if single_quotes_seen == 1 {
@@ -210,12 +198,15 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                     {
                         let serial_start = self.pos + DEFINITION_SIZE;
 
-                        return Ok(ModuleMetadata::new(
+                        let region = SourceRegion::new(
                             self.handle.buffer()[..self.pos + DEFINITION_SIZE].to_vec(),
-                            self.path_id,
-                            lex_start,
+                            self.current_region_id,
+                            self.current_path_id,
+                            script_start,
                             Some(serial_start),
-                        ));
+                        );
+
+                        return Ok(region);
                     }
 
                     if !requires_end && !can_check {
@@ -224,12 +215,16 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                         && &self.handle.buffer()[self.pos..self.pos + DEFINITION_SIZE] == b"@def"
                     {
                         requires_end = true;
-                        lex_start = self.pos;
+                        script_start = self.pos;
                         self.skip(DEFINITION_SIZE);
                         // self.pos + DEFINITION_SIZE stops exactly at the 'f' in '@def' which
                         // doesn't align with (inclusive, exclusive) spanning within the lexer so
                         // it needs to be taken down by 1.
-                        def_span = Some(Span::new(span_start, self.pos - 1));
+                        def_span = Some(SourceSpan::new(
+                            self.current_region_id,
+                            span_start as u32,
+                            (self.pos - 1) as u32,
+                        ));
                     }
 
                     self.advance();
@@ -244,12 +239,15 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
         // Case of no @def and no @end which requires a '0' return since the entire file should be
         // read. This does not mean it is correct, it only means the read limit wasn't reached.
         if !requires_end {
-            Ok(ModuleMetadata::new(
+            let region = SourceRegion::new(
                 self.handle.buffer()[..self.pos].to_vec(),
-                self.path_id,
-                lex_start,
+                self.current_region_id,
+                self.current_path_id,
+                script_start,
                 None,
-            ))
+            );
+
+            Ok(region)
         } else {
             let core_msg = format!("Could not find `@end` after `@def`");
 
@@ -262,34 +260,25 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                 self.pos - 1
             } else {
                 self.pos
-            };
+            } as u32;
 
-            let eof_span = Span::new(eof_pos, eof_pos);
+            let eof_span = SourceSpan::new(self.current_region_id, eof_pos, eof_pos);
 
-            let ln_data = reporter::form_err_diag(
-                self.handle.buffer(),
-                &[def_span, eof_span],
-                self.settings.can_color,
-            );
+            let src_diag =
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.current_path_id)
+                    .add_annotation(
+                        def_span,
+                        AnnotationKind::Secondary,
+                        "`@def` started here".to_string().into(),
+                    )
+                    .add_annotation(
+                        eof_span,
+                        AnnotationKind::Primary,
+                        "Unexpected <eof>".to_string().into(),
+                    )
+                    .build();
 
-            let fmtted_diag = reporter::standardize_err(
-                &core_msg,
-                &ln_data,
-                None,
-                self.interner.search_path(self.path_id.id as usize),
-                self.settings.can_color,
-            );
-
-            let diag = Diagnostic::new(
-                self.interner.search_path(self.path_id.id as usize),
-                core_msg,
-                Some(def_span.merge(eof_span)),
-                None,
-                fmtted_diag,
-                Area::ConfigLoad,
-            );
-
-            Err(ConfigLoadError::General(diag))
+            Err(ConfigLoadError::General(src_diag))
         }
     }
 
@@ -354,34 +343,28 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
             let core_msg = format!("Found unclosed multi-line comment in script");
 
             // To include full multi-line syntax. / + 1 = /*
-            let comment_span = Span::new(comment_start, comment_start + 1);
+            let comment_start = comment_start as u32;
+            let comment_start_span =
+                SourceSpan::new(self.current_region_id, comment_start, comment_start + 1);
 
-            let eof_span = Span::new(self.pos, self.pos);
+            let current_pos = self.pos as u32;
+            let eof_span = SourceSpan::new(self.current_region_id, current_pos, current_pos);
 
-            let ln_data = reporter::form_err_diag(
-                self.handle.buffer(),
-                &[comment_span, eof_span],
-                self.settings.can_color,
-            );
+            let src_diag =
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.current_path_id)
+                    .add_annotation(
+                        comment_start_span,
+                        AnnotationKind::Secondary,
+                        "Comment starts here".to_string().into(),
+                    )
+                    .add_annotation(
+                        eof_span,
+                        AnnotationKind::Primary,
+                        "Unexpected <eof>".to_string().into(),
+                    )
+                    .build();
 
-            let fmtted_diag = reporter::standardize_err(
-                &core_msg,
-                &ln_data,
-                None,
-                self.interner.search_path(self.path_id.id as usize),
-                self.settings.can_color,
-            );
-
-            let diag = Diagnostic::new(
-                self.interner.search_path(self.path_id.id as usize),
-                core_msg,
-                Some(comment_span.merge(eof_span)),
-                None,
-                fmtted_diag,
-                Area::ConfigLoad,
-            );
-
-            return Err(ConfigLoadError::General(diag));
+            return Err(ConfigLoadError::General(src_diag));
         }
 
         Ok(())

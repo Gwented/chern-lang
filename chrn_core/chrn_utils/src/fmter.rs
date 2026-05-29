@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use crate::source_map::source_span::SourceSpan;
+
 // Would it be better to just have it as a singular enum, or a trait?
 
 /// A trait meant to unify the way in which parts of the program are printed
@@ -10,9 +12,21 @@ pub trait Formattable {
     // }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct SpannedFormatted {
+    pub fmtted: Formatted,
+    pub span: SourceSpan,
+}
+
+impl SpannedFormatted {
+    pub fn new(fmtted: Formatted, span: SourceSpan) -> SpannedFormatted {
+        SpannedFormatted { fmtted, span }
+    }
+}
+
 //TEST: May change in form but a general print format is needed
 /// Enum that depicts any language needed identifiers in a unified form
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Formatted {
     I8,
     U8,

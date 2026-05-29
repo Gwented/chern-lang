@@ -1,0 +1,203 @@
+use crate::{id_types::PathId, source_map::source_span::SourceSpan};
+
+/// This exists in case other methods or fields are considered, but is just a Vec<Diagnostic>
+/// wrapper as of right now
+#[derive(Debug)]
+pub struct Reporter {
+    pub diags: Vec<SourceDiagnostic>,
+}
+
+impl Reporter {
+    pub fn new() -> Reporter {
+        Reporter { diags: Vec::new() }
+    }
+}
+
+/// Although there are error types that say where the error came from, all of `CoreError` needs to
+/// still returns `Diagnostic` as a vector, which could have other areas inside of it, making this
+/// serve as persistent metadata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Area {
+    ConfigLoad,
+    Script,
+    Serial,
+}
+
+// Temp name of course
+#[derive(Debug, Default)]
+pub struct SourceDiagnostic {
+    pub level: DiagnosticLevel,
+    pub core_msg: String,
+    pub path_id: PathId,
+    pub annotations: Vec<Annotation>,
+    pub help: Vec<String>,
+    pub notes: Vec<String>,
+}
+
+impl SourceDiagnostic {
+    pub fn new(
+        level: DiagnosticLevel,
+        core_msg: String,
+        path_id: PathId,
+        annotations: Vec<Annotation>,
+        help: Vec<String>,
+        notes: Vec<String>,
+    ) -> SourceDiagnostic {
+        SourceDiagnostic {
+            level,
+            core_msg,
+            path_id,
+            annotations,
+            help,
+            notes,
+        }
+    }
+
+    /// Creates basic error where the given span is the primary annotation with no extra details
+    pub fn basic(
+        level: DiagnosticLevel,
+        core_msg: String,
+        path_id: PathId,
+        span: SourceSpan,
+    ) -> SourceDiagnostic {
+        let annotations = vec![Annotation::new(span, AnnotationKind::Primary, None)];
+        SourceDiagnostic {
+            level,
+            core_msg,
+            path_id,
+            annotations,
+            ..Default::default()
+        }
+    }
+
+    /// Creates basic error where the given span vector gives all spans a primary level annotation
+    pub fn basic_multiple(
+        level: DiagnosticLevel,
+        core_msg: String,
+        path_id: PathId,
+        spans: &[SourceSpan],
+    ) -> SourceDiagnostic {
+        let mut annotations = Vec::new();
+        for span in spans {
+            annotations.push(Annotation::new(*span, AnnotationKind::Primary, None));
+        }
+
+        SourceDiagnostic {
+            level,
+            core_msg,
+            path_id,
+            annotations,
+            ..Default::default()
+        }
+    }
+
+    pub fn builder(
+        level: DiagnosticLevel,
+        core_msg: String,
+        path_id: PathId,
+    ) -> SourceDiagnosticBuilder {
+        SourceDiagnosticBuilder {
+            level,
+            core_msg,
+            path_id,
+            annotations: Vec::new(),
+            help: Vec::new(),
+            notes: Vec::new(),
+        }
+    }
+}
+
+/// Optional structure that uses builder pattern to create a `SourceDiagnostic` as opposed to a regular
+/// constructor
+#[derive(Debug)]
+pub struct SourceDiagnosticBuilder {
+    level: DiagnosticLevel,
+    core_msg: String,
+    path_id: PathId,
+    annotations: Vec<Annotation>,
+    help: Vec<String>,
+    notes: Vec<String>,
+}
+
+impl SourceDiagnosticBuilder {
+    /// Creates annotation for the current diagnostic being built
+    pub fn add_annotation(
+        mut self,
+        span: SourceSpan,
+        kind: AnnotationKind,
+        label: Option<String>,
+    ) -> Self {
+        let annotation = Annotation::new(span, kind, label);
+        self.annotations.push(annotation);
+        self
+    }
+
+    pub fn add_help(mut self, help: String) -> Self {
+        self.help.push(help);
+        self
+    }
+
+    pub fn add_note(mut self, note: String) -> Self {
+        self.notes.push(note);
+        self
+    }
+
+    pub fn build(self) -> SourceDiagnostic {
+        SourceDiagnostic {
+            level: self.level,
+            core_msg: self.core_msg,
+            path_id: self.path_id,
+            annotations: self.annotations,
+            help: self.help,
+            notes: self.notes,
+        }
+    }
+}
+
+#[derive(Debug)]
+/// Structure intended to add context to a span beyond just where to point
+pub struct Annotation {
+    span: SourceSpan,
+    kind: AnnotationKind,
+    /// Optional message like, note or, uh, um
+    label: Option<String>,
+}
+
+impl Annotation {
+    pub fn new(span: SourceSpan, kind: AnnotationKind, label: Option<String>) -> Annotation {
+        Annotation { span, kind, label }
+    }
+}
+
+#[derive(Debug)]
+// Can this be replaced with DiagnosticKind?
+pub enum AnnotationKind {
+    /// Main part of error
+    Primary,
+    // Kind of help, but not help?
+    /// Secondary information related to the error that could help fix it
+    Secondary,
+    Note,
+    Help,
+}
+
+// pub enum PointerKind {
+//     Carot,
+//     Hyphen,
+//     Tilde,
+//     Plus,
+// }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiagnosticLevel {
+    Error,
+    Warn,
+    Note,
+    Help,
+}
+
+impl Default for DiagnosticLevel {
+    fn default() -> Self {
+        DiagnosticLevel::Error
+    }
+}

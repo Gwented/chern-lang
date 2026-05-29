@@ -1,7 +1,6 @@
 use std::path::Path;
 
-use chrn_utils::intern::Intern;
-use common::{chrn_settings::ChrnSettings, core_error::ConfigLoadError};
+use chrn_utils::{chrn_settings::ChrnSettings, core_error::ConfigLoadError, intern::Intern};
 use script_lib::modules;
 
 use crate::{script_prettifier::ScriptPrettifier, text_builder::TextBuilder};
@@ -12,18 +11,25 @@ use crate::{script_prettifier::ScriptPrettifier, text_builder::TextBuilder};
 pub fn fmt_script_block(path: &Path, settings: &ChrnSettings) -> Result<String, ConfigLoadError> {
     let mut interner = Intern::init();
     // Maybe a way to only load main?
-    let script_compiler = modules::extract_modules(path, settings, &mut interner)?;
+    let (script_compiler, src_region_arena) =
+        modules::extract_modules(path, settings, &mut interner)?;
 
     // TEMP
     let module = &script_compiler.mods[0];
 
-    let metadata = &module
+    let region_id = module
         .src_metadata
         .as_ref()
         .expect("fmt can only work on valid paths");
 
-    let (toks, trivia) = script_lib::lexer::Lexer::new(&metadata.src_bytes, metadata.script_start)
-        .tokenize(&mut interner);
+    let metadata = src_region_arena.get_region(*region_id);
+
+    let (toks, trivia) = script_lib::lexer::Lexer::new(
+        metadata.region_id,
+        &metadata.src_bytes,
+        metadata.script_start,
+    )
+    .tokenize(&mut interner);
 
     let ast_info = match script_lib::parser::parse(settings, metadata, &toks, &mut interner) {
         Ok(info) => info,

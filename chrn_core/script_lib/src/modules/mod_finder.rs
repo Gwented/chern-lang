@@ -1,17 +1,15 @@
 use std::{ffi::OsStr, path::PathBuf, str::FromStr};
 
 use chrn_utils::{
-    id_types::{InternedId, PathId},
-    intern::Intern,
-};
-use common::{
     chrn_settings::ChrnSettings,
     core_error::{self, ConfigLoadError},
-    reporter::{
-        self,
-        diagnostic::{Area, Diagnostic},
+    id_types::InternedId,
+    intern::Intern,
+    source_map::{
+        source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
+        source_region_data::SourceRegion,
+        source_span::SourceSpan,
     },
-    span::Span,
 };
 
 use crate::modules::{Bind, Import, ImportKind};
@@ -23,7 +21,7 @@ pub struct ModuleFinder<'a> {
     src_bytes: &'a [u8],
     settings: &'a ChrnSettings,
     /// Path origin so that errors can accurately report the path where the import was declared
-    path_origin: PathBuf,
+    current_region: &'a SourceRegion,
     pos: usize,
     start: usize,
     end: usize,
@@ -34,14 +32,14 @@ impl ModuleFinder<'_> {
         //TODO: Need to store beg
         src_bytes: &'a [u8],
         settings: &'a ChrnSettings,
-        path_origin: PathBuf,
+        current_region: &'a SourceRegion,
         script_start: usize,
         serial_start: Option<usize>,
     ) -> ModuleFinder<'a> {
         ModuleFinder {
             src_bytes,
             settings,
-            path_origin,
+            current_region,
             pos: script_start,
             start: script_start,
             end: serial_start.unwrap_or(src_bytes.len()),
@@ -142,34 +140,26 @@ impl ModuleFinder<'_> {
         // - 1 to include quotes since that happens in the lexer. No other reason.
         let end = self.pos - 1;
 
-        let path_span = Span::new(start - 1, end);
+        let path_span = SourceSpan::new(
+            self.current_region.region_id,
+            (start - 1) as u32,
+            end as u32,
+        );
 
         if saw_backslash {
             let core_msg = "Only '/' can be used as path separators.".to_string();
 
-            let ln_data =
-                reporter::form_err_diag(self.src_bytes, &[path_span], self.settings.can_color);
-
             // Since we know it's invalid
 
-            let fmtted_diag = reporter::standardize_err(
-                &core_msg,
-                &ln_data,
-                None,
-                &self.path_origin,
-                self.settings.can_color,
-            );
-
-            let diag = Diagnostic::new(
-                &self.path_origin,
+            let src_diag = SourceDiagnostic::builder(
+                DiagnosticLevel::Error,
                 core_msg,
-                Some(path_span),
-                None,
-                fmtted_diag,
-                Area::ConfigLoad,
-            );
+                self.current_region.path_id,
+            )
+            .add_annotation(path_span, AnnotationKind::Primary, None)
+            .build();
 
-            return Err(ConfigLoadError::Module(diag));
+            return Err(ConfigLoadError::Module(src_diag));
         }
 
         let path_buf = self.create_pathbuf(&self.src_bytes[start..end])?;
@@ -180,27 +170,15 @@ impl ModuleFinder<'_> {
                 let core_msg =
                     core_error::form_string_from_io_err(&e, &path_buf).unwrap_or(e.to_string());
 
-                let ln_data =
-                    reporter::form_err_diag(self.src_bytes, &[path_span], self.settings.can_color);
-
-                let fmtted_diag = reporter::standardize_err(
-                    &core_msg,
-                    &ln_data,
-                    None,
-                    &self.path_origin,
-                    self.settings.can_color,
-                );
-
-                let diag = Diagnostic::new(
-                    &path_buf,
+                let src_diag = SourceDiagnostic::builder(
+                    DiagnosticLevel::Error,
                     core_msg,
-                    Some(path_span),
-                    None,
-                    fmtted_diag,
-                    Area::ConfigLoad,
-                );
+                    self.current_region.path_id,
+                )
+                .add_annotation(path_span, AnnotationKind::Primary, None)
+                .build();
 
-                return Err(ConfigLoadError::Module(diag));
+                return Err(ConfigLoadError::Module(src_diag));
             }
         };
 
@@ -209,26 +187,25 @@ impl ModuleFinder<'_> {
         let file_name = match import_path.file_prefix().map(|n| n.to_str()) {
             Some(Some(n)) => n,
             _ => {
-                let msg = format!(
+                let core_msg = format!(
                     "Failed to extract file name for path \"{}\"",
                     import_path.display()
                 );
 
-                let diag = Diagnostic::new(
-                    &self.path_origin,
-                    msg.clone(),
-                    None,
-                    None,
-                    msg,
-                    Area::ConfigLoad,
-                );
+                let src_diag = SourceDiagnostic::builder(
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    self.current_region.path_id,
+                )
+                .add_annotation(path_span, AnnotationKind::Primary, None)
+                .build();
 
-                return Err(ConfigLoadError::General(diag));
+                return Err(ConfigLoadError::General(src_diag));
             }
         };
 
-        let name_id = InternedId::new(interner.intern(&file_name));
-        let path_id = PathId::new(interner.intern_path(&import_path));
+        let name_id = interner.intern(&file_name);
+        let path_id = interner.intern_path(&import_path);
 
         let alias_id: Option<InternedId> = if self.is_as() {
             self.skip_whitespace();
@@ -238,6 +215,7 @@ impl ModuleFinder<'_> {
         };
 
         let import_kind = ImportKind::Source(path_id, path_span);
+
         Ok(Import::new(name_id, import_kind, alias_id))
     }
 
@@ -263,16 +241,14 @@ impl ModuleFinder<'_> {
                 Ok(s) => return Ok(PathBuf::from_str(&s).expect("Infailable")),
                 Err(_) => {
                     let msg = "Invalid UTF-8 found within file".to_string();
-                    let diag = Diagnostic::new(
-                        &self.path_origin,
-                        msg.clone(),
-                        None,
-                        None,
+                    let src_diag = SourceDiagnostic::builder(
+                        DiagnosticLevel::Error,
                         msg,
-                        Area::ConfigLoad,
-                    );
+                        self.current_region.path_id,
+                    )
+                    .build();
 
-                    return Err(ConfigLoadError::General(diag));
+                    return Err(ConfigLoadError::General(src_diag));
                 }
             }
         }
@@ -281,16 +257,14 @@ impl ModuleFinder<'_> {
             Ok(s) => Ok(PathBuf::from_str(&s).expect("Unwrapped twice")),
             Err(_) => {
                 let msg = "Invalid UTF-8 found within file".to_string();
-                let diag = Diagnostic::new(
-                    &self.path_origin,
-                    msg.clone(),
-                    None,
-                    None,
+                let src_diag = SourceDiagnostic::builder(
+                    DiagnosticLevel::Error,
                     msg,
-                    Area::ConfigLoad,
-                );
+                    self.current_region.path_id,
+                )
+                .build();
 
-                return Err(ConfigLoadError::General(diag));
+                return Err(ConfigLoadError::General(src_diag));
             }
         }
     }
@@ -319,73 +293,54 @@ impl ModuleFinder<'_> {
         }
 
         let end = self.pos - 1;
-        let path_span = Span::new(start - 1, end);
+        let path_span = SourceSpan::new(
+            self.current_region.region_id,
+            (start - 1) as u32,
+            end as u32,
+        );
 
         if saw_backslash {
             let core_msg = "Only '/' can be used as path separators.".to_string();
 
-            let ln_data =
-                reporter::form_err_diag(self.src_bytes, &[path_span], self.settings.can_color);
-
-            // Since we know it's invalid
-
-            let fmtted_diag = reporter::standardize_err(
-                &core_msg,
-                &ln_data,
-                None,
-                &self.path_origin,
-                self.settings.can_color,
-            );
-
-            let diag = Diagnostic::new(
-                &self.path_origin,
+            let src_diag = SourceDiagnostic::builder(
+                DiagnosticLevel::Error,
                 core_msg,
-                None,
-                None,
-                fmtted_diag,
-                Area::ConfigLoad,
-            );
+                self.current_region.path_id,
+            )
+            .add_annotation(path_span, AnnotationKind::Primary, None)
+            .build();
 
-            return Err(ConfigLoadError::Module(diag));
+            return Err(ConfigLoadError::Module(src_diag));
         }
 
         // Um uh
         let path_buf = self.create_pathbuf(&self.src_bytes[start..end]).unwrap();
 
         //WARN: WRONG PATH NAME
+        // Please..
         let bind_path = match path_buf.canonicalize() {
             Ok(p) => p,
             Err(e) => {
+                let path = interner.search_path(self.current_region.path_id);
+                // todo!("Correct the name with it's region's path name");
                 let core_msg =
-                    core_error::form_string_from_io_err(&e, &path_buf).unwrap_or(e.to_string());
+                    core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
 
-                let ln_data =
-                    reporter::form_err_diag(self.src_bytes, &[path_span], self.settings.can_color);
-
-                let fmtted_diag = reporter::standardize_err(
-                    &core_msg,
-                    &ln_data,
-                    None,
-                    &self.path_origin,
-                    self.settings.can_color,
-                );
-
-                let diag = Diagnostic::new(
-                    &self.path_origin,
+                let src_diag = SourceDiagnostic::builder(
+                    DiagnosticLevel::Error,
                     core_msg,
-                    Some(path_span),
-                    None,
-                    fmtted_diag,
-                    Area::ConfigLoad,
-                );
+                    self.current_region.path_id,
+                )
+                .add_annotation(path_span, AnnotationKind::Primary, None)
+                .build();
 
-                return Err(ConfigLoadError::Module(diag));
+                return Err(ConfigLoadError::Module(src_diag));
             }
         };
 
-        let path_id = PathId::new(interner.intern_path(&bind_path));
+        let bind_path_id = interner.intern_path(&bind_path);
 
-        Ok(Bind::new(path_id, path_span))
+        Ok(Bind::new(bind_path_id, path_span))
     }
 
     fn read_id(&mut self, interner: &mut Intern) -> InternedId {
@@ -404,9 +359,7 @@ impl ModuleFinder<'_> {
         let id_str = str::from_utf8(&self.src_bytes[start..end])
             .expect("Cannot fail due to loop only accepting valid UTF-8 characters.");
 
-        let id = interner.intern(&id_str);
-
-        InternedId::new(id)
+        interner.intern(&id_str)
     }
 
     fn peek_behind_char(&mut self, dest: usize) -> char {

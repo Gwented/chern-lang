@@ -1,13 +1,11 @@
 use chrn_utils::{
+    fmter::{Formattable, Formatted},
     id_types::{AstId, InternedId},
-    inner_args::SpannedInnerArgs,
+    inner_args::SpannedInnerArg,
+    source_map::source_span::SourceSpan,
     types::type_constraints::{self, TypeConstraintFlags},
 };
 //NOTE: MAY MAKE EXPRESSION THAT HELPS RESOLVE SEMANTIC TYPES MORE CLEANLY
-use common::{
-    fmter::{Formattable, Formatted},
-    span::Span,
-};
 
 use crate::token::Notation;
 
@@ -122,7 +120,7 @@ impl AstInfo {
         }
     }
 
-    pub fn get_sym_span(&self, ast_id: AstId) -> Span {
+    pub fn get_sym_span(&self, ast_id: AstId) -> SourceSpan {
         match &self.items[ast_id.id as usize] {
             Item::TypeDef(abs_typedef) => abs_typedef.name_span,
             Item::Struct(abs_struct) => abs_struct.name_span,
@@ -192,11 +190,11 @@ pub enum SectionKind {
 #[derive(Debug)]
 pub struct SpannedExpr {
     pub expr: Expr,
-    pub span: Span,
+    pub span: SourceSpan,
 }
 
 impl SpannedExpr {
-    pub fn new(expr: Expr, span: Span) -> SpannedExpr {
+    pub fn new(expr: Expr, span: SourceSpan) -> SpannedExpr {
         SpannedExpr { expr, span }
     }
 }
@@ -211,8 +209,8 @@ pub enum Expr {
     Bool(bool),
     /// Variable name, along with optional default type
     Default(Box<SpannedExpr>, Box<SpannedExpr>),
-    Integer(u32, Notation),
-    Float(u32, Notation),
+    Integer(InternedId, Notation),
+    Float(InternedId, Notation),
     Str(InternedId),
     Char(char),
     /// Caller, Args
@@ -301,7 +299,7 @@ impl BinaryOp {
 }
 
 impl Formattable for BinaryOp {
-    fn to_fmt(&self) -> common::fmter::Formatted {
+    fn to_fmt(&self) -> Formatted {
         match self {
             BinaryOp::Add => Formatted::OpAdd,
             BinaryOp::Sub => Formatted::Hyphen,
@@ -355,11 +353,11 @@ impl ArrayExpr {
 #[derive(Debug, Clone)]
 pub struct SpannedTypeExpr {
     pub ty_expr: TypeExpr,
-    pub span: Span,
+    pub span: SourceSpan,
 }
 
 impl SpannedTypeExpr {
-    pub fn new(ty_expr: TypeExpr, span: Span) -> SpannedTypeExpr {
+    pub fn new(ty_expr: TypeExpr, span: SourceSpan) -> SpannedTypeExpr {
         SpannedTypeExpr { ty_expr, span }
     }
 }
@@ -374,11 +372,11 @@ pub enum TypeExpr {
 #[derive(Debug, Clone)]
 pub struct SpannedPathSegment {
     pub kind: PathSegment,
-    pub span: Span,
+    pub span: SourceSpan,
 }
 
 impl SpannedPathSegment {
-    pub fn new(kind: PathSegment, span: Span) -> Self {
+    pub fn new(kind: PathSegment, span: SourceSpan) -> Self {
         SpannedPathSegment { kind, span }
     }
 }
@@ -394,7 +392,7 @@ pub enum PathSegment {
 #[derive(Debug)]
 pub struct AbstractVar {
     pub name_id: InternedId,
-    pub name_span: Span,
+    pub name_span: SourceSpan,
     pub spanned_expr: SpannedExpr,
     pub is_priv: bool,
 }
@@ -402,7 +400,7 @@ pub struct AbstractVar {
 impl AbstractVar {
     pub fn new(
         name_id: InternedId,
-        name_span: Span,
+        name_span: SourceSpan,
         spanned_expr: SpannedExpr,
         is_priv: bool,
     ) -> AbstractVar {
@@ -418,18 +416,18 @@ impl AbstractVar {
 #[derive(Debug)]
 pub struct AbstractTypeDef {
     pub name_id: InternedId,
-    pub name_span: Span,
+    pub name_span: SourceSpan,
     pub spanned_ty_expr: SpannedTypeExpr,
     pub conds: Vec<SpannedExpr>,
-    pub args: Vec<SpannedInnerArgs>,
+    pub args: Vec<SpannedInnerArg>,
 }
 
 impl AbstractTypeDef {
     pub fn new(
         name_id: InternedId,
-        name_span: Span,
+        name_span: SourceSpan,
         spanned_ty_expr: SpannedTypeExpr,
-        args: Vec<SpannedInnerArgs>,
+        args: Vec<SpannedInnerArg>,
         conds: Vec<SpannedExpr>,
     ) -> AbstractTypeDef {
         AbstractTypeDef {
@@ -445,9 +443,9 @@ impl AbstractTypeDef {
 #[derive(Debug)]
 pub struct AbstractStruct {
     pub name_id: InternedId,
-    pub name_span: Span,
+    pub name_span: SourceSpan,
     pub glob_conds: Vec<SpannedExpr>,
-    pub glob_args: Vec<SpannedInnerArgs>,
+    pub glob_args: Vec<SpannedInnerArg>,
     pub fields: Vec<AbstractTypeDef>,
     pub is_priv: bool,
 }
@@ -455,9 +453,9 @@ pub struct AbstractStruct {
 impl AbstractStruct {
     pub fn new(
         name_id: InternedId,
-        name_span: Span,
+        name_span: SourceSpan,
         glob_conds: Vec<SpannedExpr>,
-        glob_args: Vec<SpannedInnerArgs>,
+        glob_args: Vec<SpannedInnerArg>,
         fields: Vec<AbstractTypeDef>,
         is_priv: bool,
         // visibility: Visibility,
@@ -477,10 +475,10 @@ impl AbstractStruct {
 pub struct AbstractEnum {
     // Would be SymbolId in symbol table anyways
     pub name_id: InternedId,
-    pub name_span: Span,
+    pub name_span: SourceSpan,
     pub variants: Vec<AbstractVariant>,
     pub glob_conds: Vec<SpannedExpr>,
-    pub glob_args: Vec<SpannedInnerArgs>,
+    pub glob_args: Vec<SpannedInnerArg>,
     pub is_priv: bool,
     // pub(crate) visibility: Visibility,
 }
@@ -488,10 +486,10 @@ pub struct AbstractEnum {
 impl AbstractEnum {
     pub fn new(
         name_id: InternedId,
-        name_span: Span,
+        name_span: SourceSpan,
         variants: Vec<AbstractVariant>,
         glob_conds: Vec<SpannedExpr>,
-        glob_args: Vec<SpannedInnerArgs>,
+        glob_args: Vec<SpannedInnerArg>,
         is_priv: bool,
     ) -> AbstractEnum {
         AbstractEnum {
@@ -509,21 +507,21 @@ impl AbstractEnum {
 #[derive(Debug)]
 pub struct AbstractVariant {
     pub name_id: InternedId,
-    pub name_span: Span,
+    pub name_span: SourceSpan,
     // I think this is right?
     pub ty_expr: Option<SpannedTypeExpr>,
-    pub args: Vec<SpannedInnerArgs>,
+    pub args: Vec<SpannedInnerArg>,
     pub conds: Vec<SpannedExpr>,
 }
 
 impl AbstractVariant {
     pub fn new(
         name_id: InternedId,
-        name_span: Span,
+        name_span: SourceSpan,
         // I think this is right?
         ty_expr: Option<SpannedTypeExpr>,
         conds: Vec<SpannedExpr>,
-        args: Vec<SpannedInnerArgs>,
+        args: Vec<SpannedInnerArg>,
     ) -> AbstractVariant {
         AbstractVariant {
             name_id,
@@ -538,12 +536,16 @@ impl AbstractVariant {
 #[derive(Debug)]
 pub struct AbstractFunc {
     pub name_id: InternedId,
-    pub name_span: Span,
+    pub name_span: SourceSpan,
     pub params: Vec<SpannedExpr>,
 }
 
 impl AbstractFunc {
-    pub fn new(name_id: InternedId, name_span: Span, params: Vec<SpannedExpr>) -> AbstractFunc {
+    pub fn new(
+        name_id: InternedId,
+        name_span: SourceSpan,
+        params: Vec<SpannedExpr>,
+    ) -> AbstractFunc {
         AbstractFunc {
             name_id,
             name_span,
@@ -555,14 +557,14 @@ impl AbstractFunc {
 #[derive(Debug)]
 pub struct AbstractFuncDecl {
     pub name_id: InternedId,
-    pub name_span: Span,
+    pub name_span: SourceSpan,
     pub params: Vec<AbstractParam>,
 }
 
 impl AbstractFuncDecl {
     pub fn new(
         name_id: InternedId,
-        name_span: Span,
+        name_span: SourceSpan,
         params: Vec<AbstractParam>,
     ) -> AbstractFuncDecl {
         AbstractFuncDecl {
@@ -580,7 +582,7 @@ pub struct AbstractConfig {
     // Could be a "Outer.a { }" where it is defining it's fields config specifically
     /// Name of structural type to configure
     pub name_id: InternedId,
-    pub name_span: Span,
+    pub name_span: SourceSpan,
     /// Configuration for the current parent to apply
     pub field_assignments: Vec<AbstractFieldAssignment>,
     /// Configuration for inner fields to define recursively
@@ -590,7 +592,7 @@ pub struct AbstractConfig {
 impl AbstractConfig {
     pub fn new(
         name_id: InternedId,
-        name_span: Span,
+        name_span: SourceSpan,
         field_assignments: Vec<AbstractFieldAssignment>,
         inner_field_cfg: Vec<AbstractConfig>,
     ) -> AbstractConfig {
@@ -608,14 +610,14 @@ impl AbstractConfig {
 pub struct AbstractFieldAssignment {
     /// Name of structural type to configure
     pub name_id: InternedId,
-    pub name_span: Span,
+    pub name_span: SourceSpan,
     pub array_expr: ArrayExpr,
 }
 
 impl AbstractFieldAssignment {
     pub fn new(
         name_id: InternedId,
-        name_span: Span,
+        name_span: SourceSpan,
         array_expr: ArrayExpr,
     ) -> AbstractFieldAssignment {
         AbstractFieldAssignment {
@@ -629,12 +631,16 @@ impl AbstractFieldAssignment {
 #[derive(Debug)]
 pub struct AbstractParam {
     pub name_id: InternedId,
-    pub name_span: Span,
+    pub name_span: SourceSpan,
     pub ty_expr: SpannedTypeExpr,
 }
 
 impl AbstractParam {
-    pub fn new(name_id: InternedId, name_span: Span, ty_expr: SpannedTypeExpr) -> AbstractParam {
+    pub fn new(
+        name_id: InternedId,
+        name_span: SourceSpan,
+        ty_expr: SpannedTypeExpr,
+    ) -> AbstractParam {
         AbstractParam {
             name_id,
             name_span,
@@ -658,20 +664,20 @@ pub struct AbstractFieldDecl {
 #[derive(Debug)]
 pub struct AbstractAlias {
     pub name_id: InternedId,
-    pub name_span: Span,
+    pub name_span: SourceSpan,
     pub params: Vec<AbstractParam>,
     pub conds: Vec<SpannedExpr>,
-    pub args: Vec<SpannedInnerArgs>,
+    pub args: Vec<SpannedInnerArg>,
     pub is_priv: bool,
 }
 
 impl AbstractAlias {
     pub fn new(
         name_id: InternedId,
-        name_span: Span,
+        name_span: SourceSpan,
         params: Vec<AbstractParam>,
         conds: Vec<SpannedExpr>,
-        args: Vec<SpannedInnerArgs>,
+        args: Vec<SpannedInnerArg>,
         is_priv: bool,
     ) -> AbstractAlias {
         AbstractAlias {

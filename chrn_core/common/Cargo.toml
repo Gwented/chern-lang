@@ -2,7 +2,3 @@
 name = "common"
 version.workspace = true
 edition.workspace = true
-
-[dependencies]
-unicode-width = "0.2"
-rand = "0.10.0"

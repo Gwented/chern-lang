@@ -2,17 +2,15 @@
 use std::{collections::HashMap, fmt::Display};
 
 use chrn_utils::{
+    fmter::{Formattable, Formatted},
     id_types::{AstId, ExprId, InternedId, ModuleId, ScopeId, SymbolId, TypeId, ValueId},
     inner_args::InnerArgs,
+    source_map::source_span::SourceSpan,
     types::{
         builtins::BuiltinType,
         type_constraints::{TypeConstraint, TypeConstraintFlags},
     },
     values::ValueKind,
-};
-use common::{
-    fmter::{Formattable, Formatted},
-    span::Span,
 };
 
 use crate::{
@@ -160,7 +158,7 @@ pub struct ResolvedExpr {
     pub inputs: Vec<ExprId>,
     // Should be one
     pub user: Option<ExprId>,
-    pub span: Span,
+    pub span: SourceSpan,
     // This is not an option type even though `Value` as an `Option<Value>` because symbols are
     // already represented as unknown from `SymbolKind` and `Value` types already have the metadata
     // of their type and if they have a const value inside.
@@ -172,7 +170,7 @@ impl ResolvedExpr {
         type_id: TypeId,
         expr_hir: ExprHir,
         val_id: ValueId,
-        span: Span,
+        span: SourceSpan,
         inputs: Vec<ExprId>,
     ) -> ResolvedExpr {
         ResolvedExpr {
@@ -457,7 +455,7 @@ pub enum FuncKind {
 }
 
 impl Formattable for FuncKind {
-    fn to_fmt(&self) -> common::fmter::Formatted {
+    fn to_fmt(&self) -> Formatted {
         match self {
             FuncKind::Contains => Formatted::FuncContains,
             FuncKind::IsWhitespace => Formatted::IsWhitespace,

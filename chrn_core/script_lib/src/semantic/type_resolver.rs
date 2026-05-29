@@ -1,16 +1,18 @@
 //TODO: SHOULD IMPORT CHECKING HAPPEN HERE??
 pub mod type_context;
 
+use chrn_utils::chrn_settings::ChrnSettings;
+use chrn_utils::fmter::{Formattable, Formatted, SpannedFormatted};
 use chrn_utils::id_types::{
-    AstId, ExprId, InternedId, ModuleId, ScopeId, SymbolId, TypeId, ValueId,
+    AstId, ExprId, InternedId, ModuleId, ScopeId, SpannedInternedId, SymbolId, TypeId, ValueId,
 };
 use chrn_utils::intern::Intern;
+use chrn_utils::source_map::source_diagnostic::{
+    AnnotationKind, DiagnosticLevel, SourceDiagnostic,
+};
+use chrn_utils::source_map::source_region_data::SourceRegion;
 use chrn_utils::types::builtins::{BuiltinType, BuiltinTypeKind};
 use chrn_utils::values::{Value, ValueInfo};
-use common::chrn_settings::ChrnSettings;
-use common::fmter::{Formattable, Formatted};
-use common::reporter::diagnostic::Diagnostic;
-use common::span::Span;
 
 use crate::parser::ast::{AbstractVar, Expr, SpannedExpr, SpannedPathSegment};
 use crate::script_compiler::{self, ScriptCompiler};
@@ -43,6 +45,7 @@ use super::constraints::ArgConstraint;
 pub struct TypeResolver<'a> {
     ast_info: &'a AstInfo,
     interner: &'a Intern,
+    current_region: &'a SourceRegion,
     //WARN: Horrors
     compiler: &'a mut ScriptCompiler,
     current_mod: ModuleId,
@@ -54,6 +57,7 @@ impl TypeResolver<'_> {
     pub fn new<'a>(
         settings: &'a ChrnSettings,
         ast_info: &'a AstInfo,
+        current_region: &'a SourceRegion,
         current_mod: ModuleId,
         ty_ctx: &'a mut TypeContext,
         interner: &'a Intern,
@@ -61,15 +65,16 @@ impl TypeResolver<'_> {
     ) -> TypeResolver<'a> {
         TypeResolver {
             ast_info,
+            current_region,
             current_mod,
             ty_ctx,
-            reporter: SemanticReporter::new(settings, interner),
+            reporter: SemanticReporter::new(settings, current_region, interner),
             interner,
             compiler,
         }
     }
 
-    pub fn resolve(&mut self) -> Result<(), Vec<Diagnostic>> {
+    pub fn resolve(&mut self) -> Result<(), Vec<SourceDiagnostic>> {
         // This is resolving types but not resolving args or conditions.
         // Everything is in order so this cannot fail unless something internally went wrong.
         for (id, item) in self.ast_info.items.iter().enumerate() {
@@ -399,13 +404,7 @@ impl TypeResolver<'_> {
 
                         //WARN: Suspicious
                         let module = &self.compiler.mods[mod_id.id];
-                        self.reporter.report_semantic(
-                            sem_err,
-                            &module
-                                .src_metadata
-                                .as_ref()
-                                .expect("core should not be resolved"),
-                        )
+                        self.reporter.report_semantic(sem_err)
                     }
                 };
             } else {
@@ -510,9 +509,8 @@ impl TypeResolver<'_> {
                 let const_val_opt = if let Some(const_val) = &operand_val_info.const_val {
                     if !evaluator::is_compatible_unary(*op, const_val) {
                         return Err(MathError::UnaryOpMismatch(
-                            const_val.kind().to_fmt(),
+                            SpannedFormatted::new(const_val.kind().to_fmt(), operand_expr.span),
                             op.to_fmt(),
-                            vec![operand_expr.span],
                         ))?;
                     } else {
                         has_const_val = true;
@@ -577,13 +575,10 @@ impl TypeResolver<'_> {
                         // If cannot perform operation and neither are unknown then there is actual
                         // corruption, and not one part just being unresolved
                         if !evaluator::is_compatible_binary(lhs_const, *op, rhs_const) {
-                            let full_span = lhs_expr.span.merge(rhs_expr.span);
-
                             return Err(MathError::BinaryOpMismatch(
-                                lhs_const.kind().to_fmt(),
-                                rhs_const.kind().to_fmt(),
+                                SpannedFormatted::new(lhs_const.kind().to_fmt(), lhs_expr.span),
+                                SpannedFormatted::new(rhs_const.kind().to_fmt(), rhs_expr.span),
                                 op.to_fmt(),
-                                vec![full_span],
                             ))?;
                         } else {
                             has_const_val = true;
@@ -718,14 +713,7 @@ impl TypeResolver<'_> {
         ) {
             Ok(expr_id) => expr_id,
             Err(sem_err) => {
-                let module = &self.compiler.mods[self.current_mod.id];
-                self.reporter.report_semantic(
-                    sem_err,
-                    &module
-                        .src_metadata
-                        .as_ref()
-                        .expect("core should not be resolved"),
-                );
+                self.reporter.report_semantic(sem_err);
                 return Err(());
             }
         };
@@ -737,14 +725,6 @@ impl TypeResolver<'_> {
         let has_resolved_ty = !self.compiler.check_unknown(expr.type_id);
         let has_const_val = val.const_val.is_some();
 
-        // let inferred_type_id = match self.type_check(&expr.expr_hir) {
-        //     Ok(type_id) => type_id,
-        //     Err(sem_err) => {
-        //         self.reporter
-        //             .report_semantic(sem_err, &self.compiler.mods[self.current_mod.id]);
-        //         return Err(());
-        //     }
-        // };
         let val_id = expr.val_id;
 
         // Sets the symbol's value to be the last expression's value so that later, if it's
@@ -759,9 +739,6 @@ impl TypeResolver<'_> {
             .expect("Exists");
         symbol.kind = SymbolKind::Val(val_id);
 
-        let name = self
-            .interner
-            .search(self.compiler.symbols[sym_id.id as usize].name_id.id as usize);
         // If the symbol that was just examined is a pending symbol AND it was actually resolved,
         // then it'll be marked as resolved
         if let Some(pending_sym) = self.ty_ctx.sym_queue.get_mut(&sym_id) {
@@ -784,15 +761,7 @@ impl TypeResolver<'_> {
         ) {
             Ok(tid) => tid,
             Err(sem_err) => {
-                let module = &self.compiler.mods[self.current_mod.id];
-                self.reporter.report_semantic(
-                    sem_err,
-                    &module
-                        .src_metadata
-                        .as_ref()
-                        .expect("core should not be resolved"),
-                );
-
+                self.reporter.report_semantic(sem_err);
                 return Err(());
             }
         };
@@ -819,15 +788,7 @@ impl TypeResolver<'_> {
                 // unfinished upon singular errors
                 Ok(c) => Some(c),
                 Err(sem_err) => {
-                    let module = &self.compiler.mods[self.current_mod.id];
-                    self.reporter.report_semantic(
-                        sem_err,
-                        &module
-                            .src_metadata
-                            .as_ref()
-                            .expect("core should not be resolved"),
-                    );
-
+                    self.reporter.report_semantic(sem_err);
                     None
                 }
             };
@@ -877,40 +838,41 @@ impl TypeResolver<'_> {
             ) {
                 Ok(tid) => tid,
                 Err(sem_err) => {
-                    let module = &self.compiler.mods[self.current_mod.id];
-                    self.reporter.report_semantic(
-                        sem_err,
-                        &module
-                            .src_metadata
-                            .as_ref()
-                            .expect("core should not be resolved"),
-                    );
-
+                    self.reporter.report_semantic(sem_err);
                     return Err(());
                 }
             };
 
             if let Some(original) = seen.iter().find(|other| field_typedef.name_id == other.1) {
-                let struct_name = self.interner.search(abs_struct.name_id.id as usize);
-                let dup_name = self.interner.search(field_typedef.name_id.id as usize);
+                let struct_name = self.interner.search(abs_struct.name_id);
+                let dup_name = self.interner.search(field_typedef.name_id);
 
                 let orig_span = abs_struct.fields[original.0].name_span;
                 let field_span = abs_struct.fields[i].name_span;
 
-                let msg = format!(
+                let core_msg = format!(
                     "More than one field has the identifier \"{dup_name}\" within struct `{struct_name}`"
                 );
 
-                let module = &self.compiler.mods[self.current_mod.id];
-                self.reporter.report_spanned(
-                    &msg,
-                    None,
-                    &[orig_span, field_span],
-                    &module
-                        .src_metadata
-                        .as_ref()
-                        .expect("core should not be resolved"),
-                );
+                let src_diag = SourceDiagnostic::builder(
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    self.current_region.path_id,
+                )
+                .add_annotation(
+                    abs_struct.name_span,
+                    AnnotationKind::Secondary,
+                    "Found inside this struct".to_string().into(),
+                )
+                .add_annotation(
+                    orig_span,
+                    AnnotationKind::Secondary,
+                    format!("Original usage of identifier `{dup_name}` here").into(),
+                )
+                .add_annotation(field_span, AnnotationKind::Primary, None)
+                .build();
+
+                self.reporter.err_vec.push(src_diag);
             }
 
             seen.push((i, field_typedef.name_id));
@@ -935,15 +897,7 @@ impl TypeResolver<'_> {
                 ) {
                     Ok(c) => Some(c),
                     Err(sem_err) => {
-                        let module = &self.compiler.mods[self.current_mod.id];
-                        self.reporter.report_semantic(
-                            sem_err,
-                            &module
-                                .src_metadata
-                                .as_ref()
-                                .expect("core should not be resolved"),
-                        );
-
+                        self.reporter.report_semantic(sem_err);
                         None
                     }
                 };
@@ -970,15 +924,7 @@ impl TypeResolver<'_> {
             ) {
                 Ok(c) => Some(c),
                 Err(sem_err) => {
-                    let module = &self.compiler.mods[self.current_mod.id];
-                    self.reporter.report_semantic(
-                        sem_err,
-                        &module
-                            .src_metadata
-                            .as_ref()
-                            .expect("core should not be resolved"),
-                    );
-
+                    self.reporter.report_semantic(sem_err);
                     None
                 }
             };
@@ -1020,26 +966,35 @@ impl TypeResolver<'_> {
         // Checking if there are duplicate name ids within the same enum
         for (i, variant) in abs_enum.variants.iter().enumerate() {
             if let Some(original) = seen.iter().find(|other| variant.name_id == other.1) {
-                let enum_name = self.interner.search(abs_enum.name_id.id as usize);
-                let dup_name = self.interner.search(variant.name_id.id as usize);
+                let enum_name = self.interner.search(abs_enum.name_id);
+                let dup_name = self.interner.search(variant.name_id);
 
                 let orig_span = abs_enum.variants[original.0].name_span;
                 let variant_span = abs_enum.variants[i].name_span;
 
-                let msg = format!(
+                let core_msg = format!(
                     "More than one variant has the identifier \"{dup_name}\" within enum `{enum_name}`"
                 );
 
-                let module = &self.compiler.mods[self.current_mod.id];
-                self.reporter.report_spanned(
-                    &msg,
-                    None,
-                    &[orig_span, variant_span],
-                    &module
-                        .src_metadata
-                        .as_ref()
-                        .expect("core should not be resolved"),
-                );
+                let src_diag = SourceDiagnostic::builder(
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    self.current_region.path_id,
+                )
+                .add_annotation(
+                    abs_enum.name_span,
+                    AnnotationKind::Secondary,
+                    "Found inside this enum".to_string().into(),
+                )
+                .add_annotation(
+                    orig_span,
+                    AnnotationKind::Secondary,
+                    format!("Original usage of identifier `{dup_name}` here").into(),
+                )
+                .add_annotation(variant_span, AnnotationKind::Primary, None)
+                .build();
+
+                self.reporter.err_vec.push(src_diag);
             }
 
             seen.push((i, variant.name_id));
@@ -1053,15 +1008,7 @@ impl TypeResolver<'_> {
                 ) {
                     Ok(tid) => tid,
                     Err(sem_err) => {
-                        let module = &self.compiler.mods[self.current_mod.id];
-                        self.reporter.report_semantic(
-                            sem_err,
-                            &module
-                                .src_metadata
-                                .as_ref()
-                                .expect("core should not be resolved"),
-                        );
-
+                        self.reporter.report_semantic(sem_err);
                         TypeId::new(script_compiler::CORE_UNKNOWN)
                     }
                 };
@@ -1088,15 +1035,7 @@ impl TypeResolver<'_> {
                 ) {
                     Ok(c) => Some(c),
                     Err(sem_err) => {
-                        let module = &self.compiler.mods[self.current_mod.id];
-                        self.reporter.report_semantic(
-                            sem_err,
-                            &module
-                                .src_metadata
-                                .as_ref()
-                                .expect("core should not be resolved"),
-                        );
-
+                        self.reporter.report_semantic(sem_err);
                         None
                     }
                 };
@@ -1122,15 +1061,7 @@ impl TypeResolver<'_> {
             ) {
                 Ok(c) => Some(c),
                 Err(sem_err) => {
-                    let module = &self.compiler.mods[self.current_mod.id];
-                    self.reporter.report_semantic(
-                        sem_err,
-                        &module
-                            .src_metadata
-                            .as_ref()
-                            .expect("core should not be resolved"),
-                    );
-
+                    self.reporter.report_semantic(sem_err);
                     None
                 }
             };
@@ -1167,25 +1098,34 @@ impl TypeResolver<'_> {
         // WARN: Ok this just looks like an inlined function now
         for (i, abs_param) in abs_alias.params.iter().enumerate() {
             if let Some(original) = seen.iter().find(|other| abs_param.name_id == other.1) {
-                let alias_name = self.interner.search(abs_alias.name_id.id as usize);
-                let dup_name = self.interner.search(abs_param.name_id.id as usize);
+                let alias_name = self.interner.search(abs_alias.name_id);
+                let dup_name = self.interner.search(abs_param.name_id);
 
                 let orig_span = abs_alias.params[original.0].name_span;
 
-                let msg = format!(
+                let core_msg = format!(
                     "More than one variable has the identifier \"{dup_name}\" within alias `{alias_name}`"
                 );
 
-                let module = &self.compiler.mods[self.current_mod.id];
-                self.reporter.report_spanned(
-                    &msg,
-                    None,
-                    &[orig_span, abs_param.name_span],
-                    &module
-                        .src_metadata
-                        .as_ref()
-                        .expect("core should not be resolved"),
-                );
+                let src_diag = SourceDiagnostic::builder(
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    self.current_region.path_id,
+                )
+                .add_annotation(
+                    abs_alias.name_span,
+                    AnnotationKind::Secondary,
+                    "Found inside this alias".to_string().into(),
+                )
+                .add_annotation(
+                    orig_span,
+                    AnnotationKind::Secondary,
+                    format!("Original usage of identifier `{dup_name}` here").into(),
+                )
+                .add_annotation(abs_param.name_span, AnnotationKind::Primary, None)
+                .build();
+
+                self.reporter.err_vec.push(src_diag);
             }
 
             seen.push((i, abs_param.name_id));
@@ -1201,15 +1141,7 @@ impl TypeResolver<'_> {
             ) {
                 Ok(tid) => tid,
                 Err(sem_err) => {
-                    let module = &self.compiler.mods[self.current_mod.id];
-                    self.reporter.report_semantic(
-                        sem_err,
-                        &module
-                            .src_metadata
-                            .as_ref()
-                            .expect("core should not be resolved"),
-                    );
-
+                    self.reporter.report_semantic(sem_err);
                     return Err(());
                 }
             };
@@ -1265,15 +1197,7 @@ impl TypeResolver<'_> {
             ) {
                 Ok(c) => Some(c),
                 Err(sem_err) => {
-                    let module = &self.compiler.mods[self.current_mod.id];
-                    self.reporter.report_semantic(
-                        sem_err,
-                        &module
-                            .src_metadata
-                            .as_ref()
-                            .expect("core should not be resolved"),
-                    );
-
+                    self.reporter.report_semantic(sem_err);
                     None
                 }
             };
@@ -1377,22 +1301,30 @@ impl TypeResolver<'_> {
                     //there is no way to check for cycles outside of `TypeContext`, so this has to
                     //pick up the edge case of, "let x = x". Could change.
                     if found_sym_id == parent_sym_id {
-                        let name = self.interner.search(
-                            self.compiler.symbols[found_sym_id.id as usize].name_id.id as usize,
-                        );
+                        let name = self
+                            .interner
+                            .search(self.compiler.symbols[found_sym_id.id as usize].name_id);
 
-                        let msg = format!("Cannot declare symbol `{name}` as itself");
+                        let core_msg = format!("Cannot declare symbol `{name}` as itself");
 
-                        let parent_ast_id = self.compiler.symbols[parent_sym_id.id as usize].ast_id;
-                        let mut spans = Vec::new();
-                        spans.push(spanned_expr.span);
+                        let dup_span = spanned_expr.span;
 
-                        if let Some(ast_id) = parent_ast_id {
-                            let ast_span = self.ast_info.get_sym_span(ast_id);
-                            spans.push(ast_span);
-                        };
+                        let parent_ast_id = self.compiler.symbols[parent_sym_id.id as usize]
+                            .ast_id
+                            .expect("Parent must be a valid symbol to get to this point");
 
-                        return Err(SemanticError::General(msg, spans));
+                        let parent_span = self.ast_info.get_sym_span(parent_ast_id);
+
+                        let src_diag = SourceDiagnostic::builder(
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            self.current_region.path_id,
+                        )
+                        .add_annotation(parent_span, AnnotationKind::Primary, None)
+                        .add_annotation(dup_span, AnnotationKind::Primary, None)
+                        .build();
+
+                        return Err(SemanticError::General(src_diag));
                     }
 
                     let symbol = &self.compiler.symbols[found_sym_id.id as usize];
@@ -1428,12 +1360,22 @@ impl TypeResolver<'_> {
                                 | Type::Enum(_)
                                 | Type::TypeDef(_)
                                 | Type::Unknown => {
-                                    let msg = "Cannot have a type within expressions".to_string();
+                                    let core_msg =
+                                        "Cannot have a type within expressions".to_string();
 
-                                    return Err(SemanticError::General(
-                                        msg,
-                                        vec![spanned_expr.span],
-                                    ));
+                                    let src_diag = SourceDiagnostic::builder(
+                                        DiagnosticLevel::Error,
+                                        core_msg,
+                                        self.current_region.path_id,
+                                    )
+                                    .add_annotation(
+                                        spanned_expr.span,
+                                        AnnotationKind::Primary,
+                                        None,
+                                    )
+                                    .build();
+
+                                    return Err(SemanticError::General(src_diag));
                                 }
                                 Type::Constrained(ty_constraint) => todo!(),
                                 Type::Deferred(type_id) => todo!("Is this possible?"),
@@ -1486,14 +1428,22 @@ impl TypeResolver<'_> {
                             )
                         }
                         SymbolKind::Module(_) => {
-                            let err_mod_name = self.interner.search(name_id.id as usize);
+                            let err_mod_name = self.interner.search(*name_id);
                             // TODO: Should send help, which should be done after re-doing how
                             // errors are rendered
-                            let msg = format!(
+                            let core_msg = format!(
                                 "The symbol `{err_mod_name}` is a module, which cannot be assigned as an expression value"
                             );
 
-                            return Err(SemanticError::General(msg, vec![spanned_expr.span]));
+                            let src_diag = SourceDiagnostic::builder(
+                                DiagnosticLevel::Error,
+                                core_msg,
+                                self.current_region.path_id,
+                            )
+                            .add_annotation(spanned_expr.span, AnnotationKind::Primary, None)
+                            .build();
+
+                            return Err(SemanticError::General(src_diag));
                         }
                     };
 
@@ -1501,14 +1451,14 @@ impl TypeResolver<'_> {
 
                     Ok(expr_id)
                 } else {
-                    let ident = self.interner.search(name_id.id as usize);
+                    let ident = self.interner.search(*name_id);
                     // if ident == "_" {
                     //     panic!("hi");
                     // }
 
                     // SemanticError needs centralization
                     let module = &self.compiler.mods[self.current_mod.id];
-                    let mod_name = self.interner.search(module.name_id.id as usize);
+                    let mod_name = self.interner.search(module.name_id);
 
                     let and_local = if local_scope_id.is_some() {
                         " and local"
@@ -1516,15 +1466,23 @@ impl TypeResolver<'_> {
                         ""
                     };
 
-                    let msg = format!(
+                    let core_msg = format!(
                         "The symbol `{ident}` was not found in the module `{mod_name}` within `{scope_type}`{and_local} searchable scopes"
                     );
 
-                    Err(SemanticError::General(msg, vec![spanned_expr.span]))
+                    let src_diag = SourceDiagnostic::builder(
+                        DiagnosticLevel::Error,
+                        core_msg,
+                        self.current_region.path_id,
+                    )
+                    .add_annotation(spanned_expr.span, AnnotationKind::Primary, None)
+                    .build();
+
+                    Err(SemanticError::General(src_diag))
                 }
             }
-            Expr::Integer(id, _) => {
-                if let Ok(num) = self.interner.search(*id as usize).parse::<i64>() {
+            Expr::Integer(name_id, _) => {
+                if let Ok(num) = self.interner.search(*name_id).parse::<i64>() {
                     // Getting what it's spot would be when it's expression and value parts are
                     // pushed
                     let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
@@ -1548,15 +1506,14 @@ impl TypeResolver<'_> {
                     Ok(expr_id)
                 } else {
                     Err(SemanticError::NumericOverflow(
-                        *id,
+                        SpannedInternedId::new(*name_id, spanned_expr.span),
                         Formatted::Integer,
-                        vec![spanned_expr.span],
                     ))
                 }
             }
-            Expr::Float(id, _) => {
+            Expr::Float(name_id, _) => {
                 // No BigFloat yet
-                if let Ok(num) = self.interner.search(*id as usize).parse::<f64>() {
+                if let Ok(num) = self.interner.search(*name_id).parse::<f64>() {
                     let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
                     let val_id = ValueId::new(self.compiler.values.len() as u32);
 
@@ -1574,9 +1531,8 @@ impl TypeResolver<'_> {
                     Ok(expr_id)
                 } else {
                     Err(SemanticError::NumericOverflow(
-                        *id,
+                        SpannedInternedId::new(*name_id, spanned_expr.span),
                         Formatted::Float,
-                        vec![spanned_expr.span],
                     ))
                 }
             }
@@ -1625,13 +1581,10 @@ impl TypeResolver<'_> {
                             && !lhs_is_unknown
                             && !rhs_is_unknown
                         {
-                            let full_span = lhs.span.merge(rhs.span);
-
                             return Err(MathError::BinaryOpMismatch(
-                                lhs_const.kind().to_fmt(),
-                                rhs_const.kind().to_fmt(),
+                                SpannedFormatted::new(lhs_const.kind().to_fmt(), lhs_expr.span),
+                                SpannedFormatted::new(rhs_const.kind().to_fmt(), rhs_expr.span),
                                 op.to_fmt(),
-                                vec![full_span],
                             ))?;
                         } else {
                             Some(evaluator::apply_binary_op(lhs_const, *op, rhs_const)?)
@@ -1803,9 +1756,8 @@ impl TypeResolver<'_> {
                 let const_val_opt = if let Some(const_val) = &operand_val_opt.const_val {
                     if !evaluator::is_compatible_unary(unary.op, const_val) && !is_unknown {
                         return Err(MathError::UnaryOpMismatch(
-                            const_val.kind().to_fmt(),
+                            SpannedFormatted::new(const_val.kind().to_fmt(), operand_expr.span),
                             unary.op.to_fmt(),
-                            vec![spanned_expr.span],
                         ))?;
                     } else {
                         Some(evaluator::apply_unary_op(unary.op, const_val)?)
@@ -1971,8 +1923,16 @@ impl TypeResolver<'_> {
                         SpannedExpr::new(Expr::Var(*interned_id), last_seg.span)
                     }
                     PathSegment::Generic(_) => {
-                        let msg = "Generics are not valid in expressions".to_string();
-                        return Err(SemanticError::General(msg, vec![last_seg.span]));
+                        let core_msg = "Generics are only usable in type expressions".to_string();
+                        let src_diag = SourceDiagnostic::builder(
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            self.current_region.path_id,
+                        )
+                        .add_annotation(last_seg.span, AnnotationKind::Primary, None)
+                        .build();
+
+                        return Err(SemanticError::General(src_diag));
                     }
                 };
 
@@ -2122,16 +2082,20 @@ impl TypeResolver<'_> {
                                 // If not at end AND there is no namespace associated with the
                                 // current symbol
                                 if i + 1 < spanned_path_segs.len() {
-                                    let current_namespace =
-                                        self.interner.search(interned_id.id as usize);
+                                    let current_namespace = self.interner.search(*interned_id);
 
-                                    let msg =
+                                    let core_msg =
                                         format!("No namespace found in `{current_namespace}`");
 
-                                    return Err(SemanticError::General(
-                                        msg,
-                                        vec![sp_path_seg.span],
-                                    ));
+                                    let src_diag = SourceDiagnostic::builder(
+                                        DiagnosticLevel::Error,
+                                        core_msg,
+                                        self.current_region.path_id,
+                                    )
+                                    .add_annotation(sp_path_seg.span, AnnotationKind::Primary, None)
+                                    .build();
+
+                                    return Err(SemanticError::General(src_diag));
                                 }
                                 // Success case where the last symbol has no scope and the end was
                                 // reached
@@ -2140,7 +2104,7 @@ impl TypeResolver<'_> {
                         }
                         // Symbol not found
                     } else {
-                        let current_namespace = self.interner.search(interned_id.id as usize);
+                        let current_namespace = self.interner.search(*interned_id);
 
                         let prev_namespace_opt = if i > 0 {
                             Some(&spanned_path_segs[i - 1])
@@ -2150,10 +2114,10 @@ impl TypeResolver<'_> {
 
                         // Different error message depending on if at least the first
                         // member was resolved or not
-                        let msg = if let Some(prev) = prev_namespace_opt {
+                        let src_diag = if let Some(prev) = prev_namespace_opt {
                             let prev_namespace = match &prev.kind {
                                 PathSegment::Ident(prev_name_id) => {
-                                    self.interner.search(prev_name_id.id as usize)
+                                    self.interner.search(*prev_name_id)
                                 }
                                 PathSegment::Generic(_) => {
                                     // Represents "module::Generic<T>::stuff" where the middle
@@ -2163,29 +2127,53 @@ impl TypeResolver<'_> {
                                 }
                             };
 
-                            let msg = format!(
+                            let core_msg = format!(
                                 "Could not find the symbol `{}` in the namespace `{}`",
                                 current_namespace, prev_namespace
                             );
 
-                            msg
+                            SourceDiagnostic::builder(
+                                DiagnosticLevel::Error,
+                                core_msg,
+                                self.current_region.path_id,
+                            )
+                            .add_annotation(
+                                prev.span,
+                                AnnotationKind::Secondary,
+                                "Previous namespace".to_string().into(),
+                            )
+                            .add_annotation(sp_path_seg.span, AnnotationKind::Primary, None)
+                            .build()
                         } else {
                             // Specific scope mention?
-                            let msg = format!(
+                            let core_msg = format!(
                                 "The symbol `{current_namespace}` was not found in all `{scope_type}` searchable scopes"
                             );
 
-                            msg
+                            SourceDiagnostic::builder(
+                                DiagnosticLevel::Error,
+                                core_msg,
+                                self.current_region.path_id,
+                            )
+                            .add_annotation(sp_path_seg.span, AnnotationKind::Primary, None)
+                            .build()
                         };
 
-                        return Err(SemanticError::General(msg, vec![sp_path_seg.span]));
+                        return Err(SemanticError::General(src_diag));
                     };
                 }
                 PathSegment::Generic(_) if in_ty_expr => {
                     // Still disallows something like, core.List<i32>.other_thing
                     if i + 1 != spanned_path_segs.len() {
-                        let msg = "Generics cannot use `::` pathing at any point".to_string();
-                        return Err(SemanticError::General(msg, vec![sp_path_seg.span]));
+                        let core_msg = "Generics cannot use `::` pathing at any point".to_string();
+                        let src_diag = SourceDiagnostic::basic(
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            self.current_region.path_id,
+                            sp_path_seg.span,
+                        );
+
+                        return Err(SemanticError::General(src_diag));
                     }
 
                     break;
@@ -2193,7 +2181,7 @@ impl TypeResolver<'_> {
                 PathSegment::Generic(_) => {
                     unreachable!("The parser does not pick this up in `parse_expr`");
                     let msg = "Generics cannot be used inside of expressions".to_string();
-                    return Err(SemanticError::General(msg, vec![sp_path_seg.span]));
+                    // return Err(SemanticError::General(src_diag));
                 }
             }
         }
@@ -2248,10 +2236,10 @@ impl TypeResolver<'_> {
             } else {
                 let msg = format!(
                     "Could not find the symbol `{}` as a module or value",
-                    self.interner.search(name_id.id as usize)
+                    self.interner.search(name_id)
                 );
 
-                return Err(SemanticError::General(msg, vec![member.span]));
+                return Err(SemanticError::General(todo!()));
             }
         }
 
@@ -2282,22 +2270,39 @@ impl TypeResolver<'_> {
 
                 if has_cycle {
                     let parent_sym = &self.compiler.symbols[parent_sym_id.id as usize];
-                    let parent_name = self.interner.search(parent_sym.name_id.id as usize);
+                    let parent_name = self.interner.search(parent_sym.name_id);
                     let parent_ast_id = parent_sym.ast_id.expect("core should not be resolved");
 
                     let found_sym = &self.compiler.symbols[found_sym_id.id as usize];
                     let found_ast_id = found_sym.ast_id.expect("core should not be resolved");
-                    let found_name = self.interner.search(found_sym.name_id.id as usize);
+                    let found_name = self.interner.search(found_sym.name_id);
 
                     let cycled_span = self.ast_info.get_sym_span(parent_ast_id);
                     let found_span = self.ast_info.get_sym_span(found_ast_id);
 
-                    let msg = format!(
+                    let core_msg = format!(
                         "`{}` depends on itself through `{}`",
                         parent_name, found_name
                     );
 
-                    return Err(SemanticError::General(msg, vec![cycled_span, found_span]));
+                    let src_diag = SourceDiagnostic::builder(
+                        DiagnosticLevel::Error,
+                        core_msg,
+                        self.current_region.path_id,
+                    )
+                    .add_annotation(
+                        cycled_span,
+                        AnnotationKind::Secondary,
+                        "This has no value yet".to_string().into(),
+                    )
+                    .add_annotation(
+                        found_span,
+                        AnnotationKind::Primary,
+                        format!("Uses `{found_name}` before it has a value").into(),
+                    )
+                    .build();
+
+                    return Err(SemanticError::General(src_diag));
                 }
             }
         }
@@ -2305,6 +2310,7 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
+    //FIX: This should be removed or shortened
     /// - active_mod_id: The target module to search which is only altered if an external module is
     /// used within a member access
     /// - spanned_ty_expr: The type expression to be resolved
@@ -2316,11 +2322,11 @@ impl TypeResolver<'_> {
         // Module that is actively being searched within, not the source. Source remains
         // current_mod
         associated_scope: AssociatedScopeKind,
-        spanned_ty_expr: &SpannedTypeExpr,
+        sp_ty_expr: &SpannedTypeExpr,
         scope_type: ScopeType,
         lookup_pattern: LookupPattern,
     ) -> Result<TypeId, SemanticError> {
-        match &spanned_ty_expr.ty_expr {
+        match &sp_ty_expr.ty_expr {
             //FIXME: If an error occurs while self.current_mod = extern_mod, it tries to report the
             //error from the external module instead of the actual module of origin.
             TypeExpr::Var(name_id) => {
@@ -2335,47 +2341,58 @@ impl TypeResolver<'_> {
                     scope_type,
                     lookup_pattern,
                 ) {
-                    Some((sym_id, _)) => match self.compiler.symbols[sym_id.id as usize].kind {
-                        SymbolKind::Type(type_id) => {
-                            // NOTE: Will probably error later in resolution but fine for now
-                            let symbol = &self.compiler.symbols[sym_id.id as usize];
-                            if symbol.is_priv && symbol.owner != self.current_mod {
-                                //FIX: Would need changes
-                                let current_mod = &self.compiler.mods[self.current_mod.id];
-                                let current_mod_name =
-                                    self.interner.search(current_mod.name_id.id as usize);
-                                let sym_name = self.interner.search(symbol.name_id.id as usize);
+                    Some((sym_id, _)) => {
+                        match self.compiler.symbols[sym_id.id as usize].kind {
+                            SymbolKind::Type(type_id) => {
+                                // NOTE: Will probably error later in resolution but fine for now
+                                let symbol = &self.compiler.symbols[sym_id.id as usize];
+                                if symbol.is_priv && symbol.owner != self.current_mod {
+                                    //FIX: Would need changes
+                                    let current_mod = &self.compiler.mods[self.current_mod.id];
+                                    let current_mod_name =
+                                        self.interner.search(current_mod.name_id);
+                                    let sym_name = self.interner.search(symbol.name_id);
 
-                                let msg = format!(
-                                    "The type `{sym_name}` is private within namespace `{current_mod_name}`"
-                                );
+                                    let core_msg = format!(
+                                        "The type `{sym_name}` is private within namespace `{current_mod_name}`"
+                                    );
 
-                                return Err(SemanticError::General(
-                                    msg,
-                                    vec![spanned_ty_expr.span],
-                                ));
+                                    let src_diag = SourceDiagnostic::builder(
+                                        DiagnosticLevel::Error,
+                                        core_msg,
+                                        self.current_region.path_id,
+                                    )
+                                    .add_annotation(sp_ty_expr.span, AnnotationKind::Primary, None)
+                                    .add_help(
+                                        "Types declared can be exported if that was intended."
+                                            .into(),
+                                    )
+                                    .build();
+
+                                    return Err(SemanticError::General(src_diag));
+                                }
+
+                                return Ok(type_id);
                             }
-
-                            return Ok(type_id);
+                            // Ok but what about, "core is a MODULE which is NOT a type?"
+                            SymbolKind::Module(mod_id) => (),
+                            SymbolKind::Val(_) | SymbolKind::ReservedTypeSlot(_) => (),
                         }
-                        // Ok but what about, "core is a MODULE which is NOT a type?"
-                        SymbolKind::Module(mod_id) => (),
-                        SymbolKind::Val(_) | SymbolKind::ReservedTypeSlot(_) => (),
-                    },
+                    }
                     None => (),
                 }
-                //FIX:
+                // Case of not finding any symbol
 
                 // If we have main, that imports def, that imports other, it tries to search for
                 // things in the "other" module even though it's defined in "def".
                 //
                 // Within "def", it tries to search "other" for everything declared even if "other"
                 // is never used.
-                let err_name = self.interner.search(name_id.id as usize);
-                let msg = match associated_scope {
+                let err_name = self.interner.search(*name_id);
+                let core_msg = match associated_scope {
                     AssociatedScopeKind::Module(mod_id) => {
                         let err_mod = &self.compiler.mods[mod_id.id];
-                        let err_mod_name = self.interner.search(err_mod.name_id.id as usize);
+                        let err_mod_name = self.interner.search(err_mod.name_id);
 
                         format!(
                             "`{err_name}` is not defined as a type within the module `{err_mod_name}`"
@@ -2390,14 +2407,21 @@ impl TypeResolver<'_> {
                             .sym_owner
                             .expect("resolve_type_expr control flow broke");
                         let sym_name_id = self.compiler.symbols[sym_owner.id as usize].name_id;
-                        let sym_name = self.interner.search(sym_name_id.id as usize);
+                        let sym_name = self.interner.search(sym_name_id);
+
                         format!(
                             "The symbol `{sym_name}` does not contain a type with the the identifier `{err_name}`"
                         )
                     }
                 };
 
-                Err(SemanticError::General(msg, vec![spanned_ty_expr.span]))
+                let src_diag = SourceDiagnostic::basic(
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    self.current_region.path_id,
+                    sp_ty_expr.span,
+                );
+                Err(SemanticError::General(src_diag))
             }
             // Generics can only be these types so this can stay for now
             TypeExpr::Generic(generic) => {
@@ -2409,13 +2433,17 @@ impl TypeResolver<'_> {
                         //TODO: Should maybe put List | Set
                         BuiltinTypeKind::List | BuiltinTypeKind::Set => {
                             if generic.args.len() != 1 {
-                                let msg =
+                                let core_msg =
                                     format!("Expected only 1 type within `{}`", kind.to_fmt());
 
-                                return Err(SemanticError::General(
-                                    msg,
-                                    vec![spanned_ty_expr.span],
-                                ));
+                                let src_diag = SourceDiagnostic::basic(
+                                    DiagnosticLevel::Error,
+                                    core_msg,
+                                    self.current_region.path_id,
+                                    sp_ty_expr.span,
+                                );
+
+                                return Err(SemanticError::General(src_diag));
                             }
 
                             let inner = self.resolve_type_expr(
@@ -2465,12 +2493,15 @@ impl TypeResolver<'_> {
                         }
                         BuiltinTypeKind::Map => {
                             if generic.args.len() != 2 {
-                                let msg = format!("Expected only 2 types within `Map`",);
+                                let core_msg = format!("Expected only 2 types within `Map`",);
+                                let src_diag = SourceDiagnostic::basic(
+                                    DiagnosticLevel::Error,
+                                    core_msg,
+                                    self.current_region.path_id,
+                                    sp_ty_expr.span,
+                                );
 
-                                return Err(SemanticError::General(
-                                    msg,
-                                    vec![spanned_ty_expr.span],
-                                ));
+                                return Err(SemanticError::General(src_diag));
                             }
 
                             // Should it reset to current module if it has a new sesarch started?
@@ -2503,13 +2534,25 @@ impl TypeResolver<'_> {
                     None => (),
                 }
 
-                let err_name = self.interner.search(generic.base.id as usize);
+                let err_name = self.interner.search(generic.base);
 
-                let msg = format!(
+                let core_msg = format!(
                     "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, `Map`, and `Tuple` are valid data structures"
                 );
 
-                Err(SemanticError::General(msg, vec![spanned_ty_expr.span]))
+                // No error codes please
+                let src_diag = SourceDiagnostic::builder(
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    self.current_region.path_id,
+                )
+                .add_annotation(sp_ty_expr.span, AnnotationKind::Primary, None)
+                .add_note(
+                    "Generics and data structures are only usable through language primitives"
+                        .into(),
+                )
+                .build();
+                Err(SemanticError::General(src_diag))
             }
             // This only allows something like, defs.Thing which can go to at most one type deep,
             // but no more. Will need change since something like i32.MAX could be "core.i32.MAX".

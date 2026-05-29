@@ -1,4 +1,4 @@
-use common::span::Span;
+use chrn_utils::source_map::source_span::SourceSpan;
 use script_lib::trivia::CommentLocation;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -17,15 +17,15 @@ impl TextHir {
 //TEST: Will likely be less specific
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) enum TextType {
-    Def(Span),
-    End(Span),
-    KW(Span),
-    Ident(Span),
-    Delimiter(Span),
-    Op(Span),
-    Text(Span),
-    Expr(Span),
+    Def(SourceSpan),
+    End(SourceSpan),
+    KW(SourceSpan),
+    Ident(SourceSpan),
+    Delimiter(SourceSpan),
+    Op(SourceSpan),
+    Text(SourceSpan),
+    Expr(SourceSpan),
     Whitespace,
     Newline,
-    Comment(CommentLocation, Span),
+    Comment(CommentLocation, SourceSpan),
 }

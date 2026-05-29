@@ -1,6 +1,7 @@
-use common::fmter::{Formattable, Formatted};
-
-use crate::id_types::{ExprId, InternedId, SymbolId, TypeId};
+use crate::{
+    fmter::{Formattable, Formatted},
+    id_types::{ExprId, InternedId, SymbolId, TypeId},
+};
 
 // The value system of script would be simple but the serial does need this too so maybe re-use
 // it?
@@ -81,7 +82,7 @@ pub enum ValueKind {
 }
 
 impl Formattable for ValueKind {
-    fn to_fmt(&self) -> common::fmter::Formatted {
+    fn to_fmt(&self) -> Formatted {
         match self {
             ValueKind::I64 => Formatted::I64,
             ValueKind::F64 => Formatted::F64,

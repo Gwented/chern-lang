@@ -1,6 +1,4 @@
-use core::fmt;
-
-use common::{
+use chrn_utils::{
     chrn_settings::ChrnSettings,
     core_error::{ConfigLoadError, CoreError, ScriptError},
 };
@@ -9,6 +7,7 @@ use interpreter_lib::interpreter;
 use crate::{
     args::{CheckCmd, Cli, Commands, FmtCmd, QueryCmd},
     config::CliConfig,
+    renderer,
 };
 
 pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
@@ -22,7 +21,7 @@ pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
 
 // What if this had 2 probability models?
 fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, String> {
-    let settings = ChrnSettings::new(cli_cfg.can_color);
+    let settings = ChrnSettings::new();
 
     match interpreter::interpret_chrn_cfg(&check_cmd.path, &settings) {
         Ok(_) => {
@@ -32,15 +31,16 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
         Err(core_err) => match core_err {
             CoreError::Config(cfg_load_err) => match cfg_load_err {
                 ConfigLoadError::General(diag) | ConfigLoadError::Module(diag) => {
-                    // A bit heuristic.. but better than internally assuming a particular
-                    // formatting is wanted. Probably.
-                    let path = if diag.span.is_none() {
-                        format!("path => \"{}\"\n", diag.path.display())
-                    } else {
-                        "".into()
-                    };
-
-                    eprintln!("{path}{}", diag.fmtted_diag);
+                    let rendered_diags = renderer::render_cli_diags(&[diag]);
+                    dbg!(rendered_diags);
+                    panic!();
+                    // This IS heurstic, but will not be changed until reported errors as a whole
+                    // are changed to render instead of being created in-line as they are now.
+                    // So, no time soon.
+                    //
+                    // Would also like a rendered or not state explicilty shown instead of raw
+                    // string that MIGHT be
+                    todo!();
                     return Err("Failed to parse configuration file".to_string());
                 }
                 ConfigLoadError::IO(e) => match e.kind() {
@@ -52,9 +52,7 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
             },
             CoreError::Script(script_err) => match script_err {
                 ScriptError::Parser(diags) | ScriptError::Semantic(diags) => {
-                    for diag in &diags {
-                        eprintln!("{}", diag.fmtted_diag);
-                    }
+                    todo!();
 
                     let msg = format!("Reported {} error(s)", diags.len());
                     return Err(msg);
@@ -70,7 +68,7 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
 }
 
 fn exec_fmt(fmt_cmd: &FmtCmd, cli_cfg: &CliConfig) -> Result<String, String> {
-    let settings = ChrnSettings::new(cli_cfg.can_color);
+    let settings = ChrnSettings::new();
     match formatter::fmt::fmt_script_block(&fmt_cmd.path, &settings) {
         Ok(_) => todo!("ok"),
         Err(_) => todo!("err"),
@@ -79,14 +77,15 @@ fn exec_fmt(fmt_cmd: &FmtCmd, cli_cfg: &CliConfig) -> Result<String, String> {
 
 // Object!
 fn exec_query(query_cmd: &QueryCmd, cli_cfg: &CliConfig) -> Result<String, String> {
-    let settings = ChrnSettings::new(cli_cfg.can_color);
+    let settings = ChrnSettings::new();
 
     match interpreter::interpret_chrn_cfg(&query_cmd.path, &settings) {
         Ok(c) => c,
         Err(core_err) => match core_err {
             CoreError::Config(cfg_load_err) => match cfg_load_err {
                 ConfigLoadError::General(diag) | ConfigLoadError::Module(diag) => {
-                    eprintln!("{}", diag.fmtted_diag);
+                    todo!("Render err");
+                    // eprintln!("{}", diag.fmtted_diag);
                     return Err("Failed to parse configuration file".to_string());
                 }
                 ConfigLoadError::IO(e) => match e.kind() {
@@ -98,9 +97,10 @@ fn exec_query(query_cmd: &QueryCmd, cli_cfg: &CliConfig) -> Result<String, Strin
             },
             CoreError::Script(script_err) => match script_err {
                 ScriptError::Parser(diags) | ScriptError::Semantic(diags) => {
-                    for diag in &diags {
-                        eprintln!("{}", diag.fmtted_diag);
-                    }
+                    todo!("render err");
+                    // for diag in &diags {
+                    //     eprintln!("{}", diag.fmtted_diag);
+                    // }
 
                     eprintln!("Reported {} error(s)", diags.len());
 

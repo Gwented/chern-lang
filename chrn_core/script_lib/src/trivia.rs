@@ -1,15 +1,15 @@
-use common::span::Span;
+use chrn_utils::source_map::source_span::SourceSpan;
 
 /// Structure to represent data that would not be important to semantic data, and instead useful to
 /// external tooling since it preserves positions for characters like new lines and ocmments.
 #[derive(Debug, Clone)]
 pub struct Trivia {
     pub kind: TriviaKind,
-    pub span: Span,
+    pub span: SourceSpan,
 }
 
 impl Trivia {
-    pub fn new(kind: TriviaKind, span: Span) -> Trivia {
+    pub fn new(kind: TriviaKind, span: SourceSpan) -> Trivia {
         Trivia { kind, span }
     }
 }

@@ -1,8 +1,10 @@
 use std::ops::RangeInclusive;
 
-use common::fmter::{Formattable, Formatted};
-
-use crate::intern;
+use crate::{
+    fmter::{self, Formattable, Formatted},
+    id_types::InternedId,
+    intern,
+};
 
 /// Size in bytes for `@def` and `@end`
 pub const DEFINITION_SIZE: usize = 4;
@@ -46,7 +48,7 @@ pub enum Keyword {
 }
 
 impl Formattable for Keyword {
-    fn to_fmt(&self) -> common::fmter::Formatted {
+    fn to_fmt(&self) -> fmter::Formatted {
         match self {
             Keyword::Struct => Formatted::Struct,
             Keyword::Enum => Formatted::Enum,
@@ -76,8 +78,8 @@ impl Keyword {
 
     // No. No this will not stay.
     /// Returns Some keyword that matches the given id or None
-    pub fn try_from_interned_id(id: u32) -> Option<Keyword> {
-        match id {
+    pub fn try_from_interned_id(interned_id: InternedId) -> Option<Keyword> {
+        match interned_id.id {
             // Using literal because scared of if
             intern::INTERNED_STRUCT => Some(Keyword::Struct),
             intern::INTERNED_ENUM => Some(Keyword::Enum),
@@ -98,12 +100,12 @@ impl Keyword {
     }
 
     /// Returns Some keyword that is considered a statement or None
-    pub fn try_as_stmt(id: u32) -> Option<Keyword> {
-        if !stmt_range().contains(&(id as usize)) {
+    pub fn try_as_stmt(interned_id: InternedId) -> Option<Keyword> {
+        if !stmt_range().contains(&(interned_id.id as usize)) {
             return None;
         }
 
-        Keyword::try_from_interned_id(id)
+        Keyword::try_from_interned_id(interned_id)
     }
 }
 

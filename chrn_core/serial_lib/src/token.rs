@@ -1,6 +1,6 @@
 // May or may not use same tokens as script
 
-use common::span::Span;
+use chrn_utils::source_map::source_span::SourceSpan;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
@@ -16,7 +16,7 @@ pub(crate) enum Notation {
 #[derive(Debug)]
 pub struct SpannedToken {
     pub(crate) tok: Token,
-    pub(crate) span: Span,
+    pub(crate) span: SourceSpan,
 }
 
 #[derive(Debug, Clone, Copy)]

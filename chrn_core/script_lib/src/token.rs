@@ -1,7 +1,6 @@
-use std::fmt::Display;
+use std::{fmt::Display, ops::Range};
 
-use chrn_utils::keywords::Keyword;
-use common::span::Span;
+use chrn_utils::{id_types::InternedId, keywords::Keyword, source_map::source_span::SourceSpan};
 
 use crate::parser::ast::BinaryOp;
 
@@ -19,10 +18,10 @@ pub enum Notation {
 #[derive(Debug, Clone)]
 pub struct SpannedToken {
     pub tok: Token,
-    pub span: Span,
+    pub span: SourceSpan,
     /// A span that correlates to the trivia vector created by the lexer
     /// This corresponds to owned indices of the token, not the source file's bytes.
-    pub leading_trivia_indices: Span,
+    pub leading_trivia_indices: Range<u32>,
 }
 
 // WHAT
@@ -35,11 +34,11 @@ pub enum Token {
     End,
     Keyword(Keyword),
     BoolLiteral(bool),
-    Id(u32),
-    Str(u32),
-    Integer(u32, Notation),
-    Float(u32, Notation),
-    Illegal(u32),
+    Id(InternedId),
+    Str(InternedId),
+    Integer(InternedId, Notation),
+    Float(InternedId, Notation),
+    Illegal(InternedId),
     Char(char),
     OParen,
     CParen,

@@ -10,4 +10,5 @@ interpreter_lib = { path = "../interpreter_lib/"}
 formatter = { path = "../formatter"}
 printer = { path = "../printer/"}
 common = { path = "../../chrn_core/common/"}
+chrn_utils = {path = "../../chrn_core/chrn_utils/"}
 

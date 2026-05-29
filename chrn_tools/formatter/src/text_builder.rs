@@ -1,5 +1,4 @@
-use chrn_utils::{id_types::AstId, intern::Intern};
-use common::span::Span;
+use chrn_utils::{id_types::AstId, intern::Intern, source_map::source_span::SourceSpan};
 use script_lib::{
     parser::ast::{AbstractVar, AstInfo, Item, Section},
     token::{SpannedToken, Token},
@@ -168,7 +167,7 @@ impl TextBuilder<'_> {
     // Whitespace boolean?
     fn append_leading_trivia(&mut self, all_text_hirs: &mut Vec<TextHir>) {
         let leading_span = self.peek_spanned().leading_trivia_indices;
-        let leading_trivias = &self.trivia[leading_span.start..leading_span.end];
+        let leading_trivias = &self.trivia[leading_span.start as usize..leading_span.end as usize];
 
         //TODO: Comment semantic analysis :)
 
@@ -253,7 +252,7 @@ impl TextBuilder<'_> {
 
     // So just append anything from self.pos -> abstract's span
     // Need to track where invalid is within ast in some form
-    fn append_invalid(&mut self, abs_span: Span, all_text_hirs: &mut Vec<TextHir>) {
+    fn append_invalid(&mut self, abs_span: SourceSpan, all_text_hirs: &mut Vec<TextHir>) {
         // while self.peek_spanned().span.start < abs_span.start {
         //     panic!("Illegal");
         // }

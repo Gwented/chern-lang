@@ -3,7 +3,6 @@ mod branch;
 mod context;
 mod parser_state;
 
-use crate::modules::ModuleMetadata;
 use crate::parser::ast::{
     AbstractAlias, AbstractConfig, AbstractEnum, AbstractFieldAssignment, AbstractMemberAccess,
     AbstractParam, AbstractStruct, AbstractTypeDef, AbstractVar, AbstractVariant, ArrayExpr,
@@ -14,23 +13,23 @@ use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::Context;
 use crate::parser::parser_state::ParserState;
 use crate::token::{SpannedToken, Token, TokenKind};
-use chrn_utils::id_types::{AstId, InternedId, SpannedInternedId};
-use chrn_utils::inner_args::{InnerArgs, SpannedInnerArgs};
+use chrn_utils::chrn_settings::ChrnSettings;
+use chrn_utils::fmter::{Formattable, Formatted};
+use chrn_utils::inner_args::{InnerArgs, SpannedInnerArg};
 use chrn_utils::intern::Intern;
 use chrn_utils::keywords::Keyword;
-use common::chrn_settings::ChrnSettings;
-use common::fmter::{Formattable, Formatted};
-use common::reporter::diagnostic::Diagnostic;
-use common::span::Span;
+use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
+use chrn_utils::source_map::source_region_data::SourceRegion;
+use chrn_utils::source_map::source_span::SourceSpan;
 
 /// Returns a completed `AstInfo` on `Ok`. Returns a tuple with unfinished `AstInfo` and
 /// Diagnostics on `Err`.
 pub fn parse(
     settings: &ChrnSettings,
-    metadata: &ModuleMetadata,
+    metadata: &SourceRegion,
     tokens: &Vec<SpannedToken>,
     interner: &Intern,
-) -> Result<AstInfo, (AstInfo, Vec<Diagnostic>)> {
+) -> Result<AstInfo, (AstInfo, Vec<SourceDiagnostic>)> {
     let mut ast_info = AstInfo::new();
 
     let mut state = ParserState::new();
@@ -324,7 +323,7 @@ pub fn parse(
             Token::Illegal(id) => {
                 ctx.advance_tok();
 
-                let err_str = interner.search(id as usize);
+                let err_str = interner.search(id);
 
                 let msg = format!("Found illegal token {err_str}");
 
@@ -346,7 +345,7 @@ pub fn parse(
                     | Token::Str(id)
                     | Token::Integer(id, _)
                     | Token::Float(id, _) => {
-                        let name = interner.search(id as usize);
+                        let name = interner.search(id);
                         format!("{} \"{}\"", t.kind(), name)
                     }
                     t => t.kind().to_string(),
@@ -374,7 +373,7 @@ fn parse_alias_stmt(
 ) -> Result<AbstractAlias, Token> {
     let name_span = ctx.peek_span();
 
-    let plain_id = ctx.expect_id_verbose(
+    let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
         "Expected an identifier after `alias`, found ",
         "",
@@ -382,13 +381,9 @@ fn parse_alias_stmt(
         interner,
     )?;
 
-    let name_id = InternedId::new(plain_id);
-
-    let err_name = interner.search(plain_id as usize);
-
     ctx.expect_verbose(
         TokenKind::OParen,
-        &format!("Expected parameters to define alias \"{err_name}\", found "),
+        "Expected parameters to define alias, found ",
         "",
         Branch::Neutral(NeutralBranch::Alias),
         interner,
@@ -398,7 +393,7 @@ fn parse_alias_stmt(
 
     ctx.expect_verbose(
         TokenKind::Assign,
-        &format!("Expected '=' to define alias \"{err_name}\", found "),
+        "Expected '=' to define alias, found ",
         "",
         Branch::Neutral(NeutralBranch::Alias),
         interner,
@@ -466,7 +461,7 @@ fn check_import(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
 fn parse_typedef(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDef, Token> {
     let name_span = ctx.peek_span();
 
-    let plain_id = ctx.expect_id_verbose(
+    let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
         "Expected an identifier to define a type, found ",
         "",
@@ -476,9 +471,7 @@ fn parse_typedef(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDef
         interner,
     )?;
 
-    let name_id = InternedId::new(plain_id);
-
-    let err_name = interner.search(plain_id as usize);
+    let err_name = interner.search(name_id);
 
     ctx.expect_verbose(
         TokenKind::Colon,
@@ -526,7 +519,7 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
         Keyword::Struct => {
             let name_span = ctx.peek_span();
 
-            let plain_id = ctx.expect_id_verbose(
+            let name_id = ctx.expect_id_verbose(
                 TokenKind::Id,
                 "Expected an identifier for the given struct, found ",
                 "",
@@ -534,9 +527,7 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
                 interner,
             )?;
 
-            let name_id = InternedId::new(plain_id);
-
-            let struct_name = interner.search(plain_id as usize);
+            let struct_name = interner.search(name_id);
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
@@ -569,7 +560,7 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
         Keyword::Enum => {
             let name_span = ctx.peek_span();
 
-            let plain_id = ctx.expect_id_verbose(
+            let name_id = ctx.expect_id_verbose(
                 TokenKind::Id,
                 "Expected an identifier for the given enum, found ",
                 "",
@@ -577,7 +568,7 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
                 interner,
             )?;
 
-            let enum_name = interner.search(plain_id as usize);
+            let enum_name = interner.search(name_id);
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
@@ -586,8 +577,6 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
                 Branch::Section(SectionBranch::Nest),
                 interner,
             )?;
-
-            let name_id = InternedId::new(plain_id);
 
             let variants = handle_enum_variants(ctx, enum_name, interner)?;
 
@@ -609,10 +598,11 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
             Item::Enum(enumeration)
         }
         _ => {
-            let name = interner.search(kw as usize);
-
             ctx.report_verbose(
-                &format!("Expected the keyword `enum` or `struct`, found keyword `{name}`"),
+                &format!(
+                    "Expected the keyword `enum` or `struct`, found keyword `{}`",
+                    kw.to_fmt()
+                ),
                 Branch::Section(SectionBranch::Nest),
                 interner,
             );
@@ -630,15 +620,13 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
 fn parse_config_expr(ctx: &mut Context, interner: &Intern) -> Result<AbstractConfig, Token> {
     let name_span = ctx.peek_span();
 
-    let plain_id = ctx.expect_id_verbose(
+    let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
         "Expected an identifier to describe configuration for, found ",
         "",
         Branch::Section(SectionBranch::Complex),
         interner,
     )?;
-
-    let name_id = InternedId::new(plain_id);
 
     ctx.expect_verbose(
         TokenKind::OCurlyBracket,
@@ -699,15 +687,13 @@ fn parse_field_assignment(
 
     let name_span = ctx.peek_span();
 
-    let plain_id = ctx.expect_id_verbose(
+    let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
         "Expected an identifier for configuration field access, found ",
         "",
         Branch::Section(SectionBranch::Complex),
         interner,
     )?;
-
-    let name_id = InternedId::new(plain_id);
 
     ctx.expect_verbose(
         TokenKind::Assign,
@@ -779,15 +765,13 @@ fn parse_override_sect(ctx: &mut Context, interner: &Intern) -> Result<(), Token
 fn parse_let(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Result<AbstractVar, Token> {
     let name_span = ctx.peek_span();
 
-    let plain_id = ctx.expect_id_verbose(
+    let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
         "Expected an identifier after `let`, found ",
         "",
         Branch::Neutral(NeutralBranch::Let),
         interner,
     )?;
-
-    let name_id = InternedId::new(plain_id);
 
     ctx.expect_verbose(
         TokenKind::Assign,
@@ -818,7 +802,7 @@ fn parse_expr(ctx: &mut Context, min_bp: u8, interner: &Intern) -> Result<Spanne
 
             let rhs = parse_expr(ctx, bp + 1, interner)?;
 
-            let span = Span::new(lhs.span.start, rhs.span.end);
+            let span = SourceSpan::new(ctx.region.region_id, lhs.span.start, rhs.span.end);
             lhs = SpannedExpr::new(
                 Expr::BinaryExpr {
                     op,
@@ -837,7 +821,11 @@ fn parse_expr(ctx: &mut Context, min_bp: u8, interner: &Intern) -> Result<Spanne
             ctx.advance_tok();
 
             let args = parse_call_args(ctx, interner)?;
-            let span = Span::new(lhs.span.start, ctx.peek_behind(1).span.end);
+            let span = SourceSpan::new(
+                ctx.region.region_id,
+                lhs.span.start,
+                ctx.peek_behind(1).span.end,
+            );
 
             lhs = SpannedExpr::new(Expr::Call(Box::new(lhs), args), span);
         } else if ctx.peek_kind() == TokenKind::Id && ctx.peek_ahead(1).tok == Token::OParen {
@@ -850,7 +838,11 @@ fn parse_expr(ctx: &mut Context, min_bp: u8, interner: &Intern) -> Result<Spanne
             ctx.advance_tok();
 
             let args = parse_call_args(ctx, interner)?;
-            let span = Span::new(call_start.start, ctx.peek_behind(1).span.end);
+            let span = SourceSpan::new(
+                ctx.region.region_id,
+                call_start.start,
+                ctx.peek_behind(1).span.end,
+            );
 
             lhs = SpannedExpr::new(Expr::Call(Box::new(lhs), args), span);
         } else if ctx.peek_tok() == Token::Dot && ctx.peek_ahead(1).tok.kind() == TokenKind::Id {
@@ -871,13 +863,14 @@ fn parse_expr(ctx: &mut Context, min_bp: u8, interner: &Intern) -> Result<Spanne
                 interner,
             )?;
 
-            let span = Span::new(lhs.span.start, ctx.peek_behind(1).span.end);
+            let span = SourceSpan::new(
+                ctx.region.region_id,
+                lhs.span.start,
+                ctx.peek_behind(1).span.end,
+            );
 
             lhs = SpannedExpr::new(
-                Expr::MemberAccess(AbstractMemberAccess::new(
-                    Box::new(lhs),
-                    InternedId::new(field_id),
-                )),
+                Expr::MemberAccess(AbstractMemberAccess::new(Box::new(lhs), field_id)),
                 span,
             );
         } else {
@@ -905,8 +898,7 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
 
             Ok(expr)
         }
-        Token::Id(id) if ctx.peek_ahead(1).tok == Token::Assign => {
-            let name_id = InternedId::new(id);
+        Token::Id(name_id) if ctx.peek_ahead(1).tok == Token::Assign => {
             let ident_span = ctx.advance_span();
 
             let ident_expr = SpannedExpr::new(Expr::Var(name_id), ident_span);
@@ -915,7 +907,11 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
 
             let expr = parse_expr(ctx, 0, interner)?;
 
-            let span = Span::new(ident_span.start, ctx.peek_behind(1).span.end);
+            let span = SourceSpan::new(
+                ctx.region.region_id,
+                ident_span.start,
+                ctx.peek_behind(1).span.end,
+            );
 
             let default = Expr::Default(Box::new(ident_expr), Box::new(expr));
 
@@ -926,7 +922,7 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
             let access_path = parse_static_path(ctx, interner)?;
             let end = ctx.peek_behind(1).span.end;
 
-            let static_span = Span::new(start, end);
+            let static_span = SourceSpan::new(ctx.region.region_id, start, end);
             let sp_expr = SpannedExpr::new(Expr::StaticAccess(access_path), static_span);
 
             Ok(sp_expr)
@@ -935,27 +931,21 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
             let span = ctx.advance_span();
             Ok(SpannedExpr::new(Expr::Bool(boolean), span))
         }
-        Token::Id(id) => {
+        Token::Id(name_id) => {
             let span = ctx.advance_span();
-
-            let name_id = InternedId::new(id);
-
             Ok(SpannedExpr::new(Expr::Var(name_id), span))
         }
-        Token::Integer(id, notation) => {
+        Token::Integer(name_id, notation) => {
             let span = ctx.advance_span();
-
-            Ok(SpannedExpr::new(Expr::Integer(id, notation), span))
+            Ok(SpannedExpr::new(Expr::Integer(name_id, notation), span))
         }
-        Token::Float(id, notation) => {
+        Token::Float(name_id, notation) => {
             let span = ctx.advance_span();
 
-            Ok(SpannedExpr::new(Expr::Float(id, notation), span))
+            Ok(SpannedExpr::new(Expr::Float(name_id, notation), span))
         }
-        Token::Str(id) => {
+        Token::Str(name_id) => {
             let span = ctx.advance_span();
-            let name_id = InternedId::new(id);
-
             Ok(SpannedExpr::new(Expr::Str(name_id), span))
         }
         Token::Char(ch) => {
@@ -982,7 +972,7 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
             let msg = match t {
                 Token::Illegal(id) => format!(
                     "Expected a valid expression, found illegal \"{}\"",
-                    interner.search(id as usize)
+                    interner.search(id)
                 ),
                 Token::Keyword(kw) => format!(
                     "Expected a valid expression, found keyword `{}`",
@@ -1039,7 +1029,7 @@ fn parse_unary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Toke
             let start = ctx.advance_span().start;
             let expr = parse_unary(ctx, interner)?;
 
-            let span = Span::new(start, expr.span.end);
+            let span = SourceSpan::new(ctx.region.region_id, start, expr.span.end);
             let unary = Unary::new(UnaryOp::Negate, Box::new(expr));
 
             Ok(SpannedExpr::new(Expr::Unary(unary), span))
@@ -1048,7 +1038,7 @@ fn parse_unary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Toke
             let start = ctx.advance_span().start;
 
             let expr = parse_unary(ctx, interner)?;
-            let span = Span::new(start, expr.span.end);
+            let span = SourceSpan::new(ctx.region.region_id, start, expr.span.end);
 
             let unary = Unary::new(UnaryOp::Not, Box::new(expr));
 
@@ -1062,16 +1052,14 @@ fn parse_unary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Toke
 /// Recursive function for parsing all type expressions
 fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, Token> {
     match ctx.peek_tok() {
-        Token::Id(id) if ctx.peek_ahead(1).tok.kind() == TokenKind::OAngleBracket => {
+        Token::Id(name_id) if ctx.peek_ahead(1).tok.kind() == TokenKind::OAngleBracket => {
             let start = ctx.advance_span().start;
-
-            let name_id = InternedId::new(id);
 
             let args = parse_generic(ctx, interner)?;
             let generic = Generic::new(name_id, args);
 
             let end = ctx.peek_behind(1).span.end;
-            let span = Span::new(start, end);
+            let span = SourceSpan::new(ctx.region.region_id, start, end);
 
             if ctx.peek_tok() == Token::StaticAccess {
                 ctx.advance_tok();
@@ -1083,7 +1071,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
                 ty_path.append(&mut rest);
 
                 let path_end = ctx.peek_behind(1).span.end;
-                let path_span = Span::new(start, path_end);
+                let path_span = SourceSpan::new(ctx.region.region_id, start, path_end);
 
                 Ok(SpannedTypeExpr::new(TypeExpr::Path(ty_path), path_span))
             } else {
@@ -1093,25 +1081,23 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
                 Ok(spanned_ty_expr)
             }
         }
-        Token::Id(id) if ctx.peek_ahead(1).tok.kind() == TokenKind::StaticAccess => {
+        Token::Id(_) if ctx.peek_ahead(1).tok.kind() == TokenKind::StaticAccess => {
             let start = ctx.peek_span().start;
             let ty_path = parse_static_path(ctx, interner)?;
             let end = ctx.peek_behind(1).span.end;
 
-            let span = Span::new(start, end);
+            let span = SourceSpan::new(ctx.region.region_id, start, end);
 
             Ok(SpannedTypeExpr::new(TypeExpr::Path(ty_path), span))
         }
-        Token::Id(id) => {
+        Token::Id(name_id) => {
             let span = ctx.advance_span();
-
-            let name_id = InternedId::new(id);
             let ty_expr = TypeExpr::Var(name_id);
 
             Ok(SpannedTypeExpr::new(ty_expr, span))
         }
         Token::Str(id) | Token::Integer(id, _) => {
-            let name = interner.search(id as usize);
+            let name = interner.search(id);
             let kind = ctx.peek_kind();
 
             ctx.advance_tok();
@@ -1165,9 +1151,9 @@ fn parse_static_path(
             let args = parse_generic(ctx, interner)?;
             let end = ctx.peek_behind(1).span.end;
 
-            let generic = Generic::new(InternedId::new(base_id), args);
+            let generic = Generic::new(base_id, args);
 
-            let span = Span::new(start, end);
+            let span = SourceSpan::new(ctx.region.region_id, start, end);
             let segment = SpannedPathSegment::new(PathSegment::Generic(generic), span);
 
             static_path.push(segment);
@@ -1190,8 +1176,7 @@ fn parse_static_path(
 
             ctx.advance_tok();
 
-            let segment =
-                SpannedPathSegment::new(PathSegment::Ident(InternedId::new(name_id)), span);
+            let segment = SpannedPathSegment::new(PathSegment::Ident(name_id), span);
             static_path.push(segment);
         }
 
@@ -1199,7 +1184,7 @@ fn parse_static_path(
         // the field to access
         if !is_static_access {
             let span = ctx.peek_span();
-            let final_id = ctx.expect_id_verbose(
+            let final_ident = ctx.expect_id_verbose(
                 TokenKind::Id,
                 "Expected a complete member access, found ",
                 "",
@@ -1207,8 +1192,7 @@ fn parse_static_path(
                 interner,
             )?;
 
-            let segment =
-                SpannedPathSegment::new(PathSegment::Ident(InternedId::new(final_id)), span);
+            let segment = SpannedPathSegment::new(PathSegment::Ident(final_ident), span);
             static_path.push(segment);
             break;
         }
@@ -1316,15 +1300,13 @@ fn handle_enum_variants(
 fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant, Token> {
     let name_span = ctx.peek_span();
 
-    let plain_id = ctx.expect_id_verbose(
+    let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
         "Expected an identifier for a variant, found ",
         "",
         Branch::Section(SectionBranch::NestType),
         interner,
     )?;
-
-    let name_id = InternedId::new(plain_id);
 
     let ty_opt: Option<SpannedTypeExpr> = if ctx.peek_kind() == TokenKind::Colon {
         ctx.advance_tok();
@@ -1352,8 +1334,8 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
 }
 
 // Egregious naming scheme
-fn handle_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedInnerArgs>, Token> {
-    let mut args: Vec<SpannedInnerArgs> = Vec::new();
+fn handle_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedInnerArg>, Token> {
+    let mut args: Vec<SpannedInnerArg> = Vec::new();
 
     while ctx.peek_kind() == TokenKind::HashSymbol {
         ctx.advance_tok();
@@ -1363,10 +1345,10 @@ fn handle_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedInnerA
     Ok(args)
 }
 
-fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<SpannedInnerArgs, Token> {
+fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<SpannedInnerArg, Token> {
     let name_span = ctx.peek_span();
 
-    let id = ctx.expect_id_verbose(
+    let interned_id = ctx.expect_id_verbose(
         TokenKind::Id,
         "",
         " is not a valid argument.",
@@ -1375,14 +1357,18 @@ fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<SpannedInnerArgs, T
     )?;
 
     // FIX: Change from try_from to Some
-    let arg = InnerArgs::try_from(interner.search(id as usize)).or_else(|invalid_arg| {
-        let msg = format!("The argument \"#{invalid_arg}\" does not exist");
-        ctx.report_verbose(&msg, Branch::TypeArgs, interner);
+    let arg = match InnerArgs::try_from_str(interner.search(interned_id)) {
+        Some(a) => a,
+        None => {
+            let invalid_arg = interner.search(interned_id);
+            let msg = format!("The argument \"#{invalid_arg}\" does not exist");
+            ctx.report_verbose(&msg, Branch::TypeArgs, interner);
 
-        return Err(Token::Poison);
-    })?;
+            return Err(Token::Poison);
+        }
+    };
 
-    Ok(SpannedInnerArgs::new(arg, name_span))
+    Ok(SpannedInnerArg::new(arg, name_span))
 }
 
 // Alias is this only one that uses this so_+@$_$@
@@ -1391,9 +1377,8 @@ fn parse_alias_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<Abstract
 
     while ctx.peek_kind() != TokenKind::CParen {
         let param = match ctx.peek_tok() {
-            Token::Id(id) => {
+            Token::Id(name_id) => {
                 let span = ctx.advance_span();
-                let name_id = InternedId::new(id);
 
                 ctx.expect_verbose(
                     TokenKind::Colon,

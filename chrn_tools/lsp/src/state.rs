@@ -20,7 +20,7 @@ use chrn_utils::id_types::{InternedId, ModuleId, PathId, SymbolId};
 use chrn_utils::intern::Intern;
 use common::chrn_settings::ChrnSettings;
 use common::reporter::diagnostic::Diagnostic;
-use common::span::Span;
+use common::span::SourceSpan;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SemanticEntity {
@@ -36,7 +36,7 @@ pub enum SemanticEntity {
     Module(ModuleId),
     Local {
         name_id: InternedId,
-        decl_span: Span,
+        decl_span: SourceSpan,
         owner_sym_id: Option<SymbolId>,
     },
 }
@@ -54,7 +54,7 @@ pub struct DocumentState {
     pub parse_errors: Option<Vec<Diagnostic>>,
     pub ns_errors: Option<Vec<Diagnostic>>,
     pub ty_errors: Option<Vec<Diagnostic>>,
-    pub symbol_map: Vec<(Span, SemanticEntity)>,
+    pub symbol_map: Vec<(SourceSpan, SemanticEntity)>,
     pub main_expr_range: std::ops::Range<usize>,
     pub version: u64,
 }
@@ -289,7 +289,7 @@ impl DocumentState {
         fn collect_type_refs(
             compiler: &ScriptCompiler,
             type_expr: &script_lib::parser::ast::SpannedTypeExpr,
-            map: &mut Vec<(Span, SemanticEntity)>,
+            map: &mut Vec<(SourceSpan, SemanticEntity)>,
         ) {
             use script_lib::parser::ast::TypeExpr;
             match &type_expr.ty_expr {
@@ -361,7 +361,7 @@ impl DocumentState {
         fn collect_expr_refs(
             compiler: &ScriptCompiler,
             expr: &script_lib::parser::ast::SpannedExpr,
-            map: &mut Vec<(Span, SemanticEntity)>,
+            map: &mut Vec<(SourceSpan, SemanticEntity)>,
             text: &str,
             interner: &Intern,
         ) {
@@ -378,7 +378,7 @@ impl DocumentState {
                             let field_name = interner.search(acc.field.id as usize);
 
                             // Look for the field name in the source text between dot and end of expr
-                            let mut field_span = Span {
+                            let mut field_span = SourceSpan {
                                 start: base_end.saturating_add(1),
                                 end: full_span.end,
                             };
@@ -389,7 +389,7 @@ impl DocumentState {
                                 if let Some(name_idx) = search_area[dot_idx + 1..].find(field_name)
                                 {
                                     let start = base_end + dot_idx + 1 + name_idx;
-                                    field_span = Span {
+                                    field_span = SourceSpan {
                                         start,
                                         end: start + field_name.len() - 1,
                                     };
@@ -662,7 +662,7 @@ impl DocumentState {
     pub fn get_definition_location(
         &self,
         entity: &SemanticEntity,
-    ) -> Option<(String, Span, Option<SymbolId>)> {
+    ) -> Option<(String, SourceSpan, Option<SymbolId>)> {
         let compiler = self.compiler.as_ref()?;
         match entity {
             SemanticEntity::Symbol(sym_id) => {
@@ -725,7 +725,7 @@ impl DocumentState {
             SemanticEntity::Module(mod_id) => {
                 let metadata = compiler.mods.get(mod_id.id)?.src_metadata.as_ref()?;
                 let path = self.interner.search_path(metadata.path_id.id as usize);
-                Some((path.to_string_lossy().to_string(), Span::default(), None))
+                Some((path.to_string_lossy().to_string(), SourceSpan::default(), None))
             }
         }
     }

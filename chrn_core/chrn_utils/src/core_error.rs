@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::reporter::diagnostic::Diagnostic;
+use crate::source_map::source_diagnostic::SourceDiagnostic;
 
 /// General error enum for the entirety of the codebase to use. Everything can be converted back
 /// into it so it can be treated just as any `Err()` would be but more valuable in detail.
@@ -35,8 +35,8 @@ impl From<SerialError> for CoreError {
 #[derive(Debug)]
 pub enum ConfigLoadError {
     // Is this separation really needed?
-    General(Diagnostic),
-    Module(Diagnostic),
+    General(SourceDiagnostic),
+    Module(SourceDiagnostic),
     IO(std::io::Error),
 }
 
@@ -48,8 +48,8 @@ impl From<std::io::Error> for ConfigLoadError {
 
 #[derive(Debug)]
 pub enum ScriptError {
-    Parser(Vec<Diagnostic>),
-    Semantic(Vec<Diagnostic>),
+    Parser(Vec<SourceDiagnostic>),
+    Semantic(Vec<SourceDiagnostic>),
     IO(std::io::Error),
 }
 
@@ -61,8 +61,8 @@ impl From<std::io::Error> for ScriptError {
 
 #[derive(Debug)]
 pub enum SerialError {
-    Lexer(Vec<Diagnostic>),
-    Parser(Vec<Diagnostic>),
+    Lexer(Vec<SourceDiagnostic>),
+    Parser(Vec<SourceDiagnostic>),
     IO(std::io::Error),
 }
 

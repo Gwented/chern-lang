@@ -34,7 +34,6 @@ let x = 5*/
 
 @def
 import "../../chrn_core/chrn_tests/def.chrn" as defs
-import "../../chrn_core/chrn_tests/core.chrn"
 /*let a = b
 let b = c
 let c = d + 3
@@ -43,7 +42,7 @@ let e = 4*/
 
 // alias default(x: i8) = []
 
-let x = 3
+let 2 = 3
 var->
     x: main::def::core::str
     // Ok this should probably be a hard error

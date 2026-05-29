@@ -1,6 +1,8 @@
-use common::fmter::{Formattable, Formatted};
-
-use crate::{inner_args::InnerArgs, types::builtins::BuiltinTypeKind};
+use crate::{
+    fmter::{Formattable, Formatted},
+    inner_args::InnerArgs,
+    types::builtins::BuiltinTypeKind,
+};
 
 // This was a horrible idea.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,7 +27,7 @@ pub enum TypeConstraint {
 }
 
 impl Formattable for TypeConstraint {
-    fn to_fmt(&self) -> common::fmter::Formatted {
+    fn to_fmt(&self) -> Formatted {
         match self {
             TypeConstraint::Collection => Formatted::Collection,
             TypeConstraint::CharacterMappable => Formatted::CharacterMappable,
