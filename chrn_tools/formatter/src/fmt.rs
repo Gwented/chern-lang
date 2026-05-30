@@ -11,8 +11,7 @@ use crate::{script_prettifier::ScriptPrettifier, text_builder::TextBuilder};
 pub fn fmt_script_block(path: &Path, settings: &ChrnSettings) -> Result<String, ConfigLoadError> {
     let mut interner = Intern::init();
     // Maybe a way to only load main?
-    let (script_compiler, src_region_arena) =
-        modules::extract_modules(path, settings, &mut interner)?;
+    let (script_compiler, region_arena) = modules::extract_modules(path, settings, &mut interner)?;
 
     // TEMP
     let module = &script_compiler.mods[0];
@@ -22,7 +21,7 @@ pub fn fmt_script_block(path: &Path, settings: &ChrnSettings) -> Result<String, 
         .as_ref()
         .expect("fmt can only work on valid paths");
 
-    let metadata = src_region_arena.get_region(*region_id);
+    let metadata = region_arena.extract_region(*region_id);
 
     let (toks, trivia) = script_lib::lexer::Lexer::new(
         metadata.region_id,

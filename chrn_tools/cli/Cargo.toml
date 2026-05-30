@@ -6,7 +6,7 @@ edition.workspace = true
 [dependencies]
 clap = "4.6.0"
 clap_derive = "4.6.0"
-interpreter_lib = { path = "../interpreter_lib/"}
+orchestrator = { path = "../orchestrator/"}
 formatter = { path = "../formatter"}
 printer = { path = "../printer/"}
 common = { path = "../../chrn_core/common/"}

@@ -1,9 +1,7 @@
-use std::ops::Range;
-
 //TODO: Maybe actually make the spans inclusive exclusive so that + 1 is not needed later
 //and - 1 is not needed now
 use chrn_utils::{
-    id_types::{InternedId, SourceRegionId},
+    id_types::SourceRegionId,
     intern::{self, Intern},
     keywords::{self, Keyword},
     source_map::source_span::SourceSpan,
@@ -138,7 +136,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '<' => {
-                    let (start, mut end) = (self.pos, self.pos);
+                    let (start, mut end) = (self.pos as u32, self.pos);
 
                     let tok = if self.peek_ahead(1) == b'=' {
                         self.advance();
@@ -153,17 +151,13 @@ impl Lexer<'_> {
 
                     toks.push(SpannedToken {
                         tok,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            self.pos as u32,
-                        ),
+                        span: SourceSpan::new(self.current_region_id, start, end as u32),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
                 }
                 '>' => {
-                    let (start, mut end) = (self.pos, self.pos);
+                    let (start, mut end) = (self.pos as u32, self.pos);
 
                     let tok = if self.peek_ahead(1) == b'=' {
                         self.advance();
@@ -178,11 +172,7 @@ impl Lexer<'_> {
 
                     toks.push(SpannedToken {
                         tok,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            self.pos as u32,
-                        ),
+                        span: SourceSpan::new(self.current_region_id, start, end as u32),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });

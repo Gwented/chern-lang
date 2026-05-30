@@ -51,7 +51,11 @@ impl SourceRegionArena {
         SourceRegionArena { regions }
     }
 
-    pub fn get_region(&self, region_id: SourceRegionId) -> &SourceRegion {
+    pub fn extract_region(&self, region_id: SourceRegionId) -> &SourceRegion {
         &self.regions[region_id.id as usize]
+    }
+
+    pub fn get_region(&self, region_id: SourceRegionId) -> Option<&SourceRegion> {
+        self.regions.get(region_id.id as usize)
     }
 }

@@ -2,7 +2,7 @@ use chrn_utils::{
     chrn_settings::ChrnSettings,
     core_error::{ConfigLoadError, CoreError, ScriptError},
 };
-use interpreter_lib::interpreter;
+use orchestrator::chrn_manager::{self, ChrnManager};
 
 use crate::{
     args::{CheckCmd, Cli, Commands, FmtCmd, QueryCmd},
@@ -22,47 +22,48 @@ pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
 // What if this had 2 probability models?
 fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, String> {
     let settings = ChrnSettings::new();
+    let mut chrn_manager = match ChrnManager::init(&check_cmd.path, settings) {
+        Ok(m) => m,
+        Err(cfg_load_err) => match cfg_load_err {
+            ConfigLoadError::General(diag) | ConfigLoadError::Module(diag) => {
+                dbg!(&diag);
+                let rendered_diags = renderer::render_cli_diags(&[diag]);
+                dbg!(rendered_diags);
+                panic!();
+                // This IS heurstic, but will not be changed until reported errors as a whole
+                // are changed to render instead of being created in-line as they are now.
+                // So, no time soon.
+                //
+                // Would also like a rendered or not state explicilty shown instead of raw
+                // string that MIGHT be
+                todo!();
+                return Err("Failed to parse configuration file".to_string());
+            }
+            ConfigLoadError::IO(e) => match e.kind() {
+                e => {
+                    let msg = format!("Process exited unsuccessfully. Reason: {e}");
+                    return Err(msg);
+                }
+            },
+        },
+    };
 
-    match interpreter::interpret_chrn_cfg(&check_cmd.path, &settings) {
+    match chrn_manager.run_all() {
         Ok(_) => {
             let msg = format!("No errors found");
             Ok(msg)
         }
-        Err(core_err) => match core_err {
-            CoreError::Config(cfg_load_err) => match cfg_load_err {
-                ConfigLoadError::General(diag) | ConfigLoadError::Module(diag) => {
-                    let rendered_diags = renderer::render_cli_diags(&[diag]);
-                    dbg!(rendered_diags);
-                    panic!();
-                    // This IS heurstic, but will not be changed until reported errors as a whole
-                    // are changed to render instead of being created in-line as they are now.
-                    // So, no time soon.
-                    //
-                    // Would also like a rendered or not state explicilty shown instead of raw
-                    // string that MIGHT be
-                    todo!();
-                    return Err("Failed to parse configuration file".to_string());
-                }
-                ConfigLoadError::IO(e) => match e.kind() {
-                    e => {
-                        let msg = format!("Process exited unsuccessfully. Reason: {e}");
-                        return Err(msg);
-                    }
-                },
-            },
-            CoreError::Script(script_err) => match script_err {
-                ScriptError::Parser(diags) | ScriptError::Semantic(diags) => {
-                    todo!();
+        Err(script_err) => match script_err {
+            ScriptError::Parser(diags) | ScriptError::Semantic(diags) => {
+                todo!("Rendering not done yet");
 
-                    let msg = format!("Reported {} error(s)", diags.len());
-                    return Err(msg);
-                }
-                ScriptError::IO(e) => {
-                    let msg = format!("Process exited unsuccessfully.\nReason: {e}");
-                    return Err(msg);
-                }
-            },
-            _ => unreachable!("Serial shouldn't be checked in this command"),
+                let msg = format!("Reported {} error(s)", diags.len());
+                return Err(msg);
+            }
+            ScriptError::IO(e) => {
+                let msg = format!("Process exited unsuccessfully.\nReason: {e}");
+                return Err(msg);
+            }
         },
     }
 }
@@ -79,7 +80,7 @@ fn exec_fmt(fmt_cmd: &FmtCmd, cli_cfg: &CliConfig) -> Result<String, String> {
 fn exec_query(query_cmd: &QueryCmd, cli_cfg: &CliConfig) -> Result<String, String> {
     let settings = ChrnSettings::new();
 
-    match interpreter::interpret_chrn_cfg(&query_cmd.path, &settings) {
+    match chrn_manager::interpret_chrn_cfg(&query_cmd.path, &settings) {
         Ok(c) => c,
         Err(core_err) => match core_err {
             CoreError::Config(cfg_load_err) => match cfg_load_err {

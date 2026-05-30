@@ -273,7 +273,7 @@ pub fn extract_modules(
         }
     }
 
-    let compiler = ScriptCompiler::init(bind, mod_map, all_mods);
+    let compiler = ScriptCompiler::new(bind, mod_map, all_mods);
 
     Ok((compiler, region_arena))
 }

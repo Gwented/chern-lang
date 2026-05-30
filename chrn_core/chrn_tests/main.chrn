@@ -42,7 +42,7 @@ let e = 4*/
 
 // alias default(x: i8) = []
 
-let 2 = 3
+let x = 3
 var->
     x: main::def::core::str
     // Ok this should probably be a hard error

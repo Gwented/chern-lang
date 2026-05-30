@@ -1,5 +1,5 @@
 [workspace]
-members = ["cli", "formatter", "interpreter_lib", "lsp", "printer"]
+members = ["cli", "formatter", "orchestrator", "lsp",  "printer"]
 resolver = "3"
 
 [workspace.package]

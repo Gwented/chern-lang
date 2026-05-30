@@ -99,7 +99,7 @@ impl ScriptCompiler {
     //FIX: Arbitrary ordering of pushes tied to the actual order of the enums. Should not be tied
     //to anything, similar to the interner's constants.
     /// Loads core library and builds script specific compiler with parameters given
-    pub fn init(
+    pub fn new(
         bind: Option<Bind>,
         mod_map: HashMap<InternedId, ModuleId>,
         mods: Vec<Module>,

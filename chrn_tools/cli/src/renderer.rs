@@ -4,10 +4,7 @@
 
 use std::ops::RangeInclusive;
 
-use chrn_utils::{
-    intern::Intern,
-    source_map::source_diagnostic::{AnnotationKind, SourceDiagnostic},
-};
+use chrn_utils::source_map::source_diagnostic::{AnnotationKind, SourceDiagnostic};
 
 // Functional or not probably doesn't matter here
 #[derive(Debug)]
