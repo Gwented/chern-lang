@@ -47,26 +47,29 @@ pub struct ChrnManager {
 }
 
 /// Partial information returns when `ChrnManager` enters a failure state.
-pub struct PartialChrnManager {
+pub struct ChrnManagerInitFailure {
     pub interner: Intern,
     pub err: ConfigLoadError,
 }
 
-impl PartialChrnManager {
-    fn new(interner: Intern, err: ConfigLoadError) -> PartialChrnManager {
-        PartialChrnManager { interner, err }
+impl ChrnManagerInitFailure {
+    fn new(interner: Intern, err: ConfigLoadError) -> ChrnManagerInitFailure {
+        ChrnManagerInitFailure { interner, err }
     }
 }
 
 impl ChrnManager {
-    pub fn init(path: &Path, settings: ChrnSettings) -> Result<ChrnManager, PartialChrnManager> {
+    pub fn init(
+        path: &Path,
+        settings: ChrnSettings,
+    ) -> Result<ChrnManager, ChrnManagerInitFailure> {
         let mut interner = Intern::init();
 
         let (script_compiler, region_arena) =
             match modules::extract_modules(path, &settings, &mut interner) {
                 Ok(tuple) => tuple,
                 Err(cfg_load_err) => {
-                    return Err(PartialChrnManager::new(interner, cfg_load_err));
+                    return Err(ChrnManagerInitFailure::new(interner, cfg_load_err));
                 }
             };
 
@@ -139,7 +142,7 @@ impl ChrnManager {
         // from elsewhere, which are not known yet.
         for mod_idx in 0..self.compiler.mods.len() {
             let module = &self.compiler.mods[mod_idx];
-            let metadata = match &module.src_metadata {
+            let region = match &module.src_region_id {
                 Some(region_id) => &self.region_arena.regions[region_id.id as usize],
                 // Giving current module id a None ast
                 None => {
@@ -151,24 +154,21 @@ impl ChrnManager {
             };
 
             let (toks, trivia) = script_lib::lexer::Lexer::new(
-                metadata.region_id,
-                &metadata.src_bytes,
-                metadata.script_start,
+                region.region_id,
+                &region.src_bytes,
+                region.script_start,
             )
             .tokenize(&mut self.interner);
 
-            let ast_info = match script_lib::parser::parse(
-                &self.settings,
-                &metadata,
-                &toks,
-                &mut self.interner,
-            ) {
-                Ok(info) => info,
-                Err((unfinished_ast, mut diags)) => {
-                    reporter.diags.append(&mut diags);
-                    unfinished_ast
-                }
-            };
+            let ast_info =
+                match script_lib::parser::parse(&self.settings, &region, &toks, &mut self.interner)
+                {
+                    Ok(info) => info,
+                    Err((unfinished_ast, mut diags)) => {
+                        reporter.diags.append(&mut diags);
+                        unfinished_ast
+                    }
+                };
 
             self.toks.push(Some(toks));
             self.trivias.push(Some(trivia));
@@ -176,7 +176,7 @@ impl ChrnManager {
             NamespaceResolver::new(
                 &self.settings,
                 &ast_info,
-                metadata,
+                region,
                 &self.interner,
                 module.mod_id,
                 &mut self.compiler,
@@ -195,7 +195,7 @@ impl ChrnManager {
         let mut ty_ctx = TypeContext::new();
         for i in 0..self.compiler.mods.len() {
             let module = &self.compiler.mods[i];
-            let metadata = match &module.src_metadata {
+            let metadata = match &module.src_region_id {
                 Some(region_id) => &self.region_arena.regions[region_id.id as usize],
                 None => continue,
             };
@@ -220,7 +220,7 @@ impl ChrnManager {
 
         for i in 0..self.compiler.mods.len() {
             let module = &self.compiler.mods[i];
-            let metadata = match &module.src_metadata {
+            let metadata = match &module.src_region_id {
                 Some(region_id) => &self.region_arena.regions[region_id.id as usize],
                 None => continue,
             };
@@ -266,7 +266,7 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     // from elsewhere, which are not known yet.
     for mod_idx in 0..script_compiler.mods.len() {
         let module = &script_compiler.mods[mod_idx];
-        let metadata = match &module.src_metadata {
+        let metadata = match &module.src_region_id {
             Some(region_id) => &region_arena.regions[region_id.id as usize],
             None => continue,
         };
@@ -308,7 +308,7 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     let mut ty_ctx = TypeContext::new();
     for i in 0..script_compiler.mods.len() {
         let module = &script_compiler.mods[i];
-        let metadata = match &module.src_metadata {
+        let metadata = match &module.src_region_id {
             Some(region_id) => &region_arena.regions[region_id.id as usize],
             None => continue,
         };
@@ -333,7 +333,7 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
 
     for i in 0..script_compiler.mods.len() {
         let module = &script_compiler.mods[i];
-        let metadata = match &module.src_metadata {
+        let region = match &module.src_region_id {
             Some(region_id) => &region_arena.regions[region_id.id as usize],
             None => continue,
         };
@@ -341,7 +341,7 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
         ConstraintResolver::new(
             settings,
             &asts[i],
-            metadata,
+            region,
             &interner,
             module.mod_id,
             &mut script_compiler,

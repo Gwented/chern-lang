@@ -1,8 +1,8 @@
 use chrn_utils::{
     chrn_settings::ChrnSettings,
-    core_error::{ConfigLoadError, CoreError, ScriptError},
+    core_error::{ConfigLoadError, ScriptError},
 };
-use orchestrator::chrn_manager::{self, ChrnManager};
+use orchestrator::chrn_manager::ChrnManager;
 
 use crate::{
     args::{CheckCmd, Cli, Commands, FmtCmd, QueryCmd},
@@ -33,7 +33,9 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
                     None,
                     &partial_chrn_manager.interner,
                 );
+
                 print_diags(&rendered_diags);
+
                 return Err("Failed to parse configuration file".to_string());
             }
             ConfigLoadError::IO(e) => match e.kind() {
@@ -62,9 +64,7 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
                     chrn_manager.interner(),
                 );
 
-                for diag in rendered_diags {
-                    println!("{diag}");
-                }
+                print_diags(&rendered_diags);
 
                 let msg = format!("Reported {} error(s)", diags.len());
                 return Err(msg);

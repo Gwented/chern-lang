@@ -4,9 +4,7 @@ use std::{collections::HashSet, ops::RangeInclusive};
 //
 //FIX: Needs to handle eof. please.
 
-//TODO: ORGANIZE NEW ARCHITECTURE
-// MAKE PARAMS ONLY TAKE SPAN SINCE LINES ARE BUILT ANYWAYS
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthChar;
 
 use crate::{id_types::SourceRegionId, source_map::source_span::SourceSpan};
 

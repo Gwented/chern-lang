@@ -1,13 +1,15 @@
-pub(crate) mod render_layout;
-pub(crate) mod render_settings;
+pub(super) mod layout;
+pub(super) mod render_settings;
+pub(super) mod style;
+//TODO: !
 
-use std::{ops::RangeInclusive, path::Path};
+use std::ops::RangeInclusive;
 
 use chrn_utils::{
     intern::Intern,
     source_map::{
         line_mapping::{self, Line, LineView},
-        source_diagnostic::{Annotation, AnnotationKind, DiagnosticLevel, SourceDiagnostic},
+        source_diagnostic::{Annotation, AnnotationKind, SourceDiagnostic},
         source_region::SourceRegionArena,
         source_span::SourceSpan,
     },
@@ -138,8 +140,14 @@ pub(crate) fn render_cli_diags(
     let region_arena = match region_arena_opt {
         Some(arena) => arena,
         None => {
-            for diag in diags {}
-            todo!("Hey")
+            let mut rendered_diags: Vec<String> = Vec::new();
+            for diag in diags {
+                let path = interner.search_path(diag.path_id);
+                let header = style::create_diag_header(diag.level, path, settings.can_color);
+                rendered_diags.push(format!("{header} {}", diag.core_msg));
+            }
+
+            return rendered_diags;
         }
     };
 
@@ -162,8 +170,6 @@ pub(crate) fn render_cli_diags(
         }
     }
 
-    // dbg!(&required_mapping);
-
     let mut ln_views = Vec::new();
     let mut all_src_strs = Vec::new();
 
@@ -174,17 +180,14 @@ pub(crate) fn render_cli_diags(
         // Lexer would break if it were invalid in the first place though right?
         let src_str = match str::from_utf8(&region.src_bytes) {
             Ok(s) => s,
-            // I honestly
-            Err(_) => {
-                unreachable!("Earlier stages that depend on UTF-8 would've failed before this")
-            }
+            Err(_) => unreachable!("Should already have UTF-8 validity at this stage"),
         };
 
         all_src_strs.push(src_str);
     }
 
-    // Can maybe check if annotation.is_empty() then store plain message. Or maybe do that inside
-    // of form diagnostic
+    // I believe this would do fine for something without annotations and still give the basic
+    // error associated, but can't check since, nothing matches this case yet.
     let mut rendered_diags: Vec<String> = Vec::new();
     for diag in diags {
         let rendered_diag = form_diag(diag, &all_src_strs, &ln_views, settings, interner);
@@ -193,8 +196,6 @@ pub(crate) fn render_cli_diags(
 
     rendered_diags
 }
-
-fn form_diag_no_src() {}
 
 // Uh
 fn form_diag(
@@ -213,7 +214,7 @@ fn form_diag(
 
     // Maybe the idx isn't doing what was intended
     for (annotation_idx, annotation) in diag.annotations.iter().enumerate() {
-        dbg!(annotation_idx, annotation);
+        // dbg!(annotation_idx, annotation);
         let current_ln_view = ln_views
             .iter()
             .find(|lv| lv.region_id == annotation.span.region_id)
@@ -273,7 +274,6 @@ fn form_diag(
             current_idx += 1;
             current_ln = &current_ln_view.lines[current_idx];
             group_manager.insert(current_ln, annotation_info);
-            dbg!(current_ln);
         }
     }
 
@@ -302,6 +302,8 @@ fn form_diag(
     )
 }
 
+/// Sorts a `RenderLineLayout` according to the properties associated with it's `Annotation`
+// Can maybe remove this annotation by making it as a given address to each AnnotationInfo
 fn sort_render_layouts(ln_layout: &mut RenderLineLayout, annotations: &[Annotation]) {
     // Should encode, if two spans overlap, check kind. If both of same kind priority, randomly
     // pick one to increase the layer of.
@@ -316,9 +318,10 @@ fn sort_render_layouts(ln_layout: &mut RenderLineLayout, annotations: &[Annotati
     // Not using this yet
     let mut used_try_left = false;
 
+    //TODO: Should reason about spanning collision account for labels, as opposed to high level
+    // priorities like now.
     let mut next_layer = 1;
     for render_info in &mut ln_layout.render_info {
-        dbg!(&render_info);
         let parent_annotation = &annotations[render_info.annotation_info.annotation_idx];
         // let get_prior_primary = |annotations: &[Annotation]| {
         //     annotations
@@ -341,29 +344,27 @@ fn sort_render_layouts(ln_layout: &mut RenderLineLayout, annotations: &[Annotati
         }
     }
 
-    dbg!(&ln_layout);
+    // Putting all created layouts into their own columns in a 1D vector space
     ln_layout.render_info.sort_by_key(|info| info.layer);
+
+    // Getting individual chunks using the sorted layers so each column can be reasoned in their
+    // own slices
     let mut chunks: Vec<&mut [RenderInfo]> = ln_layout
         .render_info
         .chunk_by_mut(|l_info, r_info| l_info.layer == r_info.layer)
         .collect();
 
-    // Segmenting each layer into chunks then sorting them locally based on their spanning
-    // Overlaps not checked yet..
+    // Sorting separate layer chunks by their span
+    // WARN: Overlaps not checked yet..
     for chunk in &mut chunks {
         chunk.sort_by_key(|r_info| {
             let parent_annotation = &annotations[r_info.annotation_info.annotation_idx];
-            dbg!(parent_annotation);
             parent_annotation.span.start
         });
     }
-
-    // let mut chunk: &[RenderInfo] = ln_layout
-    //     .render_info
-    //     .chunk_by_mut(|l_info, r_info| l_info.layer == r_info.layer);
 }
 
-/// through heuristic style ruling determines whether a line should be rendered or removed.
+/// Through heuristic style ruling determines whether a line should be rendered or removed.
 /// An example would be removing intermediate line spanning if no secondary annotations are present
 /// within them, as to avoid scenarios such as hundred line rendered lines.
 fn cut_off_render_layouts(ln_layouts: &mut Vec<RenderLineLayout>, annotations: &[Annotation]) {
@@ -413,17 +414,15 @@ fn render_text(
     interner: &Intern,
     ln_num_width: usize,
 ) -> String {
-    let header = create_diag_header(diag.level, settings.can_color);
-    let (bold, nc) = color::get_bold(settings.can_color);
-
     let path = interner.search_path(diag.path_id);
-    let full_header = format!("{bold}PATH{nc} => \"{}\"\n{header}:", path.display());
+    let header = style::create_diag_header(diag.level, path, settings.can_color);
+    let nc = color::NC;
 
     let annotations = &diag.annotations;
     let mut layout_text: Vec<String> = Vec::new();
 
     for (i, layout) in ln_layouts.iter().enumerate() {
-        dbg!(layout.ln);
+        // dbg!(layout.ln);
         let current_idx = ln_views
             .iter()
             .position(|lv| lv.region_id == layout.ln.ln_span.region_id)
@@ -477,18 +476,13 @@ fn render_text(
         }
     }
 
-    // println!(
-    //     "{full_header} {}{layout_text}{help}{notes}\n{DEFAULT_SEPARATORS}",
-    //     diag.core_msg
-    // );
-    //
     format!(
-        "{full_header} {}{layout_text}{help}{notes}\n{DEFAULT_SEPARATORS}",
+        "{header} {}{layout_text}{help}{notes}\n{DEFAULT_SEPARATORS}",
         diag.core_msg
     )
 }
 
-// Still need to curate
+/// Renders text to where it aligns with row and column instructions given from a `RenderLineLayout`
 fn render_line_layout_text(
     ln_layout: &RenderLineLayout,
     src_str: &str,
@@ -524,11 +518,9 @@ fn render_line_layout_text(
 
     // Iterating through each render_info, which should already be sorted by layer and spanning.
     for (i, render_info) in ln_layout.render_info.iter().enumerate() {
-        dbg!(last_span_start);
         let annotation_parent = &annotations[render_info.annotation_info.annotation_idx];
         let span = annotation_parent.span.range_exclusive_usize();
 
-        dbg!(render_info);
         // If the current layer is different then that means we need to add a new line for a new
         // line of pointers and recent last span start.
         let mut ptrs = String::new();
@@ -543,15 +535,15 @@ fn render_line_layout_text(
 
         // let annotation_header = get_annotation_kind_text(annotation_parent.kind);
         // let annotation_color = get_annotation_kind_color(annotation_parent.kind, settings);
-        let ptr_str = get_annotation_kind_ptr(annotation_parent.kind);
-        let ptr_color = get_annotation_kind_ptr_color(annotation_parent.kind, settings.can_color);
+        let ptr_str = style::get_annotation_kind_ptr(annotation_parent.kind);
+        let ptr_color =
+            style::get_annotation_kind_ptr_color(annotation_parent.kind, settings.can_color);
 
         // Fallback to break since eof bytes are not accounted for right now
         if last_span_start == eof_byte_pos {
             break;
         }
 
-        dbg!(last_span_start, annotation_parent.span);
         let space_count = line_mapping::get_chars_width(
             src_str,
             last_span_start,
@@ -563,7 +555,6 @@ fn render_line_layout_text(
         // Space count added makes last_span_start one before the actual span. The difference of
         // span end + 1 and span start is the actual span that needs to be skipped.
         last_span_start += space_count + ((span.end + 1) - span.start);
-        dbg!(last_span_start);
 
         // Since the function is inclusive, exclusive a + 1 is needed
         let ptr_count = line_mapping::get_chars_width(src_str, span.start, span.end + 1);
@@ -573,7 +564,6 @@ fn render_line_layout_text(
         ptrs.push_str(&fmtted_ptrs);
 
         if let Some(label) = &annotation_parent.label {
-            dbg!(label);
             ptrs.push_str(&format!(" {label}"));
 
             if needs_new_line {
@@ -619,132 +609,3 @@ fn render_line_layout_text(
 //     line_data.diag,
 //     "-".repeat(TOTAL_SEPARATORS)
 // )
-
-fn create_diag_header(level: DiagnosticLevel, can_color: bool) -> String {
-    let header_text = get_diag_level_text(level);
-
-    let nc = color::NC;
-    let header_color = if can_color {
-        get_diag_level_color(level)
-    } else {
-        "".into()
-    };
-
-    format!("{header_color}{header_text}{nc}")
-}
-
-fn get_diag_level_text(level: DiagnosticLevel) -> &'static str {
-    match level {
-        DiagnosticLevel::Error => "error",
-        DiagnosticLevel::Warn => "warn",
-        DiagnosticLevel::Help => "help",
-        DiagnosticLevel::Note => "note",
-    }
-}
-
-fn get_diag_level_color(level: DiagnosticLevel) -> &'static str {
-    match level {
-        DiagnosticLevel::Error => {
-            let (red, _) = color::get_red(true);
-            red
-        }
-        DiagnosticLevel::Warn => {
-            let (orange, _) = color::get_orange(true);
-            orange
-        }
-        DiagnosticLevel::Help => {
-            let (orange, _) = color::get_orange(true);
-            orange
-        }
-        DiagnosticLevel::Note => {
-            let (cyan, _) = color::get_cyan(true);
-            cyan
-        }
-    }
-}
-
-fn get_annotation_kind_text(kind: AnnotationKind) -> &'static str {
-    match kind {
-        AnnotationKind::Primary | AnnotationKind::Secondary => "",
-        AnnotationKind::Note => "note",
-        AnnotationKind::Help => "help",
-    }
-}
-
-fn get_annotation_kind_color(kind: AnnotationKind, can_color: bool) -> &'static str {
-    match kind {
-        AnnotationKind::Primary | AnnotationKind::Secondary => "",
-        AnnotationKind::Note => {
-            let (cyan, _) = color::get_cyan(can_color);
-            cyan
-        }
-        AnnotationKind::Help => {
-            let (orange, _) = color::get_orange(can_color);
-            orange
-        }
-    }
-}
-
-// Nice name bud
-fn get_annotation_kind_ptr_color(kind: AnnotationKind, can_color: bool) -> &'static str {
-    match kind {
-        AnnotationKind::Primary => {
-            let (red, _) = color::get_red(can_color);
-            red
-        }
-        AnnotationKind::Secondary | AnnotationKind::Note => {
-            // This is kind of hard to see without bold
-            let (cyan, _) = color::get_bold_cyan(can_color);
-            cyan
-        }
-        AnnotationKind::Help => {
-            let (orange, _) = color::get_orange(can_color);
-            orange
-        }
-    }
-}
-
-fn get_annotation_kind_ptr(kind: AnnotationKind) -> &'static str {
-    match kind {
-        AnnotationKind::Primary => "^",
-        AnnotationKind::Secondary | AnnotationKind::Note | AnnotationKind::Help => "-",
-    }
-}
-
-pub fn standardize_help(msg: &str, can_color: bool) -> String {
-    let (orange, nc) = color::get_orange(can_color);
-
-    if can_color {
-        format!("{orange}help{nc}: {msg}\n")
-    } else {
-        format!("help: {msg}\n")
-    }
-}
-
-pub fn standardize_note(msg: &str, can_color: bool) -> String {
-    let (cyan, nc) = color::get_cyan(can_color);
-
-    if can_color {
-        format!("{cyan}help{nc}: {msg}\n")
-    } else {
-        format!("note: {msg}\n")
-    }
-}
-
-// Probably needs to standardize, given a layout instead.
-// Might not use this beyond ensuring!@#!#!
-pub fn standardize_err(path: &Path, can_color: bool) -> String {
-    todo!()
-    // let (red, nc) = color::get_red(can_color);
-    // let header = format!("From path => \"{}\"\n{red}error{nc}:", path.display());
-    // let help = help.unwrap_or_default();
-    //
-    // Probably stays the same other than the help and notes being printed as multiple if possible
-    // format!(
-    //     "{header} {base_msg}\n[{}:{}]\n{}\n{help}{note}{}",
-    //     line_data.ln,
-    //     line_data.col,
-    //     line_data.diag,
-    //     "-".repeat(TOTAL_SEPARATORS)
-    // )
-}

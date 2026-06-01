@@ -134,7 +134,7 @@ pub fn get_type_id(
     //May change
     let accessible_scopes = scope_type.accessible_scopes();
     let accessible_scopes = match lookup_pattern {
-        LookupPattern::NamespaceOnly if current_mod.src_metadata.is_some() => {
+        LookupPattern::NamespaceOnly if current_mod.src_region_id.is_some() => {
             &accessible_scopes[..accessible_scopes.len() - 1]
         }
         // If it's core then it'll only have access to core anyways so this is fine
@@ -210,7 +210,7 @@ pub fn get_sym_id(
 
             let accessible_scopes = scope_type.accessible_scopes();
             let accessible_scopes = match lookup_pattern {
-                LookupPattern::NamespaceOnly if current_mod.src_metadata.is_some() => {
+                LookupPattern::NamespaceOnly if current_mod.src_region_id.is_some() => {
                     &accessible_scopes[..accessible_scopes.len() - 1]
                 }
                 // If it's core then it'll only have access to core anyways so this is fine

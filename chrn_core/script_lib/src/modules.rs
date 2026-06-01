@@ -80,7 +80,7 @@ pub struct Module {
     pub exports: Vec<SymbolId>,
     /// Metadata that exists if the module contains a source file
     // As of right now this represents the difference between a pre-loaded and user space module
-    pub src_metadata: Option<SourceRegionId>,
+    pub src_region_id: Option<SourceRegionId>,
 }
 
 //TEST:
@@ -108,7 +108,7 @@ impl Module {
             imports,
             exports: Vec::new(),
             scopes: Vec::new(),
-            src_metadata,
+            src_region_id: src_metadata,
         }
     }
 
@@ -259,14 +259,23 @@ pub fn extract_modules(
     //     println!("_______\n")
     // }
 
+    // Mod map needs removal
     for mod_name_id in mod_map.keys() {
         if RESERVED_INTERNED_MODULE_IDENTS.contains(&mod_name_id.id) {
             let mod_name = interner.search(*mod_name_id);
+            let mod_id = mod_map[mod_name_id];
+            let err_mod = &all_mods[mod_id.id];
+
+            let region_id = err_mod
+                .src_region_id
+                .expect("Should only have source created modules before initializing compiler");
+            let region = region_arena.extract_region(region_id);
 
             let core_msg = format!("`{mod_name}` is a reserved module identifier");
+
             // File system gui!
             let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id).build();
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id).build();
             return Err(ConfigLoadError::General(src_diag));
         }
     }
