@@ -6,9 +6,10 @@ edition.workspace = true
 [dependencies]
 clap = "4.6.0"
 clap_derive = "4.6.0"
+common = { path = "../common/"}
 orchestrator = { path = "../orchestrator/"}
 formatter = { path = "../formatter"}
 printer = { path = "../printer/"}
-common = { path = "../../chrn_core/common/"}
 chrn_utils = {path = "../../chrn_core/chrn_utils/"}
+unicode-width = "0.2"
 

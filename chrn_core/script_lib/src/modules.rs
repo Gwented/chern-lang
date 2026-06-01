@@ -15,7 +15,7 @@ use chrn_utils::{
     intern::{self, Intern},
     source_map::{
         source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
-        source_region_data::{SourceRegion, SourceRegionArena},
+        source_region::{SourceRegion, SourceRegionArena},
         source_span::SourceSpan,
     },
 };
@@ -261,12 +261,10 @@ pub fn extract_modules(
 
     for mod_name_id in mod_map.keys() {
         if RESERVED_INTERNED_MODULE_IDENTS.contains(&mod_name_id.id) {
-            let found_mod_id = mod_map[&mod_name_id];
-            let found_mod = &all_mods[found_mod_id.id];
-
             let mod_name = interner.search(*mod_name_id);
 
             let core_msg = format!("`{mod_name}` is a reserved module identifier");
+            // File system gui!
             let src_diag =
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id).build();
             return Err(ConfigLoadError::General(src_diag));

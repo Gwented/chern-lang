@@ -362,12 +362,8 @@ impl Intern {
     }
 
     // Interesting name decision
-    pub fn search_direct_str(&self, s: &str) -> Option<&str> {
-        if let Some(id) = self.id_map.get(s) {
-            return Some(self.search(InternedId::new(*id)));
-        }
-
-        None
+    pub fn try_search_str(&self, s: &str) -> Option<InternedId> {
+        self.id_map.get(s).map(|id| InternedId::new(*id))
     }
 
     pub fn search_path(&self, path_id: PathId) -> &Path {

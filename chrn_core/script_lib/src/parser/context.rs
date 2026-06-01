@@ -6,7 +6,7 @@ use chrn_utils::{
     keywords::Keyword,
     source_map::{
         source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
-        source_region_data::SourceRegion,
+        source_region::SourceRegion,
         source_span::SourceSpan,
     },
 };
@@ -121,15 +121,18 @@ impl<'a> Context<'a> {
 
         let is_eof_err = spans.len() == 2;
 
-        let label = if is_eof_err {
-            "Token before <eof>".to_string().into()
+        let (kind, label) = if is_eof_err {
+            (
+                AnnotationKind::Secondary,
+                "Token before <eof>".to_string().into(),
+            )
         } else {
-            None
+            (AnnotationKind::Primary, None)
         };
 
         let mut diag_builder =
             SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
-                .add_annotation(spans[0], AnnotationKind::Secondary, label);
+                .add_annotation(spans[0], kind, label);
 
         // Meaning EOF error
         if spans.len() == 2 {

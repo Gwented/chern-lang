@@ -8,7 +8,7 @@ use crate::{
     keywords::DEFINITION_SIZE,
     source_map::{
         source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
-        source_region_data::SourceRegion,
+        source_region::SourceRegion,
         source_span::SourceSpan,
     },
 };

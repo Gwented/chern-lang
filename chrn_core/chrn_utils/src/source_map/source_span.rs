@@ -44,8 +44,18 @@ impl SourceSpan {
         (self.start as usize)..=(self.end as usize)
     }
 
+    /// Creates an (inclusive, exclusive) ranged span
+    pub fn range_exclusive_u32(&self) -> Range<u32> {
+        (self.start)..(self.end)
+    }
+
+    /// Creates an (inclusive, inclusive) ranged span
+    pub fn range_inclusive_u32(&self) -> RangeInclusive<u32> {
+        (self.start)..=(self.end)
+    }
+
     /// Creates span that contains the min start and max end of two spans
-    pub fn merge(&self, other: SourceSpan) -> SourceSpan {
+    pub fn merge(&self, other: &SourceSpan) -> SourceSpan {
         // Not sure about this entirely, but if this is used wrongly then it should probably be a
         // hard error since it means something internally went wrong, which would be good to know
         //
@@ -59,10 +69,39 @@ impl SourceSpan {
         SourceSpan::new(other.region_id, start, end)
     }
 
+    /// Checks if `self` is either a superset or equal to `other`
     pub fn contains(&self, other: SourceSpan) -> bool {
         self.start <= other.start && self.end >= other.end
     }
+
+    /// Checks if `self` contains `other`
+    pub fn contains_part(&self, other: u32) -> bool {
+        self.start <= other && self.end >= other
+    }
 }
+
+// Uh
+// impl Ord for SourceSpan {
+//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+//         if self.start < other.start && self.end > other.end {
+//             std::cmp::Ordering::Greater
+//         } else if self.start > other.start && self.end < other.end {
+//             std::cmp::Ordering::Less
+//         } else {
+//             std::cmp::Ordering::Equal
+//         }
+//     }
+// }
+//
+// impl PartialOrd for SourceSpan {
+//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+//         match self.start.partial_cmp(&other.start) {
+//             Some(core::cmp::Ordering::Equal) => {}
+//             ord => return ord,
+//         }
+//         self.end.partial_cmp(&other.end)
+//     }
+// }
 
 // Maybe option maybe not
 /// Takes in an array of spans and merges all of them together. Expects that there is at least 1 span
@@ -71,7 +110,7 @@ impl SourceSpan {
 pub fn merge_spans(spans: &[SourceSpan]) -> Option<SourceSpan> {
     let mut full_span = *spans.get(0)?;
 
-    for span in spans.iter().skip(1).copied() {
+    for span in spans.iter().skip(1) {
         full_span = full_span.merge(span);
     }
 

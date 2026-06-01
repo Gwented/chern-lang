@@ -4,7 +4,7 @@ use chrn_utils::{
     chrn_settings::ChrnSettings,
     core_error::{ConfigLoadError, CoreError, ScriptError},
     intern::Intern,
-    source_map::{source_diagnostic::Reporter, source_region_data::SourceRegionArena},
+    source_map::{source_diagnostic::Reporter, source_region::SourceRegionArena},
 };
 use script_lib::{
     modules::{self},
@@ -22,27 +22,53 @@ use script_lib::{
 //ScriptContext? CompilerContext? AbstractCompilerManager?
 
 //TEST:
-// 18 MB struct
+// 20 MB struct
+
+// Not bit-flags. Stop.
+// How.
+pub(crate) struct ModuleCache {
+    is_name_resolved: bool,
+    is_type_resolved: bool,
+    is_constraint_resolved: bool,
+}
 
 // Should check imports if more is needed to cache
 pub struct ChrnManager {
-    pub interner: Intern,
-    pub region_arena: SourceRegionArena,
-    settings: ChrnSettings,
+    pub(crate) interner: Intern,
+    pub(crate) region_arena: SourceRegionArena,
+    pub(crate) settings: ChrnSettings,
     // Temp. May consider using a single vector that slices indices for each module instead of
     // Vec<Vec>> but not priority right now
-    toks: Vec<Option<Vec<SpannedToken>>>,
-    trivias: Vec<Option<Vec<Trivia>>>,
-    asts: Vec<Option<AstInfo>>,
-    compiler: ScriptCompiler,
+    pub(crate) toks: Vec<Option<Vec<SpannedToken>>>,
+    pub(crate) trivias: Vec<Option<Vec<Trivia>>>,
+    pub(crate) asts: Vec<Option<AstInfo>>,
+    pub(crate) compiler: ScriptCompiler,
+    pub(crate) mod_cache: Vec<ModuleCache>,
+}
+
+/// Partial information returns when `ChrnManager` enters a failure state.
+pub struct PartialChrnManager {
+    pub interner: Intern,
+    pub err: ConfigLoadError,
+}
+
+impl PartialChrnManager {
+    fn new(interner: Intern, err: ConfigLoadError) -> PartialChrnManager {
+        PartialChrnManager { interner, err }
+    }
 }
 
 impl ChrnManager {
-    pub fn init(path: &Path, settings: ChrnSettings) -> Result<ChrnManager, ConfigLoadError> {
+    pub fn init(path: &Path, settings: ChrnSettings) -> Result<ChrnManager, PartialChrnManager> {
         let mut interner = Intern::init();
 
         let (script_compiler, region_arena) =
-            modules::extract_modules(path, &settings, &mut interner)?;
+            match modules::extract_modules(path, &settings, &mut interner) {
+                Ok(tuple) => tuple,
+                Err(cfg_load_err) => {
+                    return Err(PartialChrnManager::new(interner, cfg_load_err));
+                }
+            };
 
         Ok(ChrnManager {
             interner,
@@ -52,8 +78,36 @@ impl ChrnManager {
             asts: Default::default(),
             compiler: script_compiler,
             region_arena,
+            mod_cache: Default::default(),
         })
     }
+
+    pub fn is_fully_resolved(&self) -> bool {
+        let mut resolved_count = 0;
+        for cache in &self.mod_cache {
+            // Not wrapper method. We use pure C and MakeFile.
+            if cache.is_name_resolved && cache.is_type_resolved && cache.is_constraint_resolved {
+                resolved_count += 1;
+            }
+        }
+
+        resolved_count == self.mod_cache.len()
+    }
+
+    // Should this really be done?
+    pub fn interner(&self) -> &Intern {
+        &self.interner
+    }
+
+    // Should this really be done x2?
+    pub fn region_arena(&self) -> &SourceRegionArena {
+        &self.region_arena
+    }
+
+    // public List<Optional<AstInfo>> get_asts() { return this.asts; }
+    // pub fn asts(&self) -> &Vec<Option<AstInfo>> {
+    //     &self.asts
+    // }
 
     /// Runs lexer over all modules
     pub fn run_lexer_all(&mut self) -> Result<(), ScriptError> {
@@ -67,8 +121,8 @@ impl ChrnManager {
     }
 
     // Just
-    /// Runs every resolver on all modules
-    pub fn resolvers_all(&mut self) -> Result<(), ScriptError> {
+    /// Runs name resolver on all modules
+    pub fn run_name_resolver_all(&mut self) -> Result<(), ScriptError> {
         todo!()
     }
 
@@ -133,9 +187,9 @@ impl ChrnManager {
             asts.push(Some(ast_info));
         }
 
-        if !reporter.diags.is_empty() {
-            return Err(ScriptError::Semantic(reporter.diags).into());
-        }
+        // if !reporter.diags.is_empty() {
+        //     return Err(ScriptError::Semantic(reporter.diags).into());
+        // }
 
         //FIX: AstId position should be a direct tie, not sequential
         let mut ty_ctx = TypeContext::new();

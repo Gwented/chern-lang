@@ -1,6 +1,5 @@
 use std::{fmt::Debug, ops::Range};
 
-#[derive(Eq, PartialEq)]
 pub struct Tensor2<T: Debug + PartialEq> {
     pub inner: Vec<T>,
     pub rows: usize,
@@ -41,7 +40,7 @@ impl Tensor2<f32> {
             for col in 0..other.cols {
                 let mut sum = 0f32;
                 for k in 0..self.cols {
-                    sum += self.get(row, k) * other.get(k, col);
+                    sum += self.extract(row, k) * other.extract(k, col);
                 }
                 inner_res[row * other.cols + col] = sum;
             }
@@ -56,7 +55,7 @@ impl Tensor2<f32> {
 }
 
 impl<T: Debug + PartialEq> Tensor2<T> {
-    pub fn get(&self, row: usize, col: usize) -> &T {
+    pub fn extract(&self, row: usize, col: usize) -> &T {
         if row > self.rows - 1 || col > self.cols - 1 {
             panic!(
                 "Given index of row {} and col {} is invalid for `self` of row {} and col {}",
@@ -69,7 +68,7 @@ impl<T: Debug + PartialEq> Tensor2<T> {
         &self.inner[idx]
     }
 
-    pub fn get_mut(&mut self, row: usize, col: usize) -> &mut T {
+    pub fn extract_mut(&mut self, row: usize, col: usize) -> &mut T {
         if row > self.rows - 1 || col > self.cols - 1 {
             panic!(
                 "Given index of row {} and col {} is invalid for `self` of row {} and col {}",
@@ -81,9 +80,49 @@ impl<T: Debug + PartialEq> Tensor2<T> {
         &mut self.inner[idx]
     }
 
-    pub fn get_row(&self, row: usize) -> &[T] {
+    pub fn extract_row(&self, row: usize) -> &[T] {
         let row_idx = row * self.cols;
         &self.inner[row_idx..row_idx + self.cols]
+    }
+
+    pub fn extract_row_mut(&mut self, row: usize) -> &mut [T] {
+        let row_idx = row * self.cols;
+        &mut self.inner[row_idx..row_idx + self.cols]
+    }
+
+    pub fn get(&self, row: usize, col: usize) -> Option<&T> {
+        if row > self.rows - 1 || col > self.cols - 1 {
+            panic!(
+                "Given index of row {} and col {} is invalid for `self` of row {} and col {}",
+                row, col, self.rows, self.cols
+            );
+        }
+
+        // Suspicious
+        let idx = row * self.cols + col;
+        Some(&self.inner[idx])
+    }
+
+    pub fn get_mut(&mut self, row: usize, col: usize) -> Option<&mut T> {
+        if row > self.rows - 1 || col > self.cols - 1 {
+            panic!(
+                "Given index of row {} and col {} is invalid for `self` of row {} and col {}",
+                row, col, self.rows, self.cols
+            );
+        }
+
+        let idx = row * self.cols + col;
+        Some(&mut self.inner[idx])
+    }
+
+    pub fn get_row(&self, row: usize) -> Option<&[T]> {
+        let row_idx = row * self.cols;
+        Some(&self.inner[row_idx..row_idx + self.cols])
+    }
+
+    pub fn get_row_mut(&mut self, row: usize) -> Option<&mut [T]> {
+        let row_idx = row * self.cols;
+        Some(&mut self.inner[row_idx..row_idx + self.cols])
     }
 }
 
@@ -94,7 +133,7 @@ impl<T: Debug + PartialEq> Debug for Tensor2<T> {
         for row in 0..self.rows {
             info.push('[');
             for col in 0..self.cols {
-                let element = self.get(row, col);
+                let element = self.extract(row, col);
                 info.push_str(&format!("{element:?}"));
 
                 if col + 1 < self.cols {
@@ -133,7 +172,7 @@ impl From<&Vec<Vec<f32>>> for Tensor2<f32> {
             }
 
             for col in 0..cols {
-                *tensor2.get_mut(row, col) = other[row][col];
+                *tensor2.extract_mut(row, col) = other[row][col];
             }
         }
 

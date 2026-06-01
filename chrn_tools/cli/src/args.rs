@@ -55,6 +55,7 @@ pub struct FmtCmd {
 pub struct QueryCmd {
     /// Path of `.chrn` file to display the structural details of
     pub(crate) path: PathBuf,
+    pub(crate) ident: String,
 }
 
 //     #[arg(short = 'l', long = "log", default_value_t = false)]

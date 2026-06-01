@@ -4,6 +4,5 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-common = { path = "../common/" }
 chrn_utils = { path = "../chrn_utils/" }
 unicode-width = "0.2.2"

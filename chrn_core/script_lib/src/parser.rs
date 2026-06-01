@@ -19,7 +19,7 @@ use chrn_utils::inner_args::{InnerArgs, SpannedInnerArg};
 use chrn_utils::intern::Intern;
 use chrn_utils::keywords::Keyword;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
-use chrn_utils::source_map::source_region_data::SourceRegion;
+use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
 
 /// Returns a completed `AstInfo` on `Ok`. Returns a tuple with unfinished `AstInfo` and
@@ -400,13 +400,13 @@ fn parse_alias_stmt(
     )?;
 
     let conds = if ctx.peek_kind() == TokenKind::OBracket {
-        handle_conds(ctx, interner)?
+        handle_conds(ctx, interner).unwrap_or(Vec::new())
     } else {
         Vec::new()
     };
 
     let args = if ctx.peek_kind() == TokenKind::HashSymbol {
-        handle_args(ctx, interner)?
+        handle_args(ctx, interner).unwrap_or(Vec::new())
     } else {
         Vec::new()
     };
@@ -485,13 +485,13 @@ fn parse_typedef(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDef
 
     // WARN: DO NOT PROPOGATE
     let conds = if ctx.peek_kind() == TokenKind::OBracket {
-        handle_conds(ctx, interner)?
+        handle_conds(ctx, interner).unwrap_or(Vec::new())
     } else {
         Vec::new()
     };
 
     let args = if ctx.peek_kind() == TokenKind::HashSymbol {
-        handle_args(ctx, interner)?
+        handle_args(ctx, interner).unwrap_or(Vec::new())
     } else {
         Vec::new()
     };
@@ -540,13 +540,13 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
             let fields = handle_struct_fields(ctx, struct_name, interner)?;
 
             let conds = if ctx.peek_kind() == TokenKind::OBracket {
-                handle_conds(ctx, interner)?
+                handle_conds(ctx, interner).unwrap_or(Vec::new())
             } else {
                 Vec::new()
             };
 
             let args = if ctx.peek_kind() == TokenKind::HashSymbol {
-                handle_args(ctx, interner)?
+                handle_args(ctx, interner).unwrap_or(Vec::new())
             } else {
                 Vec::new()
             };
@@ -581,13 +581,13 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
             let variants = handle_enum_variants(ctx, enum_name, interner)?;
 
             let glob_conds = if ctx.peek_kind() == TokenKind::OBracket {
-                handle_conds(ctx, interner)?
+                handle_conds(ctx, interner).unwrap_or(Vec::new())
             } else {
                 Vec::new()
             };
 
             let glob_args = if ctx.peek_kind() == TokenKind::HashSymbol {
-                handle_args(ctx, interner)?
+                handle_args(ctx, interner).unwrap_or(Vec::new())
             } else {
                 Vec::new()
             };
@@ -1317,13 +1317,13 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
     };
 
     let conds = if ctx.peek_kind() == TokenKind::OBracket {
-        handle_conds(ctx, interner)?
+        handle_conds(ctx, interner).unwrap_or(Vec::new())
     } else {
         Vec::new()
     };
 
     let args = if ctx.peek_kind() == TokenKind::HashSymbol {
-        handle_args(ctx, interner)?
+        handle_args(ctx, interner).unwrap_or(Vec::new())
     } else {
         Vec::new()
     };

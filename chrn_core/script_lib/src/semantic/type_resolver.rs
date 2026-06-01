@@ -10,7 +10,7 @@ use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::{
     AnnotationKind, DiagnosticLevel, SourceDiagnostic,
 };
-use chrn_utils::source_map::source_region_data::SourceRegion;
+use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::types::builtins::{BuiltinType, BuiltinTypeKind};
 use chrn_utils::values::{Value, ValueInfo};
 

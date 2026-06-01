@@ -5,5 +5,5 @@ edition.workspace = true
 
 [dependencies]
 chrn_utils = { path = "../../chrn_core/chrn_utils" }
-common = { path = "../../chrn_core/common" }
+common = { path = "../common" }
 script_lib = { path = "../../chrn_core/script_lib" }

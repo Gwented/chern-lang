@@ -2,6 +2,8 @@ export let READ = 0b0
 export let WRITE = 0b1
 
 import "../../chrn_core/chrn_tests/other.chrn"
+let a = j
+let b = 9
 
 nest->
     export struct Person {

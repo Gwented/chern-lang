@@ -1,3 +1,7 @@
+use std::cmp::Ordering;
+
+// What if there was said, ".attach()" in the builder of diags to where I could tell renderers,
+// do not detach or mutate this ordering in any form by file found in
 use crate::{id_types::PathId, source_map::source_span::SourceSpan};
 
 /// This exists in case other methods or fields are considered, but is just a Vec<Diagnostic>
@@ -23,11 +27,13 @@ pub enum Area {
     Serial,
 }
 
-// Temp name of course
+/// Diagnostic intended to represent a set of instructions to be rendered.
 #[derive(Debug, Default)]
 pub struct SourceDiagnostic {
     pub level: DiagnosticLevel,
     pub core_msg: String,
+    // Stores a `PathId` instead of `SourceRegionId` because a diagnostic can exist without a region
+    // existing, such as if there was an io error before being able to read any regions.
     pub path_id: PathId,
     pub annotations: Vec<Annotation>,
     pub help: Vec<String>,
@@ -157,10 +163,10 @@ impl SourceDiagnosticBuilder {
 #[derive(Debug)]
 /// Structure intended to add context to a span beyond just where to point
 pub struct Annotation {
-    span: SourceSpan,
-    kind: AnnotationKind,
+    pub span: SourceSpan,
+    pub kind: AnnotationKind,
     /// Optional message like, note or, uh, um
-    label: Option<String>,
+    pub label: Option<String>,
 }
 
 impl Annotation {
@@ -169,7 +175,7 @@ impl Annotation {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // Can this be replaced with DiagnosticKind?
 pub enum AnnotationKind {
     /// Main part of error
@@ -179,6 +185,38 @@ pub enum AnnotationKind {
     Secondary,
     Note,
     Help,
+}
+
+impl AnnotationKind {
+    pub fn is_higher_priority(self, other: AnnotationKind) -> bool {
+        let self_priority = self.priority();
+        let other_priority = other.priority();
+
+        self_priority > other_priority
+    }
+
+    pub fn is_lower_priority(self, other: AnnotationKind) -> bool {
+        let self_priority = self.priority();
+        let other_priority = other.priority();
+
+        self_priority < other_priority
+    }
+
+    pub fn is_eq_priority(self, other: AnnotationKind) -> bool {
+        let self_priority = self.priority();
+        let other_priority = other.priority();
+
+        self_priority == other_priority
+    }
+
+    pub fn priority(&self) -> u8 {
+        match self {
+            AnnotationKind::Primary => 2,
+            AnnotationKind::Secondary => 1,
+            AnnotationKind::Note => 0,
+            AnnotationKind::Help => 0,
+        }
+    }
 }
 
 // pub enum PointerKind {

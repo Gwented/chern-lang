@@ -4,27 +4,28 @@ use std::{collections::HashSet, ops::RangeInclusive};
 //
 //FIX: Needs to handle eof. please.
 
-use common::color;
 //TODO: ORGANIZE NEW ARCHITECTURE
 // MAKE PARAMS ONLY TAKE SPAN SINCE LINES ARE BUILT ANYWAYS
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::source_map::source_span::SourceSpan;
+use crate::{id_types::SourceRegionId, source_map::source_span::SourceSpan};
 
 /// High level struct of all byte and line number data for each line inside of it
 #[derive(Debug)]
-struct LineView {
-    /// SourceSpan of the start and end line within `lines`
-    ln_num_range: RangeInclusive<u32>,
+pub struct LineView {
+    /// SourceSpan of the start and end line within `lines`. This represents high level line
+    /// numbers not any sort of source byte spanning.
+    pub ln_num_range: RangeInclusive<u32>,
     /// Detailed lines
-    lines: Vec<Line>,
+    pub lines: Vec<Line>,
+    pub region_id: SourceRegionId,
 }
 
 /// Basic line structure for metadata
 #[derive(Debug)]
-struct Line {
-    ln_num: usize,
-    ln_span: RangeInclusive<u32>,
+pub struct Line {
+    pub ln_num: u32,
+    pub ln_span: SourceSpan,
 }
 
 /// Helper struct that stores a line number and spans associated with the line number
@@ -119,36 +120,21 @@ impl LineGroupManager {
 
 // Ability to choose color when help exists in a better form
 /// Returns the line number, column and red arrows under given spans
-pub fn something(src_bytes: &[u8], spans: &[SourceSpan]) -> LineGroupManager {
-    todo!()
+pub fn something(src_bytes: &[u8], span: &SourceSpan) -> LineGroupManager {
     // // So it doesn't just explode upon no spans given since diagnostics are not essential to the
     // // program actually emitting other diagnostics. Could also just turn this into Option
-    // if spans.is_empty() {
-    //     return LineData {
-    //         diag: "".to_string(),
-    //         ln: 1,
-    //         col: 1,
-    //     };
-    // }
-    //
-    // let start = spans.iter().map(|s| s.start).min().expect("Cannot be < 1");
-    // let actual_start = get_ln_start_byte(src_bytes, start);
-    //
-    // let end = spans.iter().map(|s| s.end).max().expect("Cannot be < 1");
-    //
-    // let full_span = SourceSpan::new(actual_start, end);
-    //
-    // // --FIRST--
-    // // Forming data about every line in the given span so it can be mutated or used in a way that
-    // // is non-linear, which was a persistent issue with past designs. It is here to offer a high
-    // // level view.
-    // let ln_view = form_ln_view(src_bytes, &full_span);
-    //
-    // // External use: This is only needed if a given span could exceed one line.
-    // // --SECOND--
-    // // Curating spans to ensure all spans that may exceed their line are properly cut for their
-    // // line so later formatting is not made more complicated
-    // let mut curated_spans: Vec<SourceSpan> = Vec::new();
+    let ln_view = form_ln_view(src_bytes, span);
+
+    // --FIRST--
+    // Forming data about every line in the given span so it can be mutated or used in a way that
+    // is non-linear, which was a persistent issue with past designs. It is here to offer a high
+    // level view.
+
+    // External use: This is only needed if a given span could exceed one line.
+    // --SECOND--
+    // Curating spans to ensure all spans that may exceed their line are properly cut for their
+    // line so later formatting is not made more complicated
+    let mut curated_spans: Vec<SourceSpan> = Vec::new();
     //
     // //Maybe can be handled better
     // for ln in &ln_view.lines {
@@ -242,6 +228,7 @@ pub fn something(src_bytes: &[u8], spans: &[SourceSpan]) -> LineGroupManager {
     //     ln: ln_view.ln_num_span.start,
     //     col,
     // }
+    todo!()
 }
 
 // I know this doesn't show up correctly
@@ -295,15 +282,16 @@ fn curate_span(ln: &Line, span: &SourceSpan) -> SourceSpan {
 /// in the given span. New lines are never in a line's span unless the line only contains a single
 /// new line.
 //WARN: EOF's final byte is not currently detected
-fn form_ln_view(src_bytes: &[u8], spans: &[SourceSpan]) -> LineView {
+pub fn form_ln_view(src_bytes: &[u8], span: &SourceSpan) -> LineView {
     // Getting the first line's start position since span.start could start later in the actual
     // line. May make this something that just needs to be done outside.
-    let start = spans.iter().map(|s| s.start).min().expect("Cannot be < 1");
 
-    let actual_span_start = get_ln_start_byte(src_bytes, start as usize);
-    let span_end = spans.iter().map(|s| s.end).max().expect("Cannot be < 1") as usize;
+    let span_start = span.start as usize;
+    let span_end = span.end as usize;
 
-    let full_span = RangeInclusive::new(actual_span_start as u32, span_end as u32);
+    let actual_span_start = get_ln_start_byte(src_bytes, span_start);
+
+    let full_span = SourceSpan::new(span.region_id, actual_span_start as u32, span.end);
 
     let first_ln_start = actual_span_start;
 
@@ -315,7 +303,7 @@ fn form_ln_view(src_bytes: &[u8], spans: &[SourceSpan]) -> LineView {
     // Every i is not a current start, but every current start is i + 1 or 2.
     let mut current_start = first_ln_start;
 
-    let first_ln_num = get_ln_num(src_bytes, actual_span_start);
+    let first_ln_num = get_ln_num(src_bytes, actual_span_start) as u32;
 
     // To assign a line number to all processed lines
     let mut current_ln_num = first_ln_num;
@@ -338,11 +326,11 @@ fn form_ln_view(src_bytes: &[u8], spans: &[SourceSpan]) -> LineView {
                 // Still i - 1 here since the carriage return is stopped at and both are skipped at
                 // once in the end.
                 i - 1
-            };
+            } as u32;
 
             let ln = Line {
                 ln_num: current_ln_num,
-                ln_span: RangeInclusive::new(current_start as u32, current_end as u32),
+                ln_span: SourceSpan::new(span.region_id, current_start as u32, current_end),
             };
 
             lines.push(ln);
@@ -364,11 +352,11 @@ fn form_ln_view(src_bytes: &[u8], spans: &[SourceSpan]) -> LineView {
                 i
             } else {
                 i - 1
-            };
+            } as u32;
 
             let ln = Line {
                 ln_num: current_ln_num,
-                ln_span: RangeInclusive::new(current_start as u32, current_end as u32),
+                ln_span: SourceSpan::new(span.region_id, current_start as u32, current_end as u32),
             };
 
             lines.push(ln);
@@ -387,11 +375,11 @@ fn form_ln_view(src_bytes: &[u8], spans: &[SourceSpan]) -> LineView {
 
         // WARN: TEMP '@end' EDGE CASE PRINTING
         if i == span_end && span_end == src_bytes.len() {
-            let current_end = i - 1;
+            let current_end = (i - 1) as u32;
 
             let ln = Line {
                 ln_num: current_ln_num,
-                ln_span: RangeInclusive::new(current_start as u32, current_end as u32),
+                ln_span: SourceSpan::new(span.region_id, current_start as u32, current_end),
             };
 
             lines.push(ln);
@@ -402,6 +390,9 @@ fn form_ln_view(src_bytes: &[u8], spans: &[SourceSpan]) -> LineView {
 
     // WARN: This seemingly works fine
     // lex_tok_test_rev causes this error
+    //
+    // This exists because the main loop above ONLY processes a line if it seens a new line after
+    // starting, meaning a single line, with no new line, is completely ignored.
     if lines.is_empty() {
         let only_ln = Line {
             ln_num: first_ln_num,
@@ -430,6 +421,7 @@ fn form_ln_view(src_bytes: &[u8], spans: &[SourceSpan]) -> LineView {
     LineView {
         ln_num_range,
         lines,
+        region_id: span.region_id,
     }
 }
 
@@ -544,49 +536,9 @@ fn form_ln_diag(
     // diag
 }
 
-// pub fn standardize_err(
-//     base_msg: &str,
-//     line_data: &LineData,
-//     help: Option<&str>,
-//     path: &Path,
-//     can_color: bool,
-// ) -> String {
-//     todo!()
-//     // let (red, nc) = color::get_red(can_color);
-//     // let header = format!("From path => \"{}\"\n{red}error{nc}:", path.display());
-//     // let help = help.unwrap_or_default();
-//     //
-//     // format!(
-//     //     "{header} {base_msg}\n[{}:{}]\n{}\n{help}{}",
-//     //     line_data.ln,
-//     //     line_data.col,
-//     //     line_data.diag,
-//     //     "-".repeat(TOTAL_SEPARATORS)
-//     // )
-// }
-
-pub fn standardize_help(msg: &str, can_color: bool) -> String {
-    let (orange, nc) = color::get_orange(can_color);
-
-    if can_color {
-        format!("{orange}help{nc}: {msg}\n")
-    } else {
-        format!("help: {msg}\n")
-    }
-}
-
-pub fn standardize_note(msg: &str, can_color: bool) -> String {
-    let (cyan, nc) = color::get_cyan(can_color);
-
-    if can_color {
-        format!("{cyan}help{nc}: {msg}\n")
-    } else {
-        format!("note: {msg}\n")
-    }
-}
-
+// _Generic?
 /// Is the preferred function for getting number widths to avoid allocating strings just for number sizes
-fn get_num_width(num: usize) -> usize {
+pub fn get_num_width(num: usize) -> usize {
     let mut size = 0;
     let mut i = num;
 
@@ -599,10 +551,10 @@ fn get_num_width(num: usize) -> usize {
 }
 
 /// Returns character width count within the given start and end (inclusive, exclusive)
-fn get_chars_width(s: &str, start: usize, end: usize) -> usize {
-    // if start > end {
-    //     dbg!(&s[end..=start]);
-    // }
+pub fn get_chars_width(s: &str, start: usize, end: usize) -> usize {
+    if start > end {
+        dbg!(&s[end..=start]);
+    }
     s[start..end]
         .chars()
         .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))

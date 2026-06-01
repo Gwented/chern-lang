@@ -8,7 +8,6 @@ fn main() {
     let cli = args::Cli::parse();
 
     // Is borrowed so that the program success or error messages can be colored from one place.
-    // Could change
     match dispatcher::exec(&cli, &cli_cfg) {
         Ok(msg) => {
             let (green, nc) = color::get_green(cli_cfg.can_color);

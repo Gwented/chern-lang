@@ -6,7 +6,7 @@ use chrn_utils::{
     intern::Intern,
     source_map::{
         source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
-        source_region_data::SourceRegion,
+        source_region::SourceRegion,
     },
 };
 
@@ -73,7 +73,6 @@ impl NamespaceResolver<'_> {
         }
 
         // Type specific needed
-        self.check_duplicates();
 
         if !self.reporter.err_vec.is_empty() {
             let mut diags = Vec::new();
@@ -95,7 +94,7 @@ impl NamespaceResolver<'_> {
 
         table.ast_to_interned.insert(ast_id, abs_cfg.name_id);
         table.ast_to_sym.insert(ast_id, sym_id);
-        table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
+        let orig_sym_opt = table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
 
         let type_id = TypeId::new(self.compiler.types.len() as u32);
 
@@ -112,6 +111,10 @@ impl NamespaceResolver<'_> {
         );
 
         self.compiler.symbols.push(sym);
+
+        if let Some(orig_sym_id) = orig_sym_opt {
+            self.report_duplicate(orig_sym_id, sym_id);
+        }
 
         todo!()
     }
@@ -130,7 +133,7 @@ impl NamespaceResolver<'_> {
 
         table.ast_to_interned.insert(ast_id, abs_typedef.name_id);
         table.ast_to_sym.insert(ast_id, sym_id);
-        table.interned_to_sym.insert(abs_typedef.name_id, sym_id);
+        let orig_sym_opt = table.interned_to_sym.insert(abs_typedef.name_id, sym_id);
 
         let type_id = TypeId::new(self.compiler.types.len() as u32);
 
@@ -153,6 +156,10 @@ impl NamespaceResolver<'_> {
 
         let ty_info = TypeInfo::new(Type::TypeDef(type_def_repre), self.current_mod);
         self.compiler.types.push(ty_info);
+
+        if let Some(orig_sym_id) = orig_sym_opt {
+            self.report_duplicate(orig_sym_id, sym_id);
+        }
     }
 
     fn register_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) {
@@ -162,7 +169,7 @@ impl NamespaceResolver<'_> {
 
         table.ast_to_interned.insert(ast_id, abs_struct.name_id);
         table.ast_to_sym.insert(ast_id, sym_id);
-        table.interned_to_sym.insert(abs_struct.name_id, sym_id);
+        let orig_sym_opt = table.interned_to_sym.insert(abs_struct.name_id, sym_id);
 
         if !abs_struct.is_priv {
             let module = &mut self.compiler.mods[self.current_mod.id];
@@ -187,6 +194,10 @@ impl NamespaceResolver<'_> {
 
         let ty_info = TypeInfo::new(Type::Struct(struct_def), self.current_mod);
         self.compiler.types.push(ty_info);
+
+        if let Some(orig_sym_id) = orig_sym_opt {
+            self.report_duplicate(orig_sym_id, sym_id);
+        }
     }
 
     fn register_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) {
@@ -198,7 +209,7 @@ impl NamespaceResolver<'_> {
 
         table.ast_to_interned.insert(ast_id, abs_enum.name_id);
         table.ast_to_sym.insert(ast_id, sym_id);
-        table.interned_to_sym.insert(abs_enum.name_id, sym_id);
+        let orig_sym_opt = table.interned_to_sym.insert(abs_enum.name_id, sym_id);
 
         if !abs_enum.is_priv {
             let module = &mut self.compiler.mods[self.current_mod.id];
@@ -222,6 +233,10 @@ impl NamespaceResolver<'_> {
 
         let ty_info = TypeInfo::new(Type::Enum(enum_def), self.current_mod);
         self.compiler.types.push(ty_info);
+
+        if let Some(orig_sym_id) = orig_sym_opt {
+            self.report_duplicate(orig_sym_id, sym_id);
+        }
     }
 
     fn register_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) {
@@ -235,7 +250,7 @@ impl NamespaceResolver<'_> {
 
         table.ast_to_interned.insert(ast_id, abs_alias.name_id);
         table.ast_to_sym.insert(ast_id, sym_id);
-        table.interned_to_sym.insert(abs_alias.name_id, sym_id);
+        let orig_sym_opt = table.interned_to_sym.insert(abs_alias.name_id, sym_id);
 
         if !abs_alias.is_priv {
             let module = &mut self.compiler.mods[self.current_mod.id];
@@ -272,6 +287,10 @@ impl NamespaceResolver<'_> {
 
         let ty_info = TypeInfo::new(Type::Alias(alias_def), self.current_mod);
         self.compiler.types.push(ty_info);
+
+        if let Some(orig_sym_id) = orig_sym_opt {
+            self.report_duplicate(orig_sym_id, sym_id);
+        }
     }
 
     fn register_var(&mut self, abs_var: &AbstractVar, ast_id: AstId) {
@@ -281,9 +300,9 @@ impl NamespaceResolver<'_> {
             .push_scope(ScopeType::Neutral, self.current_mod);
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
-        table.ast_to_interned.insert(ast_id, abs_var.name_id);
         table.ast_to_sym.insert(ast_id, sym_id);
-        table.interned_to_sym.insert(abs_var.name_id, sym_id);
+        table.ast_to_interned.insert(ast_id, abs_var.name_id);
+        let orig_sym_opt = table.interned_to_sym.insert(abs_var.name_id, sym_id);
 
         if !abs_var.is_priv {
             let module = &mut self.compiler.mods[self.current_mod.id];
@@ -308,73 +327,72 @@ impl NamespaceResolver<'_> {
 
         self.compiler.symbols.push(symbol);
         self.compiler.types.push(ty_info);
+
+        if let Some(orig_sym_id) = orig_sym_opt {
+            self.report_duplicate(orig_sym_id, sym_id);
+        }
     }
 
     // Cannot check for this since the type is not known
-    /// Checks registered namespace for duplicates and collects errors if any are found
+    /// Forms and stores diagnostic, given an original symbol which has the same identifier as an
+    /// existing one
     //FIX: CHANGE TO NAME ID
-    fn check_duplicates(&mut self) {
-        // Solely a HashMap for spanning
-        let mut seen: HashMap<InternedId, AstId> = HashMap::new();
-
+    fn report_duplicate(&mut self, orig_sym_id: SymbolId, dup_sym_id: SymbolId) {
+        // Maybe use a vec instead
         //NOTE: Suspicious
         let module = &self.compiler.mods[self.current_mod.id];
 
-        // Searching if there are any duplicates with respect to the scope
-        for scope_id in &module.scopes {
-            let scope = &self.compiler.get_scope(*scope_id).scope;
-            for (ast_id, name_id) in &scope.table.ast_to_interned {
-                // Why is it not true if it exists false otherwise...seems backwards
-                let ast_opt = seen.insert(*name_id, *ast_id);
+        let orig_sym = &self.compiler.symbols[orig_sym_id.id as usize];
+        let orig_ast_id = orig_sym.ast_id.expect("Core should not be resolved");
 
-                // If the current name id exists in "seen"
-                if let Some(orig_ast_id) = ast_opt {
-                    let item = &self.ast_info.items[orig_ast_id.id as usize];
-                    let orig_span = match item {
-                        Item::TypeDef(abs_typedef) => abs_typedef.name_span,
-                        Item::Struct(abs_struct) => abs_struct.name_span,
-                        Item::Enum(abs_enum) => abs_enum.name_span,
-                        Item::Alias(abs_alias) => abs_alias.name_span,
-                        Item::Var(abs_var) => abs_var.name_span,
-                        Item::Config(abs_cfg) => abs_cfg.name_span,
-                    };
+        let dup_ast_id = &self.compiler.symbols[dup_sym_id.id as usize]
+            .ast_id
+            .expect("Core should not be resolved");
 
-                    let dup_span = match &self.ast_info.items[ast_id.id as usize] {
-                        Item::TypeDef(abs_typedef) => abs_typedef.name_span,
-                        Item::Struct(abs_struct) => abs_struct.name_span,
-                        Item::Enum(abs_enum) => abs_enum.name_span,
-                        Item::Alias(abs_alias) => abs_alias.name_span,
-                        Item::Var(abs_var) => abs_var.name_span,
-                        Item::Config(abs_cfg) => abs_cfg.name_span,
-                    };
+        let dup_name = self.interner.search(orig_sym.name_id);
+        let scope_type = orig_sym.scope_origin;
 
-                    let dup_name = self.interner.search(*name_id);
+        let item = &self.ast_info.items[orig_ast_id.id as usize];
+        let orig_span = match item {
+            Item::TypeDef(abs_typedef) => abs_typedef.name_span,
+            Item::Struct(abs_struct) => abs_struct.name_span,
+            Item::Enum(abs_enum) => abs_enum.name_span,
+            Item::Alias(abs_alias) => abs_alias.name_span,
+            Item::Var(abs_var) => abs_var.name_span,
+            Item::Config(abs_cfg) => abs_cfg.name_span,
+        };
 
-                    let core_msg = format!(
-                        "Found more than one symbol with identifier \"{dup_name}\" in the section `{}`",
-                        &scope.scope_type
-                    );
+        let dup_span = match &self.ast_info.items[dup_ast_id.id as usize] {
+            Item::TypeDef(abs_typedef) => abs_typedef.name_span,
+            Item::Struct(abs_struct) => abs_struct.name_span,
+            Item::Enum(abs_enum) => abs_enum.name_span,
+            Item::Alias(abs_alias) => abs_alias.name_span,
+            Item::Var(abs_var) => abs_var.name_span,
+            Item::Config(abs_cfg) => abs_cfg.name_span,
+        };
 
-                    let src_diag = SourceDiagnostic::builder(
-                        DiagnosticLevel::Error,
-                        core_msg,
-                        self.current_region.path_id,
-                    )
-                    .add_annotation(
-                        orig_span,
-                        AnnotationKind::Secondary,
-                        format!("`{dup_name}` first seen here").into(),
-                    )
-                    .add_annotation(dup_span, AnnotationKind::Primary, None)
-                    .build();
+        let core_msg = format!(
+            "Found more than one symbol with identifier \"{dup_name}\" in the section `{}`",
+            &scope_type
+        );
 
-                    self.reporter.err_vec.push(src_diag);
-                }
-            }
+        let src_diag = SourceDiagnostic::builder(
+            DiagnosticLevel::Error,
+            core_msg,
+            self.current_region.path_id,
+        )
+        .add_annotation(
+            orig_span,
+            AnnotationKind::Secondary,
+            format!("`{dup_name}` first seen here").into(),
+        )
+        .add_annotation(
+            dup_span,
+            AnnotationKind::Primary,
+            "Duplicate".to_string().into(),
+        )
+        .build();
 
-            // Clearing after finishing one table
-            // More suspicious
-            seen.clear();
-        }
+        self.reporter.err_vec.push(src_diag);
     }
 }
