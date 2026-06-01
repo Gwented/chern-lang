@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use chrn_utils::{
-    id_types::{InternedId, ModuleId, ScopeId, SymbolId, TypeId, ValueId},
+    id_types::{InternedId, ModuleId, PathId, ScopeId, SymbolId, TypeId, ValueId},
     intern,
     types::{
         builtins::BuiltinType,
@@ -40,7 +40,7 @@ pub struct ScriptCompiler {
     /// Module name to module id mapping to index module array. import `as` aliases are also stored here
     // This feels out of place
     // Can this be removed? Probably.
-    pub mod_map: HashMap<InternedId, ModuleId>,
+    // pub mod_map: HashMap<PathId, ModuleId>,
     /// All modules found during compilation
     pub mods: Vec<Module>,
     /// Type table which contains every module's stored types
@@ -101,7 +101,7 @@ impl ScriptCompiler {
     /// Loads core library and builds script specific compiler with parameters given
     pub fn new(
         bind: Option<Bind>,
-        mod_map: HashMap<InternedId, ModuleId>,
+        // mod_map: HashMap<PathId, ModuleId>,
         mods: Vec<Module>,
     ) -> ScriptCompiler {
         //TEST:
@@ -109,7 +109,7 @@ impl ScriptCompiler {
         let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None, None);
         let mut script_compiler = ScriptCompiler {
             bind,
-            mod_map,
+            // mod_map,
             mods,
             types: Vec::new(),
             values: Vec::new(),
@@ -175,8 +175,6 @@ impl ScriptCompiler {
             // Clone..
             for import in module.imports.clone() {
                 let import_sym_id = SymbolId::new(compiler.symbols.len() as u32);
-                let import_mod_id = compiler.mod_map[&import.name_id];
-
                 // Pushing any imports found within the given module
                 let symbol = Symbol::new(
                     import.name_id,
@@ -184,9 +182,9 @@ impl ScriptCompiler {
                     None,
                     current_mod_id,
                     true,
-                    Some(AssociatedScopeKind::Module(import_mod_id)),
+                    Some(AssociatedScopeKind::Module(import.mod_id)),
                     ScopeType::Neutral,
-                    SymbolKind::Module(import_mod_id),
+                    SymbolKind::Module(import.mod_id),
                 );
 
                 // Module symbols go into the neutral scope because, uh
@@ -212,9 +210,9 @@ impl ScriptCompiler {
                         None,
                         current_mod_id,
                         true,
-                        Some(AssociatedScopeKind::Module(import_mod_id)),
+                        Some(AssociatedScopeKind::Module(import.mod_id)),
                         ScopeType::Neutral,
-                        SymbolKind::Module(import_mod_id),
+                        SymbolKind::Module(import.mod_id),
                     );
 
                     let scope = &mut compiler.get_scope_mut(scope_id).scope;
@@ -535,10 +533,9 @@ impl ScriptCompiler {
         compiler.scopes.push(scope_info);
         core_mod.scopes.push(scope_id);
 
-        compiler.mod_map.insert(core_name_id, core_mod_id);
         compiler.mods.push(core_mod);
 
-        let core_import = Import::new(core_name_id, ImportKind::Core, None);
+        let core_import = Import::new(core_name_id, core_mod_id, ImportKind::Core, None);
 
         // Injecting core as an import and pushing it's scope so user modules can search it
         for user_mod in &mut compiler.mods {
@@ -555,17 +552,21 @@ impl ScriptCompiler {
     pub fn check_unknown(&self, type_id: TypeId) -> bool {
         let ty = &self.types[type_id.id as usize].ty;
         match ty {
-            //WARN: DANGEROUS
-            Type::Deferred(deferred_type_id) => {
-                let deferred_ty = &self.types[deferred_type_id.id as usize].ty;
-                match deferred_ty {
-                    Type::Unknown => true,
-                    Type::Deferred(_) => {
-                        panic!("Encountered infinitely recursive deferred type in `check_unknown`")
-                    }
-                    _ => false,
-                }
-            }
+            // Can't do this since a type, may depend on a type, that pointer to another type.
+            // May change this system since it is concerning to rely on such possibly deep
+            // recursive issues that could be hidden.
+            // Type::Deferred(deferred_type_id) => {
+            //     let deferred_ty = &self.types[deferred_type_id.id as usize].ty;
+            //     match deferred_ty {
+            //         Type::Unknown => true,
+            //         // Type::Deferred(_) => {
+            //         //     panic!("Encountered infinitely recursive deferred type in `check_unknown`")
+            //         // }
+            //         _ => false,
+            //     }
+            // }
+            //WARN: DANGEROUS.
+            Type::Deferred(type_id) => self.check_unknown(*type_id),
             Type::Unknown => true,
             _ => false,
         }

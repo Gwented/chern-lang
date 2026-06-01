@@ -33,6 +33,7 @@ pub(crate) struct ModuleCache {
 }
 
 // Should check imports if more is needed to cache
+//FIX:
 pub struct ChrnManager {
     pub(crate) interner: Intern,
     pub(crate) region_arena: SourceRegionArena,

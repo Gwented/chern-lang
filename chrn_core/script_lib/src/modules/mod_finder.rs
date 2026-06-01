@@ -3,7 +3,7 @@ use std::{ffi::OsStr, path::PathBuf, str::FromStr};
 use chrn_utils::{
     chrn_settings::ChrnSettings,
     core_error::{self, ConfigLoadError},
-    id_types::InternedId,
+    id_types::{InternedId, ModuleId},
     intern::Intern,
     source_map::{
         source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
@@ -22,6 +22,7 @@ pub struct ModuleFinder<'a> {
     settings: &'a ChrnSettings,
     /// Path origin so that errors can accurately report the path where the import was declared
     current_region: &'a SourceRegion,
+    current_mod_id: ModuleId,
     pos: usize,
     start: usize,
     end: usize,
@@ -33,6 +34,7 @@ impl ModuleFinder<'_> {
         src_bytes: &'a [u8],
         settings: &'a ChrnSettings,
         current_region: &'a SourceRegion,
+        current_mod_id: ModuleId,
         script_start: usize,
         serial_start: Option<usize>,
     ) -> ModuleFinder<'a> {
@@ -40,6 +42,7 @@ impl ModuleFinder<'_> {
             src_bytes,
             settings,
             current_region,
+            current_mod_id,
             pos: script_start,
             start: script_start,
             end: serial_start.unwrap_or(src_bytes.len()),
@@ -216,7 +219,12 @@ impl ModuleFinder<'_> {
 
         let import_kind = ImportKind::Source(path_id, path_span);
 
-        Ok(Import::new(name_id, import_kind, alias_id))
+        Ok(Import::new(
+            name_id,
+            self.current_mod_id,
+            import_kind,
+            alias_id,
+        ))
     }
 
     //WARN: Will be placed in different module

@@ -2179,9 +2179,15 @@ impl TypeResolver<'_> {
                     break;
                 }
                 PathSegment::Generic(_) => {
-                    unreachable!("The parser does not pick this up in `parse_expr`");
-                    let msg = "Generics cannot be used inside of expressions".to_string();
-                    // return Err(SemanticError::General(src_diag));
+                    let core_msg = "Generics cannot be used inside of expressions".to_string();
+                    let src_diag = SourceDiagnostic::basic(
+                        DiagnosticLevel::Error,
+                        core_msg,
+                        self.current_region.path_id,
+                        sp_path_seg.span,
+                    );
+
+                    return Err(SemanticError::General(src_diag));
                 }
             }
         }

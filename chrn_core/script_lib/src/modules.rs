@@ -28,16 +28,23 @@ const RESERVED_INTERNED_MODULE_IDENTS: [u32; 1] = [intern::INTERNED_CORE];
 #[derive(Debug, Clone)]
 pub struct Import {
     pub name_id: InternedId,
+    pub mod_id: ModuleId,
     pub kind: ImportKind,
     pub alias_id: Option<InternedId>,
 }
 
 impl Import {
-    pub fn new(name_id: InternedId, kind: ImportKind, alias_id: Option<InternedId>) -> Import {
+    pub fn new(
+        name_id: InternedId,
+        mod_id: ModuleId,
+        kind: ImportKind,
+        alias_id: Option<InternedId>,
+    ) -> Import {
         Import {
             name_id,
             kind,
             alias_id,
+            mod_id,
         }
     }
 }
@@ -147,14 +154,14 @@ pub fn extract_modules(
     };
 
     let path = path.canonicalize()?;
-    let path_id = interner.intern_path(&path);
+    let main_path_id = interner.intern_path(&path);
 
     let mut region_arena: SourceRegionArena = SourceRegionArena::new(Default::default());
     let main_region_id = SourceRegionId::new(0);
 
     // Using region id before pushing
-    let main_region =
-        ChrnConfigLoader::new(main_region_id, src, path_id, settings, interner).load_config()?;
+    let main_region = ChrnConfigLoader::new(main_region_id, src, main_path_id, settings, interner)
+        .load_config()?;
 
     // let region = SourceRegion::new(
     //     self.handle.buffer()[..self.pos + DEFINITION_SIZE].to_vec(),
@@ -173,7 +180,7 @@ pub fn extract_modules(
             );
 
             let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id).build();
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, main_path_id).build();
 
             return Err(ConfigLoadError::Module(src_diag));
         }
@@ -182,24 +189,21 @@ pub fn extract_modules(
     let name_id = interner.intern(&file_name);
 
     // dbg!(str::from_utf8(&main_metadata.src_bytes[..]));
+    let main_mod_id = ModuleId::new(0);
     let (bind, main_imports) = ModuleFinder::new(
         &main_region.src_bytes,
         settings,
         &main_region,
+        main_mod_id,
         main_region.script_start,
         main_region.serial_start,
     )
     .collect_imports(interner)?;
 
-    let mod_id = ModuleId::new(0);
-    let main_mod = Module::new(name_id, mod_id, main_imports, Some(main_region_id));
+    let main_mod = Module::new(name_id, main_mod_id, main_imports, Some(main_region_id));
 
-    let mut mod_map: HashMap<InternedId, ModuleId> = HashMap::new();
-    mod_map.insert(main_mod.name_id, mod_id);
-
-    // Vec
-    let mut seen: Vec<PathId> = Vec::new();
-    seen.push(path_id);
+    let mut seen_map: Vec<(PathId, ModuleId)> = Vec::new();
+    seen_map.push((main_path_id, main_mod_id));
 
     region_arena.regions.push(main_region);
 
@@ -210,11 +214,10 @@ pub fn extract_modules(
     // filled then UNWRAPPED after since we know they're all resolved
     let mut other_mods: Vec<Option<Module>> = Vec::with_capacity(main_mod.imports.len());
     resolve_modules(
-        &mut seen,
+        &mut seen_map,
         &mut other_mods,
         &main_mod,
         &mut region_arena,
-        &mut mod_map,
         settings,
         interner,
     )?;
@@ -259,28 +262,29 @@ pub fn extract_modules(
     //     println!("_______\n")
     // }
 
-    // Mod map needs removal
-    for mod_name_id in mod_map.keys() {
-        if RESERVED_INTERNED_MODULE_IDENTS.contains(&mod_name_id.id) {
-            let mod_name = interner.search(*mod_name_id);
-            let mod_id = mod_map[mod_name_id];
-            let err_mod = &all_mods[mod_id.id];
+    // I don't THINK this causes issues since lookups are by symbol, not identifier. Should maybe
+    // warn if needed.
+    // for mod_name_id in seen_map.iter().map(|(_, mod_id)| mod_id) {
+    //     if RESERVED_INTERNED_MODULE_IDENTS.contains(&mod_name_id.id) {
+    //         let mod_name = interner.search(*mod_name_id);
+    //         let mod_id = seen_map[mod_name_id];
+    //         let err_mod = &all_mods[mod_id.id];
+    //
+    //         let region_id = err_mod
+    //             .src_region_id
+    //             .expect("Should only have source created modules before initializing compiler");
+    //         let region = region_arena.extract_region(region_id);
+    //
+    //         let core_msg = format!("`{mod_name}` is a reserved module identifier");
+    //
+    //         // File system gui!
+    //         let src_diag =
+    //             SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id).build();
+    //         return Err(ConfigLoadError::General(src_diag));
+    //     }
+    // }
 
-            let region_id = err_mod
-                .src_region_id
-                .expect("Should only have source created modules before initializing compiler");
-            let region = region_arena.extract_region(region_id);
-
-            let core_msg = format!("`{mod_name}` is a reserved module identifier");
-
-            // File system gui!
-            let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id).build();
-            return Err(ConfigLoadError::General(src_diag));
-        }
-    }
-
-    let compiler = ScriptCompiler::new(bind, mod_map, all_mods);
+    let compiler = ScriptCompiler::new(bind, all_mods);
 
     Ok((compiler, region_arena))
 }
@@ -296,11 +300,10 @@ pub fn extract_modules(
 /// `mod_map`: Module interned file name -> ModuleId.
 fn resolve_modules(
     // Maybe change to vec
-    seen: &mut Vec<PathId>,
+    seen_map: &mut Vec<(PathId, ModuleId)>,
     modules: &mut Vec<Option<Module>>,
     prev_mod: &Module,
     region_arena: &mut SourceRegionArena,
-    mod_map: &mut HashMap<InternedId, ModuleId>,
     settings: &ChrnSettings,
     interner: &mut Intern,
 ) -> Result<(), ConfigLoadError> {
@@ -309,24 +312,21 @@ fn resolve_modules(
             continue;
         };
 
-        if seen.contains(&path_id) {
-            if let Some(alias_id) = import.alias_id {
-                mod_map.insert(alias_id, ModuleId::new(seen.len() - 1));
-            }
-
-            continue;
-        }
-        // This entire process is performing IO recursively based off of file paths so a failure
-        // here would be either an early detailed error
-        // let prev_region_id = &prev_mod
-        //     .src_metadata
-        //     .as_ref()
-        //     .expect("Infailable currently");
+        //NOTE: I don't THINK this is needed anymore since this was only here so that the mod_map could
+        // lookup modules from aliases, but since imports carry alias information that is checked
+        // already without any of this, it's likely not necessary to do anything with aliases here.
+        //
+        // if seen_map.iter().any(|(p_id, m_id)| *p_id == path_id) {
+        //     if let Some(alias_id) = import.alias_id {
+        //         seen_map.insert(alias_id, ModuleId::new(seen_map.len() - 1));
+        //     }
+        //     continue;
+        // }
 
         // Tracks the id of the current module by tracking however many imports were seen, which
         // all represent one module
-        let current_mod_id = seen.len();
-        seen.push(path_id);
+        let current_mod_id = ModuleId::new(seen_map.len());
+        seen_map.push((path_id, import.mod_id));
 
         let path = interner.search_path(path_id);
         let src = match fs::File::open(path) {
@@ -402,6 +402,7 @@ fn resolve_modules(
             &sub_region.src_bytes,
             settings,
             &sub_region,
+            current_mod_id,
             sub_region.script_start,
             sub_region.serial_start,
         )
@@ -413,7 +414,7 @@ fn resolve_modules(
 
         let sub_mod = Module::new(
             sub_mod_name_id,
-            ModuleId::new(current_mod_id),
+            current_mod_id,
             sub_imports,
             Some(sub_region_id),
         );
@@ -421,16 +422,11 @@ fn resolve_modules(
         // Filling in this module's spot
         modules.push(None);
 
-        if let Some(alias_id) = import.alias_id {
-            mod_map.insert(alias_id, ModuleId::new(current_mod_id));
-        }
-
         resolve_modules(
-            seen,
+            seen_map,
             modules,
             &sub_mod,
             region_arena,
-            mod_map,
             settings,
             interner,
         )?;
@@ -438,8 +434,7 @@ fn resolve_modules(
         // Needs - 1 so that it fits inside the temporary Vec before being put into a Vec that has
         // the "main" module in it, which would be a + 1, which is what the ModuleId with by
         // default. A, + 1.
-        modules[current_mod_id - 1] = Some(sub_mod);
-        mod_map.insert(sub_mod_name_id, ModuleId::new(current_mod_id));
+        modules[current_mod_id.id - 1] = Some(sub_mod);
 
         // Modules start off at 0 since the main module can't be inserted before this so + 1 for
         // correct indexing in the final vector
