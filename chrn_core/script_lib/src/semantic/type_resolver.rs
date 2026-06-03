@@ -2275,21 +2275,24 @@ impl TypeResolver<'_> {
                     .iter()
                     .any(|pend_expr| pend_expr.parent_sym == found_sym_id);
 
+                // In, "let a = b, let b = a"
+                // a would be cycled
+                // b would be current
                 if has_cycle {
-                    let parent_sym = &self.compiler.symbols[parent_sym_id.id as usize];
-                    let parent_name = self.interner.search(parent_sym.name_id);
-                    let parent_ast_id = parent_sym.ast_id.expect("core should not be resolved");
+                    let current_sym = &self.compiler.symbols[parent_sym_id.id as usize];
+                    let current_name = self.interner.search(current_sym.name_id);
+                    let current_ast_id = current_sym.ast_id.expect("core should not be resolved");
 
-                    let found_sym = &self.compiler.symbols[found_sym_id.id as usize];
-                    let found_ast_id = found_sym.ast_id.expect("core should not be resolved");
-                    let found_name = self.interner.search(found_sym.name_id);
+                    let cycled_sym = &self.compiler.symbols[found_sym_id.id as usize];
+                    let cycled_ast_id = cycled_sym.ast_id.expect("core should not be resolved");
+                    let cycled_name = self.interner.search(cycled_sym.name_id);
 
-                    let cycled_span = self.ast_info.get_sym_span(parent_ast_id);
-                    let found_span = self.ast_info.get_sym_span(found_ast_id);
+                    let cycled_span = self.ast_info.get_sym_span(cycled_ast_id);
+                    let current_span = self.ast_info.get_sym_span(current_ast_id);
 
                     let core_msg = format!(
                         "`{}` depends on itself through `{}`",
-                        parent_name, found_name
+                        current_name, cycled_name
                     );
 
                     let src_diag = SourceDiagnostic::builder(
@@ -2303,9 +2306,9 @@ impl TypeResolver<'_> {
                         "This has no value yet".to_string().into(),
                     )
                     .add_annotation(
-                        found_span,
+                        current_span,
                         AnnotationKind::Primary,
-                        format!("Uses `{found_name}` before it has a value").into(),
+                        format!("Uses `{cycled_name}` before it has a value").into(),
                     )
                     .build();
 

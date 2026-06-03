@@ -219,7 +219,7 @@ pub fn extract_modules(
     // Need to be an Option because a HashMap is not necessary if spots can just be reserved and
     // filled then UNWRAPPED after since we know they're all resolved
     let mut other_mods: Vec<Option<Module>> = Vec::with_capacity(main_mod.imports.len());
-    let mut seen: Vec<PathId> = Vec::new();
+    let mut seen: Vec<PathId> = vec![main_path_id];
 
     resolve_modules(
         &mut reserved_mod_ids,
@@ -239,7 +239,7 @@ pub fn extract_modules(
     let mut all_mods: Vec<Module> = Vec::new();
     debug_assert!(
         other_mods.iter().all(|e| e.is_some()),
-        "None found in other_mods: {other_mods:?}"
+        "`None` found in other_mods: {other_mods:?}"
     );
 
     all_mods.push(main_mod);
@@ -318,7 +318,7 @@ fn resolve_modules(
     // Maybe change to vec
     reserved_mod_ids: &mut Vec<(PathId, ModuleId)>,
     seen: &mut Vec<PathId>,
-    modules: &mut Vec<Option<Module>>,
+    other_mods: &mut Vec<Option<Module>>,
     prev_mod: &Module,
     region_arena: &mut SourceRegionArena,
     settings: &ChrnSettings,
@@ -332,6 +332,8 @@ fn resolve_modules(
         // If the path from a given import was seen already then it ensures a stack overflow is
         // avoided by skipping
         if seen.iter().any(|p_id| *p_id == path_id) {
+            // dbg!(interner.search_path(path_id));
+            // panic!();
             continue;
         }
 
@@ -429,8 +431,8 @@ fn resolve_modules(
         // Checking if modules needs to reserve space for more modules. This check is needed
         // because module id registration is tied to when an import is seen, which COULD be later
         // than the module is found recursively, so extra space needs to be reserved in that case.
-        if modules.len() < expected_len {
-            modules.resize(expected_len - modules.len(), None);
+        if other_mods.len() < expected_len {
+            other_mods.resize(expected_len, None);
         }
 
         // As opposed to how modules are pushed, regions are pushed before recursively descending
@@ -447,7 +449,7 @@ fn resolve_modules(
         resolve_modules(
             reserved_mod_ids,
             seen,
-            modules,
+            other_mods,
             &sub_mod,
             region_arena,
             settings,
@@ -456,7 +458,7 @@ fn resolve_modules(
 
         // Needs - 1 so that it fits inside the temporary Vec, but still uses it's actual module
         // id.
-        modules[current_mod_id.id - 1] = Some(sub_mod);
+        other_mods[current_mod_id.id - 1] = Some(sub_mod);
     }
 
     Ok(())

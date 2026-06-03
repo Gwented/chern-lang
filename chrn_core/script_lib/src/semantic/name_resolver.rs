@@ -164,7 +164,6 @@ impl NamespaceResolver<'_> {
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
         let scope_id = self.compiler.push_scope(ScopeType::Nest, self.current_mod);
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
-        dbg!(self.interner.search(abs_struct.name_id));
 
         table.ast_to_interned.insert(ast_id, abs_struct.name_id);
         table.ast_to_sym.insert(ast_id, sym_id);
