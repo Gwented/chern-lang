@@ -3,7 +3,7 @@ use std::{ffi::OsStr, path::PathBuf, str::FromStr};
 use chrn_utils::{
     chrn_settings::ChrnSettings,
     core_error::{self, ConfigLoadError},
-    id_types::{InternedId, ModuleId},
+    id_types::{InternedId, ModuleId, PathId},
     intern::Intern,
     source_map::{
         source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
@@ -20,9 +20,9 @@ pub struct ModuleFinder<'a> {
     // Maybe turn this into &str
     src_bytes: &'a [u8],
     settings: &'a ChrnSettings,
+    seen: &'a mut Vec<(PathId, ModuleId)>,
     /// Path origin so that errors can accurately report the path where the import was declared
     current_region: &'a SourceRegion,
-    current_mod_id: ModuleId,
     pos: usize,
     start: usize,
     end: usize,
@@ -30,11 +30,10 @@ pub struct ModuleFinder<'a> {
 
 impl ModuleFinder<'_> {
     pub fn new<'a>(
-        //TODO: Need to store beg
         src_bytes: &'a [u8],
         settings: &'a ChrnSettings,
+        seen: &'a mut Vec<(PathId, ModuleId)>,
         current_region: &'a SourceRegion,
-        current_mod_id: ModuleId,
         script_start: usize,
         serial_start: Option<usize>,
     ) -> ModuleFinder<'a> {
@@ -42,7 +41,7 @@ impl ModuleFinder<'_> {
             src_bytes,
             settings,
             current_region,
-            current_mod_id,
+            seen,
             pos: script_start,
             start: script_start,
             end: serial_start.unwrap_or(src_bytes.len()),
@@ -219,12 +218,16 @@ impl ModuleFinder<'_> {
 
         let import_kind = ImportKind::Source(path_id, path_span);
 
-        Ok(Import::new(
-            name_id,
-            self.current_mod_id,
-            import_kind,
-            alias_id,
-        ))
+        let mod_id =
+            if let Some((_, inner_mod_id)) = self.seen.iter().find(|(p_id, _)| *p_id == path_id) {
+                *inner_mod_id
+            } else {
+                let new_mod_id = ModuleId::new(self.seen.len());
+                self.seen.push((path_id, new_mod_id));
+                new_mod_id
+            };
+
+        Ok(Import::new(name_id, mod_id, import_kind, alias_id))
     }
 
     //WARN: Will be placed in different module

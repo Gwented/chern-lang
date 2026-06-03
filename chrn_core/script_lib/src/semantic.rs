@@ -7,4 +7,5 @@ pub mod name_resolver;
 pub mod representation;
 pub mod scopes;
 mod semantic_reporter;
+pub mod type_checker;
 pub mod type_resolver;

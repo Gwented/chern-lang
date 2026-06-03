@@ -102,7 +102,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                         )
                         .add_annotation(
                             q_span,
-                            AnnotationKind::Primary,
+                            AnnotationKind::Secondary,
                             "Possible unclosed quotes".to_string().into(),
                         );
 
@@ -150,7 +150,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                         )
                         .add_annotation(
                             q_span,
-                            AnnotationKind::Primary,
+                            AnnotationKind::Secondary,
                             "Possible unclosed quotes".to_string().into(),
                         );
 
@@ -274,7 +274,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                     .add_annotation(
                         eof_span,
                         AnnotationKind::Primary,
-                        "Unexpected <eof>".to_string().into(),
+                        "Unexpected `@end`".to_string().into(),
                     )
                     .build();
 

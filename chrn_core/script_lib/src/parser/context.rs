@@ -61,12 +61,12 @@ pub(super) struct Context<'a> {
 impl<'a> Context<'a> {
     pub(super) fn new(
         settings: &'a ChrnSettings,
-        metadata: &'a SourceRegion,
+        region: &'a SourceRegion,
         toks: &'a [SpannedToken],
     ) -> Context<'a> {
         Context {
             settings,
-            region: metadata,
+            region,
             toks,
             pos: 0,
             err_vec: Vec::new(),
@@ -516,13 +516,14 @@ impl<'a> Context<'a> {
                 let ident = interner.search(name_id);
                 Some(format!("\"{ident}\""))
             }
-            Token::Keyword(kw) => Some(format!("`{}`", kw.to_fmt().to_string())),
+            Token::Keyword(kw) => Some(format!("keyword `{}`", kw.to_fmt().to_string())),
             Token::Illegal(name_id) => {
                 let illegal_msg = interner.search(name_id);
                 let new_msg = format!("invalid token \"{illegal_msg}\"");
                 Some(new_msg)
             }
             Token::Char(ch) => Some(format!("'{ch}'")),
+            Token::BoolLiteral(boolean) => Some(format!("bool literal `{}`", boolean)),
             _ => None,
         }
     }
@@ -594,6 +595,7 @@ impl<'a> Context<'a> {
     }
 
     fn advance(&mut self) -> SpannedToken {
+        // If it made it here there has to be at least ONE token inside so this is fine
         if self.pos >= self.toks.len() {
             return self.toks[self.toks.len() - 1].clone();
         }

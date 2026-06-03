@@ -2131,6 +2131,7 @@ impl TypeResolver<'_> {
                                 "Could not find the symbol `{}` in the namespace `{}`",
                                 current_namespace, prev_namespace
                             );
+                            panic!("err");
 
                             SourceDiagnostic::builder(
                                 DiagnosticLevel::Error,

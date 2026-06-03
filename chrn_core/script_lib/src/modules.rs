@@ -1,9 +1,5 @@
 // TODO: This should be split but not sure what would be best since it is fairly local and small
-use std::{
-    collections::{HashMap, HashSet},
-    fs,
-    path::Path,
-};
+use std::{fs, path::Path};
 
 pub mod mod_finder;
 
@@ -15,14 +11,14 @@ use chrn_utils::{
     intern::{self, Intern},
     source_map::{
         source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
-        source_region::{SourceRegion, SourceRegionArena},
+        source_region::SourceRegionArena,
         source_span::SourceSpan,
     },
 };
 
 use crate::{iyo::file_ops, modules::mod_finder::ModuleFinder, script_compiler::ScriptCompiler};
 
-const RESERVED_INTERNED_MODULE_IDENTS: [u32; 1] = [intern::INTERNED_CORE];
+pub const RESERVED_INTERNED_MODULE_IDENTS: [u32; 1] = [intern::INTERNED_CORE];
 
 //TEST: Relocate reollacl rreellocrelac
 #[derive(Debug, Clone)]
@@ -42,9 +38,9 @@ impl Import {
     ) -> Import {
         Import {
             name_id,
+            mod_id,
             kind,
             alias_id,
-            mod_id,
         }
     }
 }
@@ -72,7 +68,7 @@ impl Bind {
 //or, a wrapper that has a module that could explicitly represent if it's user or not
 //OR maybe src_metadata is actually a kind, which says whether it's user defined or not so it's
 //just not a basic nullable field, and actually has meaning
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Module {
     /// File name that will be used internally
     pub name_id: InternedId,
@@ -190,20 +186,30 @@ pub fn extract_modules(
 
     // dbg!(str::from_utf8(&main_metadata.src_bytes[..]));
     let main_mod_id = ModuleId::new(0);
+    // For now, just give mod finder the dfs search where, it will search and push the vec where
+    // needed, so during recursive resolution we can just give the module id.
+    //
+    // Or ModuleAst
+
+    // This is a Vector relationship stored where, the path id of an import is stored along with a
+    // module id. So, we store main, go into main's imports then fill in OR create the module id of
+    // unknown imports based off of reserved len(). This works during the recursive process because
+    // it MUST look at all imports before ever recursing further, and it reserves it's spot as
+    // `None`.
+    let mut reserved_mod_ids: Vec<(PathId, ModuleId)> = vec![(main_path_id, main_mod_id)];
+
     let (bind, main_imports) = ModuleFinder::new(
         &main_region.src_bytes,
         settings,
+        &mut reserved_mod_ids,
         &main_region,
-        main_mod_id,
+        // We don't know the module id for imports. At all.
         main_region.script_start,
         main_region.serial_start,
     )
     .collect_imports(interner)?;
 
     let main_mod = Module::new(name_id, main_mod_id, main_imports, Some(main_region_id));
-
-    let mut seen_map: Vec<(PathId, ModuleId)> = Vec::new();
-    seen_map.push((main_path_id, main_mod_id));
 
     region_arena.regions.push(main_region);
 
@@ -213,19 +219,29 @@ pub fn extract_modules(
     // Need to be an Option because a HashMap is not necessary if spots can just be reserved and
     // filled then UNWRAPPED after since we know they're all resolved
     let mut other_mods: Vec<Option<Module>> = Vec::with_capacity(main_mod.imports.len());
+    let mut seen: Vec<PathId> = Vec::new();
+
     resolve_modules(
-        &mut seen_map,
+        &mut reserved_mod_ids,
+        &mut seen,
         &mut other_mods,
         &main_mod,
         &mut region_arena,
         settings,
         interner,
     )?;
+    // dbg!(reserved_mod_ids, &other_mods, seen);
+    // panic!();
 
     // May change
     // Please change
     // NOT yet
     let mut all_mods: Vec<Module> = Vec::new();
+    debug_assert!(
+        other_mods.iter().all(|e| e.is_some()),
+        "None found in other_mods: {other_mods:?}"
+    );
+
     all_mods.push(main_mod);
     for mod_opt in other_mods.drain(..) {
         let known = mod_opt.expect("ModuleId reserving failed");
@@ -300,7 +316,8 @@ pub fn extract_modules(
 /// `mod_map`: Module interned file name -> ModuleId.
 fn resolve_modules(
     // Maybe change to vec
-    seen_map: &mut Vec<(PathId, ModuleId)>,
+    reserved_mod_ids: &mut Vec<(PathId, ModuleId)>,
+    seen: &mut Vec<PathId>,
     modules: &mut Vec<Option<Module>>,
     prev_mod: &Module,
     region_arena: &mut SourceRegionArena,
@@ -312,21 +329,21 @@ fn resolve_modules(
             continue;
         };
 
-        //NOTE: I don't THINK this is needed anymore since this was only here so that the mod_map could
-        // lookup modules from aliases, but since imports carry alias information that is checked
-        // already without any of this, it's likely not necessary to do anything with aliases here.
-        //
-        // if seen_map.iter().any(|(p_id, m_id)| *p_id == path_id) {
-        //     if let Some(alias_id) = import.alias_id {
-        //         seen_map.insert(alias_id, ModuleId::new(seen_map.len() - 1));
-        //     }
-        //     continue;
-        // }
+        // If the path from a given import was seen already then it ensures a stack overflow is
+        // avoided by skipping
+        if seen.iter().any(|p_id| *p_id == path_id) {
+            continue;
+        }
+
+        seen.push(path_id);
 
         // Tracks the id of the current module by tracking however many imports were seen, which
         // all represent one module
-        let current_mod_id = ModuleId::new(seen_map.len());
-        seen_map.push((path_id, import.mod_id));
+        let current_mod_id = reserved_mod_ids
+            .iter()
+            .find(|(p_id, _)| *p_id == path_id)
+            .map(|(_, m_id)| *m_id)
+            .expect("Previous registration failed");
 
         let path = interner.search_path(path_id);
         let src = match fs::File::open(path) {
@@ -362,8 +379,6 @@ fn resolve_modules(
         };
 
         let sub_region_id = SourceRegionId::new(region_arena.regions.len() as u32);
-
-        let path = interner.search_path(path_id);
 
         //Oh my
         let file_name = match path.file_prefix().map(|n| n.to_str()) {
@@ -401,12 +416,22 @@ fn resolve_modules(
         let (_, sub_imports) = ModuleFinder::new(
             &sub_region.src_bytes,
             settings,
+            reserved_mod_ids,
             &sub_region,
-            current_mod_id,
             sub_region.script_start,
             sub_region.serial_start,
         )
         .collect_imports(interner)?;
+
+        // Is subtracting 1 because reserved mod includes main.
+        let expected_len = reserved_mod_ids.len() - 1;
+
+        // Checking if modules needs to reserve space for more modules. This check is needed
+        // because module id registration is tied to when an import is seen, which COULD be later
+        // than the module is found recursively, so extra space needs to be reserved in that case.
+        if modules.len() < expected_len {
+            modules.resize(expected_len - modules.len(), None);
+        }
 
         // As opposed to how modules are pushed, regions are pushed before recursively descending
         // so no special cases needed for indexing it
@@ -419,11 +444,9 @@ fn resolve_modules(
             Some(sub_region_id),
         );
 
-        // Filling in this module's spot
-        modules.push(None);
-
         resolve_modules(
-            seen_map,
+            reserved_mod_ids,
+            seen,
             modules,
             &sub_mod,
             region_arena,
@@ -431,13 +454,9 @@ fn resolve_modules(
             interner,
         )?;
 
-        // Needs - 1 so that it fits inside the temporary Vec before being put into a Vec that has
-        // the "main" module in it, which would be a + 1, which is what the ModuleId with by
-        // default. A, + 1.
+        // Needs - 1 so that it fits inside the temporary Vec, but still uses it's actual module
+        // id.
         modules[current_mod_id.id - 1] = Some(sub_mod);
-
-        // Modules start off at 0 since the main module can't be inserted before this so + 1 for
-        // correct indexing in the final vector
     }
 
     Ok(())

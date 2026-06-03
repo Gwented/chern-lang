@@ -14,16 +14,16 @@ impl Tensor2<f32> {
         Tensor2 { inner, rows, cols }
     }
 
-    pub fn with_random(rows: usize, cols: usize, range: Range<f32>) -> Tensor2<f32> {
-        let size = rows * cols;
-        let mut inner = vec![0f32; size];
-
-        for i in 0..inner.len() {
-            inner[i] = rand::random_range(range.clone());
-        }
-
-        Tensor2 { inner, rows, cols }
-    }
+    // pub fn with_random(rows: usize, cols: usize, range: Range<f32>) -> Tensor2<f32> {
+    //     let size = rows * cols;
+    //     let mut inner = vec![0f32; size];
+    //
+    //     for i in 0..inner.len() {
+    //         inner[i] = rand::random_range(range.clone());
+    //     }
+    //
+    //     Tensor2 { inner, rows, cols }
+    // }
 
     pub fn dot(&self, other: &Tensor2<f32>) -> Tensor2<f32> {
         if self.rows * self.cols != other.rows * other.cols {

@@ -132,13 +132,13 @@ impl<'a> ConstraintResolver<'a> {
 
         let symbol = &self.compiler.symbols[sym_id.id as usize];
 
-        let val_info = self.compiler.get_var(sym_id);
-        let ty = &self.compiler.types[val_info.type_id.id as usize].ty;
+        // let val_info = self.compiler.get_var(sym_id);
+        // let ty = &self.compiler.types[val_info.type_id.id as usize].ty;
 
         // Not sure what to do with this yet
-        if let Type::Unknown = ty {
-            return Err(());
-        }
+        // if let Type::Unknown = ty {
+        //     return Err(());
+        // }
 
         Ok(())
     }
