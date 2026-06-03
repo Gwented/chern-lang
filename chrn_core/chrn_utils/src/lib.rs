@@ -1,3 +1,4 @@
+pub mod arenas;
 pub mod chrn_settings;
 pub mod config_loader;
 pub mod core_error;

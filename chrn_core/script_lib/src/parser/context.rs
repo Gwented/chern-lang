@@ -1,3 +1,4 @@
+// Static access help messages
 use chrn_utils::{
     chrn_settings::ChrnSettings,
     fmter::Formattable,
@@ -119,12 +120,17 @@ impl<'a> Context<'a> {
     ) {
         let spans = self.safely_handle_span(&found);
 
-        let is_eof_err = spans.len() == 2;
+        // A little odd...
+        let terminator_str: &str = match found.tok {
+            Token::EOF => "<eof>",
+            Token::End => "`@end`",
+            _ => "",
+        };
 
-        let (kind, label) = if is_eof_err {
+        let (kind, label) = if !terminator_str.is_empty() {
             (
                 AnnotationKind::Secondary,
-                "Token before <eof>".to_string().into(),
+                format!("Token before {terminator_str}").into(),
             )
         } else {
             (AnnotationKind::Primary, None)
@@ -139,7 +145,7 @@ impl<'a> Context<'a> {
             diag_builder = diag_builder.add_annotation(
                 spans[1],
                 AnnotationKind::Primary,
-                "Unexpected <eof>".to_string().into(),
+                format!("Unexpected {terminator_str}").into(),
             );
         }
 
@@ -218,7 +224,7 @@ impl<'a> Context<'a> {
             let help = self.try_help(expected, &found, branch, interner);
 
             let core_msg = if let Some(id_str) = err_ident_opt {
-                format!("(in {branch})\n{bmsg}{} {id_str}{amsg}", found.tok.kind())
+                format!("(in {branch})\n{bmsg}{id_str}{amsg}")
             } else {
                 format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind())
             };

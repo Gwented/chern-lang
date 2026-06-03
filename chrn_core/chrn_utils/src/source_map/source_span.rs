@@ -1,16 +1,23 @@
+// Should maybe not be specifically inside source_map
 use std::ops::{Range, RangeInclusive};
 
-use crate::id_types::{ModuleId, SourceRegionId};
+use crate::id_types::{SourceRegionId, SpanId};
 
-// pub struct SpanArena {
-//     spans: Vec<SourceSpan>,
-// }
-//
-// impl SpanArena {
-//     pub fn new(spans: Vec<SourceSpan>) -> SpanArena {
-//         SpanArena { spans }
-//     }
-// }
+/// Type safe wrapper for accessing spans with ids
+pub struct SpanArena {
+    spans: Vec<SourceSpan>,
+}
+
+impl SpanArena {
+    pub fn new(spans: Vec<SourceSpan>) -> SpanArena {
+        SpanArena { spans }
+    }
+
+    /// Returns copied `SourceSpan`
+    pub fn get_span(&self, span_id: SpanId) -> SourceSpan {
+        self.spans[span_id.id as usize]
+    }
+}
 
 // Could this be u32?
 /// Span structure used for source mapping

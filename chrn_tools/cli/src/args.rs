@@ -30,6 +30,8 @@ pub enum Commands {
 pub struct CheckCmd {
     /// Path of `.chrn` config file to check
     pub(crate) path: PathBuf,
+    #[arg(short = 'l', long = "lint", default_value_t = false)]
+    pub(crate) can_lint: bool,
 }
 
 // chrn gen <PATH> --<LANGUAGE> man<TypeName>

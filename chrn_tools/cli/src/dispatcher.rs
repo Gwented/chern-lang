@@ -26,7 +26,8 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
         Ok(m) => m,
         Err(partial_chrn_manager) => match partial_chrn_manager.err {
             ConfigLoadError::General(diag) | ConfigLoadError::Module(diag) => {
-                let render_settings = RenderSettings::new(cli_cfg.can_color);
+                let render_settings =
+                    RenderSettings::new(cli_cfg.can_color, cli_cfg.terminal_color_type);
                 let rendered_diags = renderer::render_cli_diags(
                     &[diag],
                     &render_settings,

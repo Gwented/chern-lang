@@ -54,6 +54,7 @@ pub struct ScriptCompiler {
     /// Scope arena
     pub scopes: Vec<ScopeInfo>,
     // em-dash
+    // em-dash
     /// Information regarding intrinsic data such as core's `ModuleId`
     pub intrinsic_registry: IntrinsicRegistry,
 }

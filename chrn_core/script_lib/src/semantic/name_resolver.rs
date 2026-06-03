@@ -338,8 +338,6 @@ impl NamespaceResolver<'_> {
     fn report_duplicate(&mut self, orig_sym_id: SymbolId, dup_sym_id: SymbolId) {
         // Maybe use a vec instead
         //NOTE: Suspicious
-        let module = &self.compiler.mods[self.current_mod.id];
-
         let orig_sym = &self.compiler.symbols[orig_sym_id.id as usize];
         let orig_ast_id = orig_sym.ast_id.expect("Core should not be resolved");
 

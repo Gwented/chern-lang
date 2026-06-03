@@ -61,9 +61,12 @@ impl Lexer<'_> {
             self.handle_trivia();
 
             if self.peek() == b'\0' || illegal_toks > MAX_ILLEGAL_TOKS {
+                // Over-indexes if not subtracted
+                // Could be an empty file so needs saturation
+                let eof_pos = self.pos.saturating_sub(1) as u32;
                 toks.push(SpannedToken {
                     tok: Token::EOF,
-                    span: SourceSpan::new(self.current_region_id, self.pos as u32, self.pos as u32),
+                    span: SourceSpan::new(self.current_region_id, eof_pos, eof_pos),
                     leading_trivia_indices: self.trivia_start_idx as u32
                         ..self.trivia_end_idx as u32,
                 });

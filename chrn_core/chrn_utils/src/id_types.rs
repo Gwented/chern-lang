@@ -35,6 +35,17 @@ impl SourceRegionId {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct SpanId {
+    pub id: u32,
+}
+
+impl SpanId {
+    pub fn new(id: u32) -> SpanId {
+        SpanId { id }
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PathId {
     pub id: u32,

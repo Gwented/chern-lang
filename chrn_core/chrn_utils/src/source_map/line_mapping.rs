@@ -6,7 +6,7 @@ use std::{collections::HashSet, ops::RangeInclusive};
 
 use unicode_width::UnicodeWidthChar;
 
-use crate::{id_types::SourceRegionId, source_map::source_span::SourceSpan};
+use crate::{id_types::SourceRegionId, keywords, source_map::source_span::SourceSpan};
 
 /// High level struct of all byte and line number data for each line inside of it
 #[derive(Debug)]
@@ -305,6 +305,8 @@ pub fn form_ln_view(src_bytes: &[u8], span: &SourceSpan) -> LineView {
 
     // To assign a line number to all processed lines
     let mut current_ln_num = first_ln_num;
+    //TODO: Change to start and len so that an eof byte is implicitly tracked as opposed to
+    //depending on new lines to end
 
     //NOTE: Uses the first_ln_start as the default first line, then goes through every line within the
     // given span until it reaches the end of the span, collecting all `Line` information.
@@ -315,9 +317,12 @@ pub fn form_ln_view(src_bytes: &[u8], span: &SourceSpan) -> LineView {
     while i < src_bytes.len() {
         let b = src_bytes[i];
 
+        //TODO: CHECK WINDOWS
         if b == b'\r' && src_bytes.get(i + 1) == Some(&b'\n') {
             // if the previous byte was a \n then that means this line is a singular new line and
             // line start == line end, otherwise the actual end is - 1
+            //
+            // Same eof byte pos reasoning as '\n' below
             let current_end = if src_bytes.get(i - 1) == Some(&b'\n') {
                 i
             } else {
@@ -346,11 +351,15 @@ pub fn form_ln_view(src_bytes: &[u8], span: &SourceSpan) -> LineView {
             // Processes single new line line as a singular line with one '\n' inside.
             // This is so all lines are accounted for empty or not. No particular reason for this
             // to happen but it is done just in case.
+            //
+            // This needs an OR case because if i == eof then we want to preserve the new line byte
+            // for source retention purposes. So, this is an accepted heuristic tooling likely will
+            // need to just account for.
             let current_end = if src_bytes.get(i - 1) == Some(&b'\n') {
                 i
             } else {
                 i - 1
-            } as u32;
+            };
 
             let ln = Line {
                 ln_num: current_ln_num,
@@ -368,21 +377,8 @@ pub fn form_ln_view(src_bytes: &[u8], span: &SourceSpan) -> LineView {
             current_ln_num += 1;
             i += 1;
         } else {
+            // Incrementing forward normally if no new line bytes
             i += 1;
-        }
-
-        // WARN: TEMP '@end' EDGE CASE PRINTING
-        if i == span_end && span_end == src_bytes.len() {
-            let current_end = (i - 1) as u32;
-
-            let ln = Line {
-                ln_num: current_ln_num,
-                ln_span: SourceSpan::new(span.region_id, current_start as u32, current_end),
-            };
-
-            lines.push(ln);
-
-            break;
         }
     }
 
@@ -400,18 +396,15 @@ pub fn form_ln_view(src_bytes: &[u8], span: &SourceSpan) -> LineView {
         lines.push(only_ln);
     }
 
-    // // TEST:
-    // // EOF is not able to be picked up by the main loop so it is checked for here so the last eof
-    // // byte can be accurately printed
-    // let eof_byte_pos = src_bytes.len() - 1;
-    // if eof_byte_pos == span.end {
-    //     lines.push(Line {
-    //         // current_ln_num is always set to the next possible new line, meaning it's only correct in
-    //         // the context that a new line is next
-    //         ln_num: current_ln_num,
-    //         ln_span: SourceSpan::new(eof_byte_pos, eof_byte_pos),
-    //     });
-    // }
+    let eof_byte_pos = (src_bytes.len() - 1) as u32;
+
+    //WARN: To deal with eof, currently just checks if eof was ended at, and if true, mutates the
+    //final line so that it's last byte properly is set to the actual eof byte. Seemingly works for
+    //now.
+    if eof_byte_pos == span.end {
+        let last_pos = lines.len() - 1;
+        lines[last_pos].ln_span.end = eof_byte_pos;
+    }
 
     let ln_num_range =
         RangeInclusive::new(first_ln_num as u32, lines[lines.len() - 1].ln_num as u32);

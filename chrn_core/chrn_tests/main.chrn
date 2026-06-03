@@ -46,6 +46,7 @@ let x = 5*/
 
 
 "*/
+// Should warn
 import "../../chrn_core/chrn_tests/core.chrn"
 let a = 2 
     

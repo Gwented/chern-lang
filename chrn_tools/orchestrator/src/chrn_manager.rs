@@ -22,7 +22,7 @@ use script_lib::{
 //ScriptContext? CompilerContext? AbstractCompilerManager?
 
 //TEST:
-// 20 MB struct
+// 23 MB struct
 
 // Not bit-flags. Stop.
 // How.
@@ -38,6 +38,7 @@ pub struct ChrnManager {
     pub(crate) interner: Intern,
     pub(crate) region_arena: SourceRegionArena,
     pub(crate) settings: ChrnSettings,
+    // pub(crate) spans: Vec<SourceSpan>,
     // Temp. May consider using a single vector that slices indices for each module instead of
     // Vec<Vec>> but not priority right now
     pub(crate) toks: Vec<Option<Vec<SpannedToken>>>,
@@ -65,6 +66,7 @@ impl ChrnManager {
         settings: ChrnSettings,
     ) -> Result<ChrnManager, ChrnManagerInitFailure> {
         let mut interner = Intern::init();
+        // let mut spans = SpanArena::new(Vec::new());
 
         let (script_compiler, region_arena) =
             match modules::extract_modules(path, &settings, &mut interner) {
@@ -77,6 +79,7 @@ impl ChrnManager {
         Ok(ChrnManager {
             interner,
             settings,
+            // spans,
             toks: Default::default(),
             trivias: Default::default(),
             asts: Default::default(),
@@ -192,7 +195,6 @@ impl ChrnManager {
         //     return Err(ScriptError::Semantic(reporter.diags).into());
         // }
 
-        //FIX: AstId position should be a direct tie, not sequential
         let mut ty_ctx = TypeContext::new();
         for i in 0..self.compiler.mods.len() {
             let module = &self.compiler.mods[i];
