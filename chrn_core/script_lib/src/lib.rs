@@ -32,7 +32,7 @@ mod tests {
 
     fn get_module_region<'a>(arena: &'a SourceRegionArena, module: &Module) -> &'a SourceRegion {
         let region_id = module
-            .src_region_id
+            .region_id
             .expect("Module should have a source region");
         arena.extract_region(region_id)
     }
@@ -51,6 +51,7 @@ mod tests {
                 .unwrap();
 
         let module = Module::new(
+            Default::default(),
             Default::default(),
             Default::default(),
             Default::default(),
@@ -101,6 +102,7 @@ mod tests {
 
         let module = Module::new(
             interner.intern(name),
+            ModuleState::Loaded,
             ModuleId::new(mod_id),
             imports,
             Some(region_id),
@@ -140,7 +142,7 @@ mod tests {
 
     use crate::{
         lexer::Lexer,
-        modules::{Import, ImportKind, Module},
+        modules::{Import, ImportKind, Module, ModuleState},
         parser::{self, ast::AstInfo},
         script_compiler::ScriptCompiler,
         semantic::{
@@ -970,6 +972,7 @@ mod tests {
 
         let main_mod = Module::new(
             main_mod_name_id,
+            ModuleState::Loaded,
             main_mod_id,
             vec![sub_import],
             Some(main_region_id),
@@ -995,6 +998,7 @@ mod tests {
 
         let sub_mod = Module::new(
             sub_mod_name_id,
+            ModuleState::Loaded,
             sub_mod_id,
             Default::default(),
             Some(sub_region_id),
@@ -1008,7 +1012,7 @@ mod tests {
 
         for mod_idx in 0..compiler.mods.len() {
             let module = &compiler.mods[mod_idx];
-            let region = match module.src_region_id {
+            let region = match module.region_id {
                 Some(id) => region_arena.extract_region(id),
                 None => continue,
             };
@@ -1035,7 +1039,7 @@ mod tests {
         let mut ty_ctx = TypeContext::new();
         for i in 0..compiler.mods.len() {
             let mod_id = ModuleId::new(i);
-            let region_id = compiler.mods[mod_id.id].src_region_id;
+            let region_id = compiler.mods[mod_id.id].region_id;
 
             let region = match region_id {
                 Some(id) => region_arena.extract_region(id),
@@ -1105,7 +1109,7 @@ mod tests {
 
         for mod_idx in 0..compiler.mods.len() {
             let module = &compiler.mods[mod_idx];
-            let region = match module.src_region_id {
+            let region = match module.region_id {
                 Some(region_id) => arena.extract_region(region_id),
                 None => {
                     asts.push(None);
@@ -1134,7 +1138,7 @@ mod tests {
         let mut ty_ctx = TypeContext::new();
         for i in 0..compiler.mods.len() {
             let module = &compiler.mods[i];
-            let region = match module.src_region_id {
+            let region = match module.region_id {
                 Some(region_id) => arena.extract_region(region_id),
                 None => continue,
             };
@@ -1202,7 +1206,7 @@ mod tests {
 
         for mod_idx in 0..compiler.mods.len() {
             let module = &compiler.mods[mod_idx];
-            let region = match module.src_region_id {
+            let region = match module.region_id {
                 Some(region_id) => arena.extract_region(region_id),
                 None => {
                     asts.push(None);
@@ -1233,7 +1237,7 @@ mod tests {
 
         for i in 0..compiler.mods.len() {
             let module = &compiler.mods[i];
-            let region = match module.src_region_id {
+            let region = match module.region_id {
                 Some(region_id) => arena.extract_region(region_id),
                 None => continue,
             };
@@ -1302,7 +1306,7 @@ mod tests {
 
         for mod_idx in 0..compiler.mods.len() {
             let module = &compiler.mods[mod_idx];
-            let region = match module.src_region_id {
+            let region = match module.region_id {
                 Some(region_id) => arena.extract_region(region_id),
                 None => {
                     asts.push(None);
@@ -1333,7 +1337,7 @@ mod tests {
 
         for i in 0..compiler.mods.len() {
             let module = &compiler.mods[i];
-            let region = match module.src_region_id {
+            let region = match module.region_id {
                 Some(region_id) => arena.extract_region(region_id),
                 None => continue,
             };

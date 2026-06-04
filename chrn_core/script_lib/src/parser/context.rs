@@ -314,6 +314,7 @@ impl<'a> Context<'a> {
         interner: &Intern,
     ) -> Option<String> {
         // Maybe saturating could lead to mis info
+        let prev_prev_tok = self.toks.get(self.pos.saturating_sub(3))?.clone();
         let prev_tok = self.toks.get(self.pos.saturating_sub(2))?.clone();
         let prev_kind = prev_tok.tok.kind();
 
@@ -340,6 +341,7 @@ impl<'a> Context<'a> {
                         // Statements and sections are possible so both are tried
                         let similar = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Stmt)
                             .is_none()
+                            // ???????
                             .then_some(algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect))??;
 
                         let help = format!("Found similar \"{similar}\"");
@@ -378,6 +380,14 @@ impl<'a> Context<'a> {
             },
             Branch::Section(sect_branch) => match sect_branch {
                 SectionBranch::Var => match found.tok {
+                    // Catching: "x: core.i32"
+                    Token::Dot
+                        if expected == TokenKind::Id
+                            && prev_prev_tok.tok.kind() == TokenKind::Colon =>
+                    {
+                        let help = "Was this meant to be `::`?".to_string();
+                        Some(help)
+                    }
                     Token::Keyword(kw)
                         if expected == TokenKind::Id && next_kind == TokenKind::Colon =>
                     {
@@ -489,6 +499,10 @@ impl<'a> Context<'a> {
                 _ => None,
             },
             Branch::Type => match found.tok {
+                Token::Dot => {
+                    let help = "Was this meant to be `::`?".to_string();
+                    Some(help)
+                }
                 Token::CAngleBracket if prev_kind == TokenKind::Comma => {
                     let help = "Was there a trailing ',' ?".to_string();
                     Some(help)

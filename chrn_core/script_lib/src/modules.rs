@@ -77,13 +77,25 @@ pub struct Module {
     /// Imports found in the module
     // What if imports were tagged with bit-wise?
     pub imports: Vec<Import>,
+    /// Representation of the module's state
+    pub state: ModuleState,
     /// Represents the 5 known scopes as well as any local scopes
     pub scopes: Vec<ScopeId>,
     // HashSet maybe
     pub exports: Vec<SymbolId>,
     /// Metadata that exists if the module contains a source file
     // As of right now this represents the difference between a pre-loaded and user space module
-    pub src_region_id: Option<SourceRegionId>,
+    pub region_id: Option<SourceRegionId>,
+}
+
+/// A state for modules to be tracked by
+// May or may not add more specific states like parsed and such, but this is fine
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleState {
+    Error,
+    #[default]
+    Loading,
+    Loaded,
 }
 
 //TEST:
@@ -100,18 +112,20 @@ pub struct Module {
 impl Module {
     pub fn new(
         name_id: InternedId,
+        state: ModuleState,
         mod_id: ModuleId,
         imports: Vec<Import>,
         //TODO: Convert to explicit kind
-        src_metadata: Option<SourceRegionId>,
+        region_id: Option<SourceRegionId>,
     ) -> Module {
         Module {
             name_id,
             mod_id,
+            state,
             imports,
             exports: Vec::new(),
             scopes: Vec::new(),
-            src_region_id: src_metadata,
+            region_id,
         }
     }
 
@@ -128,12 +142,21 @@ impl Module {
     }
 }
 
+/// Helper struct for carrying module data if `main` fails to be loaded within `extract_modules`.
+pub struct ModuleInitExtractionError {
+    region: Option<SourceRegionArena>,
+    cfg_load_err: ConfigLoadError,
+}
+
+impl ModuleInitExtractionError {}
+
 //TEST: Lets depending on self recursively as a module happen for now
 /// Takes in a path to a `chrn` config file, then recursively resolved all imports associated with
 /// the path given in separate modules.
 /// THIS IMPLICITLY LOADS CORE
+//TODO: Should return an unfinished module state by default where a module may or may not be
+//completely loaded. Meaning, this would probably be best returning diagnostics.
 pub fn extract_modules(
-    // Does this get canonicalized here or earlier..
     path: &Path,
     settings: &ChrnSettings,
     interner: &mut Intern,
@@ -209,7 +232,13 @@ pub fn extract_modules(
     )
     .collect_imports(interner)?;
 
-    let main_mod = Module::new(name_id, main_mod_id, main_imports, Some(main_region_id));
+    let main_mod = Module::new(
+        name_id,
+        ModuleState::Loading,
+        main_mod_id,
+        main_imports,
+        Some(main_region_id),
+    );
 
     region_arena.regions.push(main_region);
 
@@ -287,7 +316,7 @@ pub fn extract_modules(
     //         let err_mod = &all_mods[mod_id.id];
     //
     //         let region_id = err_mod
-    //             .src_region_id
+    //             .region_id
     //             .expect("Should only have source created modules before initializing compiler");
     //         let region = region_arena.extract_region(region_id);
     //
@@ -345,7 +374,7 @@ fn resolve_modules(
             .iter()
             .find(|(p_id, _)| *p_id == path_id)
             .map(|(_, m_id)| *m_id)
-            .expect("Previous registration failed");
+            .expect("`mod_finder` registration failed");
 
         let path = interner.search_path(path_id);
         let src = match fs::File::open(path) {
@@ -441,6 +470,7 @@ fn resolve_modules(
 
         let sub_mod = Module::new(
             sub_mod_name_id,
+            ModuleState::Loading,
             current_mod_id,
             sub_imports,
             Some(sub_region_id),

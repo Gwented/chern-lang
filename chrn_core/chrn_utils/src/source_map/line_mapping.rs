@@ -396,14 +396,29 @@ pub fn form_ln_view(src_bytes: &[u8], span: &SourceSpan) -> LineView {
         lines.push(only_ln);
     }
 
-    let eof_byte_pos = (src_bytes.len() - 1) as u32;
+    let eof_byte_pos = src_bytes.len() - 1;
+    let span_ends_at_eof = eof_byte_pos == span_end;
 
-    //WARN: To deal with eof, currently just checks if eof was ended at, and if true, mutates the
-    //final line so that it's last byte properly is set to the actual eof byte. Seemingly works for
-    //now.
-    if eof_byte_pos == span.end {
+    dbg!(current_start, eof_byte_pos);
+    // Current start is a variable that eagerly goes to the start of the next line. Meaning, if it
+    // reaches the last line, it should be greater than the actual end since it should be at what
+    // would be the next line since goes to the next line's position whether or not it exists.
+    //
+    // So if eof_byte > current_start, that means the last line wasn't processed, which only
+    // happens if an abrupt end occurs, which is only caused by `@end` since it's the only case
+    // where the eof byte would not just be the last byte.
+    if span_ends_at_eof && eof_byte_pos > current_start {
+        // The main loop does not detect the line and end
+        let end_ln = Line {
+            ln_num: current_ln_num,
+            ln_span: SourceSpan::new(span.region_id, current_start as u32, eof_byte_pos as u32),
+        };
+
+        lines.push(end_ln);
+        // Mutates the last line so that it captures eof since it skips it otherwise
+    } else if span_ends_at_eof {
         let last_pos = lines.len() - 1;
-        lines[last_pos].ln_span.end = eof_byte_pos;
+        lines[last_pos].ln_span.end = eof_byte_pos as u32;
     }
 
     let ln_num_range =
@@ -435,7 +450,6 @@ fn get_ln_start_byte(src_bytes: &[u8], pos: usize) -> usize {
 
 /// Get's the line number of the given start byte position
 fn get_ln_num(src_bytes: &[u8], start: usize) -> usize {
-    // Could be issues here regarding line numbers being counted for single line lines
     let mut ln_num = 1;
     for i in 0..=start {
         let b = src_bytes[i];

@@ -2131,17 +2131,11 @@ impl TypeResolver<'_> {
                                 "Could not find the symbol `{}` in the namespace `{}`",
                                 current_namespace, prev_namespace
                             );
-                            panic!("err");
 
                             SourceDiagnostic::builder(
                                 DiagnosticLevel::Error,
                                 core_msg,
                                 self.current_region.path_id,
-                            )
-                            .add_annotation(
-                                prev.span,
-                                AnnotationKind::Secondary,
-                                "Previous namespace".to_string().into(),
                             )
                             .add_annotation(sp_path_seg.span, AnnotationKind::Primary, None)
                             .build()

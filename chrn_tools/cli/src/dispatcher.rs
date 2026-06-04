@@ -2,7 +2,8 @@ use chrn_utils::{
     chrn_settings::ChrnSettings,
     core_error::{ConfigLoadError, ScriptError},
 };
-use orchestrator::chrn_manager::ChrnManager;
+use orchestrator::{chrn_manager::ChrnManager, query};
+use printer::symbol_printer;
 
 use crate::{
     args::{CheckCmd, Cli, Commands, FmtCmd, QueryCmd},
@@ -94,23 +95,22 @@ fn exec_fmt(fmt_cmd: &FmtCmd, cli_cfg: &CliConfig) -> Result<String, String> {
 
 // Object!
 fn exec_query(query_cmd: &QueryCmd, cli_cfg: &CliConfig) -> Result<String, String> {
-    let settings = ChrnSettings::new();
-    let mut chrn_manager = match ChrnManager::init(&query_cmd.path, settings) {
-        // It does not return it's belongings!
+    let chrn_settings = ChrnSettings::new();
+    let mut chrn_manager = match ChrnManager::init(&query_cmd.path, chrn_settings) {
         Ok(m) => m,
         Err(partial_chrn_manager) => match partial_chrn_manager.err {
             ConfigLoadError::General(diag) | ConfigLoadError::Module(diag) => {
-                dbg!(&diag);
-                // let rendered_diags = renderer::render_cli_diags(&[diag], None);
-                // dbg!(rendered_diags);
-                panic!();
-                // This IS heurstic, but will not be changed until reported errors as a whole
-                // are changed to render instead of being created in-line as they are now.
-                // So, no time soon.
-                //
-                // Would also like a rendered or not state explicilty shown instead of raw
-                // string that MIGHT be
-                todo!();
+                let render_settings =
+                    RenderSettings::new(cli_cfg.can_color, cli_cfg.terminal_color_type);
+                let rendered_diags = renderer::render_cli_diags(
+                    &[diag],
+                    &render_settings,
+                    None,
+                    &partial_chrn_manager.interner,
+                );
+
+                print_diags(&rendered_diags);
+
                 return Err("Failed to parse configuration file".to_string());
             }
             ConfigLoadError::IO(e) => match e.kind() {
@@ -122,11 +122,20 @@ fn exec_query(query_cmd: &QueryCmd, cli_cfg: &CliConfig) -> Result<String, Strin
         },
     };
 
-    match chrn_manager.run_all() {
-        Ok(_) => (),
-        Err(script_err) => match script_err {
+    if let Err(script_err) = chrn_manager.run_all() {
+        match script_err {
             ScriptError::Parser(diags) | ScriptError::Semantic(diags) => {
-                todo!("Rendering not done yet");
+                // For now
+                let render_settings = RenderSettings::init();
+                // Should print rendered diagnostics here
+                let rendered_diags = renderer::render_cli_diags(
+                    &diags,
+                    &render_settings,
+                    Some(chrn_manager.region_arena()),
+                    chrn_manager.interner(),
+                );
+
+                print_diags(&rendered_diags);
 
                 let msg = format!("Reported {} error(s)", diags.len());
                 return Err(msg);
@@ -135,9 +144,24 @@ fn exec_query(query_cmd: &QueryCmd, cli_cfg: &CliConfig) -> Result<String, Strin
                 let msg = format!("Process exited unsuccessfully.\nReason: {e}");
                 return Err(msg);
             }
-        },
+        }
     }
 
+    let found = query::find_symbols_named(
+        &chrn_manager.compiler(),
+        chrn_manager.interner(),
+        &query_cmd.ident,
+    );
+
+    let mut sym_strs: Vec<String> = Vec::new();
+    for sym in &found {
+        let sym_str =
+            symbol_printer::print_symbol(chrn_manager.compiler(), sym, chrn_manager.interner());
+        sym_strs.push(sym_str);
+    }
+
+    sym_strs.iter().for_each(|s| println!("{s}\n"));
+    dbg!(found);
     // This should probably be in core itself, for diagnostic purposes.
 
     // printer::script_printer::ScriptPrinter::new(ast_info, &script_compiler);

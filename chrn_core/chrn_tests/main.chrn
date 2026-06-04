@@ -47,13 +47,17 @@ let x = 5*/
 
 "*/
 // Should warn
-import "../../chrn_core/chrn_tests/core.chrn"
-let a = 2 
-    
+// import "../../chrn_core/chrn_tests/core.chrn"
+// import "../../chrn_core/chrn_tests/def.chrn" as defs
     nest->
         struct Forb {
-            p: defs::Person
+            p: core::Comparable
+            // Breaks reporting since cross module spanning is NOT possible right now
+            // p: defs::Person
         } #scient
+
+    complex->
+        Door 
 
 @end
 

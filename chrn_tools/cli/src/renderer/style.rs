@@ -103,9 +103,9 @@ pub(super) fn standardize_help(msg: &str, can_color: bool, terminal: TerminalCol
     let (orange, nc) = color::get_orange(can_color, terminal);
 
     if can_color {
-        format!("{orange}help{nc}: {msg}\n")
+        format!("{orange}help{nc}: {msg}")
     } else {
-        format!("help: {msg}\n")
+        format!("help: {msg}")
     }
 }
 
@@ -113,9 +113,9 @@ pub(super) fn standardize_note(msg: &str, can_color: bool, terminal: TerminalCol
     let (cyan, nc) = color::get_cyan(can_color, terminal);
 
     if can_color {
-        format!("{cyan}note{nc}: {msg}\n")
+        format!("{cyan}note{nc}: {msg}")
     } else {
-        format!("note: {msg}\n")
+        format!("note: {msg}")
     }
 }
 

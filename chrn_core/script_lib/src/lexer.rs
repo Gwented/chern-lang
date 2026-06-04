@@ -259,6 +259,8 @@ impl Lexer<'_> {
                             span: SourceSpan::new(
                                 self.current_region_id,
                                 self.pos as u32,
+                                // If - 1 isn't done then it will always be 1 above the actually
+                                // last byte of a given source
                                 (self.pos + keywords::DEFINITION_SIZE - 1) as u32,
                             ),
                             leading_trivia_indices: self.trivia_start_idx as u32
@@ -274,7 +276,9 @@ impl Lexer<'_> {
                             span: SourceSpan::new(
                                 self.current_region_id,
                                 self.pos as u32,
-                                (self.pos + keywords::DEFINITION_SIZE) as u32,
+                                // If - 1 isn't done then it will always be 1 above the actually
+                                // last byte of a given source
+                                (self.pos + keywords::DEFINITION_SIZE - 1) as u32,
                             ),
                             leading_trivia_indices: self.trivia_start_idx as u32
                                 ..self.trivia_end_idx as u32,

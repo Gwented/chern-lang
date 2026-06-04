@@ -17,7 +17,7 @@ pub fn fmt_script_block(path: &Path, settings: &ChrnSettings) -> Result<String, 
     let module = &script_compiler.mods[0];
 
     let region_id = module
-        .src_region_id
+        .region_id
         .as_ref()
         .expect("fmt can only work on valid paths");
 

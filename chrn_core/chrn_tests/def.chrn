@@ -1,7 +1,6 @@
 export let READ = 0b0
 export let WRITE = 0b1
 
-let a = j
 let b = 9
 
 nest->

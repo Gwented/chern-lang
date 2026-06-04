@@ -1,6 +1,9 @@
 use std::fmt::Display;
 
-use chrn_utils::id_types::{InternedId, ModuleId, ScopeId, SymbolId, TypeId};
+use chrn_utils::{
+    id_types::{InternedId, ModuleId, ScopeId, SymbolId, TypeId},
+    intern::Intern,
+};
 
 use crate::{
     script_compiler::ScriptCompiler,
@@ -134,7 +137,7 @@ pub fn get_type_id(
     //May change
     let accessible_scopes = scope_type.accessible_scopes();
     let accessible_scopes = match lookup_pattern {
-        LookupPattern::NamespaceOnly if current_mod.src_region_id.is_some() => {
+        LookupPattern::NamespaceOnly if current_mod.region_id.is_some() => {
             &accessible_scopes[..accessible_scopes.len() - 1]
         }
         // If it's core then it'll only have access to core anyways so this is fine
@@ -210,7 +213,7 @@ pub fn get_sym_id(
 
             let accessible_scopes = scope_type.accessible_scopes();
             let accessible_scopes = match lookup_pattern {
-                LookupPattern::NamespaceOnly if current_mod.src_region_id.is_some() => {
+                LookupPattern::NamespaceOnly if current_mod.region_id.is_some() => {
                     &accessible_scopes[..accessible_scopes.len() - 1]
                 }
                 // If it's core then it'll only have access to core anyways so this is fine
@@ -260,6 +263,24 @@ pub fn get_sym_id(
     }
 
     None
+}
+
+// Ok.
+pub fn find_symbols_named<'a>(
+    compiler: &'a ScriptCompiler,
+    interner: &Intern,
+    ident: &str,
+) -> Vec<&'a Symbol> {
+    let target_name_id = match interner.try_search_str(ident) {
+        Some(id) => id,
+        None => return Vec::new(),
+    };
+
+    compiler
+        .symbols
+        .iter()
+        .filter(|sym| sym.name_id == target_name_id)
+        .collect()
 }
 
 /// Enum representing all kinds of scopes usable in chrn

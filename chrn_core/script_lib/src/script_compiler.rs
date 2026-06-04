@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use chrn_utils::{
     id_types::{InternedId, ModuleId, PathId, ScopeId, SymbolId, TypeId, ValueId},
     intern,
@@ -11,7 +9,7 @@ use chrn_utils::{
 };
 
 use crate::{
-    modules::{Bind, Import, ImportKind, Module},
+    modules::{Bind, Import, ImportKind, Module, ModuleState},
     semantic::{
         constraints::ArgConstraint,
         representation::{
@@ -22,15 +20,7 @@ use crate::{
     },
 };
 
-//TODO: A type state control flow where the TypeState is stored inside of types so that all types
-//have a stable handle, whether or not their handle exists yet, so that variables can have their
-//type id slot mutated into whatever type it needs so that static accessibility can assign it's
-//expression a type handle even if the type of the end of the variable in the namespace hasn't been
-//resolved yet.
-//
-// So in the case of: "module::NUMBER" where NUMBER is a valid static namespace, but hasn't been
-// resolved yet, it'll store the possibly, "TypeState::Unresolved" index, which is notified later
-// on.
+// Should this be in utils?
 /// "chrn" script compiler that holds all essential data for incremental updates through resolution
 pub struct ScriptCompiler {
     /// Optional bind statement that is obtained from the main module
@@ -53,8 +43,6 @@ pub struct ScriptCompiler {
     pub symbols: Vec<Symbol>,
     /// Scope arena
     pub scopes: Vec<ScopeInfo>,
-    // em-dash
-    // em-dash
     /// Information regarding intrinsic data such as core's `ModuleId`
     pub intrinsic_registry: IntrinsicRegistry,
 }
@@ -514,7 +502,13 @@ impl ScriptCompiler {
         let core_name_id = InternedId::new(intern::INTERNED_CORE);
         let core_mod_id = ModuleId::new(compiler.mods.len());
         let core_scope_id = ScopeId::new(compiler.scopes.len());
-        let mut core_mod = Module::new(core_name_id, core_mod_id, Vec::new(), None);
+        let mut core_mod = Module::new(
+            core_name_id,
+            ModuleState::Loaded,
+            core_mod_id,
+            Vec::new(),
+            None,
+        );
 
         Self::load_core_types(compiler, &core_mod, &mut table);
         Self::load_core_funcs(compiler, &core_mod, &mut table);

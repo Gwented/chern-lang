@@ -70,7 +70,7 @@ impl ChrnManager {
 
         let (script_compiler, region_arena) =
             match modules::extract_modules(path, &settings, &mut interner) {
-                Ok(tuple) => tuple,
+                Ok(finished) => finished,
                 Err(cfg_load_err) => {
                     return Err(ChrnManagerInitFailure::new(interner, cfg_load_err));
                 }
@@ -111,6 +111,11 @@ impl ChrnManager {
         &self.region_arena
     }
 
+    // Should this really be done x2?
+    pub fn compiler(&self) -> &ScriptCompiler {
+        &self.compiler
+    }
+
     // public List<Optional<AstInfo>> get_asts() { return this.asts; }
     // pub fn asts(&self) -> &Vec<Option<AstInfo>> {
     //     &self.asts
@@ -146,7 +151,7 @@ impl ChrnManager {
         // from elsewhere, which are not known yet.
         for mod_idx in 0..self.compiler.mods.len() {
             let module = &self.compiler.mods[mod_idx];
-            let region = match &module.src_region_id {
+            let region = match &module.region_id {
                 Some(region_id) => &self.region_arena.regions[region_id.id as usize],
                 // Giving current module id a None ast
                 None => {
@@ -198,7 +203,7 @@ impl ChrnManager {
         let mut ty_ctx = TypeContext::new();
         for i in 0..self.compiler.mods.len() {
             let module = &self.compiler.mods[i];
-            let metadata = match &module.src_region_id {
+            let metadata = match &module.region_id {
                 Some(region_id) => &self.region_arena.regions[region_id.id as usize],
                 None => continue,
             };
@@ -223,7 +228,7 @@ impl ChrnManager {
 
         for i in 0..self.compiler.mods.len() {
             let module = &self.compiler.mods[i];
-            let metadata = match &module.src_region_id {
+            let metadata = match &module.region_id {
                 Some(region_id) => &self.region_arena.regions[region_id.id as usize],
                 None => continue,
             };
@@ -269,7 +274,7 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     // from elsewhere, which are not known yet.
     for mod_idx in 0..script_compiler.mods.len() {
         let module = &script_compiler.mods[mod_idx];
-        let metadata = match &module.src_region_id {
+        let metadata = match &module.region_id {
             Some(region_id) => &region_arena.regions[region_id.id as usize],
             None => continue,
         };
@@ -311,7 +316,7 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
     let mut ty_ctx = TypeContext::new();
     for i in 0..script_compiler.mods.len() {
         let module = &script_compiler.mods[i];
-        let metadata = match &module.src_region_id {
+        let metadata = match &module.region_id {
             Some(region_id) => &region_arena.regions[region_id.id as usize],
             None => continue,
         };
@@ -336,7 +341,7 @@ pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), Co
 
     for i in 0..script_compiler.mods.len() {
         let module = &script_compiler.mods[i];
-        let region = match &module.src_region_id {
+        let region = match &module.region_id {
             Some(region_id) => &region_arena.regions[region_id.id as usize],
             None => continue,
         };
