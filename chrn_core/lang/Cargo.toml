@@ -1,0 +1,7 @@
+[package]
+name = "lang"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+chrn_utils = {path =  "../chrn_utils/"}

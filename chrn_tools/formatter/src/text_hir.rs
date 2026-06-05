@@ -1,5 +1,5 @@
 use chrn_utils::source_map::source_span::SourceSpan;
-use script_lib::trivia::CommentLocation;
+use lang::trivia::CommentLocation;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) struct TextHir {

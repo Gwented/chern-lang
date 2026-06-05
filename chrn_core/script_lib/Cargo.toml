@@ -1,8 +1,0 @@
-[package]
-name = "script_lib"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-chrn_utils = { path = "../chrn_utils/" }
-unicode-width = "0.2.2"

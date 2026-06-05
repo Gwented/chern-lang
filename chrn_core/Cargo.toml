@@ -1,5 +1,5 @@
 [workspace]
-members = ["chrn_utils", "script_lib", "serial_lib"]
+members = ["chrn_utils", "compilation", "lang" ]
 resolver = "3"
 
 [workspace.package]

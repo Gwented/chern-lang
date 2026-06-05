@@ -331,12 +331,6 @@ impl Intern {
         }
     }
 
-    // I'm scared of you
-    pub fn get_interned_id_async(&self, s: &str) -> Option<u32> {
-        self.id_map.get(s).copied()
-    }
-
-    //
     pub fn intern_path(&mut self, s: &Path) -> PathId {
         if let Some(id) = self.path_map.get(s) {
             return PathId::new(*id);
@@ -361,7 +355,6 @@ impl Intern {
         &self.stored_strs[idx]
     }
 
-    // Interesting name decision
     pub fn try_search_str(&self, s: &str) -> Option<InternedId> {
         self.id_map.get(s).map(|id| InternedId::new(*id))
     }

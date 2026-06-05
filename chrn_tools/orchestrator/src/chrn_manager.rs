@@ -4,23 +4,16 @@ use chrn_utils::{
     chrn_settings::ChrnSettings,
     core_error::{ModuleInitError, ScriptError},
     intern::Intern,
-    source_map::{
-        source_diagnostic::{Reporter, SourceDiagnostic},
-        source_region::SourceRegionArena,
-    },
+    source_map::{source_diagnostic::Reporter, source_region::SourceRegionArena},
 };
-use script_lib::{
-    modules::{self},
-    parser::ast::AstInfo,
+use compilation::{
+    constraint_resolver::ConstraintResolver,
+    modules,
+    name_resolver::NamespaceResolver,
     script_compiler::ScriptCompiler,
-    semantic::{
-        constraint_resolver::ConstraintResolver,
-        name_resolver::NamespaceResolver,
-        type_resolver::{TypeResolver, type_context::TypeContext},
-    },
-    token::SpannedToken,
-    trivia::Trivia,
+    type_resolver::{TypeResolver, type_context::TypeContext},
 };
+use lang::{parser::ast::AstInfo, token::SpannedToken, trivia::Trivia};
 
 //ScriptContext? CompilerContext? AbstractCompilerManager?
 
@@ -59,11 +52,8 @@ pub struct ChrnManagerInitFailure {
 }
 
 impl ChrnManagerInitFailure {
-    fn new(interner: Intern, err: ModuleInitError) -> ChrnManagerInitFailure {
-        ChrnManagerInitFailure {
-            interner,
-            init_err: err,
-        }
+    fn new(interner: Intern, init_err: ModuleInitError) -> ChrnManagerInitFailure {
+        ChrnManagerInitFailure { interner, init_err }
     }
 }
 
@@ -168,16 +158,12 @@ impl ChrnManager {
                 }
             };
 
-            let (toks, trivia) = script_lib::lexer::Lexer::new(
-                region.region_id,
-                &region.src_bytes,
-                region.script_start,
-            )
-            .tokenize(&mut self.interner);
+            let (toks, trivia) =
+                lang::lexer::Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+                    .tokenize(&mut self.interner);
 
             let ast_info =
-                match script_lib::parser::parse(&self.settings, &region, &toks, &mut self.interner)
-                {
+                match lang::parser::parse(&self.settings, &region, &toks, &mut self.interner) {
                     Ok(info) => info,
                     Err((unfinished_ast, mut diags)) => {
                         self.reporter.diags.append(&mut diags);
@@ -209,7 +195,7 @@ impl ChrnManager {
         let mut ty_ctx = TypeContext::new();
         for i in 0..self.compiler.mods.len() {
             let module = &self.compiler.mods[i];
-            let metadata = match &module.region_id {
+            let region = match &module.region_id {
                 Some(region_id) => &self.region_arena.regions[region_id.id as usize],
                 None => continue,
             };
@@ -217,8 +203,8 @@ impl ChrnManager {
             // NOTE: Brain not on yet
             TypeResolver::new(
                 &self.settings,
-                &asts[i].as_ref().expect("Has metadata already"),
-                metadata,
+                &asts[i].as_ref().expect("Has region already"),
+                region,
                 module.mod_id,
                 &mut ty_ctx,
                 &self.interner,
@@ -236,15 +222,15 @@ impl ChrnManager {
 
         for i in 0..self.compiler.mods.len() {
             let module = &self.compiler.mods[i];
-            let metadata = match &module.region_id {
+            let region = match &module.region_id {
                 Some(region_id) => &self.region_arena.regions[region_id.id as usize],
                 None => continue,
             };
 
             ConstraintResolver::new(
                 &self.settings,
-                &asts[i].as_ref().expect("Has metadata already"),
-                metadata,
+                &asts[i].as_ref().expect("Has region already"),
+                region,
                 &self.interner,
                 module.mod_id,
                 &mut self.compiler,

@@ -1,11 +1,16 @@
 use chrn_utils::intern::Intern;
-use script_lib::{
+use compilation::{
     script_compiler::ScriptCompiler,
     semantic::representation::{Symbol, SymbolKind, Type},
 };
 
 // TEST:
 // More like stringifying
+
+pub fn print_env(compiler: &ScriptCompiler, interner: &Intern) -> String {
+    todo!()
+}
+
 pub fn print_symbol(compiler: &ScriptCompiler, sym: &Symbol, interner: &Intern) -> String {
     let ident = interner.search(sym.name_id);
     let access_level = if sym.is_priv { "private" } else { "public" };
@@ -35,7 +40,7 @@ pub fn print_symbol(compiler: &ScriptCompiler, sym: &Symbol, interner: &Intern) 
         }
         SymbolKind::Val(val_id) => todo!(),
         SymbolKind::ReservedTypeSlot(type_id) => "Unknown".to_string(),
-        SymbolKind::Module(module_id) => todo!(),
+        SymbolKind::Module(mod_id) => todo!(),
     };
 
     full_str

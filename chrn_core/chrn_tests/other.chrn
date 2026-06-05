@@ -1,3 +1,4 @@
 export let e#var = 3
+
 nest->
     export enum People {}

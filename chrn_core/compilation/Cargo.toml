@@ -1,0 +1,8 @@
+[package]
+name = "compilation"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+chrn_utils = {path = "../chrn_utils/"}
+lang =  { path = "../lang/" }

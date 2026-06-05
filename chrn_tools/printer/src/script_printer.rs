@@ -1,4 +1,5 @@
-use script_lib::{parser::ast::AstInfo, script_compiler::ScriptCompiler};
+use compilation::script_compiler::ScriptCompiler;
+use lang::parser::ast::AstInfo;
 
 pub struct ScriptPrinter<'a> {
     ast_info: &'a AstInfo,

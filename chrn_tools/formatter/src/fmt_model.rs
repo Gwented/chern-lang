@@ -314,9 +314,9 @@ pub(crate) fn embed_text_type(text_type: TextType) -> TextClass {
         TextType::Whitespace => TextClass::Whitespace,
         TextType::Newline => TextClass::Newline,
         TextType::Comment(location, _) => match location {
-            script_lib::trivia::CommentLocation::Inline => TextClass::CommentInline,
-            script_lib::trivia::CommentLocation::Trailing => TextClass::CommentTrailing,
-            script_lib::trivia::CommentLocation::SingleLine => TextClass::CommentSingleLine,
+            lang::trivia::CommentLocation::Inline => TextClass::CommentInline,
+            lang::trivia::CommentLocation::Trailing => TextClass::CommentTrailing,
+            lang::trivia::CommentLocation::SingleLine => TextClass::CommentSingleLine,
         },
     }
 }

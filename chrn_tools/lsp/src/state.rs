@@ -175,7 +175,7 @@ impl DocumentState {
             all_mods.push(known);
         }
 
-        let mut compiler = ScriptCompiler::new(bind, mod_map, all_mods);
+        let mut compiler = ScriptCompiler::init(bind, mod_map, all_mods);
 
         let mut all_asts = Vec::with_capacity(compiler.mods.len());
         for _ in 0..compiler.mods.len() {

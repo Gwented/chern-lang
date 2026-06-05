@@ -1,8 +1,0 @@
-[package]
-name = "serial_lib"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-script_lib = { path = "../script_lib/" }
-chrn_utils = { path = "../chrn_utils/" }

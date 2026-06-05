@@ -36,7 +36,6 @@ impl From<SerialError> for CoreError {
 pub enum ConfigLoadError {
     // Is this separation really needed?
     General(SourceDiagnostic),
-    Module(SourceDiagnostic),
     IO(std::io::Error),
 }
 impl From<std::io::Error> for ConfigLoadError {

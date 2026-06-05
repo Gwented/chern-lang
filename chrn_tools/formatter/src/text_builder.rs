@@ -1,5 +1,5 @@
 use chrn_utils::{id_types::AstId, intern::Intern, source_map::source_span::SourceSpan};
-use script_lib::{
+use lang::{
     parser::ast::{AbstractVar, AstInfo, Item, Section},
     token::{SpannedToken, Token},
     trivia::{CommentLocation, Trivia, TriviaKind},

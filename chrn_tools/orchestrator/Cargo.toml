@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-script_lib = { path = "../../chrn_core/script_lib/" }
-serial_lib = { path = "../../chrn_core/serial_lib/" }
 chrn_utils = { path = "../../chrn_core/chrn_utils/" }
+compilation = { path = "../../chrn_core/compilation/"}
+lang = { path = "../../chrn_core/lang/" }
 common = { path = "../common/" }

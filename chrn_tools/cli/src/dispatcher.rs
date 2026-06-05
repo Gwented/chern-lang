@@ -32,7 +32,7 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
         Ok(m) => m,
         // Might be going a bit too far here
         Err(ChrnManagerInitFailure { interner, init_err }) => match init_err.cfg_err {
-            ConfigLoadError::General(diag) | ConfigLoadError::Module(diag) => {
+            ConfigLoadError::General(diag) => {
                 let render_settings =
                     RenderSettings::new(cli_cfg.can_color, cli_cfg.terminal_color_type);
                 let rendered_diags = renderer::render_cli_diags(
@@ -43,7 +43,6 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
                 );
 
                 print_diags(&rendered_diags);
-
                 return Err("Failed to parse configuration file".to_string());
             }
             ConfigLoadError::IO(e) => match e.kind() {
@@ -102,20 +101,18 @@ fn exec_fmt(fmt_cmd: &FmtCmd, cli_cfg: &CliConfig) -> Result<String, String> {
 // Object!
 fn exec_query(query_cmd: &QueryCmd, cli_cfg: &CliConfig) -> Result<String, String> {
     let chrn_settings = ChrnSettings::new();
-    // Right...
     let path = files::make_canon(&query_cmd.path)?;
 
     let mut chrn_manager = match ChrnManager::init(&path, chrn_settings) {
         Ok(m) => m,
         Err(ChrnManagerInitFailure { interner, init_err }) => match init_err.cfg_err {
-            ConfigLoadError::General(diag) | ConfigLoadError::Module(diag) => {
+            ConfigLoadError::General(diag) => {
                 let render_settings =
                     RenderSettings::new(cli_cfg.can_color, cli_cfg.terminal_color_type);
                 let rendered_diags =
                     renderer::render_cli_diags(&[diag], &render_settings, None, &interner);
 
                 print_diags(&rendered_diags);
-
                 return Err("Failed to parse configuration file".to_string());
             }
             ConfigLoadError::IO(e) => match e.kind() {
@@ -167,8 +164,5 @@ fn exec_query(query_cmd: &QueryCmd, cli_cfg: &CliConfig) -> Result<String, Strin
 
     sym_strs.iter().for_each(|s| println!("{s}\n"));
     dbg!(found);
-    // This should probably be in core itself, for diagnostic purposes.
-
-    // printer::script_printer::ScriptPrinter::new(ast_info, &script_compiler);
     todo!("detailing")
 }

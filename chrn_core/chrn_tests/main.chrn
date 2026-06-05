@@ -40,8 +40,6 @@ let x = 5*/
 @def
 
 import "../../chrn_core/chrn_tests/def.chrn" as defs
-import "../../chrn_core/chrn_tests/oter.chrn" as defs
-let a  = other::e#var
 
 /*"
 
