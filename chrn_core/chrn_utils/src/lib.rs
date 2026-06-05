@@ -307,7 +307,6 @@ pub mod tests {
 
     #[test]
     fn interned_preload_size_matches() {
-        let interner = Intern::init();
         assert_eq!(
             intern::INTERNED_CORE + 1,
             51,

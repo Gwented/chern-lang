@@ -1,13 +1,17 @@
 use chrn_utils::{
     chrn_settings::ChrnSettings,
-    core_error::{ConfigLoadError, ScriptError},
+    core_error::{ConfigLoadError, ModuleInitError, ScriptError},
 };
-use orchestrator::{chrn_manager::ChrnManager, query};
+use orchestrator::{
+    chrn_manager::{ChrnManager, ChrnManagerInitFailure},
+    query,
+};
 use printer::symbol_printer;
 
 use crate::{
     args::{CheckCmd, Cli, Commands, FmtCmd, QueryCmd},
     config::CliConfig,
+    files,
     renderer::{self, render_settings::RenderSettings},
 };
 
@@ -20,20 +24,22 @@ pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
     }
 }
 
-// What if this had 2 probability models?
 fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, String> {
     let chrn_settings = ChrnSettings::new();
-    let mut chrn_manager = match ChrnManager::init(&check_cmd.path, chrn_settings) {
+    let path = files::make_canon(&check_cmd.path)?;
+
+    let mut chrn_manager = match ChrnManager::init(&path, chrn_settings) {
         Ok(m) => m,
-        Err(partial_chrn_manager) => match partial_chrn_manager.err {
+        // Might be going a bit too far here
+        Err(ChrnManagerInitFailure { interner, init_err }) => match init_err.cfg_err {
             ConfigLoadError::General(diag) | ConfigLoadError::Module(diag) => {
                 let render_settings =
                     RenderSettings::new(cli_cfg.can_color, cli_cfg.terminal_color_type);
                 let rendered_diags = renderer::render_cli_diags(
                     &[diag],
                     &render_settings,
-                    None,
-                    &partial_chrn_manager.interner,
+                    init_err.region.as_ref(),
+                    &interner,
                 );
 
                 print_diags(&rendered_diags);
@@ -96,18 +102,17 @@ fn exec_fmt(fmt_cmd: &FmtCmd, cli_cfg: &CliConfig) -> Result<String, String> {
 // Object!
 fn exec_query(query_cmd: &QueryCmd, cli_cfg: &CliConfig) -> Result<String, String> {
     let chrn_settings = ChrnSettings::new();
-    let mut chrn_manager = match ChrnManager::init(&query_cmd.path, chrn_settings) {
+    // Right...
+    let path = files::make_canon(&query_cmd.path)?;
+
+    let mut chrn_manager = match ChrnManager::init(&path, chrn_settings) {
         Ok(m) => m,
-        Err(partial_chrn_manager) => match partial_chrn_manager.err {
+        Err(ChrnManagerInitFailure { interner, init_err }) => match init_err.cfg_err {
             ConfigLoadError::General(diag) | ConfigLoadError::Module(diag) => {
                 let render_settings =
                     RenderSettings::new(cli_cfg.can_color, cli_cfg.terminal_color_type);
-                let rendered_diags = renderer::render_cli_diags(
-                    &[diag],
-                    &render_settings,
-                    None,
-                    &partial_chrn_manager.interner,
-                );
+                let rendered_diags =
+                    renderer::render_cli_diags(&[diag], &render_settings, None, &interner);
 
                 print_diags(&rendered_diags);
 

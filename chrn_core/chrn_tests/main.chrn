@@ -38,6 +38,11 @@ let x = 5*/
 // Same-line spanning.
 // Collisions.
 @def
+
+import "../../chrn_core/chrn_tests/def.chrn" as defs
+import "../../chrn_core/chrn_tests/oter.chrn" as defs
+let a  = other::e#var
+
 /*"
 
 
@@ -51,17 +56,16 @@ let x = 5*/
 // import "../../chrn_core/chrn_tests/def.chrn" as defs
     nest->
         struct Forb {
-            p: core::Comparable
+            p: f32
             // Breaks reporting since cross module spanning is NOT possible right now
             // p: defs::Person
         } #scient
 
-    complex->
-        Door 
+    /*complex->
+        Door {}*/
 
 @end
 
-import "../../chrn_core/chrn_tests/def.chrn" as defs
 /*let a = b
 let b = c
 let c = d + 3

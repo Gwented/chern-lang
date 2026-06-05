@@ -416,19 +416,21 @@ impl ScriptCompiler {
         // Beep
         let intrinsic_scope_opt: Option<ScopeId> = match scope_type {
             ScopeType::Complex => {
-                if let Some(scope_id) = self.intrinsic_registry.complex {
+                if let Some(scope_id) = self.intrinsic_registry.complex_scope_id {
                     Some(scope_id)
                 } else {
-                    let scope_id = self.load_complex_constants();
-                    Some(scope_id)
+                    let scope_id = Some(self.load_complex_constants());
+                    self.intrinsic_registry.complex_scope_id = scope_id;
+                    scope_id
                 }
             }
             ScopeType::Override => {
-                if let Some(scope_id) = self.intrinsic_registry.overrid {
+                if let Some(scope_id) = self.intrinsic_registry.override_scope_id {
                     Some(scope_id)
                 } else {
-                    let scope_id = self.load_override_constants();
-                    Some(scope_id)
+                    let scope_id = Some(self.load_override_constants());
+                    self.intrinsic_registry.override_scope_id = scope_id;
+                    scope_id
                 }
             }
             ScopeType::Local
@@ -594,6 +596,7 @@ impl ScriptCompiler {
         let core_mod_id = self.intrinsic_registry.core_mod_id;
         let scope_type = ScopeType::Complex;
         let complex_scope_id = ScopeId::new(self.scopes.len());
+        self.intrinsic_registry.complex_scope_id = Some(complex_scope_id);
 
         let mut table = Table::new();
 

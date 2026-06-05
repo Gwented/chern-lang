@@ -1,5 +1,3 @@
-use std::cmp::Ordering;
-
 // What if there was said, ".attach()" in the builder of diags to where I could tell renderers,
 // do not detach or mutate this ordering in any form by file found in
 use crate::{id_types::PathId, source_map::source_span::SourceSpan};
@@ -12,8 +10,8 @@ pub struct Reporter {
 }
 
 impl Reporter {
-    pub fn new() -> Reporter {
-        Reporter { diags: Vec::new() }
+    pub fn new(diags: Vec<SourceDiagnostic>) -> Reporter {
+        Reporter { diags }
     }
 }
 

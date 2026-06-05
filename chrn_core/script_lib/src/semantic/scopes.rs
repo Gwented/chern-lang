@@ -379,8 +379,8 @@ pub enum AssociatedScopeKind {
 
 pub struct IntrinsicRegistry {
     pub core_mod_id: ModuleId,
-    pub complex: Option<ScopeId>,
-    pub overrid: Option<ScopeId>,
+    pub complex_scope_id: Option<ScopeId>,
+    pub override_scope_id: Option<ScopeId>,
 }
 
 impl IntrinsicRegistry {
@@ -391,8 +391,8 @@ impl IntrinsicRegistry {
     ) -> IntrinsicRegistry {
         IntrinsicRegistry {
             core_mod_id,
-            complex,
-            overrid,
+            complex_scope_id: complex,
+            override_scope_id: overrid,
         }
     }
 }

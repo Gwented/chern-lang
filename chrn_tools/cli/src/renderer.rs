@@ -179,7 +179,6 @@ fn find_annotation_lines<'a>(
         .find(|lv| lv.region_id == annotation.span.region_id)
         .expect("Should already have mapped the given annotation's ln_view");
 
-    dbg!(annotation);
     let mut current_idx = current_ln_view
         .lines
         .iter()

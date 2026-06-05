@@ -19,7 +19,7 @@ pub enum Commands {
     #[command(name = "check", alias = "c")]
     Check(CheckCmd),
     // Minify argument
-    /// Formats `.chrn` file for highest readability. Changes with behavior with arguments.
+    /// Formats `.chrn` file for readability. Changes behavior with arguments.
     Fmt(FmtCmd),
     Gen(GenCmd),
     #[command(name = "query", alias = "q")]

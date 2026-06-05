@@ -1,17 +1,18 @@
 use std::path::Path;
 
-use chrn_utils::{chrn_settings::ChrnSettings, core_error::ConfigLoadError, intern::Intern};
-use script_lib::modules;
+use chrn_utils::{chrn_settings::ChrnSettings, core_error::ModuleInitError, intern::Intern};
+use script_lib::modules::{self};
 
 use crate::{script_prettifier::ScriptPrettifier, text_builder::TextBuilder};
 
 //TODO: Trivia unit tests
 
 //TEST:
-pub fn fmt_script_block(path: &Path, settings: &ChrnSettings) -> Result<String, ConfigLoadError> {
+pub fn fmt_script_block(path: &Path, settings: &ChrnSettings) -> Result<String, ModuleInitError> {
     let mut interner = Intern::init();
     // Maybe a way to only load main?
-    let (script_compiler, region_arena) = modules::extract_modules(path, settings, &mut interner)?;
+    let (script_compiler, region_arena, diags) =
+        modules::extract_modules(path, settings, &mut interner)?;
 
     // TEMP
     let module = &script_compiler.mods[0];

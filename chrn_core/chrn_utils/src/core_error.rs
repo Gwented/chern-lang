@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::source_map::source_diagnostic::SourceDiagnostic;
+use crate::source_map::{source_diagnostic::SourceDiagnostic, source_region::SourceRegionArena};
 
 /// General error enum for the entirety of the codebase to use. Everything can be converted back
 /// into it so it can be treated just as any `Err()` would be but more valuable in detail.
@@ -39,10 +39,28 @@ pub enum ConfigLoadError {
     Module(SourceDiagnostic),
     IO(std::io::Error),
 }
-
 impl From<std::io::Error> for ConfigLoadError {
     fn from(err: std::io::Error) -> Self {
         ConfigLoadError::IO(err)
+    }
+}
+
+// Should this be here?
+/// Struct for carrying module data if `main` fails to be loaded within `extract_modules`.
+pub struct ModuleInitError {
+    pub region: Option<SourceRegionArena>,
+    pub cfg_err: ConfigLoadError,
+}
+
+impl ModuleInitError {
+    pub fn new(region: Option<SourceRegionArena>, cfg_err: ConfigLoadError) -> ModuleInitError {
+        ModuleInitError { region, cfg_err }
+    }
+}
+
+impl From<std::io::Error> for ModuleInitError {
+    fn from(err: std::io::Error) -> Self {
+        ModuleInitError::new(None, ConfigLoadError::IO(err))
     }
 }
 
@@ -74,8 +92,7 @@ impl From<std::io::Error> for SerialError {
 
 // Naming naming naming namingnamingnamign
 /// Preset of error messages to reduce code duplication for file io errors. Returns a `Some` type
-/// with a preset error. Returns `None` if no present is available which allows for the caller to
-/// choose whether to use built-in error messages rather than doing it by default.
+/// with a preset error. Returns `None` if no present is available.
 pub fn form_string_from_io_err(err: &std::io::Error, path: &Path) -> Option<String> {
     match err.kind() {
         std::io::ErrorKind::NotFound => {
@@ -88,7 +105,7 @@ pub fn form_string_from_io_err(err: &std::io::Error, path: &Path) -> Option<Stri
             Some(format!("The path \"{}\" is a directory", path.display()))
         }
         std::io::ErrorKind::PermissionDenied => Some(format!(
-            "Cannot read file \"{}\" due to a lack of read permissions",
+            "Cannot read file \"{}\" due to not having read permissions",
             path.display()
         )),
         std::io::ErrorKind::AlreadyExists => {

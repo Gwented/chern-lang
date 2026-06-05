@@ -238,42 +238,41 @@ impl TypeResolver<'_> {
         // };
 
         // if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
-        // dbg!(&self.ty_ctx);
-        // for symbol in &self.compiler.symbols {
-        //     if self.interner.search(symbol.name_id.id as usize) == "d" {
-        //         let name = self.interner.search(symbol.name_id.id as usize);
-        //         dbg!(name);
-        //         match symbol.kind {
-        //             SymbolKind::Val(value_id) => {
-        //                 let val = &self.compiler.values[value_id.id as usize];
-        //                 let expr = &self.compiler.exprs[val.expr_id.id as usize];
-        //                 // dbg!(expr.val_id, expr);
-        //                 dbg!(expr, val);
-        //             }
-        //             SymbolKind::Type(type_id) => {
-        //                 let ty_info = &self.compiler.types[type_id.id as usize];
-        //                 match &ty_info.ty {
-        //                     Type::BuiltinType(builtin_type) => {
-        //                         dbg!(builtin_type);
-        //                     }
-        //                     Type::Struct(struct_def) => todo!(),
-        //                     Type::Enum(enum_def) => todo!(),
-        //                     Type::Func(func_def) => todo!(),
-        //                     Type::Alias(alias_def) => todo!(),
-        //                     Type::TypeDef(type_def) => {
-        //                         let ty = &self.compiler.types[type_def.type_id.id as usize];
-        //                         dbg!(ty);
-        //                     }
-        //                     Type::Unknown => todo!(),
-        //                     _ => todo!(),
+        //     dbg!(&self.ty_ctx);
+        //     for symbol in &self.compiler.symbols {
+        //         if self.interner.search(symbol.name_id) == "a" {
+        //             let name = self.interner.search(symbol.name_id);
+        //             dbg!(name);
+        //             match symbol.kind {
+        //                 SymbolKind::Val(value_id) => {
+        //                     let val = &self.compiler.values[value_id.id as usize];
+        //                     let expr = &self.compiler.exprs[val.expr_id.id as usize];
+        //                     // dbg!(expr.val_id, expr);
+        //                     dbg!(expr, val);
         //                 }
+        //                 SymbolKind::Type(type_id) => {
+        //                     let ty_info = &self.compiler.types[type_id.id as usize];
+        //                     match &ty_info.ty {
+        //                         Type::BuiltinType(builtin_type) => {
+        //                             dbg!(builtin_type);
+        //                         }
+        //                         Type::Struct(struct_def) => todo!(),
+        //                         Type::Enum(enum_def) => todo!(),
+        //                         Type::Func(func_def) => todo!(),
+        //                         Type::Alias(alias_def) => todo!(),
+        //                         Type::TypeDef(type_def) => {
+        //                             let ty = &self.compiler.types[type_def.type_id.id as usize];
+        //                             dbg!(ty);
+        //                         }
+        //                         Type::Unknown => todo!(),
+        //                         _ => todo!(),
+        //                     }
+        //                 }
+        //                 _ => todo!(),
         //             }
-        //             _ => todo!(),
+        //             panic!("Done");
         //         }
-        //         panic!("Done");
         //     }
-        // dbg!(self.interner.search(symbol.name_id.id as usize));
-        // dbg!(symbol);
         // }
 
         //     for ty in &self.compiler.types {

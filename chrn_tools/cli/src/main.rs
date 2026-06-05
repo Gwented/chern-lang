@@ -1,4 +1,5 @@
 //TODO: Eventually will have it's own cli backend but not priority
+// Maybe not?
 use chrn::{args, config::CliConfig, dispatcher};
 use clap::Parser;
 use common::color;
@@ -17,6 +18,7 @@ fn main() {
         Err(emsg) => {
             let (red, nc) = color::get_red(cli_cfg.can_color, cli_cfg.terminal_color_type);
             println!("{red}exited{nc}: {emsg}");
+            std::process::exit(1);
         }
     }
 }

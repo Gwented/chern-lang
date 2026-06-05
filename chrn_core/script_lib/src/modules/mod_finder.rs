@@ -1,9 +1,13 @@
 // Has weird behavior and silent errors when it comes to import keyword usage
-use std::{ffi::OsStr, path::PathBuf, str::FromStr};
+use std::{
+    ffi::OsStr,
+    path::{self, PathBuf},
+    str::FromStr,
+};
 
 use chrn_utils::{
     chrn_settings::ChrnSettings,
-    core_error::{self, ConfigLoadError},
+    core_error::{self},
     id_types::{InternedId, ModuleId, PathId},
     intern::Intern,
     source_map::{
@@ -22,6 +26,7 @@ pub struct ModuleFinder<'a> {
     src_bytes: &'a [u8],
     settings: &'a ChrnSettings,
     seen: &'a mut Vec<(PathId, ModuleId)>,
+    diags: Vec<SourceDiagnostic>,
     /// Path origin so that errors can accurately report the path where the import was declared
     current_region: &'a SourceRegion,
     pos: usize,
@@ -42,6 +47,7 @@ impl ModuleFinder<'_> {
             src_bytes,
             settings,
             current_region,
+            diags: Vec::new(),
             seen,
             pos: script_start,
             start: script_start,
@@ -54,7 +60,8 @@ impl ModuleFinder<'_> {
     pub fn collect_imports(
         &mut self,
         interner: &mut Intern,
-    ) -> Result<(Option<Bind>, Vec<Import>), ConfigLoadError> {
+        // A little crowded..
+    ) -> (Option<Bind>, Vec<Import>, Vec<SourceDiagnostic>) {
         let mut imports: Vec<Import> = Vec::new();
         let mut bind: Option<Bind> = None;
 
@@ -99,10 +106,23 @@ impl ModuleFinder<'_> {
                     // The operation requires a full utf-8 check
                     if self.peek_behind_char(1).is_whitespace() {
                         if c == b'i' && self.is_import() {
-                            let import = self.parse_import(interner)?;
+                            let import = match self.parse_import(interner) {
+                                Ok(i) => i,
+                                Err(d) => {
+                                    self.diags.push(d);
+                                    continue;
+                                }
+                            };
+
                             imports.push(import);
                         } else if c == b'b' && self.is_bind() {
-                            bind = Some(self.parse_bind(interner)?);
+                            bind = match self.parse_bind(interner) {
+                                Ok(b) => Some(b),
+                                Err(d) => {
+                                    self.diags.push(d);
+                                    continue;
+                                }
+                            };
                         }
                     } else {
                         self.advance();
@@ -114,11 +134,14 @@ impl ModuleFinder<'_> {
             }
         }
 
-        Ok((bind, imports))
+        let mut diags = Vec::new();
+        diags.append(&mut self.diags);
+
+        (bind, imports, diags)
     }
 
     /// Assumes the starting point is at the start quote
-    fn parse_import(&mut self, interner: &mut Intern) -> Result<Import, ConfigLoadError> {
+    fn parse_import(&mut self, interner: &mut Intern) -> Result<Import, SourceDiagnostic> {
         self.advance();
         let start = self.pos;
         // Boolean to track if a "\" was seen since only "/" can be used to separate
@@ -162,12 +185,12 @@ impl ModuleFinder<'_> {
             .add_annotation(path_span, AnnotationKind::Primary, None)
             .build();
 
-            return Err(ConfigLoadError::Module(src_diag));
+            return Err(src_diag);
         }
 
         let path_buf = self.create_pathbuf(&self.src_bytes[start..end])?;
 
-        let import_path = match path_buf.canonicalize() {
+        let import_path = match path::absolute(&path_buf) {
             Ok(p) => p,
             Err(e) => {
                 let core_msg =
@@ -181,7 +204,7 @@ impl ModuleFinder<'_> {
                 .add_annotation(path_span, AnnotationKind::Primary, None)
                 .build();
 
-                return Err(ConfigLoadError::Module(src_diag));
+                return Err(src_diag);
             }
         };
 
@@ -203,7 +226,7 @@ impl ModuleFinder<'_> {
                 .add_annotation(path_span, AnnotationKind::Primary, None)
                 .build();
 
-                return Err(ConfigLoadError::General(src_diag));
+                return Err(src_diag);
             }
         };
 
@@ -232,7 +255,7 @@ impl ModuleFinder<'_> {
     }
 
     //WARN: Will be placed in different module
-    fn create_pathbuf(&self, slice: &[u8]) -> Result<PathBuf, ConfigLoadError> {
+    fn create_pathbuf(&self, slice: &[u8]) -> Result<PathBuf, SourceDiagnostic> {
         if cfg!(unix) {
             #[cfg(unix)]
             {
@@ -263,7 +286,7 @@ impl ModuleFinder<'_> {
                     )
                     .build();
 
-                    return Err(ConfigLoadError::General(src_diag));
+                    return Err(src_diag);
                 }
             }
         }
@@ -279,12 +302,12 @@ impl ModuleFinder<'_> {
                 )
                 .build();
 
-                return Err(ConfigLoadError::General(src_diag));
+                return Err(src_diag);
             }
         }
     }
 
-    fn parse_bind(&mut self, interner: &mut Intern) -> Result<Bind, ConfigLoadError> {
+    fn parse_bind(&mut self, interner: &mut Intern) -> Result<Bind, SourceDiagnostic> {
         // skipping "
         self.advance();
         let start = self.pos;
@@ -325,7 +348,7 @@ impl ModuleFinder<'_> {
             .add_annotation(path_span, AnnotationKind::Primary, None)
             .build();
 
-            return Err(ConfigLoadError::Module(src_diag));
+            return Err(src_diag);
         }
 
         // Um uh
@@ -333,7 +356,7 @@ impl ModuleFinder<'_> {
 
         //WARN: WRONG PATH NAME
         // Please..
-        let bind_path = match path_buf.canonicalize() {
+        let bind_path = match path::absolute(&path_buf) {
             Ok(p) => p,
             Err(e) => {
                 let path = interner.search_path(self.current_region.path_id);
@@ -349,7 +372,7 @@ impl ModuleFinder<'_> {
                 .add_annotation(path_span, AnnotationKind::Primary, None)
                 .build();
 
-                return Err(ConfigLoadError::Module(src_diag));
+                return Err(src_diag);
             }
         };
 
