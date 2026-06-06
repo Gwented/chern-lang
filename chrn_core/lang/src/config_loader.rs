@@ -33,7 +33,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
     pub fn new<'a>(
         current_region_id: SourceRegionId,
         handle: R,
-        path_id: PathId,
+        current_path_id: PathId,
         settings: &'a ChrnSettings,
         interner: &'a Intern,
     ) -> ChrnConfigLoader<'a, R> {
@@ -41,7 +41,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
             current_region_id,
             settings,
             interner,
-            current_path_id: path_id,
+            current_path_id,
             handle: BufReader::new(handle),
             pos: 0,
         }
@@ -130,13 +130,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                     // Is there a reason for lines_read to be printed if there are multiple quotes?
                     // When are there ever NOT multiple quotes if it's in a serialized file?
                     if self.read_quotes(quote_type).is_err() {
-                        let note = if single_quotes_seen > 1 {
-                            "\nnote: There are other quotes within the file so the line given could be incorrect"
-                        } else {
-                            ""
-                        };
-
-                        let core_msg = format!("Found unclosed quotes which reached <eof>{}", note);
+                        let core_msg = format!("Found unclosed quotes which reached <eof>");
 
                         let q_span = SourceSpan::new(
                             self.current_region_id,

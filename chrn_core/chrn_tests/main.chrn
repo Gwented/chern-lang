@@ -54,7 +54,7 @@ import "../../chrn_core/chrn_tests/def.chrn" as defs
 // import "../../chrn_core/chrn_tests/def.chrn" as defs
     nest->
         struct Forb {
-            p: f32
+            p: def::Person
             // Breaks reporting since cross module spanning is NOT possible right now
             // p: defs::Person
         } #scient

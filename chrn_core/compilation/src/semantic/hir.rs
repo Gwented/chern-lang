@@ -1,9 +1,9 @@
-// TypeId is the index of the type itself, OR the type it's pointing to
-use std::{collections::HashMap, fmt::Display};
+// Should likely split this eventually
+use std::{collections::HashMap, fmt::Debug};
 
 use chrn_utils::{
     fmter::{Formattable, Formatted},
-    id_types::{AstId, ExprId, InternedId, ModuleId, ScopeId, SymbolId, TypeId, ValueId},
+    id_types::{AstId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId, ValueId},
     source_map::source_span::SourceSpan,
 };
 use lang::{
@@ -49,28 +49,11 @@ pub enum Type {
     Unknown,
 }
 
-impl Formattable for Type {
-    fn to_fmt(&self) -> Formatted {
-        match self {
-            Type::BuiltinType(builtin_type) => builtin_type.kind().to_fmt(),
-            Type::Struct(struct_def) => struct_def.to_fmt(),
-            Type::Enum(enum_def) => enum_def.to_fmt(),
-            Type::Func(func_def) => func_def.to_fmt(),
-            Type::Alias(alias_def) => alias_def.to_fmt(),
-            Type::TypeDef(type_def) => type_def.to_fmt(),
-            Type::Deferred(_) => todo!("This should probably be a function"),
-            Type::Unknown => Formatted::Unknown,
-            Type::Constrained(_) => {
-                unimplemented!("Type constrains cannot be formatted through `Type`")
-            }
-        }
-    }
-}
-
 // Iyad yourrg gieyetters iiyand sieyetters
 #[derive(Debug)]
 pub struct Symbol {
     pub name_id: InternedId,
+    // pub name_span: Option<SourceSpan>,
     pub sym_id: SymbolId,
     //err span purposes
     pub ast_id: Option<AstId>,
@@ -86,6 +69,7 @@ impl Symbol {
     pub fn new(
         // May couple dbg info but fine for now
         name_id: InternedId,
+        // name_span: Option<SourceSpan>,
         sym_id: SymbolId,
         //dbgr
         // Maybe we can have an id enum instead with it possibility allowing for field types?
@@ -98,6 +82,7 @@ impl Symbol {
     ) -> Symbol {
         Symbol {
             name_id,
+            // name_span,
             sym_id,
             ast_id,
             kind,
@@ -117,7 +102,8 @@ pub enum SymbolKind {
     /// Represents a variable symbol
     Val(ValueId),
     /// Represents a reserved type id which allows for symbols such as unresolved variables to have
-    /// a stable type id associated with it even if it isn't resolved yet.
+    /// a stable type id associated with it even if it isn't resolved yet. This is mainly intended
+    /// to isolate this type of state inside of a kind of symbol, rather than polluting type-space.
     ReservedTypeSlot(TypeId),
     /// Represents a module symbol
     Module(ModuleId),
@@ -125,9 +111,62 @@ pub enum SymbolKind {
     // Section(),
 }
 
+// #[derive(Debug)]
+// pub struct AbstractConfig {
+//     // In regards to "var->" defined variables, I think just allowing for, "var.inner" would be the
+//     // best in regards to accessing and changing fields
+//     // Could be a "Outer.a { }" where it is defining it's fields config specifically
+//     /// Name of structural type to configure
+//     pub name_id: InternedId,
+//     pub name_span: SourceSpan,
+//     /// Configuration for the current parent to apply
+//     pub field_assignments: Vec<AbstractFieldAssignment>,
+//     /// Configuration for inner fields to define recursively
+//     pub inner_field_cfg: Vec<AbstractConfig>,
+// }
+
+#[derive(Debug)]
+pub struct ConfigDef {
+    pub sym_id: SymbolId,
+    pub field_assignments: Vec<FieldAssignment>,
+    pub inner_field_cfg: Vec<ConfigDef>,
+}
+
+// #[derive(Debug)]
+// pub struct AbstractFieldAssignment {
+//     /// Name of structural type to configure
+//     pub name_id: InternedId,
+//     pub name_span: SourceSpan,
+//     pub array_expr: ArrayExpr,
+// }
+
+#[derive(Debug)]
+pub struct FieldAssignment {
+    // Own member id
+    pub member_id: MemberId,
+    pub name_id: InternedId,
+    pub name_span: SourceSpan,
+    pub array: Vec<ExprId>,
+}
+
+// Not 100% sure on this needed
+// #[derive(Debug)]
+// pub struct MemberSymbol {
+//     pub kind: MemberSymbolKind,
+//     pub span: SourceSpan,
+// }
+
+/// An enum that represents any sort of inner member that could exist within a given parent symbol.
+#[derive(Debug)]
+pub enum MemberSymbolKind {
+    Field(FieldRepre),
+    Variant(VariantRepre),
+    Param(Param),
+    FieldAssignment(FieldAssignment),
+}
+
 #[derive(Debug)]
 pub struct Param {
-    // Remove eventually
     pub sym_id: SymbolId,
     //FIX: More like "FieldId"
     // Should become SpanId
@@ -225,16 +264,18 @@ impl Table {
 #[derive(Debug)]
 pub struct StructDef {
     pub sym_id: SymbolId,
-    pub fields: Vec<FieldRepre>,
+    pub name_span: SourceSpan,
+    pub fields: Vec<MemberId>,
     pub glob_conds: Vec<ExprId>,
     //Maybe SpannedInnerArgs is fine here
     pub glob_args: Vec<InnerArgs>,
 }
 
 impl StructDef {
-    pub fn new(sym_id: SymbolId, fields: Vec<FieldRepre>) -> StructDef {
+    pub fn new(sym_id: SymbolId, name_span: SourceSpan, fields: Vec<MemberId>) -> StructDef {
         StructDef {
             sym_id,
+            name_span,
             fields,
             glob_conds: Vec::new(),
             glob_args: Vec::new(),
@@ -251,15 +292,17 @@ impl Formattable for StructDef {
 #[derive(Debug)]
 pub struct EnumDef {
     pub sym_id: SymbolId,
-    pub variants: Vec<VariantRepre>,
+    pub name_span: SourceSpan,
+    pub variants: Vec<MemberId>,
     pub glob_args: Vec<InnerArgs>,
     pub glob_conds: Vec<ExprId>,
 }
 
 impl EnumDef {
-    pub fn new(sym_id: SymbolId, variants: Vec<VariantRepre>) -> EnumDef {
+    pub fn new(sym_id: SymbolId, name_span: SourceSpan, variants: Vec<MemberId>) -> EnumDef {
         EnumDef {
             sym_id,
+            name_span,
             variants,
             glob_conds: Vec::new(),
             glob_args: Vec::new(),
@@ -276,7 +319,9 @@ impl Formattable for EnumDef {
 /// A HIR of enum variants created by script semantics
 #[derive(Debug)]
 pub struct VariantRepre {
+    pub member_id: MemberId,
     pub name_id: InternedId,
+    pub name_span: SourceSpan,
     // Because enum types are nullable
     pub type_id: Option<TypeId>,
     // Points to variant within original Ast enum
@@ -287,9 +332,17 @@ pub struct VariantRepre {
 }
 
 impl VariantRepre {
-    pub fn new(name_id: InternedId, type_id: Option<TypeId>, ast_id: AstId) -> VariantRepre {
+    pub fn new(
+        member_id: MemberId,
+        name_id: InternedId,
+        name_span: SourceSpan,
+        type_id: Option<TypeId>,
+        ast_id: AstId,
+    ) -> VariantRepre {
         VariantRepre {
+            member_id,
             name_id,
+            name_span,
             type_id,
             ast_id,
             conds: Vec::new(),
@@ -302,6 +355,7 @@ impl VariantRepre {
 #[derive(Debug)]
 pub struct TypeDef {
     pub sym_id: SymbolId,
+    pub name_span: SourceSpan,
     /// Represents the str in "var-> name: str"
     pub type_id: TypeId,
     pub conds: Vec<ExprId>,
@@ -309,9 +363,10 @@ pub struct TypeDef {
 }
 
 impl TypeDef {
-    pub fn new(sym_id: SymbolId, type_id: TypeId) -> TypeDef {
+    pub fn new(sym_id: SymbolId, name_span: SourceSpan, type_id: TypeId) -> TypeDef {
         TypeDef {
             sym_id,
+            name_span,
             type_id,
             conds: Vec::new(),
             args: Vec::new(),
@@ -371,7 +426,9 @@ impl Formattable for FuncDef {
 
 #[derive(Debug)]
 pub struct FieldRepre {
+    pub member_id: MemberId,
     pub name_id: InternedId,
+    pub name_span: SourceSpan,
     // To TypeDef
     pub type_id: TypeId,
     // Ast contained field id, maybe this should just be AstId
@@ -381,9 +438,17 @@ pub struct FieldRepre {
 }
 
 impl FieldRepre {
-    pub fn new(name_id: InternedId, type_id: TypeId, ast_id: AstId) -> FieldRepre {
+    pub fn new(
+        member_id: MemberId,
+        name_id: InternedId,
+        name_span: SourceSpan,
+        type_id: TypeId,
+        ast_id: AstId,
+    ) -> FieldRepre {
         FieldRepre {
+            member_id,
             name_id,
+            name_span,
             type_id,
             conds: Vec::new(),
             args: Vec::new(),
@@ -395,6 +460,7 @@ impl FieldRepre {
 #[derive(Debug)]
 pub struct AliasDef {
     pub sym_id: SymbolId,
+    pub name_span: SourceSpan,
     pub params: Vec<Param>,
     pub ty_constraints: TypeConstraintFlags,
     pub arg_constraints: Vec<ArgConstraint>,
@@ -406,12 +472,14 @@ pub struct AliasDef {
 impl AliasDef {
     pub fn new(
         sym_id: SymbolId,
+        name_span: SourceSpan,
         params: Vec<Param>,
         arg_constraints: Vec<ArgConstraint>,
         local_scope_id: ScopeId,
     ) -> AliasDef {
         AliasDef {
             sym_id,
+            name_span,
             params,
             ty_constraints: TypeConstraintFlags::runtime(),
             arg_constraints,
@@ -430,8 +498,8 @@ impl Formattable for AliasDef {
 
 //TEST:
 pub(crate) enum PossibleMember {
-    // Would be removed
     Type(TypeId),
+    // Member(MemberId),
     Var(ValueId),
     Nothing,
 }
@@ -458,5 +526,19 @@ impl Formattable for FuncKind {
             FuncKind::Equals => Formatted::FuncEquals,
             FuncKind::IsEmpty => Formatted::IsEmpty,
         }
+    }
+}
+
+//TEST:
+/// Generic structure for attaching a span to any type
+#[derive(Debug)]
+pub struct SpannedItem<T: Debug> {
+    pub inner: T,
+    pub span: SourceSpan,
+}
+
+impl<T: Debug> SpannedItem<T> {
+    pub fn new(inner: T, span: SourceSpan) -> SpannedItem<T> {
+        SpannedItem { inner, span }
     }
 }

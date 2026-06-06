@@ -1,3 +1,3 @@
-# lang/
+## chrn_core/lang/
 
-Directory defining language implementation details
+For defining language implementation details

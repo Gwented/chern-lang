@@ -5,7 +5,7 @@ use chrn_utils::{
 };
 use lang::{inner_args::SpannedInnerArg, types::type_constraints::TypeConstraintFlags};
 
-use crate::{constraints::ArgConstraint, semantic::representation::FuncKind};
+use crate::{constraints::ArgConstraint, semantic::hir::FuncKind};
 
 //TODO: Change this majorly. Make many mistakes. Hallucinate.
 #[derive(Debug)]

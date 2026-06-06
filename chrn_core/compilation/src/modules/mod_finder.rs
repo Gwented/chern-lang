@@ -5,6 +5,7 @@ use std::{
     str::FromStr,
 };
 
+use chrn_utils::chrn_settings::ChrnSettings;
 use chrn_utils::{
     core_error::{self},
     id_types::{InternedId, ModuleId, PathId},
@@ -15,7 +16,6 @@ use chrn_utils::{
         source_span::SourceSpan,
     },
 };
-use chrn_utils::chrn_settings::ChrnSettings;
 
 use crate::modules::{Bind, Import, ImportKind};
 

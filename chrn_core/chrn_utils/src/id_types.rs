@@ -1,4 +1,18 @@
+use std::fmt::Debug;
+
 use crate::source_map::source_span::SourceSpan;
+
+//TEST: May or may not be used
+pub struct SpannedContainer<T: Debug> {
+    pub inner: T,
+    pub span: SourceSpan,
+}
+
+impl<T: Debug> SpannedContainer<T> {
+    pub fn new(inner: T, span: SourceSpan) -> SpannedContainer<T> {
+        SpannedContainer { inner, span }
+    }
+}
 
 //TEST:
 #[derive(Debug, Default, Clone, Copy)]
@@ -13,6 +27,7 @@ impl SpannedInternedId {
     }
 }
 
+/// Type-safe wrapper for using an index that contains a valid index into `Intern`
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InternedId {
     pub id: u32,
@@ -24,6 +39,7 @@ impl InternedId {
     }
 }
 
+/// Type-safe wrapper for using an index that contains a valid index into a source region
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct SourceRegionId {
     pub id: u32,
@@ -35,16 +51,17 @@ impl SourceRegionId {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct SpanId {
-    pub id: u32,
-}
-
-impl SpanId {
-    pub fn new(id: u32) -> SpanId {
-        SpanId { id }
-    }
-}
+// Not using a span arena unless smoe sort of bottleneck is reached somehow
+// #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+// pub struct SpanId {
+//     pub id: u32,
+// }
+//
+// impl SpanId {
+//     pub fn new(id: u32) -> SpanId {
+//         SpanId { id }
+//     }
+// }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PathId {
@@ -112,14 +129,16 @@ impl AstId {
     }
 }
 
+/// Type-safe wrapper for using an index that contains a valid index into a symbol of some kind
+/// that would be considered a member
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct FieldId {
+pub struct MemberId {
     pub id: u32,
 }
 
-impl FieldId {
-    pub fn new(id: u32) -> FieldId {
-        FieldId { id }
+impl MemberId {
+    pub fn new(id: u32) -> MemberId {
+        MemberId { id }
     }
 }
 

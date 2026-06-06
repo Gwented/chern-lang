@@ -16,9 +16,7 @@ use crate::{
     scopes::{Scope, ScopeInfo},
     script_compiler::ScriptCompiler,
     semantic::{
-        representation::{
-            AliasDef, EnumDef, StructDef, Symbol, SymbolKind, Type, TypeDef, TypeInfo,
-        },
+        hir::{AliasDef, EnumDef, StructDef, Symbol, SymbolKind, Type, TypeDef, TypeInfo},
         semantic_reporter::SemanticReporter,
     },
 };
@@ -133,7 +131,7 @@ impl NamespaceResolver<'_> {
 
         let type_id = TypeId::new(self.compiler.types.len() as u32);
 
-        let type_def_repre = TypeDef::new(sym_id, type_id);
+        let type_def_repre = TypeDef::new(sym_id, abs_typedef.name_span, type_id);
 
         let symbol = Symbol::new(
             abs_typedef.name_id,
@@ -170,7 +168,7 @@ impl NamespaceResolver<'_> {
         }
 
         let type_id = TypeId::new(self.compiler.types.len() as u32);
-        let struct_def = StructDef::new(sym_id, Vec::new());
+        let struct_def = StructDef::new(sym_id, abs_struct.name_span, Vec::new());
 
         let symbol = Symbol::new(
             abs_struct.name_id,
@@ -208,7 +206,7 @@ impl NamespaceResolver<'_> {
             module.exports.push(sym_id);
         }
 
-        let enum_def = EnumDef::new(sym_id, Vec::new());
+        let enum_def = EnumDef::new(sym_id, abs_enum.name_span, Vec::new());
 
         let symbol = Symbol::new(
             abs_enum.name_id,
@@ -261,7 +259,13 @@ impl NamespaceResolver<'_> {
         current_mod.scopes.push(local_scope_id);
 
         // Ok ok
-        let alias_def = AliasDef::new(sym_id, Vec::new(), Vec::new(), local_scope_id);
+        let alias_def = AliasDef::new(
+            sym_id,
+            abs_alias.name_span,
+            Vec::new(),
+            Vec::new(),
+            local_scope_id,
+        );
 
         let symbol = Symbol::new(
             abs_alias.name_id,

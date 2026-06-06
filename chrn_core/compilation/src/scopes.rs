@@ -7,7 +7,7 @@ use chrn_utils::{
 
 use crate::{
     script_compiler::ScriptCompiler,
-    semantic::representation::{Symbol, SymbolKind, Table},
+    semantic::hir::{Symbol, SymbolKind, Table},
 };
 
 //TODO: Maybe this is the point where the scope wrapper comes in

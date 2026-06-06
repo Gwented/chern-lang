@@ -5,20 +5,20 @@ use lang::types::type_constraints::TypeConstraintFlags;
 
 use crate::{
     script_compiler::ScriptCompiler,
-    semantic::{error::SemanticError, representation::Type},
+    semantic::{error::SemanticError, hir::Type},
 };
 
 //TEST:
 /// Checks given type against the constraints given
 pub(super) fn check_type_constraint(
-    script_compiler: &ScriptCompiler,
+    compiler: &ScriptCompiler,
     type_id: TypeId,
     ty_span: SourceSpan,
     cond_span: SourceSpan,
     visited: &mut Vec<TypeId>,
     given_constraints: TypeConstraintFlags,
 ) -> Result<(), SemanticError> {
-    let ty = &script_compiler.types[type_id.id as usize].ty;
+    let ty = &compiler.types[type_id.id as usize].ty;
     match ty {
         Type::Struct(struct_def) => {
             // let symbol = &script_compiler.symbols[struct_def.sym_id.id as usize];
@@ -27,7 +27,8 @@ pub(super) fn check_type_constraint(
             visited.push(type_id);
 
             // No cross module reporting so all messages are shallow in spanning
-            for (i, field) in struct_def.fields.iter().enumerate() {
+            for (i, member_id) in struct_def.fields.iter().enumerate() {
+                let field = &compiler.get_field(*member_id);
                 // Not sure if this incurs any errors this time
                 if visited.contains(&field.type_id) {
                     // if spanned_arg.arg.has_restrictions() {
@@ -50,7 +51,7 @@ pub(super) fn check_type_constraint(
                 visited.push(field.type_id);
 
                 check_type_constraint(
-                    script_compiler,
+                    compiler,
                     field.type_id,
                     ty_span,
                     cond_span,
@@ -64,7 +65,8 @@ pub(super) fn check_type_constraint(
         Type::Enum(enum_def) => {
             visited.push(type_id);
 
-            for variant in &enum_def.variants {
+            for member_id in &enum_def.variants {
+                let variant = compiler.get_variant(*member_id);
                 if let Some(inner_id) = variant.type_id {
                     visited.push(inner_id);
 
@@ -76,7 +78,7 @@ pub(super) fn check_type_constraint(
                     }
 
                     check_type_constraint(
-                        script_compiler,
+                        compiler,
                         inner_id,
                         ty_span,
                         cond_span,

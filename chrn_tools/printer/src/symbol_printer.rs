@@ -1,7 +1,7 @@
 use chrn_utils::intern::Intern;
 use compilation::{
     script_compiler::ScriptCompiler,
-    semantic::representation::{Symbol, SymbolKind, Type},
+    semantic::hir::{Symbol, SymbolKind, Type},
 };
 
 // TEST:

@@ -1,5 +1,5 @@
 use chrn_utils::intern::Intern;
-use compilation::{scopes, script_compiler::ScriptCompiler, semantic::representation::Symbol};
+use compilation::{scopes, script_compiler::ScriptCompiler, semantic::hir::Symbol};
 
 // Testing something..
 

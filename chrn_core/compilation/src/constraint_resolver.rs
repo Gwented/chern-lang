@@ -22,7 +22,7 @@ use crate::{
     modules::Module,
     scopes::ScopeType,
     script_compiler::ScriptCompiler,
-    semantic::{error::SemanticError, representation::Type, semantic_reporter::SemanticReporter},
+    semantic::{error::SemanticError, hir::Type, semantic_reporter::SemanticReporter},
 };
 
 pub struct ConstraintResolver<'a> {
@@ -504,8 +504,10 @@ impl<'a> ConstraintResolver<'a> {
         let module = &self.compiler.mods[self.current_mod.id];
 
         // Glob conds
-        for (i, field) in struct_def.fields.iter().enumerate() {
+        for (i, member_id) in struct_def.fields.iter().enumerate() {
+            let field = self.compiler.get_field(*member_id);
             let ty_span = abs_struct.fields[i].spanned_ty_expr.span;
+
             for cond_expr in &struct_def.glob_conds {
                 if let Err(sem_errs) = self.check_cond(field.type_id, ty_span, *cond_expr) {
                     for err in sem_errs {
@@ -516,8 +518,10 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         // Field conds
-        for (i, field) in struct_def.fields.iter().enumerate() {
+        for (i, member_id) in struct_def.fields.iter().enumerate() {
+            let field = self.compiler.get_field(*member_id);
             let ty_span = abs_struct.fields[i].spanned_ty_expr.span;
+
             for cond_expr in &field.conds {
                 if let Err(sem_errs) = self.check_cond(field.type_id, ty_span, *cond_expr) {
                     for err in sem_errs {
@@ -528,8 +532,10 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         // Glob args
-        for (i, field) in struct_def.fields.iter().enumerate() {
+        for (i, member_id) in struct_def.fields.iter().enumerate() {
+            let field = self.compiler.get_field(*member_id);
             let ty_span = abs_struct.fields[i].spanned_ty_expr.span;
+
             for spanned_arg in &abs_struct.glob_args {
                 if let Err(sem_err) = self.check_type_arg(
                     field.type_id,
@@ -545,9 +551,11 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         // Field args
-        for (i, field) in struct_def.fields.iter().enumerate() {
+        for (i, member_id) in struct_def.fields.iter().enumerate() {
+            let field = self.compiler.get_field(*member_id);
             let abs_field = &abs_struct.fields[i];
             let ty_span = abs_field.spanned_ty_expr.span;
+
             for spanned_arg in &abs_field.args {
                 if let Err(sem_err) = self.check_type_arg(
                     field.type_id,
@@ -577,7 +585,8 @@ impl<'a> ConstraintResolver<'a> {
         let module = &self.compiler.mods[self.current_mod.id];
 
         // Glob conds
-        for (i, variant) in enum_def.variants.iter().enumerate() {
+        for (i, member_id) in enum_def.variants.iter().enumerate() {
+            let variant = self.compiler.get_variant(*member_id);
             if let Some(inner_id) = variant.type_id {
                 let ty_span = abs_enum.variants[i]
                     .ty_expr
@@ -596,7 +605,8 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         // Variant conds
-        for (i, variant) in enum_def.variants.iter().enumerate() {
+        for (i, member_id) in enum_def.variants.iter().enumerate() {
+            let variant = self.compiler.get_variant(*member_id);
             if let Some(inner_id) = variant.type_id {
                 let ty_span = abs_enum.variants[i]
                     .ty_expr
@@ -615,7 +625,8 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         // Glob args
-        for (i, variant) in enum_def.variants.iter().enumerate() {
+        for (i, member_id) in enum_def.variants.iter().enumerate() {
+            let variant = self.compiler.get_variant(*member_id);
             if let Some(inner_id) = variant.type_id {
                 let ty_span = abs_enum.variants[i]
                     .ty_expr
@@ -639,7 +650,8 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         // Variant args
-        for (i, variant) in enum_def.variants.iter().enumerate() {
+        for (i, member_id) in enum_def.variants.iter().enumerate() {
+            let variant = self.compiler.get_variant(*member_id);
             if let Some(inner_id) = variant.type_id {
                 let abs_variant = &abs_enum.variants[i];
                 let ty_span = abs_variant.ty_expr.as_ref().expect("Just checked").span;
@@ -920,7 +932,8 @@ impl<'a> ConstraintResolver<'a> {
                 visited.push(type_id);
 
                 // No cross module reporting so all messages are shallow in spanning
-                for (i, field) in struct_def.fields.iter().enumerate() {
+                for (i, member_id) in struct_def.fields.iter().enumerate() {
+                    let field = self.compiler.get_field(*member_id);
                     // let ast_span = abs_struct.fields[i].spanned_ty_expr.span;
                     // Checking if one of it's variants are self referencing, or if the type from
                     // the last call stack, possibly a tuple, is self referencing the current
@@ -974,7 +987,8 @@ impl<'a> ConstraintResolver<'a> {
                 let abs_enum = &self.ast_info.get_enum(ast_id);
                 visited.push(type_id);
 
-                for variant in &enum_def.variants {
+                for member_id in &enum_def.variants {
+                    let variant = self.compiler.get_variant(*member_id);
                     if let Some(inner) = variant.type_id {
                         visited.push(inner);
 

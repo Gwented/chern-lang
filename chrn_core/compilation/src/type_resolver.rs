@@ -4,7 +4,8 @@ pub mod type_context;
 use chrn_utils::chrn_settings::ChrnSettings;
 use chrn_utils::fmter::{Formattable, Formatted, SpannedFormatted};
 use chrn_utils::id_types::{
-    AstId, ExprId, InternedId, ModuleId, ScopeId, SpannedInternedId, SymbolId, TypeId, ValueId,
+    AstId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SpannedInternedId, SymbolId, TypeId,
+    ValueId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::{
@@ -21,13 +22,13 @@ use lang::values::{Value, ValueInfo};
 use crate::scopes::{self, AssociatedScopeKind, LookupPattern, ScopeType};
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::error::{MathError, SemanticError};
-use crate::semantic::representation::{
-    ExprHir, Param, PossibleMember, ResolvedExpr, Symbol, SymbolKind,
+use crate::semantic::hir::{
+    ExprHir, MemberSymbolKind, Param, PossibleMember, ResolvedExpr, Symbol, SymbolKind,
 };
 use crate::semantic::{evaluator, inference};
 
 use crate::semantic::{
-    representation::{FieldRepre, Type, TypeInfo, VariantRepre},
+    hir::{FieldRepre, Type, TypeInfo, VariantRepre},
     semantic_reporter::SemanticReporter,
 };
 use crate::type_resolver::type_context::{
@@ -177,10 +178,11 @@ impl TypeResolver<'_> {
                 }
             }
 
-            // Integral loop that sets whatever resolution information regarding the parent to
+            // Loop that sets whatever resolution information regarding the parent to
             // true, so that it can actually be accounted for as a resolved pending symbol. Pending
             // symbol's expressions are never attempted for resolution unless they are marked to at
-            // least have a resolved type.
+            // least have a resolved type. So, resolution trigerring is lazy and fully dependent on
+            // signals.
             for (pending_sym_id, pending_expr_idx, parent_info) in resolved_parents {
                 // Setting expr to stale
                 let pending_sym = self
@@ -684,7 +686,6 @@ impl TypeResolver<'_> {
             return self.traverse_expr(user);
         }
 
-        // has_resolved_ty && has_const_val
         Ok((has_resolved_ty, has_const_val))
     }
 
@@ -727,7 +728,6 @@ impl TypeResolver<'_> {
         // expression is resolved further, since it's already pointing the the same expression it
         // will by proxy be updated
 
-        //WARN: You were warned
         let symbol = self
             .compiler
             .symbols
@@ -809,7 +809,7 @@ impl TypeResolver<'_> {
         // somewhat conflicts. For now, typedef is just consumed differently depending on if it's a
         // field declared in var-> or not since var-> fields may be made possible to reference, but
         // fields in structures can't. Will possibly just be unified in the future.
-        let mut fields: Vec<FieldRepre> = Vec::new();
+        let mut fields: Vec<MemberId> = Vec::new();
         let mut seen: Vec<(usize, InternedId)> = Vec::new();
 
         let scope_id = self
@@ -873,12 +873,21 @@ impl TypeResolver<'_> {
 
             seen.push((i, field_typedef.name_id));
 
-            let field = FieldRepre::new(field_typedef.name_id, type_id, ast_id);
+            let member_id = MemberId::new(self.compiler.members.len() as u32);
 
-            fields.push(field);
+            let field = FieldRepre::new(
+                member_id,
+                field_typedef.name_id,
+                field_typedef.name_span,
+                type_id,
+                ast_id,
+            );
+
+            self.compiler.members.push(MemberSymbolKind::Field(field));
+            fields.push(member_id);
         }
 
-        for (i, field) in fields.iter_mut().enumerate() {
+        for (i, current_member_id) in fields.iter().enumerate() {
             let abs_field = &abs_struct.fields[i];
             let mut conds: Vec<ExprId> = Vec::new();
 
@@ -903,6 +912,7 @@ impl TypeResolver<'_> {
                 }
             }
 
+            let field = self.compiler.get_field_mut(*current_member_id);
             field.conds = conds;
             field.args = abs_field.args.iter().map(|sp_arg| sp_arg.arg).collect();
         }
@@ -945,7 +955,7 @@ impl TypeResolver<'_> {
     }
 
     fn resolve_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) -> Result<(), ()> {
-        let mut variants: Vec<VariantRepre> = Vec::new();
+        let mut variants: Vec<MemberId> = Vec::new();
 
         let scope_id = self
             .compiler
@@ -995,6 +1005,7 @@ impl TypeResolver<'_> {
 
             seen.push((i, variant.name_id));
 
+            let member_id = MemberId::new(self.compiler.members.len() as u32);
             let variant_repre = if let Some(spanned_ty_expr) = &variant.ty_expr {
                 let type_id = match self.resolve_type_expr(
                     AssociatedScopeKind::Module(self.current_mod),
@@ -1008,15 +1019,31 @@ impl TypeResolver<'_> {
                         TypeId::new(script_compiler::CORE_UNKNOWN)
                     }
                 };
-                VariantRepre::new(variant.name_id, Some(type_id), AstId::new(i as u32))
+                VariantRepre::new(
+                    member_id,
+                    variant.name_id,
+                    variant.name_span,
+                    Some(type_id),
+                    AstId::new(i as u32),
+                )
             } else {
-                VariantRepre::new(variant.name_id, None, AstId::new(i as u32))
+                VariantRepre::new(
+                    member_id,
+                    variant.name_id,
+                    variant.name_span,
+                    None,
+                    AstId::new(i as u32),
+                )
             };
 
-            variants.push(variant_repre);
+            self.compiler
+                .members
+                .push(MemberSymbolKind::Variant(variant_repre));
+
+            variants.push(member_id);
         }
 
-        for (i, variant) in variants.iter_mut().enumerate() {
+        for (i, current_member_id) in variants.iter().enumerate() {
             let abs_variant = &abs_enum.variants[i];
             let mut conds: Vec<ExprId> = Vec::new();
 
@@ -1041,6 +1068,7 @@ impl TypeResolver<'_> {
                 }
             }
 
+            let variant = self.compiler.get_variant_mut(*current_member_id);
             variant.conds = conds;
             variant.args = abs_variant.args.iter().map(|sp_arg| sp_arg.arg).collect();
         }
@@ -2269,6 +2297,7 @@ impl TypeResolver<'_> {
                 // In, "let a = b, let b = a"
                 // a would be cycled
                 // b would be current
+                //TODO: Would be changed if symbols were given Option span directly
                 if has_cycle {
                     let current_sym = &self.compiler.symbols[parent_sym_id.id as usize];
                     let current_name = self.interner.search(current_sym.name_id);
@@ -2427,7 +2456,7 @@ impl TypeResolver<'_> {
             // Generics can only be these types so this can stay for now
             TypeExpr::Generic(generic) => {
                 //FIX: This is still using the old id matching but maybe it's ok since this is
-                //actually supposed to be specifically only known data structures
+                // actually supposed to be specifically only known data structures
                 match BuiltinTypeKind::try_from_interned_id(generic.base.id) {
                     // Self referential type ids used here
                     Some(kind) => match kind {

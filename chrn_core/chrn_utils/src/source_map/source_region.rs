@@ -1,4 +1,4 @@
-use crate::id_types::{InternedId, PathId, SourceRegionId};
+use crate::id_types::{PathId, SourceRegionId};
 
 #[derive(Debug)]
 pub struct SourceRegion {
@@ -15,8 +15,6 @@ pub struct SourceRegion {
     pub script_start: usize,
     /// The serial start which can be None if there is no serialized file within the config file
     pub serial_start: Option<usize>,
-    // Maybe
-    // metadata: Metadata,
 }
 
 impl SourceRegion {

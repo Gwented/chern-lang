@@ -1,6 +1,7 @@
 use chrn_utils::{
-    id_types::{InternedId, ModuleId, ScopeId, SymbolId, TypeId},
+    id_types::{InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId},
     intern,
+    source_map::source_span::SourceSpan,
 };
 use lang::{
     types::{
@@ -14,9 +15,9 @@ use crate::{
     constraints::ArgConstraint,
     modules::{Bind, Import, ImportKind, Module, ModuleState},
     scopes::{AssociatedScopeKind, IntrinsicRegistry, Scope, ScopeInfo, ScopeType},
-    semantic::representation::{
-        AliasDef, EnumDef, FuncDef, FuncKind, ResolvedExpr, StructDef, Symbol, SymbolKind, Table,
-        Type, TypeDef, TypeInfo,
+    semantic::hir::{
+        AliasDef, EnumDef, FieldAssignment, FieldRepre, FuncDef, FuncKind, MemberSymbolKind, Param,
+        ResolvedExpr, StructDef, Symbol, SymbolKind, Table, Type, TypeDef, TypeInfo, VariantRepre,
     },
 };
 
@@ -41,6 +42,10 @@ pub struct ScriptCompiler {
     pub exprs: Vec<ResolvedExpr>,
     /// All symbols that were found
     pub symbols: Vec<Symbol>,
+    /// All symbols considered a "member" of another. This is here to serve the same purpose of a
+    /// collection that would be considered fields, but more general since the language is small
+    /// scale and would likely not benefit much from such a wide variety of collections.
+    pub members: Vec<MemberSymbolKind>,
     /// Scope arena
     pub scopes: Vec<ScopeInfo>,
     /// Information regarding intrinsic data such as core's `ModuleId`
@@ -100,6 +105,7 @@ impl ScriptCompiler {
             values: Vec::new(),
             exprs: Vec::new(),
             symbols: Vec::new(),
+            members: Vec::new(),
             scopes: Vec::new(),
             //TEST:
             intrinsic_registry,
@@ -352,6 +358,84 @@ impl ScriptCompiler {
         }
     }
 
+    /// Assumes the member symbol given is a field
+    pub(super) fn get_field(&self, member_id: MemberId) -> &FieldRepre {
+        match &self.members[member_id.id as usize] {
+            MemberSymbolKind::Field(field_repre) => field_repre,
+            MemberSymbolKind::Variant(_)
+            | MemberSymbolKind::Param(_)
+            | MemberSymbolKind::FieldAssignment(_) => unreachable!(),
+        }
+    }
+
+    /// Assumes the member symbol given is a field
+    pub(super) fn get_field_mut(&mut self, member_id: MemberId) -> &mut FieldRepre {
+        match &mut self.members[member_id.id as usize] {
+            MemberSymbolKind::Field(field_repre) => field_repre,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Assumes the member symbol given is a variant
+    pub(super) fn get_variant(&self, member_id: MemberId) -> &VariantRepre {
+        match &self.members[member_id.id as usize] {
+            MemberSymbolKind::Variant(variant_repre) => variant_repre,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Assumes the member symbol given is a variant
+    pub(super) fn get_variant_mut(&mut self, member_id: MemberId) -> &mut VariantRepre {
+        match &mut self.members[member_id.id as usize] {
+            MemberSymbolKind::Variant(variant_repre) => variant_repre,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Assumes the member symbol given is a parameter
+    pub(super) fn get_param(&self, member_id: MemberId) -> &Param {
+        match &self.members[member_id.id as usize] {
+            MemberSymbolKind::Param(param) => &param,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Assumes the member symbol given is a parameter
+    pub(super) fn get_param_mut(&mut self, member_id: MemberId) -> &mut Param {
+        match &mut self.members[member_id.id as usize] {
+            MemberSymbolKind::Param(param) => param,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Assumes the member symbol given is a field
+    pub(super) fn get_field_assignment(&self, member_id: MemberId) -> &FieldAssignment {
+        match &self.members[member_id.id as usize] {
+            MemberSymbolKind::FieldAssignment(field_assignment) => field_assignment,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Assumes the member symbol given is a field
+    pub(super) fn get_field_assignment_mut(&mut self, member_id: MemberId) -> &mut FieldAssignment {
+        match &mut self.members[member_id.id as usize] {
+            MemberSymbolKind::FieldAssignment(field_assignment) => field_assignment,
+            _ => unreachable!(),
+        }
+    }
+
+    // pub(super) fn get_sym_span(&self, sym_id: SymbolId) -> SourceSpan {
+    //     match &self.symbols[sym_id.id as usize] {
+    //         sym_info => match &sym_info.kind {
+    //             SymbolKind::Type(type_id) => *type_id,
+    //             SymbolKind::Val(val_id) => self.values[val_id.id as usize].type_id,
+    //             SymbolKind::ReservedTypeSlot(type_id) => *type_id,
+    //             // Not a type, just a symbol with a scope
+    //             SymbolKind::Module(_) => unreachable!(),
+    //         },
+    //     }
+    // }
+
     // Maybe return option?
     /// Assumes the symbol given has a `TypeId` attached. Will return a `TypeId` of `Unknown` if
     /// the `SymbolKind` is unknown.
@@ -361,13 +445,14 @@ impl ScriptCompiler {
                 SymbolKind::Type(type_id) => *type_id,
                 SymbolKind::Val(val_id) => self.values[val_id.id as usize].type_id,
                 SymbolKind::ReservedTypeSlot(type_id) => *type_id,
+                // Not a type, just a symbol with a scope
                 SymbolKind::Module(_) => unreachable!(),
             },
         }
     }
 
     /// Returns `ModuleId` which is the module of origin
-    pub fn get_owner(&self, sym_id: SymbolId) -> ModuleId {
+    pub(super) fn get_owner(&self, sym_id: SymbolId) -> ModuleId {
         self.symbols[sym_id.id as usize].owner
     }
 
