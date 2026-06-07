@@ -181,8 +181,9 @@ impl<'a> ConstraintResolver<'a> {
                 Type::Struct(_) | Type::Enum(_) => {
                     if sp_arg.inner.has_restrictions() {
                         let sem_err = SemanticError::VagueArg(sp_arg.clone());
-
                         self.reporter.report_semantic(sem_err);
+
+                        continue;
                     }
                 }
                 _ => (),

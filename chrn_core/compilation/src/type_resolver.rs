@@ -365,7 +365,7 @@ impl TypeResolver<'_> {
                 // technically still exists and needs to be ignored. Not currently aware of any
                 // direct issues with this. Maybe an Error tag on a pending expression could help?
                 SymbolKind::ReservedTypeSlot(_) => continue,
-                SymbolKind::Type(_) | SymbolKind::Module(_) => {
+                SymbolKind::Type(_) | SymbolKind::Module(_) | SymbolKind::Config(_) => {
                     unreachable!("Not possible")
                 }
             }
@@ -1302,6 +1302,7 @@ impl TypeResolver<'_> {
                             SymbolKind::Type(type_id) => todo!(),
                             SymbolKind::Module(mod_id) => todo!(),
                             SymbolKind::ReservedTypeSlot(type_id) => todo!(),
+                            SymbolKind::Config(config_id) => todo!(),
                         };
 
                         self.compiler.exprs.push(expr);
@@ -1474,6 +1475,10 @@ impl TypeResolver<'_> {
                             .build();
 
                             return Err(SemanticError::General(src_diag));
+                        }
+                        // Config not declarable in neutral sections so this should not be possible
+                        SymbolKind::Config(_) => {
+                            unreachable!("Should be impossible due to sections")
                         }
                     };
 
@@ -2413,6 +2418,7 @@ impl TypeResolver<'_> {
                             // Ok but what about, "core is a MODULE which is NOT a type?"
                             SymbolKind::Module(mod_id) => (),
                             SymbolKind::Val(_) | SymbolKind::ReservedTypeSlot(_) => (),
+                            SymbolKind::Config(_) => unreachable!("Cannot lookup configs"),
                         }
                     }
                     None => (),

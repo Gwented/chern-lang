@@ -101,7 +101,7 @@ nest->
     }
 ```
 
-`"::"`: Namespace pathing operator for accessing modules and types
+`"::"`: Namespace pathing operator for accessing namespaces like modules, types, and variables
 
 `"."`: Member access operator for accessing fields
 

@@ -1,5 +1,5 @@
 use chrn_utils::{
-    id_types::{InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId},
+    id_types::{ConfigId, InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId},
     intern,
     source_map::source_span::SourceSpan,
 };
@@ -16,8 +16,9 @@ use crate::{
     modules::{Bind, Import, ImportKind, Module, ModuleState},
     scopes::{AssociatedScopeKind, IntrinsicRegistry, Scope, ScopeInfo, ScopeType},
     semantic::hir::{
-        AliasDef, EnumDef, FieldAssignment, FieldRepre, FuncDef, FuncKind, MemberSymbolKind, Param,
-        ResolvedExpr, StructDef, Symbol, SymbolKind, Table, Type, TypeDef, TypeInfo, VariantRepre,
+        AliasDef, ConfigDef, ConfigDescription, ConfigKind, EnumDef, FieldRepre, FuncDef, FuncKind,
+        MemberSymbolKind, OptionAssignment, Param, ResolvedExpr, StructDef, Symbol, SymbolKind,
+        Table, Type, TypeDef, TypeInfo, VariantRepre,
     },
 };
 
@@ -46,6 +47,9 @@ pub struct ScriptCompiler {
     /// collection that would be considered fields, but more general since the language is small
     /// scale and would likely not benefit much from such a wide variety of collections.
     pub members: Vec<MemberSymbolKind>,
+    /// All user defined configuration. Is considered it's own class instead of a type since it
+    /// behaves uniquely
+    pub configs: Vec<ConfigKind>,
     /// Scope arena
     pub scopes: Vec<ScopeInfo>,
     /// Information regarding intrinsic data such as core's `ModuleId`
@@ -106,6 +110,7 @@ impl ScriptCompiler {
             exprs: Vec::new(),
             symbols: Vec::new(),
             members: Vec::new(),
+            configs: Vec::new(),
             scopes: Vec::new(),
             //TEST:
             intrinsic_registry,
@@ -358,6 +363,34 @@ impl ScriptCompiler {
         }
     }
 
+    pub(super) fn get_cfg_def(&self, cfg_id: ConfigId) -> &ConfigDef {
+        match &self.configs[cfg_id.id as usize] {
+            ConfigKind::Def(cfg_def) => cfg_def,
+            ConfigKind::Description(_) => unreachable!(),
+        }
+    }
+
+    pub(super) fn get_cfg_def_mut(&mut self, cfg_id: ConfigId) -> &mut ConfigDef {
+        match &mut self.configs[cfg_id.id as usize] {
+            ConfigKind::Def(cfg_def) => cfg_def,
+            ConfigKind::Description(_) => unreachable!(),
+        }
+    }
+
+    pub(super) fn get_cfg_desc(&self, cfg_id: ConfigId) -> &ConfigDescription {
+        match &self.configs[cfg_id.id as usize] {
+            ConfigKind::Description(cfg_desc) => cfg_desc,
+            ConfigKind::Def(_) => unreachable!(),
+        }
+    }
+
+    pub(super) fn get_cfg_desc_mut(&mut self, cfg_id: ConfigId) -> &mut ConfigDescription {
+        match &mut self.configs[cfg_id.id as usize] {
+            ConfigKind::Description(cfg_desc) => cfg_desc,
+            ConfigKind::Def(_) => unreachable!(),
+        }
+    }
+
     /// Assumes the member symbol given is a field
     pub(super) fn get_field(&self, member_id: MemberId) -> &FieldRepre {
         match &self.members[member_id.id as usize] {
@@ -409,17 +442,20 @@ impl ScriptCompiler {
     }
 
     /// Assumes the member symbol given is a field
-    pub(super) fn get_field_assignment(&self, member_id: MemberId) -> &FieldAssignment {
+    pub(super) fn get_option_assignment(&self, member_id: MemberId) -> &OptionAssignment {
         match &self.members[member_id.id as usize] {
-            MemberSymbolKind::FieldAssignment(field_assignment) => field_assignment,
+            MemberSymbolKind::FieldAssignment(option_assignment) => option_assignment,
             _ => unreachable!(),
         }
     }
 
     /// Assumes the member symbol given is a field
-    pub(super) fn get_field_assignment_mut(&mut self, member_id: MemberId) -> &mut FieldAssignment {
+    pub(super) fn get_option_assignment_mut(
+        &mut self,
+        member_id: MemberId,
+    ) -> &mut OptionAssignment {
         match &mut self.members[member_id.id as usize] {
-            MemberSymbolKind::FieldAssignment(field_assignment) => field_assignment,
+            MemberSymbolKind::FieldAssignment(option_assignment) => option_assignment,
             _ => unreachable!(),
         }
     }
@@ -434,7 +470,7 @@ impl ScriptCompiler {
                 SymbolKind::Val(val_id) => self.values[val_id.id as usize].type_id,
                 SymbolKind::ReservedTypeSlot(type_id) => *type_id,
                 // Not a type, just a symbol with a scope
-                SymbolKind::Module(_) => unreachable!(),
+                SymbolKind::Module(_) | SymbolKind::Config(_) => unreachable!(),
             },
         }
     }
@@ -668,6 +704,14 @@ impl ScriptCompiler {
         self.intrinsic_registry.complex_scope_id = Some(complex_scope_id);
 
         let mut table = Table::new();
+        // Need to load configuration structures with known fields
+        //
+        // The conceptual idea is, ConfigDef holds config options, which are known, and may have
+        // different options depending on the type.
+        //
+        // For searching against configuration that's known, we could have, SchemaKind, where it's
+        // kind dictates what options should be accounted for. So, given a target identifier,
+        // value, and kind of schema, what did we find.
 
         todo!()
     }

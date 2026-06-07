@@ -6,7 +6,7 @@ mod parser_state;
 use crate::inner_args::InnerArgs;
 use crate::keywords::Keyword;
 use crate::parser::ast::{
-    AbstractAlias, AbstractConfig, AbstractEnum, AbstractFieldAssignment, AbstractMemberAccess,
+    AbstractAlias, AbstractConfig, AbstractEnum, AbstractMemberAccess, AbstractOptionAssignment,
     AbstractParam, AbstractStruct, AbstractTypeDef, AbstractVar, AbstractVariant, ArrayExpr,
     AstInfo, Expr, Generic, Item, PathSegment, SectionKind, SpannedExpr, SpannedPathSegment,
     SpannedTypeExpr, TypeExpr, Unary, UnaryOp,
@@ -641,14 +641,14 @@ fn parse_config_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<Abstr
         interner,
     )?;
 
-    let mut field_assignments: Vec<AbstractFieldAssignment> = Vec::new();
+    let mut option_assignments: Vec<AbstractOptionAssignment> = Vec::new();
     let mut inner_field_cfg: Vec<AbstractConfig> = Vec::new();
 
     loop {
         // for ".cases = [snake_case]"
         if ctx.peek_tok() == Token::Dot {
-            let field_assignment = parse_field_assignment(ctx, interner)?;
-            field_assignments.push(field_assignment);
+            let option_assignment = parse_option_assignment(ctx, interner)?;
+            option_assignments.push(option_assignment);
         // for "inner {/*assignments*/}"
         } else if ctx.peek_kind() == TokenKind::Id {
             let abs_cfg = parse_config_expr(ctx, interner)?;
@@ -670,7 +670,7 @@ fn parse_config_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<Abstr
     Ok(AbstractConfig::new(
         name_id,
         name_span,
-        field_assignments,
+        option_assignments,
         inner_field_cfg,
     ))
 }
@@ -678,10 +678,10 @@ fn parse_config_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<Abstr
 // The field assignments could be ANYWHERE as long as it's in a valid scope with the parent it's
 // defining, so it's probably best to just keep this one by one in control flow to avoid allocating
 // and appending vecs just because a field assignment was after a nested config.
-fn parse_field_assignment(
+fn parse_option_assignment(
     ctx: &mut ParserContext,
     interner: &Intern,
-) -> Result<AbstractFieldAssignment, Token> {
+) -> Result<AbstractOptionAssignment, Token> {
     ctx.expect_verbose(
         TokenKind::Dot,
         "Expected a '.' to select available configuration, found ",
@@ -716,7 +716,9 @@ fn parse_field_assignment(
         ArrayExpr::new(vec![only_element])
     };
 
-    Ok(AbstractFieldAssignment::new(name_id, name_span, array_expr))
+    Ok(AbstractOptionAssignment::new(
+        name_id, name_span, array_expr,
+    ))
 }
 
 // Should this just return elements similar to how call_args does?

@@ -68,7 +68,7 @@ impl<'a> SemanticReporter<'a> {
             SemanticError::VagueArg(sp_arg) => {
                 let core_msg = format!(
                     //FIXME: Still vague
-                    "The argument \"#{}\" cannot be used for a `var->` defined variable that holds a \"struct\" or \"enum\"",
+                    "The argument \"#{}\" cannot be used for a `var->` defined variable that holds a `struct` or `enum`",
                     sp_arg.inner
                 );
 
@@ -107,7 +107,7 @@ impl<'a> SemanticReporter<'a> {
                     )
                     .add_annotation(
                         err_ty_span,
-                        AnnotationKind::Primary,
+                        AnnotationKind::Secondary,
                         "Recursive".to_string().into(),
                     )
                     .add_annotation(

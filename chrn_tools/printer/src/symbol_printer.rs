@@ -41,6 +41,7 @@ pub fn print_symbol(compiler: &ScriptCompiler, sym: &Symbol, interner: &Intern) 
         SymbolKind::Val(val_id) => todo!(),
         SymbolKind::ReservedTypeSlot(type_id) => "Unknown".to_string(),
         SymbolKind::Module(mod_id) => todo!(),
+        SymbolKind::Config(cfg_id) => todo!(),
     };
 
     full_str

@@ -156,12 +156,11 @@ pub fn get_type_id(
                 if current_sym.name_id == target_name_id {
                     match &compiler.symbols[current_sym_id.id as usize].kind {
                         SymbolKind::Type(type_id) => return Some(*type_id),
-                        // Is this even possible
                         SymbolKind::Val(val_id) => {
                             return Some(compiler.values[val_id.id as usize].type_id);
                         }
                         SymbolKind::ReservedTypeSlot(type_id) => return Some(*type_id),
-                        SymbolKind::Module(_) => return None,
+                        SymbolKind::Module(_) | SymbolKind::Config(_) => return None,
                     }
                 }
             }

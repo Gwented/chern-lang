@@ -39,7 +39,7 @@ mod tests {
     fn mock_single_module_compiler(
         text: &str,
     ) -> (SourceRegionArena, Intern, ChrnSettings, ScriptCompiler) {
-        let mut interner = mock_interner(0, 1);
+        let interner = mock_interner(0, 1);
         let settings = ChrnSettings::default();
         let path_id = PathId::new(0);
         let region_id = SourceRegionId::new(0);

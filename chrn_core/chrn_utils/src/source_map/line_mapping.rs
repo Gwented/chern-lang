@@ -399,7 +399,6 @@ pub fn form_ln_view(src_bytes: &[u8], span: &SourceSpan) -> LineView {
     let eof_byte_pos = src_bytes.len() - 1;
     let span_ends_at_eof = eof_byte_pos == span_end;
 
-    dbg!(current_start, eof_byte_pos);
     // Current start is a variable that eagerly goes to the start of the next line. Meaning, if it
     // reaches the last line, it should be greater than the actual end since it should be at what
     // would be the next line since goes to the next line's position whether or not it exists.
@@ -557,9 +556,9 @@ pub fn get_num_width(num: usize) -> usize {
 
 /// Returns character width count within the given start and end (inclusive, exclusive)
 pub fn get_chars_width(s: &str, start: usize, end: usize) -> usize {
-    if start > end {
-        dbg!(&s[end..=start]);
-    }
+    // if start > end {
+    //     dbg!(&s[end..=start]);
+    // }
     s[start..end]
         .chars()
         .map(|c| UnicodeWidthChar::width(c).unwrap_or(1))

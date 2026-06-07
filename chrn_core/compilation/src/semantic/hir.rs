@@ -4,8 +4,8 @@ use std::{collections::HashMap, fmt::Debug};
 use chrn_utils::{
     fmter::{Formattable, Formatted},
     id_types::{
-        AstId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SpannedContainer, SymbolId, TypeId,
-        ValueId,
+        AstId, ConfigId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SpannedContainer,
+        SymbolId, TypeId, ValueId,
     },
     source_map::source_span::SourceSpan,
 };
@@ -55,7 +55,6 @@ pub enum Type {
     Unknown,
 }
 
-// Iyad yourrg gieyetters iiyand sieyetters
 #[derive(Debug)]
 pub struct Symbol {
     pub name_id: InternedId,
@@ -113,54 +112,100 @@ pub enum SymbolKind {
     ReservedTypeSlot(TypeId),
     /// Represents a module symbol
     Module(ModuleId),
-    // Maybe for "JAVA {}" or "PYTHON {}" specifics
+    Config(ConfigId),
     // Section(),
 }
 
-// #[derive(Debug)]
-// pub struct AbstractConfig {
-//     // In regards to "var->" defined variables, I think just allowing for, "var.inner" would be the
-//     // best in regards to accessing and changing fields
-//     // Could be a "Outer.a { }" where it is defining it's fields config specifically
-//     /// Name of structural type to configure
-//     pub name_id: InternedId,
-//     pub name_span: SourceSpan,
-//     /// Configuration for the current parent to apply
-//     pub field_assignments: Vec<AbstractFieldAssignment>,
-//     /// Configuration for inner fields to define recursively
-//     pub inner_field_cfg: Vec<AbstractConfig>,
-// }
+// Maybe, ConfigKind, UserConfigDef, IntrinsicConfigDef
+#[derive(Debug)]
+pub enum ConfigKind {
+    Description(ConfigDescription),
+    Def(ConfigDef),
+}
+
+/// Represent a configurataion description that must be followed,
+#[derive(Debug)]
+pub struct ConfigDescription {
+    pub kind: ConfigDescriptionKind,
+    pub option_desc: Vec<OptionDescripton>,
+}
+
+impl ConfigDescription {
+    pub fn new(
+        kind: ConfigDescriptionKind,
+        option_desc: Vec<OptionDescripton>,
+    ) -> ConfigDescription {
+        ConfigDescription { kind, option_desc }
+    }
+}
+
+/// Represents a configurations options, that are preloaded by the compiler as schemas to follow
+#[derive(Debug)]
+pub struct OptionDescripton {
+    name_id: InternedId,
+    constraints: Option<TypeConstraintFlags>,
+}
 
 #[derive(Debug)]
+pub enum ConfigDescriptionKind {
+    Struct,
+    Enum,
+    Field,
+}
+
+/// Intended to represent a configuration block environment that consumes options for a field.
+#[derive(Debug)]
 pub struct ConfigDef {
-    pub sym_id: SymbolId,
-    pub field_assignments: Vec<FieldAssignment>,
+    /// Is a name id instead of symbol id since `NameResolver` merely registers names, with no
+    /// knowledge of symbol specifics. A dependency system may be used in the future.
+    pub name_id: InternedId,
+    pub name_span: SourceSpan,
+    pub option_assignments: Vec<OptionAssignment>,
     pub inner_field_cfg: Vec<ConfigDef>,
 }
 
-// #[derive(Debug)]
-// pub struct AbstractFieldAssignment {
-//     /// Name of structural type to configure
-//     pub name_id: InternedId,
-//     pub name_span: SourceSpan,
-//     pub array_expr: ArrayExpr,
-// }
+impl ConfigDef {
+    pub fn new(
+        name_id: InternedId,
+        name_span: SourceSpan,
+        option_assignments: Vec<OptionAssignment>,
+        inner_field_cfg: Vec<ConfigDef>,
+    ) -> ConfigDef {
+        ConfigDef {
+            name_id,
+            name_span,
+            option_assignments,
+            inner_field_cfg,
+        }
+    }
+}
 
+/// Represents options and their values assigned by the user
 #[derive(Debug)]
-pub struct FieldAssignment {
+pub struct OptionAssignment {
     // Own member id
     pub member_id: MemberId,
+    // more like option_name_id
     pub name_id: InternedId,
     pub name_span: SourceSpan,
     pub array: Vec<ExprId>,
 }
 
-// Not 100% sure on this needed
-// #[derive(Debug)]
-// pub struct MemberSymbol {
-//     pub kind: MemberSymbolKind,
-//     pub span: SourceSpan,
-// }
+impl OptionAssignment {
+    pub fn new(
+        member_id: MemberId,
+        name_id: InternedId,
+        name_span: SourceSpan,
+        array: Vec<ExprId>,
+    ) -> OptionAssignment {
+        OptionAssignment {
+            member_id,
+            name_id,
+            name_span,
+            array,
+        }
+    }
+}
 
 /// An enum that represents any sort of inner member that could exist within a given parent symbol.
 #[derive(Debug)]
@@ -170,7 +215,7 @@ pub enum MemberSymbolKind {
     // FIX:
     /// **NOT ACTUALLY A MEMBER YET**
     Param(Param),
-    FieldAssignment(FieldAssignment),
+    FieldAssignment(OptionAssignment),
 }
 
 // Maybe this should be a member?

@@ -1,6 +1,6 @@
 use chrn_utils::{
     chrn_settings::ChrnSettings,
-    id_types::{AstId, InternedId, ModuleId, ScopeId, SymbolId, TypeId},
+    id_types::{AstId, ConfigId, InternedId, ModuleId, ScopeId, SymbolId, TypeId},
     intern::Intern,
     source_map::{
         source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
@@ -16,7 +16,10 @@ use crate::{
     scopes::{Scope, ScopeInfo},
     script_compiler::ScriptCompiler,
     semantic::{
-        hir::{AliasDef, EnumDef, StructDef, Symbol, SymbolKind, Type, TypeDef, TypeInfo},
+        hir::{
+            AliasDef, ConfigDef, ConfigKind, EnumDef, StructDef, Symbol, SymbolKind, Type, TypeDef,
+            TypeInfo,
+        },
         semantic_reporter::SemanticReporter,
     },
 };
@@ -58,6 +61,7 @@ impl NamespaceResolver<'_> {
         for (id, item) in self.ast_info.items.iter().enumerate() {
             let ast_id = AstId::new(id as u32);
 
+            // Maybe opt into section specific processing
             match item {
                 Item::TypeDef(abs_typedef) => self.register_typedef(abs_typedef, ast_id),
                 Item::Struct(abs_struct) => self.register_struct(abs_struct, ast_id),
@@ -67,8 +71,6 @@ impl NamespaceResolver<'_> {
                 Item::Config(abs_cfg) => self.register_config(abs_cfg, ast_id),
             }
         }
-
-        // Type specific needed
 
         if !self.reporter.err_vec.is_empty() {
             let mut diags = Vec::new();
@@ -87,11 +89,11 @@ impl NamespaceResolver<'_> {
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
 
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
-
         table.ast_to_sym.insert(ast_id, sym_id);
         let orig_sym_opt = table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
 
-        let type_id = TypeId::new(self.compiler.types.len() as u32);
+        let cfg_def = ConfigDef::new(abs_cfg.name_id, abs_cfg.name_span, Vec::new(), Vec::new());
+        let cfg_id = ConfigId::new(self.compiler.configs.len() as u32);
 
         let sym = Symbol::new(
             abs_cfg.name_id,
@@ -101,17 +103,15 @@ impl NamespaceResolver<'_> {
             true,
             None,
             ScopeType::Complex,
-            // IS it a type?
-            todo!(),
+            SymbolKind::Config(cfg_id),
         );
 
+        self.compiler.configs.push(ConfigKind::Def(cfg_def));
         self.compiler.symbols.push(sym);
 
         if let Some(orig_sym_id) = orig_sym_opt {
             self.report_duplicate(orig_sym_id, sym_id);
         }
-
-        todo!()
     }
 
     /// Attaches ast_id to the name_id of it's ast structure.

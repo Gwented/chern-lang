@@ -40,6 +40,8 @@ let x = 5*/
 @def
 
 import "../../chrn_core/chrn_tests/def.chrn" as defs
+var->
+    x: Forb
 
 /*"
 
@@ -57,11 +59,10 @@ import "../../chrn_core/chrn_tests/def.chrn" as defs
             p: def::Person
             // Breaks reporting since cross module spanning is NOT possible right now
             // p: defs::Person
-        } #scient
+        }
 
-    /*complex->
-        Door {}*/
-
+    complex->
+        Door {}
 @end
 
 /*let a = b

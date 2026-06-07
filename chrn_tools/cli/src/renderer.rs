@@ -253,7 +253,7 @@ fn form_diag(
 
     // Remove layouts that ended up with no annotations after layer assignment
     // (intermediate lines of multi-line spans)
-    ln_layouts.retain(|layout| !layout.render_info.is_empty());
+    ln_layouts.retain(|lay| !lay.render_info.is_empty());
     //TODO: Need to have it so line layouts greedily have their region priority chosen.
     //So, if any region has a primary, that primary region is printed before all other layout
     //regions, and if 2 regions have a primary, the region first seen is the one that goes first.
