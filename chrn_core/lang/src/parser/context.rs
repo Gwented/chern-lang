@@ -51,7 +51,7 @@ const A_BRANCH_FUNC_SET: u64 = A_BASE_EXIT_SET | token::C_BRACKET;
 /// Parser context struct that orchestrates parser as well as reports errors
 // p_ctx
 #[derive(Debug)]
-pub(super) struct Context<'a> {
+pub(super) struct ParserContext<'a> {
     settings: &'a ChrnSettings,
     pub(super) region: &'a SourceRegion,
     toks: &'a [SpannedToken],
@@ -59,13 +59,13 @@ pub(super) struct Context<'a> {
     pub(super) err_vec: Vec<SourceDiagnostic>,
 }
 
-impl<'a> Context<'a> {
+impl<'a> ParserContext<'a> {
     pub(super) fn new(
         settings: &'a ChrnSettings,
         region: &'a SourceRegion,
         toks: &'a [SpannedToken],
-    ) -> Context<'a> {
-        Context {
+    ) -> ParserContext<'a> {
+        ParserContext {
             settings,
             region,
             toks,

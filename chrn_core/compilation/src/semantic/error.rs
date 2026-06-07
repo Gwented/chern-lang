@@ -1,9 +1,9 @@
 use chrn_utils::{
-    fmter::{Formatted, SpannedFormatted},
-    id_types::SpannedInternedId,
+    fmter::Formatted,
+    id_types::{InternedId, SpannedContainer},
     source_map::{source_diagnostic::SourceDiagnostic, source_span::SourceSpan},
 };
-use lang::{inner_args::SpannedInnerArg, types::type_constraints::TypeConstraintFlags};
+use lang::{inner_args::InnerArgs, types::type_constraints::TypeConstraintFlags};
 
 use crate::{constraints::ArgConstraint, semantic::hir::FuncKind};
 
@@ -21,19 +21,25 @@ pub enum SemanticError {
     /// Currently inferred constraints, Conflicting other constraints, spans
     TypeConstraintBoundConflict(TypeConstraintFlags, TypeConstraintFlags, Vec<SourceSpan>),
     /// SpannedArg failed at, Error Symbol span
-    UnsupportedArg(SpannedInnerArg, SourceSpan),
+    UnsupportedArg(SpannedContainer<InnerArgs>, SourceSpan),
     /// SpannedArg,
     // Interesting name
-    VagueArg(SpannedInnerArg),
+    VagueArg(SpannedContainer<InnerArgs>),
     // CircularRef
     // Change this
-    /// The type with a circular reference that has an invalid argument for that reference
-    /// Parent declaration span, SpannedArg failed at, Spanned Type failed at
+    /// Occurs when an argument is applied to a type, that recursively holds itself inside of
+    /// itself
+    ///
+    /// (Parent declaration span, SpannedArg failed at, Spanned Type failed at)
     //TODO: Combine
-    CircularArg(SourceSpan, SpannedInnerArg, SpannedFormatted),
+    CircularArg(
+        SpannedContainer<Formatted>,
+        SpannedContainer<InnerArgs>,
+        SourceSpan,
+    ),
     /// SpannedInterned number, type overflown
     //WARN: This technically shouldn't exist since BigInt/BigFloat would exist
-    NumericOverflow(SpannedInternedId, Formatted),
+    NumericOverflow(SpannedContainer<InternedId>, Formatted),
     //TODO: Maybe option name id?
     UndefinedMember(SourceSpan),
     Math(MathError),
@@ -42,9 +48,13 @@ pub enum SemanticError {
 #[derive(Debug)]
 pub enum MathError {
     /// SpannedLhs, SpannedRhs, Op
-    BinaryOpMismatch(SpannedFormatted, SpannedFormatted, Formatted),
+    BinaryOpMismatch(
+        SpannedContainer<Formatted>,
+        SpannedContainer<Formatted>,
+        Formatted,
+    ),
     /// Spanned Operand, operator, spans
-    UnaryOpMismatch(SpannedFormatted, Formatted),
+    UnaryOpMismatch(SpannedContainer<Formatted>, Formatted),
     /// Lhs, rhs, spans
     DivideByZero(Formatted, Vec<SourceSpan>),
 }

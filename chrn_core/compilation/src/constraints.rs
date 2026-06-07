@@ -27,8 +27,8 @@ pub(super) fn check_type_constraint(
             visited.push(type_id);
 
             // No cross module reporting so all messages are shallow in spanning
-            for (i, member_id) in struct_def.fields.iter().enumerate() {
-                let field = &compiler.get_field(*member_id);
+            for member_id in &struct_def.fields {
+                let field = compiler.get_field(*member_id);
                 // Not sure if this incurs any errors this time
                 if visited.contains(&field.type_id) {
                     // if spanned_arg.arg.has_restrictions() {

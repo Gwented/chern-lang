@@ -1,3 +1,4 @@
+use chrn_utils::chrn_settings::ChrnSettings;
 use chrn_utils::{
     fmter::Formattable,
     intern::Intern,
@@ -6,7 +7,6 @@ use chrn_utils::{
         source_region::SourceRegion,
     },
 };
-use chrn_utils::chrn_settings::ChrnSettings;
 
 use crate::semantic::error::SemanticError;
 
@@ -39,7 +39,7 @@ impl<'a> SemanticReporter<'a> {
         let src_diag = match sem_err {
             // Need to know which spans exactly now
             SemanticError::UnsupportedArg(sp_arg, sym_span) => {
-                let arg_constraints = sp_arg.arg.type_constraints().to_type_constraint_vec();
+                let arg_constraints = sp_arg.inner.type_constraints().to_type_constraint_vec();
 
                 let mut constraints_str = String::new();
 
@@ -53,7 +53,7 @@ impl<'a> SemanticReporter<'a> {
 
                 let core_msg = format!(
                     "Only types that satisfy {} can use the argument `#{}`",
-                    constraints_str, sp_arg.arg
+                    constraints_str, sp_arg.inner
                 );
 
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
@@ -69,7 +69,7 @@ impl<'a> SemanticReporter<'a> {
                 let core_msg = format!(
                     //FIXME: Still vague
                     "The argument \"#{}\" cannot be used for a `var->` defined variable that holds a \"struct\" or \"enum\"",
-                    sp_arg.arg
+                    sp_arg.inner
                 );
 
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
@@ -92,30 +92,34 @@ impl<'a> SemanticReporter<'a> {
                 //
                 // (msg, spans)
             }
-            SemanticError::CircularArg(parent_span, sp_arg, sp_fmtted_ty) => {
+            SemanticError::CircularArg(sp_parent_ty, sp_arg, err_ty_span) => {
                 let core_msg = format!(
                     // Suspicious error message
                     "Cannot give type `{}` the argument `#{}` due to the circularly referenced type itself not supporting the argument",
-                    sp_fmtted_ty.fmtted, sp_arg.arg
+                    sp_parent_ty.inner, sp_arg.inner
                 );
 
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
                     .add_annotation(
-                        parent_span,
+                        sp_parent_ty.span,
                         AnnotationKind::Secondary,
-                        format!("{} defined here", sp_fmtted_ty.fmtted).into(),
+                        format!("defined here").into(),
                     )
-                    .add_annotation(sp_fmtted_ty.span, AnnotationKind::Primary, None)
+                    .add_annotation(
+                        err_ty_span,
+                        AnnotationKind::Primary,
+                        "Recursive".to_string().into(),
+                    )
                     .add_annotation(
                         sp_arg.span,
-                        AnnotationKind::Secondary,
-                        "Conflicting argument".to_string().into(),
+                        AnnotationKind::Primary,
+                        "Conflicting argument here".to_string().into(),
                     )
                     .build()
             }
             // Should have the data type's cap shown as well
             SemanticError::NumericOverflow(sp_interned_num, fmtted_ty) => {
-                let overflown_num = self.interner.search(sp_interned_num.interned_id);
+                let overflown_num = self.interner.search(sp_interned_num.inner);
                 let core_msg = format!(
                     "The type `{fmtted_ty}` had an overflow with the value \"{}\" ",
                     overflown_num
@@ -133,7 +137,7 @@ impl<'a> SemanticReporter<'a> {
                 MathError::BinaryOpMismatch(sp_fmtted_lhs, sp_fmtted_rhs, fmtted_op) => {
                     let core_msg = format!(
                         "The type `{}` cannot apply `{fmtted_op}` to type `{}`",
-                        sp_fmtted_lhs.fmtted, sp_fmtted_rhs.fmtted,
+                        sp_fmtted_lhs.inner, sp_fmtted_rhs.inner,
                     );
 
                     SourceDiagnostic::basic_multiple(
@@ -146,7 +150,7 @@ impl<'a> SemanticReporter<'a> {
                 MathError::UnaryOpMismatch(fmtted_operand, fmtted_op) => {
                     let core_msg = format!(
                         "Cannot apply `{}` to type `{}`",
-                        fmtted_op, fmtted_operand.fmtted
+                        fmtted_op, fmtted_operand.inner
                     );
 
                     SourceDiagnostic::basic(

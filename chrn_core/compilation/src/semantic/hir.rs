@@ -3,7 +3,10 @@ use std::{collections::HashMap, fmt::Debug};
 
 use chrn_utils::{
     fmter::{Formattable, Formatted},
-    id_types::{AstId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId, ValueId},
+    id_types::{
+        AstId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SpannedContainer, SymbolId, TypeId,
+        ValueId,
+    },
     source_map::source_span::SourceSpan,
 };
 use lang::{
@@ -33,6 +36,9 @@ impl TypeInfo {
     }
 }
 
+// Types are not given spans directly since it would over-complicate storing and add a net 12 byte
+// increase to all spans. Also, type spanning is entity symbol dependent anyways so it's likely the
+// better choice.
 //NOTE: Should be in chrn_utils?
 #[derive(Debug)]
 pub enum Type {
@@ -161,16 +167,20 @@ pub struct FieldAssignment {
 pub enum MemberSymbolKind {
     Field(FieldRepre),
     Variant(VariantRepre),
+    // FIX:
+    /// **NOT ACTUALLY A MEMBER YET**
     Param(Param),
     FieldAssignment(FieldAssignment),
 }
 
+// Maybe this should be a member?
 #[derive(Debug)]
 pub struct Param {
     pub sym_id: SymbolId,
     //FIX: More like "FieldId"
-    // Should become SpanId
+    //
     pub type_id: TypeId,
+    // Should become SpanId maybe.
     pub ast_id: AstId,
 }
 
@@ -324,6 +334,7 @@ pub struct VariantRepre {
     pub name_span: SourceSpan,
     // Because enum types are nullable
     pub type_id: Option<TypeId>,
+    // pub spanned_ty: Option<SpannedContainer<TypeId>>,
     // Points to variant within original Ast enum
     // Also, more so a "FieldId"
     pub ast_id: AstId,
@@ -336,6 +347,7 @@ impl VariantRepre {
         member_id: MemberId,
         name_id: InternedId,
         name_span: SourceSpan,
+        // spanned_ty: Option<SpannedContainer<TypeId>>,
         type_id: Option<TypeId>,
         ast_id: AstId,
     ) -> VariantRepre {
@@ -344,6 +356,7 @@ impl VariantRepre {
             name_id,
             name_span,
             type_id,
+            // spanned_ty,
             ast_id,
             conds: Vec::new(),
             args: Vec::new(),
@@ -526,19 +539,5 @@ impl Formattable for FuncKind {
             FuncKind::Equals => Formatted::FuncEquals,
             FuncKind::IsEmpty => Formatted::IsEmpty,
         }
-    }
-}
-
-//TEST:
-/// Generic structure for attaching a span to any type
-#[derive(Debug)]
-pub struct SpannedItem<T: Debug> {
-    pub inner: T,
-    pub span: SourceSpan,
-}
-
-impl<T: Debug> SpannedItem<T> {
-    pub fn new(inner: T, span: SourceSpan) -> SpannedItem<T> {
-        SpannedItem { inner, span }
     }
 }

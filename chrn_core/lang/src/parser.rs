@@ -3,7 +3,7 @@ mod branch;
 mod context;
 mod parser_state;
 
-use crate::inner_args::{InnerArgs, SpannedInnerArg};
+use crate::inner_args::InnerArgs;
 use crate::keywords::Keyword;
 use crate::parser::ast::{
     AbstractAlias, AbstractConfig, AbstractEnum, AbstractFieldAssignment, AbstractMemberAccess,
@@ -12,11 +12,12 @@ use crate::parser::ast::{
     SpannedTypeExpr, TypeExpr, Unary, UnaryOp,
 };
 use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
-use crate::parser::context::Context;
+use crate::parser::context::ParserContext;
 use crate::parser::parser_state::ParserState;
 use crate::token::{SpannedToken, Token, TokenKind};
 use chrn_utils::chrn_settings::ChrnSettings;
 use chrn_utils::fmter::{Formattable, Formatted};
+use chrn_utils::id_types::SpannedContainer;
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
 use chrn_utils::source_map::source_region::SourceRegion;
@@ -33,7 +34,7 @@ pub fn parse(
     let mut ast_info = AstInfo::new();
 
     let mut state = ParserState::new();
-    let mut ctx = Context::new(settings, metadata, tokens);
+    let mut ctx = ParserContext::new(settings, metadata, tokens);
 
     // Skipping possible @def first since it is recognized as it's own token
     if ctx.peek_tok() == Token::Def {
@@ -367,7 +368,7 @@ pub fn parse(
 
 //FIXME: These sets may be misaligned
 fn parse_alias_stmt(
-    ctx: &mut Context,
+    ctx: &mut ParserContext,
     is_priv: bool,
     interner: &Intern,
 ) -> Result<AbstractAlias, Token> {
@@ -421,7 +422,7 @@ fn parse_alias_stmt(
     Ok(alias)
 }
 
-fn check_bind(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
+fn check_bind(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token> {
     ctx.expect_id_verbose(
         TokenKind::Str,
         "Expected a string literal after `bind`, found ",
@@ -433,7 +434,7 @@ fn check_bind(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
     Ok(())
 }
 
-fn check_import(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
+fn check_import(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token> {
     ctx.expect_id_verbose(
         TokenKind::Str,
         "Expected a string literal path, found ",
@@ -458,7 +459,7 @@ fn check_import(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
     Ok(())
 }
 
-fn parse_typedef(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDef, Token> {
+fn parse_typedef(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractTypeDef, Token> {
     let name_span = ctx.peek_span();
 
     let name_id = ctx.expect_id_verbose(
@@ -505,7 +506,11 @@ fn parse_typedef(ctx: &mut Context, interner: &Intern) -> Result<AbstractTypeDef
     Ok(abs_typedef)
 }
 
-fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Result<Item, Token> {
+fn parse_nest_sect(
+    ctx: &mut ParserContext,
+    is_priv: bool,
+    interner: &Intern,
+) -> Result<Item, Token> {
     // Wait what is this error?
     let kw = ctx.expect_kw_verbose(
         "Expected the keyword `enum` or `struct`, found ",
@@ -617,7 +622,7 @@ fn parse_nest_sect(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Resul
 //TODO: Better complex branching tracking so that help messages can be made
 //
 //No other branches exist right now so it just parses expecting uh, stuff.
-fn parse_config_expr(ctx: &mut Context, interner: &Intern) -> Result<AbstractConfig, Token> {
+fn parse_config_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractConfig, Token> {
     let name_span = ctx.peek_span();
 
     let name_id = ctx.expect_id_verbose(
@@ -674,7 +679,7 @@ fn parse_config_expr(ctx: &mut Context, interner: &Intern) -> Result<AbstractCon
 // defining, so it's probably best to just keep this one by one in control flow to avoid allocating
 // and appending vecs just because a field assignment was after a nested config.
 fn parse_field_assignment(
-    ctx: &mut Context,
+    ctx: &mut ParserContext,
     interner: &Intern,
 ) -> Result<AbstractFieldAssignment, Token> {
     ctx.expect_verbose(
@@ -716,7 +721,7 @@ fn parse_field_assignment(
 
 // Should this just return elements similar to how call_args does?
 //NOTE: May add parse_array to parse_expr eventually
-fn parse_array(ctx: &mut Context, interner: &Intern) -> Result<ArrayExpr, Token> {
+fn parse_array(ctx: &mut ParserContext, interner: &Intern) -> Result<ArrayExpr, Token> {
     ctx.expect_verbose(
         TokenKind::OBracket,
         "Expected a '[' to declare array, found ",
@@ -758,11 +763,15 @@ fn parse_array(ctx: &mut Context, interner: &Intern) -> Result<ArrayExpr, Token>
 }
 
 //TODO:
-fn parse_override_sect(ctx: &mut Context, interner: &Intern) -> Result<(), Token> {
+fn parse_override_sect(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token> {
     todo!()
 }
 
-fn parse_let(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Result<AbstractVar, Token> {
+fn parse_let(
+    ctx: &mut ParserContext,
+    is_priv: bool,
+    interner: &Intern,
+) -> Result<AbstractVar, Token> {
     let name_span = ctx.peek_span();
 
     let name_id = ctx.expect_id_verbose(
@@ -789,7 +798,11 @@ fn parse_let(ctx: &mut Context, is_priv: bool, interner: &Intern) -> Result<Abst
 }
 
 /// Pratt Parser for all expression kinds except type expressions
-fn parse_expr(ctx: &mut Context, min_bp: u8, interner: &Intern) -> Result<SpannedExpr, Token> {
+fn parse_expr(
+    ctx: &mut ParserContext,
+    min_bp: u8,
+    interner: &Intern,
+) -> Result<SpannedExpr, Token> {
     let mut lhs = parse_unary(ctx, interner)?;
 
     loop {
@@ -882,7 +895,7 @@ fn parse_expr(ctx: &mut Context, min_bp: u8, interner: &Intern) -> Result<Spanne
 }
 
 // For single values, likley lhs
-fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Token> {
+fn parse_primary(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedExpr, Token> {
     match ctx.peek_tok() {
         Token::OParen => {
             ctx.advance_tok();
@@ -987,7 +1000,7 @@ fn parse_primary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, To
     }
 }
 
-fn parse_call_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>, Token> {
+fn parse_call_args(ctx: &mut ParserContext, interner: &Intern) -> Result<Vec<SpannedExpr>, Token> {
     let mut args: Vec<SpannedExpr> = Vec::new();
 
     if ctx.peek_kind() == TokenKind::CParen {
@@ -1022,7 +1035,7 @@ fn parse_call_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedEx
     Ok(args)
 }
 
-fn parse_unary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Token> {
+fn parse_unary(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedExpr, Token> {
     match ctx.peek_tok() {
         //BUG: Unary does not properly apply self to member access
         Token::Hyphen => {
@@ -1050,7 +1063,7 @@ fn parse_unary(ctx: &mut Context, interner: &Intern) -> Result<SpannedExpr, Toke
 
 // ENFORCE TYPE NAMING FOR GENERICS AT LEAST
 /// Recursive function for parsing all type expressions
-fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, Token> {
+fn parse_type(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedTypeExpr, Token> {
     match ctx.peek_tok() {
         Token::Id(name_id) if ctx.peek_ahead(1).tok.kind() == TokenKind::OAngleBracket => {
             let start = ctx.advance_span().start;
@@ -1129,7 +1142,7 @@ fn parse_type(ctx: &mut Context, interner: &Intern) -> Result<SpannedTypeExpr, T
 /// Handles both plain identifiers and generic segments, and is shared between expression
 /// and type-expression contexts.
 fn parse_static_path(
-    ctx: &mut Context,
+    ctx: &mut ParserContext,
     interner: &Intern,
 ) -> Result<Vec<SpannedPathSegment>, Token> {
     let mut static_path: Vec<SpannedPathSegment> = Vec::new();
@@ -1203,7 +1216,10 @@ fn parse_static_path(
 
 /// Parses assuming that within "List<i32>" the "List" part was skipped, which would leave <i32>
 /// to be handled
-fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedTypeExpr>, Token> {
+fn parse_generic(
+    ctx: &mut ParserContext,
+    interner: &Intern,
+) -> Result<Vec<SpannedTypeExpr>, Token> {
     ctx.expect_verbose(
         TokenKind::OAngleBracket,
         "Expected a '<' to declare generic, found ",
@@ -1236,7 +1252,7 @@ fn parse_generic(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedType
 }
 
 fn handle_struct_fields(
-    ctx: &mut Context,
+    ctx: &mut ParserContext,
     struct_name: &str,
     interner: &Intern,
 ) -> Result<Vec<AbstractTypeDef>, Token> {
@@ -1265,7 +1281,7 @@ fn handle_struct_fields(
 
 /// Assumes the leading '{' was skipped
 fn handle_enum_variants(
-    ctx: &mut Context,
+    ctx: &mut ParserContext,
     enum_name: &str,
     interner: &Intern,
 ) -> Result<Vec<AbstractVariant>, Token> {
@@ -1297,7 +1313,7 @@ fn handle_enum_variants(
 }
 
 /// Variant-specific parser that account for if there is a type declared with the variant or not
-fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant, Token> {
+fn parse_variant(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractVariant, Token> {
     let name_span = ctx.peek_span();
 
     let name_id = ctx.expect_id_verbose(
@@ -1334,8 +1350,11 @@ fn parse_variant(ctx: &mut Context, interner: &Intern) -> Result<AbstractVariant
 }
 
 // Egregious naming scheme
-fn handle_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedInnerArg>, Token> {
-    let mut args: Vec<SpannedInnerArg> = Vec::new();
+fn handle_args(
+    ctx: &mut ParserContext,
+    interner: &Intern,
+) -> Result<Vec<SpannedContainer<InnerArgs>>, Token> {
+    let mut args: Vec<SpannedContainer<InnerArgs>> = Vec::new();
 
     while ctx.peek_kind() == TokenKind::HashSymbol {
         ctx.advance_tok();
@@ -1345,7 +1364,10 @@ fn handle_args(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedInnerA
     Ok(args)
 }
 
-fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<SpannedInnerArg, Token> {
+fn parse_arg(
+    ctx: &mut ParserContext,
+    interner: &Intern,
+) -> Result<SpannedContainer<InnerArgs>, Token> {
     let name_span = ctx.peek_span();
 
     let interned_id = ctx.expect_id_verbose(
@@ -1368,11 +1390,14 @@ fn parse_arg(ctx: &mut Context, interner: &Intern) -> Result<SpannedInnerArg, To
         }
     };
 
-    Ok(SpannedInnerArg::new(arg, name_span))
+    Ok(SpannedContainer::new(arg, name_span))
 }
 
 // Alias is this only one that uses this so_+@$_$@
-fn parse_alias_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<AbstractParam>, Token> {
+fn parse_alias_decl(
+    ctx: &mut ParserContext,
+    interner: &Intern,
+) -> Result<Vec<AbstractParam>, Token> {
     let mut params: Vec<AbstractParam> = Vec::new();
 
     while ctx.peek_kind() != TokenKind::CParen {
@@ -1428,7 +1453,7 @@ fn parse_alias_decl(ctx: &mut Context, interner: &Intern) -> Result<Vec<Abstract
     Ok(params)
 }
 
-fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>, Token> {
+fn handle_conds(ctx: &mut ParserContext, interner: &Intern) -> Result<Vec<SpannedExpr>, Token> {
     let mut conds: Vec<SpannedExpr> = Vec::new();
     // This count cannot end the definition since it would prevent arguments from being viewed
     ctx.expect_verbose(
@@ -1475,7 +1500,7 @@ fn handle_conds(ctx: &mut Context, interner: &Intern) -> Result<Vec<SpannedExpr>
 //NOTE: Could make the first pass only resolve the basics so that module resolution for local
 //imports are handled without giving the module passer too much syntax knowledge, but fine for now.
 /// Only does syntax checking for import since modules are resolved on first pass.
-fn parse_export(ctx: &mut Context, interner: &Intern) -> Result<bool, ()> {
+fn parse_export(ctx: &mut ParserContext, interner: &Intern) -> Result<bool, ()> {
     let mut is_priv = true;
 
     while let Token::Keyword(kw) = ctx.peek_tok()
@@ -1501,7 +1526,7 @@ fn parse_export(ctx: &mut Context, interner: &Intern) -> Result<bool, ()> {
 }
 
 /// Helper for solely reporting export
-fn report_export(ctx: &mut Context, fmtted: Formatted, branch: Branch, interner: &Intern) {
+fn report_export(ctx: &mut ParserContext, fmtted: Formatted, branch: Branch, interner: &Intern) {
     ctx.report_verbose(
         &format!("Cannot use `export` on `{}`", fmtted),
         branch,

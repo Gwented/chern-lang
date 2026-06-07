@@ -7,11 +7,13 @@ let x = other::e#var
 
 nest->
     export struct Person {
-        name: str
-        age: u8
+        // state: State
+        p: Person
+        // name: str
+        // age: u8
     }
 
     export enum State {
-        Ready: u8 [] #warn
+        Ready: str [] #warn
         InProgress
     }

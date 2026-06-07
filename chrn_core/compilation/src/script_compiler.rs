@@ -424,18 +424,6 @@ impl ScriptCompiler {
         }
     }
 
-    // pub(super) fn get_sym_span(&self, sym_id: SymbolId) -> SourceSpan {
-    //     match &self.symbols[sym_id.id as usize] {
-    //         sym_info => match &sym_info.kind {
-    //             SymbolKind::Type(type_id) => *type_id,
-    //             SymbolKind::Val(val_id) => self.values[val_id.id as usize].type_id,
-    //             SymbolKind::ReservedTypeSlot(type_id) => *type_id,
-    //             // Not a type, just a symbol with a scope
-    //             SymbolKind::Module(_) => unreachable!(),
-    //         },
-    //     }
-    // }
-
     // Maybe return option?
     /// Assumes the symbol given has a `TypeId` attached. Will return a `TypeId` of `Unknown` if
     /// the `SymbolKind` is unknown.

@@ -3,6 +3,7 @@ pub(super) mod render_settings;
 pub(super) mod style;
 
 use chrn_utils::{
+    id_types::SourceRegionId,
     intern::Intern,
     source_map::{
         line_mapping::{self, Line, LineView},
@@ -109,13 +110,12 @@ pub(crate) fn render_cli_diags(
             let mut rendered_diags: Vec<String> = Vec::new();
             for diag in diags {
                 let path = interner.search_path(diag.path_id);
-                let header = style::create_diag_header(
-                    diag.level,
-                    path,
-                    settings.can_color,
-                    settings.terminal_type,
-                );
-                rendered_diags.push(format!("{header} {}", diag.core_msg));
+                let path_header = style::create_path_header(path, settings);
+                // Not really a header when it's using the message too
+                let level_header = style::create_level_header(diag.level, &diag.core_msg, settings);
+
+                let header = format!("{path_header}\n{level_header}");
+                rendered_diags.push(header);
             }
 
             return rendered_diags;
@@ -160,7 +160,14 @@ pub(crate) fn render_cli_diags(
     // Final step of rendering and returning the text
     let mut rendered_diags: Vec<String> = Vec::new();
     for diag in diags {
-        let rendered_diag = form_diag(diag, &all_src_strs, &ln_views, settings, interner);
+        let rendered_diag = form_diag(
+            diag,
+            &all_src_strs,
+            &ln_views,
+            settings,
+            region_arena,
+            interner,
+        );
         rendered_diags.push(rendered_diag);
     }
 
@@ -206,6 +213,7 @@ fn form_diag(
     src_strs: &[&str],
     ln_views: &[LineView],
     settings: &RenderSettings,
+    region_arena: &SourceRegionArena,
     interner: &Intern,
 ) -> String {
     // For tracking max line width needed for rendering
@@ -230,7 +238,7 @@ fn form_diag(
         }
     }
 
-    let mut ln_layouts = create_render_line_layout(&group_manager);
+    let mut ln_layouts = create_render_line_layout(diag, &group_manager);
     let ln_num_width = line_mapping::get_num_width(highest_ln_num as usize);
 
     for layout in &mut ln_layouts {
@@ -246,6 +254,9 @@ fn form_diag(
     // Remove layouts that ended up with no annotations after layer assignment
     // (intermediate lines of multi-line spans)
     ln_layouts.retain(|layout| !layout.render_info.is_empty());
+    //TODO: Need to have it so line layouts greedily have their region priority chosen.
+    //So, if any region has a primary, that primary region is printed before all other layout
+    //regions, and if 2 regions have a primary, the region first seen is the one that goes first.
 
     render_text(
         diag,
@@ -253,8 +264,9 @@ fn form_diag(
         src_strs,
         ln_views,
         settings,
-        interner,
         ln_num_width,
+        region_arena,
+        interner,
     )
 }
 
@@ -343,6 +355,7 @@ fn assign_layers_in_layout(ln_layout: &mut RenderLineLayout, src_str: &str) {
 /// Converts grouped annotations into a sorted list of line layouts, one per source line
 /// with annotations
 fn create_render_line_layout<'a>(
+    diag: &SourceDiagnostic,
     group_manager: &'a RenderGroupManager,
 ) -> Vec<RenderLineLayout<'a>> {
     let mut ln_layouts = Vec::new();
@@ -357,10 +370,39 @@ fn create_render_line_layout<'a>(
         ln_layouts.push(RenderLineLayout::new(render_group.ln, rows));
     }
 
-    // Sorting line numbers by ascending order
-    ln_layouts.sort_by_key(|layout| layout.ln.ln_num);
+    // Greedily sorts to where if a primary is present, the layout will go first, otherwise the
+    // layout is sequential
+    // Sorting line numbers by ascending order.
+    ln_layouts.sort_by_key(|lay| (lay.ln.ln_num,));
+    // sort_by_region_id(diag, &mut ln_layouts);
     ln_layouts
 }
+
+// fn sort_by_region_id(diag: &SourceDiagnostic, ln_layouts: &mut [RenderLineLayout]) {
+//     let mut binding_set: Vec<(usize, SourceRegionId)> = Vec::new();
+//
+//     for ann in &diag.annotations {
+//         if ann.kind == AnnotationKind::Primary {
+//             binding_set.push((0, ann.span.region_id));
+//         } else {
+//             binding_set.push((1, ann.span.region_id));
+//         }
+//     }
+//
+//     for i in 0..ln_layouts.len() {
+//         let i_binding = binding_set
+//             .iter()
+//             .find(|(p, r_id)| ln_layouts[i].ln.ln_span.region_id == *r_id)
+//             .unwrap();
+//
+//         for j in 1..ln_layouts.len() {
+//             let j_binding = binding_set
+//                 .iter()
+//                 .find(|(p, r_id)| ln_layouts[j].ln.ln_span.region_id == *r_id)
+//                 .unwrap();
+//         }
+//     }
+// }
 
 /// Assembles the full diagnostic string by combining the header, all rendered line layouts,
 /// help messages, notes, and the trailing separator.
@@ -370,39 +412,69 @@ fn render_text(
     src_strs: &[&str],
     ln_views: &[LineView],
     settings: &RenderSettings,
-    interner: &Intern,
     ln_num_width: usize,
+    region_arena: &SourceRegionArena,
+    interner: &Intern,
 ) -> String {
-    let path = interner.search_path(diag.path_id);
-    let header =
-        style::create_diag_header(diag.level, path, settings.can_color, settings.terminal_type);
-
     // Spaces prefixing the `---` gap separator (line-number column width). The bar lines use
     // one additional space so the `|` visually sits just after the line-number column.
     let num_alignment = " ".repeat(ln_num_width);
+    // Spacing intented to align right where the bars would be for the given line context
     let bar_spaces = " ".repeat(ln_num_width + 1);
 
     let mut layout_text = String::new();
+
+    // Is Option since there could be something going through render_text that does not actually have
+    // any line layouts and only has a header and basic error message
+    let mut prev_region_id_opt: Option<SourceRegionId> =
+        ln_layouts.first().map(|layout| layout.ln.ln_span.region_id);
+    let mut placed_path = false;
+
     for (i, layout) in ln_layouts.iter().enumerate() {
-        // Giving visual dashes if the distance between the previous and current line is > 1
-        if i > 0 {
-            let prev_ln = ln_layouts[i - 1].ln.ln_num;
-            if layout.ln.ln_num - prev_ln > 1 {
+        // Searching by key with the region id into ln_views, which corresponds with it's src_str
+        let current_ln_view_idx = ln_views
+            .iter()
+            .position(|lv| lv.region_id == layout.ln.ln_span.region_id)
+            .expect("Infailable existence");
+        let current_region_id = layout.ln.ln_span.region_id;
+
+        // Checking if the region is different so files from different annotations are visually
+        // distinct and labeled.
+        if let Some(prev_id) = prev_region_id_opt
+            && prev_id != current_region_id
+        {
+            placed_path = false;
+        }
+
+        if !placed_path {
+            let new_region = region_arena.extract_region(current_region_id);
+            let path = interner.search_path(new_region.path_id);
+            let path_header_sep = style::create_path_header(path, settings);
+
+            // Since this boolean controls the first path placed and any intermediate paths placed,
+            // this condition is so that it doesn't push dashes for the first
+            if i > 0 {
                 layout_text.push_str(&format!("\n{num_alignment}---"));
-                layout_text.push_str(&format!("\n{bar_spaces}|"));
+            }
+
+            layout_text.push_str(&format!("\n{path_header_sep}"));
+            layout_text.push_str(&format!("\n{bar_spaces}|"));
+
+            prev_region_id_opt = Some(current_region_id);
+            placed_path = true;
+        } else if i > 0 {
+            // Giving visual dashes if the distance between the previous and current line is > 1
+            let prev_ln = ln_layouts[i - 1].ln.ln_num;
+            if prev_ln + 1 != layout.ln.ln_num {
+                layout_text.push_str(&format!("\n{num_alignment}---"));
             }
         } else {
             layout_text.push_str(&format!("\n{bar_spaces}|"));
         }
 
-        let current_idx = ln_views
-            .iter()
-            .position(|lv| lv.region_id == layout.ln.ln_span.region_id)
-            .expect("Infailable existence");
-
         layout_text.push_str(&render_line_layout_text(
             layout,
-            src_strs[current_idx],
+            src_strs[current_ln_view_idx],
             settings,
             ln_num_width,
         ));
@@ -436,10 +508,9 @@ fn render_text(
         }
     }
 
-    format!(
-        "{header} {}{layout_text}{help}{notes}\n{DEFAULT_VISUAL_SEPARATORS}",
-        diag.core_msg
-    )
+    let level_header = style::create_level_header(diag.level, &diag.core_msg, settings);
+
+    format!("{level_header} {layout_text}{help}{notes}\n{DEFAULT_VISUAL_SEPARATORS}")
 }
 
 //FIX: Eof byte handling might DESTROY this. Also cross-module.

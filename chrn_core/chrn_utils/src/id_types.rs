@@ -3,27 +3,16 @@ use std::fmt::Debug;
 use crate::source_map::source_span::SourceSpan;
 
 //TEST: May or may not be used
-pub struct SpannedContainer<T: Debug> {
+/// Generic structure for attaching a span to any type
+#[derive(Debug, Clone)]
+pub struct SpannedContainer<T> {
     pub inner: T,
     pub span: SourceSpan,
 }
 
-impl<T: Debug> SpannedContainer<T> {
+impl<T> SpannedContainer<T> {
     pub fn new(inner: T, span: SourceSpan) -> SpannedContainer<T> {
         SpannedContainer { inner, span }
-    }
-}
-
-//TEST:
-#[derive(Debug, Default, Clone, Copy)]
-pub struct SpannedInternedId {
-    pub interned_id: InternedId,
-    pub span: SourceSpan,
-}
-
-impl SpannedInternedId {
-    pub fn new(interned_id: InternedId, span: SourceSpan) -> SpannedInternedId {
-        SpannedInternedId { interned_id, span }
     }
 }
 

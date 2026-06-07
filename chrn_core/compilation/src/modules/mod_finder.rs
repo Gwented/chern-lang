@@ -190,7 +190,7 @@ impl ModuleFinder<'_> {
 
         let path_buf = self.create_pathbuf(&self.src_bytes[start..end])?;
 
-        let import_path = match path::absolute(&path_buf) {
+        let import_path = match path_buf.canonicalize() {
             Ok(p) => p,
             Err(e) => {
                 let core_msg =
@@ -356,7 +356,7 @@ impl ModuleFinder<'_> {
 
         //WARN: WRONG PATH NAME
         // Please..
-        let bind_path = match path::absolute(&path_buf) {
+        let bind_path = match path_buf.canonicalize() {
             Ok(p) => p,
             Err(e) => {
                 let path = interner.search_path(self.current_region.path_id);

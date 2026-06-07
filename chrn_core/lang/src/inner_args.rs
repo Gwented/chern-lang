@@ -1,7 +1,5 @@
 use std::fmt::Display;
 
-use chrn_utils::source_map::source_span::SourceSpan;
-
 use crate::types::{
     builtins::BuiltinType,
     type_constraints::{self, TypeConstraintFlags},
@@ -9,18 +7,6 @@ use crate::types::{
 
 /// If a new argument is added ensure this is updated
 pub static ARGS_ARRAY: [&str; 6] = ["warn", "scient", "hex", "bin", "octal", "ignore"];
-
-#[derive(Debug, Copy, Clone)]
-pub struct SpannedInnerArg {
-    pub arg: InnerArgs,
-    pub span: SourceSpan,
-}
-
-impl SpannedInnerArg {
-    pub fn new(arg: InnerArgs, span: SourceSpan) -> SpannedInnerArg {
-        SpannedInnerArg { arg, span }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InnerArgs {

@@ -1,7 +1,7 @@
 use chrn_utils::{
     chrn_settings::ChrnSettings,
-    fmter::{Formatted, SpannedFormatted},
-    id_types::{AstId, ExprId, ModuleId, TypeId},
+    fmter::Formatted,
+    id_types::{AstId, ExprId, ModuleId, SpannedContainer, TypeId},
     intern::Intern,
     source_map::{
         source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
@@ -10,7 +10,7 @@ use chrn_utils::{
     },
 };
 use lang::{
-    inner_args::SpannedInnerArg,
+    inner_args::InnerArgs,
     parser::ast::{
         AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Item,
     },
@@ -19,7 +19,6 @@ use lang::{
 
 use crate::{
     constraints::ArgConstraint,
-    modules::Module,
     scopes::ScopeType,
     script_compiler::ScriptCompiler,
     semantic::{error::SemanticError, hir::Type, semantic_reporter::SemanticReporter},
@@ -180,8 +179,8 @@ impl<'a> ConstraintResolver<'a> {
         for sp_arg in &abs_typedef.args {
             match &ty_info.ty {
                 Type::Struct(_) | Type::Enum(_) => {
-                    if sp_arg.arg.has_restrictions() {
-                        let sem_err = SemanticError::VagueArg(*sp_arg);
+                    if sp_arg.inner.has_restrictions() {
+                        let sem_err = SemanticError::VagueArg(sp_arg.clone());
 
                         self.reporter.report_semantic(sem_err);
                     }
@@ -193,7 +192,6 @@ impl<'a> ConstraintResolver<'a> {
                 type_def.type_id,
                 abs_typedef.name_span,
                 ty_span,
-                module,
                 &sp_arg,
                 &mut Vec::new(),
             ) {
@@ -541,7 +539,6 @@ impl<'a> ConstraintResolver<'a> {
                     field.type_id,
                     abs_struct.name_span,
                     ty_span,
-                    module,
                     spanned_arg,
                     &mut vec![],
                 ) {
@@ -561,7 +558,6 @@ impl<'a> ConstraintResolver<'a> {
                     field.type_id,
                     abs_struct.name_span,
                     ty_span,
-                    module,
                     spanned_arg,
                     &mut vec![],
                 ) {
@@ -639,7 +635,6 @@ impl<'a> ConstraintResolver<'a> {
                         inner_id,
                         abs_enum.name_span,
                         ty_span,
-                        module,
                         spanned_arg,
                         &mut vec![],
                     ) {
@@ -661,7 +656,6 @@ impl<'a> ConstraintResolver<'a> {
                         inner_id,
                         abs_enum.name_span,
                         ty_span,
-                        module,
                         spanned_arg,
                         &mut vec![],
                     ) {
@@ -918,62 +912,44 @@ impl<'a> ConstraintResolver<'a> {
         type_id: TypeId,
         parent_span: SourceSpan,
         active_span: SourceSpan,
-        module: &Module,
-        spanned_arg: &SpannedInnerArg,
+        spanned_arg: &SpannedContainer<InnerArgs>,
         visited: &mut Vec<TypeId>,
         // Making this vec makes error messages painful depending on which message failed, so it
         // needs some signal to say to stop going.
     ) -> Result<(), SemanticError> {
         match &self.compiler.types[type_id.id as usize].ty {
             Type::Struct(struct_def) => {
-                let symbol = &self.compiler.symbols[struct_def.sym_id.id as usize];
-                let ast_id = symbol.ast_id.expect("Core should not be resolved");
-                let abs_struct = &self.ast_info.get_struct(ast_id);
                 visited.push(type_id);
 
                 // No cross module reporting so all messages are shallow in spanning
-                for (i, member_id) in struct_def.fields.iter().enumerate() {
+                for member_id in &struct_def.fields {
                     let field = self.compiler.get_field(*member_id);
-                    // let ast_span = abs_struct.fields[i].spanned_ty_expr.span;
                     // Checking if one of it's variants are self referencing, or if the type from
                     // the last call stack, possibly a tuple, is self referencing the current
                     // struct.
                     if visited.contains(&field.type_id) {
-                        if spanned_arg.arg.has_restrictions() {
-                            let name = self.interner.search(symbol.name_id);
-
-                            let core_msg = format!(
-                                "The type `{name}` cannot have `#{}` applied due to recursively relying on itself satisfying the argument",
-                                spanned_arg.arg
-                            );
-
-                            //TODO: Will use CircularArg after the type spanning issues are fixed
-                            let src_diag = SourceDiagnostic::builder(
-                                DiagnosticLevel::Error,
-                                core_msg,
-                                self.current_region.path_id,
-                            )
-                            .add_annotation(
-                                spanned_arg.span,
-                                AnnotationKind::Secondary,
-                                "Conflicting argument here".to_string().into(),
-                            )
-                            .add_annotation(active_span, AnnotationKind::Primary, None)
-                            .build();
-
-                            return Err(SemanticError::General(src_diag));
+                        if spanned_arg.inner.has_restrictions() {
+                            return Err(SemanticError::CircularArg(
+                                SpannedContainer::new(Formatted::Struct, struct_def.name_span),
+                                spanned_arg.clone(),
+                                field.name_span,
+                            ));
                         }
 
                         continue;
                     }
 
-                    visited.push(field.type_id);
+                    let ty = &self.compiler.types[field.type_id.id as usize].ty;
+                    match ty {
+                        Type::BuiltinType(_) => (),
+                        _ => visited.push(field.type_id),
+                    }
 
+                    //TODO: Needs to separate path and errors depending on fjailfjialfn path
                     self.check_type_arg(
                         field.type_id,
-                        abs_struct.name_span,
-                        active_span,
-                        module,
+                        struct_def.name_span,
+                        field.name_span,
                         spanned_arg,
                         visited,
                     )?;
@@ -982,52 +958,36 @@ impl<'a> ConstraintResolver<'a> {
                 Ok(())
             }
             Type::Enum(enum_def) => {
-                let symbol = &self.compiler.symbols[enum_def.sym_id.id as usize];
-                let ast_id = symbol.ast_id.expect("Core should not be resolved");
-                let abs_enum = &self.ast_info.get_enum(ast_id);
                 visited.push(type_id);
 
                 for member_id in &enum_def.variants {
                     let variant = self.compiler.get_variant(*member_id);
                     if let Some(inner) = variant.type_id {
-                        visited.push(inner);
-
                         // Checking if one of it's variants are self referencing, or if the type we
                         // just came from, possibly a tuple, is referring to itself from a
                         // different context.
                         if visited.contains(&inner) {
-                            if spanned_arg.arg.has_restrictions() {
-                                let name = self.interner.search(symbol.name_id);
-
-                                let core_msg = format!(
-                                    "The type `{name}` cannot have `#{}` applied due to recursively relying on itself satisfying the argument",
-                                    spanned_arg.arg
-                                );
-
-                                let src_diag = SourceDiagnostic::builder(
-                                    DiagnosticLevel::Error,
-                                    core_msg,
-                                    self.current_region.path_id,
-                                )
-                                .add_annotation(
-                                    spanned_arg.span,
-                                    AnnotationKind::Secondary,
-                                    "Conflicting argument here".to_string().into(),
-                                )
-                                .add_annotation(active_span, AnnotationKind::Primary, None)
-                                .build();
-
-                                return Err(SemanticError::General(src_diag));
+                            if spanned_arg.inner.has_restrictions() {
+                                return Err(SemanticError::CircularArg(
+                                    SpannedContainer::new(Formatted::Enum, enum_def.name_span),
+                                    spanned_arg.clone(),
+                                    variant.name_span,
+                                ));
                             }
 
                             continue;
                         }
 
+                        let ty = &self.compiler.types[inner.id as usize].ty;
+                        match ty {
+                            Type::BuiltinType(_) => (),
+                            _ => visited.push(inner),
+                        }
+
                         self.check_type_arg(
                             inner,
-                            abs_enum.name_span,
-                            active_span,
-                            module,
+                            enum_def.name_span,
+                            variant.name_span,
                             spanned_arg,
                             visited,
                         )?;
@@ -1042,7 +1002,6 @@ impl<'a> ConstraintResolver<'a> {
                         *type_id,
                         parent_span,
                         active_span,
-                        module,
                         spanned_arg,
                         visited,
                     ),
@@ -1052,28 +1011,20 @@ impl<'a> ConstraintResolver<'a> {
                             *key_id,
                             parent_span,
                             active_span,
-                            module,
                             spanned_arg,
                             visited,
                         )?;
-                        self.check_type_arg(
-                            *val_id,
-                            parent_span,
-                            active_span,
-                            module,
-                            spanned_arg,
-                            visited,
-                        )
+                        self.check_type_arg(*val_id, parent_span, active_span, spanned_arg, visited)
                     }
                     BuiltinType::Tuple(elements) => {
                         visited.push(type_id);
                         for element in elements {
                             if visited.contains(&*element) {
-                                if spanned_arg.arg.has_restrictions() {
+                                if spanned_arg.inner.has_restrictions() {
                                     return Err(SemanticError::CircularArg(
-                                        parent_span,
-                                        *spanned_arg,
-                                        SpannedFormatted::new(Formatted::Tuple, active_span),
+                                        SpannedContainer::new(Formatted::Tuple, parent_span),
+                                        spanned_arg.clone(),
+                                        active_span,
                                     ));
                                 }
                             }
@@ -1088,7 +1039,6 @@ impl<'a> ConstraintResolver<'a> {
                                 *element,
                                 active_span,
                                 parent_span,
-                                module,
                                 spanned_arg,
                                 visited,
                             )?;
@@ -1100,7 +1050,7 @@ impl<'a> ConstraintResolver<'a> {
                     // since shallow checks accept more than proven
                     builtin_ty => {
                         let constraints = builtin_ty.kind().type_constraints();
-                        let arg_constraints = spanned_arg.arg.type_constraints();
+                        let arg_constraints = spanned_arg.inner.type_constraints();
 
                         if !arg_constraints.contains(constraints) {
                             return Err(SemanticError::UnsupportedArg(
@@ -1115,7 +1065,7 @@ impl<'a> ConstraintResolver<'a> {
             }
             Type::Alias(alias_def) => {
                 let alias_constraints = alias_def.ty_constraints;
-                let arg_constraints = spanned_arg.arg.type_constraints();
+                let arg_constraints = spanned_arg.inner.type_constraints();
 
                 if !arg_constraints.contains(alias_constraints) {
                     return Err(SemanticError::TypeConstraintBoundConflict(
@@ -1148,12 +1098,11 @@ impl<'a> ConstraintResolver<'a> {
                 *deferred_ty_id,
                 parent_span,
                 active_span,
-                module,
                 spanned_arg,
                 visited,
             ),
             Type::Constrained(current_constraints) => {
-                let arg_constraints = spanned_arg.arg.type_constraints();
+                let arg_constraints = spanned_arg.inner.type_constraints();
 
                 if !arg_constraints.contains(*current_constraints) {
                     return Err(SemanticError::TypeConstraintBoundConflict(

@@ -3,6 +3,8 @@ use std::path::Path;
 use chrn_utils::source_map::source_diagnostic::{AnnotationKind, DiagnosticLevel};
 use common::color::{self, TerminalColorType};
 
+use crate::renderer::render_settings::RenderSettings;
+
 /// Returns the text that corresponds with a given diagnostic level
 pub(super) fn get_diag_level_text(level: DiagnosticLevel) -> &'static str {
     match level {
@@ -14,26 +16,19 @@ pub(super) fn get_diag_level_text(level: DiagnosticLevel) -> &'static str {
 }
 
 /// Returns the color code that corresponds to the given diagnostic level
-pub(super) fn get_diag_level_color(
-    level: DiagnosticLevel,
-    can_color: bool,
-    terminal: TerminalColorType,
-) -> String {
+pub(super) fn get_diag_level_color(level: DiagnosticLevel, settings: &RenderSettings) -> String {
     match level {
         DiagnosticLevel::Error => {
-            let (red, _) = color::get_red(can_color, terminal);
+            let (red, _) = color::get_red(settings.can_color, settings.terminal_type);
             red
         }
-        DiagnosticLevel::Warn => {
-            let (orange, _) = color::get_orange(can_color, terminal);
+        DiagnosticLevel::Warn | DiagnosticLevel::Help => {
+            let (orange, _) = color::get_orange(settings.can_color, settings.terminal_type);
             orange
         }
-        DiagnosticLevel::Help => {
-            let (orange, _) = color::get_orange(can_color, terminal);
-            orange
-        }
+
         DiagnosticLevel::Note => {
-            let (cyan, _) = color::get_cyan(can_color, terminal);
+            let (cyan, _) = color::get_cyan(settings.can_color, settings.terminal_type);
             cyan
         }
     }
@@ -119,39 +114,44 @@ pub(super) fn standardize_note(msg: &str, can_color: bool, terminal: TerminalCol
     }
 }
 
-/// Creates a template header with the path and diagnostic level given
-pub(super) fn create_diag_header(
+pub(super) fn create_path_header(path: &Path, settings: &RenderSettings) -> String {
+    let (bold, nc) = color::get_bold(settings.can_color);
+    format!("{bold}PATH{nc} => \"{}\"", path.display())
+}
+
+/// Creates a template header with the diagnostic level and msg given
+pub(super) fn create_level_header(
     level: DiagnosticLevel,
-    path: &Path,
-    can_color: bool,
-    terminal: TerminalColorType,
+    msg: &str,
+    settings: &RenderSettings,
 ) -> String {
     let header_text = get_diag_level_text(level);
 
     let nc = color::NC;
-    let header_color = get_diag_level_color(level, can_color, terminal);
+    let header_color = get_diag_level_color(level, settings);
 
     let level_header = format!("{header_color}{header_text}{nc}");
 
-    let (bold, nc) = color::get_bold(can_color);
-
-    format!("{bold}PATH{nc} => \"{}\"\n{level_header}:", path.display())
+    format!("{level_header}: {msg}")
 }
 
 // Not sure about this anymore but might use it
-pub(super) fn standardize_err(path: &Path, can_color: bool, terminal: TerminalColorType) -> String {
-    let _ = terminal;
-    todo!()
-    // let (red, nc) = color::get_red(can_color, terminal);
-    // let header = format!("From path => \"{}\"\n{red}error{nc}:", path.display());
-    // let help = help.unwrap_or_default();
-    //
-    // Probably stays the same other than the help and notes being printed as multiple if possible
-    // format!(
-    //     "{header} {base_msg}\n[{}:{}]\n{}\n{help}{note}{}",
-    //     line_data.ln,
-    //     line_data.col,
-    //     line_data.diag,
-    //     "-".repeat(TOTAL_SEPARATORS)
-    // )
-}
+// /// Creates a full basic error message
+// pub(super) fn standardize_err(
+//     level: DiagnosticLevel,
+//     msg: &str,
+//     path: &Path,
+//     settings: &RenderSettings,
+// ) -> String {
+//     let header_text = get_diag_level_text(level);
+//
+//     let nc = color::NC;
+//     let header_color = get_diag_level_color(level, settings);
+//
+//     let level_header = format!("{header_color}{header_text}{nc}");
+//     let path_header = create_path_header(path, settings);
+//
+//     let (bold, nc) = color::get_bold(settings.can_color);
+//
+//     format!("{path_header}\n{level_header}: {msg}")
+// }

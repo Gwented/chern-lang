@@ -2,9 +2,9 @@
 pub mod type_context;
 
 use chrn_utils::chrn_settings::ChrnSettings;
-use chrn_utils::fmter::{Formattable, Formatted, SpannedFormatted};
+use chrn_utils::fmter::{Formattable, Formatted};
 use chrn_utils::id_types::{
-    AstId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SpannedInternedId, SymbolId, TypeId,
+    AstId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SpannedContainer, SymbolId, TypeId,
     ValueId,
 };
 use chrn_utils::intern::Intern;
@@ -507,7 +507,7 @@ impl TypeResolver<'_> {
                 let const_val_opt = if let Some(const_val) = &operand_val_info.const_val {
                     if !evaluator::is_compatible_unary(*op, const_val) {
                         return Err(MathError::UnaryOpMismatch(
-                            SpannedFormatted::new(const_val.kind().to_fmt(), operand_expr.span),
+                            SpannedContainer::new(const_val.kind().to_fmt(), operand_expr.span),
                             op.to_fmt(),
                         ))?;
                     } else {
@@ -574,8 +574,8 @@ impl TypeResolver<'_> {
                         // corruption, and not one part just being unresolved
                         if !evaluator::is_compatible_binary(lhs_const, *op, rhs_const) {
                             return Err(MathError::BinaryOpMismatch(
-                                SpannedFormatted::new(lhs_const.kind().to_fmt(), lhs_expr.span),
-                                SpannedFormatted::new(rhs_const.kind().to_fmt(), rhs_expr.span),
+                                SpannedContainer::new(lhs_const.kind().to_fmt(), lhs_expr.span),
+                                SpannedContainer::new(rhs_const.kind().to_fmt(), rhs_expr.span),
                                 op.to_fmt(),
                             ))?;
                         } else {
@@ -799,7 +799,7 @@ impl TypeResolver<'_> {
         //TODO: Constraints should check if this is unknown
         type_def.type_id = type_id;
         type_def.conds = conds;
-        type_def.args = abs_typedef.args.iter().map(|sp_arg| sp_arg.arg).collect();
+        type_def.args = abs_typedef.args.iter().map(|sp_arg| sp_arg.inner).collect();
 
         Ok(())
     }
@@ -914,7 +914,7 @@ impl TypeResolver<'_> {
 
             let field = self.compiler.get_field_mut(*current_member_id);
             field.conds = conds;
-            field.args = abs_field.args.iter().map(|sp_arg| sp_arg.arg).collect();
+            field.args = abs_field.args.iter().map(|sp_arg| sp_arg.inner).collect();
         }
 
         let mut glob_conds: Vec<ExprId> = Vec::new();
@@ -948,7 +948,7 @@ impl TypeResolver<'_> {
         struct_def.glob_args = abs_struct
             .glob_args
             .iter()
-            .map(|sp_arg| sp_arg.arg)
+            .map(|sp_arg| sp_arg.inner)
             .collect();
 
         Ok(())
@@ -1070,7 +1070,7 @@ impl TypeResolver<'_> {
 
             let variant = self.compiler.get_variant_mut(*current_member_id);
             variant.conds = conds;
-            variant.args = abs_variant.args.iter().map(|sp_arg| sp_arg.arg).collect();
+            variant.args = abs_variant.args.iter().map(|sp_arg| sp_arg.inner).collect();
         }
 
         let mut glob_conds: Vec<ExprId> = Vec::new();
@@ -1099,7 +1099,11 @@ impl TypeResolver<'_> {
 
         enum_def.variants.append(&mut variants);
         enum_def.glob_conds = glob_conds;
-        enum_def.glob_args = abs_enum.glob_args.iter().map(|sp_arg| sp_arg.arg).collect();
+        enum_def.glob_args = abs_enum
+            .glob_args
+            .iter()
+            .map(|sp_arg| sp_arg.inner)
+            .collect();
 
         Ok(())
     }
@@ -1247,7 +1251,7 @@ impl TypeResolver<'_> {
 
         alias_def.conds = conds;
         // May change it so spanning is preserved
-        alias_def.args = abs_alias.args.iter().map(|sp_arg| sp_arg.arg).collect();
+        alias_def.args = abs_alias.args.iter().map(|sp_arg| sp_arg.inner).collect();
 
         Ok(())
     }
@@ -1333,6 +1337,8 @@ impl TypeResolver<'_> {
 
                         let dup_span = spanned_expr.span;
 
+                        //FIX: Not failable since the exntire expression has to be placed in one module,
+                        // to error to begin with, but should still operate off stored spans
                         let parent_ast_id = self.compiler.symbols[parent_sym_id.id as usize]
                             .ast_id
                             .expect("Parent must be a valid symbol to get to this point");
@@ -1530,7 +1536,7 @@ impl TypeResolver<'_> {
                     Ok(expr_id)
                 } else {
                     Err(SemanticError::NumericOverflow(
-                        SpannedInternedId::new(*name_id, spanned_expr.span),
+                        SpannedContainer::new(*name_id, spanned_expr.span),
                         Formatted::Integer,
                     ))
                 }
@@ -1555,7 +1561,7 @@ impl TypeResolver<'_> {
                     Ok(expr_id)
                 } else {
                     Err(SemanticError::NumericOverflow(
-                        SpannedInternedId::new(*name_id, spanned_expr.span),
+                        SpannedContainer::new(*name_id, spanned_expr.span),
                         Formatted::Float,
                     ))
                 }
@@ -1606,8 +1612,8 @@ impl TypeResolver<'_> {
                             && !rhs_is_unknown
                         {
                             return Err(MathError::BinaryOpMismatch(
-                                SpannedFormatted::new(lhs_const.kind().to_fmt(), lhs_expr.span),
-                                SpannedFormatted::new(rhs_const.kind().to_fmt(), rhs_expr.span),
+                                SpannedContainer::new(lhs_const.kind().to_fmt(), lhs_expr.span),
+                                SpannedContainer::new(rhs_const.kind().to_fmt(), rhs_expr.span),
                                 op.to_fmt(),
                             ))?;
                         } else {
@@ -1780,7 +1786,7 @@ impl TypeResolver<'_> {
                 let const_val_opt = if let Some(const_val) = &operand_val_opt.const_val {
                     if !evaluator::is_compatible_unary(unary.op, const_val) && !is_unknown {
                         return Err(MathError::UnaryOpMismatch(
-                            SpannedFormatted::new(const_val.kind().to_fmt(), operand_expr.span),
+                            SpannedContainer::new(const_val.kind().to_fmt(), operand_expr.span),
                             unary.op.to_fmt(),
                         ))?;
                     } else {

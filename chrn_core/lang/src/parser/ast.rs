@@ -1,12 +1,12 @@
 use chrn_utils::{
     fmter::{Formattable, Formatted},
-    id_types::{AstId, InternedId},
+    id_types::{AstId, InternedId, SpannedContainer},
     source_map::source_span::SourceSpan,
 };
 //NOTE: MAY MAKE EXPRESSION THAT HELPS RESOLVE SEMANTIC TYPES MORE CLEANLY
 
 use crate::{
-    inner_args::SpannedInnerArg,
+    inner_args::InnerArgs,
     token::Notation,
     types::type_constraints::{self, TypeConstraintFlags},
 };
@@ -421,7 +421,7 @@ pub struct AbstractTypeDef {
     pub name_span: SourceSpan,
     pub spanned_ty_expr: SpannedTypeExpr,
     pub conds: Vec<SpannedExpr>,
-    pub args: Vec<SpannedInnerArg>,
+    pub args: Vec<SpannedContainer<InnerArgs>>,
 }
 
 impl AbstractTypeDef {
@@ -429,7 +429,7 @@ impl AbstractTypeDef {
         name_id: InternedId,
         name_span: SourceSpan,
         spanned_ty_expr: SpannedTypeExpr,
-        args: Vec<SpannedInnerArg>,
+        args: Vec<SpannedContainer<InnerArgs>>,
         conds: Vec<SpannedExpr>,
     ) -> AbstractTypeDef {
         AbstractTypeDef {
@@ -447,7 +447,7 @@ pub struct AbstractStruct {
     pub name_id: InternedId,
     pub name_span: SourceSpan,
     pub glob_conds: Vec<SpannedExpr>,
-    pub glob_args: Vec<SpannedInnerArg>,
+    pub glob_args: Vec<SpannedContainer<InnerArgs>>,
     pub fields: Vec<AbstractTypeDef>,
     pub is_priv: bool,
 }
@@ -457,7 +457,7 @@ impl AbstractStruct {
         name_id: InternedId,
         name_span: SourceSpan,
         glob_conds: Vec<SpannedExpr>,
-        glob_args: Vec<SpannedInnerArg>,
+        glob_args: Vec<SpannedContainer<InnerArgs>>,
         fields: Vec<AbstractTypeDef>,
         is_priv: bool,
         // visibility: Visibility,
@@ -480,7 +480,7 @@ pub struct AbstractEnum {
     pub name_span: SourceSpan,
     pub variants: Vec<AbstractVariant>,
     pub glob_conds: Vec<SpannedExpr>,
-    pub glob_args: Vec<SpannedInnerArg>,
+    pub glob_args: Vec<SpannedContainer<InnerArgs>>,
     pub is_priv: bool,
     // pub(crate) visibility: Visibility,
 }
@@ -491,7 +491,7 @@ impl AbstractEnum {
         name_span: SourceSpan,
         variants: Vec<AbstractVariant>,
         glob_conds: Vec<SpannedExpr>,
-        glob_args: Vec<SpannedInnerArg>,
+        glob_args: Vec<SpannedContainer<InnerArgs>>,
         is_priv: bool,
     ) -> AbstractEnum {
         AbstractEnum {
@@ -512,7 +512,7 @@ pub struct AbstractVariant {
     pub name_span: SourceSpan,
     // I think this is right?
     pub ty_expr: Option<SpannedTypeExpr>,
-    pub args: Vec<SpannedInnerArg>,
+    pub args: Vec<SpannedContainer<InnerArgs>>,
     pub conds: Vec<SpannedExpr>,
 }
 
@@ -523,7 +523,7 @@ impl AbstractVariant {
         // I think this is right?
         ty_expr: Option<SpannedTypeExpr>,
         conds: Vec<SpannedExpr>,
-        args: Vec<SpannedInnerArg>,
+        args: Vec<SpannedContainer<InnerArgs>>,
     ) -> AbstractVariant {
         AbstractVariant {
             name_id,
@@ -669,7 +669,7 @@ pub struct AbstractAlias {
     pub name_span: SourceSpan,
     pub params: Vec<AbstractParam>,
     pub conds: Vec<SpannedExpr>,
-    pub args: Vec<SpannedInnerArg>,
+    pub args: Vec<SpannedContainer<InnerArgs>>,
     pub is_priv: bool,
 }
 
@@ -679,7 +679,7 @@ impl AbstractAlias {
         name_span: SourceSpan,
         params: Vec<AbstractParam>,
         conds: Vec<SpannedExpr>,
-        args: Vec<SpannedInnerArg>,
+        args: Vec<SpannedContainer<InnerArgs>>,
         is_priv: bool,
     ) -> AbstractAlias {
         AbstractAlias {
