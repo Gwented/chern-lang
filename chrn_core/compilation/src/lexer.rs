@@ -1,5 +1,4 @@
-//TODO: Maybe actually make the spans inclusive exclusive so that + 1 is not needed later
-//and - 1 is not needed now
+// TODO: Maybe give this diagnostics
 
 use chrn_utils::{
     id_types::SourceRegionId,
@@ -599,8 +598,11 @@ impl Lexer<'_> {
 
         let interned_id = interner.intern(&id_str);
 
-        // Offset due to advance being done before leaving the loop.
-        let span = SourceSpan::new(self.current_region_id, start as u32, (end - 1) as u32);
+        // The start is different on escape so that it captures the "e#" can be shown in spanning
+        let span_start = if is_escaped { start - 2 } else { start } as u32;
+
+        // end Offset due to advance being done before leaving the loop.
+        let span = SourceSpan::new(self.current_region_id, span_start, (end - 1) as u32);
 
         if interned_id.id == intern::INTERNED_TRUE && !is_escaped {
             return SpannedToken {

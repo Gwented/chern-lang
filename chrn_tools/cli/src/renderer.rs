@@ -378,32 +378,6 @@ fn create_render_line_layout<'a>(
     ln_layouts
 }
 
-// fn sort_by_region_id(diag: &SourceDiagnostic, ln_layouts: &mut [RenderLineLayout]) {
-//     let mut binding_set: Vec<(usize, SourceRegionId)> = Vec::new();
-//
-//     for ann in &diag.annotations {
-//         if ann.kind == AnnotationKind::Primary {
-//             binding_set.push((0, ann.span.region_id));
-//         } else {
-//             binding_set.push((1, ann.span.region_id));
-//         }
-//     }
-//
-//     for i in 0..ln_layouts.len() {
-//         let i_binding = binding_set
-//             .iter()
-//             .find(|(p, r_id)| ln_layouts[i].ln.ln_span.region_id == *r_id)
-//             .unwrap();
-//
-//         for j in 1..ln_layouts.len() {
-//             let j_binding = binding_set
-//                 .iter()
-//                 .find(|(p, r_id)| ln_layouts[j].ln.ln_span.region_id == *r_id)
-//                 .unwrap();
-//         }
-//     }
-// }
-
 /// Assembles the full diagnostic string by combining the header, all rendered line layouts,
 /// help messages, notes, and the trailing separator.
 fn render_text(

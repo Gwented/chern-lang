@@ -128,82 +128,42 @@ pub enum SymbolKind {
     // Section(),
 }
 
-// Maybe, ConfigKind, UserConfigDef, IntrinsicConfigDef
-#[derive(Debug)]
-pub enum ConfigKind {
-    Schema(ConfigSchema),
-    Def(ConfigDef),
-}
-
-/// Represent a configurataion description that must be followed,
-#[derive(Debug)]
-pub struct ConfigSchema {
-    pub kind: ConfigSchemaKind,
-    pub option_schema: Vec<OptionSchema>,
-}
-
-impl ConfigSchema {
-    pub fn new(kind: ConfigSchemaKind, option_schema: Vec<OptionSchema>) -> ConfigSchema {
-        ConfigSchema {
-            kind,
-            option_schema,
-        }
-    }
-}
-
-/// Represents a configurations options, that are preloaded by the compiler as schemas to follow
-#[derive(Debug)]
-pub struct OptionSchema {
-    name_id: InternedId,
-    constraints: Option<TypeConstraintFlags>,
-}
-
-impl OptionSchema {
-    pub fn new(name_id: InternedId, constraints: Option<TypeConstraintFlags>) -> OptionSchema {
-        OptionSchema {
-            name_id,
-            constraints,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum ConfigSchemaKind {
-    Struct,
-    Enum,
-    Field,
-}
-
 /// Intended to represent a configuration block environment that consumes options for a field.
 #[derive(Debug)]
 pub struct ConfigDef {
     /// Is a name id instead of symbol id since `NameResolver` merely registers names, with no
     /// knowledge of symbol specifics. A dependency system may be used in the future.
     pub name_id: InternedId,
+    /// During name resolution, we can't actually lookup the symbol since it may or may not be
+    /// registered, so it's Option since it actually is `None` at some point, and could remain
+    /// `None` if in a later stage it doesn't have it's target symbol found.
+    pub sym_id: Option<SymbolId>,
     pub name_span: SourceSpan,
-    pub option_assignments: Vec<OptionAssignment>,
-    pub inner_field_cfg: Vec<ConfigDef>,
+    pub opt_assignments: Vec<ConfigOptionAssignment>,
+    pub inner_field_cfgs: Vec<ConfigDef>,
 }
 
 impl ConfigDef {
     pub fn new(
         name_id: InternedId,
         name_span: SourceSpan,
-        option_assignments: Vec<OptionAssignment>,
+        sym_id: Option<SymbolId>,
+        option_assignments: Vec<ConfigOptionAssignment>,
         inner_field_cfg: Vec<ConfigDef>,
     ) -> ConfigDef {
         ConfigDef {
             name_id,
             name_span,
-            option_assignments,
-            inner_field_cfg,
+            sym_id,
+            opt_assignments: option_assignments,
+            inner_field_cfgs: inner_field_cfg,
         }
     }
 }
 
 /// Represents options and their values assigned by the user
 #[derive(Debug)]
-pub struct OptionAssignment {
+pub struct ConfigOptionAssignment {
     // Own member id
     pub member_id: MemberId,
     // more like option_name_id
@@ -212,14 +172,14 @@ pub struct OptionAssignment {
     pub array: Vec<ExprId>,
 }
 
-impl OptionAssignment {
+impl ConfigOptionAssignment {
     pub fn new(
         member_id: MemberId,
         name_id: InternedId,
         name_span: SourceSpan,
         array: Vec<ExprId>,
-    ) -> OptionAssignment {
-        OptionAssignment {
+    ) -> ConfigOptionAssignment {
+        ConfigOptionAssignment {
             member_id,
             name_id,
             name_span,
@@ -236,7 +196,7 @@ pub enum MemberSymbolKind {
     // FIX:
     /// **NOT ACTUALLY A MEMBER YET**
     // Param(Param),
-    OptionAssignment(OptionAssignment),
+    OptionAssignment(ConfigOptionAssignment),
 }
 
 impl MemberSymbolKind {
@@ -524,7 +484,7 @@ pub struct FieldRepre {
     // To TypeDef
     pub type_id: TypeId,
     // Ast contained field id, maybe this should just be AstId
-    pub ast_id: AstId,
+    // pub ast_id: AstId,
     pub conds: Vec<ExprId>,
     pub args: Vec<InnerArgs>,
 }
@@ -535,7 +495,6 @@ impl FieldRepre {
         name_id: InternedId,
         name_span: SourceSpan,
         type_id: TypeId,
-        ast_id: AstId,
     ) -> FieldRepre {
         FieldRepre {
             member_id,
@@ -544,7 +503,6 @@ impl FieldRepre {
             type_id,
             conds: Vec::new(),
             args: Vec::new(),
-            ast_id,
         }
     }
 }

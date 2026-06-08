@@ -17,8 +17,7 @@ use crate::{
     script_compiler::ScriptCompiler,
     semantic::{
         hir::{
-            AliasDef, ConfigDef, ConfigKind, EnumDef, StructDef, Symbol, SymbolKind, Type, TypeDef,
-            TypeInfo,
+            AliasDef, ConfigDef, EnumDef, StructDef, Symbol, SymbolKind, Type, TypeDef, TypeInfo,
         },
         semantic_reporter::SemanticReporter,
     },
@@ -89,10 +88,17 @@ impl NamespaceResolver<'_> {
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
 
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
-        table.ast_to_sym.insert(ast_id, sym_id);
         let orig_sym_opt = table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
+        table.ast_to_sym.insert(ast_id, sym_id);
 
-        let cfg_def = ConfigDef::new(abs_cfg.name_id, abs_cfg.name_span, Vec::new(), Vec::new());
+        let cfg_def = ConfigDef::new(
+            abs_cfg.name_id,
+            abs_cfg.name_span,
+            None,
+            Vec::new(),
+            Vec::new(),
+        );
+
         let cfg_id = ConfigId::new(self.compiler.configs.len() as u32);
 
         let sym = Symbol::new(
@@ -106,7 +112,7 @@ impl NamespaceResolver<'_> {
             SymbolKind::Config(cfg_id),
         );
 
-        self.compiler.configs.push(ConfigKind::Def(cfg_def));
+        self.compiler.configs.push(cfg_def);
         self.compiler.symbols.push(sym);
 
         if let Some(orig_sym_id) = orig_sym_opt {

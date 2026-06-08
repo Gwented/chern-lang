@@ -35,7 +35,7 @@ pub struct SourceSpan {
 }
 
 impl SourceSpan {
-    pub fn new(region_id: SourceRegionId, start: u32, end: u32) -> SourceSpan {
+    pub const fn new(region_id: SourceRegionId, start: u32, end: u32) -> SourceSpan {
         SourceSpan {
             region_id,
             start,
@@ -47,27 +47,27 @@ impl SourceSpan {
     // pub fn curate(&self, other: SourceSpan) -> SourceSpan {}
 
     /// Creates an (inclusive, exclusive) ranged span
-    pub fn range_exclusive_usize(&self) -> Range<usize> {
+    pub const fn range_exclusive_usize(&self) -> Range<usize> {
         (self.start as usize)..(self.end as usize)
     }
 
     /// Creates an (inclusive, inclusive) ranged span
-    pub fn range_inclusive_usize(&self) -> RangeInclusive<usize> {
+    pub const fn range_inclusive_usize(&self) -> RangeInclusive<usize> {
         (self.start as usize)..=(self.end as usize)
     }
 
     /// Creates an (inclusive, exclusive) ranged span
-    pub fn range_exclusive_u32(&self) -> Range<u32> {
+    pub const fn range_exclusive_u32(&self) -> Range<u32> {
         (self.start)..(self.end)
     }
 
     /// Creates an (inclusive, inclusive) ranged span
-    pub fn range_inclusive_u32(&self) -> RangeInclusive<u32> {
+    pub const fn range_inclusive_u32(&self) -> RangeInclusive<u32> {
         (self.start)..=(self.end)
     }
 
     /// Creates span that contains the min start and max end of two spans
-    pub fn merge(&self, other: &SourceSpan) -> SourceSpan {
+    pub const fn merge(&self, other: &SourceSpan) -> SourceSpan {
         // Not sure about this entirely, but if this is used wrongly then it should probably be a
         // hard error since it means something internally went wrong, which would be good to know
         //
@@ -76,13 +76,24 @@ impl SourceSpan {
         //     panic!("`self` path_id == `other` path_id in call to `SourceSpan::merge`");
         // }
 
-        let start = self.start.min(other.start);
-        let end = self.end.max(other.end);
+        // using min and max prevents const so just using ifs here
+        let start = if self.start > other.start {
+            other.start
+        } else {
+            self.start
+        };
+
+        let end = if self.end > other.end {
+            self.end
+        } else {
+            other.end
+        };
+
         SourceSpan::new(other.region_id, start, end)
     }
 
     /// Checks if `self` is either a superset or equal to `other`
-    pub fn contains(&self, other: SourceSpan) -> bool {
+    pub const fn contains(&self, other: SourceSpan) -> bool {
         self.start <= other.start && self.end >= other.end
     }
 

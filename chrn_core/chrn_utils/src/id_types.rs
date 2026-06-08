@@ -11,7 +11,7 @@ pub struct SpannedContainer<T> {
 }
 
 impl<T> SpannedContainer<T> {
-    pub fn new(inner: T, span: SourceSpan) -> SpannedContainer<T> {
+    pub const fn new(inner: T, span: SourceSpan) -> SpannedContainer<T> {
         SpannedContainer { inner, span }
     }
 }
@@ -23,7 +23,7 @@ pub struct InternedId {
 }
 
 impl InternedId {
-    pub fn new(id: u32) -> InternedId {
+    pub const fn new(id: u32) -> InternedId {
         InternedId { id }
     }
 }
@@ -35,7 +35,7 @@ pub struct SourceRegionId {
 }
 
 impl SourceRegionId {
-    pub fn new(id: u32) -> SourceRegionId {
+    pub const fn new(id: u32) -> SourceRegionId {
         SourceRegionId { id }
     }
 }
@@ -47,7 +47,7 @@ impl SourceRegionId {
 // }
 //
 // impl SpanId {
-//     pub fn new(id: u32) -> SpanId {
+//     pub const fn new(id: u32) -> SpanId {
 //         SpanId { id }
 //     }
 // }
@@ -58,7 +58,7 @@ pub struct PathId {
 }
 
 impl PathId {
-    pub fn new(id: u32) -> PathId {
+    pub const fn new(id: u32) -> PathId {
         PathId { id }
     }
 }
@@ -69,7 +69,7 @@ pub struct TypeId {
 }
 
 impl TypeId {
-    pub fn new(id: u32) -> TypeId {
+    pub const fn new(id: u32) -> TypeId {
         TypeId { id }
     }
 }
@@ -80,7 +80,7 @@ pub struct ConfigId {
 }
 
 impl ConfigId {
-    pub fn new(id: u32) -> ConfigId {
+    pub const fn new(id: u32) -> ConfigId {
         ConfigId { id }
     }
 }
@@ -91,7 +91,7 @@ pub struct SymbolId {
 }
 
 impl SymbolId {
-    pub fn new(id: u32) -> SymbolId {
+    pub const fn new(id: u32) -> SymbolId {
         SymbolId { id }
     }
 }
@@ -102,7 +102,7 @@ pub struct ModuleId {
 }
 
 impl ModuleId {
-    pub fn new(id: usize) -> ModuleId {
+    pub const fn new(id: usize) -> ModuleId {
         ModuleId { id }
     }
 }
@@ -113,7 +113,7 @@ pub struct ScopeId {
 }
 
 impl ScopeId {
-    pub fn new(id: usize) -> ScopeId {
+    pub const fn new(id: usize) -> ScopeId {
         ScopeId { id }
     }
 }
@@ -124,7 +124,7 @@ pub struct AstId {
 }
 
 impl AstId {
-    pub fn new(id: u32) -> AstId {
+    pub const fn new(id: u32) -> AstId {
         AstId { id }
     }
 }
@@ -137,7 +137,7 @@ pub struct MemberId {
 }
 
 impl MemberId {
-    pub fn new(id: u32) -> MemberId {
+    pub const fn new(id: u32) -> MemberId {
         MemberId { id }
     }
 }
@@ -148,7 +148,7 @@ pub struct ExprId {
 }
 
 impl ExprId {
-    pub fn new(id: u32) -> ExprId {
+    pub const fn new(id: u32) -> ExprId {
         ExprId { id }
     }
 }
@@ -159,7 +159,7 @@ pub struct ValueId {
 }
 
 impl ValueId {
-    pub fn new(id: u32) -> ValueId {
+    pub const fn new(id: u32) -> ValueId {
         ValueId { id }
     }
 }

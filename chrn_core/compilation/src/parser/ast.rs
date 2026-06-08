@@ -599,7 +599,7 @@ pub struct AbstractConfig {
     pub name_id: InternedId,
     pub name_span: SourceSpan,
     /// Configuration for the current parent to apply
-    pub option_assignments: Vec<AbstractOptionAssignment>,
+    pub opt_assignments: Vec<AbstractOptionAssignment>,
     /// Configuration for inner fields to define recursively
     pub inner_field_cfg: Vec<AbstractConfig>,
 }
@@ -608,32 +608,33 @@ impl AbstractConfig {
     pub fn new(
         name_id: InternedId,
         name_span: SourceSpan,
-        option_assignments: Vec<AbstractOptionAssignment>,
+        opt_assignments: Vec<AbstractOptionAssignment>,
         inner_field_cfg: Vec<AbstractConfig>,
     ) -> AbstractConfig {
         AbstractConfig {
             name_id,
             name_span,
-            option_assignments,
+            opt_assignments,
             inner_field_cfg,
         }
     }
 }
 
-// outer { .inner = Expr }
+/// outer { .inner = Expr }
 #[derive(Debug)]
 pub struct AbstractOptionAssignment {
     /// Name of structural type to configure
     pub name_id: InternedId,
     pub name_span: SourceSpan,
-    pub array_expr: ArrayExpr,
+    /// Must be an `ArrayExpr`
+    pub array_expr: SpannedExpr,
 }
 
 impl AbstractOptionAssignment {
     pub fn new(
         name_id: InternedId,
         name_span: SourceSpan,
-        array_expr: ArrayExpr,
+        array_expr: SpannedExpr,
     ) -> AbstractOptionAssignment {
         AbstractOptionAssignment {
             name_id,

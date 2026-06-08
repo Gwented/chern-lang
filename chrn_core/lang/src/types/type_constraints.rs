@@ -54,7 +54,7 @@ pub struct TypeDomainFlags {
 }
 
 impl TypeDomainFlags {
-    pub fn new(flags: u64) -> TypeDomainFlags {
+    pub const fn new(flags: u64) -> TypeDomainFlags {
         TypeDomainFlags { flags }
     }
 
@@ -82,11 +82,11 @@ pub struct TypeConstraintFlags {
 }
 
 impl TypeConstraintFlags {
-    pub fn new(flags: u64) -> TypeConstraintFlags {
+    pub const fn new(flags: u64) -> TypeConstraintFlags {
         TypeConstraintFlags { flags }
     }
 
-    pub fn runtime() -> TypeConstraintFlags {
+    pub const fn runtime() -> TypeConstraintFlags {
         TypeConstraintFlags { flags: RUNTIME }
     }
 
@@ -200,7 +200,7 @@ impl TypeConstraintFlags {
     }
 }
 
-pub fn to_idx(flag: u64) -> usize {
+pub const fn to_idx(flag: u64) -> usize {
     match flag {
         SIGNED_INTEGER => 0,
         UNSIGNED_INTEGER => 1,
@@ -354,7 +354,7 @@ impl TypeConstraint {
         // }
     }
 
-    pub fn to_u64(&self) -> u64 {
+    pub const fn to_u64(&self) -> u64 {
         match self {
             TypeConstraint::Collection => COLLECTION,
             TypeConstraint::CharacterMappable => CHARACTER_MAPPABLE,
@@ -375,7 +375,29 @@ impl TypeConstraint {
         }
     }
 
-    pub fn to_u64_domain(&self) -> u64 {
+    // pub const fn from_u64(self, val: u64) -> TypeConstraint {
+    //     match val {
+    //         COLLECTION => TypeConstraint::Collection,
+    //         CHARACTER_MAPPABLE => TypeConstraint::CharacterMappable,
+    //         HAS_LEN => TypeConstraint::HasLen,
+    //         NUMERIC => TypeConstraint::Numeric,
+    //         INTEGER => TypeConstraint::Integer,
+    //         SIGNED_INTEGER => TypeConstraint::SignedInteger,
+    //         FLOAT => TypeConstraint::Float,
+    //         BOOL => TypeConstraint::Bool,
+    //         STR => TypeConstraint::Str,
+    //         CHAR => TypeConstraint::Char,
+    //         UNSIGNED_INTEGER => TypeConstraint::UnsignedInteger,
+    //         RUNTIME => TypeConstraint::Runtime,
+    //         RANGED => TypeConstraint::Ranged,
+    //         COMPARABLE => TypeConstraint::Comparable,
+    //         ORDERED => TypeConstraint::Ordered,
+    //         NIL => TypeConstraint::Nil,
+    //         _ => unreachable!("try_from failed to turn u64 constraint into enum `TypeConstraint`"),
+    //     }
+    // }
+
+    pub const fn to_u64_domain(&self) -> u64 {
         match self {
             TypeConstraint::Collection => COLLECTION_DOMAIN,
             TypeConstraint::CharacterMappable => CHARACTER_MAPPABLE_DOMAIN,

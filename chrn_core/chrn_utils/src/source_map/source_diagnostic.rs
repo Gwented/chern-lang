@@ -10,7 +10,7 @@ pub struct Reporter {
 }
 
 impl Reporter {
-    pub fn new(diags: Vec<SourceDiagnostic>) -> Reporter {
+    pub const fn new(diags: Vec<SourceDiagnostic>) -> Reporter {
         Reporter { diags }
     }
 }
@@ -39,7 +39,7 @@ pub struct SourceDiagnostic {
 }
 
 impl SourceDiagnostic {
-    pub fn new(
+    pub const fn new(
         level: DiagnosticLevel,
         core_msg: String,
         path_id: PathId,

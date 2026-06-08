@@ -43,6 +43,13 @@ pub const SCOPE_LOCAL: u8 = 1 << 6;
 pub static SCOPE_CORE_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Core];
 pub static SCOPE_NEUTRAL_ACCESSIBLE: [ScopeType; 2] = [ScopeType::Neutral, ScopeType::Core];
 
+pub static SCOPE_COMPLEX_ACCESSIBLE: [ScopeType; 4] = [
+    ScopeType::Neutral,
+    ScopeType::Nest,
+    ScopeType::Override,
+    ScopeType::Core,
+];
+
 //WARN: Suspicious accessibility
 pub static SCOPE_LOCAL_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Local];
 
@@ -110,7 +117,7 @@ impl Scope {
 }
 /// Locally searches for the given name id. Locally searching in this context means solely
 /// searching the scope given for the identifier due to parent relationships not existing.
-pub fn get_sym_id_local(
+pub fn find_sym_id_local(
     compiler: &ScriptCompiler,
     scope_id: ScopeId,
     target_name_id: InternedId,
@@ -130,7 +137,7 @@ pub fn get_sym_id_local(
 
 //NOTE: Exists for separation reasons due to the compiler becoming bloated in many forms
 /// Get's `TypeId` associated with the `InternedId` given if possible
-pub fn get_type_id(
+pub fn find_type_id(
     compiler: &ScriptCompiler,
     owner_id: ModuleId,
     target_name_id: InternedId,
@@ -175,7 +182,8 @@ pub fn get_type_id(
     None
 }
 
-/// Returns `Some` scope under the given kind if it exists, `None` otherwise.
+/// Searches the given module for the given `ScopeType` by iterating through it's scopes
+/// and returns `Some` if it's found, `None` otherwise.
 pub fn find_scope(
     compiler: &ScriptCompiler,
     scope_type: ScopeType,
@@ -201,7 +209,7 @@ pub fn find_scope(
 /// - lookup_pattern: How much access the lookup should have
 ///
 /// - On `Some`: Returns Symbol found and the `ScopeId` from the scope it was found in
-pub fn get_sym_id(
+pub fn find_sym_id(
     compiler: &ScriptCompiler,
     associated_scope: AssociatedScopeKind,
     target_name_id: InternedId,
@@ -456,9 +464,8 @@ impl ScopeType {
             // Neutral can only access neutral because this section is purely for declaring and
             // using in other sections
             ScopeType::Neutral => &SCOPE_NEUTRAL_ACCESSIBLE,
-            ScopeType::Var | ScopeType::Nest | ScopeType::Complex | ScopeType::Override => {
-                &SCOPE_REST_ACCESSIBLE
-            }
+            ScopeType::Var | ScopeType::Nest | ScopeType::Override => &SCOPE_REST_ACCESSIBLE,
+            ScopeType::Complex => &SCOPE_COMPLEX_ACCESSIBLE,
             ScopeType::Local => &SCOPE_LOCAL_ACCESSIBLE,
         }
     }
@@ -537,13 +544,13 @@ pub struct IntrinsicRegistry {
 impl IntrinsicRegistry {
     pub fn new(
         core_mod_id: ModuleId,
-        complex: Option<ScopeId>,
-        overrid: Option<ScopeId>,
+        complex_scope_id: Option<ScopeId>,
+        override_scope_id: Option<ScopeId>,
     ) -> IntrinsicRegistry {
         IntrinsicRegistry {
             core_mod_id,
-            complex_scope_id: complex,
-            override_scope_id: overrid,
+            complex_scope_id,
+            override_scope_id,
         }
     }
 }

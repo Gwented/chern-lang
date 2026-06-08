@@ -38,6 +38,9 @@ let x = 5*/
 // Same-line spanning.
 // Collisions.
 @def
+let e#2 = 3
+
+let e#2 = 2
 
 import "../../chrn_core/chrn_tests/def.chrn" as defs
 var->
@@ -62,7 +65,8 @@ var->
         }
 
     complex->
-        Door {}
+        // I don't know about this
+        /*def {}*/
 @end
 
 /*let a = b

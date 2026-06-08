@@ -401,13 +401,13 @@ fn parse_alias_stmt(
     )?;
 
     let conds = if ctx.peek_kind() == TokenKind::OBracket {
-        handle_conds(ctx, interner).unwrap_or(Vec::new())
+        handle_conds(ctx, interner).unwrap_or_default()
     } else {
         Vec::new()
     };
 
     let args = if ctx.peek_kind() == TokenKind::HashSymbol {
-        handle_args(ctx, interner).unwrap_or(Vec::new())
+        handle_args(ctx, interner).unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -486,13 +486,13 @@ fn parse_typedef(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractT
 
     // WARN: DO NOT PROPOGATE
     let conds = if ctx.peek_kind() == TokenKind::OBracket {
-        handle_conds(ctx, interner).unwrap_or(Vec::new())
+        handle_conds(ctx, interner).unwrap_or_default()
     } else {
         Vec::new()
     };
 
     let args = if ctx.peek_kind() == TokenKind::HashSymbol {
-        handle_args(ctx, interner).unwrap_or(Vec::new())
+        handle_args(ctx, interner).unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -542,18 +542,18 @@ fn parse_nest_sect(
                 interner,
             )?;
 
-            let fields = handle_struct_fields(ctx, struct_name, interner)?;
+            let fields = handle_struct_fields(ctx, struct_name, interner).unwrap_or_default();
 
             let conds = if ctx.peek_kind() == TokenKind::OBracket {
-                // Uses unwrap_or in many places so that the rest can be parsed if present for
+                // Uses unwrap_or_default() in many places so that the rest can be parsed if present for
                 // better errors
-                handle_conds(ctx, interner).unwrap_or(Vec::new())
+                handle_conds(ctx, interner).unwrap_or_default()
             } else {
                 Vec::new()
             };
 
             let args = if ctx.peek_kind() == TokenKind::HashSymbol {
-                handle_args(ctx, interner).unwrap_or(Vec::new())
+                handle_args(ctx, interner).unwrap_or_default()
             } else {
                 Vec::new()
             };
@@ -588,13 +588,13 @@ fn parse_nest_sect(
             let variants = handle_enum_variants(ctx, enum_name, interner)?;
 
             let glob_conds = if ctx.peek_kind() == TokenKind::OBracket {
-                handle_conds(ctx, interner).unwrap_or(Vec::new())
+                handle_conds(ctx, interner).unwrap_or_default()
             } else {
                 Vec::new()
             };
 
             let glob_args = if ctx.peek_kind() == TokenKind::HashSymbol {
-                handle_args(ctx, interner).unwrap_or(Vec::new())
+                handle_args(ctx, interner).unwrap_or_default()
             } else {
                 Vec::new()
             };
@@ -710,22 +710,27 @@ fn parse_option_assignment(
         interner,
     )?;
 
-    let array_expr = if ctx.peek_tok() == Token::OBracket {
+    let sp_array_expr = if ctx.peek_tok() == Token::OBracket {
         parse_array(ctx, interner)?
     } else {
         // Assumes it's a single value assignment if no OBracket is present
         let only_element = parse_expr(ctx, 0, interner)?;
-        ArrayExpr::new(vec![only_element])
+        let span = only_element.span;
+        let array_expr = Expr::Array(ArrayExpr::new(vec![only_element]));
+
+        SpannedExpr::new(array_expr, span)
     };
 
     Ok(AbstractOptionAssignment::new(
-        name_id, name_span, array_expr,
+        name_id,
+        name_span,
+        sp_array_expr,
     ))
 }
 
 // Should this just return elements similar to how call_args does?
 //NOTE: May add parse_array to parse_expr eventually
-fn parse_array(ctx: &mut ParserContext, interner: &Intern) -> Result<ArrayExpr, Token> {
+fn parse_array(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedExpr, Token> {
     ctx.expect_verbose(
         TokenKind::OBracket,
         "Expected a '[' to declare array, found ",
@@ -735,6 +740,8 @@ fn parse_array(ctx: &mut ParserContext, interner: &Intern) -> Result<ArrayExpr, 
     )?;
 
     let mut elements: Vec<SpannedExpr> = Vec::new();
+
+    let start = ctx.peek_span().start;
 
     while ctx.peek_tok() != Token::CBracket {
         let sp_expr = parse_expr(ctx, 0, interner)?;
@@ -753,6 +760,9 @@ fn parse_array(ctx: &mut ParserContext, interner: &Intern) -> Result<ArrayExpr, 
         )?;
     }
 
+    let end = ctx.peek_span().end;
+    let span = SourceSpan::new(ctx.region.region_id, start, end);
+
     ctx.expect_verbose(
         TokenKind::CBracket,
         "Expected a ']' to close array, found ",
@@ -763,7 +773,7 @@ fn parse_array(ctx: &mut ParserContext, interner: &Intern) -> Result<ArrayExpr, 
 
     let array_expr = ArrayExpr::new(elements);
 
-    Ok(array_expr)
+    Ok(SpannedExpr::new(Expr::Array(array_expr), span))
 }
 
 //TODO:
@@ -1337,13 +1347,13 @@ fn parse_variant(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractV
     };
 
     let conds = if ctx.peek_kind() == TokenKind::OBracket {
-        handle_conds(ctx, interner).unwrap_or(Vec::new())
+        handle_conds(ctx, interner).unwrap_or_default()
     } else {
         Vec::new()
     };
 
     let args = if ctx.peek_kind() == TokenKind::HashSymbol {
-        handle_args(ctx, interner).unwrap_or(Vec::new())
+        handle_args(ctx, interner).unwrap_or_default()
     } else {
         Vec::new()
     };

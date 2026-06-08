@@ -305,6 +305,7 @@ impl<'a> ParserContext<'a> {
 
     // TODO: Make a helper reporter so something like can_color doesn't need to be re-entered
     // everytime
+    /// Checks available known branching to where a help message can be sent
     fn try_help(
         &self,
         expected: TokenKind,
@@ -312,6 +313,7 @@ impl<'a> ParserContext<'a> {
         branch: Branch,
         interner: &Intern,
     ) -> Option<String> {
+        // ) -> (AnnotationKind, Option<String>) {
         // Maybe saturating could lead to mis info
         let prev_prev_tok = self.toks.get(self.pos.saturating_sub(3))?.clone();
         let prev_tok = self.toks.get(self.pos.saturating_sub(2))?.clone();
@@ -469,7 +471,17 @@ impl<'a> ParserContext<'a> {
                 },
                 // SectionBranch::NestType => todo!(),
                 // SectionBranch::NestEnum => todo!(),
-                // SectionBranch::Complex => todo!(),
+                SectionBranch::Complex => match found.tok {
+                    Token::StaticAccess if expected == TokenKind::OCurlyBracket => {
+                        //NOTE: Not sure if this should stick
+                        // Also very normal sized message.
+                        let help =
+                            "Static access is not permitted within configuration declarations.\nIf this was a module namespace, declare this in it's module of origin.\nIf this was a type namespace, this must be defined inside the configuration itself using available syntax."
+                                .to_string();
+                        Some(help)
+                    }
+                    _ => None,
+                },
                 // SectionBranch::Override => todo!(),
                 _ => match found.tok {
                     Token::Id(ident_id) | Token::Illegal(ident_id) => {

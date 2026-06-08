@@ -16,14 +16,15 @@ use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
 use lang::values::{Value, ValueInfo};
 
 use crate::parser::ast::{
-    AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Expr, Item,
-    PathSegment, SpannedExpr, SpannedPathSegment, SpannedTypeExpr, TypeExpr,
+    AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
+    AstInfo, Expr, Item, PathSegment, SpannedExpr, SpannedPathSegment, SpannedTypeExpr, TypeExpr,
 };
 use crate::scopes::{self, AssociatedScopeKind, LookupPattern, ScopeType};
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::error::{MathError, SemanticError};
 use crate::semantic::hir::{
-    ExprHir, MemberSymbolKind, Param, PossibleMember, ResolvedExpr, Symbol, SymbolKind,
+    ConfigDef, ConfigOptionAssignment, ExprHir, MemberSymbolKind, Param, PossibleMember,
+    ResolvedExpr, Symbol, SymbolKind,
 };
 use crate::semantic::{evaluator, inference};
 
@@ -79,12 +80,12 @@ impl TypeResolver<'_> {
             let ast_id = AstId::new(id as u32);
 
             match item {
-                Item::TypeDef(abs_typedef) => _ = self.resolve_typedef(abs_typedef, ast_id),
-                Item::Struct(abs_struct) => _ = self.resolve_struct(abs_struct, ast_id),
-                Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum, ast_id),
-                Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias, ast_id),
-                Item::Var(abs_var) => _ = self.resolve_var(abs_var, ast_id),
-                Item::Config(abs_cfg) => todo!(),
+                Item::TypeDef(abs_typedef) => _ = self.resolve_typedef(abs_typedef),
+                Item::Struct(abs_struct) => _ = self.resolve_struct(abs_struct),
+                Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum),
+                Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias),
+                Item::Var(abs_var) => _ = self.resolve_var(abs_var),
+                Item::Config(abs_cfg) => _ = self.resolve_cfg(abs_cfg),
             }
         }
 
@@ -293,6 +294,89 @@ impl TypeResolver<'_> {
 
             return Err(diags);
         }
+
+        Ok(())
+    }
+
+    fn resolve_cfg(&mut self, abs_cfg: &AbstractConfig) -> Result<(), ()> {
+        let opt_assignments: Vec<ConfigOptionAssignment> = Vec::new();
+        let inner_field_cfgs: Vec<ConfigDef> = Vec::new();
+
+        let scope_id = self
+            .compiler
+            .extract_scope_id(ScopeType::Complex, self.current_mod);
+        let table = &self.compiler.get_scope(scope_id).scope.table;
+
+        //TODO: global condition and argument setting.
+        //field arg and cond settings.
+        //same for enums.
+
+        let parent_sym_id = table.interned_to_sym[&abs_cfg.name_id];
+        let associated_scope = AssociatedScopeKind::Module(self.current_mod);
+
+        // Leaving this to the type checker?
+        let found_sym_id = if let Some((found_sym, _)) = scopes::find_sym_id(
+            self.compiler,
+            associated_scope,
+            abs_cfg.name_id,
+            ScopeType::Complex,
+            // I don't know about this lookup. It should probably be able to search namespace by
+            // namespace, but not by #)%*@%)@()
+            LookupPattern::NamespaceOnly,
+        ) {
+            found_sym
+        } else {
+            let name = self.interner.search(abs_cfg.name_id);
+            let core_msg = format!(
+                "Could not find a symbol with the identifier `{name}` in all complex searchable scopes"
+            );
+
+            let src_diag = SourceDiagnostic::builder(
+                DiagnosticLevel::Error,
+                core_msg,
+                self.current_region.path_id,
+            )
+            .add_annotation(abs_cfg.name_span, AnnotationKind::Primary, None)
+            .build();
+
+            self.reporter.err_vec.push(src_diag);
+
+            return Err(());
+        };
+
+        let cfg_def = self.compiler.get_cfg_def_mut(parent_sym_id);
+
+        for abs_opt in &abs_cfg.opt_assignments {
+            match self.register_expr(
+                parent_sym_id,
+                &abs_opt.array_expr,
+                None,
+                associated_scope,
+                // This purposeful setting is done on purpose.
+                ScopeType::Complex,
+                &mut vec![],
+            ) {
+                Ok(expr_id) => todo!(),
+                Err(sem_err) => {
+                    self.reporter.report_semantic(sem_err);
+                }
+            };
+
+            todo!();
+            let member_id = MemberId::new(self.compiler.members.len() as u32);
+            // ConfigOptionAssignment::new(member_id, abs_opt.name_id, abs_opt.name_span);
+
+            // opt_assignments.push(value);
+        }
+
+        for abs_inner in &abs_cfg.inner_field_cfg {
+            todo!()
+        }
+
+        cfg_def.sym_id = Some(found_sym_id);
+        cfg_def.opt_assignments = opt_assignments;
+        cfg_def.inner_field_cfgs = inner_field_cfgs;
+        dbg!(cfg_def);
 
         Ok(())
     }
@@ -689,13 +773,13 @@ impl TypeResolver<'_> {
         Ok((has_resolved_ty, has_const_val))
     }
 
-    fn resolve_var(&mut self, abs_var: &AbstractVar, ast_id: AstId) -> Result<(), ()> {
+    fn resolve_var(&mut self, abs_var: &AbstractVar) -> Result<(), ()> {
         let scope_id = self
             .compiler
             .extract_scope_id(ScopeType::Neutral, self.current_mod);
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
-        let sym_id = table.ast_to_sym[&ast_id];
+        let sym_id = table.interned_to_sym[&abs_var.name_id];
         let associated_scope = AssociatedScopeKind::Module(self.current_mod);
 
         //NOTE: Pipeline where expressions are always returned, just that some may have
@@ -748,7 +832,7 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
-    fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
+    fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef) -> Result<(), ()> {
         let type_id = match self.resolve_type_expr(
             AssociatedScopeKind::Module(self.current_mod),
             &abs_typedef.spanned_ty_expr,
@@ -766,7 +850,7 @@ impl TypeResolver<'_> {
             .compiler
             .extract_scope_id(ScopeType::Var, self.current_mod);
         let table = &self.compiler.get_scope(scope_id).scope.table;
-        let sym_id = table.ast_to_sym[&ast_id];
+        let sym_id = table.interned_to_sym[&abs_typedef.name_id];
         let associated_scope = AssociatedScopeKind::Module(self.current_mod);
 
         let mut conds: Vec<ExprId> = Vec::new();
@@ -804,7 +888,7 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
-    fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
+    fn resolve_struct(&mut self, abs_struct: &AbstractStruct) -> Result<(), ()> {
         // Not sure of if this should stay a Field type or just be a TypeDef since their intent
         // somewhat conflicts. For now, typedef is just consumed differently depending on if it's a
         // field declared in var-> or not since var-> fields may be made possible to reference, but
@@ -821,7 +905,7 @@ impl TypeResolver<'_> {
         //field arg and cond settings.
         //same for enums.
 
-        let sym_id = table.ast_to_sym[&ast_id];
+        let sym_id = table.interned_to_sym[&abs_struct.name_id];
         let associated_scope = AssociatedScopeKind::Module(self.current_mod);
 
         // Checking if there are duplicate name ids within the same struct along with resolution
@@ -880,7 +964,6 @@ impl TypeResolver<'_> {
                 field_typedef.name_id,
                 field_typedef.name_span,
                 type_id,
-                ast_id,
             );
 
             self.compiler.members.push(MemberSymbolKind::Field(field));
@@ -954,7 +1037,7 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
-    fn resolve_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) -> Result<(), ()> {
+    fn resolve_enum(&mut self, abs_enum: &AbstractEnum) -> Result<(), ()> {
         let mut variants: Vec<MemberId> = Vec::new();
 
         let scope_id = self
@@ -962,7 +1045,7 @@ impl TypeResolver<'_> {
             .extract_scope_id(ScopeType::Nest, self.current_mod);
         let table = &self.compiler.get_scope(scope_id).scope.table;
 
-        let sym_id = table.ast_to_sym[&ast_id];
+        let sym_id = table.interned_to_sym[&abs_enum.name_id];
         let associated_scope = AssociatedScopeKind::Module(self.current_mod);
 
         // (ast variant idx, name_id)
@@ -1108,13 +1191,13 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
-    fn resolve_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) -> Result<(), ()> {
+    fn resolve_alias(&mut self, abs_alias: &AbstractAlias) -> Result<(), ()> {
         let scope_id = self
             .compiler
             .extract_scope_id(ScopeType::Neutral, self.current_mod);
         let table = &self.compiler.get_scope_mut(scope_id).scope.table;
 
-        let alias_sym_id = table.ast_to_sym[&ast_id];
+        let alias_sym_id = table.interned_to_sym[&abs_alias.name_id];
         let associated_scope = AssociatedScopeKind::Module(self.current_mod);
 
         let local_scope_id = self.compiler.get_alias(alias_sym_id).local_scope_id;
@@ -1276,7 +1359,7 @@ impl TypeResolver<'_> {
                 if let Some(scope_id) = local_scope_id {
                     //FIXME:
                     if let Some(local_sym_id) =
-                        scopes::get_sym_id_local(self.compiler, scope_id, *name_id)
+                        scopes::find_sym_id_local(self.compiler, scope_id, *name_id)
                     {
                         // Stores it like this because local symbols can only be parameters, and
                         // parameters are inferred in type, so they are basically just variables
@@ -1311,7 +1394,7 @@ impl TypeResolver<'_> {
                     }
                 }
 
-                if let Some((found_sym_id, _)) = scopes::get_sym_id(
+                if let Some((found_sym_id, _)) = scopes::find_sym_id(
                     self.compiler,
                     associated_scope,
                     *name_id,
@@ -2099,7 +2182,7 @@ impl TypeResolver<'_> {
         for (i, sp_path_seg) in spanned_path_segs.iter().enumerate() {
             match &sp_path_seg.kind {
                 PathSegment::Ident(interned_id) => {
-                    if let Some((sym_id, _)) = scopes::get_sym_id(
+                    if let Some((sym_id, _)) = scopes::find_sym_id(
                         self.compiler,
                         current_scope,
                         *interned_id,
@@ -2260,7 +2343,7 @@ impl TypeResolver<'_> {
         }
 
         if let Expr::Var(name_id) = member.expr {
-            if let Some(sym_id) = scopes::get_sym_id(
+            if let Some(sym_id) = scopes::find_sym_id(
                 self.compiler,
                 todo!(),
                 name_id,
@@ -2375,7 +2458,7 @@ impl TypeResolver<'_> {
                 // since it would just be looking at it's type, which is not a favorable allowable syntax
                 // So, let x = 3, var-> field: x, would be valid if this weren't handled at the
                 // symbol level here
-                match scopes::get_sym_id(
+                match scopes::find_sym_id(
                     self.compiler,
                     associated_scope,
                     *name_id,

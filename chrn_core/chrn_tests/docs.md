@@ -165,9 +165,9 @@ var->
 
 - The `->` operator is used after section keywords to swap to the section. There cannot be more than one of each section.
 
-- Each section has their own set of allowed other sections to search. Scope searching does not change in any form for searching module imports unless the symbol is explicitly kept private.
+- Each section has their own set of allowed other sections to search. Scope searching does not change in any form for searching module imports unless the symbol is explicitly kept private. Every section has access to the core language features by default.
 
-`neutral`: This section needs no keyword and exists until a section is explicitly used.
+`neutral`: This section has no keyword and exists until a section is explicitly used.
 
 `neutral` allows for:
 - importing
@@ -240,13 +240,16 @@ nest->
     }
 ```
 
+Maybe rename to config?
+`complex`: Define complex rules
+
+Searchable scopes: `neutral` and `nest`
+
 ## Type & Argument constraints
 
 # DOES NOT EXIST YET
 `override`: Most important part of the language which controls things such as possible namespace casing to also look for and setting language type defaults. Language defaults exist but this can change any if needed.
 
-`complex`: Define complex rules
-Very descriptive!
 
 # DOES NOT EXIST YET
 -------------------------------

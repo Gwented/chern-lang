@@ -16,9 +16,9 @@ use crate::{
     modules::{Bind, Import, ImportKind, Module, ModuleState},
     scopes::{self, AssociatedScopeKind, IntrinsicRegistry, Scope, ScopeInfo, ScopeType},
     semantic::hir::{
-        AliasDef, ConfigDef, ConfigKind, ConfigSchema, ConfigSchemaKind, EnumDef, FieldRepre,
-        FuncDef, FuncKind, MemberSymbolKind, OptionAssignment, OptionSchema, Param, ResolvedExpr,
-        StructDef, Symbol, SymbolKind, Table, Type, TypeDef, TypeInfo, VariantRepre,
+        AliasDef, ConfigDef, ConfigOptionAssignment, EnumDef, FieldRepre, FuncDef, FuncKind,
+        MemberSymbolKind, ResolvedExpr, StructDef, Symbol, SymbolKind, Table, Type, TypeDef,
+        TypeInfo, VariantRepre,
     },
 };
 
@@ -49,7 +49,7 @@ pub struct ScriptCompiler {
     pub members: Vec<MemberSymbolKind>,
     /// All user defined configuration. Is considered it's own class instead of a type since it
     /// behaves uniquely
-    pub configs: Vec<ConfigKind>,
+    pub configs: Vec<ConfigDef>,
     /// Scope arena
     pub scopes: Vec<ScopeInfo>,
     /// Information regarding intrinsic data such as core's `ModuleId`
@@ -363,17 +363,21 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_cfg_def(&self, cfg_id: ConfigId) -> &ConfigDef {
-        match &self.configs[cfg_id.id as usize] {
-            ConfigKind::Def(cfg_def) => cfg_def,
-            ConfigKind::Schema(_) => unreachable!(),
+    pub(super) fn get_cfg_def(&self, sym_id: SymbolId) -> &ConfigDef {
+        match &self.symbols[sym_id.id as usize] {
+            sym_info => match &sym_info.kind {
+                SymbolKind::Config(cfg_id) => &self.configs[cfg_id.id as usize],
+                _ => unreachable!(),
+            },
         }
     }
 
-    pub(super) fn get_cfg_def_mut(&mut self, cfg_id: ConfigId) -> &mut ConfigDef {
-        match &mut self.configs[cfg_id.id as usize] {
-            ConfigKind::Def(cfg_def) => cfg_def,
-            ConfigKind::Schema(_) => unreachable!(),
+    pub(super) fn get_cfg_def_mut(&mut self, sym_id: SymbolId) -> &mut ConfigDef {
+        match &self.symbols[sym_id.id as usize] {
+            sym_info => match &sym_info.kind {
+                SymbolKind::Config(cfg_id) => &mut self.configs[cfg_id.id as usize],
+                _ => unreachable!(),
+            },
         }
     }
 
@@ -442,7 +446,7 @@ impl ScriptCompiler {
     // }
 
     /// Assumes the member symbol given is a field
-    pub(super) fn get_option_assignment(&self, member_id: MemberId) -> &OptionAssignment {
+    pub(super) fn get_option_assignment(&self, member_id: MemberId) -> &ConfigOptionAssignment {
         match &self.members[member_id.id as usize] {
             MemberSymbolKind::OptionAssignment(option_assignment) => option_assignment,
             _ => unreachable!(),
@@ -453,7 +457,7 @@ impl ScriptCompiler {
     pub(super) fn get_option_assignment_mut(
         &mut self,
         member_id: MemberId,
-    ) -> &mut OptionAssignment {
+    ) -> &mut ConfigOptionAssignment {
         match &mut self.members[member_id.id as usize] {
             MemberSymbolKind::OptionAssignment(option_assignment) => option_assignment,
             _ => unreachable!(),
@@ -520,14 +524,16 @@ impl ScriptCompiler {
         let scope_id = ScopeId::new(self.scopes.len());
         // Beep
         let intrinsic_scope_opt: Option<ScopeId> = match scope_type {
+            // Maybe this stages an internal language construct at compile time
             ScopeType::Complex => {
-                if let Some(scope_id) = self.intrinsic_registry.complex_scope_id {
-                    Some(scope_id)
-                } else {
-                    let scope_id = Some(self.load_complex_constants());
-                    self.intrinsic_registry.complex_scope_id = scope_id;
-                    scope_id
-                }
+                None
+                // if let Some(scope_id) = self.intrinsic_registry.complex_scope_id {
+                //     Some(scope_id)
+                // } else {
+                //     // let scope_id = Some(self.load_complex_constants());
+                //     self.intrinsic_registry.complex_scope_id = scope_id;
+                //     scope_id
+                // }
             }
             ScopeType::Override => {
                 if let Some(scope_id) = self.intrinsic_registry.override_scope_id {
@@ -650,53 +656,53 @@ impl ScriptCompiler {
     //
     // Ok what about, if not found in normal scope, search intrinsic, where now scopes carry
     // Option<ScopeId's> which allow for their intrinsics to be searched
-    /// Creates scope with the constants needed for a `complex` section to function then returns
-    /// it's `ScopeId`
-    fn load_complex_constants(&mut self) -> ScopeId {
-        // IS it from core? The semantics are getting a little lost
-        let core_mod_id = self.intrinsic_registry.core_mod_id;
-        let scope_type = ScopeType::Complex;
-
-        let mut table = Table::new();
-
-        let default_val_name_id = InternedId::new(intern::INTERNED_DEFAULT_VALUE);
-
-        let opt_schema = OptionSchema::new(default_val_name_id, None);
-        let field_opt_schemas = vec![opt_schema];
-
-        // table.interned_to_sym.insert(default_val_name_id, sym_id);
-
-        let cfg_schema = ConfigSchema::new(ConfigSchemaKind::Field, field_opt_schemas);
-
-        // let cfg_id = ConfigId::new(self.configs.len() as u32);
-        // let sym = Symbol::new(
-        //     default_val_name_id,
-        //     sym_id,
-        //     None,
-        //     core_mod_id,
-        //     false,
-        //     None,
-        //     scope_type,
-        //     SymbolKind::Config(cfg_id),
-        // );
-
-        self.configs.push(ConfigKind::Schema(cfg_schema));
-
-        let scope_id = ScopeId::new(self.scopes.len());
-        let scope = Scope::with_table(scope_id, scope_type, None, true, table);
-        let scope_info = ScopeInfo::new(scope, None, core_mod_id);
-        self.scopes.push(scope_info);
-
-        scope_id
-        // Need to load configuration structures with known fields
-        //
-        // The conceptual idea is, ConfigDef holds config options, which are known, and may have
-        // different options depending on the type.
-        //
-        // For searching against configuration that's known, we could have, SchemaKind, where it's
-        // kind dictates what options should be accounted for. So, given a target identifier,
-        // value, and kind of schema, what did we find.
-    }
+    // /// Creates scope with the constants needed for a `complex` section to function then returns
+    // /// it's `ScopeId`
+    // fn load_complex_constants(&mut self) -> ScopeId {
+    //     // IS it from core? The semantics are getting a little lost
+    //     let core_mod_id = self.intrinsic_registry.core_mod_id;
+    //     let scope_type = ScopeType::Complex;
+    //
+    //     let mut table = Table::new();
+    //
+    //     let default_val_name_id = InternedId::new(intern::INTERNED_DEFAULT_VALUE);
+    //
+    //     let opt_schema = OptionSchema::new(default_val_name_id, None);
+    //     let field_opt_schemas = vec![opt_schema];
+    //
+    //     // table.interned_to_sym.insert(default_val_name_id, sym_id);
+    //
+    //     let cfg_schema = ConfigSchema::new(ConfigSchemaKind::Field, field_opt_schemas);
+    //
+    //     // let cfg_id = ConfigId::new(self.configs.len() as u32);
+    //     // let sym = Symbol::new(
+    //     //     default_val_name_id,
+    //     //     sym_id,
+    //     //     None,
+    //     //     core_mod_id,
+    //     //     false,
+    //     //     None,
+    //     //     scope_type,
+    //     //     SymbolKind::Config(cfg_id),
+    //     // );
+    //
+    //     self.configs.push(cfg_schema);
+    //
+    //     let scope_id = ScopeId::new(self.scopes.len());
+    //     let scope = Scope::with_table(scope_id, scope_type, None, true, table);
+    //     let scope_info = ScopeInfo::new(scope, None, core_mod_id);
+    //     self.scopes.push(scope_info);
+    //
+    //     scope_id
+    //     // Need to load configuration structures with known fields
+    //     //
+    //     // The conceptual idea is, ConfigDef holds config options, which are known, and may have
+    //     // different options depending on the type.
+    //     //
+    //     // For searching against configuration that's known, we could have, SchemaKind, where it's
+    //     // kind dictates what options should be accounted for. So, given a target identifier,
+    //     // value, and kind of schema, what did we find.
+    // }
 
     // const fn configs(kind: ConfigSchemaKind) -> &'static ConfigSchema {
     //     match kind {
