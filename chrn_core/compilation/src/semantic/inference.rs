@@ -1,7 +1,10 @@
 use chrn_utils::id_types::TypeId;
-use lang::{parser::ast::BinaryOp, values::Value};
+use lang::values::Value;
 
-use crate::script_compiler::{self, ScriptCompiler};
+use crate::{
+    parser::ast::BinaryOp,
+    script_compiler::{self, ScriptCompiler},
+};
 
 pub(crate) fn infer_type_from_val(compiler: &ScriptCompiler, val: &Value) -> Option<TypeId> {
     match val {

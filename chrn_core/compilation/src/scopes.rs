@@ -1,13 +1,13 @@
 use std::fmt::Display;
 
 use chrn_utils::{
-    id_types::{InternedId, ModuleId, ScopeId, SymbolId, TypeId},
+    id_types::{InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId},
     intern::Intern,
 };
 
 use crate::{
     script_compiler::ScriptCompiler,
-    semantic::hir::{Symbol, SymbolKind, Table},
+    semantic::hir::{MemberSymbolKind, Symbol, SymbolKind, Table, Type},
 };
 
 //TODO: Maybe this is the point where the scope wrapper comes in
@@ -59,10 +59,15 @@ pub static SCOPE_REST_ACCESSIBLE: [ScopeType; 5] = [
 #[derive(Debug)]
 pub struct Scope {
     pub table: Table,
+    /// Own `ScopeId`
     pub scope_id: ScopeId,
+    /// `ScopeType` this scope represents
     pub scope_type: ScopeType,
+    /// An `Option` scope that is intrinsically a part of this scope
     pub intrinsic_scope: Option<ScopeId>,
+    /// Boolean of whether or not the scope is intrinsic
     pub is_intrinsic: bool,
+    /// An `Option` scope that is intrinsically a part of this scope
     pub accessible_scopes: &'static [ScopeType],
 }
 
@@ -150,7 +155,7 @@ pub fn get_type_id(
     for allowed_scope_type in accessible_scopes.iter().copied() {
         // In this scenario the scope may or may not exist since this could be used from
         // another module
-        if let Some(scope_info) = compiler.find_scope(allowed_scope_type, current_mod.mod_id) {
+        if let Some(scope_info) = find_scope(compiler, allowed_scope_type, current_mod.mod_id) {
             for current_sym_id in scope_info.scope.table.interned_to_sym.values() {
                 let current_sym = &compiler.symbols[current_sym_id.id as usize];
                 if current_sym.name_id == target_name_id {
@@ -170,6 +175,7 @@ pub fn get_type_id(
     None
 }
 
+/// Returns `Some` scope under the given kind if it exists, `None` otherwise.
 pub fn find_scope(
     compiler: &ScriptCompiler,
     scope_type: ScopeType,
@@ -220,7 +226,7 @@ pub fn get_sym_id(
             };
 
             for allowed_scope_type in accessible_scopes.iter() {
-                if let Some(scope_info) = compiler.find_scope(*allowed_scope_type, mod_id) {
+                if let Some(scope_info) = find_scope(compiler, *allowed_scope_type, mod_id) {
                     if let Some(sym_id) =
                         scope_info.scope.table.interned_to_sym.get(&target_name_id)
                     {
@@ -267,38 +273,47 @@ pub fn get_sym_id(
 /// Finds all symbols under the given string identifier and returns their symbol ids
 pub fn find_symbols_named<'a>(
     compiler: &'a ScriptCompiler,
-    interner: &Intern,
-    ident: &str,
-) -> Vec<SymbolId> {
-    let target_name_id = match interner.try_search_str(ident) {
-        Some(id) => id,
-        None => return Vec::new(),
-    };
+    target_name_id: InternedId,
+) -> (Vec<SymbolId>, Vec<&'a MemberSymbolKind>) {
+    let mut found: Vec<SymbolId> = Vec::new();
+    for sym in &compiler.symbols {
+        if sym.name_id == target_name_id {
+            found.push(sym.sym_id);
+        }
+    }
 
-    compiler
-        .symbols
-        .iter()
-        .filter(|sym| sym.name_id == target_name_id)
-        .map(|sym| sym.sym_id)
-        .collect()
+    todo!()
 }
 
 /// Finds all symbols under the given string identifier and returns their symbols as references
 pub fn find_symbols_named_ref<'a>(
     compiler: &'a ScriptCompiler,
-    interner: &Intern,
-    ident: &str,
-) -> Vec<&'a Symbol> {
-    let target_name_id = match interner.try_search_str(ident) {
-        Some(id) => id,
-        None => return Vec::new(),
-    };
+    target_name_id: InternedId,
+) -> (Vec<&'a Symbol>, Vec<&'a MemberSymbolKind>) {
+    let mut found_syms: Vec<&Symbol> = Vec::new();
+    let mut found_members: Vec<&MemberSymbolKind> = Vec::new();
 
-    compiler
-        .symbols
-        .iter()
-        .filter(|sym| sym.name_id == target_name_id)
-        .collect()
+    for sym in &compiler.symbols {
+        if sym.name_id == target_name_id {
+            found_syms.push(&sym);
+        }
+
+        match sym.kind {
+            SymbolKind::Type(type_id) => {
+                let new_members = collect_inner_symbols(compiler, type_id, target_name_id);
+                found_members.append(
+                    &mut new_members
+                        .iter()
+                        .map(|m_id| &compiler.members[m_id.id as usize])
+                        .collect(),
+                );
+            }
+            // To avoid allocating Vec if there is no possible inner
+            _ => (),
+        }
+    }
+
+    (found_syms, found_members)
 }
 
 // To avoid O(symbols) search by allowing module specific lookups
@@ -308,10 +323,10 @@ pub fn find_symbols_named_from_module<'a>(
     interner: &Intern,
     target_mod_id: ModuleId,
     ident: &str,
-) -> Vec<SymbolId> {
+) -> (Vec<SymbolId>, Vec<&'a MemberSymbolKind>) {
     let target_name_id = match interner.try_search_str(ident) {
         Some(id) => id,
-        None => return Vec::new(),
+        None => return (Vec::new(), Vec::new()),
     };
 
     let module = &compiler.mods[target_mod_id.id];
@@ -326,7 +341,7 @@ pub fn find_symbols_named_from_module<'a>(
         }
     }
 
-    found_symbols
+    todo!()
 }
 
 /// Finds all symbols under the given string identifier within the specific module given
@@ -335,26 +350,88 @@ pub fn find_symbols_named_from_module_ref<'a>(
     interner: &Intern,
     target_mod_id: ModuleId,
     ident: &str,
-) -> Vec<&'a Symbol> {
+) -> (Vec<&'a Symbol>, Vec<&'a MemberSymbolKind>) {
     let target_name_id = match interner.try_search_str(ident) {
         Some(id) => id,
-        None => return Vec::new(),
+        None => return (Vec::new(), Vec::new()),
     };
+
+    let mut found_syms: Vec<&Symbol> = Vec::new();
+    let mut found_members: Vec<&MemberSymbolKind> = Vec::new();
 
     let module = &compiler.mods[target_mod_id.id];
 
-    let mut found_symbols = Vec::new();
     for scope_id in &module.scopes {
         let scope = &compiler.scopes[scope_id.id].scope;
-        for (interned_id, sym_id) in &scope.table.interned_to_sym {
-            if *interned_id == target_name_id {
-                let sym = &compiler.symbols[sym_id.id as usize];
-                found_symbols.push(sym);
+        for sym_id in scope.table.interned_to_sym.values() {
+            let sym = &compiler.symbols[sym_id.id as usize];
+
+            if sym.name_id == target_name_id {
+                found_syms.push(&sym);
+            }
+
+            match sym.kind {
+                SymbolKind::Type(type_id) => {
+                    let new_members = collect_inner_symbols(compiler, type_id, target_name_id);
+                    found_members.append(
+                        &mut new_members
+                            .iter()
+                            .map(|m_id| &compiler.members[m_id.id as usize])
+                            .collect(),
+                    );
+                }
+                // To avoid allocating Vec if there is no possible inner
+                _ => (),
             }
         }
     }
 
-    found_symbols
+    (found_syms, found_members)
+}
+
+fn collect_inner_symbols<'a>(
+    compiler: &'a ScriptCompiler,
+    type_id: TypeId,
+    target_name_id: InternedId,
+) -> Vec<MemberId> {
+    // Um, 20 mb?
+    let mut found: Vec<MemberId> = Vec::new();
+
+    match &compiler.types[type_id.id as usize].ty {
+        Type::Struct(struct_def) => {
+            for member_id in &struct_def.fields {
+                let field = compiler.get_field(*member_id);
+                if field.name_id == target_name_id {
+                    found.push(field.member_id);
+                }
+            }
+        }
+        Type::Enum(enum_def) => {
+            for member_id in &enum_def.variants {
+                let variant = compiler.get_variant(*member_id);
+                if variant.name_id == target_name_id {
+                    found.push(variant.member_id);
+                }
+            }
+        }
+        Type::Alias(alias_def) => {
+            // Not sure what to do with params yet
+            // for thing in &alias_def.params {}
+        }
+        Type::Deferred(inner_type_id) => found.append(&mut collect_inner_symbols(
+            compiler,
+            *inner_type_id,
+            target_name_id,
+        )),
+        // Function isn't possible as an inner
+        Type::Func(_)
+        | Type::TypeDef(_)
+        | Type::Constrained(_)
+        | Type::BuiltinType(_)
+        | Type::Unknown => (),
+    }
+
+    found
 }
 
 /// Enum representing all kinds of scopes usable in chrn

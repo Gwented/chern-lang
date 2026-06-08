@@ -151,7 +151,14 @@ impl Module {
 //TEST: Lets depending on self recursively as a module happen for now
 /// Takes in a path to a `chrn` config file, then recursively resolved all imports associated with
 /// the path given in separate modules.
-/// THIS IMPLICITLY LOADS CORE
+///
+//// Maybe this is a little redundant
+/// Returns `Ok` with a `ScriptCompiler`, `SoruceRegionArena`, and `Vec<SourceDiagnostic>`.
+/// Modules in the compiler may or may not have a state which shows they are incomplete, which
+/// would mean a diagnostic was emitted. If diagnostics are empty then everything is stable.
+///
+/// Returns `Err` when the entry point path given experiences an unrecoverable error to where no
+/// sort of half state can be processed.
 //TODO: Should return an unfinished module state by default where a module may or may not be
 //completely loaded. Meaning, this would probably be best returning diagnostics.
 pub fn extract_modules(
@@ -362,10 +369,12 @@ pub fn extract_modules(
 
 // Maybe this has gone a little bit too far
 /// This function recursively resolves each import after being given a root module with imports to go off of.
+/// `reserved_mod_ids`: All stored K = Path, V = ModuleId, relationships, which were found by
+/// `ModuleFinder`'s collect imports method
 /// `seen`: All imports seen to perform DFS.
-/// `modules`: Modules to store during recursive process to return and append to main module.
+/// `other_mods`: Modules to store during recursive process, which is to be returned and
+///  appended with main module.
 /// `prev_mod`: The last module so that it's spanning information can be tracked.
-/// `mod_map`: Module interned file name -> ModuleId.
 /// `diags`: Vector to append any found diagnostics to since errors do not signify immediate
 /// failure.
 fn resolve_modules(

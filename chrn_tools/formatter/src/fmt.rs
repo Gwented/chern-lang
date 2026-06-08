@@ -1,8 +1,8 @@
 use std::path::Path;
 
+use chrn_utils::chrn_settings::ChrnSettings;
 use chrn_utils::{core_error::ModuleInitError, intern::Intern};
 use compilation::modules;
-use chrn_utils::chrn_settings::ChrnSettings;
 
 use crate::{script_prettifier::ScriptPrettifier, text_builder::TextBuilder};
 
@@ -25,14 +25,14 @@ pub fn fmt_script_block(path: &Path, settings: &ChrnSettings) -> Result<String, 
 
     let metadata = region_arena.extract_region(*region_id);
 
-    let (toks, trivia) = lang::lexer::Lexer::new(
+    let (toks, trivia) = compilation::lexer::Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
     .tokenize(&mut interner);
 
-    let ast_info = match lang::parser::parse(settings, metadata, &toks, &mut interner) {
+    let ast_info = match compilation::parser::parse(settings, metadata, &toks, &mut interner) {
         Ok(info) => info,
         Err((unfinished_ast, _)) => unfinished_ast,
     };

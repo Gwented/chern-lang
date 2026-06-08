@@ -3,13 +3,13 @@ use chrn_utils::{
     id_types::{AstId, InternedId, SpannedContainer},
     source_map::source_span::SourceSpan,
 };
-//NOTE: MAY MAKE EXPRESSION THAT HELPS RESOLVE SEMANTIC TYPES MORE CLEANLY
-
-use crate::{
+use lang::{
     inner_args::InnerArgs,
-    token::Notation,
     types::type_constraints::{self, TypeConstraintFlags},
 };
+//NOTE: MAY MAKE EXPRESSION THAT HELPS RESOLVE SEMANTIC TYPES MORE CLEANLY
+
+use crate::token::Notation;
 
 #[derive(Debug)]
 pub struct AstInfo {
@@ -146,6 +146,19 @@ pub enum Item {
     Var(AbstractVar),
     Config(AbstractConfig),
     // Func(AbstractFunc),
+}
+
+impl Item {
+    pub fn span(&self) -> SourceSpan {
+        match self {
+            Item::TypeDef(abs_typedef) => abs_typedef.name_span,
+            Item::Struct(abs_struct) => abs_struct.name_span,
+            Item::Enum(abs_enum) => abs_enum.name_span,
+            Item::Alias(abs_alias) => abs_alias.name_span,
+            Item::Var(abs_var) => abs_var.name_span,
+            Item::Config(abs_cfg) => abs_cfg.name_span,
+        }
+    }
 }
 
 #[derive(Debug)]

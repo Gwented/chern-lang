@@ -4,19 +4,18 @@ use std::{collections::HashMap, fmt::Debug};
 use chrn_utils::{
     fmter::{Formattable, Formatted},
     id_types::{
-        AstId, ConfigId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SpannedContainer,
-        SymbolId, TypeId, ValueId,
+        AstId, ConfigId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId, ValueId,
     },
     source_map::source_span::SourceSpan,
 };
 use lang::{
     inner_args::InnerArgs,
-    parser::ast::{BinaryOp, UnaryOp},
     types::{builtins::BuiltinType, type_constraints::TypeConstraintFlags},
 };
 
 use crate::{
     constraints::ArgConstraint,
+    parser::ast::{BinaryOp, UnaryOp},
     scopes::{AssociatedScopeKind, ScopeType},
 };
 
@@ -54,6 +53,18 @@ pub enum Type {
     Deferred(TypeId),
     Unknown,
 }
+
+// #[derive(Debug)]
+// pub enum TypeKind {
+//     BuiltinType(BuiltinTypeKind),
+//     Struct,
+//     Enum,
+//     Func,
+//     Alias,
+//     TypeDef,
+//     Constrained,
+//     Unknown,
+// }
 
 #[derive(Debug)]
 pub struct Symbol {
@@ -112,6 +123,7 @@ pub enum SymbolKind {
     ReservedTypeSlot(TypeId),
     /// Represents a module symbol
     Module(ModuleId),
+    /// Represents a config symbol
     Config(ConfigId),
     // Section(),
 }
@@ -119,35 +131,44 @@ pub enum SymbolKind {
 // Maybe, ConfigKind, UserConfigDef, IntrinsicConfigDef
 #[derive(Debug)]
 pub enum ConfigKind {
-    Description(ConfigDescription),
+    Schema(ConfigSchema),
     Def(ConfigDef),
 }
 
 /// Represent a configurataion description that must be followed,
 #[derive(Debug)]
-pub struct ConfigDescription {
-    pub kind: ConfigDescriptionKind,
-    pub option_desc: Vec<OptionDescripton>,
+pub struct ConfigSchema {
+    pub kind: ConfigSchemaKind,
+    pub option_schema: Vec<OptionSchema>,
 }
 
-impl ConfigDescription {
-    pub fn new(
-        kind: ConfigDescriptionKind,
-        option_desc: Vec<OptionDescripton>,
-    ) -> ConfigDescription {
-        ConfigDescription { kind, option_desc }
+impl ConfigSchema {
+    pub fn new(kind: ConfigSchemaKind, option_schema: Vec<OptionSchema>) -> ConfigSchema {
+        ConfigSchema {
+            kind,
+            option_schema,
+        }
     }
 }
 
 /// Represents a configurations options, that are preloaded by the compiler as schemas to follow
 #[derive(Debug)]
-pub struct OptionDescripton {
+pub struct OptionSchema {
     name_id: InternedId,
     constraints: Option<TypeConstraintFlags>,
 }
 
+impl OptionSchema {
+    pub fn new(name_id: InternedId, constraints: Option<TypeConstraintFlags>) -> OptionSchema {
+        OptionSchema {
+            name_id,
+            constraints,
+        }
+    }
+}
+
 #[derive(Debug)]
-pub enum ConfigDescriptionKind {
+pub enum ConfigSchemaKind {
     Struct,
     Enum,
     Field,
@@ -214,8 +235,18 @@ pub enum MemberSymbolKind {
     Variant(VariantRepre),
     // FIX:
     /// **NOT ACTUALLY A MEMBER YET**
-    Param(Param),
-    FieldAssignment(OptionAssignment),
+    // Param(Param),
+    OptionAssignment(OptionAssignment),
+}
+
+impl MemberSymbolKind {
+    pub fn member_id(&self) -> MemberId {
+        match self {
+            MemberSymbolKind::Field(field_repre) => field_repre.member_id,
+            MemberSymbolKind::Variant(variant_repre) => variant_repre.member_id,
+            MemberSymbolKind::OptionAssignment(option_assignment) => option_assignment.member_id,
+        }
+    }
 }
 
 // Maybe this should be a member?
@@ -440,6 +471,7 @@ impl Formattable for TypeDef {
 
 #[derive(Debug)]
 pub struct FuncDef {
+    pub sym_id: SymbolId,
     pub kind: FuncKind,
     // May be separate structure
     pub is_callable: bool,
@@ -458,6 +490,7 @@ pub struct FuncDef {
 
 impl FuncDef {
     pub fn new(
+        sym_id: SymbolId,
         kind: FuncKind,
         is_callable: bool,
         type_constraints: TypeConstraintFlags,
@@ -466,6 +499,7 @@ impl FuncDef {
         ret_type: TypeId,
     ) -> FuncDef {
         FuncDef {
+            sym_id,
             kind,
             is_callable,
             affects_type_constraint,

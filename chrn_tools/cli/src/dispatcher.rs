@@ -2,11 +2,14 @@ use chrn_utils::{
     chrn_settings::ChrnSettings,
     core_error::{ConfigLoadError, ModuleInitError, ScriptError},
 };
+use dumper::{
+    dump_settings::{DumpOutputKind, DumpSettings, ModuleOptions},
+    symbol_printer,
+};
 use orchestrator::{
     chrn_manager::{ChrnManager, ChrnManagerInitFailure},
     query,
 };
-use printer::symbol_printer;
 
 use crate::{
     args::{CheckCmd, Cli, Commands, FmtCmd, QueryCmd},
@@ -149,20 +152,29 @@ fn exec_query(query_cmd: &QueryCmd, cli_cfg: &CliConfig) -> Result<String, Strin
         }
     }
 
-    let found = query::find_symbols_named(
-        &chrn_manager.compiler(),
-        chrn_manager.interner(),
-        &query_cmd.ident,
-    );
+    // Ok...
+    // Clap commands ensure that a value must be provided if the option was chosen, so if !empty then
+    // it wasn't selected
+    let mod_opt = if !query_cmd.skip_modules.is_empty() {
+        ModuleOptions::Skip(query_cmd.skip_modules.clone())
+    } else if !query_cmd.only_modules.is_empty() {
+        ModuleOptions::Only(query_cmd.only_modules.clone())
+    } else if query_cmd.entry_only {
+        ModuleOptions::EntryPoint
+    } else {
+        ModuleOptions::All
+    };
 
-    let mut sym_strs: Vec<String> = Vec::new();
-    for sym in &found {
-        let sym_str =
-            symbol_printer::print_symbol(chrn_manager.compiler(), sym, chrn_manager.interner());
-        sym_strs.push(sym_str);
+    let settings = DumpSettings::new(mod_opt, DumpOutputKind::Cli);
+    if let Some(ident) = &query_cmd.ident {
+        let res =
+            dumper::dump::dump_env(chrn_manager.compiler(), chrn_manager.interner(), &settings);
+        dbg!(println!("{res}"));
+        todo!("Hi")
+    } else {
+        // dumper::symbol_printer::print_env(compiler, settings, interner)
+        todo!("Detailing")
     }
 
-    sym_strs.iter().for_each(|s| println!("{s}\n"));
-    dbg!(found);
     todo!("detailing")
 }

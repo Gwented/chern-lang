@@ -10,10 +10,9 @@ use chrn_utils::{
         source_span::SourceSpan,
     },
 };
+use lang::{algo, keywords::Keyword};
 
 use crate::{
-    algo,
-    keywords::Keyword,
     parser::{NeutralBranch, SectionBranch, branch::Branch},
     token::{self, SpannedToken, Token, TokenKind},
 };

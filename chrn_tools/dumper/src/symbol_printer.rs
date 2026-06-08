@@ -4,14 +4,50 @@ use compilation::{
     semantic::hir::{Symbol, SymbolKind, Type},
 };
 
+use crate::dump_settings::DumpSettings;
+
+pub struct PrintContext<'a> {
+    compiler: &'a ScriptCompiler,
+    indent: usize,
+    interner: &'a Intern,
+}
+
+impl PrintContext<'_> {
+    pub(crate) fn new<'a>(
+        compiler: &'a ScriptCompiler,
+        indent: usize,
+        interner: &'a Intern,
+    ) -> PrintContext<'a> {
+        PrintContext {
+            compiler,
+            indent,
+            interner,
+        }
+    }
+
+    pub(crate) fn increase_indent(&mut self) {
+        self.indent += 4;
+    }
+
+    pub(crate) fn decrease_indent(&mut self) {
+        self.indent -= 4;
+    }
+}
+
 // TEST:
 // More like stringifying
 
-pub fn print_env(compiler: &ScriptCompiler, interner: &Intern) -> String {
+pub fn print_env(compiler: &ScriptCompiler, settings: &DumpSettings, interner: &Intern) -> String {
+    let mut ctx = PrintContext::new(compiler, 0, interner);
     todo!()
 }
 
-pub fn print_symbol(compiler: &ScriptCompiler, sym: &Symbol, interner: &Intern) -> String {
+pub fn print_symbol(
+    compiler: &ScriptCompiler,
+    sym: &Symbol,
+    settings: &DumpSettings,
+    interner: &Intern,
+) -> String {
     let ident = interner.search(sym.name_id);
     let access_level = if sym.is_priv { "private" } else { "public" };
     // Maybe can sort by declaration module normally

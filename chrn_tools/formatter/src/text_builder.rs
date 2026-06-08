@@ -1,9 +1,9 @@
 use chrn_utils::{id_types::AstId, intern::Intern, source_map::source_span::SourceSpan};
-use lang::{
+use compilation::{
     parser::ast::{AbstractVar, AstInfo, Item, Section},
     token::{SpannedToken, Token},
-    trivia::{CommentLocation, Trivia, TriviaKind},
 };
+use lang::trivia::{CommentLocation, Trivia, TriviaKind};
 
 use crate::text_hir::{TextHir, TextType};
 

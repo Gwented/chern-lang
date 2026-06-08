@@ -1,10 +1,13 @@
 pub mod constraint_resolver;
 pub mod constraints;
+pub mod lexer;
 pub mod modules;
 pub mod name_resolver;
+pub mod parser;
 pub mod scopes;
 pub mod script_compiler;
 pub mod semantic;
+pub mod token;
 pub mod type_checker;
 pub mod type_resolver;
 
@@ -135,18 +138,16 @@ mod tests {
         intern::Intern,
         source_map::source_region::{SourceRegion, SourceRegionArena},
     };
-    use lang::{
-        config_loader::ChrnConfigLoader,
-        lexer::Lexer,
-        parser::{self, ast::AstInfo},
-        token::{Notation, Token},
-    };
+    use lang::config_loader::ChrnConfigLoader;
 
     use crate::{
+        lexer::Lexer,
         modules::{Import, ImportKind, Module, ModuleState},
         name_resolver::NamespaceResolver,
+        parser::{self, ast::AstInfo},
         scopes::ScopeType,
         script_compiler::ScriptCompiler,
+        token::{Notation, Token},
         type_resolver::{TypeResolver, type_context::TypeContext},
     };
 

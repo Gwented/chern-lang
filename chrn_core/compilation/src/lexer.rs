@@ -6,12 +6,12 @@ use chrn_utils::{
     intern::{self, Intern},
     source_map::source_span::SourceSpan,
 };
-
-use crate::{
+use lang::{
     keywords::{self, Keyword},
-    token::{Notation, SpannedToken, Token},
     trivia::{Trivia, TriviaKind},
 };
+
+use crate::token::{Notation, SpannedToken, Token};
 
 const MAX_ILLEGAL_TOKS: u8 = 5;
 

@@ -1,7 +1,7 @@
+// TODO: MAYBE eventually change from SipHash
 use chrn_utils::{
     id_types::{ConfigId, InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId},
     intern,
-    source_map::source_span::SourceSpan,
 };
 use lang::{
     types::{
@@ -14,11 +14,11 @@ use lang::{
 use crate::{
     constraints::ArgConstraint,
     modules::{Bind, Import, ImportKind, Module, ModuleState},
-    scopes::{AssociatedScopeKind, IntrinsicRegistry, Scope, ScopeInfo, ScopeType},
+    scopes::{self, AssociatedScopeKind, IntrinsicRegistry, Scope, ScopeInfo, ScopeType},
     semantic::hir::{
-        AliasDef, ConfigDef, ConfigDescription, ConfigKind, EnumDef, FieldRepre, FuncDef, FuncKind,
-        MemberSymbolKind, OptionAssignment, Param, ResolvedExpr, StructDef, Symbol, SymbolKind,
-        Table, Type, TypeDef, TypeInfo, VariantRepre,
+        AliasDef, ConfigDef, ConfigKind, ConfigSchema, ConfigSchemaKind, EnumDef, FieldRepre,
+        FuncDef, FuncKind, MemberSymbolKind, OptionAssignment, OptionSchema, Param, ResolvedExpr,
+        StructDef, Symbol, SymbolKind, Table, Type, TypeDef, TypeInfo, VariantRepre,
     },
 };
 
@@ -366,38 +366,38 @@ impl ScriptCompiler {
     pub(super) fn get_cfg_def(&self, cfg_id: ConfigId) -> &ConfigDef {
         match &self.configs[cfg_id.id as usize] {
             ConfigKind::Def(cfg_def) => cfg_def,
-            ConfigKind::Description(_) => unreachable!(),
+            ConfigKind::Schema(_) => unreachable!(),
         }
     }
 
     pub(super) fn get_cfg_def_mut(&mut self, cfg_id: ConfigId) -> &mut ConfigDef {
         match &mut self.configs[cfg_id.id as usize] {
             ConfigKind::Def(cfg_def) => cfg_def,
-            ConfigKind::Description(_) => unreachable!(),
+            ConfigKind::Schema(_) => unreachable!(),
         }
     }
 
-    pub(super) fn get_cfg_desc(&self, cfg_id: ConfigId) -> &ConfigDescription {
-        match &self.configs[cfg_id.id as usize] {
-            ConfigKind::Description(cfg_desc) => cfg_desc,
-            ConfigKind::Def(_) => unreachable!(),
-        }
-    }
-
-    pub(super) fn get_cfg_desc_mut(&mut self, cfg_id: ConfigId) -> &mut ConfigDescription {
-        match &mut self.configs[cfg_id.id as usize] {
-            ConfigKind::Description(cfg_desc) => cfg_desc,
-            ConfigKind::Def(_) => unreachable!(),
-        }
-    }
+    // pub(super) fn get_cfg_schema(&self, cfg_id: ConfigId) -> &ConfigSchema {
+    //     match &self.configs[cfg_id.id as usize] {
+    //         ConfigKind::Schema(cfg_schema) => cfg_schema,
+    //         ConfigKind::Def(_) => unreachable!(),
+    //     }
+    // }
+    //
+    // pub(super) fn get_cfg_schema_mut(&mut self, cfg_id: ConfigId) -> &mut ConfigSchema {
+    //     match &mut self.configs[cfg_id.id as usize] {
+    //         ConfigKind::Schema(cfg_schema) => cfg_schema,
+    //         ConfigKind::Def(_) => unreachable!(),
+    //     }
+    // }
 
     /// Assumes the member symbol given is a field
     pub(super) fn get_field(&self, member_id: MemberId) -> &FieldRepre {
         match &self.members[member_id.id as usize] {
             MemberSymbolKind::Field(field_repre) => field_repre,
             MemberSymbolKind::Variant(_)
-            | MemberSymbolKind::Param(_)
-            | MemberSymbolKind::FieldAssignment(_) => unreachable!(),
+            // | MemberSymbolKind::Param(_)
+            | MemberSymbolKind::OptionAssignment(_) => unreachable!(),
         }
     }
 
@@ -425,26 +425,26 @@ impl ScriptCompiler {
         }
     }
 
-    /// Assumes the member symbol given is a parameter
-    pub(super) fn get_param(&self, member_id: MemberId) -> &Param {
-        match &self.members[member_id.id as usize] {
-            MemberSymbolKind::Param(param) => &param,
-            _ => unreachable!(),
-        }
-    }
-
-    /// Assumes the member symbol given is a parameter
-    pub(super) fn get_param_mut(&mut self, member_id: MemberId) -> &mut Param {
-        match &mut self.members[member_id.id as usize] {
-            MemberSymbolKind::Param(param) => param,
-            _ => unreachable!(),
-        }
-    }
+    // /// Assumes the member symbol given is a parameter
+    // pub(super) fn get_param(&self, member_id: MemberId) -> &Param {
+    //     match &self.members[member_id.id as usize] {
+    //         MemberSymbolKind::Param(param) => &param,
+    //         _ => unreachable!(),
+    //     }
+    // }
+    //
+    // /// Assumes the member symbol given is a parameter
+    // pub(super) fn get_param_mut(&mut self, member_id: MemberId) -> &mut Param {
+    //     match &mut self.members[member_id.id as usize] {
+    //         MemberSymbolKind::Param(param) => param,
+    //         _ => unreachable!(),
+    //     }
+    // }
 
     /// Assumes the member symbol given is a field
     pub(super) fn get_option_assignment(&self, member_id: MemberId) -> &OptionAssignment {
         match &self.members[member_id.id as usize] {
-            MemberSymbolKind::FieldAssignment(option_assignment) => option_assignment,
+            MemberSymbolKind::OptionAssignment(option_assignment) => option_assignment,
             _ => unreachable!(),
         }
     }
@@ -455,7 +455,7 @@ impl ScriptCompiler {
         member_id: MemberId,
     ) -> &mut OptionAssignment {
         match &mut self.members[member_id.id as usize] {
-            MemberSymbolKind::FieldAssignment(option_assignment) => option_assignment,
+            MemberSymbolKind::OptionAssignment(option_assignment) => option_assignment,
             _ => unreachable!(),
         }
     }
@@ -486,7 +486,7 @@ impl ScriptCompiler {
     /// innately confirming whether or not it contains a particular `ScopeType`
     //FIX: Id for consistency
     pub fn get_scope_id(&self, scope_type: ScopeType, owner: ModuleId) -> Option<ScopeId> {
-        self.find_scope(scope_type, owner).map(|s| s.scope.scope_id)
+        scopes::find_scope(self, scope_type, owner).map(|s| s.scope.scope_id)
     }
 
     /// Get's the `ScopeId` assuming that the scope already exists. Panics otherwise.
@@ -494,7 +494,7 @@ impl ScriptCompiler {
     /// This exists because if the current module has something like a typedef in the semantic stage,
     /// that means the parser itself already checked if it was legal grammar-wise.
     pub fn extract_scope_id(&self, scope_type: ScopeType, owner_id: ModuleId) -> ScopeId {
-        self.find_scope(scope_type, owner_id)
+        scopes::find_scope(self, scope_type, owner_id)
             .expect("Either misuage of function, semantic broke, parser broke, or modules broke")
             .scope
             .scope_id
@@ -513,7 +513,7 @@ impl ScriptCompiler {
     /// Pushes new scope with given scope type and returns the `ScopeId`. If the scope already
     /// exists then it returns the existent `ScopeId`.
     pub fn push_scope(&mut self, scope_type: ScopeType, owner_id: ModuleId) -> ScopeId {
-        if let Some(scope_info) = self.find_scope(scope_type, owner_id) {
+        if let Some(scope_info) = scopes::find_scope(self, scope_type, owner_id) {
             return scope_info.scope.scope_id;
         }
 
@@ -556,50 +556,6 @@ impl ScriptCompiler {
 
         scope_id
     }
-
-    /// Returns `Some` scope under the given kind if it exists, `None` otherwise.
-    //NOTE: May opt for indices similarly to the ast's way of making sections
-    pub fn find_scope(&self, scope_type: ScopeType, owner_id: ModuleId) -> Option<&ScopeInfo> {
-        let mod_owner = &self.mods[owner_id.id];
-        for scope_id in &mod_owner.scopes {
-            let scope_info = &self.scopes[scope_id.id];
-            if scope_info.scope.scope_type == scope_type {
-                return Some(scope_info);
-            }
-        }
-
-        None
-    }
-
-    // //TEST:
-    // pub fn find_scope(
-    //     &self,
-    //     scope_type: ScopeType,
-    //     associated_scope: AssociatedScopeKind,
-    // ) -> Option<&ScopeInfo> {
-    //     match associated_scope {
-    //         AssociatedScopeKind::Module(mod_id) => {
-    //             let mod_owner = &self.mods[mod_id.id];
-    //
-    //             for scope_id in &mod_owner.scopes {
-    //                 let scope_info = &self.scopes[scope_id.id];
-    //                 if scope_info.scope.scope_type == scope_type {
-    //                     return Some(scope_info);
-    //                 }
-    //             }
-    //         }
-    //         // Seems a little odd
-    //         // Probably shouldn't account for it's type here
-    //         AssociatedScopeKind::Scope(scope_id) => {
-    //             let scope_info = &self.scopes[scope_id.id];
-    //             if scope_info.scope.scope_type == scope_type {
-    //                 return Some(scope_info);
-    //             }
-    //         }
-    //     }
-    //
-    //     None
-    // }
 
     /// Loads the core module
     fn load_core(compiler: &mut ScriptCompiler) {
@@ -700,10 +656,38 @@ impl ScriptCompiler {
         // IS it from core? The semantics are getting a little lost
         let core_mod_id = self.intrinsic_registry.core_mod_id;
         let scope_type = ScopeType::Complex;
-        let complex_scope_id = ScopeId::new(self.scopes.len());
-        self.intrinsic_registry.complex_scope_id = Some(complex_scope_id);
 
         let mut table = Table::new();
+
+        let default_val_name_id = InternedId::new(intern::INTERNED_DEFAULT_VALUE);
+
+        let opt_schema = OptionSchema::new(default_val_name_id, None);
+        let field_opt_schemas = vec![opt_schema];
+
+        // table.interned_to_sym.insert(default_val_name_id, sym_id);
+
+        let cfg_schema = ConfigSchema::new(ConfigSchemaKind::Field, field_opt_schemas);
+
+        // let cfg_id = ConfigId::new(self.configs.len() as u32);
+        // let sym = Symbol::new(
+        //     default_val_name_id,
+        //     sym_id,
+        //     None,
+        //     core_mod_id,
+        //     false,
+        //     None,
+        //     scope_type,
+        //     SymbolKind::Config(cfg_id),
+        // );
+
+        self.configs.push(ConfigKind::Schema(cfg_schema));
+
+        let scope_id = ScopeId::new(self.scopes.len());
+        let scope = Scope::with_table(scope_id, scope_type, None, true, table);
+        let scope_info = ScopeInfo::new(scope, None, core_mod_id);
+        self.scopes.push(scope_info);
+
+        scope_id
         // Need to load configuration structures with known fields
         //
         // The conceptual idea is, ConfigDef holds config options, which are known, and may have
@@ -712,9 +696,16 @@ impl ScriptCompiler {
         // For searching against configuration that's known, we could have, SchemaKind, where it's
         // kind dictates what options should be accounted for. So, given a target identifier,
         // value, and kind of schema, what did we find.
-
-        todo!()
     }
+
+    // const fn configs(kind: ConfigSchemaKind) -> &'static ConfigSchema {
+    //     match kind {
+    //         ConfigSchemaKind::Struct => lang::schemas::,
+    //         ConfigSchemaKind::Enum => todo!(),
+    //         ConfigSchemaKind::Field => todo!(),
+    //     }
+    //
+    // }
 
     /// Creates scope with the constants needed for an `override` section to function then returns
     /// it's `ScopeId`
@@ -762,7 +753,9 @@ impl ScriptCompiler {
         let type_id = TypeId::new(compiler.types.len() as u32);
         let is_empty_flags = TypeConstraintFlags::new(TypeConstraint::Collection.to_u64());
 
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
+            sym_id,
             FuncKind::IsEmpty,
             false,
             is_empty_flags,
@@ -770,11 +763,11 @@ impl ScriptCompiler {
             true,
             TypeId::new(CORE_BOOL),
         );
+
         compiler
             .types
             .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
 
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_IS_EMPTY);
         let symbol = Symbol::new(
             interned_id,
@@ -794,7 +787,9 @@ impl ScriptCompiler {
         let type_id = TypeId::new(compiler.types.len() as u32);
         let ws_flags = TypeConstraintFlags::new(TypeConstraint::CharacterMappable.to_u64());
 
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
+            sym_id,
             FuncKind::IsWhitespace,
             false,
             ws_flags,
@@ -807,7 +802,6 @@ impl ScriptCompiler {
             .types
             .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
 
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_IS_WHITESPACE);
         let symbol = Symbol::new(
             interned_id,
@@ -827,7 +821,9 @@ impl ScriptCompiler {
         let type_id = TypeId::new(compiler.types.len() as u32);
         let contains_flags = TypeConstraintFlags::new(TypeConstraint::CharacterMappable.to_u64());
 
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
+            sym_id,
             FuncKind::Contains,
             true,
             contains_flags,
@@ -840,7 +836,6 @@ impl ScriptCompiler {
             .types
             .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
 
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_CONTAINS);
         let symbol = Symbol::new(
             interned_id,
@@ -860,7 +855,9 @@ impl ScriptCompiler {
         let type_id = TypeId::new(compiler.types.len() as u32);
         let startsw_flags = TypeConstraintFlags::new(TypeConstraint::CharacterMappable.to_u64());
 
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
+            sym_id,
             FuncKind::StartsW,
             true,
             startsw_flags,
@@ -873,7 +870,6 @@ impl ScriptCompiler {
             .types
             .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
 
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_STARTSW);
         let symbol = Symbol::new(
             interned_id,
@@ -890,10 +886,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         // EndsW(Value) | CharacterMappable
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let type_id = TypeId::new(compiler.types.len() as u32);
         let endsw_flags = TypeConstraintFlags::new(TypeConstraint::CharacterMappable.to_u64());
 
         let func_def = FuncDef::new(
+            sym_id,
             FuncKind::EndsW,
             true,
             // What about CharacterMappable? Do we really want to be judgemental here?
@@ -908,7 +906,6 @@ impl ScriptCompiler {
             .types
             .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
 
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_ENDSW);
         let symbol = Symbol::new(
             interned_id,
@@ -927,7 +924,10 @@ impl ScriptCompiler {
         // Range(inclusive, inclusive) | Numeric | Ordering
         let type_id = TypeId::new(compiler.types.len() as u32);
         let range_flags = TypeConstraintFlags::new(TypeConstraint::Ranged.to_u64());
+
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
+            sym_id,
             FuncKind::Range,
             true,
             range_flags,
@@ -945,7 +945,6 @@ impl ScriptCompiler {
             .types
             .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
 
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_RANGE);
         let symbol = Symbol::new(
             interned_id,
@@ -965,7 +964,9 @@ impl ScriptCompiler {
         let type_id = TypeId::new(compiler.types.len() as u32);
         let eq_flags = TypeConstraintFlags::new(TypeConstraint::Comparable.to_u64());
 
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
+            sym_id,
             FuncKind::Equals,
             true,
             eq_flags,
@@ -982,7 +983,6 @@ impl ScriptCompiler {
             .types
             .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
 
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_EQUALS);
         let symbol = Symbol::new(
             interned_id,

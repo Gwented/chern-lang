@@ -8,12 +8,15 @@ use chrn_utils::{
 };
 use compilation::{
     constraint_resolver::ConstraintResolver,
+    lexer::Lexer,
     modules,
     name_resolver::NamespaceResolver,
+    parser::{self, ast::AstInfo},
     script_compiler::ScriptCompiler,
+    token::SpannedToken,
     type_resolver::{TypeResolver, type_context::TypeContext},
 };
-use lang::{parser::ast::AstInfo, token::SpannedToken, trivia::Trivia};
+use lang::trivia::Trivia;
 
 //ScriptContext? CompilerContext? AbstractCompilerManager?
 
@@ -159,17 +162,16 @@ impl ChrnManager {
             };
 
             let (toks, trivia) =
-                lang::lexer::Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+                Lexer::new(region.region_id, &region.src_bytes, region.script_start)
                     .tokenize(&mut self.interner);
 
-            let ast_info =
-                match lang::parser::parse(&self.settings, &region, &toks, &mut self.interner) {
-                    Ok(info) => info,
-                    Err((unfinished_ast, mut diags)) => {
-                        self.reporter.diags.append(&mut diags);
-                        unfinished_ast
-                    }
-                };
+            let ast_info = match parser::parse(&self.settings, &region, &toks, &mut self.interner) {
+                Ok(info) => info,
+                Err((unfinished_ast, mut diags)) => {
+                    self.reporter.diags.append(&mut diags);
+                    unfinished_ast
+                }
+            };
 
             self.toks.push(Some(toks));
             self.trivias.push(Some(trivia));

@@ -53,11 +53,38 @@ pub struct FmtCmd {
     pub(crate) minify: bool,
 }
 
+// Shows all modules by default
 #[derive(Args)]
 pub struct QueryCmd {
     /// Path of `.chrn` file to display the structural details of
     pub(crate) path: PathBuf,
-    pub(crate) ident: String,
+    /// Identifier to match the prefix of and query code for any instances of
+    pub(crate) ident: Option<String>,
+    /// The exact identifier should be matched instead of the prefix
+    #[arg(long = "exact", requires("ident"))]
+    pub(crate) exact: bool,
+    /// Only displays the entry point's information
+    #[arg(
+        long = "entry-only",
+        default_value_t = false,
+        // conflicts_with = "only_modules",
+        conflicts_with = "skip_modules",
+    )]
+    pub(crate) entry_only: bool,
+    /// Only displays information for the modules listed
+    #[arg(
+        long = "only-modules",
+        conflicts_with = "entry_only",
+        conflicts_with = "skip_modules"
+    )]
+    pub(crate) only_modules: Vec<String>,
+    /// Does not display information regarding any module under the identifiers given
+    #[arg(
+        long = "skip-modules",
+        conflicts_with = "entry_only",
+        conflicts_with = "only_modules"
+    )]
+    pub(crate) skip_modules: Vec<String>,
 }
 
 //     #[arg(short = 'l', long = "log", default_value_t = false)]

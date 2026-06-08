@@ -17,8 +17,10 @@ use crate::keywords::DEFINITION_SIZE;
 const READ_LIMIT_OFFSET: usize = 500;
 
 pub struct ChrnConfigLoader<'a, R: Read> {
-    // Configuration file path
+    // Since region ids are not used by the loader for diagnostics, this is safe. Only the path id
+    // is used.
     current_region_id: SourceRegionId,
+    // Configuration file path
     current_path_id: PathId,
     handle: BufReader<R>,
     settings: &'a ChrnSettings,

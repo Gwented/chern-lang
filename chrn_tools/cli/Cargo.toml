@@ -9,7 +9,7 @@ clap_derive = "4.6.0"
 common = { path = "../common/"}
 orchestrator = { path = "../orchestrator/"}
 formatter = { path = "../formatter"}
-printer = { path = "../printer/"}
+dumper = { path = "../dumper/"}
 chrn_utils = {path = "../../chrn_core/chrn_utils/"}
 unicode-width = "0.2"
 

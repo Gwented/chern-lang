@@ -12,13 +12,13 @@ use chrn_utils::source_map::source_diagnostic::{
     AnnotationKind, DiagnosticLevel, SourceDiagnostic,
 };
 use chrn_utils::source_map::source_region::SourceRegion;
-use lang::parser::ast::{
-    AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Expr, Item,
-    PathSegment, SpannedExpr, SpannedPathSegment, SpannedTypeExpr, TypeExpr,
-};
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
 use lang::values::{Value, ValueInfo};
 
+use crate::parser::ast::{
+    AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Expr, Item,
+    PathSegment, SpannedExpr, SpannedPathSegment, SpannedTypeExpr, TypeExpr,
+};
 use crate::scopes::{self, AssociatedScopeKind, LookupPattern, ScopeType};
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::error::{MathError, SemanticError};

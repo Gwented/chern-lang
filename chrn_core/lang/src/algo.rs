@@ -2,7 +2,7 @@ use std::cmp;
 
 use crate::{inner_args, keywords, types::builtins};
 
-pub(crate) enum FuzzyMatch {
+pub enum FuzzyMatch {
     KW,
     Type,
     Sect,

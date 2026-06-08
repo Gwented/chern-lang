@@ -3,8 +3,6 @@ mod branch;
 mod context;
 mod parser_state;
 
-use crate::inner_args::InnerArgs;
-use crate::keywords::Keyword;
 use crate::parser::ast::{
     AbstractAlias, AbstractConfig, AbstractEnum, AbstractMemberAccess, AbstractOptionAssignment,
     AbstractParam, AbstractStruct, AbstractTypeDef, AbstractVar, AbstractVariant, ArrayExpr,
@@ -22,6 +20,8 @@ use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
 use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
+use lang::inner_args::InnerArgs;
+use lang::keywords::Keyword;
 
 /// Returns a completed `AstInfo` on `Ok`. Returns a tuple with unfinished `AstInfo` and
 /// Diagnostics on `Err`.
@@ -545,6 +545,8 @@ fn parse_nest_sect(
             let fields = handle_struct_fields(ctx, struct_name, interner)?;
 
             let conds = if ctx.peek_kind() == TokenKind::OBracket {
+                // Uses unwrap_or in many places so that the rest can be parsed if present for
+                // better errors
                 handle_conds(ctx, interner).unwrap_or(Vec::new())
             } else {
                 Vec::new()

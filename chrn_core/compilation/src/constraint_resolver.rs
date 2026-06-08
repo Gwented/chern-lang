@@ -9,16 +9,13 @@ use chrn_utils::{
         source_span::SourceSpan,
     },
 };
-use lang::{
-    inner_args::InnerArgs,
-    parser::ast::{
-        AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Item,
-    },
-    types::builtins::BuiltinType,
-};
+use lang::{inner_args::InnerArgs, types::builtins::BuiltinType};
 
 use crate::{
     constraints::ArgConstraint,
+    parser::ast::{
+        AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Item,
+    },
     scopes::ScopeType,
     script_compiler::ScriptCompiler,
     semantic::{error::SemanticError, hir::Type, semantic_reporter::SemanticReporter},

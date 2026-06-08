@@ -1,18 +1,18 @@
 use chrn_utils::{
     chrn_settings::ChrnSettings,
-    id_types::{AstId, ConfigId, InternedId, ModuleId, ScopeId, SymbolId, TypeId},
+    id_types::{AstId, ConfigId, ModuleId, ScopeId, SymbolId, TypeId},
     intern::Intern,
     source_map::{
         source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
         source_region::SourceRegion,
     },
 };
-use lang::parser::ast::{
-    AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
-    AstInfo, Item,
-};
 
 use crate::{
+    parser::ast::{
+        AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
+        AstInfo, Item,
+    },
     scopes::{Scope, ScopeInfo},
     script_compiler::ScriptCompiler,
     semantic::{
@@ -332,7 +332,6 @@ impl NamespaceResolver<'_> {
     /// existing one
     //FIX: CHANGE TO NAME ID
     fn report_duplicate(&mut self, orig_sym_id: SymbolId, dup_sym_id: SymbolId) {
-        // Maybe use a vec instead
         //NOTE: Suspicious
         let orig_sym = &self.compiler.symbols[orig_sym_id.id as usize];
         let orig_ast_id = orig_sym.ast_id.expect("Core should not be resolved");
@@ -344,24 +343,8 @@ impl NamespaceResolver<'_> {
         let dup_name = self.interner.search(orig_sym.name_id);
         let scope_type = orig_sym.scope_origin;
 
-        let item = &self.ast_info.items[orig_ast_id.id as usize];
-        let orig_span = match item {
-            Item::TypeDef(abs_typedef) => abs_typedef.name_span,
-            Item::Struct(abs_struct) => abs_struct.name_span,
-            Item::Enum(abs_enum) => abs_enum.name_span,
-            Item::Alias(abs_alias) => abs_alias.name_span,
-            Item::Var(abs_var) => abs_var.name_span,
-            Item::Config(abs_cfg) => abs_cfg.name_span,
-        };
-
-        let dup_span = match &self.ast_info.items[dup_ast_id.id as usize] {
-            Item::TypeDef(abs_typedef) => abs_typedef.name_span,
-            Item::Struct(abs_struct) => abs_struct.name_span,
-            Item::Enum(abs_enum) => abs_enum.name_span,
-            Item::Alias(abs_alias) => abs_alias.name_span,
-            Item::Var(abs_var) => abs_var.name_span,
-            Item::Config(abs_cfg) => abs_cfg.name_span,
-        };
+        let orig_span = self.ast_info.items[orig_ast_id.id as usize].span();
+        let dup_span = self.ast_info.items[dup_ast_id.id as usize].span();
 
         let core_msg = format!(
             "Found more than one symbol with identifier \"{dup_name}\" in the section `{}`",

@@ -1,9 +1,9 @@
-use lang::{
-    parser::ast::{BinaryOp, UnaryOp},
-    values::Value,
-};
+use lang::values::Value;
 
-use crate::semantic::error::SemanticError;
+use crate::{
+    parser::ast::{BinaryOp, UnaryOp},
+    semantic::error::SemanticError,
+};
 
 pub fn is_compatible_unary(op: UnaryOp, operand: &Value) -> bool {
     match op {

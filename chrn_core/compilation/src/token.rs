@@ -1,10 +1,10 @@
 use std::{fmt::Display, ops::Range};
 
 use chrn_utils::{id_types::InternedId, source_map::source_span::SourceSpan};
+use lang::keywords::Keyword;
 
-use crate::{keywords::Keyword, parser::ast::BinaryOp};
+use crate::parser::ast::BinaryOp;
 
-#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // This exists so that the interned value can be kept and displayed. It's also so a notation can be
 // read within the lexer and stored without losing accuracy by setting it to something like i64
