@@ -1,5 +1,6 @@
-use chrn_utils::{keywords::Keyword, types::builtins::BuiltinTypeKind};
-use script_lib::semantic::representation::FuncKind;
+use compilation::semantic::hir::FuncKind;
+use lang::keywords::Keyword;
+use lang::types::builtins::BuiltinTypeKind;
 
 /// 60 Dashes
 pub static HOVER_DASHES: &str = "------------------------------------------------------------";

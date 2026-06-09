@@ -16,7 +16,6 @@ pub fn extract_word_at(line: &str, idx: usize) -> String {
             || c == '@'
             || c == '<'
             || c == '>'
-            || c == ':'
             || c == '-'
         {
             start -= 1;
@@ -34,7 +33,6 @@ pub fn extract_word_at(line: &str, idx: usize) -> String {
             || c == '@'
             || c == '<'
             || c == '>'
-            || c == ':'
             || c == '-'
         {
             end += 1;
@@ -120,7 +118,6 @@ pub fn find_word_bounds(text: &str, offset: usize) -> (usize, usize) {
             || c == '@'
             || c == '<'
             || c == '>'
-            || c == ':'
             || c == '-'
         {
             start -= 1;
@@ -138,7 +135,6 @@ pub fn find_word_bounds(text: &str, offset: usize) -> (usize, usize) {
             || c == '@'
             || c == '<'
             || c == '>'
-            || c == ':'
             || c == '-'
         {
             end += 1;

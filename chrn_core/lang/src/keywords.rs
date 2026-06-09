@@ -1,10 +1,8 @@
 use std::ops::RangeInclusive;
 
-use chrn_utils::{
-    fmter::{self, Formattable, Formatted},
-    id_types::InternedId,
-    intern,
-};
+use chrn_utils::{id_types::InternedId, intern};
+
+use crate::fmter::{self, Formattable, Formatted};
 
 /// Size in bytes for `@def` and `@end`
 pub const DEFINITION_SIZE: usize = 4;

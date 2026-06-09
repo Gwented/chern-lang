@@ -1,9 +1,9 @@
 use chrn_utils::{
-    fmter::{Formattable, Formatted},
     id_types::{AstId, InternedId, SpannedContainer},
     source_map::source_span::SourceSpan,
 };
 use lang::{
+    fmter::{Formattable, Formatted},
     inner_args::InnerArgs,
     types::type_constraints::{self, TypeConstraintFlags},
 };

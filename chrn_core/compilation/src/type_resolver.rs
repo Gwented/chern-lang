@@ -2,29 +2,30 @@
 pub mod type_context;
 
 use chrn_utils::chrn_settings::ChrnSettings;
-use chrn_utils::fmter::{Formattable, Formatted};
 use chrn_utils::id_types::{
-    AstId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SpannedContainer, SymbolId, TypeId,
-    ValueId,
+    AstId, ConfigId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SpannedContainer, SymbolId,
+    TypeId, ValueId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::{
     AnnotationKind, DiagnosticLevel, SourceDiagnostic,
 };
 use chrn_utils::source_map::source_region::SourceRegion;
+use lang::fmter::{Formattable, Formatted};
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
 use lang::values::{Value, ValueInfo};
 
+use crate::lookup::member_lookup::{self, MemberLookupResult};
+use crate::lookup::scopes::{self, AssociatedScopeKind, LookupPattern, ScopeType};
 use crate::parser::ast::{
     AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
     AstInfo, Expr, Item, PathSegment, SpannedExpr, SpannedPathSegment, SpannedTypeExpr, TypeExpr,
 };
-use crate::scopes::{self, AssociatedScopeKind, LookupPattern, ScopeType};
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::error::{MathError, SemanticError};
 use crate::semantic::hir::{
-    ConfigDef, ConfigOptionAssignment, ExprHir, MemberSymbolKind, Param, PossibleMember,
-    ResolvedExpr, Symbol, SymbolKind,
+    ConfigOptionAssignment, ExprHir, MemberSymbolKind, Param, PossibleMember, ResolvedExpr, Symbol,
+    SymbolKind,
 };
 use crate::semantic::{evaluator, inference};
 
@@ -299,8 +300,8 @@ impl TypeResolver<'_> {
     }
 
     fn resolve_cfg(&mut self, abs_cfg: &AbstractConfig) -> Result<(), ()> {
-        let opt_assignments: Vec<ConfigOptionAssignment> = Vec::new();
-        let inner_field_cfgs: Vec<ConfigDef> = Vec::new();
+        let opt_assignments: Vec<MemberId> = Vec::new();
+        let inner_field_cfgs: Vec<ConfigId> = Vec::new();
 
         let scope_id = self
             .compiler
@@ -315,13 +316,14 @@ impl TypeResolver<'_> {
         let associated_scope = AssociatedScopeKind::Module(self.current_mod);
 
         // Leaving this to the type checker?
+        // Can't really though since I need to check NOW
         let found_sym_id = if let Some((found_sym, _)) = scopes::find_sym_id(
             self.compiler,
             associated_scope,
             abs_cfg.name_id,
             ScopeType::Complex,
             // I don't know about this lookup. It should probably be able to search namespace by
-            // namespace, but not by #)%*@%)@()
+            // namespace, but not by #)%*@%)@(
             LookupPattern::NamespaceOnly,
         ) {
             found_sym
@@ -344,10 +346,9 @@ impl TypeResolver<'_> {
             return Err(());
         };
 
-        let cfg_def = self.compiler.get_cfg_def_mut(parent_sym_id);
-
+        // Get schema option then lookup against he actual possibilities
         for abs_opt in &abs_cfg.opt_assignments {
-            match self.register_expr(
+            let expr_id = match self.register_expr(
                 parent_sym_id,
                 &abs_opt.array_expr,
                 None,
@@ -356,29 +357,75 @@ impl TypeResolver<'_> {
                 ScopeType::Complex,
                 &mut vec![],
             ) {
-                Ok(expr_id) => todo!(),
+                Ok(expr_id) => expr_id,
                 Err(sem_err) => {
                     self.reporter.report_semantic(sem_err);
+                    continue;
                 }
             };
 
-            todo!();
             let member_id = MemberId::new(self.compiler.members.len() as u32);
-            // ConfigOptionAssignment::new(member_id, abs_opt.name_id, abs_opt.name_span);
-
-            // opt_assignments.push(value);
+            let opt =
+                ConfigOptionAssignment::new(member_id, abs_opt.name_id, abs_opt.name_span, expr_id);
+            self.compiler
+                .members
+                .push(MemberSymbolKind::OptionAssignment(opt));
         }
 
         for abs_inner in &abs_cfg.inner_field_cfg {
+            let member_id = match member_lookup::lookup_member(
+                self.compiler,
+                found_sym_id,
+                abs_inner.name_id,
+            ) {
+                // For having the same behavior as Ok, Err where it allows for the error path to
+                // execute specific code, to reduce boilerplate
+                MemberLookupResult::Found(member_id) => member_id,
+                res => {
+                    // So they all use the same scope for diagnostic reporting, to reduce code
+                    // duplication
+                    let diag_level = DiagnosticLevel::Error;
+                    let path_id = self.current_region.path_id;
+
+                    let src_diag = match res {
+                        MemberLookupResult::TypeHasNoMembers(type_id) => {
+                            let fmtted = Type::to_fmt(self.compiler, type_id);
+                        }
+                        MemberLookupResult::TypeDoesNotContainMember(type_id) => todo!(),
+                        MemberLookupResult::SymbolHasNoMembers => {
+                            let fmtted = SymbolKind::to_fmt(self.compiler, found_sym_id);
+                            let core_msg = format!("The symbol");
+                            let diag = SourceDiagnostic::builder(diag_level, core_msg, path_id);
+                        }
+                        MemberLookupResult::Unknown => todo!(),
+                        MemberLookupResult::Found(_) => unreachable!(),
+                    };
+                    todo!("Moz")
+                }
+            };
             todo!()
         }
+
+        dbg!(&abs_cfg);
+        panic!();
+
+        let cfg_def = self.compiler.get_cfg_def_mut(parent_sym_id);
 
         cfg_def.sym_id = Some(found_sym_id);
         cfg_def.opt_assignments = opt_assignments;
         cfg_def.inner_field_cfgs = inner_field_cfgs;
         dbg!(cfg_def);
+        panic!("END");
 
         Ok(())
+    }
+
+    /// Recursive function for resolving inner configs
+    fn resolve_cfg_inner(&mut self, abs_cfg: &AbstractConfig) -> Result<ConfigId, ()> {
+        let opt_assignments: Vec<MemberId> = Vec::new();
+        let inner_field_cfgs: Vec<ConfigId> = Vec::new();
+
+        todo!()
     }
 
     fn try_resolve_pending(
@@ -481,11 +528,7 @@ impl TypeResolver<'_> {
                     Err(sem_err) => {
                         // Extracting module of origin from the pending expression by using the symbol
                         // attached to the expression upon it's creation
-                        let parent_sym_id = pending_sym.pending_exprs[0].parent_sym;
-                        let mod_id = self.compiler.get_owner(parent_sym_id);
-
                         //WARN: Suspicious
-                        let module = &self.compiler.mods[mod_id.id];
                         self.reporter.report_semantic(sem_err)
                     }
                 };
@@ -709,6 +752,9 @@ impl TypeResolver<'_> {
             }
             // Hallucinating severely here.
             ExprHir::Array(expr_ids) => {
+                //TODO: Need to require const here
+                // So, maybe need to look at the context at some point later, or just typecheck.
+                // tybejeg TYPE check
                 let array = &self.compiler.exprs[current_expr_id.id as usize];
                 let array_len = expr_ids.len();
 
@@ -2133,6 +2179,7 @@ impl TypeResolver<'_> {
 
                         values.push(val);
                     }
+                    dbg!(&values);
 
                     Some(Value::Array(values))
                 } else {
@@ -2155,8 +2202,6 @@ impl TypeResolver<'_> {
 
                 self.compiler.values.push(val_info);
                 self.compiler.exprs.push(resolved_expr);
-
-                todo!("Make sure this works");
 
                 Ok(array_expr_id)
             }

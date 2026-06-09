@@ -1,6 +1,7 @@
 pub mod algo;
 pub mod config_loader;
 pub mod config_schemas;
+pub mod fmter;
 pub mod inner_args;
 pub mod keywords;
 pub mod lang_config;

@@ -9,11 +9,11 @@ use chrn_utils::{
 };
 
 use crate::{
+    lookup::scopes::{Scope, ScopeInfo, ScopeType},
     parser::ast::{
         AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
         AstInfo, Item,
     },
-    scopes::{Scope, ScopeInfo},
     script_compiler::ScriptCompiler,
     semantic::{
         hir::{
@@ -22,8 +22,6 @@ use crate::{
         semantic_reporter::SemanticReporter,
     },
 };
-
-use super::scopes::ScopeType;
 
 pub struct NamespaceResolver<'a> {
     ast_info: &'a AstInfo,

@@ -1,9 +1,8 @@
 use chrn_utils::{
-    fmter::Formatted,
     id_types::{InternedId, SpannedContainer},
     source_map::{source_diagnostic::SourceDiagnostic, source_span::SourceSpan},
 };
-use lang::{inner_args::InnerArgs, types::type_constraints::TypeConstraintFlags};
+use lang::{fmter::Formatted, inner_args::InnerArgs, types::type_constraints::TypeConstraintFlags};
 
 use crate::{constraints::ArgConstraint, semantic::hir::FuncKind};
 
@@ -13,6 +12,7 @@ pub enum SemanticError {
     /// Intended so that diagnostics can be made inline and still align with the same type
     General(SourceDiagnostic),
     /// Constraint, found type(builtin or user), spans
+    Lookup(),
     FuncConstraintMismatch(ArgConstraint, Formatted, Vec<SourceSpan>),
     /// Constraint, amount of incorrect params found, spans
     ArgCountMismatch(ArgConstraint, u32, Vec<SourceSpan>),
@@ -58,6 +58,9 @@ pub enum MathError {
     /// Lhs, rhs, spans
     DivideByZero(Formatted, Vec<SourceSpan>),
 }
+
+#[derive(Debug)]
+pub enum LookupError {}
 
 #[derive(Debug)]
 pub(super) enum FunctionConstraints {

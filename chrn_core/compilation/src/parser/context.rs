@@ -1,7 +1,6 @@
 // Static access help messages
 use chrn_utils::{
     chrn_settings::ChrnSettings,
-    fmter::Formattable,
     id_types::InternedId,
     intern::Intern,
     source_map::{
@@ -10,7 +9,7 @@ use chrn_utils::{
         source_span::SourceSpan,
     },
 };
-use lang::{algo, keywords::Keyword};
+use lang::{algo, fmter::Formattable, keywords::Keyword};
 
 use crate::{
     parser::{NeutralBranch, SectionBranch, branch::Branch},

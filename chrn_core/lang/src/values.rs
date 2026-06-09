@@ -1,10 +1,9 @@
 // The value system of script would be simple but the serial does need this too so maybe re-use
 // it?
 
-use chrn_utils::{
-    fmter::{Formattable, Formatted},
-    id_types::{ExprId, InternedId, SymbolId, TypeId},
-};
+use chrn_utils::id_types::{ExprId, InternedId, SymbolId, TypeId};
+
+use crate::fmter::{Formattable, Formatted};
 
 // This is supposed to represent something like, let x = 4, where 4 may or may not have a constant
 // value, 4 is the expression, and it's type is whatever is inferred

@@ -13,8 +13,8 @@ use lang::{
 
 use crate::{
     constraints::ArgConstraint,
+    lookup::scopes::{self, AssociatedScopeKind, IntrinsicRegistry, Scope, ScopeInfo, ScopeType},
     modules::{Bind, Import, ImportKind, Module, ModuleState},
-    scopes::{self, AssociatedScopeKind, IntrinsicRegistry, Scope, ScopeInfo, ScopeType},
     semantic::hir::{
         AliasDef, ConfigDef, ConfigOptionAssignment, EnumDef, FieldRepre, FuncDef, FuncKind,
         MemberSymbolKind, ResolvedExpr, StructDef, Symbol, SymbolKind, Table, Type, TypeDef,

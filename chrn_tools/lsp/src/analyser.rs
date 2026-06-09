@@ -1,7 +1,7 @@
+use compilation::modules::ImportKind;
+use compilation::modules::Module;
+use lang::config_loader::ChrnConfigLoader;
 use parking_lot::RwLock;
-use script_lib::config_loader::ChrnConfigLoader;
-use script_lib::modules::ImportKind;
-use script_lib::modules::Module;
 use serde_json;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -9,10 +9,14 @@ use std::sync::Arc;
 use tower_lsp::Client;
 use tower_lsp::lsp_types;
 
-use chrn_utils::id_types::{InternedId, ModuleId, PathId};
+use chrn_utils::chrn_settings::ChrnSettings;
+use chrn_utils::id_types::{ModuleId, PathId, SourceRegionId};
 use chrn_utils::intern::Intern;
-use common::chrn_settings::ChrnSettings;
-use script_lib::modules::mod_finder::ModuleFinder;
+use chrn_utils::source_map::source_diagnostic::{
+    AnnotationKind, DiagnosticLevel, SourceDiagnostic,
+};
+use chrn_utils::source_map::source_region::SourceRegionArena;
+use compilation::modules::mod_finder::ModuleFinder;
 use std::io::Cursor;
 use tower_lsp::lsp_types::Url;
 
@@ -51,52 +55,114 @@ fn evict_cache_if_needed(cache: &mut HashMap<String, String>) {
 
 /// Convert a `ConfigLoadError` into LSP diagnostics (error + optional hint).
 pub(crate) fn config_load_error_to_diagnostics(
-    err: common::core_error::ConfigLoadError,
+    err: chrn_utils::core_error::ConfigLoadError,
     text: &str,
 ) -> Vec<tower_lsp::lsp_types::Diagnostic> {
+    let source = "chrn-config";
     let start = lsp_types::Position {
         line: 0,
         character: 0,
     };
 
     match err {
-        common::core_error::ConfigLoadError::Unclosed(diag)
-        | common::core_error::ConfigLoadError::Module(diag) => {
-            let diag_span = diag.span.unwrap_or_default();
-            let start_pos = crate::text::offset_to_position(text, diag_span.start);
-            let end_pos = crate::text::offset_to_position(text, diag_span.end);
+        chrn_utils::core_error::ConfigLoadError::General(diag) => {
+            let severity = match diag.level {
+                DiagnosticLevel::Error => lsp_types::DiagnosticSeverity::ERROR,
+                DiagnosticLevel::Warn => lsp_types::DiagnosticSeverity::WARNING,
+                DiagnosticLevel::Note => lsp_types::DiagnosticSeverity::INFORMATION,
+                DiagnosticLevel::Help => lsp_types::DiagnosticSeverity::HINT,
+            };
 
-            let main_diag = tower_lsp::lsp_types::Diagnostic {
+            let (start_pos, end_pos) = if let Some(annotation) = diag
+                .annotations
+                .iter()
+                .find(|a| matches!(a.kind, AnnotationKind::Primary))
+                .or_else(|| diag.annotations.first())
+            {
+                let s_pos = crate::text::offset_to_position(text, annotation.span.start as usize);
+                let e_pos =
+                    crate::text::offset_to_position(text, (annotation.span.end + 1) as usize);
+                (s_pos, e_pos)
+            } else {
+                (start, start)
+            };
+
+            let mut result = vec![tower_lsp::lsp_types::Diagnostic {
                 range: lsp_types::Range {
                     start: start_pos,
                     end: end_pos,
                 },
-                severity: Some(lsp_types::DiagnosticSeverity::ERROR),
-                source: None,
+                severity: Some(severity),
+                source: Some(source.to_string()),
                 message: diag.core_msg,
                 ..Default::default()
-            };
+            }];
 
-            if let Some(help) = diag.help {
-                let help_diag = tower_lsp::lsp_types::Diagnostic {
+            for annotation in &diag.annotations {
+                let msg = match &annotation.label {
+                    Some(label) => label.clone(),
+                    None => match annotation.kind {
+                        AnnotationKind::Primary => continue,
+                        AnnotationKind::Secondary => "related to this".to_string(),
+                        AnnotationKind::Note => "note: ".to_string(),
+                        AnnotationKind::Help => "help: ".to_string(),
+                    },
+                };
+
+                let ann_start =
+                    crate::text::offset_to_position(text, annotation.span.start as usize);
+                let ann_end =
+                    crate::text::offset_to_position(text, (annotation.span.end + 1) as usize);
+                let ann_sev = match annotation.kind {
+                    AnnotationKind::Primary => severity,
+                    AnnotationKind::Secondary => lsp_types::DiagnosticSeverity::WARNING,
+                    AnnotationKind::Note => lsp_types::DiagnosticSeverity::INFORMATION,
+                    AnnotationKind::Help => lsp_types::DiagnosticSeverity::HINT,
+                };
+                result.push(tower_lsp::lsp_types::Diagnostic {
+                    range: lsp_types::Range {
+                        start: ann_start,
+                        end: ann_end,
+                    },
+                    severity: Some(ann_sev),
+                    source: Some(source.to_string()),
+                    message: msg,
+                    ..Default::default()
+                });
+            }
+
+            for note in &diag.notes {
+                result.push(tower_lsp::lsp_types::Diagnostic {
+                    range: lsp_types::Range {
+                        start: start_pos,
+                        end: end_pos,
+                    },
+                    severity: Some(lsp_types::DiagnosticSeverity::INFORMATION),
+                    source: Some(source.to_string()),
+                    message: note.clone(),
+                    ..Default::default()
+                });
+            }
+
+            for help_msg in &diag.help {
+                result.push(tower_lsp::lsp_types::Diagnostic {
                     range: lsp_types::Range {
                         start: start_pos,
                         end: end_pos,
                     },
                     severity: Some(lsp_types::DiagnosticSeverity::HINT),
-                    source: None,
-                    message: help,
+                    source: Some(source.to_string()),
+                    message: help_msg.clone(),
                     ..Default::default()
-                };
-                vec![main_diag, help_diag]
-            } else {
-                vec![main_diag]
+                });
             }
+
+            result
         }
-        common::core_error::ConfigLoadError::IO(io) => vec![tower_lsp::lsp_types::Diagnostic {
+        chrn_utils::core_error::ConfigLoadError::IO(io) => vec![tower_lsp::lsp_types::Diagnostic {
             range: lsp_types::Range { start, end: start },
             severity: Some(lsp_types::DiagnosticSeverity::ERROR),
-            source: Some("chrn-config".to_string()),
+            source: Some(source.to_string()),
             message: io.to_string(),
             ..Default::default()
         }],
@@ -119,11 +185,12 @@ pub async fn analyze_and_publish_task(
         .unwrap_or_else(|_| PathBuf::from(uri.path()));
 
     let mut interner = Intern::init();
-    let path_id = PathId::new(interner.intern_path(&path_buf));
+    let path_id = interner.intern_path(&path_buf);
     // 1. Initial config load to find boundaries
-    let metadata = match ChrnConfigLoader::new(
-        path_id,
+    let region = match ChrnConfigLoader::new(
+        SourceRegionId::new(0),
         Cursor::new(text.as_bytes()),
+        path_id,
         &settings,
         &mut interner,
     )
@@ -149,8 +216,8 @@ pub async fn analyze_and_publish_task(
     let state_arc = doc_cache.get_or_create(
         &uri.to_string(),
         text,
-        metadata.script_start,
-        metadata.serial_start,
+        region.script_start,
+        region.serial_start,
         version,
     );
 
@@ -223,179 +290,291 @@ async fn publish_if_current(
 
 pub(crate) fn push_diagnostics(
     lsp_diags: &mut Vec<tower_lsp::lsp_types::Diagnostic>,
-    diags: &[common::reporter::diagnostic::Diagnostic],
+    diags: &[SourceDiagnostic],
     doc_len: usize,
     text: &str,
-    _source: &str,
+    source: &str,
 ) {
     for core_diag in diags {
-        let (start_byte, end_byte) = match core_diag.span {
-            Some(span) => {
-                let s = span.start.min(doc_len);
-                let e = span.end.saturating_add(1).min(doc_len);
-                (s, e)
-            }
-            None => (0, 0),
+        let severity = match core_diag.level {
+            DiagnosticLevel::Error => lsp_types::DiagnosticSeverity::ERROR,
+            DiagnosticLevel::Warn => lsp_types::DiagnosticSeverity::WARNING,
+            DiagnosticLevel::Note => lsp_types::DiagnosticSeverity::INFORMATION,
+            DiagnosticLevel::Help => lsp_types::DiagnosticSeverity::HINT,
+        };
+
+        let (start_byte, end_byte) = if let Some(annotation) = core_diag
+            .annotations
+            .iter()
+            .find(|a| matches!(a.kind, AnnotationKind::Primary))
+            .or_else(|| core_diag.annotations.first())
+        {
+            let s = (annotation.span.start as usize).min(doc_len);
+            let e = (annotation.span.end as usize)
+                .saturating_add(1)
+                .min(doc_len);
+            (s, e)
+        } else {
+            (0, 0)
         };
 
         let start_pos = crate::text::offset_to_position(text, start_byte);
         let end_pos = crate::text::offset_to_position(text, end_byte);
 
-        let diag = tower_lsp::lsp_types::Diagnostic {
+        lsp_diags.push(tower_lsp::lsp_types::Diagnostic {
             range: lsp_types::Range {
                 start: start_pos,
                 end: end_pos,
             },
-            severity: Some(lsp_types::DiagnosticSeverity::ERROR),
-            source: None,
+            severity: Some(severity),
+            source: Some(source.to_string()),
             message: core_diag.core_msg.clone(),
             ..Default::default()
-        };
+        });
 
-        lsp_diags.push(diag);
+        for annotation in &core_diag.annotations {
+            let msg = match &annotation.label {
+                Some(label) => label.clone(),
+                None => match annotation.kind {
+                    AnnotationKind::Primary => continue,
+                    AnnotationKind::Secondary => "".to_string(),
+                    AnnotationKind::Note => "note: ".to_string(),
+                    AnnotationKind::Help => "help: ".to_string(),
+                },
+            };
 
-        if let Some(help) = &core_diag.help {
-            let help_diag = tower_lsp::lsp_types::Diagnostic {
+            let ann_start = (annotation.span.start as usize).min(doc_len);
+            let ann_end = (annotation.span.end as usize)
+                .saturating_add(1)
+                .min(doc_len);
+            let ann_sev = match annotation.kind {
+                AnnotationKind::Primary => severity,
+                AnnotationKind::Secondary | AnnotationKind::Help => {
+                    lsp_types::DiagnosticSeverity::HINT
+                }
+                AnnotationKind::Note => lsp_types::DiagnosticSeverity::INFORMATION,
+            };
+            lsp_diags.push(tower_lsp::lsp_types::Diagnostic {
+                range: lsp_types::Range {
+                    start: crate::text::offset_to_position(text, ann_start),
+                    end: crate::text::offset_to_position(text, ann_end),
+                },
+                severity: Some(ann_sev),
+                source: Some(source.to_string()),
+                message: msg,
+                ..Default::default()
+            });
+        }
+
+        for note in &core_diag.notes {
+            lsp_diags.push(tower_lsp::lsp_types::Diagnostic {
+                range: lsp_types::Range {
+                    start: start_pos,
+                    end: end_pos,
+                },
+                severity: Some(lsp_types::DiagnosticSeverity::INFORMATION),
+                source: Some(source.to_string()),
+                message: note.clone(),
+                ..Default::default()
+            });
+        }
+
+        for help_msg in &core_diag.help {
+            lsp_diags.push(tower_lsp::lsp_types::Diagnostic {
                 range: lsp_types::Range {
                     start: start_pos,
                     end: end_pos,
                 },
                 severity: Some(lsp_types::DiagnosticSeverity::HINT),
-                source: None,
-                message: help.clone(),
+                source: Some(source.to_string()),
+                message: help_msg.clone(),
                 ..Default::default()
-            };
-            lsp_diags.push(help_diag);
+            });
         }
     }
 }
 
 pub(crate) fn resolve_modules_lsp(
-    seen: &mut std::collections::HashSet<PathId>,
+    reserved_mod_ids: &mut Vec<(PathId, ModuleId)>,
+    seen: &mut Vec<PathId>,
     modules: &mut Vec<Option<Module>>,
     prev_mod: &Module,
-    mod_map: &mut HashMap<InternedId, ModuleId>,
     settings: &ChrnSettings,
     interner: &mut Intern,
     doc_cache: &DocumentCache,
-) -> Result<(), common::core_error::ConfigLoadError> {
+    region_arena: &mut SourceRegionArena,
+    diags: &mut Vec<SourceDiagnostic>,
+) {
+    use chrn_utils::core_error::{self, ConfigLoadError};
+    use compilation::modules::ModuleState;
+
     for import in &prev_mod.imports {
         let ImportKind::Source(path_id, path_span) = import.kind else {
             continue;
         };
 
-        if seen.contains(&path_id) {
+        if seen.iter().any(|p_id| *p_id == path_id) {
             continue;
         }
 
-        let current_mod_id = seen.len();
-        seen.insert(path_id);
+        seen.push(path_id);
 
-        let path_owned = interner.search_path(path_id.id as usize).to_path_buf();
+        let current_mod_id = reserved_mod_ids
+            .iter()
+            .find(|(p_id, _)| *p_id == path_id)
+            .map(|(_, m_id)| *m_id)
+            .expect("Previous registration failed");
+
+        let path_owned = interner.search_path(path_id).to_path_buf();
         let path = path_owned.as_path();
 
         // Try to get from doc_cache first
         let uri = Url::from_file_path(path).unwrap();
-        let source_res: Result<Box<dyn std::io::Read + Send>, common::core_error::ConfigLoadError> =
+        let source_res: Result<Box<dyn std::io::Read + Send>, ConfigLoadError> =
             if let Some(text) = doc_cache.get_text(&uri.to_string()) {
                 Ok(Box::new(ArcReader { data: text, pos: 0 }))
             } else {
                 // Fallback to disk
-                std::fs::File::open(path)
-                    .map(|f| Box::new(f) as Box<dyn std::io::Read + Send>)
-                    .map_err(|e| {
-                        let core_msg = common::core_error::form_string_from_io_err(&e, path)
-                            .unwrap_or(e.to_string());
-                        let metadata = prev_mod.src_metadata.as_ref().unwrap();
-                        let ln_data = common::reporter::form_err_diag(
-                            &metadata.src_bytes,
-                            &[path_span],
-                            settings.can_color,
-                        );
-                        let prev_path = interner.search_path(metadata.path_id.id as usize);
-                        let fmtted_diag = common::reporter::standardize_err(
-                            &core_msg,
-                            &ln_data,
-                            None,
-                            prev_path,
-                            settings.can_color,
-                        );
-                        common::core_error::ConfigLoadError::Module(
-                            common::reporter::diagnostic::Diagnostic::new(
-                                path,
-                                core_msg,
-                                Some(path_span),
-                                None,
-                                fmtted_diag,
-                                common::reporter::diagnostic::Area::ConfigLoad,
-                            ),
-                        )
-                    })
+                match std::fs::File::open(path) {
+                    Ok(_) if path.is_dir() => {
+                        let core_msg = format!("The path \"{}\" is a directory", path.display());
+                        let src_diag =
+                            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
+                                .add_annotation(
+                                    path_span,
+                                    AnnotationKind::Primary,
+                                    "Caused by this import".to_string().into(),
+                                )
+                                .build();
+                        Err(ConfigLoadError::General(src_diag))
+                    }
+                    Ok(f) => Ok(Box::new(f) as Box<dyn std::io::Read + Send>),
+                    Err(e) => {
+                        let core_msg =
+                            core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
+                        let src_diag =
+                            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
+                                .add_annotation(
+                                    path_span,
+                                    AnnotationKind::Primary,
+                                    "Caused by this import".to_string().into(),
+                                )
+                                .build();
+                        Err(ConfigLoadError::General(src_diag))
+                    }
+                }
             };
 
         let src = match source_res {
             Ok(s) => s,
-            Err(e) => return Err(e),
+            Err(ConfigLoadError::General(diag)) => {
+                diags.push(diag);
+                continue;
+            }
+            Err(ConfigLoadError::IO(e)) => {
+                let core_msg = format!("IO error: {}", e);
+                let src_diag = SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
+                    .add_annotation(path_span, AnnotationKind::Primary, None)
+                    .build();
+                diags.push(src_diag);
+                continue;
+            }
         };
 
-        let mod_metadata = ChrnConfigLoader::new(path_id, src, settings, interner).load_config()?;
+        let sub_region_id = SourceRegionId::new(region_arena.regions.len() as u32);
 
-        let file_name = match path.file_stem().and_then(|n| n.to_str()) {
+        let sub_region =
+            match ChrnConfigLoader::new(sub_region_id, src, path_id, settings, interner)
+                .load_config()
+            {
+                Ok(reg) => reg,
+                Err(cfg_err) => {
+                    match cfg_err {
+                        ConfigLoadError::General(diag) => {
+                            diags.push(diag);
+                        }
+                        ConfigLoadError::IO(e) => {
+                            let path = interner.search_path(path_id);
+                            let core_msg = core_error::form_string_from_io_err(&e, path)
+                                .unwrap_or(e.to_string());
+                            let src_diag = SourceDiagnostic::builder(
+                                DiagnosticLevel::Error,
+                                core_msg,
+                                path_id,
+                            )
+                            .add_annotation(path_span, AnnotationKind::Primary, None)
+                            .build();
+                            diags.push(src_diag);
+                        }
+                    }
+                    continue;
+                }
+            };
+
+        let file_name = match path.file_prefix().and_then(|n| n.to_str()) {
             Some(p) => p.to_string(),
             _ => {
                 if let Some(name_id) = import.alias_id {
-                    interner.search(name_id.id as usize).to_string()
+                    interner.search(name_id).to_string()
                 } else {
                     let core_msg = format!(
                         "The path \"{}\" does not have a valid UTF-8 file name usable within the program.",
                         path.display()
                     );
-                    let diag = common::reporter::diagnostic::Diagnostic::new(
-                        path,
+                    let src_diag = SourceDiagnostic::builder(
+                        DiagnosticLevel::Error,
                         core_msg.clone(),
-                        None,
-                        None,
-                        core_msg,
-                        common::reporter::diagnostic::Area::ConfigLoad,
-                    );
-                    return Err(common::core_error::ConfigLoadError::Module(diag));
+                        path_id,
+                    )
+                    .build();
+                    diags.push(src_diag);
+                    continue;
                 }
             }
         };
 
-        let name_id = InternedId::new(interner.intern(&file_name));
-        let metadata = prev_mod.src_metadata.as_ref().unwrap();
-        let origin = interner.search_path(metadata.path_id.id as usize);
+        let sub_mod_name_id = interner.intern(&file_name);
 
-        let (_, sub_imports) = ModuleFinder::new(
-            &mod_metadata.src_bytes,
+        let (_, sub_imports, mut finder_diags) = ModuleFinder::new(
+            &sub_region.src_bytes,
             settings,
-            origin.to_path_buf(),
-            mod_metadata.script_start,
-            mod_metadata.serial_start,
+            reserved_mod_ids,
+            &sub_region,
+            sub_region.script_start,
+            sub_region.serial_start,
         )
-        .collect_imports(interner)?;
+        .collect_imports(interner);
 
-        let sub_mod = Module::new(
-            name_id,
-            ModuleId::new(current_mod_id),
-            sub_imports,
-            Some(mod_metadata),
-        );
+        diags.append(&mut finder_diags);
 
-        if let Some(alias_id) = import.alias_id {
-            mod_map.insert(alias_id, ModuleId::new(current_mod_id));
+        let expected_len = reserved_mod_ids.len() - 1;
+
+        if modules.len() < expected_len {
+            modules.resize(expected_len, None);
         }
 
-        modules.push(None);
+        region_arena.regions.push(sub_region);
+
+        let sub_mod = Module::new(
+            sub_mod_name_id,
+            ModuleState::Loaded,
+            current_mod_id,
+            sub_imports,
+            Some(sub_region_id),
+        );
 
         resolve_modules_lsp(
-            seen, modules, &sub_mod, mod_map, settings, interner, doc_cache,
-        )?;
+            reserved_mod_ids,
+            seen,
+            modules,
+            &sub_mod,
+            settings,
+            interner,
+            doc_cache,
+            region_arena,
+            diags,
+        );
 
-        modules[current_mod_id - 1] = Some(sub_mod);
-        mod_map.insert(name_id, ModuleId::new(current_mod_id));
+        modules[current_mod_id.id - 1] = Some(sub_mod);
     }
-
-    Ok(())
 }

@@ -14,12 +14,12 @@ use crate::parser::context::ParserContext;
 use crate::parser::parser_state::ParserState;
 use crate::token::{SpannedToken, Token, TokenKind};
 use chrn_utils::chrn_settings::ChrnSettings;
-use chrn_utils::fmter::{Formattable, Formatted};
 use chrn_utils::id_types::SpannedContainer;
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
 use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
+use lang::fmter::{Formattable, Formatted};
 use lang::inner_args::InnerArgs;
 use lang::keywords::Keyword;
 

@@ -21,7 +21,7 @@ use lang::trivia::Trivia;
 //ScriptContext? CompilerContext? AbstractCompilerManager?
 
 //TEST:
-// 23 MB struct
+// 26 MB struct
 
 // Not bit-flags. Stop.
 // How.

@@ -2,14 +2,8 @@ use chrn_utils::{
     chrn_settings::ChrnSettings,
     core_error::{ConfigLoadError, ModuleInitError, ScriptError},
 };
-use dumper::{
-    dump_settings::{DumpOutputKind, DumpSettings, ModuleOptions},
-    symbol_printer,
-};
-use orchestrator::{
-    chrn_manager::{ChrnManager, ChrnManagerInitFailure},
-    query,
-};
+use dumper::dump_settings::{DumpOutputKind, DumpSettings, ModuleOptions};
+use orchestrator::chrn_manager::{ChrnManager, ChrnManagerInitFailure};
 
 use crate::{
     args::{CheckCmd, Cli, Commands, FmtCmd, QueryCmd},

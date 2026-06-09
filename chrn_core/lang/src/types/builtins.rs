@@ -1,10 +1,9 @@
-use chrn_utils::{
-    fmter::{Formattable, Formatted},
-    id_types::TypeId,
-    intern,
-};
+use chrn_utils::{id_types::TypeId, intern};
 
-use crate::types::type_constraints::{self, TypeConstraintFlags};
+use crate::{
+    fmter::{Formattable, Formatted},
+    types::type_constraints::{self, TypeConstraintFlags},
+};
 
 pub static BUILTIN_TYPE_ARRAY: [&str; 27] = [
     "i8", "u8", "i16", "u16", "f16", "i32", "u32", "f32", "i64", "u64", "f64", "i128", "u128",

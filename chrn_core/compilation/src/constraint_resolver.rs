@@ -1,6 +1,5 @@
 use chrn_utils::{
     chrn_settings::ChrnSettings,
-    fmter::Formatted,
     id_types::{AstId, ExprId, ModuleId, SpannedContainer, TypeId},
     intern::Intern,
     source_map::{
@@ -9,14 +8,14 @@ use chrn_utils::{
         source_span::SourceSpan,
     },
 };
-use lang::{inner_args::InnerArgs, types::builtins::BuiltinType};
+use lang::{fmter::Formatted, inner_args::InnerArgs, types::builtins::BuiltinType};
 
 use crate::{
     constraints::ArgConstraint,
+    lookup::scopes::ScopeType,
     parser::ast::{
         AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Item,
     },
-    scopes::ScopeType,
     script_compiler::ScriptCompiler,
     semantic::{error::SemanticError, hir::Type, semantic_reporter::SemanticReporter},
 };

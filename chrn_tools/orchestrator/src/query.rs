@@ -1,6 +1,6 @@
 use chrn_utils::intern::Intern;
 use compilation::{
-    scopes,
+    lookup::scopes,
     script_compiler::ScriptCompiler,
     semantic::hir::{MemberSymbolKind, Symbol},
 };

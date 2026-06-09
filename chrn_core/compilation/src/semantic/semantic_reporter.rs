@@ -1,12 +1,12 @@
 use chrn_utils::chrn_settings::ChrnSettings;
 use chrn_utils::{
-    fmter::Formattable,
     intern::Intern,
     source_map::{
         source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
         source_region::SourceRegion,
     },
 };
+use lang::fmter::Formattable;
 
 use crate::semantic::error::SemanticError;
 
@@ -133,6 +133,7 @@ impl<'a> SemanticReporter<'a> {
                 )
             }
             SemanticError::General(src_diag) => src_diag,
+            SemanticError::Lookup() => todo!(),
             SemanticError::Math(math_error) => match math_error {
                 MathError::BinaryOpMismatch(sp_fmtted_lhs, sp_fmtted_rhs, fmtted_op) => {
                     let core_msg = format!(

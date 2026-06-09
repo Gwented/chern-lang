@@ -1,7 +1,6 @@
 pub mod chrn_settings;
 pub mod core_error;
 pub mod files;
-pub mod fmter;
 pub mod help_model;
 pub mod id_types;
 pub mod intern;

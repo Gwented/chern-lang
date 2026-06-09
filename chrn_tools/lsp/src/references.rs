@@ -42,8 +42,8 @@ pub fn compute_references(
                     locations.push(Location {
                         uri: uri.clone(),
                         range: Range {
-                            start: offset_to_position(&state.text, span.start),
-                            end: offset_to_position(&state.text, span.end + 1),
+                            start: offset_to_position(&state.text, span.start as usize),
+                            end: offset_to_position(&state.text, (span.end + 1) as usize),
                         },
                     });
                 }
@@ -70,8 +70,8 @@ pub fn compute_references(
                         file_locations.push(Location {
                             uri: other_uri.clone(),
                             range: Range {
-                                start: offset_to_position(&other_state.text, span.start),
-                                end: offset_to_position(&other_state.text, span.end + 1),
+                                start: offset_to_position(&other_state.text, span.start as usize),
+                                end: offset_to_position(&other_state.text, (span.end + 1) as usize),
                             },
                         });
                     }

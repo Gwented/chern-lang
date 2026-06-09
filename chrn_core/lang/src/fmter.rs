@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use crate::types::type_constraints::TypeConstraintFlags;
+
 // Would it be better to just have it as a singular enum, or a trait?
 
 /// A trait meant to unify the way in which parts of the program are printed
@@ -28,6 +30,7 @@ pub enum Formatted {
     I128,
     U128,
     F128,
+    Constraints(TypeConstraintFlags),
     Integer,
     SignedInteger,
     UnsignedInteger,
@@ -52,6 +55,9 @@ pub enum Formatted {
     Array,
     Import,
     Export,
+    Variable,
+    Module,
+    Config,
     Bind,
     Alias,
     Let,
@@ -164,6 +170,7 @@ impl Display for Formatted {
             Formatted::As => write!(f, "as"),
             Formatted::True => write!(f, "true"),
             Formatted::False => write!(f, "false"),
+            Formatted::Module => write!(f, "Module"),
             Formatted::OpAdd => write!(f, "+"),
             Formatted::Hyphen => write!(f, "-"),
             Formatted::OpMult => write!(f, "*"),
@@ -198,6 +205,22 @@ impl Display for Formatted {
             Formatted::Ranged => write!(f, "Ranged"),
             Formatted::Comparable => write!(f, "Comparable"),
             Formatted::Ordered => write!(f, "Ordered"),
+            Formatted::Config => write!(f, "Config"),
+            Formatted::Variable => write!(f, "Variable"),
+            Formatted::Constraints(flags) => {
+                let mut out = String::new();
+                let constraints_vec = flags.to_type_constraint_vec();
+
+                for (i, constraint) in constraints_vec.iter().enumerate() {
+                    out.push_str(&constraint.to_fmt().to_string());
+
+                    if i + 1 != constraints_vec.len() {
+                        out.push_str(" + ");
+                    }
+                }
+
+                write!(f, "{out}")
+            }
         }
     }
 }

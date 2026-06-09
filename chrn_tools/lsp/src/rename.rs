@@ -44,8 +44,8 @@ pub fn compute_rename(
                 if *decl_span == def_span && *owner_sym_id == def_owner_sym_id {
                     edits.push(TextEdit {
                         range: Range {
-                            start: offset_to_position(&state.text, span.start),
-                            end: offset_to_position(&state.text, span.end + 1),
+                            start: offset_to_position(&state.text, span.start as usize),
+                            end: offset_to_position(&state.text, (span.end + 1) as usize),
                         },
                         new_text: new_name.clone(),
                     });
@@ -70,8 +70,8 @@ pub fn compute_rename(
                         && other_def_owner_sym_id == def_owner_sym_id
                     {
                         let range = Range {
-                            start: offset_to_position(&other_state.text, span.start),
-                            end: offset_to_position(&other_state.text, span.end + 1),
+                            start: offset_to_position(&other_state.text, span.start as usize),
+                            end: offset_to_position(&other_state.text, (span.end + 1) as usize),
                         };
                         file_edits.push((range, new_name.clone()));
                     }

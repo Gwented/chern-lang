@@ -483,7 +483,7 @@ fn resolve_modules(
                 Ok(reg) => reg,
                 Err(cfg_err) => {
                     match cfg_err {
-                        ConfigLoadError::General(diag) | ConfigLoadError::General(diag) => {
+                        ConfigLoadError::General(diag) => {
                             diags.push(diag);
                         }
                         ConfigLoadError::IO(e) => {

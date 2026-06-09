@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
-use chrn_utils::{fmter::Formattable, id_types::TypeId, source_map::source_span::SourceSpan};
-use lang::types::type_constraints::TypeConstraintFlags;
+use chrn_utils::{id_types::TypeId, source_map::source_span::SourceSpan};
+use lang::{fmter::Formattable, types::type_constraints::TypeConstraintFlags};
 
 use crate::{
     script_compiler::ScriptCompiler,

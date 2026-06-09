@@ -1,10 +1,10 @@
 pub mod constraint_resolver;
 pub mod constraints;
 pub mod lexer;
+pub mod lookup;
 pub mod modules;
 pub mod name_resolver;
 pub mod parser;
-pub mod scopes;
 pub mod script_compiler;
 pub mod semantic;
 pub mod token;
@@ -142,10 +142,10 @@ mod tests {
 
     use crate::{
         lexer::Lexer,
+        lookup::scopes::ScopeType,
         modules::{Import, ImportKind, Module, ModuleState},
         name_resolver::NamespaceResolver,
         parser::{self, ast::AstInfo},
-        scopes::ScopeType,
         script_compiler::ScriptCompiler,
         token::{Notation, Token},
         type_resolver::{TypeResolver, type_context::TypeContext},

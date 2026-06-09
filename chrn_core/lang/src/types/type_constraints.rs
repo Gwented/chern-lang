@@ -1,6 +1,7 @@
-use chrn_utils::fmter::{Formattable, Formatted};
-
-use crate::types::builtins::BuiltinTypeKind;
+use crate::{
+    fmter::{Formattable, Formatted},
+    types::builtins::BuiltinTypeKind,
+};
 
 // This was a horrible idea.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

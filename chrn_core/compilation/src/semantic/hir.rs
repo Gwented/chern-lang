@@ -2,21 +2,22 @@
 use std::{collections::HashMap, fmt::Debug};
 
 use chrn_utils::{
-    fmter::{Formattable, Formatted},
     id_types::{
         AstId, ConfigId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId, ValueId,
     },
     source_map::source_span::SourceSpan,
 };
 use lang::{
+    fmter::{Formattable, Formatted},
     inner_args::InnerArgs,
     types::{builtins::BuiltinType, type_constraints::TypeConstraintFlags},
 };
 
 use crate::{
     constraints::ArgConstraint,
+    lookup::scopes::{AssociatedScopeKind, ScopeType},
     parser::ast::{BinaryOp, UnaryOp},
-    scopes::{AssociatedScopeKind, ScopeType},
+    script_compiler::ScriptCompiler,
 };
 
 // What is a drop? I am new to thinking i have never thought before what is RAII
@@ -52,6 +53,26 @@ pub enum Type {
     /// to the correct type which prevents duplicating different definitions.
     Deferred(TypeId),
     Unknown,
+}
+
+impl Type {
+    /// The env can't be passed into to_fmt so
+    pub fn to_fmt(compiler: &ScriptCompiler, type_id: TypeId) -> Formatted {
+        match &compiler.types[type_id.id as usize].ty {
+            Type::BuiltinType(builtin_type) => builtin_type.kind().to_fmt(),
+            Type::Struct(struct_def) => struct_def.to_fmt(),
+            Type::Enum(enum_def) => enum_def.to_fmt(),
+            Type::Func(func_def) => func_def.to_fmt(),
+            Type::Alias(alias_def) => alias_def.to_fmt(),
+            Type::TypeDef(type_def) => type_def.to_fmt(),
+            // This is the only issue since it's not a single Formatted.
+            // The next obvious decision should be to do, "Formatted::NumericIntegerRanged", etc.,
+            // where we have 4000 variants which
+            Type::Constrained(flags) => Formatted::Constraints(*flags),
+            Type::Deferred(inner) => Type::to_fmt(compiler, *inner),
+            Type::Unknown => Formatted::Unknown,
+        }
+    }
 }
 
 // #[derive(Debug)]
@@ -128,6 +149,19 @@ pub enum SymbolKind {
     // Section(),
 }
 
+impl SymbolKind {
+    // This is getting obscure now...
+    pub fn to_fmt(compiler: &ScriptCompiler, sym_id: SymbolId) -> Formatted {
+        match &compiler.symbols[sym_id.id as usize].kind {
+            SymbolKind::Type(type_id) => Type::to_fmt(compiler, *type_id),
+            SymbolKind::Val(_) => Formatted::Variable,
+            SymbolKind::ReservedTypeSlot(_) => Formatted::Unknown,
+            SymbolKind::Module(_) => Formatted::Module,
+            SymbolKind::Config(_) => Formatted::Config,
+        }
+    }
+}
+
 /// Intended to represent a configuration block environment that consumes options for a field.
 #[derive(Debug)]
 pub struct ConfigDef {
@@ -137,10 +171,12 @@ pub struct ConfigDef {
     /// During name resolution, we can't actually lookup the symbol since it may or may not be
     /// registered, so it's Option since it actually is `None` at some point, and could remain
     /// `None` if in a later stage it doesn't have it's target symbol found.
+    ///
     pub sym_id: Option<SymbolId>,
     pub name_span: SourceSpan,
-    pub opt_assignments: Vec<ConfigOptionAssignment>,
-    pub inner_field_cfgs: Vec<ConfigDef>,
+    /// Expects `ConfigOptionAssignment`
+    pub opt_assignments: Vec<MemberId>,
+    pub inner_field_cfgs: Vec<ConfigId>,
 }
 
 impl ConfigDef {
@@ -148,8 +184,8 @@ impl ConfigDef {
         name_id: InternedId,
         name_span: SourceSpan,
         sym_id: Option<SymbolId>,
-        option_assignments: Vec<ConfigOptionAssignment>,
-        inner_field_cfg: Vec<ConfigDef>,
+        option_assignments: Vec<MemberId>,
+        inner_field_cfg: Vec<ConfigId>,
     ) -> ConfigDef {
         ConfigDef {
             name_id,
@@ -169,7 +205,7 @@ pub struct ConfigOptionAssignment {
     // more like option_name_id
     pub name_id: InternedId,
     pub name_span: SourceSpan,
-    pub array: Vec<ExprId>,
+    pub array_expr_id: ExprId,
 }
 
 impl ConfigOptionAssignment {
@@ -177,13 +213,13 @@ impl ConfigOptionAssignment {
         member_id: MemberId,
         name_id: InternedId,
         name_span: SourceSpan,
-        array: Vec<ExprId>,
+        array: ExprId,
     ) -> ConfigOptionAssignment {
         ConfigOptionAssignment {
             member_id,
             name_id,
             name_span,
-            array,
+            array_expr_id: array,
         }
     }
 }
