@@ -1,6 +1,7 @@
 pub mod ast;
 mod branch;
 mod context;
+mod parse_fmt;
 mod parser_state;
 
 use crate::parser::ast::{
@@ -299,22 +300,21 @@ pub fn parse(
                         _ = parse_override_sect(&mut ctx, interner);
                     }
                 }
-                kw => {
+                _ => {
+                    // kw
                     ctx.advance_tok();
-
-                    let fmsg = format!("keyword `{}`", kw.to_fmt());
 
                     if state.is_neutral() {
                         ctx.report_template(
                             "a statement or section",
-                            &fmsg,
+                            &parse_fmt::fmt_tok(tok, interner),
                             Branch::Neutral(NeutralBranch::Searching),
                             interner,
                         );
                     } else {
                         ctx.report_template(
                             "a section with a '->' after",
-                            &fmsg,
+                            &parse_fmt::fmt_tok(tok, interner),
                             Branch::Section(SectionBranch::Searching),
                             interner,
                         );
@@ -482,7 +482,7 @@ fn parse_typedef(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractT
         interner,
     )?;
 
-    let ty = parse_type(ctx, interner)?;
+    let ty = parse_type_expr(ctx, interner)?;
 
     // WARN: DO NOT PROPOGATE
     let conds = if ctx.peek_kind() == TokenKind::OBracket {
@@ -1086,7 +1086,7 @@ fn parse_unary(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedExpr
 
 // ENFORCE TYPE NAMING FOR GENERICS AT LEAST
 /// Recursive function for parsing all type expressions
-fn parse_type(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedTypeExpr, Token> {
+fn parse_type_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedTypeExpr, Token> {
     match ctx.peek_tok() {
         Token::Id(name_id) if ctx.peek_ahead(1).tok.kind() == TokenKind::OAngleBracket => {
             let start = ctx.advance_span().start;
@@ -1133,12 +1133,10 @@ fn parse_type(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedTypeE
             Ok(SpannedTypeExpr::new(ty_expr, span))
         }
         Token::Str(id) | Token::Integer(id, _) => {
-            let name = interner.search(id);
-            let kind = ctx.peek_kind();
+            let tok = ctx.advance_tok();
 
-            ctx.advance_tok();
+            let fmt_tok = parse_fmt::fmt_tok(tok, interner);
 
-            let fmt_tok = format!("{} \"{name}\"", kind);
             ctx.report_template("a type", &fmt_tok, Branch::Type, interner);
 
             Err(Token::Str(id))
@@ -1152,7 +1150,10 @@ fn parse_type(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedTypeE
         t => {
             ctx.advance_tok();
 
-            let fmt_tok = format!("'{}'", t.kind());
+            //TODO: Maybe it should return a boolean instead since, if the token is not known, it gets
+            // `{}` around it anyways, so it's more so, the caller may or may not care about it
+            // having an identifier, not that it can't format it
+            let fmt_tok = parse_fmt::fmt_tok(t, interner);
 
             ctx.report_template("a type", &fmt_tok, Branch::Type, interner);
             //WARN:
@@ -1253,13 +1254,13 @@ fn parse_generic(
 
     let mut args: Vec<SpannedTypeExpr> = Vec::new();
 
-    let arg = parse_type(ctx, interner)?;
+    let arg = parse_type_expr(ctx, interner)?;
     args.push(arg);
 
     while ctx.peek_kind() == TokenKind::Comma {
         ctx.advance_tok();
 
-        let other_arg = parse_type(ctx, interner)?;
+        let other_arg = parse_type_expr(ctx, interner)?;
         args.push(other_arg);
     }
 
@@ -1349,7 +1350,7 @@ fn parse_variant(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractV
 
     let ty_opt: Option<SpannedTypeExpr> = if ctx.peek_kind() == TokenKind::Colon {
         ctx.advance_tok();
-        let ty = parse_type(ctx, interner)?;
+        let ty = parse_type_expr(ctx, interner)?;
         Some(ty)
     } else {
         None
@@ -1436,7 +1437,7 @@ fn parse_alias_decl(
                     interner,
                 )?;
 
-                let ty_expr = parse_type(ctx, interner)?;
+                let ty_expr = parse_type_expr(ctx, interner)?;
 
                 AbstractParam::new(name_id, span, ty_expr)
             }

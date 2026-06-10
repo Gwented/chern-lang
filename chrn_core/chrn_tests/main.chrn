@@ -58,8 +58,9 @@ var->
 
     complex->
         // I don't know about this
-        x {
+        dok {
             i32 {}
+            i {}
             // .extra = def::e#2
         }
 @end

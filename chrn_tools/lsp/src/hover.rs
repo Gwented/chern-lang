@@ -1,6 +1,6 @@
 use chrn_utils::intern::Intern;
 use compilation::script_compiler::ScriptCompiler;
-use compilation::semantic::hir::{SymbolKind, Type};
+use compilation::semantic::hir::{SymbolKind, Type, VariableState};
 use compilation::token::Token as ScriptToken;
 use lang::fmter::Formattable;
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
@@ -143,27 +143,33 @@ pub fn compute_hover(
                                         }
                                     }
                                 }
-                                SymbolKind::Val(val_id) => {
-                                    let val_info = &compiler.values[val_id.id as usize];
-                                    let ty_info = &compiler.types[val_info.type_id.id as usize];
+                                SymbolKind::Variable(var_id) => {
+                                    let var = &compiler.variables[var_id.id as usize];
+                                    match var.state {
+                                        VariableState::Known(val_id) => {
+                                            let val_info = &compiler.values[val_id.id as usize];
+                                            let ty_info =
+                                                &compiler.types[val_info.type_id.id as usize];
 
-                                    let var_name = interner.search(sym.name_id);
-                                    let type_str = strip_struct_enum_prefix(&format_type(
-                                        &ty_info.ty,
-                                        &compiler,
-                                        &interner,
-                                        true,
-                                    ));
-                                    let val_str = match &val_info.const_val {
-                                        Some(v) => format_value(v, &interner),
-                                        None => "unknown".to_string(),
-                                    };
+                                            let var_name = interner.search(sym.name_id);
+                                            let type_str = strip_struct_enum_prefix(&format_type(
+                                                &ty_info.ty,
+                                                &compiler,
+                                                &interner,
+                                                true,
+                                            ));
+                                            let val_str = match &val_info.const_val {
+                                                Some(v) => format_value(v, &interner),
+                                                None => "unknown".to_string(),
+                                            };
 
-                                    hover_text =
-                                        format!("{}: {} = {}", var_name, type_str, val_str);
-                                }
-                                SymbolKind::ReservedTypeSlot(_) => {
-                                    hover_text = "Unknown".to_string();
+                                            hover_text =
+                                                format!("{}: {} = {}", var_name, type_str, val_str);
+                                        }
+                                        VariableState::ReservedTypeSlot(_) => {
+                                            hover_text = "Unknown".to_string();
+                                        }
+                                    }
                                 }
                                 SymbolKind::Module(mod_id) => {
                                     let module = &compiler.mods[mod_id.id as usize];

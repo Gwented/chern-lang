@@ -134,9 +134,14 @@ impl NamespaceResolver<'_> {
         table.ast_to_sym.insert(ast_id, sym_id);
         let orig_sym_opt = table.interned_to_sym.insert(abs_typedef.name_id, sym_id);
 
-        let type_id = TypeId::new(self.compiler.types.len() as u32);
+        // The actual typedefs position to store inside it's symbol
+        let type_def_type_id = TypeId::new(self.compiler.types.len() as u32);
 
-        let type_def_repre = TypeDef::new(sym_id, abs_typedef.name_span, type_id);
+        // The id of the spot where the unknown type is placed, for the typedef
+        // May or may not be able to use the reserved Unknown spot
+        let inner_type_id = TypeId::new((self.compiler.types.len() + 1) as u32);
+
+        let type_def_repre = TypeDef::new(sym_id, abs_typedef.name_span, inner_type_id);
 
         let symbol = Symbol::new(
             abs_typedef.name_id,
@@ -146,13 +151,17 @@ impl NamespaceResolver<'_> {
             true,
             None,
             ScopeType::Var,
-            SymbolKind::Type(type_id),
+            SymbolKind::Type(type_def_type_id),
         );
 
         self.compiler.symbols.push(symbol);
 
-        let ty_info = TypeInfo::new(Type::TypeDef(type_def_repre), self.current_mod);
-        self.compiler.types.push(ty_info);
+        let type_def_info = TypeInfo::new(Type::TypeDef(type_def_repre), self.current_mod);
+        self.compiler.types.push(type_def_info);
+
+        // Yes, ty and type should probably be consistent in some form name-wise.
+        let inner_ty_info = TypeInfo::new(Type::Unknown, self.current_mod);
+        self.compiler.types.push(inner_ty_info);
 
         if let Some(orig_sym_id) = orig_sym_opt {
             self.report_duplicate(orig_sym_id, sym_id);

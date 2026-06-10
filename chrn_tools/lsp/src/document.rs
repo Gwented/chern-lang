@@ -265,7 +265,7 @@ pub static BUILTIN_TYPE_DOCS: [Document; 27] = [
         example: None,
     },
     Document {
-        key: "Any",
+        key: "Runtime",
         description: "Generic type",
         example: None,
     },

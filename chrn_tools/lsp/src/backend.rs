@@ -1,6 +1,6 @@
 use compilation::lookup::scopes;
 use compilation::script_compiler::ScriptCompiler;
-use compilation::semantic::hir::{Symbol, SymbolKind, Type};
+use compilation::semantic::hir::{Symbol, SymbolKind, Type, VariableState};
 use compilation::token::Token as ScriptToken;
 use lang::config_loader::ChrnConfigLoader;
 use parking_lot::RwLock;
@@ -226,7 +226,11 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
                 CompletionItemKind::VARIABLE
             }
         },
-        SymbolKind::Val(val_id) => {
+        SymbolKind::Variable(var_id) => {
+            let var = &compiler.variables[var_id.id as usize];
+            let VariableState::Known(val_id) = var.state else {
+                return CompletionItemKind::VARIABLE;
+            };
             let type_id = compiler.values[val_id.id as usize].type_id;
             match &compiler.types[type_id.id as usize].ty {
                 Type::BuiltinType(_) | Type::Struct(_) | Type::TypeDef(_) | Type::Enum(_) => {
@@ -240,7 +244,6 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
                 }
             }
         }
-        SymbolKind::ReservedTypeSlot(_) => CompletionItemKind::VARIABLE,
         SymbolKind::Module(_) => CompletionItemKind::MODULE,
         SymbolKind::Config(config_id) => todo!(),
     }
@@ -280,13 +283,13 @@ fn classify_id_token(
                                 }
                             }
                         }
-                        SymbolKind::Val(_) => {
+                        SymbolKind::Variable(_) => {
                             if next_is_paren {
                                 return Some(SemanticTokenType::Function.as_u32());
                             }
                             return Some(SemanticTokenType::Variable.as_u32());
                         }
-                        SymbolKind::ReservedTypeSlot(_) | SymbolKind::Module(_) => {
+                        SymbolKind::Module(_) => {
                             return Some(SemanticTokenType::Variable.as_u32());
                         }
                         SymbolKind::Config(config_id) => todo!(),

@@ -77,9 +77,7 @@ impl TypeResolver<'_> {
     pub fn resolve(&mut self) -> Result<(), Vec<SourceDiagnostic>> {
         // This is resolving types but not resolving args or conditions.
         // Everything is in order so this cannot fail unless something internally went wrong.
-        for (id, item) in self.ast_info.items.iter().enumerate() {
-            let ast_id = AstId::new(id as u32);
-
+        for item in &self.ast_info.items {
             match item {
                 Item::TypeDef(abs_typedef) => _ = self.resolve_typedef(abs_typedef),
                 Item::Struct(abs_struct) => _ = self.resolve_struct(abs_struct),
@@ -315,8 +313,7 @@ impl TypeResolver<'_> {
         let parent_sym_id = table.interned_to_sym[&abs_cfg.name_id];
         let associated_scope = AssociatedScopeKind::Module(self.current_mod);
 
-        // Leaving this to the type checker?
-        // Can't really though since I need to check NOW
+        // Checks if the symbol is valid later
         let found_sym_id = if let Some((found_sym, _)) = scopes::find_sym_id(
             self.compiler,
             associated_scope,
@@ -382,24 +379,50 @@ impl TypeResolver<'_> {
                 // boilerplate where needed
                 MemberLookupResult::Found(mem_id) => mem_id,
                 lookup_res => {
+                    // In case the lookup error points to an issue with the actual symbol we found
+                    // rather than the member not existing or some non-terminal lookup error
+                    //
+                    // This is done because the validity of the symbol isn't checked before we
+                    // actually lookup it's members
+                    let mut should_break = false;
+
                     let src_diag = match lookup_res {
                         MemberLookupResult::InvalidTypeMemberAccess(type_id) => {
-                            let span = self
-                                .compiler
-                                .get_decl_span(found_sym_id)
-                                .expect("Should have a span since it has members and was searched");
+                            should_break = true;
+                            //FIX: This has odd phrasing and pointers
+                            // If we get a variable, this is matched, but the error is more so, you
+                            // cannot use a variable in configuration, rather than the member
+                            // access itself
+                            let decl_span = self.compiler.get_decl_span(found_sym_id).expect(
+                                "Should have a span since it has members and was searched for",
+                            );
+
+                            let found_sym = &self.compiler.symbols[found_sym_id.id as usize];
+                            let found_name = self.interner.search(found_sym.name_id);
 
                             let sem_err = SemanticError::Lookup(
                                 LookupError::InvalidTypeMemberAccess(SpannedContainer::new(
                                     Type::to_fmt(self.compiler, type_id),
-                                    span,
+                                    decl_span,
                                 )),
                             );
 
-                            self.reporter.create_diag_builder_preset(sem_err).build()
+                            self.reporter
+                                .create_diag_builder_preset(sem_err)
+                                .add_annotation(
+                                    abs_cfg.name_span,
+                                    AnnotationKind::Secondary,
+                                    format!("`{found_name}` used here").into(),
+                                )
+                                .add_annotation(
+                                    abs_inner_cfg.name_span,
+                                    AnnotationKind::Secondary,
+                                    "member searched for".to_string().into(),
+                                )
+                                .build()
                         }
                         MemberLookupResult::MemberNotFoundInType(type_id) => {
-                            let span = self
+                            let decl_span = self
                                 .compiler
                                 .get_decl_span(found_sym_id)
                                 .expect("Should have a span since it has members and was searched");
@@ -410,10 +433,11 @@ impl TypeResolver<'_> {
                                 abs_inner_cfg.name_id,
                             ));
 
+                            // List available members?
                             self.reporter
                                 .create_diag_builder_preset(sem_err)
                                 .add_annotation(
-                                    span,
+                                    decl_span,
                                     AnnotationKind::Secondary,
                                     format!("{} defined here", fmtted_ty).into(),
                                 )
@@ -425,6 +449,7 @@ impl TypeResolver<'_> {
                                 .build()
                         }
                         MemberLookupResult::InvalidSymbolMemberAccess => {
+                            should_break = true;
                             let sem_err = SemanticError::Lookup(
                                 LookupError::InvalidSymbolMemberAccess(SpannedContainer::new(
                                     SymbolKind::to_fmt(self.compiler, found_sym_id),
@@ -444,16 +469,21 @@ impl TypeResolver<'_> {
                             let name = self.interner.search(var.name_id);
 
                             // dbg!(&self.compiler.types[var.type_id.id as usize]);
-                            todo!("Same stpo");
+                            todo!("RUST_BACKTRACE=1");
                         }
                         MemberLookupResult::Found(_) => unreachable!(),
                     };
 
                     self.reporter.err_vec.push(src_diag);
+
+                    if should_break {
+                        break;
+                    }
+
                     continue;
                 }
             };
-            // todo!()
+            todo!("sic")
         }
 
         // dbg!(&abs_cfg);
@@ -939,7 +969,11 @@ impl TypeResolver<'_> {
             Ok(tid) => tid,
             Err(sem_err) => {
                 self.reporter.report_semantic(sem_err);
-                return Err(());
+                // I believe this is fine since it just points to the new type if found with no
+                // mutation
+                //
+                // It is already initalized as unknown so this is redundant
+                TypeId::new(script_compiler::CORE_UNKNOWN)
             }
         };
 
@@ -953,7 +987,7 @@ impl TypeResolver<'_> {
         let mut conds: Vec<ExprId> = Vec::new();
         for spanned_expr in &abs_typedef.conds {
             //FIX: Scope type is a little wrong here since it's a condition
-            let cond_opt = match self.register_expr(
+            match self.register_expr(
                 sym_id,
                 spanned_expr,
                 None,
@@ -963,15 +997,10 @@ impl TypeResolver<'_> {
             ) {
                 // For allowing for more diagnostics instead of just leaving the rest of the struct
                 // unfinished upon singular errors
-                Ok(c) => Some(c),
+                Ok(c) => conds.push(c),
                 Err(sem_err) => {
                     self.reporter.report_semantic(sem_err);
-                    None
                 }
-            };
-
-            if let Some(cond) = cond_opt {
-                conds.push(cond);
             }
         }
 
@@ -1016,7 +1045,7 @@ impl TypeResolver<'_> {
                 Ok(tid) => tid,
                 Err(sem_err) => {
                     self.reporter.report_semantic(sem_err);
-                    return Err(());
+                    continue;
                 }
             };
 
@@ -1072,7 +1101,7 @@ impl TypeResolver<'_> {
             let mut conds: Vec<ExprId> = Vec::new();
 
             for cond in &abs_field.conds {
-                let cond_opt = match self.register_expr(
+                match self.register_expr(
                     sym_id,
                     &cond,
                     None,
@@ -1080,16 +1109,11 @@ impl TypeResolver<'_> {
                     ScopeType::Nest,
                     &mut vec![sym_id],
                 ) {
-                    Ok(c) => Some(c),
+                    Ok(c) => conds.push(c),
                     Err(sem_err) => {
                         self.reporter.report_semantic(sem_err);
-                        None
                     }
                 };
-
-                if let Some(cond) = cond_opt {
-                    conds.push(cond);
-                }
             }
 
             let field = self.compiler.get_field_mut(*current_member_id);
@@ -1100,7 +1124,7 @@ impl TypeResolver<'_> {
         let mut glob_conds: Vec<ExprId> = Vec::new();
 
         for cond in &abs_struct.glob_conds {
-            let cond_opt = match self.register_expr(
+            match self.register_expr(
                 sym_id,
                 cond,
                 None,
@@ -1108,15 +1132,10 @@ impl TypeResolver<'_> {
                 ScopeType::Nest,
                 &mut vec![sym_id],
             ) {
-                Ok(c) => Some(c),
+                Ok(c) => glob_conds.push(c),
                 Err(sem_err) => {
                     self.reporter.report_semantic(sem_err);
-                    None
                 }
-            };
-
-            if let Some(cond) = cond_opt {
-                glob_conds.push(cond);
             }
         }
 
@@ -1199,6 +1218,7 @@ impl TypeResolver<'_> {
                         TypeId::new(script_compiler::CORE_UNKNOWN)
                     }
                 };
+
                 VariantRepre::new(
                     member_id,
                     variant.name_id,
@@ -2653,8 +2673,8 @@ impl TypeResolver<'_> {
                                         self.current_region.path_id,
                                     )
                                     .add_annotation(sp_ty_expr.span, AnnotationKind::Primary, None)
-                                    .add_help(
-                                        "Types declared can be exported if that was intended."
+                                    .add_note(
+                                        "Types declared can be exported if that was unintended"
                                             .into(),
                                     );
 
@@ -2665,7 +2685,7 @@ impl TypeResolver<'_> {
                             }
                             // Ok but what about, "core is a MODULE which is NOT a type?"
                             SymbolKind::Module(mod_id) => (),
-                            SymbolKind::Variable(_) => {}
+                            SymbolKind::Variable(_) => (),
                             SymbolKind::Config(_) => unreachable!("Cannot lookup configs"),
                         }
                     }

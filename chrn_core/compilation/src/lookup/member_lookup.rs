@@ -20,6 +20,10 @@ pub enum MemberLookupResult {
     Unknown(TypeId),
 }
 
+pub fn collect_all_members(compiler: &ScriptCompiler, sym_id: SymbolId) -> MemberLookupResult {
+    todo!()
+}
+
 // Naming has a little collision since member runtime lookup has the same name as this,
 // realistically, const lookup.
 pub fn lookup_member(

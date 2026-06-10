@@ -14,7 +14,7 @@ use chrn_utils::{
 use lang::{algo, fmter::Formattable, keywords::Keyword};
 
 use crate::{
-    parser::{NeutralBranch, SectionBranch, branch::Branch},
+    parser::{NeutralBranch, SectionBranch, branch::Branch, parse_fmt},
     token::{self, SpannedToken, Token, TokenKind},
 };
 
@@ -86,22 +86,18 @@ impl<'a> ParserContext<'a> {
         // WARN: IF ANYTHING GOES WRONG ADD THE IF STATEMENTS BACK FOR EOF
         let found = self.advance();
 
-        let err_ident_opt = match found.tok {
+        let fmtted_tok = match found.tok {
             Token::Id(id) | Token::Str(id) | Token::Integer(id, _) | Token::Float(id, _) => {
                 if found.tok.kind() == expected {
                     return Ok(id);
                 } else {
-                    self.get_err_ident(found.tok, interner)
+                    parse_fmt::fmt_tok(found.tok, interner)
                 }
             }
-            t => self.get_err_ident(t, interner),
+            t => parse_fmt::fmt_tok(t, interner),
         };
 
-        let core_msg = if let Some(name) = err_ident_opt {
-            format!("(in {branch})\n{bmsg}{name}{amsg}")
-        } else {
-            format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind())
-        };
+        let core_msg = format!("(in {branch})\n{bmsg}{fmtted_tok}{amsg}");
 
         let builder = self.create_diag_builder(&found, core_msg);
         let builder = self.try_assistance(builder, expected, &found, branch, interner);
@@ -168,13 +164,10 @@ impl<'a> ParserContext<'a> {
             return Ok(kw);
         }
 
-        let err_ident_opt = self.get_err_ident(found.tok, interner);
+        let fmtted_tok = parse_fmt::fmt_tok(found.tok, interner);
 
-        let core_msg = if let Some(ident) = err_ident_opt {
-            format!("(in {branch})\n{bmsg}{ident}{amsg}")
-        } else {
-            format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind())
-        };
+        // Well maybe fmt_tok should be a method at this point, or at least an associated function
+        let core_msg = format!("(in {branch})\n{bmsg}{fmtted_tok}{amsg}");
 
         let builder = self.create_diag_builder(&found, core_msg);
 
@@ -217,13 +210,9 @@ impl<'a> ParserContext<'a> {
         let found = self.advance();
 
         if found.tok.kind() != expected {
-            let err_ident_opt = self.get_err_ident(found.tok, interner);
+            let fmtted_tok = parse_fmt::fmt_tok(found.tok, interner);
 
-            let core_msg = if let Some(id_str) = err_ident_opt {
-                format!("(in {branch})\n{bmsg}{id_str}{amsg}")
-            } else {
-                format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind())
-            };
+            let core_msg = format!("(in {branch})\n{bmsg}{fmtted_tok}{amsg}");
 
             let builder = self.create_diag_builder(&found, core_msg);
             let builder = self.try_assistance(builder, expected, &found, branch, interner);
@@ -574,30 +563,6 @@ impl<'a> ParserContext<'a> {
         };
 
         builder
-    }
-
-    /// Helper to reduce boiler-plate of getting an identifier if possible from an error token
-    fn get_err_ident(&self, tok: Token, interner: &Intern) -> Option<String> {
-        match tok {
-            Token::Def => Some("`@def`".to_string()),
-            Token::End => Some("`@end`".to_string()),
-            Token::Id(name_id)
-            | Token::Str(name_id)
-            | Token::Integer(name_id, _)
-            | Token::Float(name_id, _) => {
-                let ident = interner.search(name_id);
-                Some(format!("\"{ident}\""))
-            }
-            Token::Keyword(kw) => Some(format!("keyword `{}`", kw.to_fmt().to_string())),
-            Token::Illegal(name_id) => {
-                let illegal_msg = interner.search(name_id);
-                let new_msg = format!("invalid token \"{illegal_msg}\"");
-                Some(new_msg)
-            }
-            Token::Char(ch) => Some(format!("'{ch}'")),
-            Token::BoolLiteral(boolean) => Some(format!("bool literal `{}`", boolean)),
-            _ => None,
-        }
     }
 
     /// Intended to handle the case where EOF is reached due to errors likely wanting to show the

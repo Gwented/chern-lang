@@ -156,7 +156,7 @@ impl<'a> SemanticReporter<'a> {
                         .add_annotation(sp_interned_ty.span, AnnotationKind::Primary, None)
                 }
                 LookupError::InvalidSymbolMemberAccess(sp_sym) => {
-                    let core_msg = format!("Type `{}` cannot use member access", sp_sym.inner);
+                    let core_msg = format!("Symbol `{}` cannot use member access", sp_sym.inner);
                     SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
                         .add_annotation(sp_sym.span, AnnotationKind::Primary, None)
                 }

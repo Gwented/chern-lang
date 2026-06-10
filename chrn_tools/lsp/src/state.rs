@@ -12,10 +12,11 @@ use compilation::semantic::hir::ExprHir;
 use compilation::semantic::hir::MemberSymbolKind;
 use compilation::semantic::hir::SymbolKind;
 use compilation::semantic::hir::Type;
+use compilation::semantic::hir::VariableState;
 use compilation::token::SpannedToken;
 use compilation::token::Token as ScriptToken;
-use compilation::type_resolver::TypeResolver;
 use compilation::type_resolver::type_context::TypeContext;
+use compilation::type_resolver::TypeResolver;
 use lang::trivia::Trivia;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -538,16 +539,19 @@ impl DocumentState {
                                             current_ty = Some(tid);
                                             matched = true;
                                         }
-                                        SymbolKind::Val(vid) => {
-                                            if let Some(val_info) =
-                                                compiler.values.get(vid.id as usize)
-                                            {
-                                                map.push((
-                                                    segments[0].span,
-                                                    SemanticEntity::Symbol(sid),
-                                                ));
-                                                current_ty = Some(val_info.type_id);
-                                                matched = true;
+                                        SymbolKind::Variable(var_id) => {
+                                            let var = &compiler.variables[var_id.id as usize];
+                                            if let VariableState::Known(val_id) = var.state {
+                                                if let Some(val_info) =
+                                                    compiler.values.get(val_id.id as usize)
+                                                {
+                                                    map.push((
+                                                        segments[0].span,
+                                                        SemanticEntity::Symbol(sid),
+                                                    ));
+                                                    current_ty = Some(val_info.type_id);
+                                                    matched = true;
+                                                }
                                             }
                                         }
                                         _ => {}
@@ -594,19 +598,27 @@ impl DocumentState {
                                                                     current_mod = None;
                                                                     current_ty = Some(tid);
                                                                 }
-                                                                SymbolKind::Val(vid) => {
-                                                                    map.push((
-                                                                        seg.span,
-                                                                        SemanticEntity::Symbol(
-                                                                            sym_id,
-                                                                        ),
-                                                                    ));
-                                                                    current_mod = None;
-                                                                    current_ty = Some(
-                                                                        compiler.values
-                                                                            [vid.id as usize]
-                                                                            .type_id,
-                                                                    );
+                                                                SymbolKind::Variable(var_id) => {
+                                                                    let var = &compiler.variables
+                                                                        [var_id.id as usize];
+                                                                    if let VariableState::Known(
+                                                                        val_id,
+                                                                    ) = var.state
+                                                                    {
+                                                                        map.push((
+                                                                            seg.span,
+                                                                            SemanticEntity::Symbol(
+                                                                                sym_id,
+                                                                            ),
+                                                                        ));
+                                                                        current_mod = None;
+                                                                        current_ty = Some(
+                                                                            compiler.values[val_id
+                                                                                .id
+                                                                                as usize]
+                                                                                .type_id,
+                                                                        );
+                                                                    }
                                                                 }
                                                                 _ => {
                                                                     map.push((
