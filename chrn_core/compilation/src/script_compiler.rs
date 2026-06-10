@@ -1,7 +1,8 @@
 // TODO: MAYBE eventually change from SipHash
 use chrn_utils::{
-    id_types::{ConfigId, InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId},
+    id_types::{InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId},
     intern,
+    source_map::source_span::SourceSpan,
 };
 use lang::{
     types::{
@@ -18,7 +19,7 @@ use crate::{
     semantic::hir::{
         AliasDef, ConfigDef, ConfigOptionAssignment, EnumDef, FieldRepre, FuncDef, FuncKind,
         MemberSymbolKind, ResolvedExpr, StructDef, Symbol, SymbolKind, Table, Type, TypeDef,
-        TypeInfo, VariantRepre,
+        TypeInfo, VarDef, VariableState, VariantRepre,
     },
 };
 
@@ -47,6 +48,7 @@ pub struct ScriptCompiler {
     /// collection that would be considered fields, but more general since the language is small
     /// scale and would likely not benefit much from such a wide variety of collections.
     pub members: Vec<MemberSymbolKind>,
+    pub variables: Vec<VarDef>,
     /// All user defined configuration. Is considered it's own class instead of a type since it
     /// behaves uniquely
     pub configs: Vec<ConfigDef>,
@@ -103,12 +105,12 @@ impl ScriptCompiler {
         let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None, None);
         let mut script_compiler = ScriptCompiler {
             bind,
-            // mod_map,
             mods,
             types: Vec::new(),
             values: Vec::new(),
             exprs: Vec::new(),
             symbols: Vec::new(),
+            variables: Vec::new(),
             members: Vec::new(),
             configs: Vec::new(),
             scopes: Vec::new(),
@@ -344,20 +346,20 @@ impl ScriptCompiler {
     }
 
     /// Assumes the symbol given is a variable, meaning a symbol with a value inside of it
-    pub(super) fn get_var(&self, sym_id: SymbolId) -> &ValueInfo {
+    pub(super) fn get_var(&self, sym_id: SymbolId) -> &VarDef {
         match &self.symbols[sym_id.id as usize] {
             sym_info => match &sym_info.kind {
-                SymbolKind::Val(val_id) => &self.values[val_id.id as usize],
+                SymbolKind::Variable(var_id) => &self.variables[var_id.id as usize],
                 _ => unreachable!(),
             },
         }
     }
 
     /// Assumes the symbol given is a variable, meaning a symbol with a value inside of it
-    pub(super) fn get_var_mut(&mut self, sym_id: SymbolId) -> &mut ValueInfo {
+    pub(super) fn get_var_mut(&mut self, sym_id: SymbolId) -> &mut VarDef {
         match &self.symbols[sym_id.id as usize] {
             sym_info => match &sym_info.kind {
-                SymbolKind::Val(val_id) => &mut self.values[val_id.id as usize],
+                SymbolKind::Variable(var_id) => &mut self.variables[var_id.id as usize],
                 _ => unreachable!(),
             },
         }
@@ -471,11 +473,37 @@ impl ScriptCompiler {
         match &self.symbols[sym_id.id as usize] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => *type_id,
-                SymbolKind::Val(val_id) => self.values[val_id.id as usize].type_id,
-                SymbolKind::ReservedTypeSlot(type_id) => *type_id,
+                SymbolKind::Variable(var_id) => match self.variables[var_id.id as usize].state {
+                    VariableState::ReservedTypeSlot(type_id) => type_id,
+                    VariableState::Known(val_id) => self.values[val_id.id as usize].type_id,
+                },
                 // Not a type, just a symbol with a scope
                 SymbolKind::Module(_) | SymbolKind::Config(_) => unreachable!(),
             },
+        }
+    }
+
+    pub(super) fn get_decl_span(&self, sym_id: SymbolId) -> Option<SourceSpan> {
+        match &self.symbols[sym_id.id as usize].kind {
+            SymbolKind::Type(type_id) => self.get_decl_span_type(*type_id),
+            SymbolKind::Variable(var_id) => Some(self.variables[var_id.id as usize].name_span),
+            SymbolKind::Config(cfg_id) => Some(self.configs[cfg_id.id as usize].name_span),
+            SymbolKind::Module(_) => None,
+        }
+    }
+
+    fn get_decl_span_type(&self, type_id: TypeId) -> Option<SourceSpan> {
+        match &self.types[type_id.id as usize].ty {
+            Type::BuiltinType(builtin_type) => None,
+            Type::Struct(struct_def) => Some(struct_def.name_span),
+            Type::Enum(enum_def) => Some(enum_def.name_span),
+            // Functions can't be declared
+            Type::Func(func_def) => None,
+            Type::Alias(alias_def) => Some(alias_def.name_span),
+            Type::TypeDef(type_def) => Some(type_def.name_span),
+            Type::Constrained(type_constraint_flags) => todo!(),
+            Type::Deferred(inner) => self.get_decl_span_type(*inner),
+            Type::Unknown => todo!("Should still be spanned though"),
         }
     }
 

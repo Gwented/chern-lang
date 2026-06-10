@@ -4,7 +4,7 @@ pub mod type_context;
 use chrn_utils::chrn_settings::ChrnSettings;
 use chrn_utils::id_types::{
     AstId, ConfigId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SpannedContainer, SymbolId,
-    TypeId, ValueId,
+    TypeId, ValueId, VariableId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::{
@@ -22,10 +22,10 @@ use crate::parser::ast::{
     AstInfo, Expr, Item, PathSegment, SpannedExpr, SpannedPathSegment, SpannedTypeExpr, TypeExpr,
 };
 use crate::script_compiler::{self, ScriptCompiler};
-use crate::semantic::error::{MathError, SemanticError};
+use crate::semantic::error::{LookupError, MathError, SemanticError};
 use crate::semantic::hir::{
     ConfigOptionAssignment, ExprHir, MemberSymbolKind, Param, PossibleMember, ResolvedExpr, Symbol,
-    SymbolKind,
+    SymbolKind, VarDef, VariableState,
 };
 use crate::semantic::{evaluator, inference};
 
@@ -372,50 +372,100 @@ impl TypeResolver<'_> {
                 .push(MemberSymbolKind::OptionAssignment(opt));
         }
 
-        for abs_inner in &abs_cfg.inner_field_cfg {
+        for abs_inner_cfg in &abs_cfg.inner_field_cfg {
             let member_id = match member_lookup::lookup_member(
                 self.compiler,
                 found_sym_id,
-                abs_inner.name_id,
+                abs_inner_cfg.name_id,
             ) {
-                // For having the same behavior as Ok, Err where it allows for the error path to
-                // execute specific code, to reduce boilerplate
-                MemberLookupResult::Found(member_id) => member_id,
-                res => {
-                    // So they all use the same scope for diagnostic reporting, to reduce code
-                    // duplication
-                    let diag_level = DiagnosticLevel::Error;
-                    let path_id = self.current_region.path_id;
+                // These are split so that the theoretical ok and err paths are able to reduce
+                // boilerplate where needed
+                MemberLookupResult::Found(mem_id) => mem_id,
+                lookup_res => {
+                    let src_diag = match lookup_res {
+                        MemberLookupResult::InvalidTypeMemberAccess(type_id) => {
+                            let span = self
+                                .compiler
+                                .get_decl_span(found_sym_id)
+                                .expect("Should have a span since it has members and was searched");
 
-                    let src_diag = match res {
-                        MemberLookupResult::TypeHasNoMembers(type_id) => {
-                            let fmtted = Type::to_fmt(self.compiler, type_id);
+                            let sem_err = SemanticError::Lookup(
+                                LookupError::InvalidTypeMemberAccess(SpannedContainer::new(
+                                    Type::to_fmt(self.compiler, type_id),
+                                    span,
+                                )),
+                            );
+
+                            self.reporter.create_diag_builder_preset(sem_err).build()
                         }
-                        MemberLookupResult::TypeDoesNotContainMember(type_id) => todo!(),
-                        MemberLookupResult::SymbolHasNoMembers => {
-                            let fmtted = SymbolKind::to_fmt(self.compiler, found_sym_id);
-                            let core_msg = format!("The symbol");
-                            let diag = SourceDiagnostic::builder(diag_level, core_msg, path_id);
+                        MemberLookupResult::MemberNotFoundInType(type_id) => {
+                            let span = self
+                                .compiler
+                                .get_decl_span(found_sym_id)
+                                .expect("Should have a span since it has members and was searched");
+                            let fmtted_ty = Type::to_fmt(self.compiler, type_id);
+
+                            let sem_err = SemanticError::Lookup(LookupError::MemberNotFound(
+                                SpannedContainer::new(abs_cfg.name_id, abs_cfg.name_span),
+                                abs_inner_cfg.name_id,
+                            ));
+
+                            self.reporter
+                                .create_diag_builder_preset(sem_err)
+                                .add_annotation(
+                                    span,
+                                    AnnotationKind::Secondary,
+                                    format!("{} defined here", fmtted_ty).into(),
+                                )
+                                .add_annotation(
+                                    abs_inner_cfg.name_span,
+                                    AnnotationKind::Secondary,
+                                    "Searched for this member".to_string().into(),
+                                )
+                                .build()
                         }
-                        MemberLookupResult::Unknown => todo!(),
+                        MemberLookupResult::InvalidSymbolMemberAccess => {
+                            let sem_err = SemanticError::Lookup(
+                                LookupError::InvalidSymbolMemberAccess(SpannedContainer::new(
+                                    SymbolKind::to_fmt(self.compiler, found_sym_id),
+                                    abs_cfg.name_span,
+                                )),
+                            );
+
+                            self
+                                .reporter
+                                .create_diag_builder_preset(sem_err)
+                                .add_note("Config blocks expect a valid `nest->` or `var->` defined variable".to_string())
+                                .build()
+                        }
+                        // When is this case reached?
+                        MemberLookupResult::Unknown(type_id) => {
+                            let var = self.compiler.get_var(found_sym_id);
+                            let name = self.interner.search(var.name_id);
+
+                            // dbg!(&self.compiler.types[var.type_id.id as usize]);
+                            todo!("Same stpo");
+                        }
                         MemberLookupResult::Found(_) => unreachable!(),
                     };
-                    todo!("Moz")
+
+                    self.reporter.err_vec.push(src_diag);
+                    continue;
                 }
             };
-            todo!()
+            // todo!()
         }
 
-        dbg!(&abs_cfg);
-        panic!();
+        // dbg!(&abs_cfg);
+        // panic!();
 
         let cfg_def = self.compiler.get_cfg_def_mut(parent_sym_id);
 
         cfg_def.sym_id = Some(found_sym_id);
         cfg_def.opt_assignments = opt_assignments;
         cfg_def.inner_field_cfgs = inner_field_cfgs;
-        dbg!(cfg_def);
-        panic!("END");
+        // dbg!(cfg_def);
+        // panic!("END");
 
         Ok(())
     }
@@ -470,7 +520,12 @@ impl TypeResolver<'_> {
             // Still need to repair root expr
             let root_expr = &mut self.compiler.exprs[root_id.id as usize];
             match self.compiler.symbols[resolved_sym_id.id as usize].kind {
-                SymbolKind::Val(val_id) => {
+                SymbolKind::Variable(var_id) => {
+                    let var = &self.compiler.variables[var_id.id as usize];
+                    let VariableState::Known(val_id) = var.state else {
+                        continue;
+                    };
+
                     if pending_sym.has_resolved_ty {
                         let val_info = &self.compiler.values[val_id.id as usize];
                         let other_type_id = val_info.type_id;
@@ -495,7 +550,6 @@ impl TypeResolver<'_> {
                 // a cyclic dependency error, the error will exist and emit later, but this
                 // technically still exists and needs to be ignored. Not currently aware of any
                 // direct issues with this. Maybe an Error tag on a pending expression could help?
-                SymbolKind::ReservedTypeSlot(_) => continue,
                 SymbolKind::Type(_) | SymbolKind::Module(_) | SymbolKind::Config(_) => {
                     unreachable!("Not possible")
                 }
@@ -728,7 +782,7 @@ impl TypeResolver<'_> {
                         false,
                     )
                 }
-                .expect("Infailable since unknown is checked before this");
+                .expect("Infallable since unknown is checked before this");
 
                 //NOTE: Only the type of the expression is altered here, the rest is the inner
                 //value
@@ -858,12 +912,9 @@ impl TypeResolver<'_> {
         // expression is resolved further, since it's already pointing the the same expression it
         // will by proxy be updated
 
-        let symbol = self
-            .compiler
-            .symbols
-            .get_mut(sym_id.id as usize)
-            .expect("Exists");
-        symbol.kind = SymbolKind::Val(val_id);
+        //WARN: MAKE SURE EXPRESSION RESOLUTION IS NOT BROKEN FROM VAR CHANGES
+        let var = self.compiler.get_var_mut(sym_id);
+        var.state = VariableState::Known(val_id);
 
         // If the symbol that was just examined is a pending symbol AND it was actually resolved,
         // then it'll be marked as resolved
@@ -1287,6 +1338,7 @@ impl TypeResolver<'_> {
 
             seen.push((i, abs_param.name_id));
 
+            //TODO: SHOULD THIS BE A VARIABLE?
             let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
             let val_id = ValueId::new(self.compiler.values.len() as u32);
 
@@ -1304,6 +1356,15 @@ impl TypeResolver<'_> {
             };
 
             let param_sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+            let var_id = VariableId::new(self.compiler.variables.len() as u32);
+
+            let var = VarDef::new(
+                param_sym_id,
+                abs_param.name_id,
+                abs_param.name_span,
+                VariableState::Known(val_id),
+            );
+
             let param_sym = Symbol::new(
                 abs_param.name_id,
                 param_sym_id,
@@ -1312,7 +1373,7 @@ impl TypeResolver<'_> {
                 true,
                 None,
                 ScopeType::Local,
-                SymbolKind::Val(val_id),
+                SymbolKind::Variable(var_id),
             );
 
             let expr_hir = ExprHir::Var(param_sym_id);
@@ -1327,6 +1388,7 @@ impl TypeResolver<'_> {
 
             self.compiler.symbols.push(param_sym);
 
+            self.compiler.variables.push(var);
             self.compiler.exprs.push(resolved_expr);
             self.compiler.values.push(val_info);
 
@@ -1415,13 +1477,18 @@ impl TypeResolver<'_> {
                         // the constraint type becomes
                         let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
                         let expr = match self.compiler.symbols[local_sym_id.id as usize].kind {
-                            SymbolKind::Val(val_id) => {
-                                let val_info = &self.compiler.values[val_id.id as usize];
-
+                            SymbolKind::Variable(var_id) => {
+                                let var = &self.compiler.variables[var_id.id as usize];
                                 let expr_hir = ExprHir::Var(local_sym_id);
 
+                                let VariableState::Known(val_id) = var.state else {
+                                    unreachable!("Not possible right now")
+                                };
+
+                                let type_id = self.compiler.values[val_id.id as usize].type_id;
+
                                 ResolvedExpr::new(
-                                    val_info.type_id,
+                                    type_id,
                                     expr_hir,
                                     val_id,
                                     spanned_expr.span,
@@ -1430,7 +1497,6 @@ impl TypeResolver<'_> {
                             }
                             SymbolKind::Type(type_id) => todo!(),
                             SymbolKind::Module(mod_id) => todo!(),
-                            SymbolKind::ReservedTypeSlot(type_id) => todo!(),
                             SymbolKind::Config(config_id) => todo!(),
                         };
 
@@ -1481,8 +1547,11 @@ impl TypeResolver<'_> {
                             self.current_region.path_id,
                         )
                         .add_annotation(parent_span, AnnotationKind::Primary, None)
-                        .add_annotation(dup_span, AnnotationKind::Primary, None)
-                        .build();
+                        .add_annotation(
+                            dup_span,
+                            AnnotationKind::Primary,
+                            None,
+                        );
 
                         return Err(SemanticError::General(src_diag));
                     }
@@ -1532,8 +1601,7 @@ impl TypeResolver<'_> {
                                         spanned_expr.span,
                                         AnnotationKind::Primary,
                                         None,
-                                    )
-                                    .build();
+                                    );
 
                                     return Err(SemanticError::General(src_diag));
                                 }
@@ -1541,52 +1609,88 @@ impl TypeResolver<'_> {
                                 Type::Deferred(type_id) => todo!("Is this possible?"),
                             }
                         }
-                        SymbolKind::Val(val_id) => {
-                            let val_info = &self.compiler.values[val_id.id as usize];
-                            let ty = &self.compiler.types[val_info.type_id.id as usize].ty;
+                        SymbolKind::Variable(var_id) => {
+                            let var = &self.compiler.variables[var_id.id as usize];
 
-                            if let Type::Unknown = ty {
-                                let pending_expr = PendingExpr::new(expr_id, parent_sym_id);
-                                self.ty_ctx.store_pending_expr(found_sym_id, pending_expr);
+                            match var.state {
+                                // A value is attached to the variable found
+                                VariableState::Known(val_id) => {
+                                    let val_info = &self.compiler.values[val_id.id as usize];
+                                    let ty = &self.compiler.types[val_info.type_id.id as usize].ty;
+
+                                    // The type of the variable is unknown meaning it still needs
+                                    // to await
+                                    if let Type::Unknown = ty {
+                                        let pending_expr = PendingExpr::new(expr_id, parent_sym_id);
+                                        self.ty_ctx.store_pending_expr(found_sym_id, pending_expr);
+                                    }
+
+                                    let expr_hir = ExprHir::Var(found_sym_id);
+
+                                    ResolvedExpr::new(
+                                        val_info.type_id,
+                                        expr_hir,
+                                        val_id,
+                                        spanned_expr.span,
+                                        Vec::new(),
+                                    )
+                                }
+                                VariableState::ReservedTypeSlot(reserved_ty_id) => {
+                                    let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+                                    let expr_hir = ExprHir::Var(found_sym_id);
+                                    let pending_expr = PendingExpr::new(expr_id, parent_sym_id);
+
+                                    //NOTE: ONLY THIS POINT SHOULD STORE THE SYMBOL. This is how the
+                                    //connection is made so that, y = x + 2, goes from x -> x + 2 -> None
+                                    //after x is resolved.
+                                    self.ty_ctx.store_pending_expr(found_sym_id, pending_expr);
+                                    // Will possibly call for others to be resolved here, or do it from the
+                                    // var resolution method itself
+
+                                    // Creates value id that has an unknown type, no constant value, and an
+                                    // unresolved expression.
+                                    let val_id = ValueId::new(self.compiler.values.len() as u32);
+                                    let val_info = ValueInfo::new(reserved_ty_id, expr_id, None);
+
+                                    self.compiler.values.push(val_info);
+
+                                    ResolvedExpr::new(
+                                        reserved_ty_id,
+                                        expr_hir,
+                                        val_id,
+                                        spanned_expr.span,
+                                        Vec::new(),
+                                    )
+                                }
                             }
-
-                            let expr_hir = ExprHir::Var(found_sym_id);
-
-                            ResolvedExpr::new(
-                                val_info.type_id,
-                                expr_hir,
-                                val_id,
-                                spanned_expr.span,
-                                Vec::new(),
-                            )
                         }
-                        SymbolKind::ReservedTypeSlot(reserved_ty_id) => {
-                            let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
-                            let expr_hir = ExprHir::Var(found_sym_id);
-                            let pending_expr = PendingExpr::new(expr_id, parent_sym_id);
-
-                            //NOTE: ONLY THIS POINT SHOULD STORE THE SYMBOL. This is how the
-                            //connection is made so that, y = x + 2, goes from x -> x + 2 -> None
-                            //after x is resolved.
-                            self.ty_ctx.store_pending_expr(found_sym_id, pending_expr);
-                            // Will possibly call for others to be resolved here, or do it from the
-                            // var resolution method itself
-
-                            // Creates value id that has an unknown type, no constant value, and an
-                            // unresolved expression.
-                            let val_id = ValueId::new(self.compiler.values.len() as u32);
-                            let val_info = ValueInfo::new(reserved_ty_id, expr_id, None);
-
-                            self.compiler.values.push(val_info);
-
-                            ResolvedExpr::new(
-                                reserved_ty_id,
-                                expr_hir,
-                                val_id,
-                                spanned_expr.span,
-                                Vec::new(),
-                            )
-                        }
+                        // SymbolKind::ReservedTypeSlot(reserved_ty_id) => {
+                        //     let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+                        //     let expr_hir = ExprHir::Var(found_sym_id);
+                        //     let pending_expr = PendingExpr::new(expr_id, parent_sym_id);
+                        //
+                        //     //NOTE: ONLY THIS POINT SHOULD STORE THE SYMBOL. This is how the
+                        //     //connection is made so that, y = x + 2, goes from x -> x + 2 -> None
+                        //     //after x is resolved.
+                        //     self.ty_ctx.store_pending_expr(found_sym_id, pending_expr);
+                        //     // Will possibly call for others to be resolved here, or do it from the
+                        //     // var resolution method itself
+                        //
+                        //     // Creates value id that has an unknown type, no constant value, and an
+                        //     // unresolved expression.
+                        //     let val_id = ValueId::new(self.compiler.values.len() as u32);
+                        //     let val_info = ValueInfo::new(reserved_ty_id, expr_id, None);
+                        //
+                        //     self.compiler.values.push(val_info);
+                        //
+                        //     ResolvedExpr::new(
+                        //         reserved_ty_id,
+                        //         expr_hir,
+                        //         val_id,
+                        //         spanned_expr.span,
+                        //         Vec::new(),
+                        //     )
+                        // }
                         SymbolKind::Module(_) => {
                             let err_mod_name = self.interner.search(*name_id);
                             // TODO: Should send help, which should be done after re-doing how
@@ -1600,8 +1704,11 @@ impl TypeResolver<'_> {
                                 core_msg,
                                 self.current_region.path_id,
                             )
-                            .add_annotation(spanned_expr.span, AnnotationKind::Primary, None)
-                            .build();
+                            .add_annotation(
+                                spanned_expr.span,
+                                AnnotationKind::Primary,
+                                None,
+                            );
 
                             return Err(SemanticError::General(src_diag));
                         }
@@ -1639,8 +1746,11 @@ impl TypeResolver<'_> {
                         core_msg,
                         self.current_region.path_id,
                     )
-                    .add_annotation(spanned_expr.span, AnnotationKind::Primary, None)
-                    .build();
+                    .add_annotation(
+                        spanned_expr.span,
+                        AnnotationKind::Primary,
+                        None,
+                    );
 
                     Err(SemanticError::General(src_diag))
                 }
@@ -2093,8 +2203,11 @@ impl TypeResolver<'_> {
                             core_msg,
                             self.current_region.path_id,
                         )
-                        .add_annotation(last_seg.span, AnnotationKind::Primary, None)
-                        .build();
+                        .add_annotation(
+                            last_seg.span,
+                            AnnotationKind::Primary,
+                            None,
+                        );
 
                         return Err(SemanticError::General(src_diag));
                     }
@@ -2256,8 +2369,11 @@ impl TypeResolver<'_> {
                                         core_msg,
                                         self.current_region.path_id,
                                     )
-                                    .add_annotation(sp_path_seg.span, AnnotationKind::Primary, None)
-                                    .build();
+                                    .add_annotation(
+                                        sp_path_seg.span,
+                                        AnnotationKind::Primary,
+                                        None,
+                                    );
 
                                     return Err(SemanticError::General(src_diag));
                                 }
@@ -2302,8 +2418,11 @@ impl TypeResolver<'_> {
                                 core_msg,
                                 self.current_region.path_id,
                             )
-                            .add_annotation(sp_path_seg.span, AnnotationKind::Primary, None)
-                            .build()
+                            .add_annotation(
+                                sp_path_seg.span,
+                                AnnotationKind::Primary,
+                                None,
+                            )
                         } else {
                             let core_msg = format!(
                                 "The symbol `{current_namespace}` was not found in all `{scope_type}` searchable scopes"
@@ -2314,8 +2433,11 @@ impl TypeResolver<'_> {
                                 core_msg,
                                 self.current_region.path_id,
                             )
-                            .add_annotation(sp_path_seg.span, AnnotationKind::Primary, None)
-                            .build()
+                            .add_annotation(
+                                sp_path_seg.span,
+                                AnnotationKind::Primary,
+                                None,
+                            )
                         };
 
                         return Err(SemanticError::General(src_diag));
@@ -2325,7 +2447,7 @@ impl TypeResolver<'_> {
                     // Still disallows something like, core.List<i32>.other_thing
                     if i + 1 != spanned_path_segs.len() {
                         let core_msg = "Generics cannot use `::` pathing at any point".to_string();
-                        let src_diag = SourceDiagnostic::basic(
+                        let src_diag = SourceDiagnostic::basic_builder(
                             DiagnosticLevel::Error,
                             core_msg,
                             self.current_region.path_id,
@@ -2339,7 +2461,7 @@ impl TypeResolver<'_> {
                 }
                 PathSegment::Generic(_) => {
                     let core_msg = "Generics cannot be used inside of expressions".to_string();
-                    let src_diag = SourceDiagnostic::basic(
+                    let src_diag = SourceDiagnostic::basic_builder(
                         DiagnosticLevel::Error,
                         core_msg,
                         self.current_region.path_id,
@@ -2468,8 +2590,7 @@ impl TypeResolver<'_> {
                         current_span,
                         AnnotationKind::Primary,
                         format!("Uses `{cycled_name}` before it has a value").into(),
-                    )
-                    .build();
+                    );
 
                     return Err(SemanticError::General(src_diag));
                 }
@@ -2535,8 +2656,7 @@ impl TypeResolver<'_> {
                                     .add_help(
                                         "Types declared can be exported if that was intended."
                                             .into(),
-                                    )
-                                    .build();
+                                    );
 
                                     return Err(SemanticError::General(src_diag));
                                 }
@@ -2545,7 +2665,7 @@ impl TypeResolver<'_> {
                             }
                             // Ok but what about, "core is a MODULE which is NOT a type?"
                             SymbolKind::Module(mod_id) => (),
-                            SymbolKind::Val(_) | SymbolKind::ReservedTypeSlot(_) => (),
+                            SymbolKind::Variable(_) => {}
                             SymbolKind::Config(_) => unreachable!("Cannot lookup configs"),
                         }
                     }
@@ -2585,7 +2705,7 @@ impl TypeResolver<'_> {
                     }
                 };
 
-                let src_diag = SourceDiagnostic::basic(
+                let src_diag = SourceDiagnostic::basic_builder(
                     DiagnosticLevel::Error,
                     core_msg,
                     self.current_region.path_id,
@@ -2605,7 +2725,7 @@ impl TypeResolver<'_> {
                                 let core_msg =
                                     format!("Expected only 1 type within `{}`", kind.to_fmt());
 
-                                let src_diag = SourceDiagnostic::basic(
+                                let src_diag = SourceDiagnostic::basic_builder(
                                     DiagnosticLevel::Error,
                                     core_msg,
                                     self.current_region.path_id,
@@ -2663,7 +2783,7 @@ impl TypeResolver<'_> {
                         BuiltinTypeKind::Map => {
                             if generic.args.len() != 2 {
                                 let core_msg = format!("Expected only 2 types within `Map`",);
-                                let src_diag = SourceDiagnostic::basic(
+                                let src_diag = SourceDiagnostic::basic_builder(
                                     DiagnosticLevel::Error,
                                     core_msg,
                                     self.current_region.path_id,
@@ -2719,8 +2839,7 @@ impl TypeResolver<'_> {
                 .add_note(
                     "Generics and data structures are only usable through language primitives"
                         .into(),
-                )
-                .build();
+                );
                 Err(SemanticError::General(src_diag))
             }
             // This only allows something like, defs.Thing which can go to at most one type deep,

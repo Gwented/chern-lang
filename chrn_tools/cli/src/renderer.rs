@@ -409,7 +409,7 @@ fn render_text(
         let current_ln_view_idx = ln_views
             .iter()
             .position(|lv| lv.region_id == layout.ln.ln_span.region_id)
-            .expect("Infailable existence");
+            .expect("Infallable existence");
         let current_region_id = layout.ln.ln_span.region_id;
 
         // Checking if the region is different so files from different annotations are visually

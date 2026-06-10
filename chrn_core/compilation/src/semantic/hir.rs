@@ -3,7 +3,8 @@ use std::{collections::HashMap, fmt::Debug};
 
 use chrn_utils::{
     id_types::{
-        AstId, ConfigId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId, ValueId,
+        AstId, ConfigId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId,
+        ValueId, VariableId,
     },
     source_map::source_span::SourceSpan,
 };
@@ -137,11 +138,11 @@ pub enum SymbolKind {
     /// Represents a type symbol
     Type(TypeId),
     /// Represents a variable symbol
-    Val(ValueId),
-    /// Represents a reserved type id which allows for symbols such as unresolved variables to have
-    /// a stable type id associated with it even if it isn't resolved yet. This is mainly intended
-    /// to isolate this type of state inside of a kind of symbol, rather than polluting type-space.
-    ReservedTypeSlot(TypeId),
+    Variable(VariableId),
+    // /// Represents a reserved type id which allows for symbols such as unresolved variables to have
+    // /// a stable type id associated with it even if it isn't resolved yet. This is mainly intended
+    // /// to isolate this type of state inside of a kind of symbol, rather than polluting type-space.
+    // ReservedTypeSlot(TypeId),
     /// Represents a module symbol
     Module(ModuleId),
     /// Represents a config symbol
@@ -154,12 +155,43 @@ impl SymbolKind {
     pub fn to_fmt(compiler: &ScriptCompiler, sym_id: SymbolId) -> Formatted {
         match &compiler.symbols[sym_id.id as usize].kind {
             SymbolKind::Type(type_id) => Type::to_fmt(compiler, *type_id),
-            SymbolKind::Val(_) => Formatted::Variable,
-            SymbolKind::ReservedTypeSlot(_) => Formatted::Unknown,
+            SymbolKind::Variable(_) => Formatted::Variable,
             SymbolKind::Module(_) => Formatted::Module,
             SymbolKind::Config(_) => Formatted::Config,
         }
     }
+}
+
+#[derive(Debug)]
+pub struct VarDef {
+    pub sym_id: SymbolId,
+    pub name_id: InternedId,
+    pub name_span: SourceSpan,
+    // Same job as SymbolKind::ReservedTypeSlot
+    pub state: VariableState,
+    // Is option since forging a value id early is a lot of unneeded extra effort
+}
+
+impl VarDef {
+    pub fn new(
+        sym_id: SymbolId,
+        name_id: InternedId,
+        name_span: SourceSpan,
+        state: VariableState,
+    ) -> VarDef {
+        VarDef {
+            sym_id,
+            name_id,
+            name_span,
+            state,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum VariableState {
+    ReservedTypeSlot(TypeId),
+    Known(ValueId),
 }
 
 /// Intended to represent a configuration block environment that consumes options for a field.

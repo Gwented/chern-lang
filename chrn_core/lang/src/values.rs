@@ -4,6 +4,7 @@
 use chrn_utils::id_types::{ExprId, InternedId, SymbolId, TypeId};
 
 use crate::fmter::{Formattable, Formatted};
+// TODO: Should probably be in compilation
 
 // This is supposed to represent something like, let x = 4, where 4 may or may not have a constant
 // value, 4 is the expression, and it's type is whatever is inferred

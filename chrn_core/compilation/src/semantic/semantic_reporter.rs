@@ -1,4 +1,5 @@
 use chrn_utils::chrn_settings::ChrnSettings;
+use chrn_utils::source_map::source_diagnostic::SourceDiagnosticBuilder;
 use chrn_utils::{
     intern::Intern,
     source_map::{
@@ -10,7 +11,7 @@ use lang::fmter::Formattable;
 
 use crate::semantic::error::SemanticError;
 
-use super::error::MathError;
+use super::error::{LookupError, MathError};
 
 #[derive(Debug)]
 pub(crate) struct SemanticReporter<'a> {
@@ -34,9 +35,17 @@ impl<'a> SemanticReporter<'a> {
         }
     }
 
-    //WARN: Could be better looking
     pub(crate) fn report_semantic(&mut self, sem_err: SemanticError) {
-        let src_diag = match sem_err {
+        let diag_builder = self.create_diag_builder_preset(sem_err);
+        self.err_vec.push(diag_builder.build());
+    }
+
+    /// Creates `SourceDiagnostic` with the preset associated with it's `SemanticErrorKind`
+    pub fn create_diag_builder_preset(
+        &mut self,
+        sem_err: SemanticError,
+    ) -> SourceDiagnosticBuilder {
+        match sem_err {
             // Need to know which spans exactly now
             SemanticError::UnsupportedArg(sp_arg, sym_span) => {
                 let arg_constraints = sp_arg.inner.type_constraints().to_type_constraint_vec();
@@ -63,7 +72,6 @@ impl<'a> SemanticReporter<'a> {
                         "Constraints required by this argument".to_string().into(),
                     )
                     .add_annotation(sym_span, AnnotationKind::Primary, None)
-                    .build()
             }
             SemanticError::VagueArg(sp_arg) => {
                 let core_msg = format!(
@@ -75,7 +83,6 @@ impl<'a> SemanticReporter<'a> {
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
                     .add_annotation(sp_arg.span, AnnotationKind::Primary, None)
                     .add_note("This is not allowed since it would overlap with any specifics arguments given to a defined type from `nest->`".into())
-                    .build()
             }
             SemanticError::FuncConstraintMismatch(constraint, type_kind, spans) => {
                 todo!();
@@ -115,7 +122,6 @@ impl<'a> SemanticReporter<'a> {
                         AnnotationKind::Primary,
                         "Conflicting argument here".to_string().into(),
                     )
-                    .build()
             }
             // Should have the data type's cap shown as well
             SemanticError::NumericOverflow(sp_interned_num, fmtted_ty) => {
@@ -125,28 +131,46 @@ impl<'a> SemanticReporter<'a> {
                     overflown_num
                 );
 
-                SourceDiagnostic::basic(
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    self.region.path_id,
-                    sp_interned_num.span,
-                )
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
+                    .add_annotation(sp_interned_num.span, AnnotationKind::Primary, None)
             }
             SemanticError::General(src_diag) => src_diag,
-            SemanticError::Lookup() => todo!(),
-            SemanticError::Math(math_error) => match math_error {
+            SemanticError::Lookup(lookup_err) => match lookup_err {
+                LookupError::InvalidTypeMemberAccess(sp_fmtted_ty) => {
+                    let core_msg = format!(
+                        "Type `{}` does not have the ability to hold members",
+                        sp_fmtted_ty.inner,
+                    );
+
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
+                        .add_annotation(sp_fmtted_ty.span, AnnotationKind::Primary, None)
+                }
+                LookupError::MemberNotFound(sp_interned_ty, member_ident) => {
+                    let ty_name = self.interner.search(sp_interned_ty.inner);
+                    let member_name = self.interner.search(member_ident);
+                    let core_msg = format!(
+                        "No member with the identifier \"{member_name}\" was found in type `{ty_name}`"
+                    );
+
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
+                        .add_annotation(sp_interned_ty.span, AnnotationKind::Primary, None)
+                }
+                LookupError::InvalidSymbolMemberAccess(sp_sym) => {
+                    let core_msg = format!("Type `{}` cannot use member access", sp_sym.inner);
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
+                        .add_annotation(sp_sym.span, AnnotationKind::Primary, None)
+                }
+            },
+            SemanticError::Math(math_err) => match math_err {
                 MathError::BinaryOpMismatch(sp_fmtted_lhs, sp_fmtted_rhs, fmtted_op) => {
                     let core_msg = format!(
                         "The type `{}` cannot apply `{fmtted_op}` to type `{}`",
                         sp_fmtted_lhs.inner, sp_fmtted_rhs.inner,
                     );
 
-                    SourceDiagnostic::basic_multiple(
-                        DiagnosticLevel::Error,
-                        core_msg,
-                        self.region.path_id,
-                        &[sp_fmtted_lhs.span, sp_fmtted_rhs.span],
-                    )
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
+                        .add_annotation(sp_fmtted_lhs.span, AnnotationKind::Primary, None)
+                        .add_annotation(sp_fmtted_rhs.span, AnnotationKind::Primary, None)
                 }
                 MathError::UnaryOpMismatch(fmtted_operand, fmtted_op) => {
                     let core_msg = format!(
@@ -154,12 +178,8 @@ impl<'a> SemanticReporter<'a> {
                         fmtted_op, fmtted_operand.inner
                     );
 
-                    SourceDiagnostic::basic(
-                        DiagnosticLevel::Error,
-                        core_msg,
-                        self.region.path_id,
-                        fmtted_operand.span,
-                    )
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
+                        .add_annotation(fmtted_operand.span, AnnotationKind::Primary, None)
                 }
                 MathError::DivideByZero(_, spans) => {
                     todo!("Need to fix inner of evaluator functions");
@@ -200,7 +220,6 @@ impl<'a> SemanticReporter<'a> {
                             .to_string()
                             .into(),
                     )
-                    .build()
             }
             SemanticError::TypeConstraintBoundConflict(
                 current_inferred,
@@ -240,9 +259,7 @@ impl<'a> SemanticReporter<'a> {
 
                 todo!()
             }
-        };
-
-        self.err_vec.push(src_diag);
+        }
     }
 
     //TODO: Needs many changes

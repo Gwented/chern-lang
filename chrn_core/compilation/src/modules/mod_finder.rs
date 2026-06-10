@@ -276,7 +276,7 @@ impl ModuleFinder<'_> {
                 // To my knowledge, a valid UTF-8 string cannot fail conversion to a path,
                 // therefore this is infailable as said by the return type, which fits whatever
                 // type utilized with the From<T> conversion.
-                Ok(s) => return Ok(PathBuf::from_str(&s).expect("Infailable")),
+                Ok(s) => return Ok(PathBuf::from_str(&s).expect("Infallable")),
                 Err(_) => {
                     let msg = "Invalid UTF-8 found within file".to_string();
                     let src_diag = SourceDiagnostic::builder(

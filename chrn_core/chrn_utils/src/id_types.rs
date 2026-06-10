@@ -75,6 +75,17 @@ impl TypeId {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct VariableId {
+    pub id: u32,
+}
+
+impl VariableId {
+    pub const fn new(id: u32) -> VariableId {
+        VariableId { id }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct ConfigId {
     pub id: u32,
 }

@@ -95,6 +95,24 @@ impl SourceDiagnostic {
         }
     }
 
+    /// Creates basic error where the given span is the primary annotation with no extra details
+    pub fn basic_builder(
+        level: DiagnosticLevel,
+        core_msg: String,
+        path_id: PathId,
+        span: SourceSpan,
+    ) -> SourceDiagnosticBuilder {
+        let annotations = vec![Annotation::new(span, AnnotationKind::Primary, None)];
+        SourceDiagnosticBuilder {
+            level,
+            core_msg,
+            path_id,
+            annotations,
+            help: Default::default(),
+            notes: Default::default(),
+        }
+    }
+
     pub fn builder(
         level: DiagnosticLevel,
         core_msg: String,

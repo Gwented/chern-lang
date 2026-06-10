@@ -1079,7 +1079,7 @@ impl<'a> ConstraintResolver<'a> {
             Type::Func(_) => {
                 let core_msg = "Functions can only be placed within type constraints".to_string();
 
-                let src_diag = SourceDiagnostic::basic(
+                let src_diag = SourceDiagnostic::basic_builder(
                     DiagnosticLevel::Error,
                     core_msg,
                     self.current_region.path_id,

@@ -4,7 +4,9 @@ use chrn_utils::{
     id_types::InternedId,
     intern::Intern,
     source_map::{
-        source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
+        source_diagnostic::{
+            AnnotationKind, DiagnosticLevel, SourceDiagnostic, SourceDiagnosticBuilder,
+        },
         source_region::SourceRegion,
         source_span::SourceSpan,
     },
@@ -95,27 +97,27 @@ impl<'a> ParserContext<'a> {
             t => self.get_err_ident(t, interner),
         };
 
-        let help = self.try_help(expected, &found, branch, interner);
-
         let core_msg = if let Some(name) = err_ident_opt {
             format!("(in {branch})\n{bmsg}{name}{amsg}")
         } else {
             format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind())
         };
 
-        self.push_src_diag(&found, core_msg, help);
+        let builder = self.create_diag_builder(&found, core_msg);
+        let builder = self.try_assistance(builder, expected, &found, branch, interner);
+
+        self.err_vec.push(builder.build());
 
         self.recover(branch);
 
         Err(found.tok)
     }
 
-    pub(super) fn push_src_diag(
+    pub(super) fn create_diag_builder(
         &mut self,
         found: &SpannedToken,
         core_msg: String,
-        help_opt: Option<String>,
-    ) {
+    ) -> SourceDiagnosticBuilder {
         let spans = self.safely_handle_span(&found);
 
         // A little odd...
@@ -147,11 +149,7 @@ impl<'a> ParserContext<'a> {
             );
         }
 
-        if let Some(inner_help) = help_opt {
-            diag_builder = diag_builder.add_help(inner_help);
-        }
-
-        self.err_vec.push(diag_builder.build());
+        diag_builder
     }
 
     /// Returns an interned name id on success and the failed token on error.
@@ -172,15 +170,16 @@ impl<'a> ParserContext<'a> {
 
         let err_ident_opt = self.get_err_ident(found.tok, interner);
 
-        let help = self.try_help(TokenKind::Keyword, &found, branch, interner);
-
         let core_msg = if let Some(ident) = err_ident_opt {
             format!("(in {branch})\n{bmsg}{ident}{amsg}")
         } else {
             format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind())
         };
 
-        self.push_src_diag(&found, core_msg, help);
+        let builder = self.create_diag_builder(&found, core_msg);
+
+        let builder = self.try_assistance(builder, TokenKind::Keyword, &found, branch, interner);
+        self.err_vec.push(builder.build());
 
         self.recover(branch);
 
@@ -194,11 +193,12 @@ impl<'a> ParserContext<'a> {
     pub(super) fn report_verbose(&mut self, msg: &str, branch: Branch, interner: &Intern) {
         let found = self.peek_behind(1);
 
-        let help = self.try_help(TokenKind::Poison, &found, branch, interner);
-
         let core_msg = format!("(in {branch})\n{msg}");
 
-        self.push_src_diag(&found, core_msg, help);
+        let builder = self.create_diag_builder(&found, core_msg);
+        let builder = self.try_assistance(builder, TokenKind::Poison, &found, branch, interner);
+
+        self.err_vec.push(builder.build());
 
         self.recover(branch);
     }
@@ -219,15 +219,15 @@ impl<'a> ParserContext<'a> {
         if found.tok.kind() != expected {
             let err_ident_opt = self.get_err_ident(found.tok, interner);
 
-            let help = self.try_help(expected, &found, branch, interner);
-
             let core_msg = if let Some(id_str) = err_ident_opt {
                 format!("(in {branch})\n{bmsg}{id_str}{amsg}")
             } else {
                 format!("(in {branch})\n{bmsg}'{}'{amsg}", found.tok.kind())
             };
 
-            self.push_src_diag(&found, core_msg, help);
+            let builder = self.create_diag_builder(&found, core_msg);
+            let builder = self.try_assistance(builder, expected, &found, branch, interner);
+            self.err_vec.push(builder.build());
 
             self.recover(branch);
 
@@ -250,11 +250,10 @@ impl<'a> ParserContext<'a> {
     ) {
         let found = &self.peek_behind(1);
 
-        let help = self.try_help(TokenKind::Poison, &found, branch, interner);
-
         let core_msg = format!("(in {branch})\nExpected {emsg}, found {fmsg}");
-
-        self.push_src_diag(&found, core_msg, help);
+        let builder = self.create_diag_builder(&found, core_msg);
+        let builder = self.try_assistance(builder, TokenKind::Poison, &found, branch, interner);
+        self.err_vec.push(builder.build());
 
         self.recover(branch);
     }
@@ -305,17 +304,26 @@ impl<'a> ParserContext<'a> {
     // TODO: Make a helper reporter so something like can_color doesn't need to be re-entered
     // everytime
     /// Checks available known branching to where a help message can be sent
-    fn try_help(
+    fn try_assistance(
         &self,
+        builder: SourceDiagnosticBuilder,
         expected: TokenKind,
         found: &SpannedToken,
         branch: Branch,
         interner: &Intern,
-    ) -> Option<String> {
+    ) -> SourceDiagnosticBuilder {
         // ) -> (AnnotationKind, Option<String>) {
         // Maybe saturating could lead to mis info
-        let prev_prev_tok = self.toks.get(self.pos.saturating_sub(3))?.clone();
-        let prev_tok = self.toks.get(self.pos.saturating_sub(2))?.clone();
+        let prev_prev_tok = match self.toks.get(self.pos.saturating_sub(3)).clone() {
+            Some(t) => t,
+            None => return builder,
+        };
+
+        let prev_tok = match self.toks.get(self.pos.saturating_sub(2)).clone() {
+            Some(t) => t,
+            None => return builder,
+        };
+
         let prev_kind = prev_tok.tok.kind();
 
         let next_kind = self
@@ -324,14 +332,26 @@ impl<'a> ParserContext<'a> {
             .map(|t| t.tok.kind())
             .unwrap_or(TokenKind::Poison);
 
-        match branch {
+        let next_next_kind = self
+            .toks
+            .get(self.pos + 2)
+            .map(|t| t.tok.kind())
+            .unwrap_or(TokenKind::Poison);
+
+        let builder = match branch {
             Branch::Neutral(neutral_branch) => match neutral_branch {
                 NeutralBranch::Let => match found.tok {
                     Token::Keyword(kw) if expected == TokenKind::Id => {
-                        let help = format!("Keywords can be escaped with \"e#{}\"", kw.to_fmt());
-                        Some(help)
+                        let help = format!("Can be escaped with `e#{}`", kw.to_fmt());
+                        builder.add_help(help)
                     }
-                    _ => None,
+                    Token::Colon
+                        // : [Token] =
+                        if expected == TokenKind::Assign && next_kind == TokenKind::Assign =>
+                    {
+                        builder.add_note("Only `alias` parameters can specify types, all others are inferred".to_string())
+                    }
+                    _ => builder,
                 },
                 NeutralBranch::Searching => match found.tok {
                     // Found stray unrecognizable identifier in neutral
@@ -342,14 +362,19 @@ impl<'a> ParserContext<'a> {
                         let similar = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Stmt)
                             .is_none()
                             // ???????
-                            .then_some(algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect))??;
+                            .then_some(algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect));
 
-                        let help = format!("Found similar \"{similar}\"");
-
-                        Some(help)
+                        // Uh huh
+                        if let Some(Some(found)) = similar {
+                            let help = format!("Found similar \"{found}\"");
+                            builder.add_help(help)
+                        } else {
+                            builder
+                        }
                     }
-                    _ => None,
+                    _ => builder,
                 },
+                // TODO: Help for, alias default(x <- Send help for type annotations) = []
                 NeutralBranch::Alias => match found.tok {
                     // Alias missing parameters
                     Token::Assign
@@ -372,50 +397,52 @@ impl<'a> ParserContext<'a> {
                         // let help = reporter::standardize_help(&help_diag, self.settings.can_color);
 
                         // Some(help)
-                        None
+                        builder
                     }
-                    _ => None,
+                    _ => builder,
                 },
-                _ => None,
+                _ => builder,
             },
             Branch::Section(sect_branch) => match sect_branch {
                 SectionBranch::Var => match found.tok {
-                    // Catching: "x: core.i32"
+                    // ident: core.i32
                     Token::Dot
                         if expected == TokenKind::Id
                             && prev_prev_tok.tok.kind() == TokenKind::Colon =>
                     {
                         let help = "Was this meant to be `::`?".to_string();
-                        Some(help)
+                        builder.add_help(help)
                     }
                     Token::Keyword(kw)
                         if expected == TokenKind::Id && next_kind == TokenKind::Colon =>
                     {
-                        let help = format!("Keywords can be escaped with \"e#{}\"", kw.to_fmt());
-                        Some(help)
+                        let help = format!("Can be escaped with `e#{}`", kw.to_fmt());
+                        builder.add_help(help)
                     }
                     Token::Str(id)
                         if expected == TokenKind::Colon && prev_kind == TokenKind::Id =>
                     {
                         let Token::Id(possible_kw_id) = prev_tok.tok else {
-                            return None;
+                            return builder;
                         };
 
-                        let kw = Keyword::try_from_interned_id(possible_kw_id)?;
+                        if let Some(kw) = Keyword::try_from_interned_id(possible_kw_id) {
+                            let help = format!(
+                                "If this was meant to use the statement `{}`, place this within `neutral`, which is the area before any section is used",
+                                kw.to_fmt()
+                            );
 
-                        let help = format!(
-                            "If this was meant to use the statement `{}`, place this within `neutral`, which is the area before any section is used",
-                            kw.to_fmt()
-                        );
+                            return builder.add_note(help);
+                        }
 
-                        Some(help)
+                        builder
                     }
                     Token::OParen if expected == TokenKind::Colon => {
                         // if let Token::Id(prev_id) = prev_tok.tok {
                         //     panic!("CApi");
                         // }
                         //
-                        None
+                        builder
                         // let msg = "Is this missing '[' to define conditions?";
                         //
                         // let span = SourceSpan::new(prev_tok.span.start, found.span.end);
@@ -435,38 +462,39 @@ impl<'a> ParserContext<'a> {
                         //
                         // Some(built_help)
                     }
-                    _ => None,
+                    _ => builder,
                 },
                 SectionBranch::Nest => match found.tok {
                     // If in `nest->` and found, struct|enum [keyword]
                     Token::Keyword(kw) if expected == TokenKind::Id => {
                         if let Token::Keyword(kw) = prev_tok.tok {
                             if kw == Keyword::Struct || kw == Keyword::Enum {
-                                let help =
-                                    format!("Keywords can be escaped with \"e#{}\"", kw.to_fmt());
+                                let help = format!("Can be escaped with `e#{}`", kw.to_fmt());
 
-                                return Some(help);
+                                return builder.add_help(help);
                             }
                         }
 
-                        None
+                        builder
                     }
                     // This will not be usable until a keyword token is made
                     Token::Id(id) if expected == TokenKind::Id && next_kind == TokenKind::Str => {
                         let Token::Id(possible_kw_id) = prev_tok.tok else {
-                            return None;
+                            return builder;
                         };
 
-                        let kw = Keyword::try_from_interned_id(possible_kw_id)?;
+                        if let Some(kw) = Keyword::try_from_interned_id(possible_kw_id) {
+                            let help = format!(
+                                "If this was meant to use the statement `{}`, place this within `neutral`, which is the area before any section was used.",
+                                kw.to_fmt()
+                            );
 
-                        let help = format!(
-                            "If this was meant to use the statement `{}`, place this within `neutral`, which is the area before any section was used.",
-                            kw.to_fmt()
-                        );
+                            return builder.add_help(help);
+                        };
 
-                        Some(help)
+                        builder
                     }
-                    _ => None,
+                    _ => builder,
                 },
                 // SectionBranch::NestType => todo!(),
                 // SectionBranch::NestEnum => todo!(),
@@ -475,11 +503,12 @@ impl<'a> ParserContext<'a> {
                         //NOTE: Not sure if this should stick
                         // Also very normal sized message.
                         let help =
-                            "Static access is not permitted within configuration declarations.\nIf this was a module namespace, declare this in it's module of origin.\nIf this was a type namespace, this must be defined inside the configuration itself using available syntax."
+                            "Static access is not permitted within configuration declarations.\n  If this was a module namespace, declare this in it's module of origin.\n  If this was a type namespace, this must be defined inside the configuration itself using available syntax."
                                 .to_string();
-                        Some(help)
+
+                        builder.add_note(help)
                     }
-                    _ => None,
+                    _ => builder,
                 },
                 // SectionBranch::Override => todo!(),
                 _ => match found.tok {
@@ -488,50 +517,63 @@ impl<'a> ParserContext<'a> {
 
                         // Maybe this should return None if it directly IS a direct match since it is
                         // just a range check
-                        let similar_sect = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect)?;
+                        if let Some(similar_sect) =
+                            algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect)
+                        {
+                            let help = format!("Found similar section \"{similar_sect}\"");
+                            return builder.add_help(help);
+                        };
 
-                        let help = format!("Found similar section \"{similar_sect}\"");
-                        Some(help)
+                        builder
                     }
-                    _ => None,
+                    _ => builder,
                 },
             },
             // Branch::Expr => todo!(),
             Branch::Cond => match found.tok {
                 Token::Id(id) if expected == TokenKind::CBracket => {
                     let help = "Is there a missing comma to separate conditions?".to_string();
-                    Some(help)
+                    builder.add_help(help)
                 }
                 Token::CBracket if prev_kind == TokenKind::Comma => {
                     let help = "Remove trailing ',' or add a condition".to_string();
-                    Some(help)
+                    builder.add_help(help)
                 }
-                _ => None,
+                _ => builder,
             },
             Branch::Type => match found.tok {
+                Token::Keyword(kw) => {
+                    let help = format!("Can be escaped with `e#{}`", kw.to_fmt());
+                    builder.add_help(help)
+                }
                 Token::Dot => {
                     let help = "Was this meant to be `::`?".to_string();
-                    Some(help)
+                    builder.add_help(help)
                 }
                 Token::CAngleBracket if prev_kind == TokenKind::Comma => {
                     let help = "Was there a trailing ',' ?".to_string();
-                    Some(help)
+                    builder.add_help(help)
                 }
-                _ => None,
+                _ => builder,
             },
             // Branch::FuncArgs => todo!(),
             Branch::TypeArgs => match found.tok {
                 Token::Id(name_id) => {
                     let found_bytes = interner.search(name_id).as_bytes();
-                    let similar_arg = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Arg)?;
-                    let help = format!("Found similar argument \"{similar_arg}\"");
+                    if let Some(similar_arg) = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Arg)
+                    {
+                        let help = format!("Found similar argument \"{similar_arg}\"");
+                        return builder.add_help(help);
+                    };
 
-                    Some(help)
+                    builder
                 }
-                _ => None,
+                _ => builder,
             },
-            _ => None,
-        }
+            _ => builder,
+        };
+
+        builder
     }
 
     /// Helper to reduce boiler-plate of getting an identifier if possible from an error token

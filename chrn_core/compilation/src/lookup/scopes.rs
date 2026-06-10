@@ -7,7 +7,7 @@ use chrn_utils::{
 
 use crate::{
     script_compiler::ScriptCompiler,
-    semantic::hir::{MemberSymbolKind, Symbol, SymbolKind, Table, Type},
+    semantic::hir::{MemberSymbolKind, Symbol, SymbolKind, Table, Type, VariableState},
 };
 
 //TODO: Maybe this is the point where the scope wrapper comes in
@@ -43,8 +43,9 @@ pub const SCOPE_LOCAL: u8 = 1 << 6;
 pub static SCOPE_CORE_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Core];
 pub static SCOPE_NEUTRAL_ACCESSIBLE: [ScopeType; 2] = [ScopeType::Neutral, ScopeType::Core];
 
-pub static SCOPE_COMPLEX_ACCESSIBLE: [ScopeType; 4] = [
+pub static SCOPE_COMPLEX_ACCESSIBLE: [ScopeType; 5] = [
     ScopeType::Neutral,
+    ScopeType::Var,
     ScopeType::Nest,
     ScopeType::Override,
     ScopeType::Core,
@@ -168,10 +169,16 @@ pub fn find_type_id(
                 if current_sym.name_id == target_name_id {
                     match &compiler.symbols[current_sym_id.id as usize].kind {
                         SymbolKind::Type(type_id) => return Some(*type_id),
-                        SymbolKind::Val(val_id) => {
-                            return Some(compiler.values[val_id.id as usize].type_id);
+                        SymbolKind::Variable(var_id) => {
+                            let type_id = match compiler.variables[var_id.id as usize].state {
+                                VariableState::ReservedTypeSlot(type_id) => type_id,
+                                VariableState::Known(val_id) => {
+                                    compiler.values[val_id.id as usize].type_id
+                                }
+                            };
+
+                            return Some(type_id);
                         }
-                        SymbolKind::ReservedTypeSlot(type_id) => return Some(*type_id),
                         SymbolKind::Module(_) | SymbolKind::Config(_) => return None,
                     }
                 }

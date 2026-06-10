@@ -1,18 +1,42 @@
 use chrn_utils::{
     id_types::{InternedId, SpannedContainer},
-    source_map::{source_diagnostic::SourceDiagnostic, source_span::SourceSpan},
+    source_map::{
+        source_diagnostic::{SourceDiagnostic, SourceDiagnosticBuilder},
+        source_span::SourceSpan,
+    },
 };
 use lang::{fmter::Formatted, inner_args::InnerArgs, types::type_constraints::TypeConstraintFlags};
 
 use crate::{constraints::ArgConstraint, semantic::hir::FuncKind};
 
+// pub struct SemanticError {
+//     pub kind: SemanticErrorKind,
+//     pub help: Vec<String>,
+//     pub notes: Vec<String>,
+// }
+//
+// impl SemanticError {
+//     pub fn new(kind: SemanticErrorKind, help: Vec<String>, notes: Vec<String>) -> SemanticError {
+//         SemanticError { kind, help, notes }
+//     }
+//
+//     pub fn from_kind(kind: SemanticErrorKind) -> SemanticError {
+//         SemanticError {
+//             kind,
+//             help: Default::default(),
+//             notes: Default::default(),
+//         }
+//     }
+// }
+
 //TODO: Change this majorly. Make many mistakes. Hallucinate.
+// No
 #[derive(Debug)]
 pub enum SemanticError {
     /// Intended so that diagnostics can be made inline and still align with the same type
-    General(SourceDiagnostic),
+    General(SourceDiagnosticBuilder),
     /// Constraint, found type(builtin or user), spans
-    Lookup(),
+    Lookup(LookupError),
     FuncConstraintMismatch(ArgConstraint, Formatted, Vec<SourceSpan>),
     /// Constraint, amount of incorrect params found, spans
     ArgCountMismatch(ArgConstraint, u32, Vec<SourceSpan>),
@@ -58,12 +82,31 @@ pub enum MathError {
     /// Lhs, rhs, spans
     DivideByZero(Formatted, Vec<SourceSpan>),
 }
+// Debug)]
+// pub enum MemberLookupResult {
+//     Found(MemberId),
+//     /// Example: A module does not have members as a field would
+//     TypeHasNoMembers(TypeId),
+//     /// Example: A type having members, but not having the field identifier specified
+//     TypeDoesNotContainMember(TypeId),
+//     /// Example: A type having members, but not having the field identifier specified
+//     SymbolHasNoMembers,
+//     Unknown,
+// }
+#[derive(Debug)]
+pub enum LookupError {
+    /// Spanned Type that is impossible to member access
+    InvalidTypeMemberAccess(SpannedContainer<Formatted>),
+    /// Spanned type's identifier which has no members, Identifier of member looked up
+    MemberNotFound(SpannedContainer<InternedId>, InternedId),
+    /// Spanned Formatted Symbol
+    /// (Symbol with no members is `Formatted` because it's a language level symbol construct, not a
+    /// possibly user defined structure)
+    InvalidSymbolMemberAccess(SpannedContainer<Formatted>),
+}
 
 #[derive(Debug)]
-pub enum LookupError {}
-
-#[derive(Debug)]
-pub(super) enum FunctionConstraints {
+pub enum FuncConstraints {
     /// Constraint, found type, function kind, spans
     FuncConstraintMismatch(ArgConstraint, Formatted, FuncKind, Vec<SourceSpan>),
     /// Constraint, function type, amount of incorrect params found, spans
@@ -73,5 +116,11 @@ pub(super) enum FunctionConstraints {
 impl From<MathError> for SemanticError {
     fn from(math_err: MathError) -> Self {
         SemanticError::Math(math_err)
+    }
+}
+
+impl From<LookupError> for SemanticError {
+    fn from(lookup_err: LookupError) -> Self {
+        SemanticError::Lookup(lookup_err)
     }
 }

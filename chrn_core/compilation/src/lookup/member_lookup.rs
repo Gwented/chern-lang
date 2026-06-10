@@ -2,20 +2,22 @@ use chrn_utils::id_types::{InternedId, MemberId, SymbolId, TypeId};
 
 use crate::{
     script_compiler::ScriptCompiler,
-    semantic::hir::{SymbolKind, Type},
+    semantic::hir::{SymbolKind, Type, VariableState},
 };
 
 //TEST:
+/// Result type for member lookups. This exists due to the fact that there is no `Ok` or `Err`
+/// inherit concept behind whether or not something was found.
 #[derive(Debug)]
 pub enum MemberLookupResult {
     Found(MemberId),
-    /// Example: A module does not have members as a field would
-    TypeHasNoMembers(TypeId),
-    /// Example: A type having members, but not having the field identifier specified
-    TypeDoesNotContainMember(TypeId),
-    /// Example: A type having members, but not having the field identifier specified
-    SymbolHasNoMembers,
-    Unknown,
+    /// A module does not have members as a field would
+    InvalidTypeMemberAccess(TypeId),
+    /// A type having members, but not having the field identifier specified
+    MemberNotFoundInType(TypeId),
+    /// A symbol not having the capability of holding members at the language level
+    InvalidSymbolMemberAccess,
+    Unknown(TypeId),
 }
 
 // Naming has a little collision since member runtime lookup has the same name as this,
@@ -29,12 +31,16 @@ pub fn lookup_member(
         SymbolKind::Type(inner_type_id) => {
             lookup_field_inner(compiler, inner_type_id, target_name_id)
         }
-        SymbolKind::Val(val_id) => {
-            let val_type_id = compiler.values[val_id.id as usize].type_id;
-            lookup_field_inner(compiler, val_type_id, target_name_id)
+        SymbolKind::Variable(var_id) => match compiler.variables[var_id.id as usize].state {
+            VariableState::ReservedTypeSlot(type_id) => MemberLookupResult::Unknown(type_id),
+            VariableState::Known(val_id) => {
+                let val_type_id = compiler.values[val_id.id as usize].type_id;
+                lookup_field_inner(compiler, val_type_id, target_name_id)
+            }
+        },
+        SymbolKind::Config(_) | SymbolKind::Module(_) => {
+            MemberLookupResult::InvalidSymbolMemberAccess
         }
-        SymbolKind::ReservedTypeSlot(_) => MemberLookupResult::Unknown,
-        SymbolKind::Config(_) | SymbolKind::Module(_) => MemberLookupResult::SymbolHasNoMembers,
     }
 }
 
@@ -44,8 +50,9 @@ fn lookup_field_inner(
     target_name_id: InternedId,
 ) -> MemberLookupResult {
     match &compiler.types[type_id.id as usize].ty {
-        Type::BuiltinType(builtin_type) => {
-            todo!("Not sure yet")
+        Type::BuiltinType(builtin_ty) => {
+            // Members/Methods do not exist for types yet
+            MemberLookupResult::InvalidTypeMemberAccess(type_id)
         }
         Type::Struct(struct_def) => {
             for member_id in &struct_def.fields {
@@ -55,7 +62,7 @@ fn lookup_field_inner(
                 }
             }
 
-            MemberLookupResult::TypeDoesNotContainMember(type_id)
+            MemberLookupResult::MemberNotFoundInType(type_id)
         }
         // But enums aren't fields..they're namespaces
         Type::Enum(enum_def) => {
@@ -70,12 +77,12 @@ fn lookup_field_inner(
         }
         Type::Alias(alias_def) => todo!(),
         Type::Func(func_def) => todo!(),
-        Type::TypeDef(_) => MemberLookupResult::TypeHasNoMembers(type_id),
+        Type::TypeDef(_) => MemberLookupResult::InvalidTypeMemberAccess(type_id),
         Type::Constrained(type_constraint_flags) => todo!(),
         // WARN: DANGEROUS
         Type::Deferred(inner_type_id) => {
             lookup_field_inner(compiler, *inner_type_id, target_name_id)
         }
-        Type::Unknown => MemberLookupResult::Unknown,
+        Type::Unknown => MemberLookupResult::Unknown(type_id),
     }
 }

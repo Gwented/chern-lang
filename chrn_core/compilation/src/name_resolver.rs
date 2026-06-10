@@ -1,6 +1,6 @@
 use chrn_utils::{
     chrn_settings::ChrnSettings,
-    id_types::{AstId, ConfigId, ModuleId, ScopeId, SymbolId, TypeId},
+    id_types::{AstId, ConfigId, ModuleId, ScopeId, SymbolId, TypeId, VariableId},
     intern::Intern,
     source_map::{
         source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
@@ -18,6 +18,7 @@ use crate::{
     semantic::{
         hir::{
             AliasDef, ConfigDef, EnumDef, StructDef, Symbol, SymbolKind, Type, TypeDef, TypeInfo,
+            VarDef, VariableState,
         },
         semantic_reporter::SemanticReporter,
     },
@@ -310,6 +311,17 @@ impl NamespaceResolver<'_> {
         let type_id = TypeId::new(self.compiler.types.len() as u32);
         let ty_info = TypeInfo::new(Type::Unknown, self.current_mod);
 
+        let var_id = VariableId::new(self.compiler.variables.len() as u32);
+
+        // TypeId is stored here so that the slot is reserved for anything that may need to refer
+        // to it's type before it's actually declared
+        let var = VarDef::new(
+            sym_id,
+            abs_var.name_id,
+            abs_var.name_span,
+            VariableState::ReservedTypeSlot(type_id),
+        );
+
         // No information that this is a variable other than the fact that AstId -> SymbolId
         let symbol = Symbol::new(
             abs_var.name_id,
@@ -320,11 +332,12 @@ impl NamespaceResolver<'_> {
             None,
             ScopeType::Neutral,
             // Will be SymbolKind::Defer
-            SymbolKind::ReservedTypeSlot(type_id),
+            SymbolKind::Variable(var_id),
         );
 
         self.compiler.symbols.push(symbol);
         self.compiler.types.push(ty_info);
+        self.compiler.variables.push(var);
 
         if let Some(orig_sym_id) = orig_sym_opt {
             self.report_duplicate(orig_sym_id, sym_id);

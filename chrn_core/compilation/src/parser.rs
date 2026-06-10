@@ -625,6 +625,14 @@ fn parse_nest_sect(
 //
 //No other branches exist right now so it just parses expecting uh, stuff.
 fn parse_config_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractConfig, Token> {
+    let in_var = if ctx.peek_tok() == Token::Keyword(Keyword::In) {
+        ctx.advance_tok();
+        panic!("Inside");
+        true
+    } else {
+        false
+    };
+
     let name_span = ctx.peek_span();
 
     let name_id = ctx.expect_id_verbose(
@@ -652,7 +660,8 @@ fn parse_config_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<Abstr
             let option_assignment = parse_option_assignment(ctx, interner)?;
             option_assignments.push(option_assignment);
         // for "inner {/*assignments*/}"
-        } else if ctx.peek_kind() == TokenKind::Id {
+        } else if ctx.peek_kind() == TokenKind::Id || ctx.peek_tok() == Token::Keyword(Keyword::In)
+        {
             let abs_cfg = parse_config_expr(ctx, interner)?;
             inner_field_cfg.push(abs_cfg);
         } else {
