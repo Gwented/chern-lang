@@ -1,5 +1,6 @@
 // Import privacy leaking behavior and overwriting tendency is highly suspicious
 
+
 // @def invalid toky // hey
 //@end
 //@def
@@ -41,26 +42,28 @@ let x = 5*/
 let x = 3// #warn
 
 
-
-import "../../chrn_core/chrn_tests/def.chrn" as defs
+import "../chrn_core/chrn_tests/def.chrn" as defs
 var->
-    x: let
 
 // Should warn
 // import "../../chrn_core/chrn_tests/core.chrn"
 // import "../../chrn_core/chrn_tests/def.chrn" as defs
     nest->
         struct Forb {
-            // p: def::Person
+            p: def::Person
             // Breaks reporting since cross module spanning is NOT possible right now
             // p: defs::Person
         }
 
     complex->
         // I don't know about this
-        dok {
-            i32 {}
-            i {}
+        Forb {
+            .default_value = 2
+            p {
+                out {
+
+                }
+            }
             // .extra = def::e#2
         }
 @end

@@ -39,6 +39,7 @@ use crate::type_resolver::type_context::{
 
 use super::constraints::ArgConstraint;
 
+//TODO: Less complicated injection
 /// Resolves types and builds the rest of any structs, enums, or expressions that can be const
 /// evaluated. Does so by mutating the compiler given, and maintaining context to retain it's last
 /// state.
@@ -298,8 +299,8 @@ impl TypeResolver<'_> {
     }
 
     fn resolve_cfg(&mut self, abs_cfg: &AbstractConfig) -> Result<(), ()> {
-        let opt_assignments: Vec<MemberId> = Vec::new();
-        let inner_field_cfgs: Vec<ConfigId> = Vec::new();
+        let mut opt_assignments: Vec<MemberId> = Vec::new();
+        let mut inner_field_cfgs: Vec<ConfigId> = Vec::new();
 
         let scope_id = self
             .compiler
@@ -343,7 +344,10 @@ impl TypeResolver<'_> {
             return Err(());
         };
 
-        // Get schema option then lookup against he actual possibilities
+        // Right...
+
+        // Get schema option then lookup against the actual possibilities
+        // Maybe do this in constraints
         for abs_opt in &abs_cfg.opt_assignments {
             let expr_id = match self.register_expr(
                 parent_sym_id,
@@ -362,17 +366,26 @@ impl TypeResolver<'_> {
             };
 
             let member_id = MemberId::new(self.compiler.members.len() as u32);
-            let opt =
-                ConfigOptionAssignment::new(member_id, abs_opt.name_id, abs_opt.name_span, expr_id);
+            let opt = ConfigOptionAssignment::new(
+                parent_sym_id,
+                member_id,
+                abs_opt.name_id,
+                abs_opt.name_span,
+                expr_id,
+            );
             self.compiler
                 .members
                 .push(MemberSymbolKind::OptionAssignment(opt));
+
+            opt_assignments.push(member_id);
         }
 
         for abs_inner_cfg in &abs_cfg.inner_field_cfg {
+            // Safe unwrap (This is not safe)
+            let found_type_id = self.compiler.get_sym_type_id(found_sym_id).unwrap();
             let member_id = match member_lookup::lookup_member(
                 self.compiler,
-                found_sym_id,
+                found_type_id,
                 abs_inner_cfg.name_id,
             ) {
                 // These are split so that the theoretical ok and err paths are able to reduce
@@ -393,7 +406,7 @@ impl TypeResolver<'_> {
                             // If we get a variable, this is matched, but the error is more so, you
                             // cannot use a variable in configuration, rather than the member
                             // access itself
-                            let decl_span = self.compiler.get_decl_span(found_sym_id).expect(
+                            let decl_span = self.compiler.get_sym_decl_span(found_sym_id).expect(
                                 "Should have a span since it has members and was searched for",
                             );
 
@@ -424,7 +437,7 @@ impl TypeResolver<'_> {
                         MemberLookupResult::MemberNotFoundInType(type_id) => {
                             let decl_span = self
                                 .compiler
-                                .get_decl_span(found_sym_id)
+                                .get_sym_decl_span(found_sym_id)
                                 .expect("Should have a span since it has members and was searched");
                             let fmtted_ty = Type::to_fmt(self.compiler, type_id);
 
@@ -448,21 +461,21 @@ impl TypeResolver<'_> {
                                 )
                                 .build()
                         }
-                        MemberLookupResult::InvalidSymbolMemberAccess => {
-                            should_break = true;
-                            let sem_err = SemanticError::Lookup(
-                                LookupError::InvalidSymbolMemberAccess(SpannedContainer::new(
-                                    SymbolKind::to_fmt(self.compiler, found_sym_id),
-                                    abs_cfg.name_span,
-                                )),
-                            );
-
-                            self
-                                .reporter
-                                .create_diag_builder_preset(sem_err)
-                                .add_note("Config blocks expect a valid `nest->` or `var->` defined variable".to_string())
-                                .build()
-                        }
+                        // MemberLookupResult::InvalidSymbolMemberAccess => {
+                        //     should_break = true;
+                        //     let sem_err = SemanticError::Lookup(
+                        //         LookupError::InvalidSymbolMemberAccess(SpannedContainer::new(
+                        //             SymbolKind::to_fmt(self.compiler, found_sym_id),
+                        //             abs_cfg.name_span,
+                        //         )),
+                        //     );
+                        //
+                        //     self
+                        //         .reporter
+                        //         .create_diag_builder_preset(sem_err)
+                        //         .add_note("Config blocks expect a valid `nest->` or `var->` defined variable".to_string())
+                        //         .build()
+                        // }
                         // When is this case reached?
                         MemberLookupResult::Unknown(type_id) => {
                             let var = self.compiler.get_var(found_sym_id);
@@ -483,7 +496,9 @@ impl TypeResolver<'_> {
                     continue;
                 }
             };
-            todo!("sic")
+
+            // Result doesn't matter since we continue either way
+            _ = self.resolve_cfg_inner(parent_sym_id, member_id, abs_inner_cfg);
         }
 
         // dbg!(&abs_cfg);
@@ -494,18 +509,207 @@ impl TypeResolver<'_> {
         cfg_def.sym_id = Some(found_sym_id);
         cfg_def.opt_assignments = opt_assignments;
         cfg_def.inner_field_cfgs = inner_field_cfgs;
-        // dbg!(cfg_def);
-        // panic!("END");
+        dbg!(&cfg_def);
+        // panic!();
 
         Ok(())
     }
 
     /// Recursive function for resolving inner configs
-    fn resolve_cfg_inner(&mut self, abs_cfg: &AbstractConfig) -> Result<ConfigId, ()> {
-        let opt_assignments: Vec<MemberId> = Vec::new();
-        let inner_field_cfgs: Vec<ConfigId> = Vec::new();
+    fn resolve_cfg_inner(
+        &mut self,
+        parent_sym_id: SymbolId,
+        parent_member_id: MemberId,
+        abs_cfg: &AbstractConfig,
+    ) -> Result<(), ()> {
+        let associated_scope = AssociatedScopeKind::Module(self.current_mod);
 
-        todo!()
+        let mut opt_assignments: Vec<MemberId> = Vec::new();
+        let mut inner_field_cfgs: Vec<ConfigId> = Vec::new();
+
+        // Checks if the symbol is valid later
+
+        // Get schema option then lookup against the actual possibilities
+        // Maybe do this in constraints
+        for abs_opt in &abs_cfg.opt_assignments {
+            let expr_id = match self.register_expr(
+                parent_sym_id,
+                &abs_opt.array_expr,
+                None,
+                associated_scope,
+                // This purposeful setting is done on purpose.
+                ScopeType::Complex,
+                &mut vec![],
+            ) {
+                Ok(expr_id) => expr_id,
+                Err(sem_err) => {
+                    self.reporter.report_semantic(sem_err);
+                    continue;
+                }
+            };
+
+            let member_id = MemberId::new(self.compiler.members.len() as u32);
+            let opt = ConfigOptionAssignment::new(
+                parent_sym_id,
+                member_id,
+                abs_opt.name_id,
+                abs_opt.name_span,
+                expr_id,
+            );
+            self.compiler
+                .members
+                .push(MemberSymbolKind::OptionAssignment(opt));
+
+            opt_assignments.push(member_id);
+        }
+
+        //
+        for abs_inner_cfg in &abs_cfg.inner_field_cfg {
+            let parent_type_id = self.compiler.get_member_type_id(parent_member_id).unwrap();
+            let name = self.interner.search(abs_inner_cfg.name_id);
+            dbg!(name);
+            let Type::Struct(structure) = &self.compiler.types[parent_type_id.id as usize].ty
+            else {
+                todo!();
+            };
+            let name = self
+                .interner
+                .search(self.compiler.symbols[structure.sym_id.id as usize].name_id);
+            dbg!(name);
+            // Person fields are not available since the config is not gauranteed to be touchign a
+            // type that is known yet
+            let person_fields = member_lookup::collect_all_members(self.compiler, parent_type_id);
+            dbg!(person_fields);
+            panic!();
+            let member_id = match member_lookup::lookup_member(
+                self.compiler,
+                parent_type_id,
+                abs_inner_cfg.name_id,
+            ) {
+                // These are split so that the theoretical ok and err paths are able to reduce
+                // boilerplate where needed
+                MemberLookupResult::Found(mem_id) => mem_id,
+                lookup_res => {
+                    // In case the lookup error points to an issue with the actual symbol we found
+                    // rather than the member not existing or some non-terminal lookup error
+                    //
+                    // This is done because the validity of the symbol isn't checked before we
+                    // actually lookup it's members
+                    let mut should_break = false;
+
+                    let parent_sym_id =
+                        self.compiler.members[parent_member_id.id as usize].parent_sym_id();
+                    let parent_decl_span = self
+                        .compiler
+                        .get_sym_decl_span(parent_sym_id)
+                        .expect("Should exist in an ast searching context");
+                    let parent_name_id = self.compiler.symbols[parent_sym_id.id as usize].name_id;
+                    let parent_name = self.interner.search(parent_name_id);
+
+                    let src_diag = match lookup_res {
+                        MemberLookupResult::InvalidTypeMemberAccess(type_id) => {
+                            should_break = true;
+                            //FIX: This has odd phrasing and pointers
+                            // If we get a variable, this is matched, but the error is more so, you
+                            // cannot use a variable in configuration, rather than the member
+                            // access itself
+
+                            let found_sym = &self.compiler.symbols[parent_member_id.id as usize];
+                            let found_name = self.interner.search(found_sym.name_id);
+
+                            let sem_err = SemanticError::Lookup(
+                                LookupError::InvalidTypeMemberAccess(SpannedContainer::new(
+                                    Type::to_fmt(self.compiler, type_id),
+                                    parent_decl_span,
+                                )),
+                            );
+
+                            self.reporter
+                                .create_diag_builder_preset(sem_err)
+                                .add_annotation(
+                                    abs_cfg.name_span,
+                                    AnnotationKind::Secondary,
+                                    format!("`{found_name}` used here").into(),
+                                )
+                                .add_annotation(
+                                    abs_inner_cfg.name_span,
+                                    AnnotationKind::Secondary,
+                                    "member searched for".to_string().into(),
+                                )
+                                .build()
+                        }
+                        MemberLookupResult::MemberNotFoundInType(type_id) => {
+                            let fmtted_ty = Type::to_fmt(self.compiler, type_id);
+
+                            let sem_err = SemanticError::Lookup(LookupError::MemberNotFound(
+                                SpannedContainer::new(parent_name_id, abs_cfg.name_span),
+                                abs_inner_cfg.name_id,
+                            ));
+
+                            // List available members?
+                            self.reporter
+                                .create_diag_builder_preset(sem_err)
+                                .add_annotation(
+                                    parent_decl_span,
+                                    AnnotationKind::Secondary,
+                                    format!("{} defined here", fmtted_ty).into(),
+                                )
+                                .add_annotation(
+                                    abs_inner_cfg.name_span,
+                                    AnnotationKind::Secondary,
+                                    "Searched for this member".to_string().into(),
+                                )
+                                .build()
+                        }
+                        // MemberLookupResult::InvalidSymbolMemberAccess => {
+                        //     should_break = true;
+                        //     let sem_err = SemanticError::Lookup(
+                        //         LookupError::InvalidSymbolMemberAccess(SpannedContainer::new(
+                        //             SymbolKind::to_fmt(self.compiler, found_sym_id),
+                        //             abs_cfg.name_span,
+                        //         )),
+                        //     );
+                        //
+                        //     self
+                        //         .reporter
+                        //         .create_diag_builder_preset(sem_err)
+                        //         .add_note("Config blocks expect a valid `nest->` or `var->` defined variable".to_string())
+                        //         .build()
+                        // }
+                        // When is this case reached?
+                        MemberLookupResult::Unknown(type_id) => {
+                            // dbg!(&self.compiler.types[var.type_id.id as usize]);
+                            todo!("RUST_BACKTRACE=1");
+                        }
+                        MemberLookupResult::Found(_) => unreachable!(),
+                    };
+
+                    self.reporter.err_vec.push(src_diag);
+
+                    if should_break {
+                        break;
+                    }
+
+                    continue;
+                }
+            };
+
+            // Result doesn't matter since we continue either way
+            let cfg_id = self.resolve_cfg_inner(parent_sym_id, member_id, abs_inner_cfg);
+            // inner_field_cfgs.push(cfg_id);
+        }
+
+        // dbg!(&abs_cfg);
+        // panic!();
+
+        let cfg_def = self.compiler.get_cfg_def_mut(parent_sym_id);
+
+        // Not quite sure what to do with this
+        // cfg_def.sym_id = None;
+        cfg_def.opt_assignments = opt_assignments;
+        cfg_def.inner_field_cfgs = inner_field_cfgs;
+
+        Ok(())
     }
 
     fn try_resolve_pending(
@@ -513,6 +717,7 @@ impl TypeResolver<'_> {
         resolved_sym_id: SymbolId,
         pending_sym: &mut PendingSymbol,
         // Eyes
+        // Why does this say eyes?
     ) -> Result<bool, ()> {
         // Tells the caller if the given pending symbol is fully resolved to where it can be
         // removed as a pending symbol
@@ -1085,7 +1290,14 @@ impl TypeResolver<'_> {
 
             let member_id = MemberId::new(self.compiler.members.len() as u32);
 
+            let parent_sym_id = if let Some(found) = self.compiler.get_sym_from_type(type_id) {
+                found
+            } else {
+                sym_id
+            };
+
             let field = FieldRepre::new(
+                parent_sym_id,
                 member_id,
                 field_typedef.name_id,
                 field_typedef.name_span,
@@ -1219,7 +1431,14 @@ impl TypeResolver<'_> {
                     }
                 };
 
+                let parent_sym_id = if let Some(found) = self.compiler.get_sym_from_type(type_id) {
+                    found
+                } else {
+                    sym_id
+                };
+
                 VariantRepre::new(
+                    parent_sym_id,
                     member_id,
                     variant.name_id,
                     variant.name_span,
@@ -1228,6 +1447,7 @@ impl TypeResolver<'_> {
                 )
             } else {
                 VariantRepre::new(
+                    sym_id,
                     member_id,
                     variant.name_id,
                     variant.name_span,
@@ -1471,6 +1691,8 @@ impl TypeResolver<'_> {
 
     /// On `Ok`, Creates a HIR expression type and returns the `ExprId` which is either going to be
     /// fully resolved, or marked as pending to be resolved later if possible.
+    // The innate `parent_sym_id` may be weird depending on the context
+    // Should it be replaced with VariableId?
     fn register_expr(
         &mut self,
         parent_sym_id: SymbolId,
@@ -2312,7 +2534,6 @@ impl TypeResolver<'_> {
 
                         values.push(val);
                     }
-                    dbg!(&values);
 
                     Some(Value::Array(values))
                 } else {

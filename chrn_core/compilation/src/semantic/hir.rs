@@ -194,6 +194,7 @@ pub enum VariableState {
     Known(ValueId),
 }
 
+// TODO: Readiness for skipping during resolution
 /// Intended to represent a configuration block environment that consumes options for a field.
 #[derive(Debug)]
 pub struct ConfigDef {
@@ -232,6 +233,7 @@ impl ConfigDef {
 /// Represents options and their values assigned by the user
 #[derive(Debug)]
 pub struct ConfigOptionAssignment {
+    pub parent_sym_id: SymbolId,
     // Own member id
     pub member_id: MemberId,
     // more like option_name_id
@@ -242,12 +244,14 @@ pub struct ConfigOptionAssignment {
 
 impl ConfigOptionAssignment {
     pub fn new(
+        parent_sym_id: SymbolId,
         member_id: MemberId,
         name_id: InternedId,
         name_span: SourceSpan,
         array: ExprId,
     ) -> ConfigOptionAssignment {
         ConfigOptionAssignment {
+            parent_sym_id,
             member_id,
             name_id,
             name_span,
@@ -273,6 +277,16 @@ impl MemberSymbolKind {
             MemberSymbolKind::Field(field_repre) => field_repre.member_id,
             MemberSymbolKind::Variant(variant_repre) => variant_repre.member_id,
             MemberSymbolKind::OptionAssignment(option_assignment) => option_assignment.member_id,
+        }
+    }
+
+    pub fn parent_sym_id(&self) -> SymbolId {
+        match self {
+            MemberSymbolKind::Field(field_repre) => field_repre.parent_sym_id,
+            MemberSymbolKind::Variant(variant_repre) => variant_repre.parent_sym_id,
+            MemberSymbolKind::OptionAssignment(option_assignment) => {
+                option_assignment.parent_sym_id
+            }
         }
     }
 }
@@ -433,6 +447,7 @@ impl Formattable for EnumDef {
 /// A HIR of enum variants created by script semantics
 #[derive(Debug)]
 pub struct VariantRepre {
+    pub parent_sym_id: SymbolId,
     pub member_id: MemberId,
     pub name_id: InternedId,
     pub name_span: SourceSpan,
@@ -448,6 +463,7 @@ pub struct VariantRepre {
 
 impl VariantRepre {
     pub fn new(
+        parent_sym_id: SymbolId,
         member_id: MemberId,
         name_id: InternedId,
         name_span: SourceSpan,
@@ -456,6 +472,7 @@ impl VariantRepre {
         ast_id: AstId,
     ) -> VariantRepre {
         VariantRepre {
+            parent_sym_id,
             member_id,
             name_id,
             name_span,
@@ -546,6 +563,7 @@ impl Formattable for FuncDef {
 
 #[derive(Debug)]
 pub struct FieldRepre {
+    pub parent_sym_id: SymbolId,
     pub member_id: MemberId,
     pub name_id: InternedId,
     pub name_span: SourceSpan,
@@ -559,12 +577,14 @@ pub struct FieldRepre {
 
 impl FieldRepre {
     pub fn new(
+        parent_sym_id: SymbolId,
         member_id: MemberId,
         name_id: InternedId,
         name_span: SourceSpan,
         type_id: TypeId,
     ) -> FieldRepre {
         FieldRepre {
+            parent_sym_id,
             member_id,
             name_id,
             name_span,

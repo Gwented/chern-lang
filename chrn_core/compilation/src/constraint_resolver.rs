@@ -3,7 +3,7 @@ use chrn_utils::{
     id_types::{AstId, ExprId, ModuleId, SpannedContainer, TypeId},
     intern::Intern,
     source_map::{
-        source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
+        source_diagnostic::{DiagnosticLevel, SourceDiagnostic},
         source_region::SourceRegion,
         source_span::SourceSpan,
     },
@@ -225,7 +225,7 @@ impl<'a> ConstraintResolver<'a> {
 
         // let alias_type_id = self.compiler.get_type_id(sym_id);
         let alias_def = self.compiler.get_alias(sym_id);
-        let alias_type_id = self.compiler.get_type_id(sym_id);
+        let alias_type_id = self.compiler.extract_type_id(sym_id);
 
         // TODO: This should now just check instead of infer
 

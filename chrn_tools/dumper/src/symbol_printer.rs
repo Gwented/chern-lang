@@ -1,8 +1,5 @@
 use chrn_utils::intern::Intern;
-use compilation::{
-    script_compiler::ScriptCompiler,
-    semantic::hir::{Symbol, SymbolKind, Type},
-};
+use compilation::script_compiler::ScriptCompiler;
 
 use crate::dump_settings::DumpSettings;
 

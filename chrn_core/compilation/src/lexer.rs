@@ -588,7 +588,8 @@ impl Lexer<'_> {
 
         // hallucinating?
         let id_str = str::from_utf8(&self.src_bytes[start..end])
-            .expect("Cannot fail due to loop only accepting valid UTF-8 characters.");
+            //FIX:
+            .expect("Invalid UTF-8");
 
         // Would it ever not be escaped if it's empty?
         // This means that we only found "e#" which is an error since it's an empty ident
@@ -980,7 +981,8 @@ impl Lexer<'_> {
         let end = self.pos;
 
         let err_str = str::from_utf8(&self.src_bytes[start..end])
-            .expect("Cannot fail due to loop only accepting valid UTF-8");
+            //FIX:
+            .expect("Invalid UTF-8");
 
         let id = interner.intern(&err_str);
 

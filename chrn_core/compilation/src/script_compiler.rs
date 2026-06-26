@@ -469,7 +469,7 @@ impl ScriptCompiler {
     // Maybe return option?
     /// Assumes the symbol given has a `TypeId` attached. Will return a `TypeId` of `Unknown` if
     /// the `SymbolKind` is unknown.
-    pub(super) fn get_type_id(&self, sym_id: SymbolId) -> TypeId {
+    pub(super) fn extract_type_id(&self, sym_id: SymbolId) -> TypeId {
         match &self.symbols[sym_id.id as usize] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => *type_id,
@@ -483,12 +483,70 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_decl_span(&self, sym_id: SymbolId) -> Option<SourceSpan> {
+    // Maybe return option?
+    /// Attempts to get a `TypeId` out of the given symbol if possible
+    pub(super) fn get_sym_type_id(&self, sym_id: SymbolId) -> Option<TypeId> {
+        match &self.symbols[sym_id.id as usize] {
+            sym_info => match &sym_info.kind {
+                SymbolKind::Type(type_id) => Some(*type_id),
+                SymbolKind::Variable(var_id) => match self.variables[var_id.id as usize].state {
+                    VariableState::ReservedTypeSlot(type_id) => Some(type_id),
+                    VariableState::Known(val_id) => Some(self.values[val_id.id as usize].type_id),
+                },
+                // Not a type, just a symbol with a scope
+                SymbolKind::Module(_) | SymbolKind::Config(_) => None,
+            },
+        }
+    }
+
+    /// Attempts to get a `SymbolId` out of a `TypeId`
+    pub(super) fn get_sym_from_type(&self, mut type_id: TypeId) -> Option<SymbolId> {
+        for _ in 0..Self::MAX_LOOPS {
+            match &self.types[type_id.id as usize].ty {
+                Type::Struct(struct_def) => return Some(struct_def.sym_id),
+                Type::Enum(enum_def) => return Some(enum_def.sym_id),
+                Type::Func(func_def) => return Some(func_def.sym_id),
+                Type::Alias(alias_def) => return Some(alias_def.sym_id),
+                Type::TypeDef(type_def) => Some(type_def.sym_id),
+                Type::Deferred(inner) => {
+                    type_id = *inner;
+                    continue;
+                }
+                Type::Constrained(_) | Type::Unknown | Type::BuiltinType(_) => {
+                    return None;
+                }
+            };
+        }
+
+        panic!(
+            "`get_type_decl_span` reached [`MAX_LOOPS`: {}]",
+            Self::MAX_LOOPS
+        );
+    }
+
+    /// Attempts to get a `TypeId` out of the given symbol if possible
+    pub(super) fn get_member_type_id(&self, member_id: MemberId) -> Option<TypeId> {
+        match &self.members[member_id.id as usize] {
+            MemberSymbolKind::Field(field_repre) => Some(field_repre.type_id),
+            MemberSymbolKind::Variant(variant_repre) => variant_repre.type_id,
+            MemberSymbolKind::OptionAssignment(_) => None,
+        }
+    }
+
+    pub(super) fn get_sym_decl_span(&self, sym_id: SymbolId) -> Option<SourceSpan> {
         match &self.symbols[sym_id.id as usize].kind {
             SymbolKind::Type(type_id) => self.get_decl_span_type(*type_id),
             SymbolKind::Variable(var_id) => Some(self.variables[var_id.id as usize].name_span),
             SymbolKind::Config(cfg_id) => Some(self.configs[cfg_id.id as usize].name_span),
             SymbolKind::Module(_) => None,
+        }
+    }
+
+    pub(super) fn get_member_decl_span(&self, member_id: MemberId) -> SourceSpan {
+        match &self.members[member_id.id as usize] {
+            MemberSymbolKind::Field(field_repre) => field_repre.name_span,
+            MemberSymbolKind::Variant(variant_repre) => variant_repre.name_span,
+            MemberSymbolKind::OptionAssignment(cfg_opt) => cfg_opt.name_span,
         }
     }
 
@@ -640,28 +698,20 @@ impl ScriptCompiler {
         }
     }
 
+    const MAX_LOOPS: u32 = 10000003;
     /// Returns `true` if the type is unknown, false otherwise
-    pub fn check_unknown(&self, type_id: TypeId) -> bool {
-        let ty = &self.types[type_id.id as usize].ty;
-        match ty {
-            // Can't do this since a type, may depend on a type, that pointer to another type.
-            // May change this system since it is concerning to rely on such possibly deep
-            // recursive issues that could be hidden.
-            // Type::Deferred(deferred_type_id) => {
-            //     let deferred_ty = &self.types[deferred_type_id.id as usize].ty;
-            //     match deferred_ty {
-            //         Type::Unknown => true,
-            //         // Type::Deferred(_) => {
-            //         //     panic!("Encountered infinitely recursive deferred type in `check_unknown`")
-            //         // }
-            //         _ => false,
-            //     }
-            // }
-            //WARN: DANGEROUS.
-            Type::Deferred(type_id) => self.check_unknown(*type_id),
-            Type::Unknown => true,
-            _ => false,
+    pub fn check_unknown(&self, mut type_id: TypeId) -> bool {
+        // This limit is semi-random
+        for _ in 0..Self::MAX_LOOPS {
+            let ty = &self.types[type_id.id as usize].ty;
+            match ty {
+                Type::Deferred(inner) => type_id = *inner,
+                Type::Unknown => return true,
+                _ => return false,
+            }
         }
+
+        panic!("`check_unknown` reached [`MAX_LOOPS`: {}]", Self::MAX_LOOPS);
     }
 
     //TODO: There is an issue with how scopes are consumed right now which makes giving specific

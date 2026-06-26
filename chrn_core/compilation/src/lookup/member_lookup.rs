@@ -16,43 +16,35 @@ pub enum MemberLookupResult {
     /// A type having members, but not having the field identifier specified
     MemberNotFoundInType(TypeId),
     /// A symbol not having the capability of holding members at the language level
-    InvalidSymbolMemberAccess,
     Unknown(TypeId),
 }
 
-pub fn collect_all_members(compiler: &ScriptCompiler, sym_id: SymbolId) -> MemberLookupResult {
-    todo!()
+/// Collects all members if possible from a given type id
+///
+/// Return type is empty if the given type cannot carry members
+pub fn collect_all_members(compiler: &ScriptCompiler, type_id: TypeId) -> Vec<MemberId> {
+    // here too
+    match &compiler.types[type_id.id as usize].ty {
+        Type::BuiltinType(builtin_type) => todo!(),
+        Type::Struct(struct_def) => struct_def.fields.clone(),
+        Type::Enum(enum_def) => enum_def.variants.clone(),
+        Type::Func(func_def) => todo!(),
+        Type::Alias(alias_def) => todo!(),
+        Type::TypeDef(type_def) => todo!(),
+        Type::Constrained(type_constraint_flags) => todo!(),
+        Type::Deferred(type_id) => collect_all_members(compiler, *type_id),
+        Type::Unknown => todo!(),
+    }
 }
 
 // Naming has a little collision since member runtime lookup has the same name as this,
 // realistically, const lookup.
 pub fn lookup_member(
     compiler: &ScriptCompiler,
-    sym_id: SymbolId,
+    mut type_id: TypeId,
     target_name_id: InternedId,
 ) -> MemberLookupResult {
-    match compiler.symbols[sym_id.id as usize].kind {
-        SymbolKind::Type(inner_type_id) => {
-            lookup_field_inner(compiler, inner_type_id, target_name_id)
-        }
-        SymbolKind::Variable(var_id) => match compiler.variables[var_id.id as usize].state {
-            VariableState::ReservedTypeSlot(type_id) => MemberLookupResult::Unknown(type_id),
-            VariableState::Known(val_id) => {
-                let val_type_id = compiler.values[val_id.id as usize].type_id;
-                lookup_field_inner(compiler, val_type_id, target_name_id)
-            }
-        },
-        SymbolKind::Config(_) | SymbolKind::Module(_) => {
-            MemberLookupResult::InvalidSymbolMemberAccess
-        }
-    }
-}
-
-fn lookup_field_inner(
-    compiler: &ScriptCompiler,
-    type_id: TypeId,
-    target_name_id: InternedId,
-) -> MemberLookupResult {
+    // Max loops will strike here.
     match &compiler.types[type_id.id as usize].ty {
         Type::BuiltinType(builtin_ty) => {
             // Members/Methods do not exist for types yet
@@ -84,9 +76,7 @@ fn lookup_field_inner(
         Type::TypeDef(_) => MemberLookupResult::InvalidTypeMemberAccess(type_id),
         Type::Constrained(type_constraint_flags) => todo!(),
         // WARN: DANGEROUS
-        Type::Deferred(inner_type_id) => {
-            lookup_field_inner(compiler, *inner_type_id, target_name_id)
-        }
+        Type::Deferred(inner_type_id) => lookup_member(compiler, *inner_type_id, target_name_id),
         Type::Unknown => MemberLookupResult::Unknown(type_id),
     }
 }
