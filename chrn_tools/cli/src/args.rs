@@ -9,8 +9,23 @@ use clap_derive::{Args, Parser, Subcommand};
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 pub struct Cli {
+    #[command(flatten)]
+    pub glob_args: GlobalArgs,
+
     #[command(subcommand)]
     pub(crate) command: Commands,
+}
+
+#[derive(Args)]
+pub struct GlobalArgs {
+    /// Disables colored output
+    #[arg(
+        long = "no-color",
+        action = clap::ArgAction::SetFalse,
+        global = true,
+        default_value_t = true
+    )]
+    pub can_color: bool,
 }
 
 #[derive(Subcommand)]

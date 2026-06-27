@@ -130,7 +130,7 @@ pub(super) fn create_level_header(
 ) -> String {
     let header_text = get_diag_level_text(level);
 
-    let nc = color::NC;
+    let nc = color::get_nc(settings.can_color);
     let header_color = get_diag_level_color(level, settings);
 
     let level_header = format!("{header_color}{header_text}{nc}");

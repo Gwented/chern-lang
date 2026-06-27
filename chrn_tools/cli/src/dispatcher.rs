@@ -9,15 +9,16 @@ use orchestration::{
 };
 
 use crate::{
-    args::{CheckCmd, Cli, Commands, FmtCmd, QueryCmd},
+    args::{CheckCmd, Cli, Commands, FmtCmd, GlobalArgs, QueryCmd},
     config::CliConfig,
     files,
     renderer::{self, render_settings::RenderSettings},
+    s_ifier,
 };
 
 pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
     match &cli.command {
-        Commands::Check(check_cmd) => exec_check(&check_cmd, &cli_cfg),
+        Commands::Check(check_cmd) => exec_check(&check_cmd, &cli.glob_args, &cli_cfg),
         Commands::Fmt(fmt_cmd) => exec_fmt(&fmt_cmd, &cli_cfg),
         Commands::Gen(gen_cmd) => todo!(),
         Commands::Query(query_cmd) => exec_query(&query_cmd, &cli_cfg),
@@ -25,10 +26,15 @@ pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
 }
 
 /// Executes `CheckCmd` which checks for any compilation errors regarding a given Script file
-fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, String> {
+fn exec_check(
+    check_cmd: &CheckCmd,
+    glob_args: &GlobalArgs,
+    cli_cfg: &CliConfig,
+) -> Result<String, String> {
     let chrn_settings = ChrnSettings::new();
     let path = files::make_canon(&check_cmd.path)?;
     let mut reporter = Reporter::default();
+    let render_settings = RenderSettings::new(glob_args.can_color, cli_cfg.terminal_color_type);
 
     // Please please please
     let (mut compiler, mut compiler_store, mut compiler_cache) =
@@ -37,8 +43,6 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
             Ok(data) => data,
             Err(init_err) => match init_err.cfg_err {
                 ConfigLoadError::General(diag) => {
-                    let render_settings =
-                        RenderSettings::new(cli_cfg.can_color, cli_cfg.terminal_color_type);
                     let rendered_diags = renderer::render_cli_diags(
                         &[diag],
                         &render_settings,
@@ -69,7 +73,6 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
         Err(script_err) => match script_err {
             ScriptError::Parser(diags) | ScriptError::Semantic(diags) => {
                 // For now
-                let render_settings = RenderSettings::init();
                 // Should print rendered diagnostics here
                 let rendered_diags = renderer::render_cli_diags(
                     &diags,
@@ -80,7 +83,9 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
 
                 print_diags(&rendered_diags);
 
-                let msg = format!("Reported {} error(s)", diags.len());
+                let s_suffix = s_ifier!(diags.len());
+
+                let msg = format!("Reported {} error{s_suffix}", diags.len());
                 return Err(msg);
             }
             ScriptError::IO(e) => {
@@ -109,7 +114,8 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
     //
     //             print_diags(&rendered_diags);
     //
-    //             let msg = format!("Reported {} error(s)", diags.len());
+    //             let sacred_s = s_ifier!(diags.len());
+    //             let msg = format!("Reported {} error{sacred_s}", diags.len());
     //             return Err(msg);
     //         }
     //         ScriptError::IO(e) => {

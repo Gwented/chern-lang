@@ -5,6 +5,7 @@ import "../chrn_core/chrn_tests/other.chrn"
 let x = other::e#var
 
 let e#2 = 3
+let e#2 = 4
 
 
 nest->
