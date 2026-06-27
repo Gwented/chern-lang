@@ -94,6 +94,7 @@ pub(super) fn get_annotation_kind_ptr(kind: AnnotationKind) -> &'static str {
     }
 }
 
+/// Formats a help message with heuristic styling
 pub(super) fn standardize_help(msg: &str, can_color: bool, terminal: TerminalColorType) -> String {
     let (orange, nc) = color::get_orange(can_color, terminal);
 
@@ -104,6 +105,7 @@ pub(super) fn standardize_help(msg: &str, can_color: bool, terminal: TerminalCol
     }
 }
 
+/// Formats a note message with heuristic styling
 pub(super) fn standardize_note(msg: &str, can_color: bool, terminal: TerminalColorType) -> String {
     let (cyan, nc) = color::get_cyan(can_color, terminal);
 
@@ -114,6 +116,7 @@ pub(super) fn standardize_note(msg: &str, can_color: bool, terminal: TerminalCol
     }
 }
 
+/// Creates a template header with with given path
 pub(super) fn create_path_header(path: &Path, settings: &RenderSettings) -> String {
     let (bold, nc) = color::get_bold(settings.can_color);
     format!("{bold}PATH{nc} => \"{}\"", path.display())

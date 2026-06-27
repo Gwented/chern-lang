@@ -17,7 +17,10 @@ use chrn_utils::{
 };
 use lang::config_loader::ChrnConfigLoader;
 
-use crate::{modules::mod_finder::ModuleFinder, script_compiler::ScriptCompiler};
+use crate::{
+    modules::mod_finder::ModuleFinder,
+    script_compiler::{ScriptCompiler, script_compiler_store::ScriptCompilerStore},
+};
 
 pub const RESERVED_INTERNED_MODULE_IDENTS: [u32; 1] = [intern::INTERNED_CORE];
 
@@ -148,7 +151,7 @@ impl Module {
     }
 }
 
-//TEST: Lets depending on self recursively as a module happen for now
+//TEST: Let depending on self recursively as a module happen for now
 /// Takes in a path to a `chrn` config file, then recursively resolved all imports associated with
 /// the path given in separate modules.
 ///
@@ -163,9 +166,9 @@ impl Module {
 //completely loaded. Meaning, this would probably be best returning diagnostics.
 pub fn extract_modules(
     path: &Path,
-    settings: &ChrnSettings,
-    interner: &mut Intern,
-) -> Result<(ScriptCompiler, SourceRegionArena, Vec<SourceDiagnostic>), ModuleInitError> {
+    settings: ChrnSettings,
+    mut interner: Intern,
+) -> Result<(ScriptCompiler, ScriptCompilerStore, Vec<SourceDiagnostic>), ModuleInitError> {
     // All errors regarding the instantiation of main, aside from it's imports, are terminal, since
     // it's the only path that actually gives access to the module tree
     let src = match file_ops::fopen(path) {
@@ -177,7 +180,7 @@ pub fn extract_modules(
                 SourceDiagnostic::builder(DiagnosticLevel::Error, err_msg, path_id).build();
             let cfg_err = ConfigLoadError::General(src_diag);
 
-            return Err(ModuleInitError::new(None, cfg_err));
+            return Err(ModuleInitError::new(None, interner, cfg_err));
         }
     };
 
@@ -188,12 +191,12 @@ pub fn extract_modules(
 
     // Using region id before pushing
     let main_region =
-        match ChrnConfigLoader::new(main_region_id, src, main_path_id, settings, interner)
+        match ChrnConfigLoader::new(main_region_id, src, main_path_id, &settings, &interner)
             .load_config()
         {
             Ok(reg) => reg,
             Err(cfg_err) => {
-                return Err(ModuleInitError::new(None, cfg_err));
+                return Err(ModuleInitError::new(None, interner, cfg_err));
             }
         };
 
@@ -213,7 +216,7 @@ pub fn extract_modules(
             //NOTE: Not sure what behavior to expect from this since, the region is available, but
             //the cli renderer may or may not properly innately just create a diagnostic that
             //simply has no extra information besides the error msg
-            return Err(ModuleInitError::new(Some(region_arena), cfg_err));
+            return Err(ModuleInitError::new(Some(region_arena), interner, cfg_err));
         }
     };
 
@@ -238,14 +241,14 @@ pub fn extract_modules(
     // Maybe not?
     let (bind, main_imports, mut diags) = ModuleFinder::new(
         &main_region.src_bytes,
-        settings,
+        &settings,
         &mut reserved_mod_ids,
         &main_region,
         // We don't know the module id for imports. At all.
         main_region.script_start,
         main_region.serial_start,
     )
-    .collect_imports(interner);
+    .collect_imports(&mut interner);
 
     // No errors are immediately terminal after this point
     let main_mod = Module::new(
@@ -273,8 +276,8 @@ pub fn extract_modules(
         &main_mod,
         &mut region_arena,
         &mut diags,
-        settings,
-        interner,
+        &settings,
+        &mut interner,
     );
 
     // dbg!(reserved_mod_ids, &other_mods, seen);
@@ -359,9 +362,19 @@ pub fn extract_modules(
     //     }
     // }
 
+    // More like compilation store
+    let compiler_store = ScriptCompilerStore::new(
+        settings,
+        region_arena,
+        interner,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    );
+
     let compiler = ScriptCompiler::init(bind, all_mods);
 
-    Ok((compiler, region_arena, diags))
+    Ok((compiler, compiler_store, diags))
 }
 
 //WARN: mod_map means that if any have the same identifier then the entire module space is broken

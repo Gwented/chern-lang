@@ -1,91 +1,95 @@
 //TODO: SHOULD IMPORT CHECKING HAPPEN HERE??
 pub mod type_context;
+pub mod type_env;
+
+use std::env;
 
 use chrn_utils::chrn_settings::ChrnSettings;
 use chrn_utils::id_types::{
-    AstId, ConfigId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SpannedContainer, SymbolId,
-    TypeId, ValueId, VariableId,
+    AstId, ConfigId, ExprId, InternedId, MemberId, ScopeId, SpannedContainer, SymbolId, TypeId,
+    ValueId, VariableId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::{
-    AnnotationKind, DiagnosticLevel, SourceDiagnostic,
+    AnnotationKind, DiagnosticLevel, Reporter, SourceDiagnostic,
 };
-use chrn_utils::source_map::source_region::SourceRegion;
 use lang::fmter::{Formattable, Formatted};
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
 use lang::values::{Value, ValueInfo};
 
+use crate::constraints::ArgConstraint;
 use crate::lookup::member_lookup::{self, MemberLookupResult};
 use crate::lookup::scopes::{self, AssociatedScopeKind, LookupPattern, ScopeType};
 use crate::parser::ast::{
     AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
-    AstInfo, Expr, Item, PathSegment, SpannedExpr, SpannedPathSegment, SpannedTypeExpr, TypeExpr,
+    Expr, Item, PathSegment, SpannedExpr, SpannedPathSegment, SpannedTypeExpr, TypeExpr,
 };
+use crate::resolvers::resolver_env::ResolverEnv;
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::error::{LookupError, MathError, SemanticError};
 use crate::semantic::hir::{
     ConfigOptionAssignment, ExprHir, MemberSymbolKind, Param, PossibleMember, ResolvedExpr, Symbol,
     SymbolKind, VarDef, VariableState,
 };
-use crate::semantic::{evaluator, inference};
+use crate::semantic::{evaluator, inference, semantic_reporter};
 
-use crate::semantic::{
-    hir::{FieldRepre, Type, TypeInfo, VariantRepre},
-    semantic_reporter::SemanticReporter,
-};
-use crate::type_resolver::type_context::{
+use crate::resolvers::type_resolver::type_context::{
     ParentInfo, ParentState, PendingExpr, PendingSymbol, TypeContext,
 };
-
-use super::constraints::ArgConstraint;
+use crate::semantic::hir::{FieldRepre, Type, TypeInfo, VariantRepre};
 
 //TODO: Less complicated injection
 /// Resolves types and builds the rest of any structs, enums, or expressions that can be const
 /// evaluated. Does so by mutating the compiler given, and maintaining context to retain it's last
 /// state.
 pub struct TypeResolver<'a> {
-    ast_info: &'a AstInfo,
+    settings: &'a ChrnSettings,
     interner: &'a Intern,
-    current_region: &'a SourceRegion,
+    // Name is a little misleading since it's not regarding types, it's the resolver, but this
+    // specific resolver
     //WARN: Horrors
     compiler: &'a mut ScriptCompiler,
-    current_mod: ModuleId,
-    ty_ctx: &'a mut TypeContext,
-    reporter: SemanticReporter<'a>,
+    ty_ctx: TypeContext,
+    err_vec: Vec<SourceDiagnostic>,
 }
 
-impl TypeResolver<'_> {
-    pub fn new<'a>(
+// pub fn resolve() {}
+
+impl<'a> TypeResolver<'a> {
+    pub fn new(
         settings: &'a ChrnSettings,
-        ast_info: &'a AstInfo,
-        current_region: &'a SourceRegion,
-        current_mod: ModuleId,
-        ty_ctx: &'a mut TypeContext,
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,
     ) -> TypeResolver<'a> {
         TypeResolver {
-            ast_info,
-            current_region,
-            current_mod,
-            ty_ctx,
-            reporter: SemanticReporter::new(settings, current_region, interner),
+            settings,
+            ty_ctx: TypeContext::new(),
+            err_vec: Vec::new(),
             interner,
             compiler,
         }
     }
 
-    pub fn resolve(&mut self) -> Result<(), Vec<SourceDiagnostic>> {
+    /// Mutates inner `ScriptCompiler` and `TypeContext` given the `env`.
+    ///
+    /// * `env`: The current environment the resolver is operating in. This being passed in
+    /// explicitly allows for `TypeResolver` to maintain it's state throughout resolution while
+    /// mutating off of given envs.
+    pub fn resolve(&mut self, env: &ResolverEnv) -> Result<(), Vec<SourceDiagnostic>> {
         // This is resolving types but not resolving args or conditions.
         // Everything is in order so this cannot fail unless something internally went wrong.
-        for item in &self.ast_info.items {
+        for item in &env.ast_info.items {
             match item {
-                Item::TypeDef(abs_typedef) => _ = self.resolve_typedef(abs_typedef),
-                Item::Struct(abs_struct) => _ = self.resolve_struct(abs_struct),
-                Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum),
-                Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias),
-                Item::Var(abs_var) => _ = self.resolve_var(abs_var),
-                Item::Config(abs_cfg) => _ = self.resolve_cfg(abs_cfg),
+                Item::TypeDef(abs_typedef) => _ = self.resolve_typedef(abs_typedef, env),
+                Item::Struct(abs_struct) => _ = self.resolve_struct(abs_struct, env),
+                Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum, env),
+                Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias, env),
+                Item::Var(abs_var) => _ = self.resolve_var(abs_var, env),
+                //TODO: Cfgs need to be able to check if any member they have has been processed or
+                //not upfront so that they can be skipped and have their ast index saved to be gone
+                //over. Maybe some light polling would be usable here to avoid either REALLY late
+                //checks just because a type have a config, or over-checking.
+                Item::Config(abs_cfg) => _ = self.resolve_cfg(abs_cfg, env),
             }
         }
 
@@ -120,7 +124,6 @@ impl TypeResolver<'_> {
             let mut pending_syms: Vec<(SymbolId, PendingSymbol)> = Vec::new();
             pending_syms.extend(self.ty_ctx.sym_queue.drain());
 
-            // TODO: Should actually check if any pending symbol has only stale expressions
             let mut removable_syms: Vec<SymbolId> = Vec::new();
 
             for (sym_id, pending_sym) in &mut pending_syms {
@@ -129,7 +132,7 @@ impl TypeResolver<'_> {
                     continue;
                 }
 
-                match self.try_resolve_pending(*sym_id, pending_sym) {
+                match self.try_resolve_pending(*sym_id, pending_sym, env) {
                     //TODO: Can something be done with these?
                     //Succeeding just means no errors ocurred, not that new information was found,
                     //so maybe we can check here for removable symbols, say, if queue is empty?
@@ -237,7 +240,7 @@ impl TypeResolver<'_> {
         //     _ => todo!(),
         // };
 
-        // if self.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
+        // if env.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
         //     dbg!(&self.ty_ctx);
         //     for symbol in &self.compiler.symbols {
         //         if self.interner.search(symbol.name_id) == "a" {
@@ -288,9 +291,9 @@ impl TypeResolver<'_> {
         //     }
         // }
 
-        if !self.reporter.err_vec.is_empty() {
+        if !self.err_vec.is_empty() {
             let mut diags = Vec::new();
-            diags.append(&mut self.reporter.err_vec);
+            diags.append(&mut self.err_vec);
 
             return Err(diags);
         }
@@ -298,13 +301,13 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
-    fn resolve_cfg(&mut self, abs_cfg: &AbstractConfig) -> Result<(), ()> {
+    fn resolve_cfg(&mut self, abs_cfg: &AbstractConfig, env: &ResolverEnv) -> Result<(), ()> {
         let mut opt_assignments: Vec<MemberId> = Vec::new();
         let mut inner_field_cfgs: Vec<ConfigId> = Vec::new();
 
         let scope_id = self
             .compiler
-            .extract_scope_id(ScopeType::Complex, self.current_mod);
+            .extract_scope_id(ScopeType::Complex, env.current_mod);
         let table = &self.compiler.get_scope(scope_id).scope.table;
 
         //TODO: global condition and argument setting.
@@ -312,7 +315,7 @@ impl TypeResolver<'_> {
         //same for enums.
 
         let parent_sym_id = table.interned_to_sym[&abs_cfg.name_id];
-        let associated_scope = AssociatedScopeKind::Module(self.current_mod);
+        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         // Checks if the symbol is valid later
         let found_sym_id = if let Some((found_sym, _)) = scopes::find_sym_id(
@@ -331,15 +334,12 @@ impl TypeResolver<'_> {
                 "Could not find a symbol with the identifier `{name}` in all complex searchable scopes"
             );
 
-            let src_diag = SourceDiagnostic::builder(
-                DiagnosticLevel::Error,
-                core_msg,
-                self.current_region.path_id,
-            )
-            .add_annotation(abs_cfg.name_span, AnnotationKind::Primary, None)
-            .build();
+            let src_diag =
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+                    .add_annotation(abs_cfg.name_span, AnnotationKind::Primary, None)
+                    .build();
 
-            self.reporter.err_vec.push(src_diag);
+            self.err_vec.push(src_diag);
 
             return Err(());
         };
@@ -357,10 +357,18 @@ impl TypeResolver<'_> {
                 // This purposeful setting is done on purpose.
                 ScopeType::Complex,
                 &mut vec![],
+                env,
             ) {
                 Ok(expr_id) => expr_id,
                 Err(sem_err) => {
-                    self.reporter.report_semantic(sem_err);
+                    semantic_reporter::report_semantic(
+                        &mut self.err_vec,
+                        sem_err,
+                        env.region,
+                        self.settings,
+                        self.interner,
+                    );
+
                     continue;
                 }
             };
@@ -420,19 +428,24 @@ impl TypeResolver<'_> {
                                 )),
                             );
 
-                            self.reporter
-                                .create_diag_builder_preset(sem_err)
-                                .add_annotation(
-                                    abs_cfg.name_span,
-                                    AnnotationKind::Secondary,
-                                    format!("`{found_name}` used here").into(),
-                                )
-                                .add_annotation(
-                                    abs_inner_cfg.name_span,
-                                    AnnotationKind::Secondary,
-                                    "member searched for".to_string().into(),
-                                )
-                                .build()
+                            semantic_reporter::create_diag_builder_preset(
+                                &mut self.err_vec,
+                                sem_err,
+                                env.region,
+                                self.settings,
+                                self.interner,
+                            )
+                            .add_annotation(
+                                abs_cfg.name_span,
+                                AnnotationKind::Secondary,
+                                format!("`{found_name}` used here").into(),
+                            )
+                            .add_annotation(
+                                abs_inner_cfg.name_span,
+                                AnnotationKind::Secondary,
+                                "member searched for".to_string().into(),
+                            )
+                            .build()
                         }
                         MemberLookupResult::MemberNotFoundInType(type_id) => {
                             let decl_span = self
@@ -447,19 +460,24 @@ impl TypeResolver<'_> {
                             ));
 
                             // List available members?
-                            self.reporter
-                                .create_diag_builder_preset(sem_err)
-                                .add_annotation(
-                                    decl_span,
-                                    AnnotationKind::Secondary,
-                                    format!("{} defined here", fmtted_ty).into(),
-                                )
-                                .add_annotation(
-                                    abs_inner_cfg.name_span,
-                                    AnnotationKind::Secondary,
-                                    "Searched for this member".to_string().into(),
-                                )
-                                .build()
+                            semantic_reporter::create_diag_builder_preset(
+                                &mut self.err_vec,
+                                sem_err,
+                                env.region,
+                                self.settings,
+                                self.interner,
+                            )
+                            .add_annotation(
+                                decl_span,
+                                AnnotationKind::Secondary,
+                                format!("{} defined here", fmtted_ty).into(),
+                            )
+                            .add_annotation(
+                                abs_inner_cfg.name_span,
+                                AnnotationKind::Secondary,
+                                "Searched for this member".to_string().into(),
+                            )
+                            .build()
                         }
                         // MemberLookupResult::InvalidSymbolMemberAccess => {
                         //     should_break = true;
@@ -487,7 +505,7 @@ impl TypeResolver<'_> {
                         MemberLookupResult::Found(_) => unreachable!(),
                     };
 
-                    self.reporter.err_vec.push(src_diag);
+                    self.err_vec.push(src_diag);
 
                     if should_break {
                         break;
@@ -498,7 +516,7 @@ impl TypeResolver<'_> {
             };
 
             // Result doesn't matter since we continue either way
-            _ = self.resolve_cfg_inner(parent_sym_id, member_id, abs_inner_cfg);
+            _ = self.resolve_cfg_inner(parent_sym_id, member_id, abs_inner_cfg, env);
         }
 
         // dbg!(&abs_cfg);
@@ -521,8 +539,9 @@ impl TypeResolver<'_> {
         parent_sym_id: SymbolId,
         parent_member_id: MemberId,
         abs_cfg: &AbstractConfig,
+        env: &ResolverEnv,
     ) -> Result<(), ()> {
-        let associated_scope = AssociatedScopeKind::Module(self.current_mod);
+        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         let mut opt_assignments: Vec<MemberId> = Vec::new();
         let mut inner_field_cfgs: Vec<ConfigId> = Vec::new();
@@ -540,10 +559,18 @@ impl TypeResolver<'_> {
                 // This purposeful setting is done on purpose.
                 ScopeType::Complex,
                 &mut vec![],
+                env,
             ) {
                 Ok(expr_id) => expr_id,
                 Err(sem_err) => {
-                    self.reporter.report_semantic(sem_err);
+                    semantic_reporter::report_semantic(
+                        &mut self.err_vec,
+                        sem_err,
+                        env.region,
+                        self.settings,
+                        self.interner,
+                    );
+
                     continue;
                 }
             };
@@ -624,19 +651,24 @@ impl TypeResolver<'_> {
                                 )),
                             );
 
-                            self.reporter
-                                .create_diag_builder_preset(sem_err)
-                                .add_annotation(
-                                    abs_cfg.name_span,
-                                    AnnotationKind::Secondary,
-                                    format!("`{found_name}` used here").into(),
-                                )
-                                .add_annotation(
-                                    abs_inner_cfg.name_span,
-                                    AnnotationKind::Secondary,
-                                    "member searched for".to_string().into(),
-                                )
-                                .build()
+                            semantic_reporter::create_diag_builder_preset(
+                                &mut self.err_vec,
+                                sem_err,
+                                env.region,
+                                self.settings,
+                                self.interner,
+                            )
+                            .add_annotation(
+                                abs_cfg.name_span,
+                                AnnotationKind::Secondary,
+                                format!("`{found_name}` used here").into(),
+                            )
+                            .add_annotation(
+                                abs_inner_cfg.name_span,
+                                AnnotationKind::Secondary,
+                                "member searched for".to_string().into(),
+                            )
+                            .build()
                         }
                         MemberLookupResult::MemberNotFoundInType(type_id) => {
                             let fmtted_ty = Type::to_fmt(self.compiler, type_id);
@@ -647,19 +679,24 @@ impl TypeResolver<'_> {
                             ));
 
                             // List available members?
-                            self.reporter
-                                .create_diag_builder_preset(sem_err)
-                                .add_annotation(
-                                    parent_decl_span,
-                                    AnnotationKind::Secondary,
-                                    format!("{} defined here", fmtted_ty).into(),
-                                )
-                                .add_annotation(
-                                    abs_inner_cfg.name_span,
-                                    AnnotationKind::Secondary,
-                                    "Searched for this member".to_string().into(),
-                                )
-                                .build()
+                            semantic_reporter::create_diag_builder_preset(
+                                &mut self.err_vec,
+                                sem_err,
+                                env.region,
+                                self.settings,
+                                self.interner,
+                            )
+                            .add_annotation(
+                                parent_decl_span,
+                                AnnotationKind::Secondary,
+                                format!("{} defined here", fmtted_ty).into(),
+                            )
+                            .add_annotation(
+                                abs_inner_cfg.name_span,
+                                AnnotationKind::Secondary,
+                                "Searched for this member".to_string().into(),
+                            )
+                            .build()
                         }
                         // MemberLookupResult::InvalidSymbolMemberAccess => {
                         //     should_break = true;
@@ -683,8 +720,7 @@ impl TypeResolver<'_> {
                         }
                         MemberLookupResult::Found(_) => unreachable!(),
                     };
-
-                    self.reporter.err_vec.push(src_diag);
+                    self.err_vec.push(src_diag);
 
                     if should_break {
                         break;
@@ -695,7 +731,7 @@ impl TypeResolver<'_> {
             };
 
             // Result doesn't matter since we continue either way
-            let cfg_id = self.resolve_cfg_inner(parent_sym_id, member_id, abs_inner_cfg);
+            let cfg_id = self.resolve_cfg_inner(parent_sym_id, member_id, abs_inner_cfg, env);
             // inner_field_cfgs.push(cfg_id);
         }
 
@@ -716,6 +752,7 @@ impl TypeResolver<'_> {
         &mut self,
         resolved_sym_id: SymbolId,
         pending_sym: &mut PendingSymbol,
+        env: &ResolverEnv,
         // Eyes
         // Why does this say eyes?
     ) -> Result<bool, ()> {
@@ -818,7 +855,14 @@ impl TypeResolver<'_> {
                         // Extracting module of origin from the pending expression by using the symbol
                         // attached to the expression upon it's creation
                         //WARN: Suspicious
-                        self.reporter.report_semantic(sem_err)
+
+                        semantic_reporter::report_semantic(
+                            &mut self.err_vec,
+                            sem_err,
+                            env.region,
+                            self.settings,
+                            self.interner,
+                        );
                     }
                 };
             } else {
@@ -1108,14 +1152,14 @@ impl TypeResolver<'_> {
         Ok((has_resolved_ty, has_const_val))
     }
 
-    fn resolve_var(&mut self, abs_var: &AbstractVar) -> Result<(), ()> {
+    fn resolve_var(&mut self, abs_var: &AbstractVar, env: &ResolverEnv) -> Result<(), ()> {
         let scope_id = self
             .compiler
-            .extract_scope_id(ScopeType::Neutral, self.current_mod);
+            .extract_scope_id(ScopeType::Neutral, env.current_mod);
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
         let sym_id = table.interned_to_sym[&abs_var.name_id];
-        let associated_scope = AssociatedScopeKind::Module(self.current_mod);
+        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         //NOTE: Pipeline where expressions are always returned, just that some may have
         //unresolved parts, which are put into the queue, not the variable itself.
@@ -1126,10 +1170,17 @@ impl TypeResolver<'_> {
             associated_scope,
             ScopeType::Neutral,
             &mut vec![sym_id],
+            env,
         ) {
             Ok(expr_id) => expr_id,
             Err(sem_err) => {
-                self.reporter.report_semantic(sem_err);
+                semantic_reporter::report_semantic(
+                    &mut self.err_vec,
+                    sem_err,
+                    env.region,
+                    self.settings,
+                    self.interner,
+                );
                 return Err(());
             }
         };
@@ -1164,16 +1215,27 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
-    fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef) -> Result<(), ()> {
+    fn resolve_typedef(
+        &mut self,
+        abs_typedef: &AbstractTypeDef,
+        env: &ResolverEnv,
+    ) -> Result<(), ()> {
         let type_id = match self.resolve_type_expr(
-            AssociatedScopeKind::Module(self.current_mod),
+            AssociatedScopeKind::Module(env.current_mod),
             &abs_typedef.spanned_ty_expr,
             ScopeType::Var,
             LookupPattern::NoRestrictions,
+            env,
         ) {
             Ok(tid) => tid,
             Err(sem_err) => {
-                self.reporter.report_semantic(sem_err);
+                semantic_reporter::report_semantic(
+                    &mut self.err_vec,
+                    sem_err,
+                    env.region,
+                    self.settings,
+                    self.interner,
+                );
                 // I believe this is fine since it just points to the new type if found with no
                 // mutation
                 //
@@ -1184,10 +1246,10 @@ impl TypeResolver<'_> {
 
         let scope_id = self
             .compiler
-            .extract_scope_id(ScopeType::Var, self.current_mod);
+            .extract_scope_id(ScopeType::Var, env.current_mod);
         let table = &self.compiler.get_scope(scope_id).scope.table;
         let sym_id = table.interned_to_sym[&abs_typedef.name_id];
-        let associated_scope = AssociatedScopeKind::Module(self.current_mod);
+        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         let mut conds: Vec<ExprId> = Vec::new();
         for spanned_expr in &abs_typedef.conds {
@@ -1199,12 +1261,19 @@ impl TypeResolver<'_> {
                 associated_scope,
                 ScopeType::Neutral,
                 &mut vec![sym_id],
+                env,
             ) {
                 // For allowing for more diagnostics instead of just leaving the rest of the struct
                 // unfinished upon singular errors
                 Ok(c) => conds.push(c),
                 Err(sem_err) => {
-                    self.reporter.report_semantic(sem_err);
+                    semantic_reporter::report_semantic(
+                        &mut self.err_vec,
+                        sem_err,
+                        env.region,
+                        self.settings,
+                        self.interner,
+                    );
                 }
             }
         }
@@ -1219,7 +1288,7 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
-    fn resolve_struct(&mut self, abs_struct: &AbstractStruct) -> Result<(), ()> {
+    fn resolve_struct(&mut self, abs_struct: &AbstractStruct, env: &ResolverEnv) -> Result<(), ()> {
         // Not sure of if this should stay a Field type or just be a TypeDef since their intent
         // somewhat conflicts. For now, typedef is just consumed differently depending on if it's a
         // field declared in var-> or not since var-> fields may be made possible to reference, but
@@ -1229,7 +1298,7 @@ impl TypeResolver<'_> {
 
         let scope_id = self
             .compiler
-            .extract_scope_id(ScopeType::Nest, self.current_mod);
+            .extract_scope_id(ScopeType::Nest, env.current_mod);
         let table = &self.compiler.get_scope(scope_id).scope.table;
 
         //TODO: global condition and argument setting.
@@ -1237,19 +1306,26 @@ impl TypeResolver<'_> {
         //same for enums.
 
         let sym_id = table.interned_to_sym[&abs_struct.name_id];
-        let associated_scope = AssociatedScopeKind::Module(self.current_mod);
+        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         // Checking if there are duplicate name ids within the same struct along with resolution
         for (i, field_typedef) in abs_struct.fields.iter().enumerate() {
             let type_id = match self.resolve_type_expr(
-                AssociatedScopeKind::Module(self.current_mod),
+                AssociatedScopeKind::Module(env.current_mod),
                 &field_typedef.spanned_ty_expr,
                 ScopeType::Nest,
                 LookupPattern::NoRestrictions,
+                env,
             ) {
                 Ok(tid) => tid,
                 Err(sem_err) => {
-                    self.reporter.report_semantic(sem_err);
+                    semantic_reporter::report_semantic(
+                        &mut self.err_vec,
+                        sem_err,
+                        env.region,
+                        self.settings,
+                        self.interner,
+                    );
                     continue;
                 }
             };
@@ -1265,25 +1341,22 @@ impl TypeResolver<'_> {
                     "More than one field has the identifier \"{dup_name}\" within struct `{struct_name}`"
                 );
 
-                let src_diag = SourceDiagnostic::builder(
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    self.current_region.path_id,
-                )
-                .add_annotation(
-                    abs_struct.name_span,
-                    AnnotationKind::Secondary,
-                    "Found inside this struct".to_string().into(),
-                )
-                .add_annotation(
-                    orig_span,
-                    AnnotationKind::Secondary,
-                    format!("Original usage of identifier `{dup_name}` here").into(),
-                )
-                .add_annotation(field_span, AnnotationKind::Primary, None)
-                .build();
+                let src_diag =
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+                        .add_annotation(
+                            abs_struct.name_span,
+                            AnnotationKind::Secondary,
+                            "Found inside this struct".to_string().into(),
+                        )
+                        .add_annotation(
+                            orig_span,
+                            AnnotationKind::Secondary,
+                            format!("Original usage of identifier `{dup_name}` here").into(),
+                        )
+                        .add_annotation(field_span, AnnotationKind::Primary, None)
+                        .build();
 
-                self.reporter.err_vec.push(src_diag);
+                self.err_vec.push(src_diag);
             }
 
             seen.push((i, field_typedef.name_id));
@@ -1320,10 +1393,17 @@ impl TypeResolver<'_> {
                     associated_scope,
                     ScopeType::Nest,
                     &mut vec![sym_id],
+                    env,
                 ) {
                     Ok(c) => conds.push(c),
                     Err(sem_err) => {
-                        self.reporter.report_semantic(sem_err);
+                        semantic_reporter::report_semantic(
+                            &mut self.err_vec,
+                            sem_err,
+                            env.region,
+                            self.settings,
+                            self.interner,
+                        );
                     }
                 };
             }
@@ -1343,10 +1423,17 @@ impl TypeResolver<'_> {
                 associated_scope,
                 ScopeType::Nest,
                 &mut vec![sym_id],
+                env,
             ) {
                 Ok(c) => glob_conds.push(c),
                 Err(sem_err) => {
-                    self.reporter.report_semantic(sem_err);
+                    semantic_reporter::report_semantic(
+                        &mut self.err_vec,
+                        sem_err,
+                        env.region,
+                        self.settings,
+                        self.interner,
+                    );
                 }
             }
         }
@@ -1365,16 +1452,16 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
-    fn resolve_enum(&mut self, abs_enum: &AbstractEnum) -> Result<(), ()> {
+    fn resolve_enum(&mut self, abs_enum: &AbstractEnum, env: &ResolverEnv) -> Result<(), ()> {
         let mut variants: Vec<MemberId> = Vec::new();
 
         let scope_id = self
             .compiler
-            .extract_scope_id(ScopeType::Nest, self.current_mod);
+            .extract_scope_id(ScopeType::Nest, env.current_mod);
         let table = &self.compiler.get_scope(scope_id).scope.table;
 
         let sym_id = table.interned_to_sym[&abs_enum.name_id];
-        let associated_scope = AssociatedScopeKind::Module(self.current_mod);
+        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         // (ast variant idx, name_id)
         let mut seen: Vec<(usize, InternedId)> = Vec::new();
@@ -1393,25 +1480,22 @@ impl TypeResolver<'_> {
                     "More than one variant has the identifier \"{dup_name}\" within enum `{enum_name}`"
                 );
 
-                let src_diag = SourceDiagnostic::builder(
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    self.current_region.path_id,
-                )
-                .add_annotation(
-                    abs_enum.name_span,
-                    AnnotationKind::Secondary,
-                    "Found inside this enum".to_string().into(),
-                )
-                .add_annotation(
-                    orig_span,
-                    AnnotationKind::Secondary,
-                    format!("Original usage of identifier `{dup_name}` here").into(),
-                )
-                .add_annotation(variant_span, AnnotationKind::Primary, None)
-                .build();
+                let src_diag =
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+                        .add_annotation(
+                            abs_enum.name_span,
+                            AnnotationKind::Secondary,
+                            "Found inside this enum".to_string().into(),
+                        )
+                        .add_annotation(
+                            orig_span,
+                            AnnotationKind::Secondary,
+                            format!("Original usage of identifier `{dup_name}` here").into(),
+                        )
+                        .add_annotation(variant_span, AnnotationKind::Primary, None)
+                        .build();
 
-                self.reporter.err_vec.push(src_diag);
+                self.err_vec.push(src_diag);
             }
 
             seen.push((i, variant.name_id));
@@ -1419,14 +1503,21 @@ impl TypeResolver<'_> {
             let member_id = MemberId::new(self.compiler.members.len() as u32);
             let variant_repre = if let Some(spanned_ty_expr) = &variant.ty_expr {
                 let type_id = match self.resolve_type_expr(
-                    AssociatedScopeKind::Module(self.current_mod),
+                    AssociatedScopeKind::Module(env.current_mod),
                     &spanned_ty_expr,
                     ScopeType::Nest,
                     LookupPattern::NoRestrictions,
+                    env,
                 ) {
                     Ok(tid) => tid,
                     Err(sem_err) => {
-                        self.reporter.report_semantic(sem_err);
+                        semantic_reporter::report_semantic(
+                            &mut self.err_vec,
+                            sem_err,
+                            env.region,
+                            self.settings,
+                            self.interner,
+                        );
                         TypeId::new(script_compiler::CORE_UNKNOWN)
                     }
                 };
@@ -1475,10 +1566,17 @@ impl TypeResolver<'_> {
                     associated_scope,
                     ScopeType::Nest,
                     &mut vec![sym_id],
+                    env,
                 ) {
                     Ok(c) => Some(c),
                     Err(sem_err) => {
-                        self.reporter.report_semantic(sem_err);
+                        semantic_reporter::report_semantic(
+                            &mut self.err_vec,
+                            sem_err,
+                            env.region,
+                            self.settings,
+                            self.interner,
+                        );
                         None
                     }
                 };
@@ -1502,10 +1600,17 @@ impl TypeResolver<'_> {
                 associated_scope,
                 ScopeType::Nest,
                 &mut vec![sym_id],
+                env,
             ) {
                 Ok(c) => Some(c),
                 Err(sem_err) => {
-                    self.reporter.report_semantic(sem_err);
+                    semantic_reporter::report_semantic(
+                        &mut self.err_vec,
+                        sem_err,
+                        env.region,
+                        self.settings,
+                        self.interner,
+                    );
                     None
                 }
             };
@@ -1528,14 +1633,14 @@ impl TypeResolver<'_> {
         Ok(())
     }
 
-    fn resolve_alias(&mut self, abs_alias: &AbstractAlias) -> Result<(), ()> {
+    fn resolve_alias(&mut self, abs_alias: &AbstractAlias, env: &ResolverEnv) -> Result<(), ()> {
         let scope_id = self
             .compiler
-            .extract_scope_id(ScopeType::Neutral, self.current_mod);
+            .extract_scope_id(ScopeType::Neutral, env.current_mod);
         let table = &self.compiler.get_scope_mut(scope_id).scope.table;
 
         let alias_sym_id = table.interned_to_sym[&abs_alias.name_id];
-        let associated_scope = AssociatedScopeKind::Module(self.current_mod);
+        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         let local_scope_id = self.compiler.get_alias(alias_sym_id).local_scope_id;
 
@@ -1555,25 +1660,22 @@ impl TypeResolver<'_> {
                     "More than one variable has the identifier \"{dup_name}\" within alias `{alias_name}`"
                 );
 
-                let src_diag = SourceDiagnostic::builder(
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    self.current_region.path_id,
-                )
-                .add_annotation(
-                    abs_alias.name_span,
-                    AnnotationKind::Secondary,
-                    "Found inside this alias".to_string().into(),
-                )
-                .add_annotation(
-                    orig_span,
-                    AnnotationKind::Secondary,
-                    format!("Original usage of identifier `{dup_name}` here").into(),
-                )
-                .add_annotation(abs_param.name_span, AnnotationKind::Primary, None)
-                .build();
+                let src_diag =
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+                        .add_annotation(
+                            abs_alias.name_span,
+                            AnnotationKind::Secondary,
+                            "Found inside this alias".to_string().into(),
+                        )
+                        .add_annotation(
+                            orig_span,
+                            AnnotationKind::Secondary,
+                            format!("Original usage of identifier `{dup_name}` here").into(),
+                        )
+                        .add_annotation(abs_param.name_span, AnnotationKind::Primary, None)
+                        .build();
 
-                self.reporter.err_vec.push(src_diag);
+                self.err_vec.push(src_diag);
             }
 
             seen.push((i, abs_param.name_id));
@@ -1583,14 +1685,21 @@ impl TypeResolver<'_> {
             let val_id = ValueId::new(self.compiler.values.len() as u32);
 
             let type_id = match self.resolve_type_expr(
-                AssociatedScopeKind::Module(self.current_mod),
+                AssociatedScopeKind::Module(env.current_mod),
                 &abs_param.ty_expr,
                 ScopeType::Neutral,
                 LookupPattern::NoRestrictions,
+                env,
             ) {
                 Ok(tid) => tid,
                 Err(sem_err) => {
-                    self.reporter.report_semantic(sem_err);
+                    semantic_reporter::report_semantic(
+                        &mut self.err_vec,
+                        sem_err,
+                        env.region,
+                        self.settings,
+                        self.interner,
+                    );
                     return Err(());
                 }
             };
@@ -1609,7 +1718,7 @@ impl TypeResolver<'_> {
                 abs_param.name_id,
                 param_sym_id,
                 Some(AstId::new(i as u32)),
-                self.current_mod,
+                env.current_mod,
                 true,
                 None,
                 ScopeType::Local,
@@ -1653,10 +1762,17 @@ impl TypeResolver<'_> {
                 associated_scope,
                 ScopeType::Neutral,
                 &mut vec![alias_sym_id],
+                env,
             ) {
                 Ok(c) => Some(c),
                 Err(sem_err) => {
-                    self.reporter.report_semantic(sem_err);
+                    semantic_reporter::report_semantic(
+                        &mut self.err_vec,
+                        sem_err,
+                        env.region,
+                        self.settings,
+                        self.interner,
+                    );
                     None
                 }
             };
@@ -1703,6 +1819,7 @@ impl TypeResolver<'_> {
         associated_scope: AssociatedScopeKind,
         scope_type: ScopeType,
         seen: &mut Vec<SymbolId>,
+        env: &ResolverEnv,
     ) -> Result<ExprId, SemanticError> {
         match &spanned_expr.expr {
             Expr::Var(name_id) => {
@@ -1761,7 +1878,7 @@ impl TypeResolver<'_> {
                     seen.push(found_sym_id);
 
                     // Code duplication reduction
-                    self.check_cycle(seen, parent_sym_id, found_sym_id)?;
+                    self.check_cycle(seen, parent_sym_id, found_sym_id, env)?;
 
                     //NOTE: Only the PendingSymbol struct carries the PendingExpr struct, meaning
                     //there is no way to check for cycles outside of `TypeContext`, so this has to
@@ -1781,12 +1898,12 @@ impl TypeResolver<'_> {
                             .ast_id
                             .expect("Parent must be a valid symbol to get to this point");
 
-                        let parent_span = self.ast_info.get_sym_span(parent_ast_id);
+                        let parent_span = env.ast_info.get_sym_span(parent_ast_id);
 
                         let src_diag = SourceDiagnostic::builder(
                             DiagnosticLevel::Error,
                             core_msg,
-                            self.current_region.path_id,
+                            env.region.path_id,
                         )
                         .add_annotation(parent_span, AnnotationKind::Primary, None)
                         .add_annotation(
@@ -1837,7 +1954,7 @@ impl TypeResolver<'_> {
                                     let src_diag = SourceDiagnostic::builder(
                                         DiagnosticLevel::Error,
                                         core_msg,
-                                        self.current_region.path_id,
+                                        env.region.path_id,
                                     )
                                     .add_annotation(
                                         spanned_expr.span,
@@ -1944,7 +2061,7 @@ impl TypeResolver<'_> {
                             let src_diag = SourceDiagnostic::builder(
                                 DiagnosticLevel::Error,
                                 core_msg,
-                                self.current_region.path_id,
+                                env.region.path_id,
                             )
                             .add_annotation(
                                 spanned_expr.span,
@@ -1970,7 +2087,7 @@ impl TypeResolver<'_> {
                     // }
 
                     // SemanticError needs centralization
-                    let module = &self.compiler.mods[self.current_mod.id];
+                    let module = &self.compiler.mods[env.current_mod.id];
                     let mod_name = self.interner.search(module.name_id);
 
                     let and_local = if local_scope_id.is_some() {
@@ -1986,7 +2103,7 @@ impl TypeResolver<'_> {
                     let src_diag = SourceDiagnostic::builder(
                         DiagnosticLevel::Error,
                         core_msg,
-                        self.current_region.path_id,
+                        env.region.path_id,
                     )
                     .add_annotation(
                         spanned_expr.span,
@@ -2060,6 +2177,7 @@ impl TypeResolver<'_> {
                     associated_scope,
                     scope_type,
                     seen,
+                    env,
                 )?;
 
                 let rhs_id = self.register_expr(
@@ -2069,6 +2187,7 @@ impl TypeResolver<'_> {
                     associated_scope,
                     scope_type,
                     seen,
+                    env,
                 )?;
 
                 let lhs_expr = &self.compiler.exprs[lhs_id.id as usize];
@@ -2142,7 +2261,7 @@ impl TypeResolver<'_> {
                 } else {
                     let type_id = TypeId::new(self.compiler.types.len() as u32);
 
-                    let ty_info = TypeInfo::new(Type::Unknown, self.current_mod);
+                    let ty_info = TypeInfo::new(Type::Unknown, env.current_mod);
                     self.compiler.types.push(ty_info);
                     type_id
                 };
@@ -2197,6 +2316,7 @@ impl TypeResolver<'_> {
                     associated_scope,
                     scope_type,
                     seen,
+                    env,
                 )?;
 
                 let default_val_expr_id = self.register_expr(
@@ -2206,6 +2326,7 @@ impl TypeResolver<'_> {
                     associated_scope,
                     scope_type,
                     seen,
+                    env,
                 )?;
 
                 // Need the entire alias to use this as it's type through checks
@@ -2261,6 +2382,7 @@ impl TypeResolver<'_> {
                     associated_scope,
                     scope_type,
                     seen,
+                    env,
                 )?;
 
                 let operand_expr = &self.compiler.exprs[operand_id.id as usize];
@@ -2294,7 +2416,7 @@ impl TypeResolver<'_> {
                     operand_expr.type_id
                 } else {
                     let type_id = TypeId::new(self.compiler.types.len() as u32);
-                    let ty_info = TypeInfo::new(Type::Unknown, self.current_mod);
+                    let ty_info = TypeInfo::new(Type::Unknown, env.current_mod);
                     self.compiler.types.push(ty_info);
 
                     type_id
@@ -2361,6 +2483,7 @@ impl TypeResolver<'_> {
                     associated_scope,
                     scope_type,
                     seen,
+                    env,
                 )?;
                 //WARN: Does this need something?
                 let type_id = self.compiler.exprs[caller_id.id as usize].type_id;
@@ -2374,6 +2497,7 @@ impl TypeResolver<'_> {
                         associated_scope,
                         scope_type,
                         seen,
+                        env,
                     )?;
 
                     call_args.push(arg);
@@ -2403,6 +2527,7 @@ impl TypeResolver<'_> {
                     associated_scope,
                     scope_type,
                     seen,
+                    env,
                 )? {
                     // Maybe this shouldn't be allowed here since parsing types is different from
                     // parinsg expressions within this resolver, meaning this should be an error
@@ -2425,6 +2550,7 @@ impl TypeResolver<'_> {
                     associated_scope,
                     scope_type,
                     false,
+                    env,
                 )?;
 
                 let last_seg = &spanned_segments[spanned_segments.len() - 1];
@@ -2443,7 +2569,7 @@ impl TypeResolver<'_> {
                         let src_diag = SourceDiagnostic::builder(
                             DiagnosticLevel::Error,
                             core_msg,
-                            self.current_region.path_id,
+                            env.region.path_id,
                         )
                         .add_annotation(
                             last_seg.span,
@@ -2462,6 +2588,7 @@ impl TypeResolver<'_> {
                     last_scope,
                     scope_type,
                     seen,
+                    env,
                 )
             }
             Expr::Array(array_expr) => {
@@ -2479,6 +2606,7 @@ impl TypeResolver<'_> {
                         associated_scope,
                         scope_type,
                         seen,
+                        env,
                     )?;
 
                     let expr = &self.compiler.exprs[expr_id.id as usize];
@@ -2514,7 +2642,7 @@ impl TypeResolver<'_> {
                     inner_type_id
                 } else {
                     let type_id = TypeId::new(self.compiler.types.len() as u32);
-                    let ty_info = TypeInfo::new(Type::Unknown, self.current_mod);
+                    let ty_info = TypeInfo::new(Type::Unknown, env.current_mod);
                     self.compiler.types.push(ty_info);
 
                     type_id
@@ -2577,6 +2705,7 @@ impl TypeResolver<'_> {
         mut current_scope: AssociatedScopeKind,
         scope_type: ScopeType,
         in_ty_expr: bool,
+        env: &ResolverEnv,
     ) -> Result<AssociatedScopeKind, SemanticError> {
         for (i, sp_path_seg) in spanned_path_segs.iter().enumerate() {
             match &sp_path_seg.kind {
@@ -2608,7 +2737,7 @@ impl TypeResolver<'_> {
                                     let src_diag = SourceDiagnostic::builder(
                                         DiagnosticLevel::Error,
                                         core_msg,
-                                        self.current_region.path_id,
+                                        env.region.path_id,
                                     )
                                     .add_annotation(
                                         sp_path_seg.span,
@@ -2657,7 +2786,7 @@ impl TypeResolver<'_> {
                             SourceDiagnostic::builder(
                                 DiagnosticLevel::Error,
                                 core_msg,
-                                self.current_region.path_id,
+                                env.region.path_id,
                             )
                             .add_annotation(
                                 sp_path_seg.span,
@@ -2672,7 +2801,7 @@ impl TypeResolver<'_> {
                             SourceDiagnostic::builder(
                                 DiagnosticLevel::Error,
                                 core_msg,
-                                self.current_region.path_id,
+                                env.region.path_id,
                             )
                             .add_annotation(
                                 sp_path_seg.span,
@@ -2691,7 +2820,7 @@ impl TypeResolver<'_> {
                         let src_diag = SourceDiagnostic::basic_builder(
                             DiagnosticLevel::Error,
                             core_msg,
-                            self.current_region.path_id,
+                            env.region.path_id,
                             sp_path_seg.span,
                         );
 
@@ -2705,7 +2834,7 @@ impl TypeResolver<'_> {
                     let src_diag = SourceDiagnostic::basic_builder(
                         DiagnosticLevel::Error,
                         core_msg,
-                        self.current_region.path_id,
+                        env.region.path_id,
                         sp_path_seg.span,
                     );
 
@@ -2717,6 +2846,7 @@ impl TypeResolver<'_> {
         Ok(current_scope)
     }
 
+    // Umm...
     fn resolve_member(
         &mut self,
         sym_parent: SymbolId,
@@ -2725,6 +2855,7 @@ impl TypeResolver<'_> {
         associated_scope: AssociatedScopeKind,
         scope_type: ScopeType,
         seen: &mut Vec<SymbolId>,
+        env: &ResolverEnv,
     ) -> Result<PossibleMember, SemanticError> {
         let res = self.register_expr(
             sym_parent,
@@ -2733,6 +2864,7 @@ impl TypeResolver<'_> {
             associated_scope,
             scope_type,
             seen,
+            env,
         )?;
         dbg!(res);
         panic!();
@@ -2744,6 +2876,7 @@ impl TypeResolver<'_> {
             associated_scope,
             scope_type,
             seen,
+            env,
         ) {
             let resolved_expr = &self.compiler.exprs[expr_id.id as usize];
 
@@ -2780,6 +2913,7 @@ impl TypeResolver<'_> {
         seen: &Vec<SymbolId>,
         parent_sym_id: SymbolId,
         found_sym_id: SymbolId,
+        env: &ResolverEnv,
     ) -> Result<(), SemanticError> {
         for seen_sym_id in seen.iter() {
             // In:
@@ -2809,8 +2943,8 @@ impl TypeResolver<'_> {
                     let cycled_ast_id = cycled_sym.ast_id.expect("core should not be resolved");
                     let cycled_name = self.interner.search(cycled_sym.name_id);
 
-                    let cycled_span = self.ast_info.get_sym_span(cycled_ast_id);
-                    let current_span = self.ast_info.get_sym_span(current_ast_id);
+                    let cycled_span = env.ast_info.get_sym_span(cycled_ast_id);
+                    let current_span = env.ast_info.get_sym_span(current_ast_id);
 
                     let core_msg = format!(
                         "`{}` depends on itself through `{}`",
@@ -2820,7 +2954,7 @@ impl TypeResolver<'_> {
                     let src_diag = SourceDiagnostic::builder(
                         DiagnosticLevel::Error,
                         core_msg,
-                        self.current_region.path_id,
+                        env.region.path_id,
                     )
                     .add_annotation(
                         cycled_span,
@@ -2856,9 +2990,10 @@ impl TypeResolver<'_> {
         sp_ty_expr: &SpannedTypeExpr,
         scope_type: ScopeType,
         lookup_pattern: LookupPattern,
+        env: &ResolverEnv,
     ) -> Result<TypeId, SemanticError> {
         match &sp_ty_expr.ty_expr {
-            //FIXME: If an error occurs while self.current_mod = extern_mod, it tries to report the
+            //FIXME: If an error occurs while env.current_mod = extern_mod, it tries to report the
             //error from the external module instead of the actual module of origin.
             TypeExpr::Var(name_id) => {
                 // Searching symbols because otherwise, the type of a variable would be valid
@@ -2877,9 +3012,9 @@ impl TypeResolver<'_> {
                             SymbolKind::Type(type_id) => {
                                 // NOTE: Will probably error later in resolution but fine for now
                                 let symbol = &self.compiler.symbols[sym_id.id as usize];
-                                if symbol.is_priv && symbol.owner != self.current_mod {
+                                if symbol.is_priv && symbol.owner != env.current_mod {
                                     //FIX: Would need changes
-                                    let current_mod = &self.compiler.mods[self.current_mod.id];
+                                    let current_mod = &self.compiler.mods[env.current_mod.id];
                                     let current_mod_name =
                                         self.interner.search(current_mod.name_id);
                                     let sym_name = self.interner.search(symbol.name_id);
@@ -2891,7 +3026,7 @@ impl TypeResolver<'_> {
                                     let src_diag = SourceDiagnostic::builder(
                                         DiagnosticLevel::Error,
                                         core_msg,
-                                        self.current_region.path_id,
+                                        env.region.path_id,
                                     )
                                     .add_annotation(sp_ty_expr.span, AnnotationKind::Primary, None)
                                     .add_note(
@@ -2949,7 +3084,7 @@ impl TypeResolver<'_> {
                 let src_diag = SourceDiagnostic::basic_builder(
                     DiagnosticLevel::Error,
                     core_msg,
-                    self.current_region.path_id,
+                    env.region.path_id,
                     sp_ty_expr.span,
                 );
                 Err(SemanticError::General(src_diag))
@@ -2969,7 +3104,7 @@ impl TypeResolver<'_> {
                                 let src_diag = SourceDiagnostic::basic_builder(
                                     DiagnosticLevel::Error,
                                     core_msg,
-                                    self.current_region.path_id,
+                                    env.region.path_id,
                                     sp_ty_expr.span,
                                 );
 
@@ -2981,6 +3116,7 @@ impl TypeResolver<'_> {
                                 &generic.args[0],
                                 scope_type,
                                 LookupPattern::NoRestrictions,
+                                env,
                             )?;
 
                             let ty = if kind == BuiltinTypeKind::List {
@@ -3009,6 +3145,7 @@ impl TypeResolver<'_> {
                                     arg,
                                     scope_type,
                                     LookupPattern::NoRestrictions,
+                                    env,
                                 )?);
                             }
 
@@ -3027,7 +3164,7 @@ impl TypeResolver<'_> {
                                 let src_diag = SourceDiagnostic::basic_builder(
                                     DiagnosticLevel::Error,
                                     core_msg,
-                                    self.current_region.path_id,
+                                    env.region.path_id,
                                     sp_ty_expr.span,
                                 );
 
@@ -3036,17 +3173,19 @@ impl TypeResolver<'_> {
 
                             // Should it reset to current module if it has a new sesarch started?
                             let key = self.resolve_type_expr(
-                                AssociatedScopeKind::Module(self.current_mod),
+                                AssociatedScopeKind::Module(env.current_mod),
                                 &generic.args[0],
                                 scope_type,
                                 LookupPattern::NoRestrictions,
+                                env,
                             )?;
 
                             let val = self.resolve_type_expr(
-                                AssociatedScopeKind::Module(self.current_mod),
+                                AssociatedScopeKind::Module(env.current_mod),
                                 &generic.args[1],
                                 scope_type,
                                 LookupPattern::NoRestrictions,
+                                env,
                             )?;
 
                             let map = Type::BuiltinType(BuiltinType::Map(key, val));
@@ -3074,7 +3213,7 @@ impl TypeResolver<'_> {
                 let src_diag = SourceDiagnostic::builder(
                     DiagnosticLevel::Error,
                     core_msg,
-                    self.current_region.path_id,
+                    env.region.path_id,
                 )
                 .add_annotation(sp_ty_expr.span, AnnotationKind::Primary, None)
                 .add_note(
@@ -3090,8 +3229,13 @@ impl TypeResolver<'_> {
             // type expressions
             TypeExpr::Path(sp_path_segs) => {
                 // maybe active_mod can be removed?
-                let last_scope =
-                    self.resolve_static_access(&sp_path_segs, associated_scope, scope_type, true)?;
+                let last_scope = self.resolve_static_access(
+                    &sp_path_segs,
+                    associated_scope,
+                    scope_type,
+                    true,
+                    env,
+                )?;
                 let last_segment = &sp_path_segs[sp_path_segs.len() - 1];
 
                 let inline_ty_expr = match &last_segment.kind {
@@ -3106,7 +3250,7 @@ impl TypeResolver<'_> {
                     }
                 };
 
-                self.resolve_type_expr(last_scope, &inline_ty_expr, scope_type, lookup_pattern)
+                self.resolve_type_expr(last_scope, &inline_ty_expr, scope_type, lookup_pattern, env)
             }
         }
     }

@@ -2,7 +2,9 @@ use std::io::{self, IsTerminal};
 
 use common::color::TerminalColorType;
 
-//TODO: Will have more eventually. Maybe.
+// This more so exists because it may need to exist as something more, but it currently just stores
+// information that other settings already use so it's mostly here just in case
+/// Settings specific to the renderer
 #[derive(Debug)]
 pub(crate) struct RenderSettings {
     // A bit redundant with CLI config but I don't know about forcing passing around the same two

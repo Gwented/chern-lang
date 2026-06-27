@@ -1,3 +1,41 @@
+//! # backend
+//!
+//! The [`Backend`] struct is the central hub of the LSP server.  It implements
+//! [`tower_lsp::LanguageServer`] and routes every LSP request/notification to the
+//! appropriate analysis or formatting helper.
+//!
+//! ## Lifecycle
+//!
+//! ```text
+//! initialize        — negotiates capabilities with the editor
+//! initialized       — no-op (analysis is demand-driven)
+//! did_open          — stores text, spawns async analysis task
+//! did_change        — applies incremental edits, debounces analysis (150 ms)
+//! did_save          — stores new text, spawns analysis task immediately
+//! did_close         — evicts text, diagnostics, and analysis state
+//! shutdown          — no-op
+//! ```
+//!
+//! ## LSP requests handled
+//!
+//! | Request                | Helper called                  |
+//! |------------------------|--------------------------------|
+//! | `textDocument/hover`           | [`crate::hover::compute_hover`]         |
+//! | `textDocument/definition`      | [`crate::state::DocumentState::get_definition_location`] |
+//! | `textDocument/references`      | [`crate::references::compute_references`] |
+//! | `textDocument/rename`          | [`crate::rename::compute_rename`]       |
+//! | `textDocument/completion`      | inline in `Backend::completion` |
+//! | `textDocument/semanticTokens/full` | inline in `Backend::semantic_tokens_full` |
+//!
+//! ## Debounce / version invariant
+//!
+//! `pending_versions` tracks a monotonically increasing counter per URI.  On
+//! `did_change` the counter is bumped and a 150 ms sleep is awaited before
+//! analysis runs.  If another change arrives before the timer fires, the previous
+//! task is aborted (`pending_tasks`) and the new one takes over.  Analysis results
+//! carry the version they were spawned for; stale results are discarded in
+//! [`crate::analyser::publish_if_current`].
+
 use compilation::lookup::scopes;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::{Symbol, SymbolKind, Type, VariableState};
@@ -25,6 +63,8 @@ use lang::types::builtins::BuiltinTypeKind as ChBuiltinTypeKind;
 use std::io::Cursor;
 use std::path::PathBuf;
 
+/// Publishes config-load diagnostics without awaiting, used in synchronous helpers
+/// that cannot be `async`.
 fn publish_config_load_error(
     client: Client,
     uri: tower_lsp::lsp_types::Url,
@@ -37,6 +77,10 @@ fn publish_config_load_error(
     });
 }
 
+/// Semantic token type indices matching the legend declared in [`Backend::initialize`].
+///
+/// The `as_u32` method returns the index into the `token_types` vector advertised
+/// to the client.  **The order must match [`SEMANTIC_TOKENS_LEGEND`](Backend::initialize)**.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SemanticTokenType {
     Keyword,
@@ -70,22 +114,27 @@ impl SemanticTokenType {
     }
 }
 
+/// The central LSP server state, shared across all request handlers via `Arc`.
+///
+/// All fields wrapped in `Arc<RwLock<_>>` are shared with async analysis tasks.
 #[derive(Debug)]
 pub struct Backend {
     pub client: Client,
-    // store documents text by uri
+    /// Raw document texts keyed by URI string, kept in sync with editor state.
     pub docs: Arc<RwLock<HashMap<String, Arc<String>>>>,
-    // per-document counter used to debounce rapid change events; incremented on each change
+    /// Monotonic per-URI change counter; bumped on every `did_change` / `did_open`.
     pub pending_versions: Arc<RwLock<HashMap<String, u64>>>,
-    // cache of last published diagnostics to avoid re-sending identical sets
+    /// JSON-serialised last-published diagnostics per URI; used to suppress
+    /// redundant `publishDiagnostics` notifications.
     pub diags_cache: Arc<RwLock<HashMap<String, String>>>,
-    // store JoinHandles for in-flight debounce tasks so we can abort them
+    /// Handles to in-flight debounce tasks so they can be aborted on newer changes.
     pub pending_tasks: Arc<RwLock<HashMap<String, JoinHandle<()>>>>,
-    // document state cache for tokens, AST, and analysis results
+    /// Document analysis cache: tokens, AST, compiler, symbol map.
     pub doc_cache: Arc<DocumentCache>,
 }
 
 impl Backend {
+    /// Creates a new `Backend` with empty state and a default 50-document analysis cache.
     pub fn new(client: Client) -> Self {
         Backend {
             client,
@@ -97,6 +146,15 @@ impl Backend {
         }
     }
 
+    /// Returns an analysed [`DocumentState`](crate::state::DocumentState) for `uri`,
+    /// running analysis synchronously if needed.
+    ///
+    /// Preferred over spawning a task when the caller already holds the document text
+    /// (e.g. in hover / definition / references / rename handlers that need the state
+    /// before they can respond).
+    ///
+    /// Falls back to publishing a config-load error and returning `None` if the
+    /// document header cannot be parsed.
     fn get_analyzed_state(
         &self,
         uri: &tower_lsp::lsp_types::Url,
@@ -158,15 +216,18 @@ impl Backend {
         Some(state_arc)
     }
 
+    /// Looks up the current source text for `uri` from the `docs` map.
     fn get_document_text(&self, uri: &str) -> Option<Arc<String>> {
         self.docs.read().get(uri).map(Arc::clone)
     }
 
+    /// Convenience: retrieves the document text and runs [`get_analyzed_state`](Self::get_analyzed_state).
     fn get_state(&self, uri: &tower_lsp::lsp_types::Url) -> Option<Arc<RwLock<DocumentState>>> {
         let text = self.get_document_text(&uri.to_string())?;
         self.get_analyzed_state(uri, text)
     }
 
+    /// Atomically increments the version counter for `uri`, returning the new value.
     fn bump_version(&self, uri: &str) -> u64 {
         let mut vers = self.pending_versions.write();
         let v = vers.entry(uri.to_string()).or_insert(0);
@@ -213,6 +274,9 @@ impl Backend {
     }
 }
 
+/// Returns the [`CompletionItemKind`] that best represents the symbol for completion.
+///
+/// Used by the completion handler to assign icons to items shown in the editor UI.
 fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> CompletionItemKind {
     match sym.kind {
         SymbolKind::Type(type_id) => match &compiler.types[type_id.id as usize].ty {
@@ -249,6 +313,17 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
     }
 }
 
+/// Maps a token to a semantic token type index, used to colour-highlight identifiers.
+///
+/// Returns `None` for identifiers that should not receive semantic highlighting
+/// (e.g. unresolved names when no entity is found and the next token is not `(`)
+/// so the client falls back to syntactic colouring.
+///
+/// # Parameters
+/// * `compiler`      — Needed to inspect symbol and type information.
+/// * `entity`        — The [`SemanticEntity`] at the token offset, if any.
+/// * `id`            — The raw interned ID of the identifier token.
+/// * `next_is_paren` — Whether the next token is `(`, indicating a call expression.
 fn classify_id_token(
     compiler: &ScriptCompiler,
     entity: Option<&SemanticEntity>,

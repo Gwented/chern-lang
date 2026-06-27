@@ -1,7 +1,36 @@
+//! # references
+//!
+//! Computes "find all references" results for a symbol under the cursor.
+//!
+//! The single public entry point is [`compute_references`], called from
+//! [`crate::backend::Backend::references`].
+//!
+//! ## Search strategy
+//!
+//! * **Local bindings** (alias type parameters etc.) are searched only within the
+//!   current file, keying on the declaration span and owning symbol ID.
+//! * **All other symbols** (types, variables, module members) are searched across
+//!   every document currently held in the [`DocumentCache`](crate::state::DocumentCache),
+//!   matching by `(definition_path, definition_span, owning_symbol_id)`.
+//!
+//! After collecting all candidate [`Location`] values, overlapping/redundant ranges
+//! within each file are removed with [`crate::text::deduplicate_range_indices`].
+
 use crate::state::{DocumentCache, SemanticEntity};
 use crate::text::{offset_to_position, position_to_offset};
 use tower_lsp::lsp_types::{Location, Position, Range, Url};
 
+/// Computes the list of locations where the symbol at `position` is referenced.
+///
+/// # Parameters
+/// * `uri`       — URI of the file containing the cursor.
+/// * `position`  — Cursor position in LSP UTF-16 coordinates.
+/// * `doc_cache` — Cache of all analysed documents to search.
+///
+/// # Returns
+/// * `Some(Vec<Location>)` with one entry per reference occurrence.
+/// * `None` when the cursor is in a comment, no entity is found, or the entity
+///   is a module (module references are not yet tracked).
 pub fn compute_references(
     uri: &Url,
     position: Position,

@@ -15,12 +15,9 @@ use crate::{
         AstInfo, Item,
     },
     script_compiler::ScriptCompiler,
-    semantic::{
-        hir::{
-            AliasDef, ConfigDef, EnumDef, StructDef, Symbol, SymbolKind, Type, TypeDef, TypeInfo,
-            VarDef, VariableState,
-        },
-        semantic_reporter::SemanticReporter,
+    semantic::hir::{
+        AliasDef, ConfigDef, EnumDef, StructDef, Symbol, SymbolKind, Type, TypeDef, TypeInfo,
+        VarDef, VariableState,
     },
 };
 
@@ -30,7 +27,7 @@ pub struct NamespaceResolver<'a> {
     interner: &'a Intern,
     compiler: &'a mut ScriptCompiler,
     current_mod: ModuleId,
-    reporter: SemanticReporter<'a>,
+    err_vec: Vec<SourceDiagnostic>,
     //NOTE: May handle this differently but ok for now
 }
 
@@ -49,7 +46,7 @@ impl NamespaceResolver<'_> {
             interner,
             compiler,
             current_mod,
-            reporter: SemanticReporter::new(settings, current_region, interner),
+            err_vec: Vec::new(),
             //TODO: This will be different
         }
     }
@@ -70,9 +67,9 @@ impl NamespaceResolver<'_> {
             }
         }
 
-        if !self.reporter.err_vec.is_empty() {
+        if !self.err_vec.is_empty() {
             let mut diags = Vec::new();
-            diags.append(&mut self.reporter.err_vec);
+            diags.append(&mut self.err_vec);
 
             return Err(diags);
         }
@@ -390,6 +387,6 @@ impl NamespaceResolver<'_> {
         .add_annotation(dup_span, AnnotationKind::Primary, None)
         .build();
 
-        self.reporter.err_vec.push(src_diag);
+        self.err_vec.push(src_diag);
     }
 }

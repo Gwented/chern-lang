@@ -1,3 +1,40 @@
+//! # analyser
+//!
+//! Provides the async document-analysis pipeline and helper utilities for
+//! converting core compiler diagnostics into LSP [`Diagnostic`] objects.
+//!
+//! ## Responsibilities
+//!
+//! * [`analyze_and_publish_task`] — the primary entry point called from
+//!   [`crate::backend::Backend`] every time a document changes.  It orchestrates:
+//!   1. Config loading (locating `@def`/`@end` boundaries via `ChrnConfigLoader`)
+//!   2. [`DocumentCache`](crate::state::DocumentCache) lookup / creation
+//!   3. Full semantic analysis via [`DocumentState::ensure_analyzed`](crate::state::DocumentState::ensure_analyzed)
+//!   4. Diagnostic publication (deduplicated, version-gated)
+//!
+//! * [`config_load_error_to_diagnostics`] — converts a [`ConfigLoadError`] into LSP
+//!   diagnostics so editors can underline the problematic region in the config header.
+//!
+//! * [`push_diagnostics`] — converts a slice of core [`SourceDiagnostic`] values into
+//!   LSP diagnostics and appends them to an existing list.
+//!
+//! * [`resolve_modules_lsp`] — recursively resolves imported modules, using the
+//!   open-document cache first and falling back to disk.  Accumulates any import
+//!   errors into the caller-supplied diagnostics vector.
+//!
+//! ## Version / debounce invariant
+//!
+//! Each document carries a monotonically increasing `version` counter (stored in
+//! `pending_versions`).  [`analyze_and_publish_task`] will silently discard its
+//! results if a newer version has been enqueued by the time it finishes, preventing
+//! stale diagnostics from overwriting fresh ones.
+//!
+//! ## Diagnostic cache
+//!
+//! `diags_cache` stores the last JSON-serialised diagnostic list per document.  A
+//! new publish is skipped when the serialised form is identical to the cached one,
+//! avoiding unnecessary LSP notifications for no-op edits.
+
 use compilation::modules::ImportKind;
 use compilation::modules::Module;
 use lang::config_loader::ChrnConfigLoader;
@@ -24,6 +61,11 @@ use crate::state::DocumentCache;
 
 const MAX_DIAGS_CACHE_SIZE: usize = 100;
 
+/// An [`std::io::Read`] adapter that reads from an `Arc<String>` without copying.
+///
+/// Used when an already-opened document is available in the [`DocumentCache`](crate::state::DocumentCache)
+/// so that the import resolver can pass the in-memory source through the same
+/// `ChrnConfigLoader` API that normally takes a file handle.
 struct ArcReader {
     data: Arc<String>,
     pos: usize,
@@ -39,6 +81,11 @@ impl std::io::Read for ArcReader {
     }
 }
 
+/// Evicts entries from the diagnostics cache if it has reached [`MAX_DIAGS_CACHE_SIZE`].
+///
+/// When the cache is full, ten extra entries are removed so the eviction does not
+/// happen on every subsequent insert.  The eviction order is unspecified (HashMap
+/// iteration order).
 fn evict_cache_if_needed(cache: &mut HashMap<String, String>) {
     if cache.len() >= MAX_DIAGS_CACHE_SIZE {
         let to_remove = cache.len() - MAX_DIAGS_CACHE_SIZE + 10;
@@ -53,7 +100,20 @@ fn evict_cache_if_needed(cache: &mut HashMap<String, String>) {
     }
 }
 
-/// Convert a `ConfigLoadError` into LSP diagnostics (error + optional hint).
+/// Converts a [`ConfigLoadError`](chrn_utils::core_error::ConfigLoadError) into a list of LSP
+/// [`Diagnostic`](tower_lsp::lsp_types::Diagnostic) values that the editor can display.
+///
+/// # Parameters
+/// * `err`  — The error returned by [`ChrnConfigLoader::load_config`].
+/// * `text` — The raw source text of the document, used to convert byte offsets to
+///            LSP line/character positions.
+///
+/// # Behaviour
+/// * A `ConfigLoadError::General` diagnostic is expanded into one primary diagnostic
+///   (using the `primary` annotation span if present) plus one additional diagnostic
+///   per secondary annotation, note, and help message.
+/// * A `ConfigLoadError::IO` error is reported at position `(0, 0)` because no span
+///   information is available.
 pub(crate) fn config_load_error_to_diagnostics(
     err: chrn_utils::core_error::ConfigLoadError,
     text: &str,
@@ -169,6 +229,32 @@ pub(crate) fn config_load_error_to_diagnostics(
     }
 }
 
+/// Async task that analyses a document and publishes diagnostics to the LSP client.
+///
+/// This is the primary entry point for the analysis pipeline.  It is spawned as a
+/// Tokio task by [`crate::backend::Backend`] on `did_open`, `did_save`, and (after a
+/// debounce period) on `did_change`.
+///
+/// # Parameters
+/// * `client`          — The tower-lsp client handle used to call `publish_diagnostics`.
+/// * `uri`             — The document URI being analysed.
+/// * `text`            — The current source text.
+/// * `diags_cache`     — Shared JSON cache of last-published diagnostics per URI;
+///                       prevents redundant notifications.
+/// * `doc_cache`       — Shared analysis cache; provides tokenisation and semantic
+///                       analysis results.
+/// * `pending_versions`— Monotonic per-URI version counter used to discard stale results.
+/// * `version`         — The version token assigned to this particular analysis run.
+///
+/// # Analysis steps
+/// 1. Runs `ChrnConfigLoader` to identify script boundaries.  If this fails, the
+///    config errors are published immediately and the task returns early.
+/// 2. Calls `DocumentCache::get_or_create` to tokenise (or reuse a cached tokenisation).
+/// 3. Calls `DocumentState::ensure_analyzed` to perform module resolution, parsing,
+///    namespace resolution, and type-checking.
+/// 4. Registers cross-module dependency edges in the cache.
+/// 5. Publishes diagnostics via `publish_if_current`, which checks that the version
+///    still matches before sending.
 pub async fn analyze_and_publish_task(
     client: Client,
     uri: Url,
@@ -243,6 +329,18 @@ pub async fn analyze_and_publish_task(
     .await;
 }
 
+/// Publishes `lsp_diags` to the client only when `version` is still the latest version
+/// for `uri` and the diagnostic list has actually changed.
+///
+/// # Version check
+/// Reads `pending_versions` under a short-lived lock.  If the stored version differs
+/// from `version`, this means a newer analysis task was spawned and these results are
+/// stale — they are silently discarded.
+///
+/// # Deduplication
+/// Serialises `lsp_diags` to JSON and compares against the last serialised form in
+/// `diags_cache`.  If they are equal the publish is skipped.  On serialisation
+/// failure the diagnostics are always sent (fail-open).
 async fn publish_if_current(
     client: &Client,
     uri: &Url,
@@ -288,6 +386,21 @@ async fn publish_if_current(
     }
 }
 
+/// Converts a slice of core [`SourceDiagnostic`] values and appends the resulting LSP
+/// diagnostics to `lsp_diags`.
+///
+/// For each core diagnostic the function emits:
+/// * One primary diagnostic at the primary annotation span (or `(0,0)` if absent).
+/// * One additional diagnostic per secondary annotation with its span.
+/// * One `INFORMATION`-severity diagnostic per note (at the primary span).
+/// * One `HINT`-severity diagnostic per help message (at the primary span).
+///
+/// # Parameters
+/// * `lsp_diags` — Output vector; diagnostics are appended, not replaced.
+/// * `diags`     — Core diagnostics produced by parsing / name-resolution / type-checking.
+/// * `doc_len`   — Total byte length of the document, used to clamp spans safely.
+/// * `text`      — Raw source text for byte-offset → LSP position conversion.
+/// * `source`    — Value for the LSP `source` field (e.g. `"chrn-parser"`).
 pub(crate) fn push_diagnostics(
     lsp_diags: &mut Vec<tower_lsp::lsp_types::Diagnostic>,
     diags: &[SourceDiagnostic],
@@ -394,6 +507,32 @@ pub(crate) fn push_diagnostics(
     }
 }
 
+/// Recursively resolves all imports declared in `prev_mod`, building the flat module
+/// list required by [`ScriptCompiler`](compilation::script_compiler::ScriptCompiler).
+///
+/// The function walks each `ImportKind::Source` import, attempts to obtain the source
+/// bytes from the open-document cache (in-memory) or from disk (fallback), parses the
+/// imported file, and calls itself recursively for that file's own imports.
+///
+/// # Parameters
+/// * `reserved_mod_ids` — Global registry mapping file paths to pre-assigned module
+///   IDs.  Updated as new imports are discovered during traversal.
+/// * `seen`             — Guard set of already-visited path IDs to break import cycles.
+/// * `modules`          — Output slot array indexed by `ModuleId - 1`; entries are
+///   `None` until a module is successfully loaded.
+/// * `prev_mod`         — The module whose imports are to be resolved in this call.
+/// * `settings`         — Global compiler settings forwarded to `ChrnConfigLoader` and
+///   `ModuleFinder`.
+/// * `interner`         — Shared string/path interner for all modules being resolved.
+/// * `doc_cache`        — Cache queried for in-memory document text before falling
+///   back to disk I/O.
+/// * `region_arena`     — Arena where the source region for each loaded file is stored.
+/// * `diags`            — Accumulator for any import-related diagnostics (path errors,
+///   IO errors, parse errors in imported files).
+///
+/// # Errors
+/// All errors are appended to `diags` rather than returned.  The function always
+/// attempts to continue resolving remaining siblings after an error.
 pub(crate) fn resolve_modules_lsp(
     reserved_mod_ids: &mut Vec<(PathId, ModuleId)>,
     seen: &mut Vec<PathId>,

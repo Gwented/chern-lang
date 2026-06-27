@@ -16,74 +16,68 @@ use crate::{
     parser::ast::{
         AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Item,
     },
+    resolvers::resolver_env::ResolverEnv,
     script_compiler::ScriptCompiler,
-    semantic::{error::SemanticError, hir::Type, semantic_reporter::SemanticReporter},
+    semantic::{error::SemanticError, hir::Type, semantic_reporter},
 };
 
 pub struct ConstraintResolver<'a> {
-    pub(crate) ast_info: &'a AstInfo,
+    pub(crate) settings: &'a ChrnSettings,
     pub(crate) interner: &'a Intern,
-    pub(crate) current_region: &'a SourceRegion,
     pub(crate) compiler: &'a mut ScriptCompiler,
     // We reward hack here
     /// If module and ast ids are not the same, this will break. (Will change(Right?))
-    pub(crate) current_mod: ModuleId,
-    pub(crate) reporter: SemanticReporter<'a>,
+    pub(crate) err_vec: Vec<SourceDiagnostic>,
 }
 
 impl<'a> ConstraintResolver<'a> {
     pub fn new(
         settings: &'a ChrnSettings,
-        ast_info: &'a AstInfo,
-        current_region: &'a SourceRegion,
         interner: &'a Intern,
-        current_mod: ModuleId,
         compiler: &'a mut ScriptCompiler,
     ) -> ConstraintResolver<'a> {
         ConstraintResolver {
-            ast_info,
+            settings,
             interner,
-            current_region,
-            current_mod,
             compiler,
-            reporter: SemanticReporter::new(settings, current_region, interner),
+            err_vec: Vec::new(),
         }
     }
 
-    pub fn resolve(&mut self) -> Result<(), Vec<SourceDiagnostic>> {
+    pub fn resolve(&mut self, env: &ResolverEnv) -> Result<(), Vec<SourceDiagnostic>> {
         // I don't think dependency tracking can be avoided here
-        for (id, item) in self.ast_info.items.iter().enumerate() {
+        for (id, item) in env.ast_info.items.iter().enumerate() {
             let ast_id = AstId::new(id as u32);
             // Maybe alias is solved first?
 
             match item {
                 Item::TypeDef(abs_typedef) => {
-                    _ = self.resolve_typedef(abs_typedef, ast_id);
+                    _ = self.resolve_typedef(abs_typedef, ast_id, env);
                     // for err in &self.reporter.err_vec {
                     //     println!("{}", err.fmtted_diag);
                     // }
                 }
                 Item::Struct(abs_struct) => {
-                    _ = self.resolve_struct(abs_struct, ast_id);
+                    _ = self.resolve_struct(abs_struct, ast_id, env);
                     // for err in &self.reporter.err_vec {
                     //     println!("{}", err.fmtted_diag);
                     // }
                 }
                 Item::Enum(abs_enum) => {
-                    _ = self.resolve_enum(abs_enum, ast_id);
+                    _ = self.resolve_enum(abs_enum, ast_id, env);
                     // for err in &self.reporter.err_vec {
                     //     println!("{}", err.fmtted_diag);
                     // }
                 }
                 Item::Alias(abs_alias) => {
-                    _ = self.resolve_alias(abs_alias, ast_id);
+                    _ = self.resolve_alias(abs_alias, ast_id, env);
                     // for err in &self.reporter.err_vec {
                     //     println!("{}", err.fmtted_diag);
                     // }
                     // todo!("Todol");
                 }
                 Item::Var(abs_var) => {
-                    _ = self.resolve_var(abs_var, ast_id);
+                    _ = self.resolve_var(abs_var, ast_id, env);
                     // for err in &self.reporter.err_vec {
                     //     println!("{}", err.fmtted_diag);
                     // }
@@ -93,9 +87,9 @@ impl<'a> ConstraintResolver<'a> {
             }
         }
 
-        if !self.reporter.err_vec.is_empty() {
+        if !self.err_vec.is_empty() {
             let mut diags = Vec::new();
-            diags.append(&mut self.reporter.err_vec);
+            diags.append(&mut self.err_vec);
 
             return Err(diags);
         }
@@ -107,11 +101,16 @@ impl<'a> ConstraintResolver<'a> {
     //
     // Maybe we can privacy check here so semantic information is still present, and the error is
     // also present
-    fn resolve_var(&mut self, abs_var: &AbstractVar, ast_id: AstId) -> Result<(), ()> {
+    fn resolve_var(
+        &mut self,
+        abs_var: &AbstractVar,
+        ast_id: AstId,
+        env: &ResolverEnv,
+    ) -> Result<(), ()> {
         // Not sure what this might need checked yet other than privacy
         let scope_id = self
             .compiler
-            .extract_scope_id(ScopeType::Neutral, self.current_mod);
+            .extract_scope_id(ScopeType::Neutral, env.current_mod);
         let table = &self.compiler.get_scope(scope_id).scope.table;
         let sym_id = table.ast_to_sym[&ast_id];
 
@@ -128,14 +127,19 @@ impl<'a> ConstraintResolver<'a> {
         Ok(())
     }
 
-    fn resolve_typedef(&mut self, abs_typedef: &AbstractTypeDef, ast_id: AstId) -> Result<(), ()> {
+    fn resolve_typedef(
+        &mut self,
+        abs_typedef: &AbstractTypeDef,
+        ast_id: AstId,
+        env: &ResolverEnv,
+    ) -> Result<(), ()> {
         let scope_id = self
             .compiler
-            .extract_scope_id(ScopeType::Var, self.current_mod);
+            .extract_scope_id(ScopeType::Var, env.current_mod);
         let table = &self.compiler.get_scope(scope_id).scope.table;
         let sym_id = table.ast_to_sym[&ast_id];
 
-        let module = &self.compiler.mods[self.current_mod.id];
+        let module = &self.compiler.mods[env.current_mod.id];
         let type_def = self.compiler.get_typedef(sym_id);
         let ty_info = &self.compiler.types[type_def.type_id.id as usize];
 
@@ -157,17 +161,37 @@ impl<'a> ConstraintResolver<'a> {
                     let src_diag = SourceDiagnostic::basic(
                         DiagnosticLevel::Error,
                         core_msg,
-                        self.current_region.path_id,
+                        env.region.path_id,
                         *ast_span,
                     );
-                    self.reporter.err_vec.push(src_diag);
+                    // semantic_reporter::report_semantic(
+                    //     &mut self.err_vec,
+                    //     sem_err,
+                    //     env.region,
+                    //     self.settings,
+                    //     self.interner,
+                    // );
+                    // semantic_reporter::create_diag_builder_preset(
+                    //     &mut self.err_vec,
+                    //     sem_err,
+                    //     env.region,
+                    //     self.settings,
+                    //     self.interner,
+                    // );
+                    self.err_vec.push(src_diag);
                 }
                 _ => (),
             }
 
             if let Err(sem_errs) = self.check_cond(type_def.type_id, ty_span, *cond_expr) {
                 for err in sem_errs {
-                    self.reporter.report_semantic(err);
+                    semantic_reporter::report_semantic(
+                        &mut self.err_vec,
+                        err,
+                        env.region,
+                        self.settings,
+                        self.interner,
+                    );
                 }
             }
         }
@@ -177,7 +201,13 @@ impl<'a> ConstraintResolver<'a> {
                 Type::Struct(_) | Type::Enum(_) => {
                     if sp_arg.inner.has_restrictions() {
                         let sem_err = SemanticError::VagueArg(sp_arg.clone());
-                        self.reporter.report_semantic(sem_err);
+                        semantic_reporter::report_semantic(
+                            &mut self.err_vec,
+                            sem_err,
+                            env.region,
+                            self.settings,
+                            self.interner,
+                        );
 
                         continue;
                     }
@@ -191,8 +221,15 @@ impl<'a> ConstraintResolver<'a> {
                 ty_span,
                 &sp_arg,
                 &mut Vec::new(),
+                env,
             ) {
-                self.reporter.report_semantic(sem_err);
+                semantic_reporter::report_semantic(
+                    &mut self.err_vec,
+                    sem_err,
+                    env.region,
+                    self.settings,
+                    self.interner,
+                );
             }
         }
 
@@ -214,10 +251,15 @@ impl<'a> ConstraintResolver<'a> {
 
     // Alias should probably be ran first by default
     // Also needs to infer it's own constraints
-    fn resolve_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId) -> Result<(), ()> {
+    fn resolve_alias(
+        &mut self,
+        abs_alias: &AbstractAlias,
+        ast_id: AstId,
+        env: &ResolverEnv,
+    ) -> Result<(), ()> {
         let scope_id = self
             .compiler
-            .extract_scope_id(ScopeType::Neutral, self.current_mod);
+            .extract_scope_id(ScopeType::Neutral, env.current_mod);
         let table = &self.compiler.get_scope(scope_id).scope.table;
         let sym_id = table.ast_to_sym[&ast_id];
 
@@ -266,7 +308,7 @@ impl<'a> ConstraintResolver<'a> {
         //                             vec![param_span, cond_expr.span],
         //                         );
         //
-        //                         let module = &self.compiler.mods[self.current_mod.id];
+        //                         let module = &self.compiler.mods[env.current_mod.id];
         //                         self.reporter.report_semantic(
         //                             sem_err,
         //                             &module
@@ -300,7 +342,7 @@ impl<'a> ConstraintResolver<'a> {
         //             todo!("Constraining contraint check of cocnsctraint");
         //         }
         //         Err(sem_err) => {
-        //             let module = &self.compiler.mods[self.current_mod.id];
+        //             let module = &self.compiler.mods[env.current_mod.id];
         //             self.reporter.report_semantic(
         //                 sem_err,
         //                 &module
@@ -326,17 +368,23 @@ impl<'a> ConstraintResolver<'a> {
         // Need a system where it takes a local variable, looks through each expression, sees if
         // it's used, then if so attempts to assign the constraint to the used argument.
 
-        let module = &self.compiler.mods[self.current_mod.id];
+        let module = &self.compiler.mods[env.current_mod.id];
         // NO
         unimplemented!("Stop using the alias please");
 
         // NOTE: Small issue here is that when we check an alias, and it has an error, it's
         // emitted. But then if we have something that USES the alias, it also gets that error.
-        let sym_span = self.ast_info.get_sym_span(ast_id);
+        let sym_span = env.ast_info.get_sym_span(ast_id);
         for cond_expr_id in &alias_def.conds {
             if let Err(sem_errs) = self.check_cond(alias_type_id, sym_span, *cond_expr_id) {
                 for err in sem_errs {
-                    self.reporter.report_semantic(err);
+                    semantic_reporter::report_semantic(
+                        &mut self.err_vec,
+                        err,
+                        env.region,
+                        self.settings,
+                        self.interner,
+                    );
                 }
             }
         }
@@ -483,10 +531,15 @@ impl<'a> ConstraintResolver<'a> {
 
     // Needs:
     //
-    fn resolve_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId) -> Result<(), ()> {
+    fn resolve_struct(
+        &mut self,
+        abs_struct: &AbstractStruct,
+        ast_id: AstId,
+        env: &ResolverEnv,
+    ) -> Result<(), ()> {
         let scope_id = self
             .compiler
-            .extract_scope_id(ScopeType::Nest, self.current_mod);
+            .extract_scope_id(ScopeType::Nest, env.current_mod);
         let table = &self.compiler.get_scope(scope_id).scope.table;
 
         //TODO: global condition and argument setting.
@@ -496,7 +549,7 @@ impl<'a> ConstraintResolver<'a> {
         let sym_id = table.ast_to_sym[&ast_id];
         let struct_def = self.compiler.get_struct(sym_id);
 
-        let module = &self.compiler.mods[self.current_mod.id];
+        let module = &self.compiler.mods[env.current_mod.id];
 
         // Glob conds
         for (i, member_id) in struct_def.fields.iter().enumerate() {
@@ -506,7 +559,13 @@ impl<'a> ConstraintResolver<'a> {
             for cond_expr in &struct_def.glob_conds {
                 if let Err(sem_errs) = self.check_cond(field.type_id, ty_span, *cond_expr) {
                     for err in sem_errs {
-                        self.reporter.report_semantic(err);
+                        semantic_reporter::report_semantic(
+                            &mut self.err_vec,
+                            err,
+                            env.region,
+                            self.settings,
+                            self.interner,
+                        );
                     }
                 }
             }
@@ -520,7 +579,13 @@ impl<'a> ConstraintResolver<'a> {
             for cond_expr in &field.conds {
                 if let Err(sem_errs) = self.check_cond(field.type_id, ty_span, *cond_expr) {
                     for err in sem_errs {
-                        self.reporter.report_semantic(err);
+                        semantic_reporter::report_semantic(
+                            &mut self.err_vec,
+                            err,
+                            env.region,
+                            self.settings,
+                            self.interner,
+                        );
                     }
                 }
             }
@@ -538,8 +603,15 @@ impl<'a> ConstraintResolver<'a> {
                     ty_span,
                     spanned_arg,
                     &mut vec![],
+                    env,
                 ) {
-                    self.reporter.report_semantic(sem_err);
+                    semantic_reporter::report_semantic(
+                        &mut self.err_vec,
+                        sem_err,
+                        env.region,
+                        self.settings,
+                        self.interner,
+                    );
                 }
             }
         }
@@ -557,8 +629,15 @@ impl<'a> ConstraintResolver<'a> {
                     ty_span,
                     spanned_arg,
                     &mut vec![],
+                    env,
                 ) {
-                    self.reporter.report_semantic(sem_err);
+                    semantic_reporter::report_semantic(
+                        &mut self.err_vec,
+                        sem_err,
+                        env.region,
+                        self.settings,
+                        self.interner,
+                    );
                 }
             }
         }
@@ -566,16 +645,21 @@ impl<'a> ConstraintResolver<'a> {
         Ok(())
     }
 
-    fn resolve_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId) -> Result<(), ()> {
+    fn resolve_enum(
+        &mut self,
+        abs_enum: &AbstractEnum,
+        ast_id: AstId,
+        env: &ResolverEnv,
+    ) -> Result<(), ()> {
         let scope_id = self
             .compiler
-            .extract_scope_id(ScopeType::Nest, self.current_mod);
+            .extract_scope_id(ScopeType::Nest, env.current_mod);
         let table = &self.compiler.get_scope(scope_id).scope.table;
 
         let sym_id = table.ast_to_sym[&ast_id];
 
         let enum_def = &self.compiler.get_enum(sym_id);
-        let module = &self.compiler.mods[self.current_mod.id];
+        let module = &self.compiler.mods[env.current_mod.id];
 
         // Glob conds
         for (i, member_id) in enum_def.variants.iter().enumerate() {
@@ -590,7 +674,13 @@ impl<'a> ConstraintResolver<'a> {
                 for cond_expr in &enum_def.glob_conds {
                     if let Err(sem_errs) = self.check_cond(inner_id, ty_span, *cond_expr) {
                         for err in sem_errs {
-                            self.reporter.report_semantic(err);
+                            semantic_reporter::report_semantic(
+                                &mut self.err_vec,
+                                err,
+                                env.region,
+                                self.settings,
+                                self.interner,
+                            );
                         }
                     }
                 }
@@ -610,7 +700,13 @@ impl<'a> ConstraintResolver<'a> {
                 for cond_expr in &variant.conds {
                     if let Err(sem_errs) = self.check_cond(inner_id, ty_span, *cond_expr) {
                         for err in sem_errs {
-                            self.reporter.report_semantic(err);
+                            semantic_reporter::report_semantic(
+                                &mut self.err_vec,
+                                err,
+                                env.region,
+                                self.settings,
+                                self.interner,
+                            );
                         }
                     }
                 }
@@ -634,8 +730,15 @@ impl<'a> ConstraintResolver<'a> {
                         ty_span,
                         spanned_arg,
                         &mut vec![],
+                        env,
                     ) {
-                        self.reporter.report_semantic(sem_err);
+                        semantic_reporter::report_semantic(
+                            &mut self.err_vec,
+                            sem_err,
+                            env.region,
+                            self.settings,
+                            self.interner,
+                        );
                     }
                 }
             }
@@ -655,8 +758,15 @@ impl<'a> ConstraintResolver<'a> {
                         ty_span,
                         spanned_arg,
                         &mut vec![],
+                        env,
                     ) {
-                        self.reporter.report_semantic(sem_err);
+                        semantic_reporter::report_semantic(
+                            &mut self.err_vec,
+                            sem_err,
+                            env.region,
+                            self.settings,
+                            self.interner,
+                        );
                     }
                 }
             }
@@ -911,6 +1021,7 @@ impl<'a> ConstraintResolver<'a> {
         active_span: SourceSpan,
         spanned_arg: &SpannedContainer<InnerArgs>,
         visited: &mut Vec<TypeId>,
+        env: &ResolverEnv,
         // Making this vec makes error messages painful depending on which message failed, so it
         // needs some signal to say to stop going.
     ) -> Result<(), SemanticError> {
@@ -949,6 +1060,7 @@ impl<'a> ConstraintResolver<'a> {
                         field.name_span,
                         spanned_arg,
                         visited,
+                        env,
                     )?;
                 }
 
@@ -987,6 +1099,7 @@ impl<'a> ConstraintResolver<'a> {
                             variant.name_span,
                             spanned_arg,
                             visited,
+                            env,
                         )?;
                     }
                 }
@@ -1001,6 +1114,7 @@ impl<'a> ConstraintResolver<'a> {
                         active_span,
                         spanned_arg,
                         visited,
+                        env,
                     ),
                     BuiltinType::Map(key_id, val_id) => {
                         // This looks weird...
@@ -1010,8 +1124,16 @@ impl<'a> ConstraintResolver<'a> {
                             active_span,
                             spanned_arg,
                             visited,
+                            env,
                         )?;
-                        self.check_type_arg(*val_id, parent_span, active_span, spanned_arg, visited)
+                        self.check_type_arg(
+                            *val_id,
+                            parent_span,
+                            active_span,
+                            spanned_arg,
+                            visited,
+                            env,
+                        )
                     }
                     BuiltinType::Tuple(elements) => {
                         visited.push(type_id);
@@ -1038,6 +1160,7 @@ impl<'a> ConstraintResolver<'a> {
                                 parent_span,
                                 spanned_arg,
                                 visited,
+                                env,
                             )?;
                         }
 
@@ -1082,7 +1205,7 @@ impl<'a> ConstraintResolver<'a> {
                 let src_diag = SourceDiagnostic::basic_builder(
                     DiagnosticLevel::Error,
                     core_msg,
-                    self.current_region.path_id,
+                    env.region.path_id,
                     active_span,
                 );
                 Err(SemanticError::General(src_diag))
@@ -1097,6 +1220,7 @@ impl<'a> ConstraintResolver<'a> {
                 active_span,
                 spanned_arg,
                 visited,
+                env,
             ),
             Type::Constrained(current_constraints) => {
                 let arg_constraints = spanned_arg.inner.type_constraints();

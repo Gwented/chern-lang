@@ -1,9 +1,12 @@
 use chrn_utils::{
     chrn_settings::ChrnSettings,
-    core_error::{ConfigLoadError, ModuleInitError, ScriptError},
+    core_error::{ConfigLoadError, ScriptError},
+    source_map::source_diagnostic::Reporter,
 };
-use dumper::dump_settings::{DumpOutputKind, DumpSettings, ModuleOptions};
-use orchestrator::chrn_manager::{ChrnManager, ChrnManagerInitFailure};
+use orchestration::{
+    orchestrator,
+    script_compiler_cache::{self},
+};
 
 use crate::{
     args::{CheckCmd, Cli, Commands, FmtCmd, QueryCmd},
@@ -21,37 +24,44 @@ pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
     }
 }
 
+/// Executes `CheckCmd` which checks for any compilation errors regarding a given Script file
 fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, String> {
     let chrn_settings = ChrnSettings::new();
     let path = files::make_canon(&check_cmd.path)?;
+    let mut reporter = Reporter::default();
 
-    let mut chrn_manager = match ChrnManager::init(&path, chrn_settings) {
-        Ok(m) => m,
-        // Might be going a bit too far here
-        Err(ChrnManagerInitFailure { interner, init_err }) => match init_err.cfg_err {
-            ConfigLoadError::General(diag) => {
-                let render_settings =
-                    RenderSettings::new(cli_cfg.can_color, cli_cfg.terminal_color_type);
-                let rendered_diags = renderer::render_cli_diags(
-                    &[diag],
-                    &render_settings,
-                    init_err.region.as_ref(),
-                    &interner,
-                );
+    // Please please please
+    let (mut compiler, mut compiler_store, mut compiler_cache) =
+        match script_compiler_cache::create_compiler_with_cache(&path, &mut reporter, chrn_settings)
+        {
+            Ok(data) => data,
+            Err(init_err) => match init_err.cfg_err {
+                ConfigLoadError::General(diag) => {
+                    let render_settings =
+                        RenderSettings::new(cli_cfg.can_color, cli_cfg.terminal_color_type);
+                    let rendered_diags = renderer::render_cli_diags(
+                        &[diag],
+                        &render_settings,
+                        init_err.region.as_ref(),
+                        &init_err.interner,
+                    );
 
-                print_diags(&rendered_diags);
-                return Err("Failed to parse configuration file".to_string());
-            }
-            ConfigLoadError::IO(e) => match e.kind() {
-                e => {
-                    let msg = format!("Process exited unsuccessfully. Reason: {e}");
+                    print_diags(&rendered_diags);
+                    return Err("Failed to parse configuration file".to_string());
+                }
+                ConfigLoadError::IO(err) => {
+                    let msg = format!("Process exited unsuccessfully. Reason: {err}");
                     return Err(msg);
                 }
             },
-        },
-    };
+        };
 
-    match chrn_manager.run_all() {
+    match orchestrator::run_all_cached(
+        &mut reporter,
+        &mut compiler,
+        &mut compiler_store,
+        &mut compiler_cache,
+    ) {
         Ok(_) => {
             let msg = format!("No errors found");
             Ok(msg)
@@ -64,8 +74,8 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
                 let rendered_diags = renderer::render_cli_diags(
                     &diags,
                     &render_settings,
-                    Some(chrn_manager.region_arena()),
-                    chrn_manager.interner(),
+                    Some(&compiler_store.region_arena),
+                    &compiler_store.interner,
                 );
 
                 print_diags(&rendered_diags);
@@ -79,6 +89,35 @@ fn exec_check(check_cmd: &CheckCmd, cli_cfg: &CliConfig) -> Result<String, Strin
             }
         },
     }
+
+    // match chrn_manager.run_all() {
+    //     Ok(_) => {
+    //         let msg = format!("No errors found");
+    //         Ok(msg)
+    //     }
+    //     Err(script_err) => match script_err {
+    //         ScriptError::Parser(diags) | ScriptError::Semantic(diags) => {
+    //             // For now
+    //             let render_settings = RenderSettings::init();
+    //             // Should print rendered diagnostics here
+    //             let rendered_diags = renderer::render_cli_diags(
+    //                 &diags,
+    //                 &render_settings,
+    //                 Some(chrn_manager.region_arena()),
+    //                 chrn_manager.interner(),
+    //             );
+    //
+    //             print_diags(&rendered_diags);
+    //
+    //             let msg = format!("Reported {} error(s)", diags.len());
+    //             return Err(msg);
+    //         }
+    //         ScriptError::IO(e) => {
+    //             let msg = format!("Process exited unsuccessfully.\nReason: {e}");
+    //             return Err(msg);
+    //         }
+    //     },
+    // }
 }
 
 fn print_diags(rendered_diags: &[String]) {
@@ -88,11 +127,12 @@ fn print_diags(rendered_diags: &[String]) {
 }
 
 fn exec_fmt(fmt_cmd: &FmtCmd, cli_cfg: &CliConfig) -> Result<String, String> {
-    let settings = ChrnSettings::new();
-    match formatter::fmt::fmt_script_block(&fmt_cmd.path, &settings) {
-        Ok(_) => todo!("ok"),
-        Err(_) => todo!("err"),
-    };
+    todo!("gofmt");
+    // let settings = ChrnSettings::new();
+    // match formatter::fmt::fmt_script_block(&fmt_cmd.path, &settings) {
+    //     Ok(_) => todo!("ok"),
+    //     Err(_) => todo!("err"),
+    // };
 }
 
 // Object!
@@ -100,75 +140,76 @@ fn exec_query(query_cmd: &QueryCmd, cli_cfg: &CliConfig) -> Result<String, Strin
     let chrn_settings = ChrnSettings::new();
     let path = files::make_canon(&query_cmd.path)?;
 
-    let mut chrn_manager = match ChrnManager::init(&path, chrn_settings) {
-        Ok(m) => m,
-        Err(ChrnManagerInitFailure { interner, init_err }) => match init_err.cfg_err {
-            ConfigLoadError::General(diag) => {
-                let render_settings =
-                    RenderSettings::new(cli_cfg.can_color, cli_cfg.terminal_color_type);
-                let rendered_diags =
-                    renderer::render_cli_diags(&[diag], &render_settings, None, &interner);
-
-                print_diags(&rendered_diags);
-                return Err("Failed to parse configuration file".to_string());
-            }
-            ConfigLoadError::IO(e) => match e.kind() {
-                e => {
-                    let msg = format!("Process exited unsuccessfully. Reason: {e}");
-                    return Err(msg);
-                }
-            },
-        },
-    };
-
-    if let Err(script_err) = chrn_manager.run_all() {
-        match script_err {
-            ScriptError::Parser(diags) | ScriptError::Semantic(diags) => {
-                // For now
-                let render_settings = RenderSettings::init();
-                // Should print rendered diagnostics here
-                let rendered_diags = renderer::render_cli_diags(
-                    &diags,
-                    &render_settings,
-                    Some(chrn_manager.region_arena()),
-                    chrn_manager.interner(),
-                );
-
-                print_diags(&rendered_diags);
-
-                let msg = format!("Reported {} error(s)", diags.len());
-                return Err(msg);
-            }
-            ScriptError::IO(e) => {
-                let msg = format!("Process exited unsuccessfully.\nReason: {e}");
-                return Err(msg);
-            }
-        }
-    }
-
-    // Ok...
-    // Clap commands ensure that a value must be provided if the option was chosen, so if !empty then
-    // it wasn't selected
-    let mod_opt = if !query_cmd.skip_modules.is_empty() {
-        ModuleOptions::Skip(query_cmd.skip_modules.clone())
-    } else if !query_cmd.only_modules.is_empty() {
-        ModuleOptions::Only(query_cmd.only_modules.clone())
-    } else if query_cmd.entry_only {
-        ModuleOptions::EntryPoint
-    } else {
-        ModuleOptions::All
-    };
-
-    let settings = DumpSettings::new(mod_opt, DumpOutputKind::Cli);
-    if let Some(ident) = &query_cmd.ident {
-        let res =
-            dumper::dump::dump_env(chrn_manager.compiler(), chrn_manager.interner(), &settings);
-        dbg!(println!("{res}"));
-        todo!("Hi")
-    } else {
-        // dumper::symbol_printer::print_env(compiler, settings, interner)
-        todo!("Detailing")
-    }
+    todo!();
+    // let mut chrn_manager = match ScriptCompilerCache::new(&path, chrn_settings) {
+    //     Ok(m) => m,
+    //     Err(ChrnManagerInitFailure { interner, init_err }) => match init_err.cfg_err {
+    //         ConfigLoadError::General(diag) => {
+    //             let render_settings =
+    //                 RenderSettings::new(cli_cfg.can_color, cli_cfg.terminal_color_type);
+    //             let rendered_diags =
+    //                 renderer::render_cli_diags(&[diag], &render_settings, None, &interner);
+    //
+    //             print_diags(&rendered_diags);
+    //             return Err("Failed to parse configuration file".to_string());
+    //         }
+    //         ConfigLoadError::IO(e) => match e.kind() {
+    //             e => {
+    //                 let msg = format!("Process exited unsuccessfully. Reason: {e}");
+    //                 return Err(msg);
+    //             }
+    //         },
+    //     },
+    // };
+    //
+    // if let Err(script_err) = chrn_manager.run_all() {
+    //     match script_err {
+    //         ScriptError::Parser(diags) | ScriptError::Semantic(diags) => {
+    //             // For now
+    //             let render_settings = RenderSettings::init();
+    //             // Should print rendered diagnostics here
+    //             let rendered_diags = renderer::render_cli_diags(
+    //                 &diags,
+    //                 &render_settings,
+    //                 Some(chrn_manager.region_arena()),
+    //                 chrn_manager.interner(),
+    //             );
+    //
+    //             print_diags(&rendered_diags);
+    //
+    //             let msg = format!("Reported {} error(s)", diags.len());
+    //             return Err(msg);
+    //         }
+    //         ScriptError::IO(e) => {
+    //             let msg = format!("Process exited unsuccessfully.\nReason: {e}");
+    //             return Err(msg);
+    //         }
+    //     }
+    // }
+    //
+    // // Ok...
+    // // Clap commands ensure that a value must be provided if the option was chosen, so if !empty then
+    // // it wasn't selected
+    // let mod_opt = if !query_cmd.skip_modules.is_empty() {
+    //     ModuleOptions::Skip(query_cmd.skip_modules.clone())
+    // } else if !query_cmd.only_modules.is_empty() {
+    //     ModuleOptions::Only(query_cmd.only_modules.clone())
+    // } else if query_cmd.entry_only {
+    //     ModuleOptions::EntryPoint
+    // } else {
+    //     ModuleOptions::All
+    // };
+    //
+    // let settings = DumpSettings::new(mod_opt, DumpOutputKind::Cli);
+    // if let Some(ident) = &query_cmd.ident {
+    //     let res =
+    //         dumper::dump::dump_env(chrn_manager.compiler(), chrn_manager.interner(), &settings);
+    //     dbg!(println!("{res}"));
+    //     todo!("Hi")
+    // } else {
+    //     // dumper::symbol_printer::print_env(compiler, settings, interner)
+    //     todo!("Detailing")
+    // }
 
     todo!("detailing")
 }

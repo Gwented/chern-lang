@@ -1,8 +1,39 @@
+//! # rename
+//!
+//! Produces [`WorkspaceEdit`] payloads for symbol renames across all cached documents.
+//!
+//! The single public entry point is [`compute_rename`], called from
+//! [`crate::backend::Backend::rename`].
+//!
+//! ## Rename strategy
+//!
+//! * **Module renames** are not supported because they imply a file-system rename;
+//!   `None` is returned immediately.
+//! * **Local bindings** are renamed within the current file only, keying on the
+//!   declaration span and owning symbol ID (same logic as `references`).
+//! * **All other symbols** are renamed cross-module by searching every cached
+//!   document for the matching `(definition_path, definition_span, owning_symbol_id)`.
+//!
+//! Overlapping/redundant `TextEdit` ranges within each file are removed with
+//! [`crate::text::deduplicate_range_indices`] before the `WorkspaceEdit` is assembled.
+
 use crate::state::{DocumentCache, SemanticEntity};
 use crate::text::{offset_to_position, position_to_offset};
 use std::collections::HashMap;
 use tower_lsp::lsp_types::{Position, Range, TextEdit, Url, WorkspaceEdit};
 
+/// Computes the workspace edits required to rename the symbol at `position`.
+///
+/// # Parameters
+/// * `uri`       — URI of the file containing the cursor.
+/// * `position`  — Cursor position in LSP UTF-16 coordinates.
+/// * `new_name`  — The replacement identifier string.
+/// * `doc_cache` — Cache of all analysed documents to search for usages.
+///
+/// # Returns
+/// * `Some(WorkspaceEdit)` mapping each affected URI to a list of [`TextEdit`] values.
+/// * `None` when the cursor is in a comment, no entity is found, or the entity is
+///   a module (module renames are not supported).
 pub fn compute_rename(
     uri: &Url,
     position: Position,

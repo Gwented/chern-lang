@@ -1,3 +1,41 @@
+//! # hover
+//!
+//! Computes rich Markdown hover content for tokens and semantic entities.
+//!
+//! The single public entry point is [`compute_hover`], which is called from
+//! [`crate::backend::Backend::hover`] after the document state has been analysed.
+//!
+//! ## Hover dispatch
+//!
+//! 1. The cursor byte offset is computed from the LSP `Position`.
+//! 2. If the offset is inside a comment, `None` is returned immediately.
+//! 3. [`DocumentState::get_symbol_at_offset`](crate::state::DocumentState::get_symbol_at_offset)
+//!    attempts to find an identifier token.  If that fails, a linear scan over all
+//!    tokens finds the closest non-identifier token.
+//! 4. The resulting [`ScriptToken`](compilation::token::Token) variant determines
+//!    which documentation branch runs:
+//!
+//!    | Token kind           | Hover content |
+//!    |----------------------|---------------|
+//!    | `@def` / `@end`      | Block-delimiter docs |
+//!    | `Keyword`            | [`Document::keyword_docs`](crate::document::Document::keyword_docs) |
+//!    | `Id`                 | Semantic-entity dispatch (see below) |
+//!    | Literals             | Type + literal value string |
+//!    | Punctuation / ops    | Brief description |
+//!
+//! ### Identifier hover (semantic dispatch)
+//!
+//! When the token is an identifier the [`SemanticEntity`](crate::state::SemanticEntity)
+//! at that offset is retrieved from `symbol_map` and dispatched:
+//!
+//! * **Symbol** — type, variable, or module hover with full type signature.
+//! * **Field** / **Variant** — `name: Type` from the resolved struct/enum HIR.
+//! * **Module** — module name, alias prefix, and file path.
+//! * **Local** — name with `(param)` tag.
+//!
+//! A name-based fallback for modules and a builtin-type fallback are applied when
+//! the semantic entity lookup yields no result.
+
 use chrn_utils::intern::Intern;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::{SymbolKind, Type, VariableState};
@@ -11,6 +49,18 @@ use tower_lsp::lsp_types;
 use crate::document::{self, Document};
 use crate::text::position_to_offset;
 
+/// Computes the hover response for a cursor position within a Chern document.
+///
+/// # Parameters
+/// * `_uri`  — The document URI (currently unused but kept for future use).
+/// * `pos`   — The cursor position in LSP UTF-16 coordinates.
+/// * `state` — The fully-analysed document state.
+///
+/// # Returns
+/// * `Some(Hover)` with Markdown-formatted text and the token range when
+///   meaningful documentation can be produced.
+/// * `None` when the cursor is in a comment, on whitespace, or on a token with
+///   no associated documentation.
 pub fn compute_hover(
     _uri: &tower_lsp::lsp_types::Url,
     pos: lsp_types::Position,
@@ -27,16 +77,8 @@ pub fn compute_hover(
         Some(res) => (ScriptToken::Id(res.0), res.1, res.2),
         None => {
             // Check for non-identifier tokens
-            let mut found = None;
-            for st in &state.tokens {
-                let span = st.span;
-                if offset >= span.start as usize && offset <= span.end as usize {
-                    found = Some((st.tok, span.start as usize, span.end as usize));
-                    break;
-                }
-            }
-            match found {
-                Some(f) => f,
+            match state.get_token_at_offset(offset) {
+                Some(st) => (st.tok.clone(), st.span.start as usize, st.span.end as usize),
                 None => return None,
             }
         }
@@ -418,6 +460,19 @@ pub fn compute_hover(
     Some(hover)
 }
 
+/// Formats a HIR [`Type`] as a human-readable string.
+///
+/// # Parameters
+/// * `ty`       — The type to format.
+/// * `compiler` — The script compiler holding the type and symbol arenas.
+/// * `interner` — Used to recover string names from interned IDs.
+/// * `shallow`  — When `true`, struct and enum types are rendered as just
+///   `"struct Name"` / `"enum Name"` without expanding fields or variants.
+///   This is used for nested type display to avoid exponential output.
+///
+/// # Recursive types
+/// Container types (`List`, `Set`, `Map`, `Tuple`) and `TypeDef` / `Deferred`
+/// wrappers call this function recursively with `shallow = true` for inner types.
 fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow: bool) -> String {
     match ty {
         Type::BuiltinType(builtin_ty) => match builtin_ty {
@@ -582,6 +637,10 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
     }
 }
 
+/// Strips the `"struct "` or `"enum "` prefix produced by [`format_type`] when used
+/// as a nested type reference (e.g. inside `List<...>` or as a field type).
+///
+/// Returns the input unchanged if neither prefix is present.
 fn strip_struct_enum_prefix(s: &str) -> String {
     if let Some(stripped) = s.strip_prefix("struct ") {
         stripped.to_string()
@@ -592,6 +651,10 @@ fn strip_struct_enum_prefix(s: &str) -> String {
     }
 }
 
+/// Formats a compile-time constant [`Value`] as a display string.
+///
+/// Used in variable hover to show `name: Type = <value>` when the value is
+/// statically known.  Returns `"Unknown"` for runtime / unresolved values.
 fn format_value(v: &Value, interner: &Intern) -> String {
     match v {
         Value::I64(num) => format!("{}", num),

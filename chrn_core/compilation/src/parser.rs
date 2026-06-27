@@ -24,14 +24,15 @@ use lang::fmter::{Formattable, Formatted};
 use lang::inner_args::InnerArgs;
 use lang::keywords::Keyword;
 
-/// Returns a completed `AstInfo` on `Ok`. Returns a tuple with unfinished `AstInfo` and
-/// Diagnostics on `Err`.
+/// Returns `AstInfo` and Diagnostics, if any exist.
+///
+/// Whether or not the `AstInfo` is unfinished is dependent on if diagnostics are empty.
 pub fn parse(
     settings: &ChrnSettings,
     metadata: &SourceRegion,
     tokens: &Vec<SpannedToken>,
     interner: &Intern,
-) -> Result<AstInfo, (AstInfo, Vec<SourceDiagnostic>)> {
+) -> (AstInfo, Vec<SourceDiagnostic>) {
     let mut ast_info = AstInfo::new();
 
     let mut state = ParserState::new();
@@ -359,11 +360,8 @@ pub fn parse(
     }
 
     // Returning broken ast and the diagnostics
-    if !ctx.err_vec.is_empty() {
-        return Err((ast_info, ctx.err_vec));
-    }
 
-    Ok(ast_info)
+    (ast_info, ctx.err_vec)
 }
 
 //FIXME: These sets may be misaligned

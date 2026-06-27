@@ -4,7 +4,7 @@ use crate::{id_types::PathId, source_map::source_span::SourceSpan};
 
 /// This exists in case other methods or fields are considered, but is just a Vec<Diagnostic>
 /// wrapper as of right now
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Reporter {
     pub diags: Vec<SourceDiagnostic>,
 }
@@ -26,7 +26,7 @@ pub enum Area {
 }
 
 /// Diagnostic intended to represent a set of instructions to be rendered.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SourceDiagnostic {
     pub level: DiagnosticLevel,
     pub core_msg: String,
@@ -70,7 +70,8 @@ impl SourceDiagnostic {
             core_msg,
             path_id,
             annotations,
-            ..Default::default()
+            help: Default::default(),
+            notes: Default::default(),
         }
     }
 
@@ -91,7 +92,8 @@ impl SourceDiagnostic {
             core_msg,
             path_id,
             annotations,
-            ..Default::default()
+            help: Default::default(),
+            notes: Default::default(),
         }
     }
 
@@ -186,7 +188,7 @@ pub struct Annotation {
 }
 
 impl Annotation {
-    pub fn new(span: SourceSpan, kind: AnnotationKind, label: Option<String>) -> Annotation {
+    pub const fn new(span: SourceSpan, kind: AnnotationKind, label: Option<String>) -> Annotation {
         Annotation { span, kind, label }
     }
 }
@@ -204,14 +206,14 @@ pub enum AnnotationKind {
 }
 
 impl AnnotationKind {
-    pub fn is_higher_priority(self, other: AnnotationKind) -> bool {
+    pub const fn is_higher_priority(self, other: AnnotationKind) -> bool {
         let self_priority = self.priority();
         let other_priority = other.priority();
 
         self_priority > other_priority
     }
 
-    pub fn is_lower_priority(self, other: AnnotationKind) -> bool {
+    pub const fn is_lower_priority(self, other: AnnotationKind) -> bool {
         let self_priority = self.priority();
         let other_priority = other.priority();
 
@@ -225,7 +227,7 @@ impl AnnotationKind {
         self_priority == other_priority
     }
 
-    pub fn priority(&self) -> u8 {
+    pub const fn priority(&self) -> u8 {
         match self {
             AnnotationKind::Primary => 2,
             AnnotationKind::Secondary => 1,
@@ -248,10 +250,4 @@ pub enum DiagnosticLevel {
     Warn,
     Note,
     Help,
-}
-
-impl Default for DiagnosticLevel {
-    fn default() -> Self {
-        DiagnosticLevel::Error
-    }
 }

@@ -1,3 +1,47 @@
+//! # chrn_lsp
+//!
+//! Language Server Protocol (LSP) implementation for the Chern language (`.chrn` files).
+//!
+//! This crate wires together the Chern compiler pipeline and exposes it to editors
+//! over the LSP protocol via [`backend::Backend`].  Editors connect through stdio
+//! (see `main.rs`) using the [`tower_lsp`] framework.
+//!
+//! ## Module overview
+//!
+//! | Module | Responsibility |
+//! |--------|----------------|
+//! | [`backend`] | `LanguageServer` trait impl – routes every LSP request/notification |
+//! | [`state`] | Per-document analysis state (`DocumentState`) and the LRU/dependency cache (`DocumentCache`) |
+//! | [`analyser`] | Drives analysis tasks asynchronously: config load → module resolve → diagnostics publish |
+//! | [`hover`] | Computes rich Markdown hover content for tokens and semantic entities |
+//! | [`document`] | Static documentation tables for keywords, builtin types, and intrinsic functions |
+//! | [`references`] | Finds all references to a symbol across all cached documents |
+//! | [`rename`] | Produces `WorkspaceEdit` payloads for symbol renames across all cached documents |
+//! | [`text`] | UTF-8 ↔ LSP UTF-16 position conversion utilities and incremental text-change application |
+//!
+//! ## Analysis pipeline
+//!
+//! Each time a document is opened or changed, the backend spawns an async analysis task:
+//!
+//! ```text
+//! did_open / did_change
+//!     └─ analyser::analyze_and_publish_task (async, debounced on change)
+//!         ├─ ChrnConfigLoader::load_config   — lex config header, find @def/@end
+//!         ├─ DocumentCache::get_or_create    — tokenise script section
+//!         ├─ DocumentState::ensure_analyzed  — resolve modules, parse, name-resolve, type-check
+//!         └─ publish_if_current              — send diagnostics only when not superseded
+//! ```
+//!
+//! ## LSP features supported
+//!
+//! * Diagnostics (config errors, parse errors, namespace errors, type errors)
+//! * Hover (keywords, builtin types, intrinsic functions, variables, structs, enums, aliases, modules)
+//! * Go-to-definition (cross-module)
+//! * Find references (cross-module)
+//! * Rename (cross-module)
+//! * Completion (keywords, core-library exports, module members, in-scope identifiers)
+//! * Semantic tokens (keyword / type / function / variable / operator highlighting)
+
 pub mod analyser;
 pub mod backend;
 pub mod document;
@@ -61,43 +105,52 @@ mod tests {
     }
 
     #[test]
-    fn test_document_cache_basic() {
+    fn test_document_cache_lru() {
         let cache = DocumentCache::new(2);
         let uri1 = "file:///test1.chrn";
         let text1 = Arc::new("let x = 1".to_string());
-
+        
         let state1 = cache.get_or_create(uri1, text1.clone(), 0, None, 1);
         assert_eq!(state1.read().version, 1);
 
-        // Retrieve existing
-        let state1_again = cache.get(uri1).unwrap();
-        assert!(Arc::ptr_eq(&state1, &state1_again));
-
-        // Update version
-        let state1_v2 = cache.get_or_create(uri1, text1.clone(), 0, None, 2);
-        // It shouldn't update version if text is same?
-        // Actually DocumentCache::get_or_create compares text.
-        // If text is same, it returns existing state.
-        assert_eq!(state1_v2.read().version, 1);
-
-        // New document
         let uri2 = "file:///test2.chrn";
         let text2 = Arc::new("let y = 2".to_string());
         cache.get_or_create(uri2, text2, 0, None, 1);
 
-        // New document, should evict uri1 if size > 2
+        // Retrieve existing uri1, making it the most recently used
+        assert!(cache.get(uri1).is_some());
+
+        // New document uri3, should evict uri2 since uri1 was accessed more recently
         let uri3 = "file:///test3.chrn";
         let text3 = Arc::new("let z = 3".to_string());
         cache.get_or_create(uri3, text3, 0, None, 1);
 
-        // uri1 should be evicted (LRU or just first-in depending on implementation)
-        // The implementation uses:
-        // let keys_to_remove: Vec<String> = cache.docs.keys().take(to_remove).map(|k| k.to_string()).collect();
-        // which is arbitrary for HashMap, but usually evicts something.
-        assert!(
-            cache.get(uri1).is_none() || cache.get(uri2).is_none() || cache.get(uri3).is_none()
-        );
-        // Since we have 3 docs and max_size 2, one must be gone.
+        assert!(cache.get(uri1).is_some(), "uri1 should be kept due to LRU");
+        assert!(cache.get(uri2).is_none(), "uri2 should be evicted due to LRU");
+        assert!(cache.get(uri3).is_some(), "uri3 should be present");
+    }
+
+    #[test]
+    fn test_get_token_at_offset() {
+        let cache = DocumentCache::new(10);
+        let uri = "file:///test_tokens.chrn";
+        //           012345678901234
+        let text = Arc::new("let foo = 123;".to_string());
+        let state = cache.get_or_create(uri, text, 0, None, 1);
+        let read_state = state.read();
+        
+        // Check finding token within a word
+        let token = read_state.get_token_at_offset(5).expect("Should find 'foo'");
+        assert_eq!(token.span.start, 4);
+        assert_eq!(token.span.end, 6);
+        
+        // Check finding token at exact boundary
+        let token2 = read_state.get_token_at_offset(10).expect("Should find '123'");
+        assert_eq!(token2.span.start, 10);
+        assert_eq!(token2.span.end, 12);
+        
+        // Space should return None
+        assert!(read_state.get_token_at_offset(3).is_none(), "Space should return None");
     }
 
     #[test]

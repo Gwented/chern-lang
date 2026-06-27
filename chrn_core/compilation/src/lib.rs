@@ -1,18 +1,16 @@
-pub mod constraint_resolver;
 pub mod constraints;
 pub mod lexer;
 pub mod lookup;
 pub mod modules;
-pub mod name_resolver;
 pub mod parser;
+pub mod resolvers;
 pub mod script_compiler;
 pub mod semantic;
 pub mod token;
-pub mod type_checker;
-pub mod type_resolver;
 
 #[cfg(test)]
 mod tests {
+    use crate::{resolvers::resolver_env::ResolverEnv, script_compiler::ScriptCompiler};
     // -- Helpers --
     /// Creates fake strings for the amounts given
     fn mock_interner(str_amt: usize, path_amt: usize) -> Intern {
@@ -60,6 +58,7 @@ mod tests {
             Some(region_id),
         );
 
+        // Should use compiler store now
         let arena = SourceRegionArena::new(vec![source_region]);
         let compiler = ScriptCompiler::init(None, vec![module]);
 
@@ -144,11 +143,12 @@ mod tests {
         lexer::Lexer,
         lookup::scopes::ScopeType,
         modules::{Import, ImportKind, Module, ModuleState},
-        name_resolver::NamespaceResolver,
         parser::{self, ast::AstInfo},
-        script_compiler::ScriptCompiler,
+        resolvers::{
+            name_resolver::NamespaceResolver,
+            type_resolver::{TypeResolver, type_context::TypeContext},
+        },
         token::{Notation, Token},
-        type_resolver::{TypeResolver, type_context::TypeContext},
     };
 
     #[test]
@@ -496,7 +496,7 @@ mod tests {
     #[test]
     fn start_and_serial_offset_test() {
         let text = format!("adwh@def var-> int: i32 @endhi");
-        let mut interner = mock_interner(0, 1);
+        let interner = mock_interner(0, 1);
         let region_id = SourceRegionId::new(0);
 
         let metadata = ChrnConfigLoader::new(
@@ -508,7 +508,6 @@ mod tests {
         )
         .load_config()
         .unwrap();
-        dbg!(metadata.serial_start);
 
         assert_eq!(&text[4..], &text[metadata.script_start..]);
         assert_eq!("hi", &text[metadata.serial_start.unwrap()..]);
@@ -774,7 +773,7 @@ mod tests {
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, region, &toks, &interner).unwrap();
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
         let res = NamespaceResolver::new(
             &settings,
@@ -801,7 +800,7 @@ mod tests {
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, region, &toks, &interner).unwrap();
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
         let res = NamespaceResolver::new(
             &settings,
@@ -832,7 +831,7 @@ mod tests {
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, region, &toks, &interner).unwrap();
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
         let res = NamespaceResolver::new(
             &settings,
@@ -860,7 +859,7 @@ mod tests {
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, region, &toks, &interner).unwrap();
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
         let res = NamespaceResolver::new(
             &settings,
@@ -890,7 +889,7 @@ mod tests {
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, region, &toks, &interner).unwrap();
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
         let res = NamespaceResolver::new(
             &settings,
@@ -918,7 +917,7 @@ mod tests {
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, region, &toks, &interner).unwrap();
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
         let res = NamespaceResolver::new(
             &settings,
@@ -1018,7 +1017,7 @@ mod tests {
             let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
                 .tokenize(&mut interner);
 
-            let ast_info = parser::parse(&settings, region, &toks, &interner).unwrap();
+            let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
             NamespaceResolver::new(
                 &settings,
@@ -1034,7 +1033,6 @@ mod tests {
             asts.push(ast_info);
         }
 
-        let mut ty_ctx = TypeContext::new();
         for i in 0..compiler.mods.len() {
             let mod_id = ModuleId::new(i);
             let region_id = compiler.mods[mod_id.id].region_id;
@@ -1044,17 +1042,10 @@ mod tests {
                 None => continue,
             };
 
-            TypeResolver::new(
-                &settings,
-                &asts[i],
-                region,
-                mod_id,
-                &mut ty_ctx,
-                &interner,
-                &mut compiler,
-            )
-            .resolve()
-            .unwrap();
+            let env = ResolverEnv::new(&asts[i], region, mod_id);
+            TypeResolver::new(&settings, &interner, &mut compiler)
+                .resolve(&env)
+                .unwrap();
         }
     }
 
@@ -1117,7 +1108,7 @@ mod tests {
             let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
                 .tokenize(&mut interner);
 
-            let ast_info = parser::parse(&settings, region, &toks, &interner).unwrap();
+            let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
             NamespaceResolver::new(
                 &settings,
@@ -1133,24 +1124,20 @@ mod tests {
             asts.push(Some(ast_info));
         }
 
-        let mut ty_ctx = TypeContext::new();
         for i in 0..compiler.mods.len() {
             let module = &compiler.mods[i];
             let region = match module.region_id {
                 Some(region_id) => arena.extract_region(region_id),
                 None => continue,
             };
-            TypeResolver::new(
-                &settings,
+            let env = ResolverEnv::new(
                 asts[i].as_ref().expect("Has metadata already"),
                 region,
                 module.mod_id,
-                &mut ty_ctx,
-                &interner,
-                &mut compiler,
-            )
-            .resolve()
-            .unwrap();
+            );
+            TypeResolver::new(&settings, &interner, &mut compiler)
+                .resolve(&env)
+                .unwrap();
         }
     }
 
@@ -1214,7 +1201,7 @@ mod tests {
             let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
                 .tokenize(&mut interner);
 
-            let ast_info = parser::parse(&settings, region, &toks, &interner).unwrap();
+            let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
             NamespaceResolver::new(
                 &settings,
@@ -1230,7 +1217,6 @@ mod tests {
             asts.push(Some(ast_info));
         }
 
-        let mut ty_ctx = TypeContext::new();
         let mut results = Vec::new();
 
         for i in 0..compiler.mods.len() {
@@ -1239,18 +1225,12 @@ mod tests {
                 Some(region_id) => arena.extract_region(region_id),
                 None => continue,
             };
-            results.push(
-                TypeResolver::new(
-                    &settings,
-                    asts[i].as_ref().expect("Has metadata already"),
-                    region,
-                    module.mod_id,
-                    &mut ty_ctx,
-                    &interner,
-                    &mut compiler,
-                )
-                .resolve(),
+            let env = ResolverEnv::new(
+                asts[i].as_ref().expect("Has metadata already"),
+                region,
+                module.mod_id,
             );
+            results.push(TypeResolver::new(&settings, &interner, &mut compiler).resolve(&env));
         }
 
         assert_eq!(results[0].is_err(), true, "Not exported");
@@ -1314,7 +1294,7 @@ mod tests {
             let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
                 .tokenize(&mut interner);
 
-            let ast_info = parser::parse(&settings, region, &toks, &interner).unwrap();
+            let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
             NamespaceResolver::new(
                 &settings,
@@ -1330,7 +1310,6 @@ mod tests {
             asts.push(Some(ast_info));
         }
 
-        let mut ty_ctx = TypeContext::new();
         let mut results = Vec::new();
 
         for i in 0..compiler.mods.len() {
@@ -1339,18 +1318,12 @@ mod tests {
                 Some(region_id) => arena.extract_region(region_id),
                 None => continue,
             };
-            results.push(
-                TypeResolver::new(
-                    &settings,
-                    asts[i].as_ref().expect("Has metadata already"),
-                    region,
-                    module.mod_id,
-                    &mut ty_ctx,
-                    &interner,
-                    &mut compiler,
-                )
-                .resolve(),
+            let env = ResolverEnv::new(
+                asts[i].as_ref().expect("Has metadata already"),
+                region,
+                module.mod_id,
             );
+            results.push(TypeResolver::new(&settings, &interner, &mut compiler).resolve(&env));
         }
 
         assert_eq!(results[0].is_ok(), true);
@@ -1372,7 +1345,7 @@ mod tests {
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, region, &toks, &interner).unwrap();
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
         NamespaceResolver::new(
             &settings,
@@ -1407,7 +1380,7 @@ mod tests {
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, region, &toks, &interner).unwrap();
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
         NamespaceResolver::new(
             &settings,
@@ -1443,7 +1416,7 @@ mod tests {
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, region, &toks, &interner).unwrap();
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
         NamespaceResolver::new(
             &settings,
@@ -1489,7 +1462,7 @@ mod tests {
         // let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
         //     .tokenize(&mut interner);
         //
-        // let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+        // let ast_info = parser::parse(&settings, &module, &toks, &mut interner).0;
         //
         // // Calls `reporter` internally but the path is fake so this fails
         // NamespaceResolver::new(
@@ -1535,7 +1508,7 @@ mod tests {
         // let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
         //     .tokenize(&mut interner);
         //
-        // let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+        // let ast_info = parser::parse(&settings, &module, &toks, &mut interner).0;
         //
         // // Calls `reporter` internally but the path is fake so this fails
         // NamespaceResolver::new(
@@ -1575,7 +1548,7 @@ mod tests {
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, region, &toks, &interner).unwrap();
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
         NamespaceResolver::new(
             &settings,
@@ -1621,7 +1594,7 @@ mod tests {
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, region, &toks, &interner).unwrap();
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
         NamespaceResolver::new(
             &settings,
@@ -1634,18 +1607,9 @@ mod tests {
         .resolve()
         .unwrap();
 
-        let mut ty_ctx = TypeContext::new();
-
-        let res = TypeResolver::new(
-            &settings,
-            &ast_info,
-            region,
-            Default::default(),
-            &mut ty_ctx,
-            &interner,
-            &mut compiler,
-        )
-        .resolve();
+        let mod_id = compiler.mods[0].mod_id;
+        let env = ResolverEnv::new(&ast_info, region, mod_id);
+        let res = TypeResolver::new(&settings, &interner, &mut compiler).resolve(&env);
 
         assert_eq!(res.is_err(), true);
 
@@ -1665,7 +1629,7 @@ mod tests {
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, region, &toks, &interner).unwrap();
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
         NamespaceResolver::new(
             &settings,
@@ -1678,18 +1642,9 @@ mod tests {
         .resolve()
         .unwrap();
 
-        let mut ty_ctx = TypeContext::new();
-
-        let res = TypeResolver::new(
-            &settings,
-            &ast_info,
-            region,
-            Default::default(),
-            &mut ty_ctx,
-            &interner,
-            &mut compiler,
-        )
-        .resolve();
+        let mod_id = compiler.mods[0].mod_id;
+        let env = ResolverEnv::new(&ast_info, region, mod_id);
+        let res = TypeResolver::new(&settings, &interner, &mut compiler).resolve(&env);
 
         assert_eq!(res.is_ok(), true);
     }
@@ -1708,7 +1663,7 @@ mod tests {
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
-        let ast_info = parser::parse(&settings, region, &toks, &interner).unwrap();
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
         NamespaceResolver::new(
             &settings,
@@ -1721,19 +1676,10 @@ mod tests {
         .resolve()
         .unwrap();
 
-        let mut ty_ctx = TypeContext::new();
-
-        TypeResolver::new(
-            &settings,
-            &ast_info,
-            region,
-            Default::default(),
-            &mut ty_ctx,
-            &interner,
-            &mut compiler,
-        )
-        .resolve()
-        .unwrap();
+        let env = ResolverEnv::new(&ast_info, region, Default::default());
+        TypeResolver::new(&settings, &interner, &mut compiler)
+            .resolve(&env)
+            .unwrap();
 
         assert!(compiler.symbols.len() > 0);
     }
@@ -1753,7 +1699,7 @@ mod tests {
     //     let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //         .tokenize(&mut interner);
     //
-    //     let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+    //     let ast_info = parser::parse(&settings, &module, &toks, &mut interner).0;
     //
     //     NamespaceResolver::new(
     //         &settings,
@@ -1812,7 +1758,7 @@ mod tests {
     //     let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //         .tokenize(&mut interner);
     //
-    //     let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+    //     let ast_info = parser::parse(&settings, &module, &toks, &mut interner).0;
     //
     //     NamespaceResolver::new(
     //         &settings,
@@ -1869,7 +1815,7 @@ mod tests {
     //     let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //         .tokenize(&mut interner);
     //
-    //     let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+    //     let ast_info = parser::parse(&settings, &module, &toks, &mut interner).0;
     //
     //     NamespaceResolver::new(
     //         &settings,
@@ -1924,7 +1870,7 @@ mod tests {
     //     let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //         .tokenize(&mut interner);
     //
-    //     let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+    //     let ast_info = parser::parse(&settings, &module, &toks, &mut interner).0;
     //
     //     NamespaceResolver::new(
     //         &settings,
@@ -1975,7 +1921,7 @@ mod tests {
     //     let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
     //         .tokenize(&mut interner);
     //
-    //     let ast_info = parser::parse(&settings, &module, &toks, &mut interner).unwrap();
+    //     let ast_info = parser::parse(&settings, &module, &toks, &mut interner).0;
     //
     //     NamespaceResolver::new(
     //         &settings,

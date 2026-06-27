@@ -1,3 +1,25 @@
+//! # document
+//!
+//! Provides static documentation tables and the [`Document`] type for hover content.
+//!
+//! Three tables are exposed as `pub static` slices:
+//!
+//! | Constant              | Indexed by                  | Length |
+//! |-----------------------|-----------------------------|--------|
+//! | [`KEYWORD_DOCS`]      | `Keyword as usize`          | 13     |
+//! | [`BUILTIN_TYPE_DOCS`] | `BuiltinTypeKind as usize`  | 27     |
+//! | [`FUNC_DOCS`]         | `FuncKind as usize`         | 7      |
+//!
+//! ## Alignment invariant
+//!
+//! **The entries in each table MUST remain aligned with the discriminant values of
+//! their respective enum.**  Adding a new keyword, builtin type, or intrinsic function
+//! requires inserting the corresponding [`Document`] entry at the correct index and
+//! updating the length in this comment.
+//!
+//! Accessor methods on [`Document`] (`keyword_docs`, `builtin_type_docs`, `func_docs`)
+//! index directly into these arrays; an out-of-bounds index will panic at runtime.
+
 use compilation::semantic::hir::FuncKind;
 use lang::keywords::Keyword;
 use lang::types::builtins::BuiltinTypeKind;
@@ -48,8 +70,15 @@ impl Document {
 
 //  Keywords
 
+// ── Keywords ─────────────────────────────────────────────────────────────────
+//
+// Indexed by `Keyword as usize`.  Variants must appear in the same order as the
+// `Keyword` enum definition in `lang::keywords`.
+//FIX: Key should be the interned id, or maybe a mixture of both depending on DECISIONS
+/// Hover documentation for each Chern language keyword.
+///
+/// Indexed by [`Keyword`] discriminant via [`Document::keyword_docs`].
 pub static KEYWORD_DOCS: [Document; 13] = [
-    //FIX: Key should be the interned id, or maybe a mixture of both depending on DECISIONS
     Document {
         key: "struct",
         description: "Defines a data structure",
@@ -131,8 +160,13 @@ pub static KEYWORD_DOCS: [Document; 13] = [
     },
 ];
 
-//  Builtin types — ordered to match `BuiltinTypeKind` variant discriminants
-
+// ── Builtin types ─────────────────────────────────────────────────────────────
+//
+// Indexed by `BuiltinTypeKind as usize`.  Variants must appear in the same order
+// as the `BuiltinTypeKind` enum definition in `lang::types::builtins`.
+/// Hover documentation for each Chern builtin type.
+///
+/// Indexed by [`BuiltinTypeKind`] discriminant via [`Document::builtin_type_docs`].
 pub static BUILTIN_TYPE_DOCS: [Document; 27] = [
     Document {
         key: "i8",
@@ -271,8 +305,13 @@ pub static BUILTIN_TYPE_DOCS: [Document; 27] = [
     },
 ];
 
-//  Intrinsic functions — ordered to match `FuncKind` variant discriminants
-
+// ── Intrinsic functions ───────────────────────────────────────────────────────
+//
+// Indexed by `FuncKind as usize`.  Variants must appear in the same order as the
+// `FuncKind` enum definition in `compilation::semantic::hir`.
+/// Hover documentation for each Chern intrinsic (built-in) function.
+///
+/// Indexed by [`FuncKind`] discriminant via [`Document::func_docs`].
 pub static FUNC_DOCS: [Document; 7] = [
     Document {
         key: "IsEmpty",

@@ -1,4 +1,5 @@
 // TODO: MAYBE eventually change from SipHash
+pub mod script_compiler_store;
 use chrn_utils::{
     id_types::{InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId},
     intern,
@@ -48,6 +49,7 @@ pub struct ScriptCompiler {
     /// collection that would be considered fields, but more general since the language is small
     /// scale and would likely not benefit much from such a wide variety of collections.
     pub members: Vec<MemberSymbolKind>,
+    /// All variables that were found
     pub variables: Vec<VarDef>,
     /// All user defined configuration. Is considered it's own class instead of a type since it
     /// behaves uniquely
@@ -58,7 +60,7 @@ pub struct ScriptCompiler {
     pub intrinsic_registry: IntrinsicRegistry,
 }
 
-//NOTE: I think these can be removed. Maybe.
+//NOTE: I think these can be removed. Maybe. I don't know actually.
 pub const CORE_I8: u32 = 0;
 pub const CORE_U8: u32 = 1;
 pub const CORE_I16: u32 = 2;
@@ -126,6 +128,9 @@ impl ScriptCompiler {
     }
 
     /// Creates the symbols needed for modules to be able to access to access their imports
+    ///
+    /// This is done by going through each module and injecting the module symbols found during the
+    /// initial module dependency graph stage.
     fn create_module_symbols(compiler: &mut ScriptCompiler) {
         // Loops through all modules, registering themselves as a symbol to themselves, iterating
         // through their imports to then inject those symbols as modules that can be looked up

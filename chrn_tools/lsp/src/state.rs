@@ -1,10 +1,43 @@
+//! # state
+//!
+//! Core document-state types used throughout the LSP.
+//!
+//! ## [`DocumentState`]
+//!
+//! Represents the fully-analysed state of a single `.chrn` file.  It is created once
+//! per document version by [`DocumentCache::get_or_create`] and then lazily populated
+//! by [`DocumentState::ensure_analyzed`], which drives the compiler pipeline:
+//!
+//! ```text
+//! DocumentState::ensure_analyzed
+//!     ├─ ModuleFinder::collect_imports     — discover @import statements
+//!     ├─ analyser::resolve_modules_lsp     — load & recurse into imported files
+//!     ├─ ScriptCompiler::init              — initialise HIR structures
+//!     ├─ parser::parse (per module)        — build AST
+//!     ├─ NamespaceResolver::resolve        — symbol registration
+//!     ├─ TypeResolver::resolve             — type inference & checking
+//!     └─ build_symbol_map                  — populate the span → entity index
+//! ```
+//!
+//! ## [`SemanticEntity`]
+//!
+//! A tagged union that identifies what semantic construct lives at a particular
+//! source span.  Used by hover, go-to-definition, references, and rename to dispatch
+//! on the kind of thing under the cursor.
+//!
+//! ## [`DocumentCache`]
+//!
+//! A thread-safe, bounded LRU-like cache of `DocumentState` values keyed by URI
+//! string.  It also maintains a forward (`imports`) and reverse (`dependents`) index
+//! of cross-module dependency edges so that editing a shared import file correctly
+//! invalidates all documents that import it.
 use compilation::lexer::Lexer;
 use compilation::lookup::scopes;
 use compilation::lookup::scopes::AssociatedScopeKind;
 use compilation::lookup::scopes::LookupPattern;
 use compilation::lookup::scopes::ScopeType;
 use compilation::modules::Module;
-use compilation::name_resolver::NamespaceResolver;
+use compilation::resolvers::name_resolver::NamespaceResolver;
 use compilation::parser::ast::PathSegment;
 use compilation::parser::ast::TypeExpr;
 use compilation::script_compiler::ScriptCompiler;
@@ -15,8 +48,9 @@ use compilation::semantic::hir::Type;
 use compilation::semantic::hir::VariableState;
 use compilation::token::SpannedToken;
 use compilation::token::Token as ScriptToken;
-use compilation::type_resolver::type_context::TypeContext;
-use compilation::type_resolver::TypeResolver;
+use compilation::resolvers::type_resolver::type_context::TypeContext;
+use compilation::resolvers::type_resolver::TypeResolver;
+use compilation::resolvers::resolver_env::ResolverEnv;
 use lang::trivia::Trivia;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -33,51 +67,101 @@ use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
 use chrn_utils::source_map::source_region::{SourceRegion, SourceRegionArena};
 use chrn_utils::source_map::source_span::SourceSpan;
 
+/// Identifies the semantic construct that occupies a particular source span.
+///
+/// The `symbol_map` in [`DocumentState`] is a `Vec<(SourceSpan, SemanticEntity)>`.
+/// Given a byte offset, the smallest span containing it resolves to one of these
+/// variants, which is then used by hover / go-to-definition / references / rename.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SemanticEntity {
+    /// A named symbol (type, variable, module-level function, …).
     Symbol(SymbolId),
+    /// A struct field, identified by its owning struct symbol and its positional index.
     Field {
         owner_sym_id: SymbolId,
         field_idx: usize,
     },
+    /// An enum variant, identified by its owning enum symbol and its positional index.
     Variant {
         owner_sym_id: SymbolId,
         variant_idx: usize,
     },
+    /// An imported or aliased module reference.
     Module(ModuleId),
+    /// A local binding (alias type parameter, etc.) scoped to a single declaration.
     Local {
         name_id: InternedId,
+        /// The span at which this local name is declared; used as a stable identity key.
         decl_span: SourceSpan,
+        /// The symbol that owns this local scope, if any (e.g. the alias symbol).
         owner_sym_id: Option<SymbolId>,
     },
 }
 
+/// All analysis results for a single `.chrn` document at a specific version.
+///
+/// A new `DocumentState` is created by [`DocumentCache::get_or_create`] whenever the
+/// document text changes.  At creation time only lexical information (`tokens`,
+/// `trivia`) is available.  The remaining fields are populated lazily when
+/// [`ensure_analyzed`](DocumentState::ensure_analyzed) is called.
+///
+/// ## Field lifetime notes
+/// * `text` is shared via `Arc` to avoid copying; do not hold references to it across
+///   async suspension points if possible.
+/// * `compiler`, `asts`, and `symbol_map` are all `None` / empty until
+///   `ensure_analyzed` completes.
+/// * Error fields (`config_errors`, `parse_errors`, `ns_errors`, `ty_errors`) hold
+///   the diagnostics produced by each analysis stage; `None` means that stage either
+///   did not run or produced no errors.
 pub struct DocumentState {
+    /// The raw source text of the document.
     pub text: Arc<String>,
+    /// Lexical tokens for the script section (from the lexer).
     pub tokens: Vec<SpannedToken>,
+    /// Trivia (comments, whitespace) from lexing; used for `offset_in_comment`.
     pub trivia: Vec<Trivia>,
+    /// String/path interner shared by all analysis stages for this document.
     pub interner: Intern,
+    /// Arena holding the `SourceRegion` for this file and every imported file.
     pub region_arena: SourceRegionArena,
+    /// Byte offset of the first token in the script section (`@def`).
     pub script_start: usize,
+    /// Byte offset of the serial section start (after `@end`), or `None` if absent.
     pub serial_start: Option<usize>,
+    /// The fully initialised script compiler, available after `ensure_analyzed`.
     pub compiler: Option<ScriptCompiler>,
+    /// ASTs indexed by module ID; entry `0` is the main module.
     pub asts: Vec<Option<compilation::parser::ast::AstInfo>>,
+    /// Diagnostics from config/import parsing (module discovery phase).
     pub config_errors: Option<Vec<SourceDiagnostic>>,
+    /// Diagnostics from the script parser.
     pub parse_errors: Option<Vec<SourceDiagnostic>>,
+    /// Diagnostics from namespace resolution.
     pub ns_errors: Option<Vec<SourceDiagnostic>>,
+    /// Diagnostics from type resolution.
     pub ty_errors: Option<Vec<SourceDiagnostic>>,
+    /// Sorted list of `(span, entity)` pairs built after analysis; queried by offset.
     pub symbol_map: Vec<(SourceSpan, SemanticEntity)>,
+    /// The sub-slice of `compiler.exprs` that belongs to the main module.
     pub main_expr_range: std::ops::Range<usize>,
+    /// LSP document version counter (used to detect stale analysis results).
     pub version: u64,
 }
 
 impl DocumentState {
+    /// Creates a new `DocumentState` pre-populated with lexical data.
+    ///
+    /// Analysis (`compiler`, `asts`, error fields, `symbol_map`) is left in its
+    /// uninitialised state; call [`ensure_analyzed`](Self::ensure_analyzed) to
+    /// complete it.
     pub fn new(
         text: Arc<String>,
         tokens: Vec<SpannedToken>,
         trivia: Vec<Trivia>,
         interner: Intern,
+        // Byte offset of the first script token.
         script_start: usize,
+        // Byte offset of the serial section, or `None`.
         serial_start: Option<usize>,
         version: u64,
     ) -> Self {
@@ -230,10 +314,8 @@ impl DocumentState {
                 compilation::parser::parse(&settings, region, &toks, &self.interner)
             };
 
-            let (ast_info, parse_errors) = match parse_result {
-                Ok(ast_info) => (ast_info, None),
-                Err((partial_ast, err)) => (partial_ast, Some(err)),
-            };
+            let (ast_info, mut errs) = parse_result;
+            let parse_errors = if errs.is_empty() { None } else { Some(errs) };
 
             if mod_idx == 0 {
                 if let Some(diags) = parse_errors {
@@ -299,15 +381,13 @@ impl DocumentState {
                 let expr_start = compiler.exprs.len();
                 let mut type_resolver = TypeResolver::new(
                     &settings,
-                    ast_info,
-                    region,
-                    ModuleId::new(mod_idx),
-                    &mut ty_ctx,
                     &self.interner,
                     &mut compiler,
                 );
 
-                if let Err(ty_diags) = type_resolver.resolve() {
+                let env = ResolverEnv::new(ast_info, region, ModuleId::new(mod_idx));
+
+                if let Err(ty_diags) = type_resolver.resolve(&env) {
                     if mod_idx == 0 {
                         self.ty_errors = Some(ty_diags);
                     }
@@ -887,6 +967,12 @@ impl DocumentState {
         self.symbol_map = map;
     }
 
+    /// Returns the most specific [`SemanticEntity`] whose span contains `offset`.
+    ///
+    /// "Most specific" is defined as the entry with the smallest span length.  This
+    /// prevents a broader expression span (e.g. a qualified path `mod::Field`) from
+    /// shadowing the individual component (e.g. the module name or the field name)
+    /// when the cursor is on that component.
     pub fn get_entity_at_offset(&self, offset: usize) -> Option<&SemanticEntity> {
         // Find the smallest span that contains the offset, as it's the most specific.
         // This prevents broader expressions (like qualified names) from shadowing
@@ -898,6 +984,18 @@ impl DocumentState {
             .map(|(_, entity)| entity)
     }
 
+    /// Collects all error phases into a flat LSP diagnostic list.
+    ///
+    /// Phases are emitted in order: config errors → parse errors → namespace
+    /// errors → type errors.  Each phase uses the appropriate `source` tag so that
+    /// editors can filter by category:
+    ///
+    /// | Phase           | `source` tag        |
+    /// |-----------------|---------------------|
+    /// | Config / import | `"chrn-config"`     |
+    /// | Parser          | `"chrn-parser"`     |
+    /// | Namespace       | `"chrn-namespace"`  |
+    /// | Type checker    | `"chrn-type"`       |
     pub fn get_lsp_diagnostics(&self) -> Vec<tower_lsp::lsp_types::Diagnostic> {
         let mut lsp_diags = Vec::new();
         let doc_len = self.text.len();
@@ -924,24 +1022,47 @@ impl DocumentState {
         lsp_diags
     }
 
+    /// Returns the interned ID, start byte, and end byte of the identifier token
+    /// that covers `byte_offset`, or `None` if no identifier token is at that offset.
     pub fn get_symbol_at_offset(&self, byte_offset: usize) -> Option<(InternedId, usize, usize)> {
-        for st in &self.tokens {
-            let span = st.span;
-            if byte_offset >= span.start as usize && byte_offset <= span.end as usize {
-                if let ScriptToken::Id(id) = st.tok {
-                    return Some((id, span.start as usize, span.end as usize));
-                }
-                return None;
+        self.get_token_at_offset(byte_offset).and_then(|st| {
+            if let ScriptToken::Id(id) = st.tok {
+                Some((id, st.span.start as usize, st.span.end as usize))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Returns the token that covers `byte_offset`, or `None` if no token is at that offset.
+    pub fn get_token_at_offset(&self, byte_offset: usize) -> Option<&SpannedToken> {
+        let idx = self.tokens.partition_point(|t| (t.span.end as usize) < byte_offset);
+        if idx < self.tokens.len() {
+            let t = &self.tokens[idx];
+            if byte_offset >= t.span.start as usize && byte_offset <= t.span.end as usize {
+                return Some(t);
             }
         }
         None
     }
 
+    /// Convenience wrapper around [`get_symbol_at_offset`](Self::get_symbol_at_offset)
+    /// that returns the identifier text as a `String`.
     pub fn get_identifier_at_offset(&self, byte_offset: usize) -> Option<String> {
         self.get_symbol_at_offset(byte_offset)
             .map(|(id, _, _)| self.interner.search(id).to_string())
     }
 
+    /// Resolves a [`SemanticEntity`] to its definition location.
+    ///
+    /// Returns `(file_path, span, owning_symbol_id)` where:
+    /// * `file_path` is the OS path string of the file containing the definition.
+    /// * `span` is the byte span of the definition name token within that file.
+    /// * `owning_symbol_id` is only meaningful for `Field` and `Variant` variants;
+    ///   it identifies the struct/enum that owns the member.
+    ///
+    /// Returns `None` when the definition cannot be located (e.g. builtin module,
+    /// missing AST, or unresolved region).
     pub fn get_definition_location(
         &self,
         entity: &SemanticEntity,
@@ -1057,17 +1178,40 @@ impl DocumentState {
     }
 }
 
+/// Internal storage for [`DocumentCache`].
 struct CacheInner {
-    docs: HashMap<String, (Arc<String>, Arc<RwLock<DocumentState>>)>,
-    /// URI → set of module URIs it imports
+    /// Primary document map: URI → (source text, analysis state, access_tick).
+    docs: HashMap<String, (Arc<String>, Arc<RwLock<DocumentState>>, Arc<std::sync::atomic::AtomicU64>)>,
+    /// URI → set of module URIs it imports (forward dependency edges).
     imports: HashMap<String, HashSet<String>>,
-    /// URI → set of URIs that import it (reverse index)
+    /// URI → set of URIs that import it (reverse dependency index).
     dependents: HashMap<String, HashSet<String>>,
 }
 
+/// Thread-safe, bounded cache of analysed document states.
+///
+/// ## Caching strategy
+/// * Documents are keyed by their URI string.
+/// * The cache stores both the source text (`Arc<String>`) and the
+///   [`DocumentState`] wrapped in a `RwLock`.
+/// * Tokenisation (via `Lexer`) happens **outside** any lock to avoid blocking
+///   readers while lexing a large file.
+/// * When the cache exceeds `max_size` a simple eviction strategy removes the
+///   oldest entries in HashMap iteration order (not strictly LRU, but sufficient
+///   for typical usage where a few dozen files are open at once).
+///
+/// ## Dependency tracking
+/// The cache maintains two complementary maps:
+/// * `imports`: for each URI, the set of URIs it imports.
+/// * `dependents`: the reverse index — for each URI, the set of URIs that import it.
+///
+/// When a document is saved or changed, [`invalidate`](Self::invalidate) performs a
+/// BFS over `dependents` to evict all transitive dependents, ensuring that stale
+/// analysis results are never served.
 pub struct DocumentCache {
     inner: RwLock<CacheInner>,
     max_size: usize,
+    tick: std::sync::atomic::AtomicU64,
 }
 
 impl std::fmt::Debug for DocumentCache {
@@ -1079,6 +1223,7 @@ impl std::fmt::Debug for DocumentCache {
 }
 
 impl DocumentCache {
+    /// Creates a new cache with the given maximum number of documents.
     pub fn new(max_size: usize) -> Self {
         DocumentCache {
             inner: RwLock::new(CacheInner {
@@ -1087,9 +1232,18 @@ impl DocumentCache {
                 dependents: HashMap::new(),
             }),
             max_size,
+            tick: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
+    /// Returns an existing [`DocumentState`] for `uri` when the source text is
+    /// unchanged, or creates a new one by tokenising `text`.
+    ///
+    /// The double-checked locking pattern is used: a read lock is acquired first to
+    /// avoid the cost of a write lock on cache hits.  The expensive tokenisation step
+    /// runs without holding any lock, and the write lock is acquired only to insert.
+    ///
+    /// If the cache is at capacity, one entry is evicted before the new one is inserted.
     pub fn get_or_create(
         &self,
         uri: &str,
@@ -1101,8 +1255,9 @@ impl DocumentCache {
         // 1. Check existing under read lock first (cheap)
         {
             let cache = self.inner.read();
-            if let Some((cached_text, existing)) = cache.docs.get(uri) {
+            if let Some((cached_text, existing, access_tick)) = cache.docs.get(uri) {
                 if Arc::ptr_eq(cached_text, &text) || **cached_text == *text {
+                    access_tick.store(self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
                     return Arc::clone(existing);
                 }
             }
@@ -1117,20 +1272,18 @@ impl DocumentCache {
         let mut cache = self.inner.write();
 
         // Double check after acquiring write lock in case another thread created it
-        if let Some((cached_text, existing)) = cache.docs.get(uri) {
+        if let Some((cached_text, existing, access_tick)) = cache.docs.get(uri) {
             if Arc::ptr_eq(cached_text, &text) || **cached_text == *text {
+                access_tick.store(self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
                 return Arc::clone(existing);
             }
         }
 
         if cache.docs.len() >= self.max_size {
             let to_remove = cache.docs.len() - self.max_size + 1;
-            let keys_to_remove: Vec<String> = cache
-                .docs
-                .keys()
-                .take(to_remove)
-                .map(|k| k.to_string())
-                .collect();
+            let mut entries: Vec<_> = cache.docs.iter().map(|(k, (_, _, tick))| (k.to_string(), tick.load(std::sync::atomic::Ordering::Relaxed))).collect();
+            entries.sort_unstable_by_key(|(_, t)| *t);
+            let keys_to_remove: Vec<String> = entries.into_iter().take(to_remove).map(|(k, _)| k).collect();
             for key in &keys_to_remove {
                 cache.docs.remove(key);
                 if let Some(imports) = cache.imports.remove(key) {
@@ -1156,7 +1309,7 @@ impl DocumentCache {
 
         cache
             .docs
-            .insert(uri.to_string(), (text, Arc::clone(&state)));
+            .insert(uri.to_string(), (text, Arc::clone(&state), Arc::new(std::sync::atomic::AtomicU64::new(self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed)))));
         state
     }
 
@@ -1213,32 +1366,45 @@ impl DocumentCache {
         }
     }
 
+    /// Looks up the [`DocumentState`] for `uri`, returning `None` if not cached.
     pub fn get(&self, uri: &str) -> Option<Arc<RwLock<DocumentState>>> {
         self.inner
             .read()
             .docs
             .get(uri)
-            .map(|(_, state)| Arc::clone(state))
+            .map(|(_, state, tick)| {
+                tick.store(self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
+                Arc::clone(state)
+            })
     }
 
+    /// Looks up only the source text for `uri` without acquiring a state lock.
     pub fn get_text(&self, uri: &str) -> Option<Arc<String>> {
         self.inner
             .read()
             .docs
             .get(uri)
-            .map(|(text, _)| Arc::clone(text))
+            .map(|(text, _, tick)| {
+                tick.store(self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
+                Arc::clone(text)
+            })
     }
 
+    /// Calls `f` with the URI and state for every cached document.
+    ///
+    /// The entire cache is read-locked for the duration of the iteration; `f` must
+    /// not call other `DocumentCache` methods to avoid deadlock.
     pub fn for_each_state<F>(&self, mut f: F)
     where
         F: FnMut(&str, Arc<RwLock<DocumentState>>),
     {
         let cache = self.inner.read();
-        for (uri, (_, state)) in &cache.docs {
+        for (uri, (_, state, _)) in &cache.docs {
             f(uri, Arc::clone(state));
         }
     }
 
+    /// Removes all documents, imports, and dependents from the cache.
     pub fn clear(&self) {
         let mut cache = self.inner.write();
         cache.docs.clear();

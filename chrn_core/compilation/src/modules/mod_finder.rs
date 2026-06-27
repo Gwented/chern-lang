@@ -1,9 +1,5 @@
 // Has weird behavior and silent errors when it comes to import keyword usage
-use std::{
-    ffi::OsStr,
-    path::{self, PathBuf},
-    str::FromStr,
-};
+use std::{ffi::OsStr, path::PathBuf, str::FromStr};
 
 use chrn_utils::chrn_settings::ChrnSettings;
 use chrn_utils::{

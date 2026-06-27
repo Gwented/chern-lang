@@ -2,7 +2,10 @@
 
 use std::path::Path;
 
-use crate::source_map::{source_diagnostic::SourceDiagnostic, source_region::SourceRegionArena};
+use crate::{
+    intern::Intern,
+    source_map::{source_diagnostic::SourceDiagnostic, source_region::SourceRegionArena},
+};
 
 /// General error enum for the entirety of the codebase to use. Everything can be converted back
 /// into it so it can be treated just as any `Err()` would be but more valuable in detail.
@@ -48,18 +51,21 @@ impl From<std::io::Error> for ConfigLoadError {
 /// Struct for carrying module data if `main` fails to be loaded within `extract_modules`.
 pub struct ModuleInitError {
     pub region: Option<SourceRegionArena>,
+    pub interner: Intern,
     pub cfg_err: ConfigLoadError,
 }
 
 impl ModuleInitError {
-    pub fn new(region: Option<SourceRegionArena>, cfg_err: ConfigLoadError) -> ModuleInitError {
-        ModuleInitError { region, cfg_err }
-    }
-}
-
-impl From<std::io::Error> for ModuleInitError {
-    fn from(err: std::io::Error) -> Self {
-        ModuleInitError::new(None, ConfigLoadError::IO(err))
+    pub fn new(
+        region: Option<SourceRegionArena>,
+        interner: Intern,
+        cfg_err: ConfigLoadError,
+    ) -> ModuleInitError {
+        ModuleInitError {
+            region,
+            interner,
+            cfg_err,
+        }
     }
 }
 

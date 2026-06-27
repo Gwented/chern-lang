@@ -1,5 +1,5 @@
 [package]
-name = "orchestrator"
+name = "orchestration"
 version.workspace = true
 edition.workspace = true
 

@@ -40,6 +40,7 @@ impl SourceRegion {
 }
 
 /// Type-safe wrapper for indexing regions
+#[derive(Debug)]
 pub struct SourceRegionArena {
     pub regions: Vec<SourceRegion>,
 }
