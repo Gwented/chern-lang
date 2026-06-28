@@ -3,7 +3,7 @@ use std::{fmt::Display, ops::Range};
 use chrn_utils::{id_types::InternedId, source_map::source_span::SourceSpan};
 use lang::keywords::Keyword;
 
-use crate::parser::ast::BinaryOp;
+use crate::parser::ast::ast_concepts::BinaryOp;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // This exists so that the interned value can be kept and displayed. It's also so a notation can be

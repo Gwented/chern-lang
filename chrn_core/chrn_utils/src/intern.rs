@@ -71,6 +71,12 @@ pub const INTERNED_ORDERED: u32 = 61;
 pub const INTERNED_COMPARABLE: u32 = 62;
 pub const INTERNED_JAVA_UPPER: u32 = 63;
 pub const INTERNED_DEFAULT_VALUE: u32 = 64;
+pub const INTERNED_WARN: u32 = 65;
+pub const INTERNED_IGNORE: u32 = 66;
+pub const INTERNED_SCIENT: u32 = 67;
+pub const INTERNED_HEX: u32 = 68;
+pub const INTERNED_BIN: u32 = 69;
+pub const INTERNED_OCTAL: u32 = 70;
 
 // Collection,
 // CharacterMappable,
@@ -300,6 +306,22 @@ impl Intern {
             .id_map
             .insert("default_value".to_string(), INTERNED_DEFAULT_VALUE);
         interner.stored_strs.push("default_value".to_string());
+        interner.id_map.insert("warn".to_string(), INTERNED_WARN);
+        interner.stored_strs.push("warn".to_string());
+        interner
+            .id_map
+            .insert("ignore".to_string(), INTERNED_IGNORE);
+        interner.stored_strs.push("ignore".to_string());
+        interner
+            .id_map
+            .insert("scient".to_string(), INTERNED_SCIENT);
+        interner.stored_strs.push("scient".to_string());
+        interner.id_map.insert("hex".to_string(), INTERNED_HEX);
+        interner.stored_strs.push("hex".to_string());
+        interner.id_map.insert("bin".to_string(), INTERNED_BIN);
+        interner.stored_strs.push("bin".to_string());
+        interner.id_map.insert("octal".to_string(), INTERNED_OCTAL);
+        interner.stored_strs.push("octal".to_string());
 
         interner.pos = interner.stored_strs.len();
 

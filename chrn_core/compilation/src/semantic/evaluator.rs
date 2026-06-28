@@ -1,10 +1,11 @@
 use lang::values::Value;
 
 use crate::{
-    parser::ast::{BinaryOp, UnaryOp},
-    semantic::error::SemanticError,
+    parser::ast::ast_concepts::{BinaryOp, UnaryOp},
+    semantic::preset_err::PresetErr,
 };
 
+/// Evaluates if the given unary operation is possible given language rules
 pub fn is_compatible_unary(op: UnaryOp, operand: &Value) -> bool {
     match op {
         UnaryOp::Not => match operand {
@@ -26,6 +27,7 @@ pub fn is_compatible_unary(op: UnaryOp, operand: &Value) -> bool {
     }
 }
 
+/// Evaluates if the given binary operation is possible given language rules
 pub fn is_compatible_binary(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
     match lhs {
         Value::I64(_) => match op {
@@ -98,7 +100,8 @@ pub fn is_compatible_binary(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
     }
 }
 
-pub fn apply_unary_op(op: UnaryOp, operand: &Value) -> Result<Value, SemanticError> {
+//FIX: Both of these should participate in this unreachable usage
+pub fn apply_unary_op(op: UnaryOp, operand: &Value) -> Result<Value, PresetErr> {
     match op {
         UnaryOp::Not => match operand {
             Value::Bool(v) => Ok(Value::Bool(!v)),
@@ -124,7 +127,7 @@ pub fn apply_unary_op(op: UnaryOp, operand: &Value) -> Result<Value, SemanticErr
 /// Applies operation assuming that lhs and rhs were checked for compatibility
 //TODO: BIGFLOAT
 //Maybe have all error handling happen here?
-pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, SemanticError> {
+pub fn apply_binary_op(lhs: &Value, op: BinaryOp, rhs: &Value) -> Result<Value, PresetErr> {
     match op {
         BinaryOp::Add => match lhs {
             Value::I64(lhs_inner) => match rhs {

@@ -1,24 +1,23 @@
 use chrn_utils::{
     chrn_settings::ChrnSettings,
-    id_types::{AstId, ExprId, ModuleId, SpannedContainer, TypeId},
+    id_types::{AstId, ExprId, SpannedContainer, SpannedContainerRef, TypeId},
     intern::Intern,
     source_map::{
         source_diagnostic::{DiagnosticLevel, SourceDiagnostic},
-        source_region::SourceRegion,
         source_span::SourceSpan,
     },
 };
-use lang::{fmter::Formatted, inner_args::InnerArgs, types::builtins::BuiltinType};
+use lang::{directives::Directive, fmter::Formatted, types::builtins::BuiltinType};
 
 use crate::{
     constraints::ArgConstraint,
     lookup::scopes::ScopeType,
-    parser::ast::{
-        AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, AstInfo, Item,
+    parser::ast::ast_concepts::{
+        AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, Item,
     },
     resolvers::resolver_env::ResolverEnv,
     script_compiler::ScriptCompiler,
-    semantic::{error::SemanticError, hir::Type, semantic_reporter},
+    semantic::{hir::hir_concepts::Type, preset_err::PresetErr, preset_reporter},
 };
 
 pub struct ConstraintResolver<'a> {
@@ -145,7 +144,7 @@ impl<'a> ConstraintResolver<'a> {
 
         // Checking if condition is valid for the given type
         // Using the Ast node's condition so that the span information is not lost
-        let ty_span = abs_typedef.spanned_ty_expr.span;
+        let ty_span = abs_typedef.sp_ty_expr.span;
         for (i, cond_expr) in type_def.conds.iter().enumerate() {
             let ast_span = &abs_typedef.conds[i].span;
 
@@ -166,14 +165,14 @@ impl<'a> ConstraintResolver<'a> {
                     );
                     // semantic_reporter::report_semantic(
                     //     &mut self.err_vec,
-                    //     sem_err,
+                    //     preset_err,
                     //     env.region,
                     //     self.settings,
                     //     self.interner,
                     // );
                     // semantic_reporter::create_diag_builder_preset(
                     //     &mut self.err_vec,
-                    //     sem_err,
+                    //     preset_err,
                     //     env.region,
                     //     self.settings,
                     //     self.interner,
@@ -183,9 +182,9 @@ impl<'a> ConstraintResolver<'a> {
                 _ => (),
             }
 
-            if let Err(sem_errs) = self.check_cond(type_def.type_id, ty_span, *cond_expr) {
-                for err in sem_errs {
-                    semantic_reporter::report_semantic(
+            if let Err(preset_errs) = self.check_cond(type_def.type_id, ty_span, *cond_expr) {
+                for err in preset_errs {
+                    preset_reporter::report_preset(
                         &mut self.err_vec,
                         err,
                         env.region,
@@ -196,14 +195,19 @@ impl<'a> ConstraintResolver<'a> {
             }
         }
 
-        for sp_arg in &abs_typedef.args {
+        for sp_directive in &type_def.directives {
+            let directive = &self.compiler.directives[sp_directive.inner.id as usize];
             match &ty_info.ty {
                 Type::Struct(_) | Type::Enum(_) => {
-                    if sp_arg.inner.has_restrictions() {
-                        let sem_err = SemanticError::VagueArg(sp_arg.clone());
-                        semantic_reporter::report_semantic(
+                    if directive.has_restrictions() {
+                        let preset_err = PresetErr::VagueDirective(SpannedContainer::new(
+                            directive.clone(),
+                            sp_directive.span,
+                        ));
+
+                        preset_reporter::report_preset(
                             &mut self.err_vec,
-                            sem_err,
+                            preset_err,
                             env.region,
                             self.settings,
                             self.interner,
@@ -215,17 +219,17 @@ impl<'a> ConstraintResolver<'a> {
                 _ => (),
             }
 
-            if let Err(sem_err) = self.check_type_arg(
+            if let Err(preset_err) = self.check_type_arg(
                 type_def.type_id,
                 abs_typedef.name_span,
                 ty_span,
-                &sp_arg,
+                &SpannedContainerRef::new(directive, sp_directive.span),
                 &mut Vec::new(),
                 env,
             ) {
-                semantic_reporter::report_semantic(
+                preset_reporter::report_preset(
                     &mut self.err_vec,
-                    sem_err,
+                    preset_err,
                     env.region,
                     self.settings,
                     self.interner,
@@ -302,7 +306,7 @@ impl<'a> ConstraintResolver<'a> {
         //                     } else {
         //                         let cond_expr = &self.compiler.exprs[cond_expr_id.id as usize];
         //
-        //                         let sem_err = SemanticError::TypeConstraintBoundConflict(
+        //                         let preset_err = SemanticError::TypeConstraintBoundConflict(
         //                             *current,
         //                             new_constraints,
         //                             vec![param_span, cond_expr.span],
@@ -310,7 +314,7 @@ impl<'a> ConstraintResolver<'a> {
         //
         //                         let module = &self.compiler.mods[env.current_mod.id];
         //                         self.reporter.report_semantic(
-        //                             sem_err,
+        //                             preset_err,
         //                             &module
         //                                 .src_metadata
         //                                 .as_ref()
@@ -335,16 +339,16 @@ impl<'a> ConstraintResolver<'a> {
 
         // Filter out duplicates in the type resolver!!
         // let mut ty_constraint: Option<TypeConstraint> = None;
-        // for (i, sp_arg) in abs_alias.args.iter().enumerate() {
+        // for (i, sp_directive) in abs_alias.args.iter().enumerate() {
         //     let param_span = abs_alias.params[i].name_span;
-        //     match self.infer_type_constraint_from_arg(sp_arg, param_span) {
+        //     match self.infer_type_constraint_from_arg(sp_directive, param_span) {
         //         Ok(constraint_opt) => {
         //             todo!("Constraining contraint check of cocnsctraint");
         //         }
-        //         Err(sem_err) => {
+        //         Err(preset_err) => {
         //             let module = &self.compiler.mods[env.current_mod.id];
         //             self.reporter.report_semantic(
-        //                 sem_err,
+        //                 preset_err,
         //                 &module
         //                     .src_metadata
         //                     .as_ref()
@@ -376,9 +380,9 @@ impl<'a> ConstraintResolver<'a> {
         // emitted. But then if we have something that USES the alias, it also gets that error.
         let sym_span = env.ast_info.get_sym_span(ast_id);
         for cond_expr_id in &alias_def.conds {
-            if let Err(sem_errs) = self.check_cond(alias_type_id, sym_span, *cond_expr_id) {
-                for err in sem_errs {
-                    semantic_reporter::report_semantic(
+            if let Err(preset_errs) = self.check_cond(alias_type_id, sym_span, *cond_expr_id) {
+                for err in preset_errs {
+                    preset_reporter::report_preset(
                         &mut self.err_vec,
                         err,
                         env.region,
@@ -518,7 +522,7 @@ impl<'a> ConstraintResolver<'a> {
     //
     // fn infer_type_constraint_from_arg(
     //     &self,
-    //     sp_arg: &SpannedInnerArgs,
+    //     sp_directive: &SpannedInnerArgs,
     //     param_span: SourceSpan,
     // ) -> Result<Option<TypeConstraint>, SemanticError> {
     //     todo!()
@@ -554,12 +558,12 @@ impl<'a> ConstraintResolver<'a> {
         // Glob conds
         for (i, member_id) in struct_def.fields.iter().enumerate() {
             let field = self.compiler.get_field(*member_id);
-            let ty_span = abs_struct.fields[i].spanned_ty_expr.span;
+            let ty_span = abs_struct.fields[i].sp_ty_expr.span;
 
             for cond_expr in &struct_def.glob_conds {
-                if let Err(sem_errs) = self.check_cond(field.type_id, ty_span, *cond_expr) {
-                    for err in sem_errs {
-                        semantic_reporter::report_semantic(
+                if let Err(preset_errs) = self.check_cond(field.type_id, ty_span, *cond_expr) {
+                    for err in preset_errs {
+                        preset_reporter::report_preset(
                             &mut self.err_vec,
                             err,
                             env.region,
@@ -574,12 +578,12 @@ impl<'a> ConstraintResolver<'a> {
         // Field conds
         for (i, member_id) in struct_def.fields.iter().enumerate() {
             let field = self.compiler.get_field(*member_id);
-            let ty_span = abs_struct.fields[i].spanned_ty_expr.span;
+            let ty_span = abs_struct.fields[i].sp_ty_expr.span;
 
             for cond_expr in &field.conds {
-                if let Err(sem_errs) = self.check_cond(field.type_id, ty_span, *cond_expr) {
-                    for err in sem_errs {
-                        semantic_reporter::report_semantic(
+                if let Err(preset_errs) = self.check_cond(field.type_id, ty_span, *cond_expr) {
+                    for err in preset_errs {
+                        preset_reporter::report_preset(
                             &mut self.err_vec,
                             err,
                             env.region,
@@ -594,20 +598,21 @@ impl<'a> ConstraintResolver<'a> {
         // Glob args
         for (i, member_id) in struct_def.fields.iter().enumerate() {
             let field = self.compiler.get_field(*member_id);
-            let ty_span = abs_struct.fields[i].spanned_ty_expr.span;
+            let ty_span = abs_struct.fields[i].sp_ty_expr.span;
 
-            for spanned_arg in &abs_struct.glob_args {
-                if let Err(sem_err) = self.check_type_arg(
+            for sp_directive in &struct_def.glob_directives {
+                let directive = &self.compiler.directives[sp_directive.inner.id as usize];
+                if let Err(preset_err) = self.check_type_arg(
                     field.type_id,
                     abs_struct.name_span,
                     ty_span,
-                    spanned_arg,
+                    &SpannedContainerRef::new(directive, sp_directive.span),
                     &mut vec![],
                     env,
                 ) {
-                    semantic_reporter::report_semantic(
+                    preset_reporter::report_preset(
                         &mut self.err_vec,
-                        sem_err,
+                        preset_err,
                         env.region,
                         self.settings,
                         self.interner,
@@ -619,21 +624,22 @@ impl<'a> ConstraintResolver<'a> {
         // Field args
         for (i, member_id) in struct_def.fields.iter().enumerate() {
             let field = self.compiler.get_field(*member_id);
-            let abs_field = &abs_struct.fields[i];
-            let ty_span = abs_field.spanned_ty_expr.span;
+            //WARN: Type spanning is not done yet
+            let field_ty_span = &abs_struct.fields[i].sp_ty_expr.span;
 
-            for spanned_arg in &abs_field.args {
-                if let Err(sem_err) = self.check_type_arg(
+            for sp_directive in &field.directives {
+                let directive = &self.compiler.directives[sp_directive.inner.id as usize];
+                if let Err(preset_err) = self.check_type_arg(
                     field.type_id,
                     abs_struct.name_span,
-                    ty_span,
-                    spanned_arg,
+                    *field_ty_span,
+                    &SpannedContainerRef::new(directive, sp_directive.span),
                     &mut vec![],
                     env,
                 ) {
-                    semantic_reporter::report_semantic(
+                    preset_reporter::report_preset(
                         &mut self.err_vec,
-                        sem_err,
+                        preset_err,
                         env.region,
                         self.settings,
                         self.interner,
@@ -672,9 +678,9 @@ impl<'a> ConstraintResolver<'a> {
                     .span;
 
                 for cond_expr in &enum_def.glob_conds {
-                    if let Err(sem_errs) = self.check_cond(inner_id, ty_span, *cond_expr) {
-                        for err in sem_errs {
-                            semantic_reporter::report_semantic(
+                    if let Err(preset_errs) = self.check_cond(inner_id, ty_span, *cond_expr) {
+                        for err in preset_errs {
+                            preset_reporter::report_preset(
                                 &mut self.err_vec,
                                 err,
                                 env.region,
@@ -698,9 +704,9 @@ impl<'a> ConstraintResolver<'a> {
                     .span;
 
                 for cond_expr in &variant.conds {
-                    if let Err(sem_errs) = self.check_cond(inner_id, ty_span, *cond_expr) {
-                        for err in sem_errs {
-                            semantic_reporter::report_semantic(
+                    if let Err(preset_errs) = self.check_cond(inner_id, ty_span, *cond_expr) {
+                        for err in preset_errs {
+                            preset_reporter::report_preset(
                                 &mut self.err_vec,
                                 err,
                                 env.region,
@@ -723,18 +729,19 @@ impl<'a> ConstraintResolver<'a> {
                     .expect("Just checked")
                     .span;
 
-                for spanned_arg in &abs_enum.glob_args {
-                    if let Err(sem_err) = self.check_type_arg(
+                for sp_directive in &enum_def.glob_directives {
+                    let directive = &self.compiler.directives[sp_directive.inner.id as usize];
+                    if let Err(preset_err) = self.check_type_arg(
                         inner_id,
                         abs_enum.name_span,
                         ty_span,
-                        spanned_arg,
+                        &SpannedContainerRef::new(directive, sp_directive.span),
                         &mut vec![],
                         env,
                     ) {
-                        semantic_reporter::report_semantic(
+                        preset_reporter::report_preset(
                             &mut self.err_vec,
-                            sem_err,
+                            preset_err,
                             env.region,
                             self.settings,
                             self.interner,
@@ -749,20 +756,21 @@ impl<'a> ConstraintResolver<'a> {
             let variant = self.compiler.get_variant(*member_id);
             if let Some(inner_id) = variant.type_id {
                 let abs_variant = &abs_enum.variants[i];
-                let ty_span = abs_variant.ty_expr.as_ref().expect("Just checked").span;
+                let variant_ty_span = abs_variant.ty_expr.as_ref().expect("Just checked").span;
 
-                for spanned_arg in &abs_variant.args {
-                    if let Err(sem_err) = self.check_type_arg(
+                for sp_directive in &variant.directives {
+                    let directive = &self.compiler.directives[sp_directive.inner.id as usize];
+                    if let Err(preset_err) = self.check_type_arg(
                         inner_id,
                         abs_enum.name_span,
-                        ty_span,
-                        spanned_arg,
+                        variant_ty_span,
+                        &SpannedContainerRef::new(directive, sp_directive.span),
                         &mut vec![],
                         env,
                     ) {
-                        semantic_reporter::report_semantic(
+                        preset_reporter::report_preset(
                             &mut self.err_vec,
-                            sem_err,
+                            preset_err,
                             env.region,
                             self.settings,
                             self.interner,
@@ -781,21 +789,21 @@ impl<'a> ConstraintResolver<'a> {
         parent_ty_id: TypeId,
         parent_span: SourceSpan,
         cond_expr_id: ExprId,
-    ) -> Result<(), Vec<SemanticError>> {
+    ) -> Result<(), Vec<PresetErr>> {
         // let cond_expr = &self.compiler.exprs[cond_expr_id.id as usize];
         //
         // // if visited.contains(&field.type_id) {
-        // //     if spanned_arg.arg.has_restrictions() {
+        // //     if spanned_directive.arg.has_restrictions() {
         // //         let name = self.interner.search(symbol.name_id.id as usize);
         // //
         // //         let msg = format!(
         // //             "The type `{name}` cannot have `#{}` applied due to recursively relying on itself satisfying the argument",
-        // //             spanned_arg.arg
+        // //             spanned_directive.arg
         // //         );
         // //
         // //         return Err(SemanticError::General(
         // //             msg,
-        // //             vec![spanned_arg.span, active_span],
+        // //             vec![spanned_directive.span, active_span],
         // //         ));
         // //     }
         // match &cond_expr.expr_hir {
@@ -816,14 +824,14 @@ impl<'a> ConstraintResolver<'a> {
         //
         //                 if let Type::BuiltinType(BuiltinType::Bool) = ret_type {
         //                     // Maybbe tturrnrn in tot a fucntinson
-        //                     if let Err(sem_err) = self.check_arg_constraints(
+        //                     if let Err(preset_err) = self.check_arg_constraints(
         //                         parent_ty_id,
         //                         parent_span,
         //                         cond_expr_id,
         //                         arg_expr_ids,
         //                         &func_def.arg_constraints,
         //                     ) {
-        //                         return Err(sem_err);
+        //                         return Err(preset_err);
         //                     };
         //
         //                     match constraints::check_type_constraint(
@@ -835,7 +843,7 @@ impl<'a> ConstraintResolver<'a> {
         //                         func_def.type_constraints,
         //                     ) {
         //                         Ok(_) => Ok(()),
-        //                         Err(sem_err) => return Err(vec![sem_err]),
+        //                         Err(preset_err) => return Err(vec![preset_err]),
         //                     }
         //                 } else {
         //                     let msg = "Top level functions or predicates used within type constraint blocks must evaluate to a boolean"
@@ -844,18 +852,18 @@ impl<'a> ConstraintResolver<'a> {
         //                 }
         //             }
         //             Type::Alias(alias_def) => {
-        //                 let mut sem_errs: Vec<SemanticError> = Vec::new();
+        //                 let mut preset_errs: Vec<SemanticError> = Vec::new();
         //
         //                 // Checking the arguments given in the call against the arg constraints of
         //                 // the alias
-        //                 if let Err(sem_err) = self.check_arg_constraints(
+        //                 if let Err(preset_err) = self.check_arg_constraints(
         //                     parent_ty_id,
         //                     parent_span,
         //                     cond_expr_id,
         //                     arg_expr_ids,
         //                     &alias_def.arg_constraints,
         //                 ) {
-        //                     return Err(sem_err);
+        //                     return Err(preset_err);
         //                 };
         //
         //                 // Checking if say, ch: char, aligns with each condition given. Where, is
@@ -865,10 +873,10 @@ impl<'a> ConstraintResolver<'a> {
         //
         //                 //WARN: I think this is wrong
         //                 for inner_cond_expr_id in &alias_def.conds {
-        //                     if let Err(mut sem_err) =
+        //                     if let Err(mut preset_err) =
         //                         self.check_cond(parent_ty_id, parent_span, *inner_cond_expr_id)
         //                     {
-        //                         sem_errs.append(&mut sem_err);
+        //                         preset_errs.append(&mut preset_err);
         //                     }
         //                 }
         //
@@ -894,7 +902,7 @@ impl<'a> ConstraintResolver<'a> {
         //                     dbg!(&self.compiler.types[arg_ty_id.id as usize]);
         //                     panic!();
         //
-        //                     if let Err(sem_err) = constraints::check_type_constraint(
+        //                     if let Err(preset_err) = constraints::check_type_constraint(
         //                         self.compiler,
         //                         *arg_ty_id,
         //                         parent_span,
@@ -902,12 +910,12 @@ impl<'a> ConstraintResolver<'a> {
         //                         &mut Vec::new(),
         //                         constraint_flags,
         //                     ) {
-        //                         sem_errs.push(sem_err);
+        //                         preset_errs.push(preset_err);
         //                     }
         //                 }
         //
-        //                 if !sem_errs.is_empty() {
-        //                     return Err(sem_errs);
+        //                 if !preset_errs.is_empty() {
+        //                     return Err(preset_errs);
         //                 }
         //
         //                 Ok(())
@@ -947,7 +955,7 @@ impl<'a> ConstraintResolver<'a> {
         //                             func_def.type_constraints,
         //                         ) {
         //                             Ok(_) => Ok(()),
-        //                             Err(sem_err) => Err(vec![sem_err]),
+        //                             Err(preset_err) => Err(vec![preset_err]),
         //                         }
         //                     } else {
         //                         let msg =
@@ -1019,12 +1027,12 @@ impl<'a> ConstraintResolver<'a> {
         type_id: TypeId,
         parent_span: SourceSpan,
         active_span: SourceSpan,
-        spanned_arg: &SpannedContainer<InnerArgs>,
+        spanned_directive: &SpannedContainerRef<Directive>,
         visited: &mut Vec<TypeId>,
         env: &ResolverEnv,
         // Making this vec makes error messages painful depending on which message failed, so it
         // needs some signal to say to stop going.
-    ) -> Result<(), SemanticError> {
+    ) -> Result<(), PresetErr> {
         match &self.compiler.types[type_id.id as usize].ty {
             Type::Struct(struct_def) => {
                 visited.push(type_id);
@@ -1036,10 +1044,10 @@ impl<'a> ConstraintResolver<'a> {
                     // the last call stack, possibly a tuple, is self referencing the current
                     // struct.
                     if visited.contains(&field.type_id) {
-                        if spanned_arg.inner.has_restrictions() {
-                            return Err(SemanticError::CircularArg(
+                        if spanned_directive.inner.has_restrictions() {
+                            return Err(PresetErr::CircularArg(
                                 SpannedContainer::new(Formatted::Struct, struct_def.name_span),
-                                spanned_arg.clone(),
+                                spanned_directive.into_owned(),
                                 field.name_span,
                             ));
                         }
@@ -1058,7 +1066,7 @@ impl<'a> ConstraintResolver<'a> {
                         field.type_id,
                         struct_def.name_span,
                         field.name_span,
-                        spanned_arg,
+                        spanned_directive,
                         visited,
                         env,
                     )?;
@@ -1076,10 +1084,10 @@ impl<'a> ConstraintResolver<'a> {
                         // just came from, possibly a tuple, is referring to itself from a
                         // different context.
                         if visited.contains(&inner) {
-                            if spanned_arg.inner.has_restrictions() {
-                                return Err(SemanticError::CircularArg(
+                            if spanned_directive.inner.has_restrictions() {
+                                return Err(PresetErr::CircularArg(
                                     SpannedContainer::new(Formatted::Enum, enum_def.name_span),
-                                    spanned_arg.clone(),
+                                    spanned_directive.into_owned(),
                                     variant.name_span,
                                 ));
                             }
@@ -1097,7 +1105,7 @@ impl<'a> ConstraintResolver<'a> {
                             inner,
                             enum_def.name_span,
                             variant.name_span,
-                            spanned_arg,
+                            spanned_directive,
                             visited,
                             env,
                         )?;
@@ -1112,7 +1120,7 @@ impl<'a> ConstraintResolver<'a> {
                         *type_id,
                         parent_span,
                         active_span,
-                        spanned_arg,
+                        spanned_directive,
                         visited,
                         env,
                     ),
@@ -1122,7 +1130,7 @@ impl<'a> ConstraintResolver<'a> {
                             *key_id,
                             parent_span,
                             active_span,
-                            spanned_arg,
+                            spanned_directive,
                             visited,
                             env,
                         )?;
@@ -1130,7 +1138,7 @@ impl<'a> ConstraintResolver<'a> {
                             *val_id,
                             parent_span,
                             active_span,
-                            spanned_arg,
+                            spanned_directive,
                             visited,
                             env,
                         )
@@ -1139,10 +1147,10 @@ impl<'a> ConstraintResolver<'a> {
                         visited.push(type_id);
                         for element in elements {
                             if visited.contains(&*element) {
-                                if spanned_arg.inner.has_restrictions() {
-                                    return Err(SemanticError::CircularArg(
+                                if spanned_directive.inner.has_restrictions() {
+                                    return Err(PresetErr::CircularArg(
                                         SpannedContainer::new(Formatted::Tuple, parent_span),
-                                        spanned_arg.clone(),
+                                        spanned_directive.into_owned(),
                                         active_span,
                                     ));
                                 }
@@ -1158,7 +1166,7 @@ impl<'a> ConstraintResolver<'a> {
                                 *element,
                                 active_span,
                                 parent_span,
-                                spanned_arg,
+                                spanned_directive,
                                 visited,
                                 env,
                             )?;
@@ -1170,11 +1178,11 @@ impl<'a> ConstraintResolver<'a> {
                     // since shallow checks accept more than proven
                     builtin_ty => {
                         let constraints = builtin_ty.kind().type_constraints();
-                        let arg_constraints = spanned_arg.inner.type_constraints();
+                        let arg_constraints = spanned_directive.inner.type_constraints();
 
                         if !arg_constraints.contains(constraints) {
-                            return Err(SemanticError::UnsupportedArg(
-                                spanned_arg.clone(),
+                            return Err(PresetErr::UnsupportedArg(
+                                spanned_directive.into_owned(),
                                 active_span,
                             ));
                         }
@@ -1185,13 +1193,13 @@ impl<'a> ConstraintResolver<'a> {
             }
             Type::Alias(alias_def) => {
                 let alias_constraints = alias_def.ty_constraints;
-                let arg_constraints = spanned_arg.inner.type_constraints();
+                let arg_constraints = spanned_directive.inner.type_constraints();
 
                 if !arg_constraints.contains(alias_constraints) {
-                    return Err(SemanticError::TypeConstraintBoundConflict(
+                    return Err(PresetErr::TypeConstraintBoundConflict(
                         alias_constraints,
                         arg_constraints,
-                        vec![spanned_arg.span, active_span],
+                        vec![spanned_directive.span, active_span],
                     ));
                 }
 
@@ -1208,7 +1216,7 @@ impl<'a> ConstraintResolver<'a> {
                     env.region.path_id,
                     active_span,
                 );
-                Err(SemanticError::General(src_diag))
+                Err(PresetErr::General(src_diag))
             }
             // Function.
             Type::TypeDef(_) => {
@@ -1218,18 +1226,18 @@ impl<'a> ConstraintResolver<'a> {
                 *deferred_ty_id,
                 parent_span,
                 active_span,
-                spanned_arg,
+                spanned_directive,
                 visited,
                 env,
             ),
             Type::Constrained(current_constraints) => {
-                let arg_constraints = spanned_arg.inner.type_constraints();
+                let arg_constraints = spanned_directive.inner.type_constraints();
 
                 if !arg_constraints.contains(*current_constraints) {
-                    return Err(SemanticError::TypeConstraintBoundConflict(
+                    return Err(PresetErr::TypeConstraintBoundConflict(
                         *current_constraints,
                         arg_constraints,
-                        vec![spanned_arg.span, active_span],
+                        vec![spanned_directive.span, active_span],
                     ));
                 }
                 panic!("Hi");
@@ -1256,8 +1264,8 @@ impl<'a> ConstraintResolver<'a> {
         arg_constraints: &[ArgConstraint],
         // Maybe a more explicit state of Recoverabilitiy as an enum of some sort would be better
         // eventually or at least a wrapper
-    ) -> Result<(), Vec<SemanticError>> {
-        let mut sem_errs: Vec<SemanticError> = Vec::new();
+    ) -> Result<(), Vec<PresetErr>> {
+        let mut preset_errs: Vec<PresetErr> = Vec::new();
         todo!();
         // for constraint in arg_constraints {
         //     match constraint {
@@ -1275,14 +1283,14 @@ impl<'a> ConstraintResolver<'a> {
         //                     spans.push(*cond_span);
         //                 }
         //
-        //                 sem_errs.push(SemanticError::ArgCountMismatch(
+        //                 preset_errs.push(SemanticError::ArgCountMismatch(
         //                     *constraint,
         //                     found_arg_count,
         //                     spans,
         //                 ));
         //
         //                 // Going further would likely lead to misleading errors
-        //                 return Err(sem_errs);
+        //                 return Err(preset_errs);
         //             }
         //         }
         //         ArgConstraint::MatchingArgumentTypes => {
@@ -1303,7 +1311,7 @@ impl<'a> ConstraintResolver<'a> {
         //
         //                     let ty = &self.compiler.types[req_type_id.id as usize].ty;
         //
-        //                     sem_errs.push(SemanticError::FuncConstraintMismatch(
+        //                     preset_errs.push(SemanticError::FuncConstraintMismatch(
         //                         *constraint,
         //                         ty.to_fmt(),
         //                         vec![req_span, other_span],
@@ -1320,7 +1328,7 @@ impl<'a> ConstraintResolver<'a> {
         //                     if !builtin_ty.kind().is_numeric() {
         //                         let span = self.compiler.exprs[expr_id.id as usize].span;
         //
-        //                         sem_errs.push(SemanticError::FuncConstraintMismatch(
+        //                         preset_errs.push(SemanticError::FuncConstraintMismatch(
         //                             *constraint,
         //                             ty.to_fmt(),
         //                             vec![span],
@@ -1338,7 +1346,7 @@ impl<'a> ConstraintResolver<'a> {
         //                     if !builtin_ty.kind().is_integer() {
         //                         let span = self.compiler.exprs[expr_id.id as usize].span;
         //
-        //                         sem_errs.push(SemanticError::FuncConstraintMismatch(
+        //                         preset_errs.push(SemanticError::FuncConstraintMismatch(
         //                             *constraint,
         //                             ty.to_fmt(),
         //                             vec![span],
@@ -1356,7 +1364,7 @@ impl<'a> ConstraintResolver<'a> {
         //                     if !builtin_ty.kind().is_float() {
         //                         let span = self.compiler.exprs[expr_id.id as usize].span;
         //
-        //                         sem_errs.push(SemanticError::FuncConstraintMismatch(
+        //                         preset_errs.push(SemanticError::FuncConstraintMismatch(
         //                             *constraint,
         //                             ty.to_fmt(),
         //                             vec![span],
@@ -1374,7 +1382,7 @@ impl<'a> ConstraintResolver<'a> {
         //                     if builtin_ty.kind() != BuiltinTypeKind::Str {
         //                         let span = self.compiler.exprs[expr_id.id as usize].span;
         //
-        //                         sem_errs.push(SemanticError::FuncConstraintMismatch(
+        //                         preset_errs.push(SemanticError::FuncConstraintMismatch(
         //                             *constraint,
         //                             ty.to_fmt(),
         //                             vec![span],
@@ -1392,7 +1400,7 @@ impl<'a> ConstraintResolver<'a> {
         //                     if !builtin_ty.kind().is_character_mappable() {
         //                         let span = self.compiler.exprs[expr_id.id as usize].span;
         //
-        //                         sem_errs.push(SemanticError::FuncConstraintMismatch(
+        //                         preset_errs.push(SemanticError::FuncConstraintMismatch(
         //                             *constraint,
         //                             ty.to_fmt(),
         //                             vec![span],
@@ -1410,7 +1418,7 @@ impl<'a> ConstraintResolver<'a> {
         //                     if builtin_ty.kind() != BuiltinTypeKind::Bool {
         //                         let span = self.compiler.exprs[expr_id.id as usize].span;
         //
-        //                         sem_errs.push(SemanticError::FuncConstraintMismatch(
+        //                         preset_errs.push(SemanticError::FuncConstraintMismatch(
         //                             *constraint,
         //                             ty.to_fmt(),
         //                             vec![span],
@@ -1428,7 +1436,7 @@ impl<'a> ConstraintResolver<'a> {
         //                 let expr_span = self.compiler.exprs[expr_id.id as usize].span;
         //                 let cond_span = self.compiler.exprs[cond_expr_id.id as usize].span;
         //
-        //                 if let Err(sem_err) = constraints::check_type_constraint(
+        //                 if let Err(preset_err) = constraints::check_type_constraint(
         //                     self.compiler,
         //                     *type_id,
         //                     expr_span,
@@ -1436,7 +1444,7 @@ impl<'a> ConstraintResolver<'a> {
         //                     &mut Vec::new(),
         //                     TypeConstraintFlags::new(TypeConstraint::Comparable.to_u64()),
         //                 ) {
-        //                     sem_errs.push(sem_err);
+        //                     preset_errs.push(preset_err);
         //                 };
         //                 todo!("TOdol");
         //
@@ -1446,7 +1454,7 @@ impl<'a> ConstraintResolver<'a> {
         //                 //         if !builtin_ty.kind().is_comparable() {
         //                 //             let span = self.compiler.exprs[expr_id.id as usize].span;
         //                 //
-        //                 //             sem_errs.push(SemanticError::FuncConstraintMismatch(
+        //                 //             preset_errs.push(SemanticError::FuncConstraintMismatch(
         //                 //                 *constraint,
         //                 //                 ty.to_fmt(),
         //                 //                 vec![span],
@@ -1477,7 +1485,7 @@ impl<'a> ConstraintResolver<'a> {
         //                     let other_span = self.compiler.exprs[expr_id.id as usize].span;
         //                     let msg = "Must be the same type as `self`".to_string();
         //
-        //                     sem_errs
+        //                     preset_errs
         //                         .push(SemanticError::General(msg, vec![parent_span, other_span]));
         //                 }
         //             }
@@ -1485,8 +1493,8 @@ impl<'a> ConstraintResolver<'a> {
         //     }
         // }
         //
-        // if !sem_errs.is_empty() {
-        //     return Err(sem_errs);
+        // if !preset_errs.is_empty() {
+        //     return Err(preset_errs);
         // }
         //
         // Ok(())

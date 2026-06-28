@@ -1,4 +1,4 @@
-use compilation::{parser::ast::AstInfo, script_compiler::ScriptCompiler};
+use compilation::{parser::ast::ast_concepts::AstInfo, script_compiler::ScriptCompiler};
 
 pub struct ScriptPrinter<'a> {
     ast_info: &'a AstInfo,

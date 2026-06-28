@@ -1,7 +1,7 @@
 ## Language intent
 - This is a scripting language that has a serialized data representation paired with it which allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required in-line in a language. The scripting language can either use the keyword `bind` to define where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
 
-- Features such as type constraints, type arguments, and anything that is beyond just setting serialized data details or serialized data specific settings are not intended to be heavily used.
+- Features such as type constraints, directives, and anything that is beyond just setting serialized data details or serialized data specific settings are not intended to be heavily used.
 
 - The projected main use-case of this language is as a library for inside of a programming language it is available for, which takes in a path to a script file that could contain the serialized data too, or separately having the script file and data given as arguments.
 
@@ -147,7 +147,7 @@ This can be applied to `struct`, `enum`, `let`, and `alias`.
 
 `import`: Imports `.chrn` file which allows for anything exported within the imported file to be used.
 
-`alias`: Allows for predicates and arguments to be stored within a single function call.
+`alias`: Allows for predicates and directives to be stored within a single function call.
 
 ```chrn
 alias ShortDefault() = [IsWhitespace]
@@ -197,7 +197,7 @@ override->
 `var` allows for:
 - Defining serialized data
 - Expressing type constraints ([[IsWhitespace, Regex("a-zA-Z")]])
-- Using type arguments (#warn/#octal)
+- Using directives (#warn/#octal)
 
 Searchable scopes: `neutral` and `nest`
 
@@ -219,7 +219,7 @@ var->
 `nest` allows for:
 - Defining nested data
 - Expressing type constraints ([[IsWhitespace, Equals("Hi")]])
-- Using type constraint arguments (#warn/#octal)
+- Using type constraint directives (#warn/#octal)
 
 Searchable scopes: `neutral` and `nest`
 
@@ -245,7 +245,7 @@ Maybe rename to config?
 
 Searchable scopes: `neutral` and `nest`
 
-## Type & Argument constraints
+## Types & Directives
 
 # DOES NOT EXIST YET
 `override`: Most important part of the language which controls things such as possible namespace casing to also look for and setting language type defaults. Language defaults exist but this can change any if needed.
@@ -254,7 +254,7 @@ Searchable scopes: `neutral` and `nest`
 # DOES NOT EXIST YET
 -------------------------------
 
-## Arguments
+## Directives
 
 - Dictates runtime behavior
 
@@ -269,7 +269,7 @@ Searchable scopes: `neutral` and `nest`
 `#ignore_rm`: (Would remove anything that didn't align under constraint rather than crash or warn.)
 # DOES NOT EXIST
 
-- Arguments can be applied to all types within a `struct` or `enum` if put directly after declaration within a nest.
+- Directives can be applied to all types within a `struct` or `enum` if put directly after declaration within a nest.
 
 ```
     var->

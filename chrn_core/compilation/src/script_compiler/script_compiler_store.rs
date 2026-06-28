@@ -3,7 +3,7 @@ use chrn_utils::{
 };
 use lang::trivia::Trivia;
 
-use crate::{parser::ast::AstInfo, token::SpannedToken};
+use crate::{parser::ast::ast_concepts::AstInfo, token::SpannedToken};
 
 /// Stores all essential data collected through compilation stages
 ///

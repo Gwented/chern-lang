@@ -10,7 +10,10 @@ pub mod token;
 
 #[cfg(test)]
 mod tests {
-    use crate::{resolvers::resolver_env::ResolverEnv, script_compiler::ScriptCompiler};
+    use crate::{
+        parser::ast::ast_concepts::AstInfo, resolvers::resolver_env::ResolverEnv,
+        script_compiler::ScriptCompiler,
+    };
     // -- Helpers --
     /// Creates fake strings for the amounts given
     fn mock_interner(str_amt: usize, path_amt: usize) -> Intern {
@@ -143,7 +146,7 @@ mod tests {
         lexer::Lexer,
         lookup::scopes::ScopeType,
         modules::{Import, ImportKind, Module, ModuleState},
-        parser::{self, ast::AstInfo},
+        parser::{self},
         resolvers::{
             name_resolver::NamespaceResolver,
             type_resolver::{TypeResolver, type_context::TypeContext},

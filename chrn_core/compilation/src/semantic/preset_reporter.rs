@@ -9,34 +9,57 @@ use chrn_utils::{
 };
 use lang::fmter::Formattable;
 
-use crate::semantic::error::SemanticError;
+use crate::semantic::preset_err::PresetErr;
 
-use super::error::{LookupError, MathError};
+use super::preset_err::{LookupError, MathError};
 
-/// Convenience function that creates a `SourceDiagnostic` from the given `sem_err` and pushes into `Reporter`
-pub(crate) fn report_semantic(
+// These take ownership because `PresetErr::General` will clone otherwise, which isn't expensive.
+// Ok maybe this should just be a reference.
+
+/// Convenience function that creates a `SourceDiagnostic` from the given `preset_err` and pushes
+/// into `diags`
+pub(crate) fn report_preset(
     diags: &mut Vec<SourceDiagnostic>,
-    sem_err: SemanticError,
+    preset_err: PresetErr,
     region: &SourceRegion,
     settings: &ChrnSettings,
     interner: &Intern,
 ) {
-    let diag_builder = create_diag_builder_preset(diags, sem_err, region, settings, interner);
+    let diag_builder = create_diag_builder_preset(diags, preset_err, region, settings, interner);
     diags.push(diag_builder.build());
+}
+
+// The s is like that on purpose
+/// Convenience function that appends `SourceDiagnostic`s from the given `preset_errs` into the
+/// given buffer `diags`
+pub(crate) fn report_preset_vec(
+    diags: &mut Vec<SourceDiagnostic>,
+    preset_errs: Vec<PresetErr>,
+    region: &SourceRegion,
+    settings: &ChrnSettings,
+    interner: &Intern,
+) {
+    for preset in preset_errs {
+        let diag_builder = create_diag_builder_preset(diags, preset, region, settings, interner);
+        diags.push(diag_builder.build());
+    }
 }
 
 /// Creates `SourceDiagnostic` with the preset associated with it's `SemanticError`
 pub(crate) fn create_diag_builder_preset(
     reporter: &mut Vec<SourceDiagnostic>,
-    sem_err: SemanticError,
+    preset_err: PresetErr,
     region: &SourceRegion,
     settings: &ChrnSettings,
     interner: &Intern,
 ) -> SourceDiagnosticBuilder {
-    match sem_err {
+    match preset_err {
         // Need to know which spans exactly now
-        SemanticError::UnsupportedArg(sp_arg, sym_span) => {
-            let arg_constraints = sp_arg.inner.type_constraints().to_type_constraint_vec();
+        PresetErr::UnsupportedArg(sp_directive, sym_span) => {
+            let arg_constraints = sp_directive
+                .inner
+                .type_constraints()
+                .to_type_constraint_vec();
 
             let mut constraints_str = String::new();
 
@@ -50,48 +73,50 @@ pub(crate) fn create_diag_builder_preset(
 
             let core_msg = format!(
                 "Only types that satisfy {} can use the argument `#{}`",
-                constraints_str, sp_arg.inner
+                constraints_str,
+                sp_directive.inner.to_fmt()
             );
 
             SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
                 .add_annotation(
-                    sp_arg.span,
+                    sp_directive.span,
                     AnnotationKind::Secondary,
                     "Constraints required by this argument".to_string().into(),
                 )
                 .add_annotation(sym_span, AnnotationKind::Primary, None)
         }
-        SemanticError::VagueArg(sp_arg) => {
+        PresetErr::VagueDirective(sp_directive) => {
             let core_msg = format!(
                 //FIXME: Still vague
                 "The argument \"#{}\" cannot be used for a `var->` defined variable that holds a `struct` or `enum`",
-                sp_arg.inner
+                sp_directive.inner.to_fmt()
             );
 
             SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg,  region.path_id)
-                    .add_annotation(sp_arg.span, AnnotationKind::Primary, None)
+                    .add_annotation(sp_directive.span, AnnotationKind::Primary, None)
                     .add_note("This is not allowed since it would overlap with any specifics arguments given to a defined type from `nest->`".into())
         }
-        SemanticError::FuncConstraintMismatch(constraint, type_kind, spans) => {
+        PresetErr::FuncConstraintMismatch(constraint, type_kind, spans) => {
             todo!();
             // let msg =
             //     format!("The type `{type_kind}` does not satisfy constraint `{constraint}`",);
             //
             // SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg)
-            //     .add_annotation(sp_arg.span, AnnotationKind::Primary, None)
+            //     .add_annotation(sp_directive.span, AnnotationKind::Primary, None)
             //     .build()
         }
-        SemanticError::ArgCountMismatch(constraint, count, spans) => {
+        PresetErr::ArgCountMismatch(constraint, count, spans) => {
             todo!();
             // let msg = format!("Expected {constraint}, found {count}");
             //
             // (msg, spans)
         }
-        SemanticError::CircularArg(sp_parent_ty, sp_arg, err_ty_span) => {
+        PresetErr::CircularArg(sp_parent_ty, sp_directive, err_ty_span) => {
             let core_msg = format!(
                 // Suspicious error message
                 "Cannot give type `{}` the argument `#{}` due to the circularly referenced type itself not supporting the argument",
-                sp_parent_ty.inner, sp_arg.inner
+                sp_parent_ty.inner,
+                sp_directive.inner.to_fmt()
             );
 
             SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
@@ -106,13 +131,13 @@ pub(crate) fn create_diag_builder_preset(
                     "Recursive".to_string().into(),
                 )
                 .add_annotation(
-                    sp_arg.span,
+                    sp_directive.span,
                     AnnotationKind::Primary,
                     "Conflicting argument here".to_string().into(),
                 )
         }
         // Should have the data type's cap shown as well
-        SemanticError::NumericOverflow(sp_interned_num, fmtted_ty) => {
+        PresetErr::NumericOverflow(sp_interned_num, fmtted_ty) => {
             let overflown_num = interner.search(sp_interned_num.inner);
             let core_msg = format!(
                 "The type `{fmtted_ty}` had an overflow with the value \"{}\" ",
@@ -122,8 +147,8 @@ pub(crate) fn create_diag_builder_preset(
             SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
                 .add_annotation(sp_interned_num.span, AnnotationKind::Primary, None)
         }
-        SemanticError::General(src_diag) => src_diag,
-        SemanticError::Lookup(lookup_err) => match lookup_err {
+        PresetErr::General(src_diag) => src_diag,
+        PresetErr::Lookup(lookup_err) => match lookup_err {
             LookupError::InvalidTypeMemberAccess(sp_fmtted_ty) => {
                 let core_msg = format!(
                     "Type `{}` does not have the ability to hold members",
@@ -149,7 +174,7 @@ pub(crate) fn create_diag_builder_preset(
                     .add_annotation(sp_sym.span, AnnotationKind::Primary, None)
             }
         },
-        SemanticError::Math(math_err) => match math_err {
+        PresetErr::Math(math_err) => match math_err {
             MathError::BinaryOpMismatch(sp_fmtted_lhs, sp_fmtted_rhs, fmtted_op) => {
                 let core_msg = format!(
                     "The type `{}` cannot apply `{fmtted_op}` to type `{}`",
@@ -178,7 +203,7 @@ pub(crate) fn create_diag_builder_preset(
             }
         },
         // Maybe a type version too?
-        SemanticError::TypeConstraintMismatch(given_constraints, fmtted_found_ty, spans) => {
+        PresetErr::TypeConstraintMismatch(given_constraints, fmtted_found_ty, spans) => {
             let given_vec = given_constraints.to_type_constraint_vec();
             let mut given_str = String::new();
 
@@ -198,7 +223,7 @@ pub(crate) fn create_diag_builder_preset(
             todo!();
         }
         //TODO: Not done
-        SemanticError::UndefinedMember(span) => {
+        PresetErr::UndefinedMember(span) => {
             let core_msg = format!("Cannot infer member access");
             SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
                 .add_annotation(
@@ -209,11 +234,7 @@ pub(crate) fn create_diag_builder_preset(
                         .into(),
                 )
         }
-        SemanticError::TypeConstraintBoundConflict(
-            current_inferred,
-            conflicting_inferred,
-            spans,
-        ) => {
+        PresetErr::TypeConstraintBoundConflict(current_inferred, conflicting_inferred, spans) => {
             //FIXME: Fear inducing message.
             let current_bounds = current_inferred.to_type_constraint_vec();
             let conflicting_bounds = conflicting_inferred.to_type_constraint_vec();

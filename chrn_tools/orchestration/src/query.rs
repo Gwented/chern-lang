@@ -2,7 +2,7 @@ use chrn_utils::intern::Intern;
 use compilation::{
     lookup::scopes,
     script_compiler::ScriptCompiler,
-    semantic::hir::{MemberSymbolKind, Symbol},
+    semantic::hir::hir_concepts::{MemberSymbolKind, Symbol},
 };
 
 // Testing something..

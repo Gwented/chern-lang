@@ -47,6 +47,7 @@ pub enum ConfigSchemaKind {
     Field,
 }
 
+/// All known preset schemas and the kinds associated with it
 pub static PRESET_CONFIG_SCHEMAS: [ConfigSchema; 1] = [ConfigSchema::new(
     ConfigSchemaKind::Field,
     &[DEFAULT_VAL_OPTION],
@@ -71,8 +72,8 @@ const DEFAULT_VAL_OPTION: OptionSchema =
 
 pub const fn get_cfg_schema(kind: ConfigSchemaKind) -> &'static ConfigSchema {
     match kind {
-        ConfigSchemaKind::Struct => &PRESET_CONFIG_SCHEMAS[0],
+        ConfigSchemaKind::Field => &PRESET_CONFIG_SCHEMAS[0],
+        ConfigSchemaKind::Struct => todo!(),
         ConfigSchemaKind::Enum => todo!(),
-        ConfigSchemaKind::Field => todo!(),
     }
 }

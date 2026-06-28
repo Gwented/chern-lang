@@ -10,14 +10,14 @@ use chrn_utils::{
 
 use crate::{
     lookup::scopes::{Scope, ScopeInfo, ScopeType},
-    parser::ast::{
+    parser::ast::ast_concepts::{
         AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
         AstInfo, Item,
     },
     script_compiler::ScriptCompiler,
-    semantic::hir::{
-        AliasDef, ConfigDef, EnumDef, StructDef, Symbol, SymbolKind, Type, TypeDef, TypeInfo,
-        VarDef, VariableState,
+    semantic::hir::hir_concepts::{
+        AliasDef, ConfigDef, EnumDef, StructDef, Symbol, SymbolKind, SymbolOrigin, Type, TypeDef,
+        TypeInfo, VarDef, VariableState,
     },
 };
 
@@ -101,7 +101,7 @@ impl NamespaceResolver<'_> {
             abs_cfg.name_id,
             sym_id,
             Some(ast_id),
-            self.current_mod,
+            SymbolOrigin::Module(self.current_mod),
             true,
             None,
             ScopeType::Complex,
@@ -144,7 +144,7 @@ impl NamespaceResolver<'_> {
             abs_typedef.name_id,
             sym_id,
             Some(ast_id),
-            self.current_mod,
+            SymbolOrigin::Module(self.current_mod),
             true,
             None,
             ScopeType::Var,
@@ -185,7 +185,7 @@ impl NamespaceResolver<'_> {
             abs_struct.name_id,
             sym_id,
             Some(ast_id),
-            self.current_mod,
+            SymbolOrigin::Module(self.current_mod),
             abs_struct.is_priv,
             None,
             ScopeType::Nest,
@@ -223,7 +223,7 @@ impl NamespaceResolver<'_> {
             abs_enum.name_id,
             sym_id,
             Some(ast_id),
-            self.current_mod,
+            SymbolOrigin::Module(self.current_mod),
             abs_enum.is_priv,
             None,
             ScopeType::Nest,
@@ -282,7 +282,7 @@ impl NamespaceResolver<'_> {
             abs_alias.name_id,
             sym_id,
             Some(ast_id),
-            self.current_mod,
+            SymbolOrigin::Module(self.current_mod),
             abs_alias.is_priv,
             None,
             ScopeType::Neutral,
@@ -333,7 +333,7 @@ impl NamespaceResolver<'_> {
             abs_var.name_id,
             sym_id,
             Some(ast_id),
-            self.current_mod,
+            SymbolOrigin::Module(self.current_mod),
             abs_var.is_priv,
             None,
             ScopeType::Neutral,

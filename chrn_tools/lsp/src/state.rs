@@ -37,20 +37,20 @@ use compilation::lookup::scopes::AssociatedScopeKind;
 use compilation::lookup::scopes::LookupPattern;
 use compilation::lookup::scopes::ScopeType;
 use compilation::modules::Module;
+use compilation::parser::ast::ast_exprs::PathSegment;
+use compilation::parser::ast::ast_exprs::TypeExpr;
 use compilation::resolvers::name_resolver::NamespaceResolver;
-use compilation::parser::ast::PathSegment;
-use compilation::parser::ast::TypeExpr;
+use compilation::resolvers::resolver_env::ResolverEnv;
+use compilation::resolvers::type_resolver::TypeResolver;
 use compilation::script_compiler::ScriptCompiler;
-use compilation::semantic::hir::ExprHir;
-use compilation::semantic::hir::MemberSymbolKind;
-use compilation::semantic::hir::SymbolKind;
-use compilation::semantic::hir::Type;
-use compilation::semantic::hir::VariableState;
+use compilation::semantic::hir::hir_concepts::MemberSymbolKind;
+use compilation::semantic::hir::hir_concepts::SymbolKind;
+use compilation::semantic::hir::hir_concepts::SymbolOrigin;
+use compilation::semantic::hir::hir_concepts::Type;
+use compilation::semantic::hir::hir_concepts::VariableState;
+use compilation::semantic::hir::hir_exprs::ExprHir;
 use compilation::token::SpannedToken;
 use compilation::token::Token as ScriptToken;
-use compilation::resolvers::type_resolver::type_context::TypeContext;
-use compilation::resolvers::type_resolver::TypeResolver;
-use compilation::resolvers::resolver_env::ResolverEnv;
 use lang::trivia::Trivia;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -131,7 +131,7 @@ pub struct DocumentState {
     /// The fully initialised script compiler, available after `ensure_analyzed`.
     pub compiler: Option<ScriptCompiler>,
     /// ASTs indexed by module ID; entry `0` is the main module.
-    pub asts: Vec<Option<compilation::parser::ast::AstInfo>>,
+    pub asts: Vec<Option<compilation::parser::ast::ast_concepts::AstInfo>>,
     /// Diagnostics from config/import parsing (module discovery phase).
     pub config_errors: Option<Vec<SourceDiagnostic>>,
     /// Diagnostics from the script parser.
@@ -361,7 +361,6 @@ impl DocumentState {
         }
 
         if self.parse_errors.is_none() {
-            let mut ty_ctx = TypeContext::new();
             let mut main_expr_range = 0..0;
             for mod_idx in 0..compiler.mods.len() {
                 let ast_info = match &all_asts[mod_idx] {
@@ -379,11 +378,7 @@ impl DocumentState {
                 };
 
                 let expr_start = compiler.exprs.len();
-                let mut type_resolver = TypeResolver::new(
-                    &settings,
-                    &self.interner,
-                    &mut compiler,
-                );
+                let mut type_resolver = TypeResolver::new(&settings, &self.interner, &mut compiler);
 
                 let env = ResolverEnv::new(ast_info, region, ModuleId::new(mod_idx));
 
@@ -420,7 +415,7 @@ impl DocumentState {
         // Helper to collect type references from AST
         fn collect_type_refs(
             compiler: &ScriptCompiler,
-            type_expr: &compilation::parser::ast::SpannedTypeExpr,
+            type_expr: &compilation::parser::ast::ast_exprs::SpannedTypeExpr,
             map: &mut Vec<(SourceSpan, SemanticEntity)>,
         ) {
             match &type_expr.ty_expr {
@@ -502,12 +497,12 @@ impl DocumentState {
         // Helper to collect expression references from AST
         fn collect_expr_refs(
             compiler: &ScriptCompiler,
-            expr: &compilation::parser::ast::SpannedExpr,
+            expr: &compilation::parser::ast::ast_exprs::SpannedExpr,
             map: &mut Vec<(SourceSpan, SemanticEntity)>,
             text: &str,
             interner: &Intern,
         ) {
-            use compilation::parser::ast::Expr;
+            use compilation::parser::ast::ast_exprs::Expr;
             match &expr.expr {
                 Expr::MemberAccess(acc) => {
                     if let Expr::Var(base_id) = acc.base.expr {
@@ -816,7 +811,9 @@ impl DocumentState {
 
         // 1. Symbol Definitions
         for (i, sym) in compiler.symbols.iter().enumerate() {
-            if sym.owner.id == 0 {
+            if matches!(sym.sym_origin, SymbolOrigin::Module(mid) if mid.id == 0)
+                || matches!(sym.sym_origin, SymbolOrigin::Compiler)
+            {
                 let sym_id = SymbolId::new(i as u32);
                 if let Some(ast_id) = sym.ast_id {
                     if let Some(Some(ast)) = self.asts.get(0) {
@@ -901,7 +898,7 @@ impl DocumentState {
         // 4. Type and Expr References in AST
         if let Some(Some(ast)) = self.asts.get(0) {
             for item in ast.items() {
-                use compilation::parser::ast::Item;
+                use compilation::parser::ast::ast_concepts::Item;
                 match item {
                     Item::Var(v) => {
                         collect_expr_refs(
@@ -913,7 +910,7 @@ impl DocumentState {
                         );
                     }
                     Item::TypeDef(def) => {
-                        collect_type_refs(compiler, &def.spanned_ty_expr, &mut map);
+                        collect_type_refs(compiler, &def.sp_ty_expr, &mut map);
                         for cond in &def.conds {
                             collect_expr_refs(compiler, cond, &mut map, &self.text, &self.interner);
                         }
@@ -923,7 +920,7 @@ impl DocumentState {
                             collect_expr_refs(compiler, cond, &mut map, &self.text, &self.interner);
                         }
                         for field in &s.fields {
-                            collect_type_refs(compiler, &field.spanned_ty_expr, &mut map);
+                            collect_type_refs(compiler, &field.sp_ty_expr, &mut map);
                             for cond in &field.conds {
                                 collect_expr_refs(
                                     compiler,
@@ -961,6 +958,34 @@ impl DocumentState {
                     }
                     Item::Config(_) => {}
                 }
+            }
+        }
+
+        // 5. Compiler-origin symbols (directives, etc.) — match by name against Id tokens
+        let id_tokens: Vec<(SourceSpan, InternedId)> = self
+            .tokens
+            .iter()
+            .filter_map(|st| {
+                if let ScriptToken::Id(id) = st.tok {
+                    Some((st.span, id))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for (span, interned_id) in &id_tokens {
+            if map
+                .iter()
+                .any(|(s, _)| s.start <= span.start && s.end >= span.end)
+            {
+                continue;
+            }
+            if let Some(sym) = compiler.symbols.iter().find(|sym| {
+                sym.ast_id.is_none()
+                    && sym.name_id.id == interned_id.id
+                    && matches!(sym.sym_origin, SymbolOrigin::Compiler)
+            }) {
+                map.push((*span, SemanticEntity::Symbol(sym.sym_id)));
             }
         }
 
@@ -1036,7 +1061,9 @@ impl DocumentState {
 
     /// Returns the token that covers `byte_offset`, or `None` if no token is at that offset.
     pub fn get_token_at_offset(&self, byte_offset: usize) -> Option<&SpannedToken> {
-        let idx = self.tokens.partition_point(|t| (t.span.end as usize) < byte_offset);
+        let idx = self
+            .tokens
+            .partition_point(|t| (t.span.end as usize) < byte_offset);
         if idx < self.tokens.len() {
             let t = &self.tokens[idx];
             if byte_offset >= t.span.start as usize && byte_offset <= t.span.end as usize {
@@ -1072,9 +1099,13 @@ impl DocumentState {
             SemanticEntity::Symbol(sym_id) => {
                 let sym = compiler.symbols.get(sym_id.id as usize)?;
                 let ast_id = sym.ast_id?;
-                let ast = self.asts.get(sym.owner.id)?.as_ref()?;
+                let owner_id = match sym.sym_origin {
+                    SymbolOrigin::Module(mid) => mid.id,
+                    SymbolOrigin::Compiler => 0,
+                };
+                let ast = self.asts.get(owner_id)?.as_ref()?;
                 let span = ast.get_sym_span(ast_id);
-                let module = compiler.mods.get(sym.owner.id)?;
+                let module = compiler.mods.get(owner_id)?;
                 let region = self.region_arena.get_region(module.region_id?)?;
                 let path = self.interner.search_path(region.path_id);
                 Some((path.to_string_lossy().to_string(), span, None))
@@ -1085,10 +1116,14 @@ impl DocumentState {
             } => {
                 let sym = compiler.symbols.get(owner_sym_id.id as usize)?;
                 let ast_id = sym.ast_id?;
-                let ast = self.asts.get(sym.owner.id)?.as_ref()?;
+                let owner_id = match sym.sym_origin {
+                    SymbolOrigin::Module(mid) => mid.id,
+                    SymbolOrigin::Compiler => 0,
+                };
+                let ast = self.asts.get(owner_id)?.as_ref()?;
                 let abs_struct = ast.get_struct(ast_id);
                 let field = abs_struct.fields.get(*field_idx)?;
-                let module = compiler.mods.get(sym.owner.id)?;
+                let module = compiler.mods.get(owner_id)?;
                 let region = self.region_arena.get_region(module.region_id?)?;
                 let path = self.interner.search_path(region.path_id);
                 Some((
@@ -1103,10 +1138,14 @@ impl DocumentState {
             } => {
                 let sym = compiler.symbols.get(owner_sym_id.id as usize)?;
                 let ast_id = sym.ast_id?;
-                let ast = self.asts.get(sym.owner.id)?.as_ref()?;
+                let owner_id = match sym.sym_origin {
+                    SymbolOrigin::Module(mid) => mid.id,
+                    SymbolOrigin::Compiler => 0,
+                };
+                let ast = self.asts.get(owner_id)?.as_ref()?;
                 let abs_enum = ast.get_enum(ast_id);
                 let variant = abs_enum.variants.get(*variant_idx)?;
-                let module = compiler.mods.get(sym.owner.id)?;
+                let module = compiler.mods.get(owner_id)?;
                 let region = self.region_arena.get_region(module.region_id?)?;
                 let path = self.interner.search_path(region.path_id);
                 Some((
@@ -1181,7 +1220,14 @@ impl DocumentState {
 /// Internal storage for [`DocumentCache`].
 struct CacheInner {
     /// Primary document map: URI → (source text, analysis state, access_tick).
-    docs: HashMap<String, (Arc<String>, Arc<RwLock<DocumentState>>, Arc<std::sync::atomic::AtomicU64>)>,
+    docs: HashMap<
+        String,
+        (
+            Arc<String>,
+            Arc<RwLock<DocumentState>>,
+            Arc<std::sync::atomic::AtomicU64>,
+        ),
+    >,
     /// URI → set of module URIs it imports (forward dependency edges).
     imports: HashMap<String, HashSet<String>>,
     /// URI → set of URIs that import it (reverse dependency index).
@@ -1257,7 +1303,10 @@ impl DocumentCache {
             let cache = self.inner.read();
             if let Some((cached_text, existing, access_tick)) = cache.docs.get(uri) {
                 if Arc::ptr_eq(cached_text, &text) || **cached_text == *text {
-                    access_tick.store(self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
+                    access_tick.store(
+                        self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
                     return Arc::clone(existing);
                 }
             }
@@ -1274,16 +1323,32 @@ impl DocumentCache {
         // Double check after acquiring write lock in case another thread created it
         if let Some((cached_text, existing, access_tick)) = cache.docs.get(uri) {
             if Arc::ptr_eq(cached_text, &text) || **cached_text == *text {
-                access_tick.store(self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
+                access_tick.store(
+                    self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 return Arc::clone(existing);
             }
         }
 
         if cache.docs.len() >= self.max_size {
             let to_remove = cache.docs.len() - self.max_size + 1;
-            let mut entries: Vec<_> = cache.docs.iter().map(|(k, (_, _, tick))| (k.to_string(), tick.load(std::sync::atomic::Ordering::Relaxed))).collect();
+            let mut entries: Vec<_> = cache
+                .docs
+                .iter()
+                .map(|(k, (_, _, tick))| {
+                    (
+                        k.to_string(),
+                        tick.load(std::sync::atomic::Ordering::Relaxed),
+                    )
+                })
+                .collect();
             entries.sort_unstable_by_key(|(_, t)| *t);
-            let keys_to_remove: Vec<String> = entries.into_iter().take(to_remove).map(|(k, _)| k).collect();
+            let keys_to_remove: Vec<String> = entries
+                .into_iter()
+                .take(to_remove)
+                .map(|(k, _)| k)
+                .collect();
             for key in &keys_to_remove {
                 cache.docs.remove(key);
                 if let Some(imports) = cache.imports.remove(key) {
@@ -1307,9 +1372,16 @@ impl DocumentCache {
             version,
         )));
 
-        cache
-            .docs
-            .insert(uri.to_string(), (text, Arc::clone(&state), Arc::new(std::sync::atomic::AtomicU64::new(self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed)))));
+        cache.docs.insert(
+            uri.to_string(),
+            (
+                text,
+                Arc::clone(&state),
+                Arc::new(std::sync::atomic::AtomicU64::new(
+                    self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                )),
+            ),
+        );
         state
     }
 
@@ -1368,26 +1440,24 @@ impl DocumentCache {
 
     /// Looks up the [`DocumentState`] for `uri`, returning `None` if not cached.
     pub fn get(&self, uri: &str) -> Option<Arc<RwLock<DocumentState>>> {
-        self.inner
-            .read()
-            .docs
-            .get(uri)
-            .map(|(_, state, tick)| {
-                tick.store(self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
-                Arc::clone(state)
-            })
+        self.inner.read().docs.get(uri).map(|(_, state, tick)| {
+            tick.store(
+                self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            Arc::clone(state)
+        })
     }
 
     /// Looks up only the source text for `uri` without acquiring a state lock.
     pub fn get_text(&self, uri: &str) -> Option<Arc<String>> {
-        self.inner
-            .read()
-            .docs
-            .get(uri)
-            .map(|(text, _, tick)| {
-                tick.store(self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
-                Arc::clone(text)
-            })
+        self.inner.read().docs.get(uri).map(|(text, _, tick)| {
+            tick.store(
+                self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            Arc::clone(text)
+        })
     }
 
     /// Calls `f` with the URI and state for every cached document.

@@ -9,6 +9,7 @@
 //! | [`KEYWORD_DOCS`]      | `Keyword as usize`          | 13     |
 //! | [`BUILTIN_TYPE_DOCS`] | `BuiltinTypeKind as usize`  | 27     |
 //! | [`FUNC_DOCS`]         | `FuncKind as usize`         | 7      |
+//! | [`DIRECTIVE_DOCS`]    | key name (`&str`)           | 6      |
 //!
 //! ## Alignment invariant
 //!
@@ -20,7 +21,7 @@
 //! Accessor methods on [`Document`] (`keyword_docs`, `builtin_type_docs`, `func_docs`)
 //! index directly into these arrays; an out-of-bounds index will panic at runtime.
 
-use compilation::semantic::hir::FuncKind;
+use compilation::semantic::hir::hir_concepts::FuncKind;
 use lang::keywords::Keyword;
 use lang::types::builtins::BuiltinTypeKind;
 
@@ -65,6 +66,11 @@ impl Document {
     /// Returns the document for a given intrinsic function kind.
     pub fn func_docs(kind: FuncKind) -> &'static Document {
         &FUNC_DOCS[kind as usize]
+    }
+
+    /// Returns the document for a directive by name, or `None` if unknown.
+    pub fn directive_docs(name: &str) -> Option<&'static Document> {
+        DIRECTIVE_DOCS.iter().find(|d| d.key == name)
     }
 }
 
@@ -347,5 +353,45 @@ pub static FUNC_DOCS: [Document; 7] = [
         key: "Equals",
         description: "Checks if a value equals another value",
         example: None,
+    },
+];
+
+// ── Directives ────────────────────────────────────────────────────────────────
+//
+// Ordered by directive index: warn, ignore, scient, hex, bin, octal.
+// Looked up by key name via [`Document::directive_docs`].
+/// Hover documentation for each Chern directive.
+///
+/// Indexed by key name via [`Document::directive_docs`].
+pub static DIRECTIVE_DOCS: [Document; 6] = [
+    Document {
+        key: "warn",
+        description: "Warns instead of terminating on constraint violations",
+        example: Some("```chrn\nvar->\n\tscore: f64 [Range(0.0, 100.0)] #warn\n```"),
+    },
+    Document {
+        key: "ignore",
+        description: "Ignores all serialization errors for the applied type",
+        example: Some("```chrn\nvar->\n\tptr: Runtime #ignore\n\tlen: Runtime #ignore\n```"),
+    },
+    Document {
+        key: "scient",
+        description: "Outputs numeric values in scientific notation",
+        example: Some("```chrn\nvar->\n\tpi: f64 #scient\n```"),
+    },
+    Document {
+        key: "hex",
+        description: "Outputs numeric values in hexadecimal notation",
+        example: Some("```chrn\nnest->\n\tenum Color { Red: Tuple<u8> Green: Tuple<u8> Blue: Tuple<u8> } #hex\n```"),
+    },
+    Document {
+        key: "bin",
+        description: "Outputs numeric values in binary notation",
+        example: Some("```chrn\nvar->\n\tflags: u8 #bin\n```"),
+    },
+    Document {
+        key: "octal",
+        description: "Outputs numeric values in octal notation",
+        example: Some("```chrn\nvar->\n\tperm: u32 #octal\n```"),
     },
 ];

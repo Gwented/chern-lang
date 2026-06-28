@@ -4,11 +4,15 @@ mod context;
 mod parse_fmt;
 mod parser_state;
 
-use crate::parser::ast::{
-    AbstractAlias, AbstractConfig, AbstractEnum, AbstractMemberAccess, AbstractOptionAssignment,
-    AbstractParam, AbstractStruct, AbstractTypeDef, AbstractVar, AbstractVariant, ArrayExpr,
-    AstInfo, Expr, Generic, Item, PathSegment, SectionKind, SpannedExpr, SpannedPathSegment,
-    SpannedTypeExpr, TypeExpr, Unary, UnaryOp,
+use crate::parser::ast::ast_concepts::{
+    AbstractAlias, AbstractConfig, AbstractDirective, AbstractEnum, AbstractMemberAccess,
+    AbstractOptionAssignment, AbstractParam, AbstractStruct, AbstractTypeDef, AbstractVar,
+    AbstractVariant, AstInfo, Item, SectionKind, Unary, UnaryOp,
+};
+
+use crate::parser::ast::ast_exprs::{
+    ArrayExpr, Expr, Generic, PathSegment, SpannedExpr, SpannedPathSegment, SpannedTypeExpr,
+    TypeExpr,
 };
 use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::ParserContext;
@@ -21,7 +25,6 @@ use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
 use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
 use lang::fmter::{Formattable, Formatted};
-use lang::inner_args::InnerArgs;
 use lang::keywords::Keyword;
 
 /// Returns `AstInfo` and Diagnostics, if any exist.
@@ -404,7 +407,7 @@ fn parse_alias_stmt(
         Vec::new()
     };
 
-    let args = if ctx.peek_kind() == TokenKind::HashSymbol {
+    let directives = if ctx.peek_kind() == TokenKind::HashSymbol {
         handle_args(ctx, interner).unwrap_or_default()
     } else {
         Vec::new()
@@ -415,7 +418,7 @@ fn parse_alias_stmt(
     //     ctx.report_verbose("", Branch::Neutral(NeutralBranch::Alias), interner);
     // }
 
-    let alias = AbstractAlias::new(name_id, name_span, params, conds, args, is_priv);
+    let alias = AbstractAlias::new(name_id, name_span, params, conds, directives, is_priv);
 
     Ok(alias)
 }
@@ -489,7 +492,7 @@ fn parse_typedef(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractT
         Vec::new()
     };
 
-    let args = if ctx.peek_kind() == TokenKind::HashSymbol {
+    let directives = if ctx.peek_kind() == TokenKind::HashSymbol {
         handle_args(ctx, interner).unwrap_or_default()
     } else {
         Vec::new()
@@ -499,7 +502,7 @@ fn parse_typedef(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractT
         ctx.advance_tok();
     }
 
-    let abs_typedef = AbstractTypeDef::new(name_id, name_span, ty, args, conds);
+    let abs_typedef = AbstractTypeDef::new(name_id, name_span, ty, directives, conds);
 
     Ok(abs_typedef)
 }
@@ -1375,24 +1378,21 @@ fn parse_variant(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractV
 fn handle_args(
     ctx: &mut ParserContext,
     interner: &Intern,
-) -> Result<Vec<SpannedContainer<InnerArgs>>, Token> {
-    let mut args: Vec<SpannedContainer<InnerArgs>> = Vec::new();
+) -> Result<Vec<AbstractDirective>, Token> {
+    let mut args: Vec<AbstractDirective> = Vec::new();
 
     while ctx.peek_kind() == TokenKind::HashSymbol {
         ctx.advance_tok();
-        args.push(parse_arg(ctx, interner)?);
+        args.push(parse_directive(ctx, interner)?);
     }
 
     Ok(args)
 }
 
-fn parse_arg(
-    ctx: &mut ParserContext,
-    interner: &Intern,
-) -> Result<SpannedContainer<InnerArgs>, Token> {
+fn parse_directive(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractDirective, Token> {
     let name_span = ctx.peek_span();
 
-    let interned_id = ctx.expect_id_verbose(
+    let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
         "",
         " is not a valid argument.",
@@ -1400,19 +1400,11 @@ fn parse_arg(
         interner,
     )?;
 
-    // FIX: Change from try_from to Some
-    let arg = match InnerArgs::try_from_str(interner.search(interned_id)) {
-        Some(a) => a,
-        None => {
-            let invalid_arg = interner.search(interned_id);
-            let msg = format!("The argument \"#{invalid_arg}\" does not exist");
-            ctx.report_verbose(&msg, Branch::TypeArgs, interner);
+    let sp_name_id = SpannedContainer::new(name_id, name_span);
 
-            return Err(Token::Poison);
-        }
-    };
+    let abs_directive = AbstractDirective::new(sp_name_id);
 
-    Ok(SpannedContainer::new(arg, name_span))
+    Ok(abs_directive)
 }
 
 // Alias is this only one that uses this so_+@$_$@

@@ -1,6 +1,6 @@
 use chrn_utils::{id_types::ModuleId, source_map::source_region::SourceRegion};
 
-use crate::parser::ast::AstInfo;
+use crate::parser::ast::ast_concepts::AstInfo;
 
 /// Struct representing the current environment of `TypeResolver` which is designed to be swapped
 /// out.

@@ -7,7 +7,9 @@ use chrn_utils::{
 
 use crate::{
     script_compiler::ScriptCompiler,
-    semantic::hir::{MemberSymbolKind, Symbol, SymbolKind, Table, Type, VariableState},
+    semantic::hir::hir_concepts::{
+        MemberSymbolKind, Symbol, SymbolKind, Table, Type, VariableState,
+    },
 };
 
 //TODO: Maybe this is the point where the scope wrapper comes in
@@ -38,6 +40,7 @@ pub const SCOPE_NEST: u8 = 1 << 3;
 pub const SCOPE_COMPLEX: u8 = 1 << 4;
 pub const SCOPE_OVERRIDE: u8 = 1 << 5;
 pub const SCOPE_LOCAL: u8 = 1 << 6;
+pub const SCOPE_COMPILER: u8 = 1 << 7;
 
 // Bitwise into array of scopes that filters each time a lookup is done?
 pub static SCOPE_CORE_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Core];
@@ -179,7 +182,9 @@ pub fn find_type_id(
 
                             return Some(type_id);
                         }
-                        SymbolKind::Module(_) | SymbolKind::Config(_) => return None,
+                        SymbolKind::Module(_)
+                        | SymbolKind::Config(_)
+                        | SymbolKind::Directive(_) => return None,
                     }
                 }
             }
@@ -452,6 +457,7 @@ fn collect_inner_symbols<'a>(
 /// Enum representing all kinds of scopes usable in chrn
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ScopeType {
+    Compiler,
     Core,
     Local,
     Neutral,
@@ -474,6 +480,8 @@ impl ScopeType {
             ScopeType::Var | ScopeType::Nest | ScopeType::Override => &SCOPE_REST_ACCESSIBLE,
             ScopeType::Complex => &SCOPE_COMPLEX_ACCESSIBLE,
             ScopeType::Local => &SCOPE_LOCAL_ACCESSIBLE,
+            // Should be a recognized builtin at this point
+            ScopeType::Compiler => &[],
         }
     }
 
@@ -486,6 +494,7 @@ impl ScopeType {
             ScopeType::Complex => SCOPE_COMPLEX,
             ScopeType::Override => SCOPE_OVERRIDE,
             ScopeType::Local => SCOPE_LOCAL,
+            ScopeType::Compiler => SCOPE_COMPILER,
         }
     }
 
@@ -496,6 +505,8 @@ impl ScopeType {
             | ScopeType::Local
             | ScopeType::Neutral
             | ScopeType::Nest
+            // I don't know does it?
+            | ScopeType::Compiler
             | ScopeType::Var => false,
         }
     }
@@ -528,6 +539,7 @@ impl Display for ScopeType {
             ScopeType::Complex => write!(f, "complex"),
             ScopeType::Override => write!(f, "override"),
             ScopeType::Local => write!(f, "local"),
+            ScopeType::Compiler => write!(f, "compiler"),
         }
     }
 }

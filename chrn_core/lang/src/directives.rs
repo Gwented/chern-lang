@@ -1,31 +1,96 @@
-use std::fmt::Display;
+use chrn_utils::{id_types::InternedId, intern};
 
-use crate::types::{
-    builtins::BuiltinType,
-    type_constraints::{self, TypeConstraintFlags},
+use crate::{
+    fmter::{Formattable, Formatted},
+    types::{
+        builtins::BuiltinType,
+        type_constraints::{self, TypeConstraintFlags},
+    },
 };
 
 /// If a new argument is added ensure this is updated
-pub static ARGS_ARRAY: [&str; 6] = ["warn", "scient", "hex", "bin", "octal", "ignore"];
+pub static BUILTIN_DIRECTIVE_STRS: [&str; 6] = ["warn", "scient", "hex", "bin", "octal", "ignore"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InnerArgs {
+/// General directives not specific to anything
+pub enum Directive {
     Warn,
-    Scientific,
-    Hex,
-    Binary,
-    Octal,
     Ignore,
+    Type(TypeDirective),
 }
 
-impl InnerArgs {
+impl From<TypeDirective> for Directive {
+    fn from(val: TypeDirective) -> Self {
+        Directive::Type(val)
+    }
+}
+
+impl Directive {
+    pub fn has_restrictions(self) -> bool {
+        match self {
+            Directive::Warn | Directive::Ignore => false,
+            Directive::Type(type_directive) => type_directive.has_restrictions(),
+        }
+    }
+    pub fn supports_builtin_type(self, builtin_type: &BuiltinType) -> bool {
+        match self {
+            Directive::Warn | Directive::Ignore => true,
+            Directive::Type(type_directive) => type_directive.supports_builtin_type(builtin_type),
+        }
+    }
+
+    pub fn type_constraints(self) -> TypeConstraintFlags {
+        let flags = match self {
+            Directive::Warn | Directive::Ignore => {
+                TypeConstraintFlags::new(type_constraints::ALL_DOMAINS)
+            }
+            Directive::Type(type_directive) => type_directive.type_constraints(),
+        };
+
+        flags
+    }
+
+    pub fn try_from_interned_str(interned_id: InternedId) -> Option<Directive> {
+        match interned_id.id {
+            intern::INTERNED_WARN => Some(Directive::Warn),
+            intern::INTERNED_IGNORE => Some(Directive::Ignore),
+            // Ok this looks confusing
+            _ => Some(TypeDirective::try_from_interned_str(interned_id)?.into()),
+        }
+    }
+}
+
+impl Formattable for Directive {
+    fn to_fmt(&self) -> crate::fmter::Formatted {
+        match self {
+            Directive::Warn => Formatted::DirectiveWarn,
+            Directive::Ignore => Formatted::DirectiveIgnore,
+            Directive::Type(type_directive) => type_directive.to_fmt(),
+        }
+    }
+}
+
+// May make it split to where there's compiler directive, type directive, but keepign it as this
+// for now
+/// Directives specific to types
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeDirective {
+    Scient,
+    Hex,
+    Bin,
+    Octal,
+}
+
+impl TypeDirective {
     // has_restrictions?
     /// Returns true if the given argument is applicable to every type, such as `#warn`, otherwise
     /// returns false
     pub fn has_restrictions(self) -> bool {
         match self {
-            InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => true,
-            InnerArgs::Ignore | InnerArgs::Warn => false,
+            TypeDirective::Scient
+            | TypeDirective::Hex
+            | TypeDirective::Bin
+            | TypeDirective::Octal => true,
         }
     }
 
@@ -33,8 +98,10 @@ impl InnerArgs {
     // Maybe this is a good time to use kind
     pub fn supports_builtin_type(self, builtin_type: &BuiltinType) -> bool {
         match self {
-            InnerArgs::Ignore | InnerArgs::Warn => true,
-            InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => {
+            TypeDirective::Scient
+            | TypeDirective::Hex
+            | TypeDirective::Bin
+            | TypeDirective::Octal => {
                 match builtin_type {
                     BuiltinType::I8
                     | BuiltinType::U8
@@ -99,37 +166,33 @@ impl InnerArgs {
 
     pub fn type_constraints(self) -> TypeConstraintFlags {
         let flags = match self {
-            InnerArgs::Warn | InnerArgs::Ignore => type_constraints::ALL_DOMAINS,
-            InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => {
-                type_constraints::NUMERIC
-            }
+            TypeDirective::Scient
+            | TypeDirective::Hex
+            | TypeDirective::Bin
+            | TypeDirective::Octal => type_constraints::NUMERIC,
         };
 
         TypeConstraintFlags::new(flags)
     }
 
-    pub fn try_from_str(val: &str) -> Option<InnerArgs> {
-        match val {
-            "warn" => Some(InnerArgs::Warn),
-            "scient" => Some(InnerArgs::Scientific),
-            "hex" => Some(InnerArgs::Hex),
-            "bin" => Some(InnerArgs::Binary),
-            "octal" => Some(InnerArgs::Octal),
-            "ignore" => Some(InnerArgs::Ignore),
+    pub fn try_from_interned_str(interned_id: InternedId) -> Option<TypeDirective> {
+        match interned_id.id {
+            intern::INTERNED_SCIENT => Some(TypeDirective::Scient),
+            intern::INTERNED_HEX => Some(TypeDirective::Hex),
+            intern::INTERNED_BIN => Some(TypeDirective::Bin),
+            intern::INTERNED_OCTAL => Some(TypeDirective::Octal),
             _ => None,
         }
     }
 }
 
-impl Display for InnerArgs {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Formattable for TypeDirective {
+    fn to_fmt(&self) -> Formatted {
         match self {
-            InnerArgs::Warn => write!(f, "warn"),
-            InnerArgs::Scientific => write!(f, "scient"),
-            InnerArgs::Hex => write!(f, "hex"),
-            InnerArgs::Binary => write!(f, "bin"),
-            InnerArgs::Octal => write!(f, "octal"),
-            InnerArgs::Ignore => write!(f, "ignore"),
+            TypeDirective::Scient => Formatted::DirectiveScient,
+            TypeDirective::Hex => Formatted::DirectiveHex,
+            TypeDirective::Bin => Formatted::DirectiveBin,
+            TypeDirective::Octal => Formatted::DirectiveOctal,
         }
     }
 }

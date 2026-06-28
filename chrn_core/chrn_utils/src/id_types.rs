@@ -2,7 +2,6 @@ use std::fmt::Debug;
 
 use crate::source_map::source_span::SourceSpan;
 
-//TEST: May or may not be used
 /// Generic structure for attaching a span to any type
 #[derive(Debug, Clone)]
 pub struct SpannedContainer<T> {
@@ -13,6 +12,27 @@ pub struct SpannedContainer<T> {
 impl<T> SpannedContainer<T> {
     pub const fn new(inner: T, span: SourceSpan) -> SpannedContainer<T> {
         SpannedContainer { inner, span }
+    }
+}
+
+/// Generic structure for attaching a span to any type reference
+#[derive(Debug, Clone)]
+pub struct SpannedContainerRef<'a, T> {
+    pub inner: &'a T,
+    pub span: SourceSpan,
+}
+
+impl<T> SpannedContainerRef<'_, T> {
+    pub const fn new<'a>(inner: &'a T, span: SourceSpan) -> SpannedContainerRef<'a, T> {
+        SpannedContainerRef { inner, span }
+    }
+}
+
+impl<T: Clone> SpannedContainerRef<'_, T> {
+    // Should this transfer ownership?
+    /// Converts borrowed `self` into owned `SpannedContainer`
+    pub fn into_owned(&self) -> SpannedContainer<T> {
+        SpannedContainer::new(self.inner.clone(), self.span)
     }
 }
 
@@ -104,6 +124,17 @@ pub struct SymbolId {
 impl SymbolId {
     pub const fn new(id: u32) -> SymbolId {
         SymbolId { id }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct DirectiveId {
+    pub id: u32,
+}
+
+impl DirectiveId {
+    pub const fn new(id: u32) -> DirectiveId {
+        DirectiveId { id }
     }
 }
 

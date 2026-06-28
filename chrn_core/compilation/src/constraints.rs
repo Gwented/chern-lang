@@ -5,7 +5,7 @@ use lang::{fmter::Formattable, types::type_constraints::TypeConstraintFlags};
 
 use crate::{
     script_compiler::ScriptCompiler,
-    semantic::{error::SemanticError, hir::Type},
+    semantic::{hir::hir_concepts::Type, preset_err::PresetErr},
 };
 
 //TEST:
@@ -17,7 +17,7 @@ pub(super) fn check_type_constraint(
     cond_span: SourceSpan,
     visited: &mut Vec<TypeId>,
     given_constraints: TypeConstraintFlags,
-) -> Result<(), SemanticError> {
+) -> Result<(), PresetErr> {
     let ty = &compiler.types[type_id.id as usize].ty;
     match ty {
         Type::Struct(struct_def) => {
@@ -31,17 +31,17 @@ pub(super) fn check_type_constraint(
                 let field = compiler.get_field(*member_id);
                 // Not sure if this incurs any errors this time
                 if visited.contains(&field.type_id) {
-                    // if spanned_arg.arg.has_restrictions() {
+                    // if spanned_directive.arg.has_restrictions() {
                     //     let name = self.interner.search(symbol.name_id.id as usize);
                     //
                     //     let msg = format!(
                     //         "The type `{name}` cannot have `#{}` applied due to recursively relying on itself satisfying the argument",
-                    //         spanned_arg.arg
+                    //         spanned_directive.arg
                     //     );
                     //
                     //     return Err(SemanticError::General(
                     //         msg,
-                    //         vec![spanned_arg.span, active_span],
+                    //         vec![spanned_directive.span, active_span],
                     //     ));
                     // }
 
@@ -96,7 +96,7 @@ pub(super) fn check_type_constraint(
         Type::Alias(alias_def) => {
             // Misleading error message
             if given_constraints.contains(alias_def.ty_constraints) {
-                return Err(SemanticError::TypeConstraintBoundConflict(
+                return Err(PresetErr::TypeConstraintBoundConflict(
                     given_constraints,
                     alias_def.ty_constraints,
                     vec![ty_span, cond_span],
@@ -112,7 +112,7 @@ pub(super) fn check_type_constraint(
             let constraints = builtin_ty.kind().type_constraints();
 
             if !given_constraints.contains(constraints) {
-                return Err(SemanticError::TypeConstraintMismatch(
+                return Err(PresetErr::TypeConstraintMismatch(
                     given_constraints,
                     builtin_ty.kind().to_fmt(),
                     vec![ty_span, cond_span],
@@ -123,7 +123,7 @@ pub(super) fn check_type_constraint(
         }
         Type::Constrained(constraints) => {
             if !given_constraints.contains(*constraints) {
-                return Err(SemanticError::TypeConstraintBoundConflict(
+                return Err(PresetErr::TypeConstraintBoundConflict(
                     given_constraints,
                     *constraints,
                     vec![ty_span, cond_span],

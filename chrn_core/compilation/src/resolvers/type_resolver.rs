@@ -1,18 +1,17 @@
-//TODO: SHOULD IMPORT CHECKING HAPPEN HERE??
+//TODO:
+// Please split this...
 pub mod type_context;
-pub mod type_env;
-
-use std::env;
 
 use chrn_utils::chrn_settings::ChrnSettings;
 use chrn_utils::id_types::{
-    AstId, ConfigId, ExprId, InternedId, MemberId, ScopeId, SpannedContainer, SymbolId, TypeId,
-    ValueId, VariableId,
+    AstId, ConfigId, DirectiveId, ExprId, InternedId, MemberId, ScopeId, SpannedContainer,
+    SymbolId, TypeId, ValueId, VariableId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::{
-    AnnotationKind, DiagnosticLevel, Reporter, SourceDiagnostic,
+    AnnotationKind, DiagnosticLevel, SourceDiagnostic,
 };
+use lang::directives::Directive;
 use lang::fmter::{Formattable, Formatted};
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
 use lang::values::{Value, ValueInfo};
@@ -20,23 +19,27 @@ use lang::values::{Value, ValueInfo};
 use crate::constraints::ArgConstraint;
 use crate::lookup::member_lookup::{self, MemberLookupResult};
 use crate::lookup::scopes::{self, AssociatedScopeKind, LookupPattern, ScopeType};
-use crate::parser::ast::{
-    AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
-    Expr, Item, PathSegment, SpannedExpr, SpannedPathSegment, SpannedTypeExpr, TypeExpr,
+use crate::parser::ast::ast_concepts::{
+    AbstractAlias, AbstractConfig, AbstractDirective, AbstractEnum, AbstractStruct,
+    AbstractTypeDef, AbstractVar, Item,
+};
+use crate::parser::ast::ast_exprs::{
+    Expr, PathSegment, SpannedExpr, SpannedPathSegment, SpannedTypeExpr, TypeExpr,
 };
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::script_compiler::{self, ScriptCompiler};
-use crate::semantic::error::{LookupError, MathError, SemanticError};
-use crate::semantic::hir::{
-    ConfigOptionAssignment, ExprHir, MemberSymbolKind, Param, PossibleMember, ResolvedExpr, Symbol,
-    SymbolKind, VarDef, VariableState,
+use crate::semantic::hir::hir_concepts::{
+    ConfigOptionAssignment, FieldRepre, MemberSymbolKind, VariableState, VariantRepre,
 };
-use crate::semantic::{evaluator, inference, semantic_reporter};
+use crate::semantic::hir::hir_concepts::{Symbol, SymbolKind, SymbolOrigin, VarDef};
+use crate::semantic::hir::hir_concepts::{Type, TypeInfo};
+use crate::semantic::hir::hir_exprs::{ExprHir, Param, PossibleMember, ResolvedExpr};
+use crate::semantic::preset_err::{LookupError, MathError, PresetErr};
+use crate::semantic::{evaluator, inference, preset_reporter};
 
 use crate::resolvers::type_resolver::type_context::{
     ParentInfo, ParentState, PendingExpr, PendingSymbol, TypeContext,
 };
-use crate::semantic::hir::{FieldRepre, Type, TypeInfo, VariantRepre};
 
 //TODO: Less complicated injection
 /// Resolves types and builds the rest of any structs, enums, or expressions that can be const
@@ -45,15 +48,10 @@ use crate::semantic::hir::{FieldRepre, Type, TypeInfo, VariantRepre};
 pub struct TypeResolver<'a> {
     settings: &'a ChrnSettings,
     interner: &'a Intern,
-    // Name is a little misleading since it's not regarding types, it's the resolver, but this
-    // specific resolver
-    //WARN: Horrors
     compiler: &'a mut ScriptCompiler,
     ty_ctx: TypeContext,
     err_vec: Vec<SourceDiagnostic>,
 }
-
-// pub fn resolve() {}
 
 impl<'a> TypeResolver<'a> {
     pub fn new(
@@ -85,11 +83,14 @@ impl<'a> TypeResolver<'a> {
                 Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum, env),
                 Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias, env),
                 Item::Var(abs_var) => _ = self.resolve_var(abs_var, env),
-                //TODO: Cfgs need to be able to check if any member they have has been processed or
+                // Why does this sound like grug </3
+                //TODO: Cfgs need to be able to check if any member they have been processed or
                 //not upfront so that they can be skipped and have their ast index saved to be gone
                 //over. Maybe some light polling would be usable here to avoid either REALLY late
                 //checks just because a type have a config, or over-checking.
-                Item::Config(abs_cfg) => _ = self.resolve_cfg(abs_cfg, env),
+                Item::Config(abs_cfg) => {
+                    _ = self.resolve_cfg(abs_cfg, env);
+                }
             }
         }
 
@@ -348,6 +349,11 @@ impl<'a> TypeResolver<'a> {
 
         // Get schema option then lookup against the actual possibilities
         // Maybe do this in constraints
+        //
+        // WARN: It is enforced that a member access config declaration CANNOT happen, therefore this can
+        // never fail unless the current module does not have the type having it's config defined
+        // declared anywhere. If this were to ever be lifted as a syntax enforced rule, this would
+        // break.
         for abs_opt in &abs_cfg.opt_assignments {
             let expr_id = match self.register_expr(
                 parent_sym_id,
@@ -360,10 +366,10 @@ impl<'a> TypeResolver<'a> {
                 env,
             ) {
                 Ok(expr_id) => expr_id,
-                Err(sem_err) => {
-                    semantic_reporter::report_semantic(
+                Err(preset_err) => {
+                    preset_reporter::report_preset(
                         &mut self.err_vec,
-                        sem_err,
+                        preset_err,
                         env.region,
                         self.settings,
                         self.interner,
@@ -421,16 +427,16 @@ impl<'a> TypeResolver<'a> {
                             let found_sym = &self.compiler.symbols[found_sym_id.id as usize];
                             let found_name = self.interner.search(found_sym.name_id);
 
-                            let sem_err = SemanticError::Lookup(
+                            let preset_err = PresetErr::Lookup(
                                 LookupError::InvalidTypeMemberAccess(SpannedContainer::new(
                                     Type::to_fmt(self.compiler, type_id),
                                     decl_span,
                                 )),
                             );
 
-                            semantic_reporter::create_diag_builder_preset(
+                            preset_reporter::create_diag_builder_preset(
                                 &mut self.err_vec,
-                                sem_err,
+                                preset_err,
                                 env.region,
                                 self.settings,
                                 self.interner,
@@ -454,15 +460,15 @@ impl<'a> TypeResolver<'a> {
                                 .expect("Should have a span since it has members and was searched");
                             let fmtted_ty = Type::to_fmt(self.compiler, type_id);
 
-                            let sem_err = SemanticError::Lookup(LookupError::MemberNotFound(
+                            let preset_err = PresetErr::Lookup(LookupError::MemberNotFound(
                                 SpannedContainer::new(abs_cfg.name_id, abs_cfg.name_span),
                                 abs_inner_cfg.name_id,
                             ));
 
                             // List available members?
-                            semantic_reporter::create_diag_builder_preset(
+                            preset_reporter::create_diag_builder_preset(
                                 &mut self.err_vec,
-                                sem_err,
+                                preset_err,
                                 env.region,
                                 self.settings,
                                 self.interner,
@@ -481,7 +487,7 @@ impl<'a> TypeResolver<'a> {
                         }
                         // MemberLookupResult::InvalidSymbolMemberAccess => {
                         //     should_break = true;
-                        //     let sem_err = SemanticError::Lookup(
+                        //     let preset_err = SemanticError::Lookup(
                         //         LookupError::InvalidSymbolMemberAccess(SpannedContainer::new(
                         //             SymbolKind::to_fmt(self.compiler, found_sym_id),
                         //             abs_cfg.name_span,
@@ -490,7 +496,7 @@ impl<'a> TypeResolver<'a> {
                         //
                         //     self
                         //         .reporter
-                        //         .create_diag_builder_preset(sem_err)
+                        //         .create_diag_builder_preset(preset_err)
                         //         .add_note("Config blocks expect a valid `nest->` or `var->` defined variable".to_string())
                         //         .build()
                         // }
@@ -562,10 +568,10 @@ impl<'a> TypeResolver<'a> {
                 env,
             ) {
                 Ok(expr_id) => expr_id,
-                Err(sem_err) => {
-                    semantic_reporter::report_semantic(
+                Err(preset_err) => {
+                    preset_reporter::report_preset(
                         &mut self.err_vec,
-                        sem_err,
+                        preset_err,
                         env.region,
                         self.settings,
                         self.interner,
@@ -583,6 +589,7 @@ impl<'a> TypeResolver<'a> {
                 abs_opt.name_span,
                 expr_id,
             );
+
             self.compiler
                 .members
                 .push(MemberSymbolKind::OptionAssignment(opt));
@@ -644,16 +651,16 @@ impl<'a> TypeResolver<'a> {
                             let found_sym = &self.compiler.symbols[parent_member_id.id as usize];
                             let found_name = self.interner.search(found_sym.name_id);
 
-                            let sem_err = SemanticError::Lookup(
+                            let preset_err = PresetErr::Lookup(
                                 LookupError::InvalidTypeMemberAccess(SpannedContainer::new(
                                     Type::to_fmt(self.compiler, type_id),
                                     parent_decl_span,
                                 )),
                             );
 
-                            semantic_reporter::create_diag_builder_preset(
+                            preset_reporter::create_diag_builder_preset(
                                 &mut self.err_vec,
-                                sem_err,
+                                preset_err,
                                 env.region,
                                 self.settings,
                                 self.interner,
@@ -673,15 +680,15 @@ impl<'a> TypeResolver<'a> {
                         MemberLookupResult::MemberNotFoundInType(type_id) => {
                             let fmtted_ty = Type::to_fmt(self.compiler, type_id);
 
-                            let sem_err = SemanticError::Lookup(LookupError::MemberNotFound(
+                            let preset_err = PresetErr::Lookup(LookupError::MemberNotFound(
                                 SpannedContainer::new(parent_name_id, abs_cfg.name_span),
                                 abs_inner_cfg.name_id,
                             ));
 
                             // List available members?
-                            semantic_reporter::create_diag_builder_preset(
+                            preset_reporter::create_diag_builder_preset(
                                 &mut self.err_vec,
-                                sem_err,
+                                preset_err,
                                 env.region,
                                 self.settings,
                                 self.interner,
@@ -700,7 +707,7 @@ impl<'a> TypeResolver<'a> {
                         }
                         // MemberLookupResult::InvalidSymbolMemberAccess => {
                         //     should_break = true;
-                        //     let sem_err = SemanticError::Lookup(
+                        //     let preset_err = SemanticError::Lookup(
                         //         LookupError::InvalidSymbolMemberAccess(SpannedContainer::new(
                         //             SymbolKind::to_fmt(self.compiler, found_sym_id),
                         //             abs_cfg.name_span,
@@ -709,7 +716,7 @@ impl<'a> TypeResolver<'a> {
                         //
                         //     self
                         //         .reporter
-                        //         .create_diag_builder_preset(sem_err)
+                        //         .create_diag_builder_preset(preset_err)
                         //         .add_note("Config blocks expect a valid `nest->` or `var->` defined variable".to_string())
                         //         .build()
                         // }
@@ -748,13 +755,88 @@ impl<'a> TypeResolver<'a> {
         Ok(())
     }
 
+    // fn should_wait(&self, abs_cfg: &AbstractConfig, env: &ResolverEnv) -> bool {
+    //     let parent_sym_id = table.interned_to_sym[&abs_cfg.name_id];
+    //     let associated_scope = AssociatedScopeKind::Module(env.current_mod);
+    //     let all_member_ids = Vec::new();
+    //     let member_id = MemberId::new(self.compiler.members.len() as u32);
+    //
+    //     // Checks if the symbol is valid later
+    //     let found_sym_id = if let Some((found_sym, _)) = scopes::find_sym_id(
+    //         self.compiler,
+    //         associated_scope,
+    //         abs_cfg.name_id,
+    //         ScopeType::Complex,
+    //         // I don't know about this lookup. It should probably be able to search namespace by
+    //         // namespace, but not by #)%*@%)@(
+    //         LookupPattern::NamespaceOnly,
+    //     ) {
+    //         found_sym
+    //     } else {
+    //         let name = self.interner.search(abs_cfg.name_id);
+    //         let core_msg = format!(
+    //             "Could not find a symbol with the identifier `{name}` in all complex searchable scopes"
+    //         );
+    //
+    //         let src_diag =
+    //             SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+    //                 .add_annotation(abs_cfg.name_span, AnnotationKind::Primary, None)
+    //                 .build();
+    //
+    //         self.err_vec.push(src_diag);
+    //
+    //         return true;
+    //     };
+    //
+    //     //     let member_id = match member_lookup::lookup_member(
+    //     //         self.compiler,
+    //     //         found_type_id,
+    //     //         abs_inner_cfg.name_id,
+    //     //     ) {
+    //     //         MemberLookupResult::Found(m_id) => m_id,
+    //     //         _ => return false,
+    //     //     };
+    //     //
+    //     // }
+    //     for abs_inner_cfg in &abs_cfg.inner_field_cfg {
+    //         // Safe unwrap (This is not safe)
+    //         self.compiler.get_sym_type_id(found_sym_id).unwrap();
+    //
+    //         _ = self.should_wait_nested(abs_inner_cfg, parent_member_id);
+    //     }
+    //
+    //     // Result doesn't matter since we continue either way
+    //     false
+    // }
+    //
+    // fn should_wait_nested(&self, abs_cfg: &AbstractConfig, parent_member_id: MemberId) {
+    //     for abs_inner_cfg in &abs_cfg.inner_field_cfg {
+    //         let parent_type_id = self.compiler.get_member_type_id(parent_member_id).unwrap();
+    //         let name = self.interner.search(abs_inner_cfg.name_id);
+    //         dbg!(name);
+    //         let Type::Struct(structure) = &self.compiler.types[parent_type_id.id as usize].ty
+    //         else {
+    //             todo!();
+    //         };
+    //         let name = self
+    //             .interner
+    //             .search(self.compiler.symbols[structure.sym_id.id as usize].name_id);
+    //         dbg!(name);
+    //         // Person fields are not available since the config is not gauranteed to be touchign a
+    //         // type that is known yet
+    //         let person_fields = member_lookup::collect_all_members(self.compiler, parent_type_id);
+    //         dbg!(person_fields);
+    //         panic!();
+    //     }
+    // }
+
     fn try_resolve_pending(
         &mut self,
         resolved_sym_id: SymbolId,
         pending_sym: &mut PendingSymbol,
         env: &ResolverEnv,
         // Eyes
-        // Why does this say eyes?
+        // No actually why did this say eyes?
     ) -> Result<bool, ()> {
         // Tells the caller if the given pending symbol is fully resolved to where it can be
         // removed as a pending symbol
@@ -818,11 +900,15 @@ impl<'a> TypeResolver<'a> {
                         inner_val.const_val = const_val_opt;
                     }
                 }
+                // I forgot what this means tbh honest
                 // NOTE: Since expressions are initialized as `ReservedTypeSlot`, if there is say,
                 // a cyclic dependency error, the error will exist and emit later, but this
                 // technically still exists and needs to be ignored. Not currently aware of any
                 // direct issues with this. Maybe an Error tag on a pending expression could help?
-                SymbolKind::Type(_) | SymbolKind::Module(_) | SymbolKind::Config(_) => {
+                SymbolKind::Type(_)
+                | SymbolKind::Module(_)
+                | SymbolKind::Config(_)
+                | SymbolKind::Directive(_) => {
                     unreachable!("Not possible")
                 }
             }
@@ -851,14 +937,14 @@ impl<'a> TypeResolver<'a> {
                     }
                     // WARN: This case is not hit yet
                     // Reports the error and continues
-                    Err(sem_err) => {
+                    Err(preset_err) => {
                         // Extracting module of origin from the pending expression by using the symbol
                         // attached to the expression upon it's creation
                         //WARN: Suspicious
 
-                        semantic_reporter::report_semantic(
+                        preset_reporter::report_preset(
                             &mut self.err_vec,
-                            sem_err,
+                            preset_err,
                             env.region,
                             self.settings,
                             self.interner,
@@ -910,7 +996,7 @@ impl<'a> TypeResolver<'a> {
     // This needs to go from x -> x + 2 -> y recursively however long needed
 
     // A bit concerned that these are cloning themselves constantly to an extent
-    fn traverse_expr(&mut self, current_expr_id: ExprId) -> Result<(bool, bool), SemanticError> {
+    fn traverse_expr(&mut self, current_expr_id: ExprId) -> Result<(bool, bool), PresetErr> {
         let expr = &self.compiler.exprs[current_expr_id.id as usize];
         let val_info = &self.compiler.values[expr.val_id.id as usize];
 
@@ -1173,14 +1259,15 @@ impl<'a> TypeResolver<'a> {
             env,
         ) {
             Ok(expr_id) => expr_id,
-            Err(sem_err) => {
-                semantic_reporter::report_semantic(
+            Err(preset_err) => {
+                preset_reporter::report_preset(
                     &mut self.err_vec,
-                    sem_err,
+                    preset_err,
                     env.region,
                     self.settings,
                     self.interner,
                 );
+
                 return Err(());
             }
         };
@@ -1222,16 +1309,16 @@ impl<'a> TypeResolver<'a> {
     ) -> Result<(), ()> {
         let type_id = match self.resolve_type_expr(
             AssociatedScopeKind::Module(env.current_mod),
-            &abs_typedef.spanned_ty_expr,
+            &abs_typedef.sp_ty_expr,
             ScopeType::Var,
             LookupPattern::NoRestrictions,
             env,
         ) {
             Ok(tid) => tid,
-            Err(sem_err) => {
-                semantic_reporter::report_semantic(
+            Err(preset_err) => {
+                preset_reporter::report_preset(
                     &mut self.err_vec,
-                    sem_err,
+                    preset_err,
                     env.region,
                     self.settings,
                     self.interner,
@@ -1266,10 +1353,10 @@ impl<'a> TypeResolver<'a> {
                 // For allowing for more diagnostics instead of just leaving the rest of the struct
                 // unfinished upon singular errors
                 Ok(c) => conds.push(c),
-                Err(sem_err) => {
-                    semantic_reporter::report_semantic(
+                Err(preset_err) => {
+                    preset_reporter::report_preset(
                         &mut self.err_vec,
-                        sem_err,
+                        preset_err,
                         env.region,
                         self.settings,
                         self.interner,
@@ -1278,12 +1365,22 @@ impl<'a> TypeResolver<'a> {
             }
         }
 
+        let (directives, preset_errs) = self.handle_directives(&abs_typedef.directives, env);
+        preset_reporter::report_preset_vec(
+            &mut self.err_vec,
+            preset_errs,
+            env.region,
+            self.settings,
+            self.interner,
+        );
+
         let type_def = self.compiler.get_typedef_mut(sym_id);
-        // Assinging from `Unknown` to it's actual type
+
+        // Assinging from `Unknown` to it's actual type if found
         //TODO: Constraints should check if this is unknown
         type_def.type_id = type_id;
         type_def.conds = conds;
-        type_def.args = abs_typedef.args.iter().map(|sp_arg| sp_arg.inner).collect();
+        type_def.directives = directives;
 
         Ok(())
     }
@@ -1312,16 +1409,16 @@ impl<'a> TypeResolver<'a> {
         for (i, field_typedef) in abs_struct.fields.iter().enumerate() {
             let type_id = match self.resolve_type_expr(
                 AssociatedScopeKind::Module(env.current_mod),
-                &field_typedef.spanned_ty_expr,
+                &field_typedef.sp_ty_expr,
                 ScopeType::Nest,
                 LookupPattern::NoRestrictions,
                 env,
             ) {
                 Ok(tid) => tid,
-                Err(sem_err) => {
-                    semantic_reporter::report_semantic(
+                Err(preset_err) => {
+                    preset_reporter::report_preset(
                         &mut self.err_vec,
-                        sem_err,
+                        preset_err,
                         env.region,
                         self.settings,
                         self.interner,
@@ -1396,10 +1493,10 @@ impl<'a> TypeResolver<'a> {
                     env,
                 ) {
                     Ok(c) => conds.push(c),
-                    Err(sem_err) => {
-                        semantic_reporter::report_semantic(
+                    Err(preset_err) => {
+                        preset_reporter::report_preset(
                             &mut self.err_vec,
-                            sem_err,
+                            preset_err,
                             env.region,
                             self.settings,
                             self.interner,
@@ -1408,9 +1505,23 @@ impl<'a> TypeResolver<'a> {
                 };
             }
 
+            let (directives, preset_errs) = self.handle_directives(&abs_field.directives, env);
+            preset_reporter::report_preset_vec(
+                &mut self.err_vec,
+                preset_errs,
+                env.region,
+                self.settings,
+                self.interner,
+            );
+
             let field = self.compiler.get_field_mut(*current_member_id);
             field.conds = conds;
-            field.args = abs_field.args.iter().map(|sp_arg| sp_arg.inner).collect();
+            field.directives = directives;
+            // field.directives = abs_field
+            //     .directives
+            //     .iter()
+            //     .map(|sp_directive| sp_directive.inner)
+            //     .collect();
         }
 
         let mut glob_conds: Vec<ExprId> = Vec::new();
@@ -1426,10 +1537,10 @@ impl<'a> TypeResolver<'a> {
                 env,
             ) {
                 Ok(c) => glob_conds.push(c),
-                Err(sem_err) => {
-                    semantic_reporter::report_semantic(
+                Err(preset_err) => {
+                    preset_reporter::report_preset(
                         &mut self.err_vec,
-                        sem_err,
+                        preset_err,
                         env.region,
                         self.settings,
                         self.interner,
@@ -1438,16 +1549,22 @@ impl<'a> TypeResolver<'a> {
             }
         }
 
+        let (glob_directives, preset_errs) =
+            self.handle_directives(&abs_struct.glob_directives, env);
+
+        preset_reporter::report_preset_vec(
+            &mut self.err_vec,
+            preset_errs,
+            env.region,
+            self.settings,
+            self.interner,
+        );
+
         let struct_def = self.compiler.get_struct_mut(sym_id);
 
         struct_def.fields.append(&mut fields);
         struct_def.glob_conds = glob_conds;
-        //TODO: Probably will be kept
-        struct_def.glob_args = abs_struct
-            .glob_args
-            .iter()
-            .map(|sp_arg| sp_arg.inner)
-            .collect();
+        struct_def.glob_directives = glob_directives;
 
         Ok(())
     }
@@ -1510,10 +1627,10 @@ impl<'a> TypeResolver<'a> {
                     env,
                 ) {
                     Ok(tid) => tid,
-                    Err(sem_err) => {
-                        semantic_reporter::report_semantic(
+                    Err(preset_err) => {
+                        preset_reporter::report_preset(
                             &mut self.err_vec,
-                            sem_err,
+                            preset_err,
                             env.region,
                             self.settings,
                             self.interner,
@@ -1569,10 +1686,10 @@ impl<'a> TypeResolver<'a> {
                     env,
                 ) {
                     Ok(c) => Some(c),
-                    Err(sem_err) => {
-                        semantic_reporter::report_semantic(
+                    Err(preset_err) => {
+                        preset_reporter::report_preset(
                             &mut self.err_vec,
-                            sem_err,
+                            preset_err,
                             env.region,
                             self.settings,
                             self.interner,
@@ -1586,9 +1703,19 @@ impl<'a> TypeResolver<'a> {
                 }
             }
 
+            let (directives, preset_errs) = self.handle_directives(&abs_variant.directives, env);
+            preset_reporter::report_preset_vec(
+                &mut self.err_vec,
+                preset_errs,
+                env.region,
+                self.settings,
+                self.interner,
+            );
+
             let variant = self.compiler.get_variant_mut(*current_member_id);
+
             variant.conds = conds;
-            variant.args = abs_variant.args.iter().map(|sp_arg| sp_arg.inner).collect();
+            variant.directives = directives;
         }
 
         let mut glob_conds: Vec<ExprId> = Vec::new();
@@ -1603,10 +1730,10 @@ impl<'a> TypeResolver<'a> {
                 env,
             ) {
                 Ok(c) => Some(c),
-                Err(sem_err) => {
-                    semantic_reporter::report_semantic(
+                Err(preset_err) => {
+                    preset_reporter::report_preset(
                         &mut self.err_vec,
-                        sem_err,
+                        preset_err,
                         env.region,
                         self.settings,
                         self.interner,
@@ -1620,15 +1747,20 @@ impl<'a> TypeResolver<'a> {
             }
         }
 
+        let (glob_directives, preset_errs) = self.handle_directives(&abs_enum.glob_directives, env);
+        preset_reporter::report_preset_vec(
+            &mut self.err_vec,
+            preset_errs,
+            env.region,
+            self.settings,
+            self.interner,
+        );
+
         let enum_def = self.compiler.get_enum_mut(sym_id);
 
         enum_def.variants.append(&mut variants);
         enum_def.glob_conds = glob_conds;
-        enum_def.glob_args = abs_enum
-            .glob_args
-            .iter()
-            .map(|sp_arg| sp_arg.inner)
-            .collect();
+        enum_def.glob_directives = glob_directives;
 
         Ok(())
     }
@@ -1692,10 +1824,10 @@ impl<'a> TypeResolver<'a> {
                 env,
             ) {
                 Ok(tid) => tid,
-                Err(sem_err) => {
-                    semantic_reporter::report_semantic(
+                Err(preset_err) => {
+                    preset_reporter::report_preset(
                         &mut self.err_vec,
-                        sem_err,
+                        preset_err,
                         env.region,
                         self.settings,
                         self.interner,
@@ -1718,7 +1850,7 @@ impl<'a> TypeResolver<'a> {
                 abs_param.name_id,
                 param_sym_id,
                 Some(AstId::new(i as u32)),
-                env.current_mod,
+                SymbolOrigin::Module(env.current_mod),
                 true,
                 None,
                 ScopeType::Local,
@@ -1765,10 +1897,10 @@ impl<'a> TypeResolver<'a> {
                 env,
             ) {
                 Ok(c) => Some(c),
-                Err(sem_err) => {
-                    semantic_reporter::report_semantic(
+                Err(preset_err) => {
+                    preset_reporter::report_preset(
                         &mut self.err_vec,
-                        sem_err,
+                        preset_err,
                         env.region,
                         self.settings,
                         self.interner,
@@ -1782,6 +1914,15 @@ impl<'a> TypeResolver<'a> {
             }
         }
 
+        let (directives, preset_errs) = self.handle_directives(&abs_alias.directives, env);
+        preset_reporter::report_preset_vec(
+            &mut self.err_vec,
+            preset_errs,
+            env.region,
+            self.settings,
+            self.interner,
+        );
+
         //TODO: Arg constraint and option tpe constraint.
         //Could technically happen in constraint resolver since it. Yes.
         let alias_def = self.compiler.get_alias_mut(alias_sym_id);
@@ -1794,11 +1935,12 @@ impl<'a> TypeResolver<'a> {
         // `ConstraintResolver`.
         alias_def
             .arg_constraints
+            // Well param count and arg count could mean a lot of different things
+            // Ok
             .push(ArgConstraint::ArgCount(param_count));
 
         alias_def.conds = conds;
-        // May change it so spanning is preserved
-        alias_def.args = abs_alias.args.iter().map(|sp_arg| sp_arg.inner).collect();
+        alias_def.directives = directives;
 
         Ok(())
     }
@@ -1820,7 +1962,7 @@ impl<'a> TypeResolver<'a> {
         scope_type: ScopeType,
         seen: &mut Vec<SymbolId>,
         env: &ResolverEnv,
-    ) -> Result<ExprId, SemanticError> {
+    ) -> Result<ExprId, PresetErr> {
         match &spanned_expr.expr {
             Expr::Var(name_id) => {
                 if let Some(scope_id) = local_scope_id {
@@ -1854,9 +1996,11 @@ impl<'a> TypeResolver<'a> {
                                     Vec::new(),
                                 )
                             }
+                            // Local scopes can't reach these right now
                             SymbolKind::Type(type_id) => todo!(),
                             SymbolKind::Module(mod_id) => todo!(),
                             SymbolKind::Config(config_id) => todo!(),
+                            SymbolKind::Directive(directive_id) => todo!(),
                         };
 
                         self.compiler.exprs.push(expr);
@@ -1912,7 +2056,7 @@ impl<'a> TypeResolver<'a> {
                             None,
                         );
 
-                        return Err(SemanticError::General(src_diag));
+                        return Err(PresetErr::General(src_diag));
                     }
 
                     let symbol = &self.compiler.symbols[found_sym_id.id as usize];
@@ -1962,7 +2106,7 @@ impl<'a> TypeResolver<'a> {
                                         None,
                                     );
 
-                                    return Err(SemanticError::General(src_diag));
+                                    return Err(PresetErr::General(src_diag));
                                 }
                                 Type::Constrained(ty_constraint) => todo!(),
                                 Type::Deferred(type_id) => todo!("Is this possible?"),
@@ -2069,8 +2213,9 @@ impl<'a> TypeResolver<'a> {
                                 None,
                             );
 
-                            return Err(SemanticError::General(src_diag));
+                            return Err(PresetErr::General(src_diag));
                         }
+                        SymbolKind::Directive(_) => unreachable!("We'll see"),
                         // Config not declarable in neutral sections so this should not be possible
                         SymbolKind::Config(_) => {
                             unreachable!("Should be impossible due to sections")
@@ -2111,7 +2256,7 @@ impl<'a> TypeResolver<'a> {
                         None,
                     );
 
-                    Err(SemanticError::General(src_diag))
+                    Err(PresetErr::General(src_diag))
                 }
             }
             Expr::Integer(name_id, _) => {
@@ -2138,7 +2283,7 @@ impl<'a> TypeResolver<'a> {
 
                     Ok(expr_id)
                 } else {
-                    Err(SemanticError::NumericOverflow(
+                    Err(PresetErr::NumericOverflow(
                         SpannedContainer::new(*name_id, spanned_expr.span),
                         Formatted::Integer,
                     ))
@@ -2163,7 +2308,7 @@ impl<'a> TypeResolver<'a> {
 
                     Ok(expr_id)
                 } else {
-                    Err(SemanticError::NumericOverflow(
+                    Err(PresetErr::NumericOverflow(
                         SpannedContainer::new(*name_id, spanned_expr.span),
                         Formatted::Float,
                     ))
@@ -2577,7 +2722,7 @@ impl<'a> TypeResolver<'a> {
                             None,
                         );
 
-                        return Err(SemanticError::General(src_diag));
+                        return Err(PresetErr::General(src_diag));
                     }
                 };
 
@@ -2706,7 +2851,7 @@ impl<'a> TypeResolver<'a> {
         scope_type: ScopeType,
         in_ty_expr: bool,
         env: &ResolverEnv,
-    ) -> Result<AssociatedScopeKind, SemanticError> {
+    ) -> Result<AssociatedScopeKind, PresetErr> {
         for (i, sp_path_seg) in spanned_path_segs.iter().enumerate() {
             match &sp_path_seg.kind {
                 PathSegment::Ident(interned_id) => {
@@ -2745,7 +2890,7 @@ impl<'a> TypeResolver<'a> {
                                         None,
                                     );
 
-                                    return Err(SemanticError::General(src_diag));
+                                    return Err(PresetErr::General(src_diag));
                                 }
                                 // Success case where the last symbol has no scope and the end was
                                 // reached
@@ -2810,7 +2955,7 @@ impl<'a> TypeResolver<'a> {
                             )
                         };
 
-                        return Err(SemanticError::General(src_diag));
+                        return Err(PresetErr::General(src_diag));
                     };
                 }
                 PathSegment::Generic(_) if in_ty_expr => {
@@ -2824,7 +2969,7 @@ impl<'a> TypeResolver<'a> {
                             sp_path_seg.span,
                         );
 
-                        return Err(SemanticError::General(src_diag));
+                        return Err(PresetErr::General(src_diag));
                     }
 
                     break;
@@ -2838,7 +2983,7 @@ impl<'a> TypeResolver<'a> {
                         sp_path_seg.span,
                     );
 
-                    return Err(SemanticError::General(src_diag));
+                    return Err(PresetErr::General(src_diag));
                 }
             }
         }
@@ -2856,7 +3001,7 @@ impl<'a> TypeResolver<'a> {
         scope_type: ScopeType,
         seen: &mut Vec<SymbolId>,
         env: &ResolverEnv,
-    ) -> Result<PossibleMember, SemanticError> {
+    ) -> Result<PossibleMember, PresetErr> {
         let res = self.register_expr(
             sym_parent,
             member,
@@ -2900,11 +3045,69 @@ impl<'a> TypeResolver<'a> {
                     self.interner.search(name_id)
                 );
 
-                return Err(SemanticError::General(todo!()));
+                return Err(PresetErr::General(todo!()));
             }
         }
 
-        Err(SemanticError::UndefinedMember(member.span))
+        Err(PresetErr::UndefinedMember(member.span))
+    }
+
+    /// Convenience method that takes an array of directives an evaluates as many as possible.
+    ///
+    /// If any of the directives given are invalid, they will be skipped, and a diagnostic will be
+    /// created.
+    ///
+    /// Returns a tuple of both the the any directives and diagnostics found
+    fn handle_directives(
+        &self,
+        abs_directives: &[AbstractDirective],
+        env: &ResolverEnv,
+    ) -> (Vec<SpannedContainer<DirectiveId>>, Vec<PresetErr>) {
+        let mut directive_ids = Vec::new();
+        let mut preset_errs = Vec::new();
+
+        // Collecting all possible directives while also collecting and preset errors
+        for abs_directive in abs_directives {
+            match Directive::try_from_interned_str(abs_directive.sp_name_id.inner) {
+                // Trying REALLY hard not to use the shortened "dir" for this
+                Some(dir) => {
+                    let directive_id = script_compiler::directive_to_id(&dir);
+                    let sp_directive_id =
+                        SpannedContainer::new(directive_id, abs_directive.sp_name_id.span);
+
+                    directive_ids.push(sp_directive_id);
+                }
+                None => {
+                    let err_name = self.interner.search(abs_directive.sp_name_id.inner);
+                    let core_msg = format!("Unknown directive `#{err_name}`");
+
+                    //TODO: Search for similar directive
+                    // Maybe delegate this to uh...um..
+                    //
+                    // ignore this
+                    let similar = lang::algo::fuzzy_match(
+                        err_name.as_bytes(),
+                        lang::algo::FuzzyMatch::Directive,
+                    );
+                    dbg!(similar);
+
+                    let builder = SourceDiagnostic::builder(
+                        DiagnosticLevel::Error,
+                        core_msg,
+                        env.region.path_id,
+                    )
+                    .add_annotation(
+                        abs_directive.sp_name_id.span,
+                        AnnotationKind::Primary,
+                        None,
+                    );
+
+                    preset_errs.push(PresetErr::General(builder));
+                }
+            };
+        }
+
+        (directive_ids, preset_errs)
     }
 
     // Helper
@@ -2914,7 +3117,7 @@ impl<'a> TypeResolver<'a> {
         parent_sym_id: SymbolId,
         found_sym_id: SymbolId,
         env: &ResolverEnv,
-    ) -> Result<(), SemanticError> {
+    ) -> Result<(), PresetErr> {
         for seen_sym_id in seen.iter() {
             // In:
             // ```
@@ -2967,7 +3170,7 @@ impl<'a> TypeResolver<'a> {
                         format!("Uses `{cycled_name}` before it has a value").into(),
                     );
 
-                    return Err(SemanticError::General(src_diag));
+                    return Err(PresetErr::General(src_diag));
                 }
             }
         }
@@ -2991,7 +3194,7 @@ impl<'a> TypeResolver<'a> {
         scope_type: ScopeType,
         lookup_pattern: LookupPattern,
         env: &ResolverEnv,
-    ) -> Result<TypeId, SemanticError> {
+    ) -> Result<TypeId, PresetErr> {
         match &sp_ty_expr.ty_expr {
             //FIXME: If an error occurs while env.current_mod = extern_mod, it tries to report the
             //error from the external module instead of the actual module of origin.
@@ -3012,29 +3215,36 @@ impl<'a> TypeResolver<'a> {
                             SymbolKind::Type(type_id) => {
                                 // NOTE: Will probably error later in resolution but fine for now
                                 let symbol = &self.compiler.symbols[sym_id.id as usize];
-                                if symbol.is_priv && symbol.owner != env.current_mod {
-                                    //FIX: Would need changes
-                                    let current_mod = &self.compiler.mods[env.current_mod.id];
-                                    let current_mod_name =
-                                        self.interner.search(current_mod.name_id);
-                                    let sym_name = self.interner.search(symbol.name_id);
 
-                                    let core_msg = format!(
-                                        "The type `{sym_name}` is private within namespace `{current_mod_name}`"
-                                    );
+                                if let SymbolOrigin::Module(mod_origin_id) = symbol.sym_origin {
+                                    if symbol.is_priv && mod_origin_id != env.current_mod {
+                                        //FIX: Would need changes
+                                        let current_mod = &self.compiler.mods[env.current_mod.id];
+                                        let current_mod_name =
+                                            self.interner.search(current_mod.name_id);
+                                        let sym_name = self.interner.search(symbol.name_id);
 
-                                    let src_diag = SourceDiagnostic::builder(
-                                        DiagnosticLevel::Error,
-                                        core_msg,
-                                        env.region.path_id,
-                                    )
-                                    .add_annotation(sp_ty_expr.span, AnnotationKind::Primary, None)
-                                    .add_note(
-                                        "Types declared can be exported if that was unintended"
-                                            .into(),
-                                    );
+                                        let core_msg = format!(
+                                            "The type `{sym_name}` is private within namespace `{current_mod_name}`"
+                                        );
 
-                                    return Err(SemanticError::General(src_diag));
+                                        let src_diag = SourceDiagnostic::builder(
+                                            DiagnosticLevel::Error,
+                                            core_msg,
+                                            env.region.path_id,
+                                        )
+                                        .add_annotation(
+                                            sp_ty_expr.span,
+                                            AnnotationKind::Primary,
+                                            None,
+                                        )
+                                        .add_note(
+                                            "Types declared can be exported if that was unintended"
+                                                .into(),
+                                        );
+
+                                        return Err(PresetErr::General(src_diag));
+                                    }
                                 }
 
                                 return Ok(type_id);
@@ -3042,6 +3252,8 @@ impl<'a> TypeResolver<'a> {
                             // Ok but what about, "core is a MODULE which is NOT a type?"
                             SymbolKind::Module(mod_id) => (),
                             SymbolKind::Variable(_) => (),
+                            // Ok ok, but what about, "#warn is a DIRECTIVE which is NOT a type?"
+                            SymbolKind::Directive(_) => (),
                             SymbolKind::Config(_) => unreachable!("Cannot lookup configs"),
                         }
                     }
@@ -3087,7 +3299,7 @@ impl<'a> TypeResolver<'a> {
                     env.region.path_id,
                     sp_ty_expr.span,
                 );
-                Err(SemanticError::General(src_diag))
+                Err(PresetErr::General(src_diag))
             }
             // Generics can only be these types so this can stay for now
             TypeExpr::Generic(generic) => {
@@ -3108,7 +3320,7 @@ impl<'a> TypeResolver<'a> {
                                     sp_ty_expr.span,
                                 );
 
-                                return Err(SemanticError::General(src_diag));
+                                return Err(PresetErr::General(src_diag));
                             }
 
                             let inner = self.resolve_type_expr(
@@ -3168,7 +3380,7 @@ impl<'a> TypeResolver<'a> {
                                     sp_ty_expr.span,
                                 );
 
-                                return Err(SemanticError::General(src_diag));
+                                return Err(PresetErr::General(src_diag));
                             }
 
                             // Should it reset to current module if it has a new sesarch started?
@@ -3220,7 +3432,7 @@ impl<'a> TypeResolver<'a> {
                     "Generics and data structures are only usable through language primitives"
                         .into(),
                 );
-                Err(SemanticError::General(src_diag))
+                Err(PresetErr::General(src_diag))
             }
             // This only allows something like, defs.Thing which can go to at most one type deep,
             // but no more. Will need change since something like i32.MAX could be "core.i32.MAX".

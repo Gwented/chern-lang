@@ -1,11 +1,12 @@
 // TODO: MAYBE eventually change from SipHash
 pub mod script_compiler_store;
 use chrn_utils::{
-    id_types::{InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId},
+    id_types::{DirectiveId, InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId},
     intern,
     source_map::source_span::SourceSpan,
 };
 use lang::{
+    directives::{Directive, TypeDirective},
     types::{
         builtins::BuiltinType,
         type_constraints::{TypeConstraint, TypeConstraintFlags},
@@ -18,14 +19,17 @@ use crate::{
     lookup::scopes::{self, AssociatedScopeKind, IntrinsicRegistry, Scope, ScopeInfo, ScopeType},
     modules::{Bind, Import, ImportKind, Module, ModuleState},
     semantic::hir::{
-        AliasDef, ConfigDef, ConfigOptionAssignment, EnumDef, FieldRepre, FuncDef, FuncKind,
-        MemberSymbolKind, ResolvedExpr, StructDef, Symbol, SymbolKind, Table, Type, TypeDef,
-        TypeInfo, VarDef, VariableState, VariantRepre,
+        hir_concepts::{
+            AliasDef, ConfigDef, ConfigOptionAssignment, EnumDef, FieldRepre, FuncDef, FuncKind,
+            MemberSymbolKind, StructDef, Symbol, SymbolKind, SymbolOrigin, Table, Type, TypeDef,
+            TypeInfo, VarDef, VariableState, VariantRepre,
+        },
+        hir_exprs::ResolvedExpr,
     },
 };
 
 // Should this be in utils?
-/// "chrn" script compiler that holds all essential data for incremental updates through resolution
+/// Script compiler that holds all essential data for incremental updates through resolution
 pub struct ScriptCompiler {
     /// Optional bind statement that is obtained from the main module
     // Maybe the module should keep it's bind info rather than give it to the compiler so that the
@@ -54,12 +58,15 @@ pub struct ScriptCompiler {
     /// All user defined configuration. Is considered it's own class instead of a type since it
     /// behaves uniquely
     pub configs: Vec<ConfigDef>,
+    /// All directives that were found
+    pub directives: Vec<Directive>,
     /// Scope arena
     pub scopes: Vec<ScopeInfo>,
     /// Information regarding intrinsic data such as core's `ModuleId`
     pub intrinsic_registry: IntrinsicRegistry,
 }
 
+// -- CORE TYPE CONSTANTS --
 //NOTE: I think these can be removed. Maybe. I don't know actually.
 pub const CORE_I8: u32 = 0;
 pub const CORE_U8: u32 = 1;
@@ -92,6 +99,29 @@ pub const CORE_UNKNOWN: u32 = 23;
 // pub const CORE_TUPLE: u32 = 26;
 // Called idx but is u32...
 
+// --  DIRECTIVE CONSTANTS --
+pub const DIRECTIVE_WARN_IDX: usize = 0;
+pub const DIRECTIVE_IGNORE_IDX: usize = 1;
+pub const DIRECTIVE_SCIENT_IDX: usize = 2;
+pub const DIRECTIVE_HEX_IDX: usize = 3;
+pub const DIRECTIVE_BIN_IDX: usize = 4;
+pub const DIRECTIVE_OCTAL_IDX: usize = 5;
+
+pub fn directive_to_id(directive: &Directive) -> DirectiveId {
+    let idx = match directive {
+        Directive::Warn => DIRECTIVE_WARN_IDX,
+        Directive::Ignore => DIRECTIVE_IGNORE_IDX,
+        Directive::Type(type_directive) => match type_directive {
+            TypeDirective::Scient => DIRECTIVE_SCIENT_IDX,
+            TypeDirective::Hex => DIRECTIVE_HEX_IDX,
+            TypeDirective::Bin => DIRECTIVE_BIN_IDX,
+            TypeDirective::Octal => DIRECTIVE_OCTAL_IDX,
+        },
+    };
+
+    DirectiveId::new(idx as u32)
+}
+
 // ----
 // NOTE: May turn this into an innate option type inside of HIR
 // Ok now this really needs to be an option
@@ -116,6 +146,7 @@ impl ScriptCompiler {
             members: Vec::new(),
             configs: Vec::new(),
             scopes: Vec::new(),
+            directives: Vec::new(),
             //TEST:
             intrinsic_registry,
         };
@@ -155,7 +186,7 @@ impl ScriptCompiler {
                 current_mod_name_id,
                 sym_id,
                 None,
-                current_mod_id,
+                SymbolOrigin::Module(current_mod_id),
                 true,
                 Some(AssociatedScopeKind::Module(current_mod_id)),
                 ScopeType::Neutral,
@@ -183,7 +214,7 @@ impl ScriptCompiler {
                     import.name_id,
                     import_sym_id,
                     None,
-                    current_mod_id,
+                    SymbolOrigin::Module(current_mod_id),
                     true,
                     Some(AssociatedScopeKind::Module(import.mod_id)),
                     ScopeType::Neutral,
@@ -211,7 +242,7 @@ impl ScriptCompiler {
                         alias_name_id,
                         alias_sym_id,
                         None,
-                        current_mod_id,
+                        SymbolOrigin::Module(current_mod_id),
                         true,
                         Some(AssociatedScopeKind::Module(import.mod_id)),
                         ScopeType::Neutral,
@@ -388,6 +419,15 @@ impl ScriptCompiler {
         }
     }
 
+    pub(super) fn get_directive(&self, sym_id: SymbolId) -> &Directive {
+        match &self.symbols[sym_id.id as usize] {
+            sym_info => match &sym_info.kind {
+                SymbolKind::Directive(directive_id) => &self.directives[directive_id.id as usize],
+                _ => unreachable!(),
+            },
+        }
+    }
+
     // pub(super) fn get_cfg_schema(&self, cfg_id: ConfigId) -> &ConfigSchema {
     //     match &self.configs[cfg_id.id as usize] {
     //         ConfigKind::Schema(cfg_schema) => cfg_schema,
@@ -482,8 +522,9 @@ impl ScriptCompiler {
                     VariableState::ReservedTypeSlot(type_id) => type_id,
                     VariableState::Known(val_id) => self.values[val_id.id as usize].type_id,
                 },
-                // Not a type, just a symbol with a scope
-                SymbolKind::Module(_) | SymbolKind::Config(_) => unreachable!(),
+                SymbolKind::Module(_) | SymbolKind::Config(_) | SymbolKind::Directive(_) => {
+                    unreachable!()
+                }
             },
         }
     }
@@ -499,7 +540,7 @@ impl ScriptCompiler {
                     VariableState::Known(val_id) => Some(self.values[val_id.id as usize].type_id),
                 },
                 // Not a type, just a symbol with a scope
-                SymbolKind::Module(_) | SymbolKind::Config(_) => None,
+                SymbolKind::Directive(_) | SymbolKind::Module(_) | SymbolKind::Config(_) => None,
             },
         }
     }
@@ -543,7 +584,7 @@ impl ScriptCompiler {
             SymbolKind::Type(type_id) => self.get_decl_span_type(*type_id),
             SymbolKind::Variable(var_id) => Some(self.variables[var_id.id as usize].name_span),
             SymbolKind::Config(cfg_id) => Some(self.configs[cfg_id.id as usize].name_span),
-            SymbolKind::Module(_) => None,
+            SymbolKind::Module(_) | SymbolKind::Directive(_) => None,
         }
     }
 
@@ -570,9 +611,11 @@ impl ScriptCompiler {
         }
     }
 
-    /// Returns `ModuleId` which is the module of origin
     pub(super) fn get_owner(&self, sym_id: SymbolId) -> ModuleId {
-        self.symbols[sym_id.id as usize].owner
+        match self.symbols[sym_id.id as usize].sym_origin {
+            SymbolOrigin::Module(mod_id) => mod_id,
+            SymbolOrigin::Compiler => self.intrinsic_registry.core_mod_id,
+        }
     }
 
     /// Get's the `ScopeId` with no assumption of it existing.
@@ -639,6 +682,7 @@ impl ScriptCompiler {
             | ScopeType::Neutral
             | ScopeType::Var
             | ScopeType::Nest
+            | ScopeType::Compiler
             | ScopeType::Core => None,
         };
 
@@ -670,6 +714,7 @@ impl ScriptCompiler {
             None,
         );
 
+        Self::load_directives(compiler);
         Self::load_core_types(compiler, &core_mod, &mut table);
         Self::load_core_funcs(compiler, &core_mod, &mut table);
         // Self::load_complex_constants(compiler, &mut core_mod, &mut table);
@@ -717,6 +762,136 @@ impl ScriptCompiler {
         }
 
         panic!("`check_unknown` reached [`MAX_LOOPS`: {}]", Self::MAX_LOOPS);
+    }
+
+    /// Loads all compiler known directives
+    fn load_directives(compiler: &mut ScriptCompiler) {
+        // #warn | 0
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let directive_id = DirectiveId::new(compiler.directives.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_WARN);
+        debug_assert_eq!(directive_id.id, 0);
+
+        let sym = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            SymbolOrigin::Compiler,
+            false,
+            None,
+            ScopeType::Compiler,
+            SymbolKind::Directive(directive_id),
+        );
+
+        let directive = Directive::Warn;
+
+        compiler.symbols.push(sym);
+        compiler.directives.push(directive);
+
+        // #ignore | 1
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let directive_id = DirectiveId::new(compiler.directives.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_IGNORE);
+
+        let sym = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            SymbolOrigin::Compiler,
+            false,
+            None,
+            ScopeType::Compiler,
+            SymbolKind::Directive(directive_id),
+        );
+
+        let directive = Directive::Ignore;
+
+        compiler.symbols.push(sym);
+        compiler.directives.push(directive);
+
+        // #scient | 2
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let directive_id = DirectiveId::new(compiler.directives.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_SCIENT);
+
+        let sym = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            SymbolOrigin::Compiler,
+            false,
+            None,
+            ScopeType::Compiler,
+            SymbolKind::Directive(directive_id),
+        );
+
+        let directive = Directive::Type(TypeDirective::Scient);
+
+        compiler.symbols.push(sym);
+        compiler.directives.push(directive);
+
+        // #hex | 3
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let directive_id = DirectiveId::new(compiler.directives.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_HEX);
+
+        let sym = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            SymbolOrigin::Compiler,
+            false,
+            None,
+            ScopeType::Compiler,
+            SymbolKind::Directive(directive_id),
+        );
+
+        let directive = Directive::Type(TypeDirective::Hex);
+
+        compiler.symbols.push(sym);
+        compiler.directives.push(directive);
+
+        // #bin | 4
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let directive_id = DirectiveId::new(compiler.directives.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_BIN);
+
+        let sym = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            SymbolOrigin::Compiler,
+            false,
+            None,
+            ScopeType::Compiler,
+            SymbolKind::Directive(directive_id),
+        );
+
+        let directive = Directive::Type(TypeDirective::Bin);
+
+        compiler.symbols.push(sym);
+        compiler.directives.push(directive);
+
+        // #octal | 5
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let directive_id = DirectiveId::new(compiler.directives.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_OCTAL);
+
+        let sym = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            SymbolOrigin::Compiler,
+            false,
+            None,
+            ScopeType::Compiler,
+            SymbolKind::Directive(directive_id),
+        );
+
+        let directive = Directive::Type(TypeDirective::Octal);
+
+        compiler.symbols.push(sym);
+        compiler.directives.push(directive);
     }
 
     //TODO: There is an issue with how scopes are consumed right now which makes giving specific
@@ -824,7 +999,7 @@ impl ScriptCompiler {
             name_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Complex,
@@ -862,7 +1037,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -896,7 +1071,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -930,7 +1105,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -964,7 +1139,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1000,7 +1175,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1039,7 +1214,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1077,7 +1252,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1107,7 +1282,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1129,7 +1304,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1151,7 +1326,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1172,7 +1347,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1193,7 +1368,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1214,7 +1389,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1235,7 +1410,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1256,7 +1431,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1277,7 +1452,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1298,7 +1473,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1319,7 +1494,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1340,7 +1515,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1361,7 +1536,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1382,7 +1557,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1403,7 +1578,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1424,7 +1599,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1445,7 +1620,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1466,7 +1641,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1487,7 +1662,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1508,7 +1683,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1529,7 +1704,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1550,7 +1725,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1571,7 +1746,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1598,7 +1773,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1622,7 +1797,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1646,7 +1821,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1668,7 +1843,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1690,7 +1865,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1713,7 +1888,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1737,7 +1912,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1761,7 +1936,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1783,7 +1958,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1805,7 +1980,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,
@@ -1829,7 +2004,7 @@ impl ScriptCompiler {
             interned_id,
             sym_id,
             None,
-            core_mod_id,
+            SymbolOrigin::Module(core_mod_id),
             false,
             None,
             ScopeType::Core,

@@ -38,7 +38,7 @@
 
 use compilation::lookup::scopes;
 use compilation::script_compiler::ScriptCompiler;
-use compilation::semantic::hir::{Symbol, SymbolKind, Type, VariableState};
+use compilation::semantic::hir::hir_concepts::{Symbol, SymbolKind, Type, VariableState};
 use compilation::token::Token as ScriptToken;
 use lang::config_loader::ChrnConfigLoader;
 use parking_lot::RwLock;
@@ -310,6 +310,7 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
         }
         SymbolKind::Module(_) => CompletionItemKind::MODULE,
         SymbolKind::Config(config_id) => todo!(),
+        SymbolKind::Directive(_) => CompletionItemKind::KEYWORD,
     }
 }
 
@@ -367,7 +368,10 @@ fn classify_id_token(
                         SymbolKind::Module(_) => {
                             return Some(SemanticTokenType::Variable.as_u32());
                         }
-                        SymbolKind::Config(config_id) => todo!(),
+                        SymbolKind::Config(cfg_id) => todo!(),
+                        SymbolKind::Directive(_) => {
+                            return Some(SemanticTokenType::Class.as_u32());
+                        }
                     }
                 }
             }
@@ -954,7 +958,7 @@ impl LanguageServer for Backend {
                         if module.mod_id.id == 0 {
                             // Current module: show all symbols except ScopeType::Var
                             for sym in &compiler.symbols {
-                                if sym.owner.id == 0 && sym.scope_origin != scopes::ScopeType::Var {
+                                if (matches!(sym.sym_origin, compilation::semantic::hir::hir_concepts::SymbolOrigin::Module(mid) if mid.id == 0) || matches!(sym.sym_origin, compilation::semantic::hir::hir_concepts::SymbolOrigin::Compiler)) && sym.scope_origin != scopes::ScopeType::Var {
                                     let sym_name = state.interner.search(sym.name_id);
                                     if prefix.is_empty() || sym_name.starts_with(prefix) {
                                         let kind = symbol_completion_kind(compiler, sym);

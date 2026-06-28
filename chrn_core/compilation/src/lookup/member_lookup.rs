@@ -1,9 +1,6 @@
-use chrn_utils::id_types::{InternedId, MemberId, SymbolId, TypeId};
+use chrn_utils::id_types::{InternedId, MemberId, TypeId};
 
-use crate::{
-    script_compiler::ScriptCompiler,
-    semantic::hir::{SymbolKind, Type, VariableState},
-};
+use crate::{script_compiler::ScriptCompiler, semantic::hir::hir_concepts::Type};
 
 //TEST:
 /// Result type for member lookups. This exists due to the fact that there is no `Ok` or `Err`

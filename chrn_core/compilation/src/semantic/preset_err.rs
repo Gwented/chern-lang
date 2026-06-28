@@ -1,13 +1,10 @@
 use chrn_utils::{
     id_types::{InternedId, SpannedContainer},
-    source_map::{
-        source_diagnostic::{SourceDiagnostic, SourceDiagnosticBuilder},
-        source_span::SourceSpan,
-    },
+    source_map::{source_diagnostic::SourceDiagnosticBuilder, source_span::SourceSpan},
 };
-use lang::{fmter::Formatted, inner_args::InnerArgs, types::type_constraints::TypeConstraintFlags};
+use lang::{directives::Directive, fmter::Formatted, types::type_constraints::TypeConstraintFlags};
 
-use crate::{constraints::ArgConstraint, semantic::hir::FuncKind};
+use crate::{constraints::ArgConstraint, semantic::hir::hir_concepts::FuncKind};
 
 // pub struct SemanticError {
 //     pub kind: SemanticErrorKind,
@@ -32,7 +29,7 @@ use crate::{constraints::ArgConstraint, semantic::hir::FuncKind};
 //TODO: Change this majorly. Make many mistakes. Hallucinate.
 // No
 #[derive(Debug)]
-pub enum SemanticError {
+pub enum PresetErr {
     /// Intended so that diagnostics can be made inline and still align with the same type
     General(SourceDiagnosticBuilder),
     /// Constraint, found type(builtin or user), spans
@@ -45,10 +42,10 @@ pub enum SemanticError {
     /// Currently inferred constraints, Conflicting other constraints, spans
     TypeConstraintBoundConflict(TypeConstraintFlags, TypeConstraintFlags, Vec<SourceSpan>),
     /// SpannedArg failed at, Error Symbol span
-    UnsupportedArg(SpannedContainer<InnerArgs>, SourceSpan),
+    UnsupportedArg(SpannedContainer<Directive>, SourceSpan),
     /// SpannedArg,
     // Interesting name
-    VagueArg(SpannedContainer<InnerArgs>),
+    VagueDirective(SpannedContainer<Directive>),
     // CircularRef
     // Change this
     /// Occurs when an argument is applied to a type, that recursively holds itself inside of
@@ -58,7 +55,7 @@ pub enum SemanticError {
     //TODO: Combine
     CircularArg(
         SpannedContainer<Formatted>,
-        SpannedContainer<InnerArgs>,
+        SpannedContainer<Directive>,
         SourceSpan,
     ),
     /// SpannedInterned number, type overflown
@@ -113,14 +110,14 @@ pub enum FuncConstraints {
     ArgCountMismatch(ArgConstraint, FuncKind, u32, Vec<SourceSpan>),
 }
 
-impl From<MathError> for SemanticError {
+impl From<MathError> for PresetErr {
     fn from(math_err: MathError) -> Self {
-        SemanticError::Math(math_err)
+        PresetErr::Math(math_err)
     }
 }
 
-impl From<LookupError> for SemanticError {
+impl From<LookupError> for PresetErr {
     fn from(lookup_err: LookupError) -> Self {
-        SemanticError::Lookup(lookup_err)
+        PresetErr::Lookup(lookup_err)
     }
 }

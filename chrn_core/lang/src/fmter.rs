@@ -12,6 +12,7 @@ pub trait Formattable {
     // }
 }
 
+// HELP
 //TEST: May change in form but a general print format is needed
 /// Enum that depicts any language needed identifiers in a unified form
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +68,13 @@ pub enum Formatted {
     Self_,
     SectComplex,
     SectOverride,
+    Directive,
+    DirectiveWarn,
+    DirectiveIgnore,
+    DirectiveScient,
+    DirectiveHex,
+    DirectiveBin,
+    DirectiveOctal,
     As,
     In,
     OpAdd,
@@ -207,6 +215,13 @@ impl Display for Formatted {
             Formatted::Ordered => write!(f, "Ordered"),
             Formatted::Config => write!(f, "Config"),
             Formatted::Variable => write!(f, "Variable"),
+            Formatted::DirectiveWarn => write!(f, "warn"),
+            Formatted::DirectiveIgnore => write!(f, "ignore"),
+            Formatted::DirectiveScient => write!(f, "scient"),
+            Formatted::DirectiveHex => write!(f, "hex"),
+            Formatted::DirectiveBin => write!(f, "bin"),
+            Formatted::DirectiveOctal => write!(f, "octal"),
+            Formatted::Directive => write!(f, "Directive"),
             Formatted::Constraints(flags) => {
                 let mut out = String::new();
                 let constraints_vec = flags.to_type_constraint_vec();

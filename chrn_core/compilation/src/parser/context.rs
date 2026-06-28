@@ -549,7 +549,8 @@ impl<'a> ParserContext<'a> {
             Branch::TypeArgs => match found.tok {
                 Token::Id(name_id) => {
                     let found_bytes = interner.search(name_id).as_bytes();
-                    if let Some(similar_arg) = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Arg)
+                    if let Some(similar_arg) =
+                        algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Directive)
                     {
                         let help = format!("Found similar argument \"{similar_arg}\"");
                         return builder.add_help(help);

@@ -2,7 +2,7 @@ use chrn_utils::id_types::TypeId;
 use lang::values::Value;
 
 use crate::{
-    parser::ast::BinaryOp,
+    parser::ast::ast_concepts::BinaryOp,
     script_compiler::{self, ScriptCompiler},
 };
 

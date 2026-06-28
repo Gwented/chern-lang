@@ -5,7 +5,6 @@ import "../chrn_core/chrn_tests/other.chrn"
 let x = other::e#var
 
 let e#2 = 3
-let e#2 = 4
 
 
 nest->
@@ -15,7 +14,7 @@ nest->
         out: i32
         // name: str
         // age: u8
-    }
+    } #warn
 
     export enum State {
         Ready: str [] #warn

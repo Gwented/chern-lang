@@ -1,6 +1,6 @@
 use chrn_utils::{id_types::AstId, intern::Intern, source_map::source_span::SourceSpan};
 use compilation::{
-    parser::ast::{AbstractVar, AstInfo, Item, Section},
+    parser::ast::ast_concepts::{AbstractVar, AstInfo, Item, Section},
     token::{SpannedToken, Token},
 };
 use lang::trivia::{CommentLocation, Trivia, TriviaKind};

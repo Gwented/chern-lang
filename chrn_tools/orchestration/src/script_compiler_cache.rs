@@ -4,18 +4,12 @@ use chrn_utils::{
     chrn_settings::ChrnSettings,
     core_error::{ModuleInitError, ScriptError},
     intern::Intern,
-    source_map::{
-        source_diagnostic::{Reporter, SourceDiagnostic, SourceDiagnosticBuilder},
-        source_region::SourceRegionArena,
-    },
+    source_map::source_diagnostic::Reporter,
 };
 use compilation::{
     modules,
-    parser::ast::AstInfo,
     script_compiler::{ScriptCompiler, script_compiler_store::ScriptCompilerStore},
-    token::SpannedToken,
 };
-use lang::trivia::Trivia;
 
 //ScriptContext? CompilerContext? AbstractCompilerManager?
 

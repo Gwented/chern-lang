@@ -2,12 +2,10 @@
 use chrn_utils::{core_error::ScriptError, source_map::source_diagnostic::Reporter};
 use compilation::{
     lexer::Lexer,
-    parser::{self, ast::AstInfo},
+    parser::{self, ast::ast_concepts::AstInfo},
     resolvers::{
-        constraint_resolver::ConstraintResolver,
-        name_resolver::NamespaceResolver,
-        resolver_env::ResolverEnv,
-        type_resolver::{TypeResolver, type_context::TypeContext},
+        constraint_resolver::ConstraintResolver, name_resolver::NamespaceResolver,
+        resolver_env::ResolverEnv, type_resolver::TypeResolver,
     },
     script_compiler::{ScriptCompiler, script_compiler_store::ScriptCompilerStore},
 };

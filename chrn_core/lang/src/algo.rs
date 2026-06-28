@@ -1,17 +1,20 @@
 use std::cmp;
 
-use crate::{inner_args, keywords, types::builtins};
+use crate::{directives, keywords, types::builtins};
 
+/// Fuzzy kiwis
 pub enum FuzzyMatch {
     KW,
     Type,
     Sect,
     Stmt,
-    Arg,
+    Directive,
 }
 
+/// Fuzzily searches stuff
 pub fn fuzzy_match(given: &[u8], target: FuzzyMatch) -> Option<&str> {
     match target {
+        //TODO: Update this!
         FuzzyMatch::KW => fuzzy_match_inner(given, &keywords::KEYWORDS_ARRAY),
         FuzzyMatch::Type => fuzzy_match_inner(given, &builtins::BUILTIN_TYPE_ARRAY),
         FuzzyMatch::Stmt => {
@@ -20,7 +23,7 @@ pub fn fuzzy_match(given: &[u8], target: FuzzyMatch) -> Option<&str> {
         FuzzyMatch::Sect => {
             fuzzy_match_inner(given, &keywords::KEYWORDS_ARRAY[keywords::sect_range()])
         }
-        FuzzyMatch::Arg => fuzzy_match_inner(given, &inner_args::ARGS_ARRAY),
+        FuzzyMatch::Directive => fuzzy_match_inner(given, &directives::BUILTIN_DIRECTIVE_STRS),
     }
 }
 
