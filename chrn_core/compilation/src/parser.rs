@@ -1253,16 +1253,16 @@ fn parse_generic(
         interner,
     )?;
 
-    let mut args: Vec<SpannedTypeExpr> = Vec::new();
+    let mut inputs: Vec<SpannedTypeExpr> = Vec::new();
 
-    let arg = parse_type_expr(ctx, interner)?;
-    args.push(arg);
+    let input = parse_type_expr(ctx, interner)?;
+    inputs.push(input);
 
     while ctx.peek_kind() == TokenKind::Comma {
         ctx.advance_tok();
 
-        let other_arg = parse_type_expr(ctx, interner)?;
-        args.push(other_arg);
+        let other_input = parse_type_expr(ctx, interner)?;
+        inputs.push(other_input);
     }
 
     ctx.expect_verbose(
@@ -1273,7 +1273,7 @@ fn parse_generic(
         interner,
     )?;
 
-    Ok(args)
+    Ok(inputs)
 }
 
 fn handle_struct_fields(

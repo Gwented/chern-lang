@@ -14,7 +14,7 @@ nest->
         out: i32
         // name: str
         // age: u8
-    } #warn
+    } #war
 
     export enum State {
         Ready: str [] #warn

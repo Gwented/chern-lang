@@ -1,8 +1,14 @@
 use std::cmp;
 
-use crate::{directives, keywords, types::builtins};
+use crate::{
+    directives,
+    fmter::{Formattable, Formatted},
+    keywords,
+    types::builtins,
+};
 
 /// Fuzzy kiwis
+#[derive(Clone, Copy)]
 pub enum FuzzyMatch {
     KW,
     Type,
@@ -11,8 +17,29 @@ pub enum FuzzyMatch {
     Directive,
 }
 
+impl Formattable for FuzzyMatch {
+    fn to_fmt(&self) -> crate::fmter::Formatted {
+        match self {
+            FuzzyMatch::KW => Formatted::KW,
+            FuzzyMatch::Type => Formatted::Type,
+            FuzzyMatch::Sect => Formatted::Section,
+            FuzzyMatch::Stmt => Formatted::Stmt,
+            FuzzyMatch::Directive => Formatted::Directive,
+        }
+    }
+}
+
+/// Executes same search as the function `fuzzy_match`
+///
+/// Returns an `Option` in comparison to `fuzzy_match` because the target's string `Formatted`
+/// version may or may not be relevant to return
+// This is a lie.
+pub fn fuzzy_match_with_fmtted(given: &[u8], target: FuzzyMatch) -> Option<(Vec<&str>, Formatted)> {
+    Some((fuzzy_match(given, target), target.to_fmt()))
+}
+
 /// Fuzzily searches stuff
-pub fn fuzzy_match(given: &[u8], target: FuzzyMatch) -> Option<&str> {
+pub fn fuzzy_match(given: &[u8], target: FuzzyMatch) -> Vec<&str> {
     match target {
         //TODO: Update this!
         FuzzyMatch::KW => fuzzy_match_inner(given, &keywords::KEYWORDS_ARRAY),
@@ -29,10 +56,11 @@ pub fn fuzzy_match(given: &[u8], target: FuzzyMatch) -> Option<&str> {
 
 /// `given` represents the given bytes that are to be compared to the elements of `arr`.
 // Returns option string instead of index because not all arrays are loaded at startup
-fn fuzzy_match_inner<'a, 'b>(given: &'a [u8], arr: &'b [&str]) -> Option<&'b str> {
+fn fuzzy_match_inner<'a>(given: &[u8], arr: &'a [&str]) -> Vec<&'a str> {
+    let mut found = Vec::new();
+
     // Calculating this in-line instead of constants due to it being prone to bugs
     let mut max_len = 0;
-
     for s in arr {
         if s.len() > max_len {
             max_len = s.len();
@@ -40,7 +68,7 @@ fn fuzzy_match_inner<'a, 'b>(given: &'a [u8], arr: &'b [&str]) -> Option<&'b str
     }
 
     if given.len() > max_len || given.len() == 1 {
-        return None;
+        return found;
     }
 
     for (i, var) in arr.iter().enumerate() {
@@ -52,7 +80,7 @@ fn fuzzy_match_inner<'a, 'b>(given: &'a [u8], arr: &'b [&str]) -> Option<&'b str
         let size_diff =
             cmp::max(given.len(), var_bytes.len()) - cmp::min(given.len(), var_bytes.len());
 
-        if size_diff > 2 {
+        if size_diff > 3 {
             continue;
         }
 
@@ -70,15 +98,26 @@ fn fuzzy_match_inner<'a, 'b>(given: &'a [u8], arr: &'b [&str]) -> Option<&'b str
         }
 
         if matched > 3 || (matched >= 2 && matched + 1 >= var_bytes.len()) {
-            // Since keywords exist now this may not be needed
-            // if given == var_bytes {
-            //     return None;
-            // }
-
-            // Similar
-            return Some(arr[i]);
+            found.push(arr[i]);
         }
     }
 
-    None
+    found
 }
+
+// IGNORE THIS
+// #[macro_export]
+// macro_rules! find_similar {
+//     ($bytes:expr, $fuzzy_match:expr) => {
+//         if true {
+//             let found = $crate::algo::fuzzy_match($bytes, $fuzzy_match);
+//             if !found.is_empty() {
+//                 (found, Some("hi"))
+//             } else {
+//                 (found, None)
+//             }
+//         } else {
+//             unreachable!()
+//         }
+//     };
+// }

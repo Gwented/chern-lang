@@ -80,7 +80,9 @@ fn publish_config_load_error(
 /// Semantic token type indices matching the legend declared in [`Backend::initialize`].
 ///
 /// The `as_u32` method returns the index into the `token_types` vector advertised
-/// to the client.  **The order must match [`SEMANTIC_TOKENS_LEGEND`](Backend::initialize)**.
+/// to the client.  **The order must match the legend in [`Backend::initialize`](Backend::initialize).**
+/// If a variant is added or removed here, the corresponding entry must be added or
+/// removed in the `token_types` vec inside `initialize()`, and vice versa.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SemanticTokenType {
     Keyword,
@@ -94,6 +96,8 @@ pub enum SemanticTokenType {
     Property,
     Class,
     EnumMember,
+    Regexp,
+    Comment,
 }
 
 impl SemanticTokenType {
@@ -110,6 +114,8 @@ impl SemanticTokenType {
             SemanticTokenType::Property => 8,
             SemanticTokenType::Class => 9,
             SemanticTokenType::EnumMember => 10,
+            SemanticTokenType::Regexp => 11,
+            SemanticTokenType::Comment => 12,
         }
     }
 }
@@ -310,7 +316,7 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
         }
         SymbolKind::Module(_) => CompletionItemKind::MODULE,
         SymbolKind::Config(config_id) => todo!(),
-        SymbolKind::Directive(_) => CompletionItemKind::KEYWORD,
+        SymbolKind::Directive(_) => CompletionItemKind::CONSTRUCTOR,
     }
 }
 
@@ -370,7 +376,7 @@ fn classify_id_token(
                         }
                         SymbolKind::Config(cfg_id) => todo!(),
                         SymbolKind::Directive(_) => {
-                            return Some(SemanticTokenType::Class.as_u32());
+                            return Some(SemanticTokenType::Regexp.as_u32());
                         }
                     }
                 }
@@ -427,17 +433,23 @@ impl LanguageServer for Backend {
                             // Provide a richer set of token kinds so clients can color
                             // keywords, types, functions, macros, operators and variables
                             // differently.
+                            // **The order must match the local `SemanticTokenType` enum.**
+                            // When adding/removing a variant in that enum, update this
+                            // vec to match.
                             token_types: vec![
                                 tower_lsp::lsp_types::SemanticTokenType::KEYWORD, // 0
-                                tower_lsp::lsp_types::SemanticTokenType::STRING,
-                                tower_lsp::lsp_types::SemanticTokenType::NUMBER, // 2
-                                tower_lsp::lsp_types::SemanticTokenType::TYPE,
+                                tower_lsp::lsp_types::SemanticTokenType::STRING,  // 1
+                                tower_lsp::lsp_types::SemanticTokenType::NUMBER,  // 2
+                                tower_lsp::lsp_types::SemanticTokenType::TYPE,    // 3
                                 tower_lsp::lsp_types::SemanticTokenType::FUNCTION, // 4
-                                tower_lsp::lsp_types::SemanticTokenType::MACRO,
+                                tower_lsp::lsp_types::SemanticTokenType::MACRO,   // 5
                                 tower_lsp::lsp_types::SemanticTokenType::OPERATOR, // 6
-                                tower_lsp::lsp_types::SemanticTokenType::VARIABLE,
-                                tower_lsp::lsp_types::SemanticTokenType::PROPERTY,
-                                tower_lsp::lsp_types::SemanticTokenType::CLASS, // was nothing
+                                tower_lsp::lsp_types::SemanticTokenType::VARIABLE, // 7
+                                tower_lsp::lsp_types::SemanticTokenType::PROPERTY, // 8
+                                tower_lsp::lsp_types::SemanticTokenType::CLASS,   // 9
+                                tower_lsp::lsp_types::SemanticTokenType::ENUM_MEMBER, // 10
+                                tower_lsp::lsp_types::SemanticTokenType::REGEXP,  // 11
+                                tower_lsp::lsp_types::SemanticTokenType::COMMENT, // 12
                             ],
                             token_modifiers: vec![],
                         },
@@ -708,103 +720,165 @@ impl LanguageServer for Backend {
         let mut prev_start: u32 = 0;
         let mut first = true;
 
-        // Highlighting
-        for i in 0..toks_vec.len() {
-            let st = &toks_vec[i];
-            let span = st.span;
-            // convert start byte to position
-            let start_pos = crate::text::offset_to_position(&state.text, span.start as usize);
-            let _end_pos =
-                crate::text::offset_to_position(&state.text, span.end.saturating_add(1) as usize);
-            // compute length in chars from start_pos to end_pos roughly using bytes difference
-            let length = span.end.saturating_add(1).saturating_sub(span.start);
+        // Interleave tokens and comment trivia in strictly increasing file order.
+        //
+        // The LSP semantic-tokens protocol uses delta encoding, which means every
+        // token's position is expressed relative to the *previous* emitted token.
+        // If we emitted all regular tokens first and all comment trivia second,
+        // a comment on line 0 would be delta-encoded relative to a token on line 10,
+        // producing a nonsensical result (saturating arithmetic would place it on
+        // line 10 instead of line 0).  The client would then render the comment
+        // at the wrong location.
+        //
+        // To work around this, we merge the two sources into a single file-order
+        // pass using two index pointers.  At each step we pick whichever span
+        // comes first in the source, skipping non-comment trivia (whitespace,
+        // newlines, tabs) which carry no semantic meaning.
+        let mut tok_idx = 0;
+        let mut triv_idx = 0;
 
-            // Map script token variants to our semantic token legend indices.
-            let token_type: u32 = match st.tok {
-                ScriptToken::Def | ScriptToken::End => SemanticTokenType::Macro.as_u32(),
-                ScriptToken::Keyword(kw) if kw.is_sect() => SemanticTokenType::Class.as_u32(),
-                ScriptToken::Keyword(_) => SemanticTokenType::Keyword.as_u32(),
-                ScriptToken::Str(_) | ScriptToken::Char(_) => SemanticTokenType::String.as_u32(),
-                ScriptToken::BoolLiteral(_) => SemanticTokenType::String.as_u32(),
-                ScriptToken::Integer(_, _) | ScriptToken::Float(_, _) => {
-                    SemanticTokenType::Number.as_u32()
+        loop {
+            let emit_comment = triv_idx < state.trivia.len()
+                && (tok_idx >= toks_vec.len()
+                    || state.trivia[triv_idx].span.start <= toks_vec[tok_idx].span.start);
+
+            if emit_comment {
+                let triv = &state.trivia[triv_idx];
+                triv_idx += 1;
+                // Only emit comment trivia — skip whitespace, newlines, tabs.
+                // These carry no semantic meaning and would just clutter the
+                // token stream with invisible highlights.
+                if !triv.kind.is_comment() {
+                    continue;
                 }
-                ScriptToken::Id(id) => {
-                    let next_is_paren = i + 1 < toks_vec.len()
-                        && matches!(toks_vec[i + 1].tok, ScriptToken::OParen);
-                    let entity = state.get_entity_at_offset(span.start as usize);
-                    if let Some(ty) = classify_id_token(compiler, entity, id.id, next_is_paren) {
-                        ty
-                    } else {
-                        continue;
-                    }
-                }
-                ScriptToken::At => SemanticTokenType::Macro.as_u32(),
-                ScriptToken::HashSymbol => SemanticTokenType::Operator.as_u32(),
-                // punctuation and operators -> OPERATOR
-                ScriptToken::Assign
-                | ScriptToken::EqualTo
-                | ScriptToken::Walrus
-                | ScriptToken::Comma
-                | ScriptToken::DotRange
-                | ScriptToken::Slash
-                | ScriptToken::Percent
-                | ScriptToken::Plus
-                | ScriptToken::Asterisk
-                | ScriptToken::Hyphen
-                | ScriptToken::GreaterOrEq
-                | ScriptToken::LessOrEq
-                | ScriptToken::NotEq
-                | ScriptToken::Ampersand
-                | ScriptToken::And
-                | ScriptToken::Or
-                | ScriptToken::Caret
-                | ScriptToken::ExclamationPoint
-                | ScriptToken::Tilde
-                | ScriptToken::VerticalBar
-                | ScriptToken::Dot
-                | ScriptToken::OParen
-                | ScriptToken::CParen
-                | ScriptToken::OBracket
-                | ScriptToken::CBracket
-                | ScriptToken::OCurlyBracket
-                | ScriptToken::CCurlyBracket
-                | ScriptToken::OAngleBracket
-                | ScriptToken::CAngleBracket
-                | ScriptToken::QuestionMark
-                | ScriptToken::Colon
-                | ScriptToken::SlimArrow
-                | ScriptToken::StaticAccess => SemanticTokenType::Operator.as_u32(),
-                _ => continue,
-            };
+                let start_pos =
+                    crate::text::offset_to_position(&state.text, triv.span.start as usize);
+                let length = triv
+                    .span
+                    .end
+                    .saturating_add(1)
+                    .saturating_sub(triv.span.start);
 
-            let delta_line: u32;
-            let delta_start: u32;
+                let delta_line: u32;
+                let delta_start: u32;
 
-            if first {
-                delta_line = start_pos.line;
-                delta_start = start_pos.character;
-                first = false;
-            } else {
-                if start_pos.line == prev_line {
+                if first {
+                    delta_line = start_pos.line;
+                    delta_start = start_pos.character;
+                    first = false;
+                } else if start_pos.line == prev_line {
                     delta_line = 0;
                     delta_start = start_pos.character.saturating_sub(prev_start);
                 } else {
                     delta_line = start_pos.line.saturating_sub(prev_line);
                     delta_start = start_pos.character;
                 }
+
+                prev_line = start_pos.line;
+                prev_start = start_pos.character;
+
+                tokens.push(SemanticToken {
+                    delta_line,
+                    delta_start,
+                    length,
+                    token_type: SemanticTokenType::Comment.as_u32(),
+                    token_modifiers_bitset: 0,
+                });
+            } else if tok_idx < toks_vec.len() {
+                let st = &toks_vec[tok_idx];
+                tok_idx += 1;
+                let span = st.span;
+                let start_pos = crate::text::offset_to_position(&state.text, span.start as usize);
+                let length = span.end.saturating_add(1).saturating_sub(span.start);
+
+                let token_type: u32 = match st.tok {
+                    ScriptToken::Def | ScriptToken::End => SemanticTokenType::Macro.as_u32(),
+                    ScriptToken::Keyword(kw) if kw.is_sect() => SemanticTokenType::Class.as_u32(),
+                    ScriptToken::Keyword(_) => SemanticTokenType::Keyword.as_u32(),
+                    ScriptToken::Str(_) | ScriptToken::Char(_) => {
+                        SemanticTokenType::String.as_u32()
+                    }
+                    ScriptToken::BoolLiteral(_) => SemanticTokenType::String.as_u32(),
+                    ScriptToken::Integer(_, _) | ScriptToken::Float(_, _) => {
+                        SemanticTokenType::Number.as_u32()
+                    }
+                    ScriptToken::Id(id) => {
+                        let next_is_paren = tok_idx < toks_vec.len()
+                            && matches!(toks_vec[tok_idx].tok, ScriptToken::OParen);
+                        let entity = state.get_entity_at_offset(span.start as usize);
+                        if let Some(ty) = classify_id_token(compiler, entity, id.id, next_is_paren)
+                        {
+                            ty
+                        } else {
+                            continue;
+                        }
+                    }
+                    ScriptToken::At => SemanticTokenType::Macro.as_u32(),
+                    ScriptToken::HashSymbol => SemanticTokenType::Regexp.as_u32(),
+                    ScriptToken::Assign
+                    | ScriptToken::EqualTo
+                    | ScriptToken::Walrus
+                    | ScriptToken::Comma
+                    | ScriptToken::DotRange
+                    | ScriptToken::Slash
+                    | ScriptToken::Percent
+                    | ScriptToken::Plus
+                    | ScriptToken::Asterisk
+                    | ScriptToken::Hyphen
+                    | ScriptToken::GreaterOrEq
+                    | ScriptToken::LessOrEq
+                    | ScriptToken::NotEq
+                    | ScriptToken::Ampersand
+                    | ScriptToken::And
+                    | ScriptToken::Or
+                    | ScriptToken::Caret
+                    | ScriptToken::ExclamationPoint
+                    | ScriptToken::Tilde
+                    | ScriptToken::VerticalBar
+                    | ScriptToken::Dot
+                    | ScriptToken::OParen
+                    | ScriptToken::CParen
+                    | ScriptToken::OBracket
+                    | ScriptToken::CBracket
+                    | ScriptToken::OCurlyBracket
+                    | ScriptToken::CCurlyBracket
+                    | ScriptToken::OAngleBracket
+                    | ScriptToken::CAngleBracket
+                    | ScriptToken::QuestionMark
+                    | ScriptToken::Colon
+                    | ScriptToken::SlimArrow
+                    | ScriptToken::StaticAccess => SemanticTokenType::Operator.as_u32(),
+                    _ => continue,
+                };
+
+                let delta_line: u32;
+                let delta_start: u32;
+
+                if first {
+                    delta_line = start_pos.line;
+                    delta_start = start_pos.character;
+                    first = false;
+                } else if start_pos.line == prev_line {
+                    delta_line = 0;
+                    delta_start = start_pos.character.saturating_sub(prev_start);
+                } else {
+                    delta_line = start_pos.line.saturating_sub(prev_line);
+                    delta_start = start_pos.character;
+                }
+
+                prev_line = start_pos.line;
+                prev_start = start_pos.character;
+
+                tokens.push(SemanticToken {
+                    delta_line,
+                    delta_start,
+                    length,
+                    token_type,
+                    token_modifiers_bitset: 0,
+                });
+            } else {
+                break;
             }
-
-            prev_line = start_pos.line;
-            prev_start = start_pos.character;
-
-            tokens.push(SemanticToken {
-                delta_line,
-                delta_start,
-                length,
-                token_type,
-                token_modifiers_bitset: 0,
-            });
         }
 
         let sem_toks = tower_lsp::lsp_types::SemanticTokens {
@@ -1016,12 +1090,6 @@ impl LanguageServer for Backend {
             ("Tuple", CompletionItemKind::STRUCT),
             ("true", CompletionItemKind::CONSTANT),
             ("false", CompletionItemKind::CONSTANT),
-            ("#warn", CompletionItemKind::CONSTRUCTOR),
-            ("#bin", CompletionItemKind::CONSTRUCTOR),
-            ("#octal", CompletionItemKind::CONSTRUCTOR),
-            ("#scient", CompletionItemKind::CONSTRUCTOR),
-            ("#hex", CompletionItemKind::CONSTRUCTOR),
-            ("#ignore", CompletionItemKind::CONSTRUCTOR),
         ];
 
         let mut items: Vec<CompletionItem> = Vec::new();
@@ -1054,6 +1122,24 @@ impl LanguageServer for Backend {
                                 ..Default::default()
                             });
                         }
+                    }
+                }
+            }
+        }
+
+        // Add compiler-origin directives (e.g. #warn, #ignore, #scient, etc.)
+        // Read dynamically from the compiler symbol registry instead of hard-coding.
+        if let Some(compiler) = &state.compiler {
+            for sym in &compiler.symbols {
+                if matches!(sym.kind, SymbolKind::Directive(_)) {
+                    let name = state.interner.search(sym.name_id);
+                    let label = format!("#{}", name);
+                    if prefix.is_empty() || label.starts_with(prefix) {
+                        items.push(CompletionItem {
+                            label,
+                            kind: Some(symbol_completion_kind(compiler, sym)),
+                            ..Default::default()
+                        });
                     }
                 }
             }

@@ -154,7 +154,7 @@ impl<'a> ConstraintResolver<'a> {
                     // The issue with allowing this is if it were not restricted, and p: Person was
                     // typed, that would mean that "other_p: Person" inside the same var-> would
                     // need to align with whatever conditions or arguments given, which would be
-                    // problematic. Hence, it just has to be a shallowly applied argument instead.
+                    // problematic. Hence, it just has to be a shallowly applied directive instead.
                     let core_msg = "Cannot give a `var->` defined type a condition when it has a `struct` or `enum` type, define\nthis within `nest->`".to_string();
 
                     let src_diag = SourceDiagnostic::basic(
@@ -1045,7 +1045,7 @@ impl<'a> ConstraintResolver<'a> {
                     // struct.
                     if visited.contains(&field.type_id) {
                         if spanned_directive.inner.has_restrictions() {
-                            return Err(PresetErr::CircularArg(
+                            return Err(PresetErr::CircularDirective(
                                 SpannedContainer::new(Formatted::Struct, struct_def.name_span),
                                 spanned_directive.into_owned(),
                                 field.name_span,
@@ -1085,7 +1085,7 @@ impl<'a> ConstraintResolver<'a> {
                         // different context.
                         if visited.contains(&inner) {
                             if spanned_directive.inner.has_restrictions() {
-                                return Err(PresetErr::CircularArg(
+                                return Err(PresetErr::CircularDirective(
                                     SpannedContainer::new(Formatted::Enum, enum_def.name_span),
                                     spanned_directive.into_owned(),
                                     variant.name_span,
@@ -1148,7 +1148,7 @@ impl<'a> ConstraintResolver<'a> {
                         for element in elements {
                             if visited.contains(&*element) {
                                 if spanned_directive.inner.has_restrictions() {
-                                    return Err(PresetErr::CircularArg(
+                                    return Err(PresetErr::CircularDirective(
                                         SpannedContainer::new(Formatted::Tuple, parent_span),
                                         spanned_directive.into_owned(),
                                         active_span,
@@ -1181,7 +1181,7 @@ impl<'a> ConstraintResolver<'a> {
                         let arg_constraints = spanned_directive.inner.type_constraints();
 
                         if !arg_constraints.contains(constraints) {
-                            return Err(PresetErr::UnsupportedArg(
+                            return Err(PresetErr::UnsupportedDirective(
                                 spanned_directive.into_owned(),
                                 active_span,
                             ));

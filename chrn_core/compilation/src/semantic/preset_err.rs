@@ -35,14 +35,16 @@ pub enum PresetErr {
     /// Constraint, found type(builtin or user), spans
     Lookup(LookupError),
     FuncConstraintMismatch(ArgConstraint, Formatted, Vec<SourceSpan>),
+    /// Spanned Directive
+    UnknownDirective(SpannedContainer<InternedId>),
     /// Constraint, amount of incorrect params found, spans
-    ArgCountMismatch(ArgConstraint, u32, Vec<SourceSpan>),
+    DirectiveCountMismatch(ArgConstraint, u32, Vec<SourceSpan>),
     /// Constraint, Incorrect type found, spans
     TypeConstraintMismatch(TypeConstraintFlags, Formatted, Vec<SourceSpan>),
     /// Currently inferred constraints, Conflicting other constraints, spans
     TypeConstraintBoundConflict(TypeConstraintFlags, TypeConstraintFlags, Vec<SourceSpan>),
     /// SpannedArg failed at, Error Symbol span
-    UnsupportedArg(SpannedContainer<Directive>, SourceSpan),
+    UnsupportedDirective(SpannedContainer<Directive>, SourceSpan),
     /// SpannedArg,
     // Interesting name
     VagueDirective(SpannedContainer<Directive>),
@@ -53,7 +55,7 @@ pub enum PresetErr {
     ///
     /// (Parent declaration span, SpannedArg failed at, Spanned Type failed at)
     //TODO: Combine
-    CircularArg(
+    CircularDirective(
         SpannedContainer<Formatted>,
         SpannedContainer<Directive>,
         SourceSpan,

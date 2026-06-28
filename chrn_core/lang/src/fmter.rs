@@ -49,6 +49,9 @@ pub enum Formatted {
     Map,
     Set,
     Tuple,
+    KW,
+    Type,
+    Stmt,
     UnknownType,
     Struct,
     Enum,
@@ -63,6 +66,7 @@ pub enum Formatted {
     Alias,
     Let,
     Change,
+    Section,
     SectVar,
     SectNest,
     Self_,
@@ -120,6 +124,7 @@ pub enum Formatted {
     Unknown,
 }
 
+// The casing with these names are a bit random
 impl Display for Formatted {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -221,7 +226,11 @@ impl Display for Formatted {
             Formatted::DirectiveHex => write!(f, "hex"),
             Formatted::DirectiveBin => write!(f, "bin"),
             Formatted::DirectiveOctal => write!(f, "octal"),
-            Formatted::Directive => write!(f, "Directive"),
+            Formatted::Directive => write!(f, "directive"),
+            Formatted::KW => write!(f, "keyword"),
+            Formatted::Type => write!(f, "type"),
+            Formatted::Section => write!(f, "section"),
+            Formatted::Stmt => write!(f, "statement"),
             Formatted::Constraints(flags) => {
                 let mut out = String::new();
                 let constraints_vec = flags.to_type_constraint_vec();

@@ -11,7 +11,11 @@ use chrn_utils::{
         source_span::SourceSpan,
     },
 };
-use lang::{algo, fmter::Formattable, keywords::Keyword};
+use lang::{
+    algo::{self, FuzzyMatch},
+    fmter::Formattable,
+    keywords::Keyword,
+};
 
 use crate::{
     parser::{NeutralBranch, SectionBranch, branch::Branch, parse_fmt},
@@ -295,7 +299,7 @@ impl<'a> ParserContext<'a> {
     /// Checks available known branching to where a help message can be sent
     fn try_assistance(
         &self,
-        builder: SourceDiagnosticBuilder,
+        mut builder: SourceDiagnosticBuilder,
         expected: TokenKind,
         found: &SpannedToken,
         branch: Branch,
@@ -348,14 +352,25 @@ impl<'a> ParserContext<'a> {
                         let found_bytes = interner.search(name_id).as_bytes();
 
                         // Statements and sections are possible so both are tried
-                        let similar = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Stmt)
-                            .is_none()
-                            // ???????
-                            .then_some(algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect));
+                        let similar_opt =
+                            algo::fuzzy_match_with_fmtted(found_bytes, FuzzyMatch::Stmt)
+                                .is_none()
+                                .then_some(algo::fuzzy_match_with_fmtted(
+                                    found_bytes,
+                                    algo::FuzzyMatch::Sect,
+                                ));
+
+                        // ???????
 
                         // Uh huh
-                        if let Some(Some(found)) = similar {
-                            let help = format!("Found similar \"{found}\"");
+                        // Ok
+                        if let Some(Some((similar_vec, fmtted_ty))) = similar_opt {
+                            let help = Self::fmt_helps(
+                                &similar_vec,
+                                &format!("Found similar {fmtted_ty}"),
+                                "`",
+                            );
+
                             builder.add_help(help)
                         } else {
                             builder
@@ -506,12 +521,18 @@ impl<'a> ParserContext<'a> {
 
                         // Maybe this should return None if it directly IS a direct match since it is
                         // just a range check
-                        if let Some(similar_sect) =
-                            algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect)
-                        {
-                            let help = format!("Found similar section \"{similar_sect}\"");
-                            return builder.add_help(help);
-                        };
+                        let similar_opt =
+                            algo::fuzzy_match_with_fmtted(found_bytes, algo::FuzzyMatch::Sect);
+
+                        if let Some((similar_vec, fmtted_ty)) = similar_opt {
+                            let help = Self::fmt_helps(
+                                &similar_vec,
+                                &format!("Found similar {fmtted_ty}"),
+                                "`",
+                            );
+
+                            builder = builder.add_help(help);
+                        }
 
                         builder
                     }
@@ -549,12 +570,18 @@ impl<'a> ParserContext<'a> {
             Branch::TypeArgs => match found.tok {
                 Token::Id(name_id) => {
                     let found_bytes = interner.search(name_id).as_bytes();
-                    if let Some(similar_arg) =
-                        algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Directive)
-                    {
-                        let help = format!("Found similar argument \"{similar_arg}\"");
-                        return builder.add_help(help);
-                    };
+                    let similar_opt =
+                        algo::fuzzy_match_with_fmtted(found_bytes, algo::FuzzyMatch::Directive);
+
+                    if let Some((similar_vec, fmtted_ty)) = similar_opt {
+                        let help = Self::fmt_helps(
+                            &similar_vec,
+                            &format!("Found similar {fmtted_ty}"),
+                            "`",
+                        );
+
+                        builder = builder.add_help(help);
+                    }
 
                     builder
                 }
@@ -564,6 +591,17 @@ impl<'a> ParserContext<'a> {
         };
 
         builder
+    }
+
+    fn fmt_helps(found: &[&str], header: &str, quote: &str) -> String {
+        let mut out = format!("{header} ");
+        for (i, similar) in found.iter().enumerate() {
+            out.push_str(&format!("{quote}{similar}{quote}"));
+            if i + 1 != found.len() {
+                out.push_str(", ");
+            }
+        }
+        out
     }
 
     /// Intended to handle the case where EOF is reached due to errors likely wanting to show the

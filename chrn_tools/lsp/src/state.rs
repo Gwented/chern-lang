@@ -962,30 +962,26 @@ impl DocumentState {
         }
 
         // 5. Compiler-origin symbols (directives, etc.) — match by name against Id tokens
-        let id_tokens: Vec<(SourceSpan, InternedId)> = self
-            .tokens
+        // Pre-index compiler-origin symbols by name_id for O(1) lookup.
+        let directive_symbols: HashMap<u32, SymbolId> = compiler
+            .symbols
             .iter()
-            .filter_map(|st| {
-                if let ScriptToken::Id(id) = st.tok {
-                    Some((st.span, id))
-                } else {
-                    None
-                }
-            })
+            .filter(|sym| sym.ast_id.is_none() && matches!(sym.sym_origin, SymbolOrigin::Compiler))
+            .map(|sym| (sym.name_id.id, sym.sym_id))
             .collect();
-        for (span, interned_id) in &id_tokens {
-            if map
-                .iter()
-                .any(|(s, _)| s.start <= span.start && s.end >= span.end)
-            {
-                continue;
-            }
-            if let Some(sym) = compiler.symbols.iter().find(|sym| {
-                sym.ast_id.is_none()
-                    && sym.name_id.id == interned_id.id
-                    && matches!(sym.sym_origin, SymbolOrigin::Compiler)
-            }) {
-                map.push((*span, SemanticEntity::Symbol(sym.sym_id)));
+
+        // Track spans already in `map` to avoid shadowing user-defined symbols
+        // with same name as a directive (e.g. `let warn = 5`).
+        let covered_starts: HashSet<u32> = map.iter().map(|(s, _)| s.start).collect();
+
+        for st in &self.tokens {
+            if let ScriptToken::Id(id) = st.tok {
+                if covered_starts.contains(&st.span.start) {
+                    continue;
+                }
+                if let Some(&sym_id) = directive_symbols.get(&id.id) {
+                    map.push((st.span, SemanticEntity::Symbol(sym_id)));
+                }
             }
         }
 
@@ -1098,6 +1094,9 @@ impl DocumentState {
         match entity {
             SemanticEntity::Symbol(sym_id) => {
                 let sym = compiler.symbols.get(sym_id.id as usize)?;
+                // Compiler-origin symbols (directives) have ast_id = None, so
+                // they intentionally return no definition location — they are
+                // built-in names without a user-visible definition site.
                 let ast_id = sym.ast_id?;
                 let owner_id = match sym.sym_origin {
                     SymbolOrigin::Module(mid) => mid.id,

@@ -597,7 +597,6 @@ impl<'a> TypeResolver<'a> {
             opt_assignments.push(member_id);
         }
 
-        //
         for abs_inner_cfg in &abs_cfg.inner_field_cfg {
             let parent_type_id = self.compiler.get_member_type_id(parent_member_id).unwrap();
             let name = self.interner.search(abs_inner_cfg.name_id);
@@ -3078,31 +3077,8 @@ impl<'a> TypeResolver<'a> {
                     directive_ids.push(sp_directive_id);
                 }
                 None => {
-                    let err_name = self.interner.search(abs_directive.sp_name_id.inner);
-                    let core_msg = format!("Unknown directive `#{err_name}`");
-
-                    //TODO: Search for similar directive
-                    // Maybe delegate this to uh...um..
-                    //
-                    // ignore this
-                    let similar = lang::algo::fuzzy_match(
-                        err_name.as_bytes(),
-                        lang::algo::FuzzyMatch::Directive,
-                    );
-                    dbg!(similar);
-
-                    let builder = SourceDiagnostic::builder(
-                        DiagnosticLevel::Error,
-                        core_msg,
-                        env.region.path_id,
-                    )
-                    .add_annotation(
-                        abs_directive.sp_name_id.span,
-                        AnnotationKind::Primary,
-                        None,
-                    );
-
-                    preset_errs.push(PresetErr::General(builder));
+                    let preset_err = PresetErr::UnknownDirective(abs_directive.sp_name_id.clone());
+                    preset_errs.push(preset_err);
                 }
             };
         }
