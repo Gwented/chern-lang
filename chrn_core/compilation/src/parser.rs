@@ -7,7 +7,7 @@ mod parser_state;
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractDirective, AbstractEnum, AbstractMemberAccess,
     AbstractOptionAssignment, AbstractParam, AbstractStruct, AbstractTypeDef, AbstractVar,
-    AbstractVariant, AstInfo, Item, SectionKind, Unary, UnaryOp,
+    AbstractVariant, AstInfo, BinaryOp, Item, SectionKind, Unary, UnaryOp,
 };
 
 use crate::parser::ast::ast_exprs::{
@@ -830,7 +830,36 @@ fn parse_expr(
     let mut lhs = parse_unary(ctx, interner)?;
 
     loop {
-        if let Some((op, bp)) = ctx.peek_tok().precedence() {
+        // Use lookahead to detect << and >> as shift operators, avoiding conflict
+        // with generic angle brackets in type contexts.
+        let is_lshift = ctx.peek_tok() == Token::OAngleBracket && ctx.peek_ahead(1).tok == Token::OAngleBracket;
+        let is_rshift = ctx.peek_tok() == Token::CAngleBracket && ctx.peek_ahead(1).tok == Token::CAngleBracket;
+
+        if is_lshift || is_rshift {
+            let bp = 1;
+            if bp < min_bp {
+                break;
+            }
+
+            let start = ctx.peek_span().start;
+            ctx.advance_tok();
+            ctx.advance_tok();
+            let op = if is_lshift { BinaryOp::BitLeftShift } else { BinaryOp::BitRightShift };
+
+            let rhs = parse_expr(ctx, bp + 1, interner)?;
+
+            let end = rhs.span.end;
+            let span = SourceSpan::new(ctx.region.region_id, start, end);
+
+            lhs = SpannedExpr::new(
+                Expr::BinaryExpr {
+                    op,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                },
+                span,
+            );
+        } else if let Some((op, bp)) = ctx.peek_tok().precedence() {
             if bp < min_bp {
                 break;
             }
@@ -1078,6 +1107,16 @@ fn parse_unary(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedExpr
             let span = SourceSpan::new(ctx.region.region_id, start, expr.span.end);
 
             let unary = Unary::new(UnaryOp::Not, Box::new(expr));
+
+            Ok(SpannedExpr::new(Expr::Unary(unary), span))
+        }
+        Token::Tilde => {
+            let start = ctx.advance_span().start;
+
+            let expr = parse_unary(ctx, interner)?;
+            let span = SourceSpan::new(ctx.region.region_id, start, expr.span.end);
+
+            let unary = Unary::new(UnaryOp::BitNot, Box::new(expr));
 
             Ok(SpannedExpr::new(Expr::Unary(unary), span))
         }

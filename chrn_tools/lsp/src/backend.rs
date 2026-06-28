@@ -316,7 +316,7 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
         }
         SymbolKind::Module(_) => CompletionItemKind::MODULE,
         SymbolKind::Config(config_id) => todo!(),
-        SymbolKind::Directive(_) => CompletionItemKind::CONSTRUCTOR,
+        SymbolKind::Directive(_) => CompletionItemKind::KEYWORD,
     }
 }
 

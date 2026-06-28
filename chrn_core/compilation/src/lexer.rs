@@ -435,6 +435,20 @@ impl Lexer<'_> {
 
                     self.advance();
                 }
+                '^' => {
+                    toks.push(SpannedToken {
+                        tok: Token::Caret,
+                        span: SourceSpan::new(
+                            self.current_region_id,
+                            self.pos as u32,
+                            self.pos as u32,
+                        ),
+                        leading_trivia_indices: self.trivia_start_idx as u32
+                            ..self.trivia_end_idx as u32,
+                    });
+
+                    self.advance();
+                }
                 // Trivia handles comment possbibilites
                 '/' => {
                     // if self.peek_ahead(1) == b'/' {

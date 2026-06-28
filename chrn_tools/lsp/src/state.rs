@@ -39,6 +39,7 @@ use compilation::lookup::scopes::ScopeType;
 use compilation::modules::Module;
 use compilation::parser::ast::ast_exprs::PathSegment;
 use compilation::parser::ast::ast_exprs::TypeExpr;
+use compilation::resolvers::constraint_resolver::ConstraintResolver;
 use compilation::resolvers::name_resolver::NamespaceResolver;
 use compilation::resolvers::resolver_env::ResolverEnv;
 use compilation::resolvers::type_resolver::TypeResolver;
@@ -140,6 +141,8 @@ pub struct DocumentState {
     pub ns_errors: Option<Vec<SourceDiagnostic>>,
     /// Diagnostics from type resolution.
     pub ty_errors: Option<Vec<SourceDiagnostic>>,
+    /// Diagnostics from constraint resolution.
+    pub cn_errors: Option<Vec<SourceDiagnostic>>,
     /// Sorted list of `(span, entity)` pairs built after analysis; queried by offset.
     pub symbol_map: Vec<(SourceSpan, SemanticEntity)>,
     /// The sub-slice of `compiler.exprs` that belongs to the main module.
@@ -179,6 +182,7 @@ impl DocumentState {
             parse_errors: None,
             ns_errors: None,
             ty_errors: None,
+            cn_errors: None,
             symbol_map: Vec::new(),
             main_expr_range: 0..0,
             version: version,
@@ -394,6 +398,55 @@ impl DocumentState {
             }
 
             self.main_expr_range = main_expr_range;
+
+            // Build resolver environments for constraint resolution
+            let mod_len = compiler.mods.len();
+            let mut resolver_envs = Vec::with_capacity(mod_len);
+            for mod_idx in 0..mod_len {
+                let ast_info = match &all_asts[mod_idx] {
+                    Some(a) => a,
+                    None => {
+                        resolver_envs.push(None);
+                        continue;
+                    }
+                };
+                let src_region_id = match compiler.mods[mod_idx].region_id {
+                    Some(rid) => rid,
+                    None => {
+                        resolver_envs.push(None);
+                        continue;
+                    }
+                };
+                let region = match self.region_arena.get_region(src_region_id) {
+                    Some(r) => r,
+                    None => {
+                        resolver_envs.push(None);
+                        continue;
+                    }
+                };
+                resolver_envs.push(Some(ResolverEnv::new(
+                    ast_info,
+                    region,
+                    ModuleId::new(mod_idx),
+                )));
+            }
+
+            // Constraint resolution for all modules
+            let mut constraint_resolver =
+                ConstraintResolver::new(&settings, &self.interner, &mut compiler);
+
+            for mod_idx in 0..mod_len {
+                let env = match &resolver_envs[mod_idx] {
+                    Some(env) => env,
+                    None => continue,
+                };
+
+                if let Err(cn_diags) = constraint_resolver.resolve(env) {
+                    if mod_idx == 0 {
+                        self.cn_errors = Some(cn_diags);
+                    }
+                }
+            }
         }
 
         self.asts = all_asts;
@@ -1038,6 +1091,15 @@ impl DocumentState {
         }
         if let Some(diags) = &self.ty_errors {
             analyser::push_diagnostics(&mut lsp_diags, diags, doc_len, &self.text, "chrn-type");
+        }
+        if let Some(diags) = &self.cn_errors {
+            analyser::push_diagnostics(
+                &mut lsp_diags,
+                diags,
+                doc_len,
+                &self.text,
+                "chrn-constraint",
+            );
         }
 
         lsp_diags

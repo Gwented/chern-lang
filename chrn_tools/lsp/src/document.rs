@@ -306,7 +306,7 @@ pub static BUILTIN_TYPE_DOCS: [Document; 27] = [
     },
     Document {
         key: "Runtime",
-        description: "Generic type",
+        description: "Runtime detected type",
         example: None,
     },
 ];
@@ -382,7 +382,9 @@ pub static DIRECTIVE_DOCS: [Document; 6] = [
     Document {
         key: "hex",
         description: "Outputs numeric values in hexadecimal notation",
-        example: Some("```chrn\nnest->\n\tenum Color { Red: Tuple<u8> Green: Tuple<u8> Blue: Tuple<u8> } #hex\n```"),
+        example: Some(
+            "```chrn\nnest->\n\tenum Color { Red: Tuple<u8> Green: Tuple<u8> Blue: Tuple<u8> } #hex\n```",
+        ),
     },
     Document {
         key: "bin",

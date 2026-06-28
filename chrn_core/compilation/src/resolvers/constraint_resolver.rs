@@ -219,7 +219,7 @@ impl<'a> ConstraintResolver<'a> {
                 _ => (),
             }
 
-            if let Err(preset_err) = self.check_type_arg(
+            if let Err(preset_err) = self.check_directive(
                 type_def.type_id,
                 abs_typedef.name_span,
                 ty_span,
@@ -602,7 +602,7 @@ impl<'a> ConstraintResolver<'a> {
 
             for sp_directive in &struct_def.glob_directives {
                 let directive = &self.compiler.directives[sp_directive.inner.id as usize];
-                if let Err(preset_err) = self.check_type_arg(
+                if let Err(preset_err) = self.check_directive(
                     field.type_id,
                     abs_struct.name_span,
                     ty_span,
@@ -629,7 +629,7 @@ impl<'a> ConstraintResolver<'a> {
 
             for sp_directive in &field.directives {
                 let directive = &self.compiler.directives[sp_directive.inner.id as usize];
-                if let Err(preset_err) = self.check_type_arg(
+                if let Err(preset_err) = self.check_directive(
                     field.type_id,
                     abs_struct.name_span,
                     *field_ty_span,
@@ -731,7 +731,7 @@ impl<'a> ConstraintResolver<'a> {
 
                 for sp_directive in &enum_def.glob_directives {
                     let directive = &self.compiler.directives[sp_directive.inner.id as usize];
-                    if let Err(preset_err) = self.check_type_arg(
+                    if let Err(preset_err) = self.check_directive(
                         inner_id,
                         abs_enum.name_span,
                         ty_span,
@@ -760,7 +760,7 @@ impl<'a> ConstraintResolver<'a> {
 
                 for sp_directive in &variant.directives {
                     let directive = &self.compiler.directives[sp_directive.inner.id as usize];
-                    if let Err(preset_err) = self.check_type_arg(
+                    if let Err(preset_err) = self.check_directive(
                         inner_id,
                         abs_enum.name_span,
                         variant_ty_span,
@@ -1022,7 +1022,7 @@ impl<'a> ConstraintResolver<'a> {
     }
 
     // This should really send signals
-    fn check_type_arg(
+    fn check_directive(
         &self,
         type_id: TypeId,
         parent_span: SourceSpan,
@@ -1062,7 +1062,7 @@ impl<'a> ConstraintResolver<'a> {
                     }
 
                     //TODO: Needs to separate path and errors depending on fjailfjialfn path
-                    self.check_type_arg(
+                    self.check_directive(
                         field.type_id,
                         struct_def.name_span,
                         field.name_span,
@@ -1101,7 +1101,7 @@ impl<'a> ConstraintResolver<'a> {
                             _ => visited.push(inner),
                         }
 
-                        self.check_type_arg(
+                        self.check_directive(
                             inner,
                             enum_def.name_span,
                             variant.name_span,
@@ -1116,7 +1116,7 @@ impl<'a> ConstraintResolver<'a> {
             }
             Type::BuiltinType(builtin_type) => {
                 match builtin_type {
-                    BuiltinType::List(type_id) | BuiltinType::Set(type_id) => self.check_type_arg(
+                    BuiltinType::List(type_id) | BuiltinType::Set(type_id) => self.check_directive(
                         *type_id,
                         parent_span,
                         active_span,
@@ -1126,7 +1126,7 @@ impl<'a> ConstraintResolver<'a> {
                     ),
                     BuiltinType::Map(key_id, val_id) => {
                         // This looks weird...
-                        self.check_type_arg(
+                        self.check_directive(
                             *key_id,
                             parent_span,
                             active_span,
@@ -1134,7 +1134,7 @@ impl<'a> ConstraintResolver<'a> {
                             visited,
                             env,
                         )?;
-                        self.check_type_arg(
+                        self.check_directive(
                             *val_id,
                             parent_span,
                             active_span,
@@ -1162,7 +1162,7 @@ impl<'a> ConstraintResolver<'a> {
                                 _ => visited.push(*element),
                             }
 
-                            self.check_type_arg(
+                            self.check_directive(
                                 *element,
                                 active_span,
                                 parent_span,
@@ -1222,7 +1222,7 @@ impl<'a> ConstraintResolver<'a> {
             Type::TypeDef(_) => {
                 unreachable!("Not syntactically possible")
             }
-            Type::Deferred(deferred_ty_id) => self.check_type_arg(
+            Type::Deferred(deferred_ty_id) => self.check_directive(
                 *deferred_ty_id,
                 parent_span,
                 active_span,

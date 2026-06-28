@@ -15,86 +15,12 @@ use chrn_utils::{
 };
 use common::color;
 
+use crate::renderer::layout::{RenderInfo, RenderLineLayout};
 use crate::renderer::render_settings::RenderSettings;
 
 /// 60 dashes used as a visual separator between diagnostics
 const DEFAULT_VISUAL_SEPARATORS: &str =
     "------------------------------------------------------------";
-
-/// Groups annotations by the line they appear on, so spans that share a line
-/// can be reasoned about together during layout.
-#[derive(Debug)]
-pub(crate) struct RenderGroupManager<'a> {
-    render_groups: Vec<RenderGroup<'a>>,
-}
-
-impl<'a> RenderGroupManager<'a> {
-    /// Creates a new group manager from an existing set of render groups.
-    pub fn new(render_groups: Vec<RenderGroup<'a>>) -> RenderGroupManager<'a> {
-        RenderGroupManager { render_groups }
-    }
-
-    /// Inserts an annotation into a line group if present, creating a new group if needed.
-    fn insert(&mut self, ln: &'a Line, annotation: &'a Annotation) {
-        if let Some(group) = self
-            .render_groups
-            .iter_mut()
-            .find(|group| group.ln.ln_num == ln.ln_num)
-        {
-            group.annotations.push(annotation);
-        } else {
-            let group = RenderGroup::new(ln, vec![annotation]);
-            self.render_groups.push(group);
-        }
-    }
-}
-
-/// Groups multiple annotations that belong to the same source line together
-/// for layer assignment and rendering.
-#[derive(Debug)]
-pub(crate) struct RenderGroup<'a> {
-    // line number used as key internally
-    /// The source line this group corresponds to. (line number used as key internally)
-    ln: &'a Line,
-    /// Annotations on this line
-    annotations: Vec<&'a Annotation>,
-}
-
-impl RenderGroup<'_> {
-    fn new<'a>(ln: &'a Line, annotations: Vec<&'a Annotation>) -> RenderGroup<'a> {
-        RenderGroup { ln, annotations }
-    }
-}
-
-/// Holds the computed layout for a single source line, including layer assignments
-/// that determine the vertical ordering of annotation pointers.
-#[derive(Debug)]
-struct RenderLineLayout<'a> {
-    /// The line structure attached to this layout
-    pub(crate) ln: &'a Line,
-    /// Annotations associated with this line, which contain their layering details.
-    /// Acts as a 1D column and row system.
-    pub(crate) render_info: Vec<RenderInfo<'a>>,
-}
-
-impl RenderLineLayout<'_> {
-    pub(crate) fn new<'a>(ln: &'a Line, render_info: Vec<RenderInfo<'a>>) -> RenderLineLayout<'a> {
-        RenderLineLayout { ln, render_info }
-    }
-}
-
-/// Associates an annotation with its assigned layer number for rendering.
-#[derive(Debug)]
-struct RenderInfo<'a> {
-    layer: u32,
-    annotation: &'a Annotation,
-}
-
-impl RenderInfo<'_> {
-    pub(crate) fn new<'a>(layer: u32, annotation: &'a Annotation) -> RenderInfo<'a> {
-        RenderInfo { layer, annotation }
-    }
-}
 
 /// Renders a slice of source diagnostics into formatted CLI output strings.
 /// When no region arena is provided, only the diagnostic header and message are emitted.
@@ -176,36 +102,6 @@ pub(crate) fn render_cli_diags(
     rendered_diags
 }
 
-/// Given an annotation, finds all source lines it touches and the highest line number
-/// in that view for number width alignment
-fn find_annotation_lines<'a>(
-    annotation: &Annotation,
-    ln_views: &'a [LineView],
-) -> (Vec<&'a Line>, u32) {
-    let current_ln_view = ln_views
-        .iter()
-        .find(|lv| lv.region_id == annotation.span.region_id)
-        .expect("Should already have mapped the given annotation's ln_view");
-
-    let mut current_idx = current_ln_view
-        .lines
-        .iter()
-        .position(|ln| ln.ln_span.contains_part(annotation.span.start))
-        .expect("Should already have mapped the given annotation's ln_view");
-
-    let mut current_ln = &current_ln_view.lines[current_idx];
-    let max_ln_num = *current_ln_view.ln_num_range.end();
-
-    let mut spanned_lines = vec![current_ln];
-    while current_ln.ln_span.end < annotation.span.end {
-        current_idx += 1;
-        current_ln = &current_ln_view.lines[current_idx];
-        spanned_lines.push(current_ln);
-    }
-
-    (spanned_lines, max_ln_num)
-}
-
 /// Build a rendered diagnostic string from a single `SourceDiagnostic`.
 /// This function: Collects annotation info, groups by line, assigns layers to resolve overlap,
 /// then renders result to text.
@@ -226,20 +122,20 @@ fn form_diag(
 
     // Pairs annotation with it's lines then stores it
     for annotation in &diag.annotations {
-        let (spanned_lines, max_ln_num) = find_annotation_lines(annotation, ln_views);
+        let (spanned_lines, max_ln_num) = layout::find_annotation_lines(annotation, ln_views);
         highest_ln_num = highest_ln_num.max(max_ln_num);
         annotation_and_lines.push((annotation, spanned_lines));
     }
 
     // Using render groups to directly pair an annotation with it's associated line
-    let mut group_manager = RenderGroupManager::new(Vec::new());
+    let mut group_manager = layout::RenderGroupManager::new(Vec::new());
     for (annotation, spanned_lines) in &annotation_and_lines {
         for ln in spanned_lines {
             group_manager.insert(ln, annotation);
         }
     }
 
-    let mut ln_layouts = create_render_line_layout(diag, &group_manager);
+    let mut ln_layouts = layout::create_render_line_layout(diag, &group_manager);
     let ln_num_width = line_mapping::get_num_width(highest_ln_num as usize);
 
     for layout in &mut ln_layouts {
@@ -249,7 +145,7 @@ fn form_diag(
             .position(|lv| lv.region_id == layout.ln.ln_span.region_id)
             .expect("Should already have mapped the given annotation's ln_view");
 
-        assign_layers_in_layout(layout, src_strs[current_idx]);
+        layout::assign_layers_in_layout(layout, src_strs[current_idx]);
     }
 
     // Remove layouts that ended up with no annotations after layer assignment
@@ -269,114 +165,6 @@ fn form_diag(
         region_arena,
         interner,
     )
-}
-
-/// Assigns layers to each `RenderInfo` so overlapping annotations don't collide on the
-/// same printed row.
-fn assign_layers_in_layout(ln_layout: &mut RenderLineLayout, src_str: &str) {
-    // Remove annotations from intermediate lines of multi-line spans. An annotation
-    // only draws its pointer on the line where it starts and the line where it ends;
-    // lines in between show the source but no pointer repetition.
-    let ln_span = ln_layout.ln.ln_span;
-    ln_layout.render_info.retain(|render_info| {
-        let ann = render_info.annotation;
-        ln_span.contains_part(ann.span.start) || ln_span.contains_part(ann.span.end)
-    });
-
-    // Track occupied visual spacing for layers
-    let mut layer_occupied: Vec<usize> = Vec::new();
-
-    // Sort primaries first so they reserve layer 0 before overlapping secondaries
-    // are placed. Within the same kind, sort by span start.
-    ln_layout.render_info.sort_by_key(|r_info| {
-        (
-            r_info.annotation.kind != AnnotationKind::Primary,
-            r_info.annotation.span.start,
-        )
-    });
-
-    for render_info in &mut ln_layout.render_info {
-        let annotation = render_info.annotation;
-
-        match annotation.kind {
-            // Place primaries on the base layer 0 and extend its occupied width
-            // so overlapping secondaries are forced to a higher layer.
-            AnnotationKind::Primary => {
-                if layer_occupied.is_empty() {
-                    layer_occupied.push(0);
-                }
-
-                let span = annotation.span.range_exclusive_usize();
-                let ln_start = ln_layout.ln.ln_span.start as usize;
-                let ln_end = ln_layout.ln.ln_span.end as usize;
-                let clamped_start = span.start.max(ln_start);
-                let clamped_end = span.end.min(ln_end);
-                let start = line_mapping::get_chars_width(src_str, ln_start, clamped_start);
-                let len = line_mapping::get_chars_width(src_str, clamped_start, clamped_end + 1);
-                layer_occupied[0] = layer_occupied[0].max(start + len);
-            }
-            AnnotationKind::Secondary | AnnotationKind::Note | AnnotationKind::Help => {
-                let span = annotation.span.range_exclusive_usize();
-                let ln_start = ln_layout.ln.ln_span.start as usize;
-                let ln_end = ln_layout.ln.ln_span.end as usize;
-                let clamped_start = span.start.max(ln_start);
-                let clamped_end = span.end.min(ln_end);
-                let start = line_mapping::get_chars_width(src_str, ln_start, clamped_start);
-                let len = line_mapping::get_chars_width(src_str, clamped_start, clamped_end + 1);
-                let end = start + len;
-
-                if layer_occupied.is_empty() {
-                    layer_occupied.push(end);
-                } else {
-                    let mut placed = false;
-                    for (layer_idx, occ_end) in layer_occupied.iter_mut().enumerate().skip(1) {
-                        if start >= *occ_end {
-                            render_info.layer = layer_idx as u32;
-                            *occ_end = end;
-                            placed = true;
-                            break;
-                        }
-                    }
-
-                    if !placed {
-                        render_info.layer = layer_occupied.len() as u32;
-                        layer_occupied.push(end);
-                    }
-                }
-            }
-        }
-    }
-
-    // Sorting by layer and by span start for correct positioning
-    ln_layout
-        .render_info
-        .sort_by_key(|info| (info.layer, info.annotation.span.start));
-}
-
-/// Converts grouped annotations into a sorted list of line layouts, one per source line
-/// with annotations
-fn create_render_line_layout<'a>(
-    diag: &SourceDiagnostic,
-    group_manager: &'a RenderGroupManager,
-) -> Vec<RenderLineLayout<'a>> {
-    let mut ln_layouts = Vec::new();
-
-    for render_group in &group_manager.render_groups {
-        let mut rows = Vec::new();
-
-        for annotation in &render_group.annotations {
-            rows.push(RenderInfo::new(0, annotation));
-        }
-
-        ln_layouts.push(RenderLineLayout::new(render_group.ln, rows));
-    }
-
-    // Greedily sorts to where if a primary is present, the layout will go first, otherwise the
-    // layout is sequential
-    // Sorting line numbers by ascending order.
-    ln_layouts.sort_by_key(|lay| (lay.ln.ln_num,));
-    // sort_by_region_id(diag, &mut ln_layouts);
-    ln_layouts
 }
 
 /// Assembles the full diagnostic string by combining the header, all rendered line layouts,

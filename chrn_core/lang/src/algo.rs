@@ -29,11 +29,11 @@ impl Formattable for FuzzyMatch {
     }
 }
 
+// This is a lie.
 /// Executes same search as the function `fuzzy_match`
 ///
 /// Returns an `Option` in comparison to `fuzzy_match` because the target's string `Formatted`
 /// version may or may not be relevant to return
-// This is a lie.
 pub fn fuzzy_match_with_fmtted(given: &[u8], target: FuzzyMatch) -> Option<(Vec<&str>, Formatted)> {
     Some((fuzzy_match(given, target), target.to_fmt()))
 }
@@ -77,8 +77,7 @@ fn fuzzy_match_inner<'a>(given: &[u8], arr: &'a [&str]) -> Vec<&'a str> {
 
         let var_bytes = var.as_bytes();
 
-        let size_diff =
-            cmp::max(given.len(), var_bytes.len()) - cmp::min(given.len(), var_bytes.len());
+        let size_diff = given.len().max(var_bytes.len()) - given.len().min(var_bytes.len());
 
         if size_diff > 3 {
             continue;
@@ -97,7 +96,9 @@ fn fuzzy_match_inner<'a>(given: &[u8], arr: &'a [&str]) -> Vec<&'a str> {
             }
         }
 
-        if matched > 3 || (matched >= 2 && matched + 1 >= var_bytes.len()) {
+        // How about len dependent matching?
+        // Edit distance checking?
+        if matched > 2 || (matched >= 2 && matched + 1 >= var_bytes.len()) {
             found.push(arr[i]);
         }
     }

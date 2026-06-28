@@ -67,11 +67,11 @@ pub(crate) fn infer_type_from_binary_op(
         | BinaryOp::NotEq
         | BinaryOp::LessOrEq => Some(TypeId::new(script_compiler::CORE_BOOL)),
         // Bitwise doesn't exist yet
-        BinaryOp::BitOr => todo!(),
-        BinaryOp::BitAnd => todo!(),
-        BinaryOp::BitNot => todo!(),
-        BinaryOp::BitRightShift => todo!(),
-        BinaryOp::BitLeftShift => todo!(),
-        BinaryOp::BitXor => todo!(),
+        //WARN: Endo
+        BinaryOp::BitOr
+        | BinaryOp::BitAnd
+        | BinaryOp::BitRightShift
+        | BinaryOp::BitLeftShift
+        | BinaryOp::BitXor => Some(TypeId::new(script_compiler::CORE_I64)),
     }
 }

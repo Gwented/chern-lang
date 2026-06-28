@@ -53,7 +53,7 @@ pub enum PresetErr {
     /// Occurs when an argument is applied to a type, that recursively holds itself inside of
     /// itself
     ///
-    /// (Parent declaration span, SpannedArg failed at, Spanned Type failed at)
+    /// (Parent declaration span, Spanned directive failed at, Type span failed at)
     //TODO: Combine
     CircularDirective(
         SpannedContainer<Formatted>,
@@ -70,28 +70,18 @@ pub enum PresetErr {
 
 #[derive(Debug)]
 pub enum MathError {
-    /// SpannedLhs, SpannedRhs, Op
+    /// Spanned lhs, Spanned rhs, Op
     BinaryOpMismatch(
         SpannedContainer<Formatted>,
         SpannedContainer<Formatted>,
         Formatted,
     ),
-    /// Spanned Operand, operator, spans
+    /// Spanned Operand, operator
     UnaryOpMismatch(SpannedContainer<Formatted>, Formatted),
-    /// Lhs, rhs, spans
-    DivideByZero(Formatted, Vec<SourceSpan>),
+    /// lhs span, rhs span
+    DivideByZero(SourceSpan, SourceSpan),
 }
-// Debug)]
-// pub enum MemberLookupResult {
-//     Found(MemberId),
-//     /// Example: A module does not have members as a field would
-//     TypeHasNoMembers(TypeId),
-//     /// Example: A type having members, but not having the field identifier specified
-//     TypeDoesNotContainMember(TypeId),
-//     /// Example: A type having members, but not having the field identifier specified
-//     SymbolHasNoMembers,
-//     Unknown,
-// }
+
 #[derive(Debug)]
 pub enum LookupError {
     /// Spanned Type that is impossible to member access

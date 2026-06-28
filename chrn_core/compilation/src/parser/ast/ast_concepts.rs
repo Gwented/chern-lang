@@ -218,7 +218,6 @@ pub enum BinaryOp {
     NotEq,
     BitOr,
     BitAnd,
-    BitNot,
     BitRightShift,
     BitLeftShift,
     BitXor,
@@ -233,7 +232,6 @@ impl BinaryOp {
             | BinaryOp::Div
             | BinaryOp::BitOr
             | BinaryOp::BitAnd
-            | BinaryOp::BitNot
             | BinaryOp::BitRightShift
             | BinaryOp::BitLeftShift
             | BinaryOp::BitXor
@@ -264,7 +262,6 @@ impl BinaryOp {
             | BinaryOp::Div
             | BinaryOp::BitOr
             | BinaryOp::BitAnd
-            | BinaryOp::BitNot
             | BinaryOp::BitRightShift
             | BinaryOp::BitLeftShift
             | BinaryOp::BitXor
@@ -292,7 +289,6 @@ impl Formattable for BinaryOp {
             BinaryOp::NotEq => Formatted::OpNotEq,
             BinaryOp::BitOr => Formatted::OpBitOr,
             BinaryOp::BitAnd => Formatted::OpBitAnd,
-            BinaryOp::BitNot => Formatted::OpBitNot,
             BinaryOp::BitRightShift => Formatted::OpBitRightShift,
             BinaryOp::BitLeftShift => Formatted::OpBitLeftShift,
             BinaryOp::BitXor => Formatted::OpBitXor,
@@ -645,6 +641,7 @@ impl Unary {
 pub enum UnaryOp {
     Not,
     Negate,
+    BitNot,
 }
 
 impl UnaryOp {
@@ -652,6 +649,7 @@ impl UnaryOp {
         let flags = match self {
             UnaryOp::Not => type_constraints::BOOL,
             UnaryOp::Negate => type_constraints::NUMERIC,
+            UnaryOp::BitNot => type_constraints::INTEGER,
         };
 
         TypeConstraintFlags::new(flags)
@@ -663,6 +661,7 @@ impl Formattable for UnaryOp {
         match self {
             UnaryOp::Not => Formatted::ExclamationPoint,
             UnaryOp::Negate => Formatted::Hyphen,
+            UnaryOp::BitNot => Formatted::OpBitNot,
         }
     }
 }

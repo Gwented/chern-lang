@@ -5,7 +5,7 @@ pub mod type_context;
 use chrn_utils::chrn_settings::ChrnSettings;
 use chrn_utils::id_types::{
     AstId, ConfigId, DirectiveId, ExprId, InternedId, MemberId, ScopeId, SpannedContainer,
-    SymbolId, TypeId, ValueId, VariableId,
+    SpannedContainerRef, SymbolId, TypeId, ValueId, VariableId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::{
@@ -28,6 +28,7 @@ use crate::parser::ast::ast_exprs::{
 };
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::script_compiler::{self, ScriptCompiler};
+use crate::semantic::evaluator::UnaryOpResult;
 use crate::semantic::hir::hir_concepts::{
     ConfigOptionAssignment, FieldRepre, MemberSymbolKind, VariableState, VariantRepre,
 };
@@ -1050,14 +1051,16 @@ impl<'a> TypeResolver<'a> {
 
                 // Basic validation of expression to see if it's const or runtime
                 let const_val_opt = if let Some(const_val) = &operand_val_info.const_val {
-                    if !evaluator::is_compatible_unary(*op, const_val) {
-                        return Err(MathError::UnaryOpMismatch(
-                            SpannedContainer::new(const_val.kind().to_fmt(), operand_expr.span),
-                            op.to_fmt(),
-                        ))?;
-                    } else {
-                        has_const_val = true;
-                        Some(evaluator::apply_unary_op(*op, const_val)?)
+                    has_const_val = true;
+                    let sp_const = SpannedContainerRef::new(const_val, operand_expr.span);
+                    match evaluator::apply_unary_op(*op, sp_const) {
+                        UnaryOpResult::Output(val) => Some(val),
+                        UnaryOpResult::Invalid => {
+                            return Err(MathError::UnaryOpMismatch(
+                                SpannedContainer::new(const_val.kind().to_fmt(), operand_expr.span),
+                                op.to_fmt(),
+                            ))?;
+                        }
                     }
                 } else {
                     None
@@ -1115,17 +1118,23 @@ impl<'a> TypeResolver<'a> {
                 // + x where we just don't know x yet
                 let const_val_opt: Option<Value> = match (lhs_val_opt, rhs_val_opt) {
                     (Some(lhs_const), Some(rhs_const)) => {
-                        // If cannot perform operation and neither are unknown then there is actual
-                        // corruption, and not one part just being unresolved
-                        if !evaluator::is_compatible_binary(lhs_const, *op, rhs_const) {
-                            return Err(MathError::BinaryOpMismatch(
-                                SpannedContainer::new(lhs_const.kind().to_fmt(), lhs_expr.span),
-                                SpannedContainer::new(rhs_const.kind().to_fmt(), rhs_expr.span),
-                                op.to_fmt(),
-                            ))?;
-                        } else {
-                            has_const_val = true;
-                            Some(evaluator::apply_binary_op(lhs_const, *op, rhs_const)?)
+                        has_const_val = true;
+                        let sp_lhs_const = SpannedContainerRef::new(lhs_const, lhs_expr.span);
+                        let sp_rhs_const = SpannedContainerRef::new(rhs_const, rhs_expr.span);
+                        match evaluator::apply_binary_op(sp_lhs_const, *op, sp_rhs_const) {
+                            evaluator::BinaryOpResult::Output(val) => Some(val),
+                            evaluator::BinaryOpResult::DivideByZero => {
+                                return Err(
+                                    MathError::DivideByZero(lhs_expr.span, rhs_expr.span).into()
+                                );
+                            }
+                            evaluator::BinaryOpResult::Invalid => {
+                                return Err(MathError::BinaryOpMismatch(
+                                    SpannedContainer::new(lhs_const.kind().to_fmt(), lhs_expr.span),
+                                    SpannedContainer::new(rhs_const.kind().to_fmt(), rhs_expr.span),
+                                    op.to_fmt(),
+                                ))?;
+                            }
                         }
                     }
                     _ => None,
@@ -1998,7 +2007,7 @@ impl<'a> TypeResolver<'a> {
                             // Local scopes can't reach these right now
                             SymbolKind::Type(type_id) => todo!(),
                             SymbolKind::Module(mod_id) => todo!(),
-                            SymbolKind::Config(config_id) => todo!(),
+                            SymbolKind::Config(cfg_id) => todo!(),
                             SymbolKind::Directive(directive_id) => todo!(),
                         };
 
@@ -2008,6 +2017,7 @@ impl<'a> TypeResolver<'a> {
                     }
                 }
 
+                // Searching if the given identifier is within the current environment
                 if let Some((found_sym_id, _)) = scopes::find_sym_id(
                     self.compiler,
                     associated_scope,
@@ -2354,19 +2364,25 @@ impl<'a> TypeResolver<'a> {
                 // + x where we just don't know x yet
                 let const_val_opt: Option<Value> = match (lhs_val_opt, rhs_val_opt) {
                     (Some(lhs_const), Some(rhs_const)) => {
-                        // If cannot perform operation and neither are unknown then there is actual
-                        // corruption, and not one part just being unresolved
-                        if !evaluator::is_compatible_binary(lhs_const, *op, rhs_const)
-                            && !lhs_is_unknown
-                            && !rhs_is_unknown
-                        {
-                            return Err(MathError::BinaryOpMismatch(
-                                SpannedContainer::new(lhs_const.kind().to_fmt(), lhs_expr.span),
-                                SpannedContainer::new(rhs_const.kind().to_fmt(), rhs_expr.span),
-                                op.to_fmt(),
-                            ))?;
-                        } else {
-                            Some(evaluator::apply_binary_op(lhs_const, *op, rhs_const)?)
+                        let sp_lhs_const = SpannedContainerRef::new(lhs_const, lhs_expr.span);
+                        let sp_rhs_const = SpannedContainerRef::new(rhs_const, rhs_expr.span);
+                        match evaluator::apply_binary_op(sp_lhs_const, *op, sp_rhs_const) {
+                            evaluator::BinaryOpResult::Output(val) => Some(val),
+                            evaluator::BinaryOpResult::DivideByZero => {
+                                return Err(
+                                    MathError::DivideByZero(lhs_expr.span, rhs_expr.span).into()
+                                );
+                            }
+                            evaluator::BinaryOpResult::Invalid
+                                if !lhs_is_unknown && !rhs_is_unknown =>
+                            {
+                                return Err(MathError::BinaryOpMismatch(
+                                    SpannedContainer::new(lhs_const.kind().to_fmt(), lhs_expr.span),
+                                    SpannedContainer::new(rhs_const.kind().to_fmt(), rhs_expr.span),
+                                    op.to_fmt(),
+                                ))?;
+                            }
+                            _ => None,
                         }
                     }
                     _ => None,
@@ -2536,13 +2552,16 @@ impl<'a> TypeResolver<'a> {
                 let operand_val_opt = &self.compiler.values[operand_expr.val_id.id as usize];
 
                 let const_val_opt = if let Some(const_val) = &operand_val_opt.const_val {
-                    if !evaluator::is_compatible_unary(unary.op, const_val) && !is_unknown {
-                        return Err(MathError::UnaryOpMismatch(
-                            SpannedContainer::new(const_val.kind().to_fmt(), operand_expr.span),
-                            unary.op.to_fmt(),
-                        ))?;
-                    } else {
-                        Some(evaluator::apply_unary_op(unary.op, const_val)?)
+                    let sp_const = SpannedContainerRef::new(const_val, operand_expr.span);
+                    match evaluator::apply_unary_op(unary.op, sp_const) {
+                        UnaryOpResult::Output(val) => Some(val),
+                        UnaryOpResult::Invalid if !is_unknown => {
+                            return Err(MathError::UnaryOpMismatch(
+                                SpannedContainer::new(const_val.kind().to_fmt(), operand_expr.span),
+                                unary.op.to_fmt(),
+                            ))?;
+                        }
+                        _ => None,
                     }
                 } else {
                     None

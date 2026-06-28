@@ -360,8 +360,6 @@ impl<'a> ParserContext<'a> {
                                     algo::FuzzyMatch::Sect,
                                 ));
 
-                        // ???????
-
                         // Uh huh
                         // Ok
                         if let Some(Some((similar_vec, fmtted_ty))) = similar_opt {
@@ -521,13 +519,12 @@ impl<'a> ParserContext<'a> {
 
                         // Maybe this should return None if it directly IS a direct match since it is
                         // just a range check
-                        let similar_opt =
-                            algo::fuzzy_match_with_fmtted(found_bytes, algo::FuzzyMatch::Sect);
+                        let similar_vec = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect);
 
-                        if let Some((similar_vec, fmtted_ty)) = similar_opt {
+                        if !similar_vec.is_empty() {
                             let help = Self::fmt_helps(
                                 &similar_vec,
-                                &format!("Found similar {fmtted_ty}"),
+                                &format!("Found similar section"),
                                 "`",
                             );
 
@@ -570,15 +567,11 @@ impl<'a> ParserContext<'a> {
             Branch::TypeArgs => match found.tok {
                 Token::Id(name_id) => {
                     let found_bytes = interner.search(name_id).as_bytes();
-                    let similar_opt =
-                        algo::fuzzy_match_with_fmtted(found_bytes, algo::FuzzyMatch::Directive);
+                    let similar_vec = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Directive);
 
-                    if let Some((similar_vec, fmtted_ty)) = similar_opt {
-                        let help = Self::fmt_helps(
-                            &similar_vec,
-                            &format!("Found similar {fmtted_ty}"),
-                            "`",
-                        );
+                    if !similar_vec.is_empty() {
+                        let help =
+                            Self::fmt_helps(&similar_vec, &format!("Found similar directive"), "`");
 
                         builder = builder.add_help(help);
                     }

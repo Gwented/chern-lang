@@ -93,10 +93,6 @@ pub(crate) fn create_diag_builder_preset(
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
                     .add_annotation(sp_interned_id.span, AnnotationKind::Primary, None);
 
-            //TODO: Search for similar directive
-            // Maybe delegate this to uh...um..
-            //
-            // ignore this
             let similar_vec =
                 lang::algo::fuzzy_match(err_name.as_bytes(), lang::algo::FuzzyMatch::Directive);
 
@@ -104,7 +100,7 @@ pub(crate) fn create_diag_builder_preset(
             if !similar_vec.is_empty() {
                 let mut help = format!("Found similar directive ");
                 for (i, similar) in similar_vec.iter().enumerate() {
-                    help.push_str(&format!("`#{similar}`"));
+                    help.push_str(&format!("`{similar}`"));
                     if i + 1 != similar_vec.len() {
                         help.push_str(&format!(", "));
                     }
@@ -153,7 +149,7 @@ pub(crate) fn create_diag_builder_preset(
                 .add_annotation(
                     sp_parent_ty.span,
                     AnnotationKind::Secondary,
-                    format!("defined here").into(),
+                    format!("Defined here").into(),
                 )
                 .add_annotation(
                     err_ty_span,
@@ -165,6 +161,8 @@ pub(crate) fn create_diag_builder_preset(
                     AnnotationKind::Primary,
                     "Conflicting directive here".to_string().into(),
                 )
+            // This is a little hard to do since now all circulars. maybe this should be inline then
+            // .add_help(format!("Either `#{}` needs to be removed or `{}` needs to get rid of it's recursive field"))
         }
         // Should have the data type's cap shown as well
         PresetErr::NumericOverflow(sp_interned_num, fmtted_ty) => {
@@ -224,12 +222,12 @@ pub(crate) fn create_diag_builder_preset(
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
                     .add_annotation(fmtted_operand.span, AnnotationKind::Primary, None)
             }
-            MathError::DivideByZero(_, spans) => {
-                todo!("Need to fix inner of evaluator functions");
-                let msg = format!("Cannot divide by zero");
+            MathError::DivideByZero(lhs_span, rhs_span) => {
+                let core_msg = format!("Cannot divide by zero");
 
-                (msg, spans);
-                todo!();
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
+                    .add_annotation(lhs_span, AnnotationKind::Primary, None)
+                    .add_annotation(rhs_span, AnnotationKind::Primary, None)
             }
         },
         // Maybe a type version too?

@@ -149,12 +149,9 @@ impl Token {
             Token::NotEq => Some((BinaryOp::NotEq, 4)),
             Token::And => Some((BinaryOp::And, 5)),
             Token::Or => Some((BinaryOp::Or, 6)),
-            // Token::Tilde => todo!(),
-            // Token::VerticalBar => todo!(),
-            // Token::Ampersand => todo!(),
-            // Token::Caret => todo!(),
-            // Token::RightShift => todo!(),
-            // Token::LeftShift => todo!(),
+            Token::Ampersand => Some((BinaryOp::BitAnd, 0)),
+            Token::VerticalBar => Some((BinaryOp::BitOr, 0)),
+            Token::Caret => Some((BinaryOp::BitXor, 0)),
             _ => None,
         }
     }
