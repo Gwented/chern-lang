@@ -11,32 +11,29 @@ use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::{
     AnnotationKind, DiagnosticLevel, SourceDiagnostic,
 };
-use lang::directives::Directive;
 use lang::fmter::{Formattable, Formatted};
-use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
 use lang::values::{Value, ValueInfo};
 
 use crate::constraints::ArgConstraint;
 use crate::lookup::member_lookup::{self, MemberLookupResult};
-use crate::lookup::scopes::{self, AssociatedScopeKind, LookupPattern, ScopeType};
+use crate::lookup::scopes::{
+    self, AssociatedScopeKind, LookupPattern, ScopeType, SymbolLookupOutput,
+};
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractDirective, AbstractEnum, AbstractStruct,
     AbstractTypeDef, AbstractVar, Item,
 };
-use crate::parser::ast::ast_exprs::{
-    Expr, PathSegment, SpannedExpr, SpannedPathSegment, SpannedTypeExpr, TypeExpr,
-};
+use crate::parser::ast::ast_exprs::{Expr, PathSegment, SpannedExpr};
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::evaluator::UnaryOpResult;
-use crate::semantic::hir::hir_concepts::{
-    ConfigOptionAssignment, FieldRepre, MemberSymbolKind, VariableState, VariantRepre,
-};
+use crate::semantic::hir::hir_concepts::{ConfigOptionAssignment, MemberSymbolKind, VariableState};
 use crate::semantic::hir::hir_concepts::{Symbol, SymbolKind, SymbolOrigin, VarDef};
 use crate::semantic::hir::hir_concepts::{Type, TypeInfo};
 use crate::semantic::hir::hir_exprs::{ExprHir, Param, PossibleMember, ResolvedExpr};
 use crate::semantic::preset_err::{LookupError, MathError, PresetErr};
-use crate::semantic::{evaluator, inference, preset_reporter};
+use crate::semantic::resolve::{StaticAccessResult, TypeExprResult};
+use crate::semantic::{evaluator, inference, preset_reporter, resolve};
 
 use crate::resolvers::type_resolver::type_context::{
     ParentInfo, ParentState, PendingExpr, PendingSymbol, TypeContext,
@@ -89,9 +86,7 @@ impl<'a> TypeResolver<'a> {
                 //not upfront so that they can be skipped and have their ast index saved to be gone
                 //over. Maybe some light polling would be usable here to avoid either REALLY late
                 //checks just because a type have a config, or over-checking.
-                Item::Config(abs_cfg) => {
-                    _ = self.resolve_cfg(abs_cfg, env);
-                }
+                Item::Config(abs_cfg) => _ = self.resolve_cfg(abs_cfg, env),
             }
         }
 
@@ -304,6 +299,7 @@ impl<'a> TypeResolver<'a> {
     }
 
     fn resolve_cfg(&mut self, abs_cfg: &AbstractConfig, env: &ResolverEnv) -> Result<(), ()> {
+        todo!("Stop using cfg");
         let mut opt_assignments: Vec<MemberId> = Vec::new();
         let mut inner_field_cfgs: Vec<ConfigId> = Vec::new();
 
@@ -320,7 +316,10 @@ impl<'a> TypeResolver<'a> {
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         // Checks if the symbol is valid later
-        let found_sym_id = if let Some((found_sym, _)) = scopes::find_sym_id(
+        let found_sym_id = if let Some(SymbolLookupOutput {
+            found_sym_id: found_sym,
+            scope_found_in,
+        }) = scopes::find_sym_id(
             self.compiler,
             associated_scope,
             abs_cfg.name_id,
@@ -337,7 +336,7 @@ impl<'a> TypeResolver<'a> {
             );
 
             let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region_id.path_id)
                     .add_annotation(abs_cfg.name_span, AnnotationKind::Primary, None)
                     .build();
 
@@ -371,7 +370,7 @@ impl<'a> TypeResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region,
+                        env.region_id,
                         self.settings,
                         self.interner,
                     );
@@ -438,7 +437,7 @@ impl<'a> TypeResolver<'a> {
                             preset_reporter::create_diag_builder_preset(
                                 &mut self.err_vec,
                                 preset_err,
-                                env.region,
+                                env.region_id,
                                 self.settings,
                                 self.interner,
                             )
@@ -470,7 +469,7 @@ impl<'a> TypeResolver<'a> {
                             preset_reporter::create_diag_builder_preset(
                                 &mut self.err_vec,
                                 preset_err,
-                                env.region,
+                                env.region_id,
                                 self.settings,
                                 self.interner,
                             )
@@ -573,7 +572,7 @@ impl<'a> TypeResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region,
+                        env.region_id,
                         self.settings,
                         self.interner,
                     );
@@ -661,7 +660,7 @@ impl<'a> TypeResolver<'a> {
                             preset_reporter::create_diag_builder_preset(
                                 &mut self.err_vec,
                                 preset_err,
-                                env.region,
+                                env.region_id,
                                 self.settings,
                                 self.interner,
                             )
@@ -689,7 +688,7 @@ impl<'a> TypeResolver<'a> {
                             preset_reporter::create_diag_builder_preset(
                                 &mut self.err_vec,
                                 preset_err,
-                                env.region,
+                                env.region_id,
                                 self.settings,
                                 self.interner,
                             )
@@ -945,7 +944,7 @@ impl<'a> TypeResolver<'a> {
                         preset_reporter::report_preset(
                             &mut self.err_vec,
                             preset_err,
-                            env.region,
+                            env.region_id,
                             self.settings,
                             self.interner,
                         );
@@ -1271,7 +1270,7 @@ impl<'a> TypeResolver<'a> {
                 preset_reporter::report_preset(
                     &mut self.err_vec,
                     preset_err,
-                    env.region,
+                    env.region_id,
                     self.settings,
                     self.interner,
                 );
@@ -1315,36 +1314,42 @@ impl<'a> TypeResolver<'a> {
         abs_typedef: &AbstractTypeDef,
         env: &ResolverEnv,
     ) -> Result<(), ()> {
-        let type_id = match self.resolve_type_expr(
-            AssociatedScopeKind::Module(env.current_mod),
-            &abs_typedef.sp_ty_expr,
-            ScopeType::Var,
-            LookupPattern::NoRestrictions,
-            env,
-        ) {
-            Ok(tid) => tid,
-            Err(preset_err) => {
-                preset_reporter::report_preset(
-                    &mut self.err_vec,
-                    preset_err,
-                    env.region,
-                    self.settings,
-                    self.interner,
-                );
-                // I believe this is fine since it just points to the new type if found with no
-                // mutation
-                //
-                // It is already initalized as unknown so this is redundant
-                TypeId::new(script_compiler::CORE_UNKNOWN)
-            }
-        };
-
         let scope_id = self
             .compiler
             .extract_scope_id(ScopeType::Var, env.current_mod);
         let table = &self.compiler.get_scope(scope_id).scope.table;
         let sym_id = table.interned_to_sym[&abs_typedef.name_id];
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
+
+        let type_id = match resolve::resolve_type_expr(
+            &mut self.compiler,
+            AssociatedScopeKind::Module(env.current_mod),
+            &abs_typedef.sp_ty_expr,
+            ScopeType::Var,
+            LookupPattern::NoRestrictions,
+            env,
+        ) {
+            TypeExprResult::Type(type_id) => type_id,
+            res => {
+                let preset_err = preset_reporter::type_expr_result_to_preset_err(
+                    &self.compiler,
+                    self.interner,
+                    &res,
+                    env,
+                )
+                .expect("Result enforced by `match`");
+
+                preset_reporter::report_preset(
+                    &mut self.err_vec,
+                    preset_err,
+                    env.region_id,
+                    self.settings,
+                    self.interner,
+                );
+
+                TypeId::new(script_compiler::CORE_UNKNOWN)
+            }
+        };
 
         let mut conds: Vec<ExprId> = Vec::new();
         for spanned_expr in &abs_typedef.conds {
@@ -1365,7 +1370,7 @@ impl<'a> TypeResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region,
+                        env.region_id,
                         self.settings,
                         self.interner,
                     );
@@ -1377,7 +1382,7 @@ impl<'a> TypeResolver<'a> {
         preset_reporter::report_preset_vec(
             &mut self.err_vec,
             preset_errs,
-            env.region,
+            env.region_id,
             self.settings,
             self.interner,
         );
@@ -1388,6 +1393,7 @@ impl<'a> TypeResolver<'a> {
         //TODO: Constraints should check if this is unknown
         type_def.type_id = type_id;
         type_def.conds = conds;
+        // Maybe directives will stay defined here
         type_def.directives = directives;
 
         Ok(())
@@ -1398,8 +1404,6 @@ impl<'a> TypeResolver<'a> {
         // somewhat conflicts. For now, typedef is just consumed differently depending on if it's a
         // field declared in var-> or not since var-> fields may be made possible to reference, but
         // fields in structures can't. Will possibly just be unified in the future.
-        let mut fields: Vec<MemberId> = Vec::new();
-        let mut seen: Vec<(usize, InternedId)> = Vec::new();
 
         let scope_id = self
             .compiler
@@ -1413,78 +1417,7 @@ impl<'a> TypeResolver<'a> {
         let sym_id = table.interned_to_sym[&abs_struct.name_id];
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
-        // Checking if there are duplicate name ids within the same struct along with resolution
-        for (i, field_typedef) in abs_struct.fields.iter().enumerate() {
-            let type_id = match self.resolve_type_expr(
-                AssociatedScopeKind::Module(env.current_mod),
-                &field_typedef.sp_ty_expr,
-                ScopeType::Nest,
-                LookupPattern::NoRestrictions,
-                env,
-            ) {
-                Ok(tid) => tid,
-                Err(preset_err) => {
-                    preset_reporter::report_preset(
-                        &mut self.err_vec,
-                        preset_err,
-                        env.region,
-                        self.settings,
-                        self.interner,
-                    );
-                    continue;
-                }
-            };
-
-            if let Some(original) = seen.iter().find(|other| field_typedef.name_id == other.1) {
-                let struct_name = self.interner.search(abs_struct.name_id);
-                let dup_name = self.interner.search(field_typedef.name_id);
-
-                let orig_span = abs_struct.fields[original.0].name_span;
-                let field_span = abs_struct.fields[i].name_span;
-
-                let core_msg = format!(
-                    "More than one field has the identifier \"{dup_name}\" within struct `{struct_name}`"
-                );
-
-                let src_diag =
-                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                        .add_annotation(
-                            abs_struct.name_span,
-                            AnnotationKind::Secondary,
-                            "Found inside this struct".to_string().into(),
-                        )
-                        .add_annotation(
-                            orig_span,
-                            AnnotationKind::Secondary,
-                            format!("Original usage of identifier `{dup_name}` here").into(),
-                        )
-                        .add_annotation(field_span, AnnotationKind::Primary, None)
-                        .build();
-
-                self.err_vec.push(src_diag);
-            }
-
-            seen.push((i, field_typedef.name_id));
-
-            let member_id = MemberId::new(self.compiler.members.len() as u32);
-
-            let parent_sym_id = if let Some(found) = self.compiler.get_sym_from_type(type_id) {
-                found
-            } else {
-                sym_id
-            };
-
-            let field = FieldRepre::new(
-                parent_sym_id,
-                member_id,
-                field_typedef.name_id,
-                field_typedef.name_span,
-                type_id,
-            );
-
-            self.compiler.members.push(MemberSymbolKind::Field(field));
-            fields.push(member_id);
-        }
+        let fields: Vec<MemberId> = self.compiler.get_struct(sym_id).fields.clone();
 
         for (i, current_member_id) in fields.iter().enumerate() {
             let abs_field = &abs_struct.fields[i];
@@ -1505,7 +1438,7 @@ impl<'a> TypeResolver<'a> {
                         preset_reporter::report_preset(
                             &mut self.err_vec,
                             preset_err,
-                            env.region,
+                            env.region_id,
                             self.settings,
                             self.interner,
                         );
@@ -1517,19 +1450,18 @@ impl<'a> TypeResolver<'a> {
             preset_reporter::report_preset_vec(
                 &mut self.err_vec,
                 preset_errs,
-                env.region,
+                env.region_id,
                 self.settings,
                 self.interner,
             );
 
             let field = self.compiler.get_field_mut(*current_member_id);
+
+            debug_assert_eq!(field.conds.len(), 0);
+            debug_assert_eq!(field.directives.len(), 0);
+
             field.conds = conds;
             field.directives = directives;
-            // field.directives = abs_field
-            //     .directives
-            //     .iter()
-            //     .map(|sp_directive| sp_directive.inner)
-            //     .collect();
         }
 
         let mut glob_conds: Vec<ExprId> = Vec::new();
@@ -1549,7 +1481,7 @@ impl<'a> TypeResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region,
+                        env.region_id,
                         self.settings,
                         self.interner,
                     );
@@ -1563,14 +1495,16 @@ impl<'a> TypeResolver<'a> {
         preset_reporter::report_preset_vec(
             &mut self.err_vec,
             preset_errs,
-            env.region,
+            env.region_id,
             self.settings,
             self.interner,
         );
 
         let struct_def = self.compiler.get_struct_mut(sym_id);
 
-        struct_def.fields.append(&mut fields);
+        debug_assert_eq!(struct_def.glob_conds.len(), 0);
+        debug_assert_eq!(struct_def.glob_directives.len(), 0);
+
         struct_def.glob_conds = glob_conds;
         struct_def.glob_directives = glob_directives;
 
@@ -1578,8 +1512,6 @@ impl<'a> TypeResolver<'a> {
     }
 
     fn resolve_enum(&mut self, abs_enum: &AbstractEnum, env: &ResolverEnv) -> Result<(), ()> {
-        let mut variants: Vec<MemberId> = Vec::new();
-
         let scope_id = self
             .compiler
             .extract_scope_id(ScopeType::Nest, env.current_mod);
@@ -1588,96 +1520,8 @@ impl<'a> TypeResolver<'a> {
         let sym_id = table.interned_to_sym[&abs_enum.name_id];
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
-        // (ast variant idx, name_id)
-        let mut seen: Vec<(usize, InternedId)> = Vec::new();
-        //Maybe just compute this once after along with struct fields
-
-        // Checking if there are duplicate name ids within the same enum
-        for (i, variant) in abs_enum.variants.iter().enumerate() {
-            if let Some(original) = seen.iter().find(|other| variant.name_id == other.1) {
-                let enum_name = self.interner.search(abs_enum.name_id);
-                let dup_name = self.interner.search(variant.name_id);
-
-                let orig_span = abs_enum.variants[original.0].name_span;
-                let variant_span = abs_enum.variants[i].name_span;
-
-                let core_msg = format!(
-                    "More than one variant has the identifier \"{dup_name}\" within enum `{enum_name}`"
-                );
-
-                let src_diag =
-                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                        .add_annotation(
-                            abs_enum.name_span,
-                            AnnotationKind::Secondary,
-                            "Found inside this enum".to_string().into(),
-                        )
-                        .add_annotation(
-                            orig_span,
-                            AnnotationKind::Secondary,
-                            format!("Original usage of identifier `{dup_name}` here").into(),
-                        )
-                        .add_annotation(variant_span, AnnotationKind::Primary, None)
-                        .build();
-
-                self.err_vec.push(src_diag);
-            }
-
-            seen.push((i, variant.name_id));
-
-            let member_id = MemberId::new(self.compiler.members.len() as u32);
-            let variant_repre = if let Some(spanned_ty_expr) = &variant.ty_expr {
-                let type_id = match self.resolve_type_expr(
-                    AssociatedScopeKind::Module(env.current_mod),
-                    &spanned_ty_expr,
-                    ScopeType::Nest,
-                    LookupPattern::NoRestrictions,
-                    env,
-                ) {
-                    Ok(tid) => tid,
-                    Err(preset_err) => {
-                        preset_reporter::report_preset(
-                            &mut self.err_vec,
-                            preset_err,
-                            env.region,
-                            self.settings,
-                            self.interner,
-                        );
-                        TypeId::new(script_compiler::CORE_UNKNOWN)
-                    }
-                };
-
-                let parent_sym_id = if let Some(found) = self.compiler.get_sym_from_type(type_id) {
-                    found
-                } else {
-                    sym_id
-                };
-
-                VariantRepre::new(
-                    parent_sym_id,
-                    member_id,
-                    variant.name_id,
-                    variant.name_span,
-                    Some(type_id),
-                    AstId::new(i as u32),
-                )
-            } else {
-                VariantRepre::new(
-                    sym_id,
-                    member_id,
-                    variant.name_id,
-                    variant.name_span,
-                    None,
-                    AstId::new(i as u32),
-                )
-            };
-
-            self.compiler
-                .members
-                .push(MemberSymbolKind::Variant(variant_repre));
-
-            variants.push(member_id);
-        }
+        // Clone needed so iteration doesn't make the compiler borrow itself twice
+        let variants = self.compiler.get_enum(sym_id).variants.clone();
 
         for (i, current_member_id) in variants.iter().enumerate() {
             let abs_variant = &abs_enum.variants[i];
@@ -1698,7 +1542,7 @@ impl<'a> TypeResolver<'a> {
                         preset_reporter::report_preset(
                             &mut self.err_vec,
                             preset_err,
-                            env.region,
+                            env.region_id,
                             self.settings,
                             self.interner,
                         );
@@ -1715,12 +1559,15 @@ impl<'a> TypeResolver<'a> {
             preset_reporter::report_preset_vec(
                 &mut self.err_vec,
                 preset_errs,
-                env.region,
+                env.region_id,
                 self.settings,
                 self.interner,
             );
 
             let variant = self.compiler.get_variant_mut(*current_member_id);
+
+            debug_assert_eq!(variant.conds.len(), 0);
+            debug_assert_eq!(variant.directives.len(), 0);
 
             variant.conds = conds;
             variant.directives = directives;
@@ -1742,7 +1589,7 @@ impl<'a> TypeResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region,
+                        env.region_id,
                         self.settings,
                         self.interner,
                     );
@@ -1759,14 +1606,15 @@ impl<'a> TypeResolver<'a> {
         preset_reporter::report_preset_vec(
             &mut self.err_vec,
             preset_errs,
-            env.region,
+            env.region_id,
             self.settings,
             self.interner,
         );
 
         let enum_def = self.compiler.get_enum_mut(sym_id);
 
-        enum_def.variants.append(&mut variants);
+        debug_assert_eq!(enum_def.glob_conds.len(), 0);
+        debug_assert_eq!(enum_def.glob_directives.len(), 0);
         enum_def.glob_conds = glob_conds;
         enum_def.glob_directives = glob_directives;
 
@@ -1801,7 +1649,7 @@ impl<'a> TypeResolver<'a> {
                 );
 
                 let src_diag =
-                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region_id.path_id)
                         .add_annotation(
                             abs_alias.name_span,
                             AnnotationKind::Secondary,
@@ -1824,23 +1672,33 @@ impl<'a> TypeResolver<'a> {
             let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
             let val_id = ValueId::new(self.compiler.values.len() as u32);
 
-            let type_id = match self.resolve_type_expr(
+            let type_id = match resolve::resolve_type_expr(
+                self.compiler,
                 AssociatedScopeKind::Module(env.current_mod),
-                &abs_param.ty_expr,
+                &abs_param.sp_ty_expr,
                 ScopeType::Neutral,
                 LookupPattern::NoRestrictions,
                 env,
             ) {
-                Ok(tid) => tid,
-                Err(preset_err) => {
+                TypeExprResult::Type(type_id) => type_id,
+                res => {
+                    let preset_err = preset_reporter::type_expr_result_to_preset_err(
+                        &self.compiler,
+                        self.interner,
+                        &res,
+                        env,
+                    )
+                    .expect("Result enforced by `match`");
+
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region,
+                        env.region_id,
                         self.settings,
                         self.interner,
                     );
-                    return Err(());
+
+                    TypeId::new(script_compiler::CORE_UNKNOWN)
                 }
             };
 
@@ -1876,7 +1734,6 @@ impl<'a> TypeResolver<'a> {
             let val_info = ValueInfo::new(type_id, expr_id, None);
 
             self.compiler.symbols.push(param_sym);
-
             self.compiler.variables.push(var);
             self.compiler.exprs.push(resolved_expr);
             self.compiler.values.push(val_info);
@@ -1909,7 +1766,7 @@ impl<'a> TypeResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region,
+                        env.region_id,
                         self.settings,
                         self.interner,
                     );
@@ -1926,7 +1783,7 @@ impl<'a> TypeResolver<'a> {
         preset_reporter::report_preset_vec(
             &mut self.err_vec,
             preset_errs,
-            env.region,
+            env.region_id,
             self.settings,
             self.interner,
         );
@@ -2018,7 +1875,7 @@ impl<'a> TypeResolver<'a> {
                 }
 
                 // Searching if the given identifier is within the current environment
-                if let Some((found_sym_id, _)) = scopes::find_sym_id(
+                if let Some(SymbolLookupOutput { found_sym_id, .. }) = scopes::find_sym_id(
                     self.compiler,
                     associated_scope,
                     *name_id,
@@ -2056,7 +1913,7 @@ impl<'a> TypeResolver<'a> {
                         let src_diag = SourceDiagnostic::builder(
                             DiagnosticLevel::Error,
                             core_msg,
-                            env.region.path_id,
+                            env.region_id.path_id,
                         )
                         .add_annotation(parent_span, AnnotationKind::Primary, None)
                         .add_annotation(
@@ -2107,7 +1964,7 @@ impl<'a> TypeResolver<'a> {
                                     let src_diag = SourceDiagnostic::builder(
                                         DiagnosticLevel::Error,
                                         core_msg,
-                                        env.region.path_id,
+                                        env.region_id.path_id,
                                     )
                                     .add_annotation(
                                         spanned_expr.span,
@@ -2214,7 +2071,7 @@ impl<'a> TypeResolver<'a> {
                             let src_diag = SourceDiagnostic::builder(
                                 DiagnosticLevel::Error,
                                 core_msg,
-                                env.region.path_id,
+                                env.region_id.path_id,
                             )
                             .add_annotation(
                                 spanned_expr.span,
@@ -2257,7 +2114,7 @@ impl<'a> TypeResolver<'a> {
                     let src_diag = SourceDiagnostic::builder(
                         DiagnosticLevel::Error,
                         core_msg,
-                        env.region.path_id,
+                        env.region_id.path_id,
                     )
                     .add_annotation(
                         spanned_expr.span,
@@ -2708,13 +2565,24 @@ impl<'a> TypeResolver<'a> {
                 }
             }
             Expr::StaticAccess(spanned_segments) => {
-                let last_scope = self.resolve_static_access(
+                let last_scope = match resolve::resolve_static_access(
+                    self.compiler,
                     spanned_segments,
                     associated_scope,
                     scope_type,
                     false,
-                    env,
-                )?;
+                ) {
+                    StaticAccessResult::Scope(associated_scope) => associated_scope,
+                    res => {
+                        let preset_err = preset_reporter::static_access_result_to_preset_err(
+                            self.interner,
+                            &res,
+                            env,
+                        )
+                        .expect("Result enforced by `match`");
+                        return Err(preset_err);
+                    }
+                };
 
                 let last_seg = &spanned_segments[spanned_segments.len() - 1];
 
@@ -2732,7 +2600,7 @@ impl<'a> TypeResolver<'a> {
                         let src_diag = SourceDiagnostic::builder(
                             DiagnosticLevel::Error,
                             core_msg,
-                            env.region.path_id,
+                            env.region_id.path_id,
                         )
                         .add_annotation(
                             last_seg.span,
@@ -2853,162 +2721,6 @@ impl<'a> TypeResolver<'a> {
         }
     }
 
-    // Ok maybe this should be separated a bit more
-    /// Method so that code can be re-used for traversing scopes in a static access.
-    ///
-    /// Takes in the segments to traverse, scope to start in, scope type for scoping rules, and
-    /// whether or not type expression restrictions should be applied.
-    ///
-    /// Returns an `Ok` with the last scope found so that wherever this was called from can use the
-    /// last segment for it's correct use-case.
-    /// Returns an `Err` upon any errors, given whether or not a type expression was the caller.
-    fn resolve_static_access(
-        &mut self,
-        spanned_path_segs: &[SpannedPathSegment],
-        mut current_scope: AssociatedScopeKind,
-        scope_type: ScopeType,
-        in_ty_expr: bool,
-        env: &ResolverEnv,
-    ) -> Result<AssociatedScopeKind, PresetErr> {
-        for (i, sp_path_seg) in spanned_path_segs.iter().enumerate() {
-            match &sp_path_seg.kind {
-                PathSegment::Ident(interned_id) => {
-                    if let Some((sym_id, _)) = scopes::find_sym_id(
-                        self.compiler,
-                        current_scope,
-                        *interned_id,
-                        scope_type,
-                        LookupPattern::NamespaceOnly,
-                    ) {
-                        let sym = &self.compiler.symbols[sym_id.id as usize];
-                        match sym.associated_scope {
-                            // Modules have their own symbol id for their given namespace so they
-                            // can't be symbol checked..
-                            Some(new_scope) => {
-                                current_scope = new_scope;
-                            }
-                            // meaning the search is DONE
-                            None => {
-                                // If not at end AND there is no namespace associated with the
-                                // current symbol
-                                if i + 1 < spanned_path_segs.len() {
-                                    let current_namespace = self.interner.search(*interned_id);
-
-                                    let core_msg =
-                                        format!("No namespace found in `{current_namespace}`");
-
-                                    let src_diag = SourceDiagnostic::builder(
-                                        DiagnosticLevel::Error,
-                                        core_msg,
-                                        env.region.path_id,
-                                    )
-                                    .add_annotation(
-                                        sp_path_seg.span,
-                                        AnnotationKind::Primary,
-                                        None,
-                                    );
-
-                                    return Err(PresetErr::General(src_diag));
-                                }
-                                // Success case where the last symbol has no scope and the end was
-                                // reached
-                                // --------------------------------
-                                // Drops to Ok
-                            }
-                        }
-                        // Symbol not found
-                    } else {
-                        let current_namespace = self.interner.search(*interned_id);
-
-                        let prev_namespace_opt = if i > 0 {
-                            Some(&spanned_path_segs[i - 1])
-                        } else {
-                            None
-                        };
-
-                        // Different error message depending on if at least the first
-                        // member was resolved or not
-                        let src_diag = if let Some(prev) = prev_namespace_opt {
-                            let prev_namespace = match &prev.kind {
-                                PathSegment::Ident(prev_name_id) => {
-                                    self.interner.search(*prev_name_id)
-                                }
-                                PathSegment::Generic(_) => {
-                                    // Represents "module::Generic<T>::stuff" where the middle
-                                    // generic has the ability to access members.
-                                    // Which is not possible right now.
-                                    unreachable!("Generics may never exist in this form.");
-                                }
-                            };
-
-                            let core_msg = format!(
-                                "Could not find the symbol `{}` in the namespace `{}`",
-                                current_namespace, prev_namespace
-                            );
-
-                            SourceDiagnostic::builder(
-                                DiagnosticLevel::Error,
-                                core_msg,
-                                env.region.path_id,
-                            )
-                            .add_annotation(
-                                sp_path_seg.span,
-                                AnnotationKind::Primary,
-                                None,
-                            )
-                        } else {
-                            let core_msg = format!(
-                                "The symbol `{current_namespace}` was not found in all `{scope_type}` searchable scopes"
-                            );
-
-                            SourceDiagnostic::builder(
-                                DiagnosticLevel::Error,
-                                core_msg,
-                                env.region.path_id,
-                            )
-                            .add_annotation(
-                                sp_path_seg.span,
-                                AnnotationKind::Primary,
-                                None,
-                            )
-                        };
-
-                        return Err(PresetErr::General(src_diag));
-                    };
-                }
-                PathSegment::Generic(_) if in_ty_expr => {
-                    // Still disallows something like, core.List<i32>.other_thing
-                    if i + 1 != spanned_path_segs.len() {
-                        let core_msg = "Generics cannot use `::` pathing at any point".to_string();
-                        let src_diag = SourceDiagnostic::basic_builder(
-                            DiagnosticLevel::Error,
-                            core_msg,
-                            env.region.path_id,
-                            sp_path_seg.span,
-                        );
-
-                        return Err(PresetErr::General(src_diag));
-                    }
-
-                    break;
-                }
-                PathSegment::Generic(_) => {
-                    let core_msg = "Generics cannot be used inside of expressions".to_string();
-                    let src_diag = SourceDiagnostic::basic_builder(
-                        DiagnosticLevel::Error,
-                        core_msg,
-                        env.region.path_id,
-                        sp_path_seg.span,
-                    );
-
-                    return Err(PresetErr::General(src_diag));
-                }
-            }
-        }
-
-        Ok(current_scope)
-    }
-
     // Umm...
     fn resolve_member(
         &mut self,
@@ -3070,41 +2782,6 @@ impl<'a> TypeResolver<'a> {
         Err(PresetErr::UndefinedMember(member.span))
     }
 
-    /// Convenience method that takes an array of directives an evaluates as many as possible.
-    ///
-    /// If any of the directives given are invalid, they will be skipped, and a diagnostic will be
-    /// created.
-    ///
-    /// Returns a tuple of both the the any directives and diagnostics found
-    fn handle_directives(
-        &self,
-        abs_directives: &[AbstractDirective],
-        env: &ResolverEnv,
-    ) -> (Vec<SpannedContainer<DirectiveId>>, Vec<PresetErr>) {
-        let mut directive_ids = Vec::new();
-        let mut preset_errs = Vec::new();
-
-        // Collecting all possible directives while also collecting and preset errors
-        for abs_directive in abs_directives {
-            match Directive::try_from_interned_str(abs_directive.sp_name_id.inner) {
-                // Trying REALLY hard not to use the shortened "dir" for this
-                Some(dir) => {
-                    let directive_id = script_compiler::directive_to_id(&dir);
-                    let sp_directive_id =
-                        SpannedContainer::new(directive_id, abs_directive.sp_name_id.span);
-
-                    directive_ids.push(sp_directive_id);
-                }
-                None => {
-                    let preset_err = PresetErr::UnknownDirective(abs_directive.sp_name_id.clone());
-                    preset_errs.push(preset_err);
-                }
-            };
-        }
-
-        (directive_ids, preset_errs)
-    }
-
     // Helper
     fn check_cycle(
         &self,
@@ -3152,7 +2829,7 @@ impl<'a> TypeResolver<'a> {
                     let src_diag = SourceDiagnostic::builder(
                         DiagnosticLevel::Error,
                         core_msg,
-                        env.region.path_id,
+                        env.region_id.path_id,
                     )
                     .add_annotation(
                         cycled_span,
@@ -3173,292 +2850,31 @@ impl<'a> TypeResolver<'a> {
         Ok(())
     }
 
-    //FIX: This should be removed or shortened
-    /// - active_mod_id: The target module to search which is only altered if an external module is
-    /// used within a member access
-    /// - spanned_ty_expr: The type expression to be resolved
-    /// - scope_type: The scope which determines how much of a module can be searched.
-    /// - lookup_pattern: The type of lookup which is recursively changed depending on if a direct
-    /// member access is being searched, or if a library such as core can be searched externally.
-    fn resolve_type_expr(
-        &mut self,
-        // Module that is actively being searched within, not the source. Source remains
-        // current_mod
-        associated_scope: AssociatedScopeKind,
-        sp_ty_expr: &SpannedTypeExpr,
-        scope_type: ScopeType,
-        lookup_pattern: LookupPattern,
+    /// Unknown or invalid directives produce a `PresetErr` which is returned alongside any
+    /// successfully resolved directive ids.
+    fn handle_directives(
+        &self,
+        abs_directives: &[AbstractDirective],
         env: &ResolverEnv,
-    ) -> Result<TypeId, PresetErr> {
-        match &sp_ty_expr.ty_expr {
-            //FIXME: If an error occurs while env.current_mod = extern_mod, it tries to report the
-            //error from the external module instead of the actual module of origin.
-            TypeExpr::Var(name_id) => {
-                // Searching symbols because otherwise, the type of a variable would be valid
-                // since it would just be looking at it's type, which is not a favorable allowable syntax
-                // So, let x = 3, var-> field: x, would be valid if this weren't handled at the
-                // symbol level here
-                match scopes::find_sym_id(
-                    self.compiler,
-                    associated_scope,
-                    *name_id,
-                    scope_type,
-                    lookup_pattern,
-                ) {
-                    Some((sym_id, _)) => {
-                        match self.compiler.symbols[sym_id.id as usize].kind {
-                            SymbolKind::Type(type_id) => {
-                                // NOTE: Will probably error later in resolution but fine for now
-                                let symbol = &self.compiler.symbols[sym_id.id as usize];
+    ) -> (Vec<SpannedContainer<DirectiveId>>, Vec<PresetErr>) {
+        let mut directive_ids = Vec::new();
+        let mut preset_errs = Vec::new();
 
-                                if let SymbolOrigin::Module(mod_origin_id) = symbol.sym_origin {
-                                    if symbol.is_priv && mod_origin_id != env.current_mod {
-                                        //FIX: Would need changes
-                                        let current_mod = &self.compiler.mods[env.current_mod.id];
-                                        let current_mod_name =
-                                            self.interner.search(current_mod.name_id);
-                                        let sym_name = self.interner.search(symbol.name_id);
-
-                                        let core_msg = format!(
-                                            "The type `{sym_name}` is private within namespace `{current_mod_name}`"
-                                        );
-
-                                        let src_diag = SourceDiagnostic::builder(
-                                            DiagnosticLevel::Error,
-                                            core_msg,
-                                            env.region.path_id,
-                                        )
-                                        .add_annotation(
-                                            sp_ty_expr.span,
-                                            AnnotationKind::Primary,
-                                            None,
-                                        )
-                                        .add_note(
-                                            "Types declared can be exported if that was unintended"
-                                                .into(),
-                                        );
-
-                                        return Err(PresetErr::General(src_diag));
-                                    }
-                                }
-
-                                return Ok(type_id);
-                            }
-                            // Ok but what about, "core is a MODULE which is NOT a type?"
-                            SymbolKind::Module(mod_id) => (),
-                            SymbolKind::Variable(_) => (),
-                            // Ok ok, but what about, "#warn is a DIRECTIVE which is NOT a type?"
-                            SymbolKind::Directive(_) => (),
-                            SymbolKind::Config(_) => unreachable!("Cannot lookup configs"),
-                        }
-                    }
-                    None => (),
+        for abs_directive in abs_directives {
+            match resolve::resolve_directive(abs_directive) {
+                Some(dir) => {
+                    let directive_id = script_compiler::directive_to_id(&dir);
+                    let sp_directive_id =
+                        SpannedContainer::new(directive_id, abs_directive.sp_name_id.span);
+                    directive_ids.push(sp_directive_id);
                 }
-                // Case of not finding any symbol
-
-                // If we have main, that imports def, that imports other, it tries to search for
-                // things in the "other" module even though it's defined in "def".
-                //
-                // Within "def", it tries to search "other" for everything declared even if "other"
-                // is never used.
-                let err_name = self.interner.search(*name_id);
-                let core_msg = match associated_scope {
-                    AssociatedScopeKind::Module(mod_id) => {
-                        let err_mod = &self.compiler.mods[mod_id.id];
-                        let err_mod_name = self.interner.search(err_mod.name_id);
-
-                        format!(
-                            "`{err_name}` is not defined as a type within the module `{err_mod_name}`"
-                        )
-                    }
-                    AssociatedScopeKind::Scope(scope_id) => {
-                        let scope_info = &self.compiler.scopes[scope_id.id];
-                        // This is infailable because an associated scope having a scope variant
-                        // means that the current search was performed by a namespace within a
-                        // module, not a module directly.
-                        let sym_owner = scope_info
-                            .sym_owner
-                            .expect("resolve_type_expr control flow broke");
-                        let sym_name_id = self.compiler.symbols[sym_owner.id as usize].name_id;
-                        let sym_name = self.interner.search(sym_name_id);
-
-                        format!(
-                            "The symbol `{sym_name}` does not contain a type with the the identifier `{err_name}`"
-                        )
-                    }
-                };
-
-                let src_diag = SourceDiagnostic::basic_builder(
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    env.region.path_id,
-                    sp_ty_expr.span,
-                );
-                Err(PresetErr::General(src_diag))
-            }
-            // Generics can only be these types so this can stay for now
-            TypeExpr::Generic(generic) => {
-                //FIX: This is still using the old id matching but maybe it's ok since this is
-                // actually supposed to be specifically only known data structures
-                match BuiltinTypeKind::try_from_interned_id(generic.base.id) {
-                    // Self referential type ids used here
-                    Some(kind) => match kind {
-                        BuiltinTypeKind::List | BuiltinTypeKind::Set => {
-                            if generic.args.len() != 1 {
-                                let core_msg =
-                                    format!("Expected only 1 type within `{}`", kind.to_fmt());
-
-                                let src_diag = SourceDiagnostic::basic_builder(
-                                    DiagnosticLevel::Error,
-                                    core_msg,
-                                    env.region.path_id,
-                                    sp_ty_expr.span,
-                                );
-
-                                return Err(PresetErr::General(src_diag));
-                            }
-
-                            let inner = self.resolve_type_expr(
-                                associated_scope,
-                                &generic.args[0],
-                                scope_type,
-                                LookupPattern::NoRestrictions,
-                                env,
-                            )?;
-
-                            let ty = if kind == BuiltinTypeKind::List {
-                                Type::BuiltinType(BuiltinType::List(inner))
-                            } else {
-                                Type::BuiltinType(BuiltinType::Set(inner))
-                            };
-
-                            let type_id = TypeId::new(self.compiler.types.len() as u32);
-
-                            // TODO: Technically it's a structure owned by core, but it wasn't
-                            // defined as core, but this can't be referenced directly anyways so it
-                            // doesn't really make a difference
-                            let ty_info =
-                                TypeInfo::new(ty, self.compiler.intrinsic_registry.core_mod_id);
-                            self.compiler.types.push(ty_info);
-
-                            return Ok(type_id);
-                        }
-                        BuiltinTypeKind::Tuple => {
-                            let mut elements: Vec<TypeId> = Vec::new();
-
-                            for arg in &generic.args {
-                                elements.push(self.resolve_type_expr(
-                                    associated_scope,
-                                    arg,
-                                    scope_type,
-                                    LookupPattern::NoRestrictions,
-                                    env,
-                                )?);
-                            }
-
-                            let type_id = TypeId::new(self.compiler.types.len() as u32);
-                            let tuple = Type::BuiltinType(BuiltinType::Tuple(elements));
-
-                            let ty_info =
-                                TypeInfo::new(tuple, self.compiler.intrinsic_registry.core_mod_id);
-                            self.compiler.types.push(ty_info);
-
-                            return Ok(type_id);
-                        }
-                        BuiltinTypeKind::Map => {
-                            if generic.args.len() != 2 {
-                                let core_msg = format!("Expected only 2 types within `Map`",);
-                                let src_diag = SourceDiagnostic::basic_builder(
-                                    DiagnosticLevel::Error,
-                                    core_msg,
-                                    env.region.path_id,
-                                    sp_ty_expr.span,
-                                );
-
-                                return Err(PresetErr::General(src_diag));
-                            }
-
-                            // Should it reset to current module if it has a new sesarch started?
-                            let key = self.resolve_type_expr(
-                                AssociatedScopeKind::Module(env.current_mod),
-                                &generic.args[0],
-                                scope_type,
-                                LookupPattern::NoRestrictions,
-                                env,
-                            )?;
-
-                            let val = self.resolve_type_expr(
-                                AssociatedScopeKind::Module(env.current_mod),
-                                &generic.args[1],
-                                scope_type,
-                                LookupPattern::NoRestrictions,
-                                env,
-                            )?;
-
-                            let map = Type::BuiltinType(BuiltinType::Map(key, val));
-                            let map_id = self.compiler.types.len() as u32;
-
-                            let ty_info =
-                                TypeInfo::new(map, self.compiler.intrinsic_registry.core_mod_id);
-                            self.compiler.types.push(ty_info);
-
-                            return Ok(TypeId::new(map_id));
-                        }
-                        // Returns nothing since both have the same error handling
-                        _ => (),
-                    },
-                    None => (),
+                None => {
+                    let preset_err = PresetErr::UnknownDirective(abs_directive.sp_name_id.clone());
+                    preset_errs.push(preset_err);
                 }
-
-                let err_name = self.interner.search(generic.base);
-
-                let core_msg = format!(
-                    "Found identifier \"{err_name}\" before generic parameters, but only `List`, `Set`, `Map`, and `Tuple` are valid data structures"
-                );
-
-                // No error codes please
-                let src_diag = SourceDiagnostic::builder(
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    env.region.path_id,
-                )
-                .add_annotation(sp_ty_expr.span, AnnotationKind::Primary, None)
-                .add_note(
-                    "Generics and data structures are only usable through language primitives"
-                        .into(),
-                );
-                Err(PresetErr::General(src_diag))
-            }
-            // This only allows something like, defs.Thing which can go to at most one type deep,
-            // but no more. Will need change since something like i32.MAX could be "core.i32.MAX".
-            //
-            // Maybe not though since that would only be usable in expressions anyways which aren't
-            // type expressions
-            TypeExpr::Path(sp_path_segs) => {
-                // maybe active_mod can be removed?
-                let last_scope = self.resolve_static_access(
-                    &sp_path_segs,
-                    associated_scope,
-                    scope_type,
-                    true,
-                    env,
-                )?;
-                let last_segment = &sp_path_segs[sp_path_segs.len() - 1];
-
-                let inline_ty_expr = match &last_segment.kind {
-                    PathSegment::Ident(interned_id) => {
-                        SpannedTypeExpr::new(TypeExpr::Var(*interned_id), last_segment.span)
-                    }
-                    PathSegment::Generic(generic) => {
-                        //FIXME: EVIL CLONING.
-                        //Would need to a compability layer to allow for referenced inners, rather
-                        //than only owned.
-                        SpannedTypeExpr::new(TypeExpr::Generic(generic.clone()), last_segment.span)
-                    }
-                };
-
-                self.resolve_type_expr(last_scope, &inline_ty_expr, scope_type, lookup_pattern, env)
             }
         }
+
+        (directive_ids, preset_errs)
     }
 }

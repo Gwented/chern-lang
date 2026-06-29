@@ -546,7 +546,7 @@ impl ScriptCompiler {
     }
 
     /// Attempts to get a `SymbolId` out of a `TypeId`
-    pub(super) fn get_sym_from_type(&self, mut type_id: TypeId) -> Option<SymbolId> {
+    pub(super) fn get_sym_id_from_type_id(&self, mut type_id: TypeId) -> Option<SymbolId> {
         for _ in 0..Self::MAX_LOOPS {
             match &self.types[type_id.id as usize].ty {
                 Type::Struct(struct_def) => return Some(struct_def.sym_id),

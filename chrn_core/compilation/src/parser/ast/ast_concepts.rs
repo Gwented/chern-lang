@@ -7,7 +7,7 @@ use lang::{
     types::type_constraints::{self, TypeConstraintFlags},
 };
 
-use crate::parser::ast::ast_exprs::{SpannedExpr, SpannedTypeExpr};
+use crate::parser::ast::ast_exprs::{SpannedExpr, TypeExpr};
 
 // Maybe this type of thing should go into an ast_concepts module?
 #[derive(Debug)]
@@ -338,7 +338,7 @@ impl AbstractDirective {
 pub struct AbstractTypeDef {
     pub name_id: InternedId,
     pub name_span: SourceSpan,
-    pub sp_ty_expr: SpannedTypeExpr,
+    pub sp_ty_expr: SpannedContainer<TypeExpr>,
     pub conds: Vec<SpannedExpr>,
     pub directives: Vec<AbstractDirective>,
 }
@@ -347,14 +347,14 @@ impl AbstractTypeDef {
     pub fn new(
         name_id: InternedId,
         name_span: SourceSpan,
-        spanned_ty_expr: SpannedTypeExpr,
+        sp_ty_expr: SpannedContainer<TypeExpr>,
         directives: Vec<AbstractDirective>,
         conds: Vec<SpannedExpr>,
     ) -> AbstractTypeDef {
         AbstractTypeDef {
             name_id,
             name_span,
-            sp_ty_expr: spanned_ty_expr,
+            sp_ty_expr,
             directives,
             conds,
         }
@@ -430,7 +430,7 @@ pub struct AbstractVariant {
     pub name_id: InternedId,
     pub name_span: SourceSpan,
     // I think this is right?
-    pub ty_expr: Option<SpannedTypeExpr>,
+    pub sp_ty_expr: Option<SpannedContainer<TypeExpr>>,
     pub directives: Vec<AbstractDirective>,
     pub conds: Vec<SpannedExpr>,
 }
@@ -440,14 +440,14 @@ impl AbstractVariant {
         name_id: InternedId,
         name_span: SourceSpan,
         // I think this is right?
-        ty_expr: Option<SpannedTypeExpr>,
+        sp_ty_expr: Option<SpannedContainer<TypeExpr>>,
         conds: Vec<SpannedExpr>,
         directives: Vec<AbstractDirective>,
     ) -> AbstractVariant {
         AbstractVariant {
             name_id,
             name_span,
-            ty_expr,
+            sp_ty_expr,
             directives,
             conds,
         }
@@ -554,19 +554,19 @@ impl AbstractOptionAssignment {
 pub struct AbstractParam {
     pub name_id: InternedId,
     pub name_span: SourceSpan,
-    pub ty_expr: SpannedTypeExpr,
+    pub sp_ty_expr: SpannedContainer<TypeExpr>,
 }
 
 impl AbstractParam {
     pub fn new(
         name_id: InternedId,
         name_span: SourceSpan,
-        ty_expr: SpannedTypeExpr,
+        sp_ty_expr: SpannedContainer<TypeExpr>,
     ) -> AbstractParam {
         AbstractParam {
             name_id,
             name_span,
-            ty_expr,
+            sp_ty_expr,
         }
     }
 }

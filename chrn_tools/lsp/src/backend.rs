@@ -46,7 +46,7 @@ use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
-use tower_lsp::lsp_types::{CompletionItemKind, SemanticToken};
+use tower_lsp::lsp_types::{CompletionItemKind, Position, SemanticToken};
 use tower_lsp::{Client, LanguageServer, jsonrpc};
 
 use crate::analyser::analyze_and_publish_task;
@@ -244,37 +244,14 @@ impl Backend {
     /// Ensures the file where a symbol is defined is analyzed and cached,
     /// enabling cross-module operations (rename, references) to find
     /// occurrences in the definition file even when it hasn't been opened.
-    fn ensure_definition_file_analyzed(
+    async fn ensure_definition_file_analyzed(
         &self,
-        state: &DocumentState,
-        byte_offset: usize,
-        current_uri: &tower_lsp::lsp_types::Url,
+        def_path_str: &str,
     ) {
-        if state.offset_in_comment(byte_offset) {
-            return;
-        }
-
-        let entity = match state.get_entity_at_offset(byte_offset) {
-            Some(e) => e,
-            None => return,
-        };
-
-        if matches!(
-            entity,
-            SemanticEntity::Local { .. } | SemanticEntity::Module(_)
-        ) {
-            return;
-        }
-
-        if let Some((def_path_str, _, _)) = state.get_definition_location(entity) {
-            let def_path = std::path::Path::new(&def_path_str);
-            if def_path == current_uri.path() {
-                return;
-            }
-            if let Ok(def_uri) = tower_lsp::lsp_types::Url::from_file_path(def_path) {
-                if let Ok(text) = std::fs::read_to_string(def_path) {
-                    self.get_analyzed_state(&def_uri, Arc::new(text));
-                }
+        let def_path = std::path::Path::new(def_path_str);
+        if let Ok(def_uri) = tower_lsp::lsp_types::Url::from_file_path(def_path) {
+            if let Ok(text) = tokio::fs::read_to_string(def_path).await {
+                self.get_analyzed_state(&def_uri, Arc::new(text));
             }
         }
     }
@@ -315,7 +292,7 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
             }
         }
         SymbolKind::Module(_) => CompletionItemKind::MODULE,
-        SymbolKind::Config(config_id) => todo!(),
+        SymbolKind::Config(_config_id) => todo!(),
         SymbolKind::Directive(_) => CompletionItemKind::KEYWORD,
     }
 }
@@ -374,7 +351,7 @@ fn classify_id_token(
                         SymbolKind::Module(_) => {
                             return Some(SemanticTokenType::Variable.as_u32());
                         }
-                        SymbolKind::Config(cfg_id) => todo!(),
+                        SymbolKind::Config(_cfg_id) => todo!(),
                         SymbolKind::Directive(_) => {
                             return Some(SemanticTokenType::Regexp.as_u32());
                         }
@@ -659,10 +636,28 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        {
+        let def_path_str = {
             let state = state_arc.read();
             let byte_offset = crate::text::position_to_offset(&state.text, pos);
-            self.ensure_definition_file_analyzed(&state, byte_offset, &uri);
+            if state.offset_in_comment(byte_offset) {
+                None
+            } else {
+                state.get_entity_at_offset(byte_offset).and_then(|e| {
+                    if matches!(e, SemanticEntity::Local { .. } | SemanticEntity::Module(_)) {
+                        return None;
+                    }
+                    let (def_path, _, _) = state.get_definition_location(e)?;
+                    let path = std::path::Path::new(&def_path);
+                    if path == uri.path() {
+                        return None;
+                    }
+                    Some(def_path)
+                })
+            }
+        };
+
+        if let Some(ref def_path_str) = def_path_str {
+            self.ensure_definition_file_analyzed(def_path_str).await;
         }
 
         let edit = crate::rename::compute_rename(&uri, pos, new_name, &self.doc_cache);
@@ -683,10 +678,28 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        {
+        let def_path_str = {
             let state = state_arc.read();
             let byte_offset = crate::text::position_to_offset(&state.text, pos);
-            self.ensure_definition_file_analyzed(&state, byte_offset, &uri);
+            if state.offset_in_comment(byte_offset) {
+                None
+            } else {
+                state.get_entity_at_offset(byte_offset).and_then(|e| {
+                    if matches!(e, SemanticEntity::Local { .. } | SemanticEntity::Module(_)) {
+                        return None;
+                    }
+                    let (def_path, _, _) = state.get_definition_location(e)?;
+                    let path = std::path::Path::new(&def_path);
+                    if path == uri.path() {
+                        return None;
+                    }
+                    Some(def_path)
+                })
+            }
+        };
+
+        if let Some(ref def_path_str) = def_path_str {
+            self.ensure_definition_file_analyzed(def_path_str).await;
         }
 
         let refs = crate::references::compute_references(&uri, pos, &self.doc_cache);
@@ -720,6 +733,28 @@ impl LanguageServer for Backend {
         let mut prev_start: u32 = 0;
         let mut first = true;
 
+        fn push_semantic_token(
+            tokens: &mut Vec<SemanticToken>,
+            prev_line: &mut u32,
+            prev_start: &mut u32,
+            first: &mut bool,
+            start_pos: Position,
+            length: u32,
+            token_type: u32,
+        ) {
+            let (delta_line, delta_start) = if *first {
+                *first = false;
+                (start_pos.line, start_pos.character)
+            } else if start_pos.line == *prev_line {
+                (0, start_pos.character.saturating_sub(*prev_start))
+            } else {
+                (start_pos.line.saturating_sub(*prev_line), start_pos.character)
+            };
+            *prev_line = start_pos.line;
+            *prev_start = start_pos.character;
+            tokens.push(SemanticToken { delta_line, delta_start, length, token_type, token_modifiers_bitset: 0 });
+        }
+
         // Interleave tokens and comment trivia in strictly increasing file order.
         //
         // The LSP semantic-tokens protocol uses delta encoding, which means every
@@ -745,45 +780,14 @@ impl LanguageServer for Backend {
             if emit_comment {
                 let triv = &state.trivia[triv_idx];
                 triv_idx += 1;
-                // Only emit comment trivia — skip whitespace, newlines, tabs.
-                // These carry no semantic meaning and would just clutter the
-                // token stream with invisible highlights.
                 if !triv.kind.is_comment() {
                     continue;
                 }
                 let start_pos =
                     crate::text::offset_to_position(&state.text, triv.span.start as usize);
-                let length = triv
-                    .span
-                    .end
-                    .saturating_add(1)
-                    .saturating_sub(triv.span.start);
+                let length = triv.span.end.saturating_add(1).saturating_sub(triv.span.start);
 
-                let delta_line: u32;
-                let delta_start: u32;
-
-                if first {
-                    delta_line = start_pos.line;
-                    delta_start = start_pos.character;
-                    first = false;
-                } else if start_pos.line == prev_line {
-                    delta_line = 0;
-                    delta_start = start_pos.character.saturating_sub(prev_start);
-                } else {
-                    delta_line = start_pos.line.saturating_sub(prev_line);
-                    delta_start = start_pos.character;
-                }
-
-                prev_line = start_pos.line;
-                prev_start = start_pos.character;
-
-                tokens.push(SemanticToken {
-                    delta_line,
-                    delta_start,
-                    length,
-                    token_type: SemanticTokenType::Comment.as_u32(),
-                    token_modifiers_bitset: 0,
-                });
+                push_semantic_token(&mut tokens, &mut prev_line, &mut prev_start, &mut first, start_pos, length, SemanticTokenType::Comment.as_u32());
             } else if tok_idx < toks_vec.len() {
                 let st = &toks_vec[tok_idx];
                 tok_idx += 1;
@@ -851,31 +855,7 @@ impl LanguageServer for Backend {
                     _ => continue,
                 };
 
-                let delta_line: u32;
-                let delta_start: u32;
-
-                if first {
-                    delta_line = start_pos.line;
-                    delta_start = start_pos.character;
-                    first = false;
-                } else if start_pos.line == prev_line {
-                    delta_line = 0;
-                    delta_start = start_pos.character.saturating_sub(prev_start);
-                } else {
-                    delta_line = start_pos.line.saturating_sub(prev_line);
-                    delta_start = start_pos.character;
-                }
-
-                prev_line = start_pos.line;
-                prev_start = start_pos.character;
-
-                tokens.push(SemanticToken {
-                    delta_line,
-                    delta_start,
-                    length,
-                    token_type,
-                    token_modifiers_bitset: 0,
-                });
+                push_semantic_token(&mut tokens, &mut prev_line, &mut prev_start, &mut first, start_pos, length, token_type);
             } else {
                 break;
             }
@@ -907,22 +887,23 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let state = state_arc.read();
-        let byte_offset = crate::text::position_to_offset(&state.text, pos);
+        let def_info = {
+            let state = state_arc.read();
+            let byte_offset = crate::text::position_to_offset(&state.text, pos);
+            if state.offset_in_comment(byte_offset) {
+                None
+            } else {
+                state.get_entity_at_offset(byte_offset).and_then(|entity| {
+                    state.get_definition_location(entity).map(|(dp, ds, _)| (dp, ds))
+                })
+            }
+        };
 
-        if state.offset_in_comment(byte_offset) {
+        if def_info.is_none() {
             return Ok(None);
         }
 
         let mut links: Vec<LocationLink> = Vec::new();
-
-        let mut def_info = None;
-        let entity = state.get_entity_at_offset(byte_offset);
-        if let Some(entity) = entity {
-            if let Some((def_path, def_span, _)) = state.get_definition_location(entity) {
-                def_info = Some((def_path, def_span));
-            }
-        }
 
         if let Some((def_path, def_span)) = def_info {
             let target_uri = match Url::from_file_path(&def_path) {
@@ -932,13 +913,17 @@ impl LanguageServer for Backend {
 
             // We need the text of the target file to convert span to position
             let target_text = if def_path == uri.path() {
+                let state = state_arc.read();
                 Some(Arc::clone(&state.text))
             } else {
                 let target_uri_str = target_uri.to_string();
-                self.doc_cache
+                let from_cache = self.doc_cache
                     .get_text(&target_uri_str)
-                    .or_else(|| self.docs.read().get(&target_uri_str).map(Arc::clone))
-                    .or_else(|| std::fs::read_to_string(&def_path).ok().map(Arc::new))
+                    .or_else(|| self.docs.read().get(&target_uri_str).map(Arc::clone));
+                match from_cache {
+                    Some(t) => Some(t),
+                    None => tokio::fs::read_to_string(&def_path).await.ok().map(Arc::new),
+                }
             };
 
             if let Some(t_text) = target_text {

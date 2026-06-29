@@ -17,10 +17,74 @@
 //! Overlapping/redundant `TextEdit` ranges within each file are removed with
 //! [`crate::text::deduplicate_range_indices`] before the `WorkspaceEdit` is assembled.
 
-use crate::state::{DocumentCache, SemanticEntity};
+use crate::state::{DocumentCache, DocumentState, SemanticEntity};
 use crate::text::{offset_to_position, position_to_offset};
+use chrn_utils::id_types::SymbolId;
+use chrn_utils::source_map::source_span::SourceSpan;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tower_lsp::lsp_types::{Position, Range, TextEdit, Url, WorkspaceEdit};
+
+/// Collects all occurrences of a local binding in the current file.
+fn collect_local_edits(
+    state: &DocumentState,
+    def_span: &SourceSpan,
+    def_owner_sym_id: Option<SymbolId>,
+    new_name: &str,
+) -> Vec<TextEdit> {
+    let mut edits = Vec::new();
+    for (span, ent) in &state.symbol_map {
+        if let SemanticEntity::Local {
+            decl_span,
+            owner_sym_id,
+            ..
+        } = ent
+        {
+            if *decl_span == *def_span && *owner_sym_id == def_owner_sym_id {
+                edits.push(TextEdit {
+                    range: Range {
+                        start: offset_to_position(&state.text, span.start as usize),
+                        end: offset_to_position(&state.text, (span.end + 1) as usize),
+                    },
+                    new_text: new_name.to_string(),
+                });
+            }
+        }
+    }
+    edits
+}
+
+/// Converts raw matching-entity tuples into a per-URI map of deduplicated text edits.
+fn matching_entities_to_edits(
+    entities: Vec<(String, Arc<String>, u32, u32)>,
+    new_name: &str,
+) -> HashMap<Url, Vec<TextEdit>> {
+    let mut by_uri: HashMap<String, Vec<Range>> = HashMap::new();
+    let mut text_map: HashMap<String, Arc<String>> = HashMap::new();
+    for (state_uri, text, start, end) in &entities {
+        let range = Range {
+            start: offset_to_position(text, *start as usize),
+            end: offset_to_position(text, (*end + 1) as usize),
+        };
+        by_uri.entry(state_uri.clone()).or_default().push(range);
+        text_map.entry(state_uri.clone()).or_insert_with(|| Arc::clone(text));
+    }
+
+    let mut changes = HashMap::new();
+    for (state_uri, ranges) in by_uri {
+        if let Ok(uri) = Url::parse(&state_uri) {
+            let mut edits = Vec::new();
+            for &i in &crate::text::deduplicate_range_indices(&ranges) {
+                edits.push(TextEdit {
+                    range: ranges[i],
+                    new_text: new_name.to_string(),
+                });
+            }
+            changes.insert(uri, edits);
+        }
+    }
+    changes
+}
 
 /// Computes the workspace edits required to rename the symbol at `position`.
 ///
@@ -60,72 +124,17 @@ pub fn compute_rename(
     let (def_path, def_span, def_owner_sym_id) = state.get_definition_location(entity)?;
     let is_local = matches!(entity, SemanticEntity::Local { .. });
 
-    let mut changes = HashMap::new();
-
-    if is_local {
-        // Optimization: for locals, we only need to look at the current file
-        let mut edits = Vec::new();
-        for (span, ent) in &state.symbol_map {
-            if let SemanticEntity::Local {
-                decl_span,
-                owner_sym_id,
-                ..
-            } = ent
-            {
-                if *decl_span == def_span && *owner_sym_id == def_owner_sym_id {
-                    edits.push(TextEdit {
-                        range: Range {
-                            start: offset_to_position(&state.text, span.start as usize),
-                            end: offset_to_position(&state.text, (span.end + 1) as usize),
-                        },
-                        new_text: new_name.clone(),
-                    });
-                }
-            }
-        }
-        if !edits.is_empty() {
-            changes.insert(uri.clone(), edits);
+    let changes = if is_local {
+            let edits = collect_local_edits(&state, &def_span, def_owner_sym_id, &new_name);
+        if edits.is_empty() {
+            HashMap::new()
+        } else {
+            [(uri.clone(), edits)].into_iter().collect()
         }
     } else {
-        // Cross-module rename: search all cached documents
-        doc_cache.for_each_state(|state_uri, other_state_arc| {
-            let other_state = other_state_arc.read();
-            let mut file_edits: Vec<(Range, String)> = Vec::new();
-
-            for (span, ent) in &other_state.symbol_map {
-                if let Some((other_def_path, other_def_span, other_def_owner_sym_id)) =
-                    other_state.get_definition_location(ent)
-                {
-                    if other_def_path == def_path
-                        && other_def_span == def_span
-                        && other_def_owner_sym_id == def_owner_sym_id
-                    {
-                        let range = Range {
-                            start: offset_to_position(&other_state.text, span.start as usize),
-                            end: offset_to_position(&other_state.text, (span.end + 1) as usize),
-                        };
-                        file_edits.push((range, new_name.clone()));
-                    }
-                }
-            }
-
-            if !file_edits.is_empty() {
-                let ranges: Vec<Range> = file_edits.iter().map(|(r, _)| *r).collect();
-                let mut final_edits = Vec::new();
-                for &i in &crate::text::deduplicate_range_indices(&ranges) {
-                    let (range, text) = &file_edits[i];
-                    final_edits.push(TextEdit {
-                        range: *range,
-                        new_text: text.clone(),
-                    });
-                }
-
-                if let Ok(u) = Url::parse(state_uri) {
-                    changes.insert(u, final_edits);
-                }
-            }
-        });
-    }
+        let entities = DocumentState::find_matching_entities(doc_cache, &def_path, def_span, def_owner_sym_id);
+        matching_entities_to_edits(entities, &new_name)
+    };
 
     if changes.is_empty() {
         return None;

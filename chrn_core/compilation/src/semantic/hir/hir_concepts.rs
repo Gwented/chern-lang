@@ -9,7 +9,6 @@ use chrn_utils::{
     source_map::source_span::SourceSpan,
 };
 use lang::{
-    directives::Directive,
     fmter::{Formattable, Formatted},
     types::{builtins::BuiltinType, type_constraints::TypeConstraintFlags},
 };
@@ -28,6 +27,15 @@ use chrn_utils::id_types::{AstId, ConfigId, DirectiveId, InternedId, SymbolId, V
 pub enum SymbolOrigin {
     Module(ModuleId),
     Compiler,
+}
+
+impl SymbolOrigin {
+    pub fn try_as_module(&self) -> Option<ModuleId> {
+        match self {
+            SymbolOrigin::Module(mod_id) => Some(*mod_id),
+            SymbolOrigin::Compiler => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -138,6 +146,14 @@ pub enum Type {
 }
 
 impl Type {
+    //TEST:
+    pub fn try_as_struct(&self) -> Option<&StructDef> {
+        match self {
+            Type::Struct(struct_def) => Some(struct_def),
+            _ => None,
+        }
+    }
+
     /// The env can't be passed into to_fmt so
     pub fn to_fmt(compiler: &ScriptCompiler, type_id: TypeId) -> Formatted {
         match &compiler.types[type_id.id as usize].ty {

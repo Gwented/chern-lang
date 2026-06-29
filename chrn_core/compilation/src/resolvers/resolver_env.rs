@@ -7,20 +7,21 @@ use crate::parser::ast::ast_concepts::AstInfo;
 ///
 /// This exists so that there is an explicit structure displaying what is and isn't swapped out.
 pub struct ResolverEnv<'a> {
-    pub(super) ast_info: &'a AstInfo,
-    pub(super) region: &'a SourceRegion,
-    pub(super) current_mod: ModuleId,
+    // Should be ids
+    pub(crate) ast_info: &'a AstInfo,
+    pub(crate) region_id: &'a SourceRegion,
+    pub(crate) current_mod: ModuleId,
 }
 
 impl ResolverEnv<'_> {
     pub fn new<'a>(
         ast_info: &'a AstInfo,
-        current_region: &'a SourceRegion,
+        region_id: &'a SourceRegion,
         current_mod: ModuleId,
     ) -> ResolverEnv<'a> {
         ResolverEnv {
             ast_info,
-            region: current_region,
+            region_id,
             current_mod,
         }
     }

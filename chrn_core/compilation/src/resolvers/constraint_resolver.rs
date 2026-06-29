@@ -160,7 +160,7 @@ impl<'a> ConstraintResolver<'a> {
                     let src_diag = SourceDiagnostic::basic(
                         DiagnosticLevel::Error,
                         core_msg,
-                        env.region.path_id,
+                        env.region_id.path_id,
                         *ast_span,
                     );
                     // semantic_reporter::report_semantic(
@@ -187,7 +187,7 @@ impl<'a> ConstraintResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         err,
-                        env.region,
+                        env.region_id,
                         self.settings,
                         self.interner,
                     );
@@ -208,7 +208,7 @@ impl<'a> ConstraintResolver<'a> {
                         preset_reporter::report_preset(
                             &mut self.err_vec,
                             preset_err,
-                            env.region,
+                            env.region_id,
                             self.settings,
                             self.interner,
                         );
@@ -230,7 +230,7 @@ impl<'a> ConstraintResolver<'a> {
                 preset_reporter::report_preset(
                     &mut self.err_vec,
                     preset_err,
-                    env.region,
+                    env.region_id,
                     self.settings,
                     self.interner,
                 );
@@ -385,7 +385,7 @@ impl<'a> ConstraintResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         err,
-                        env.region,
+                        env.region_id,
                         self.settings,
                         self.interner,
                     );
@@ -566,7 +566,7 @@ impl<'a> ConstraintResolver<'a> {
                         preset_reporter::report_preset(
                             &mut self.err_vec,
                             err,
-                            env.region,
+                            env.region_id,
                             self.settings,
                             self.interner,
                         );
@@ -586,7 +586,7 @@ impl<'a> ConstraintResolver<'a> {
                         preset_reporter::report_preset(
                             &mut self.err_vec,
                             err,
-                            env.region,
+                            env.region_id,
                             self.settings,
                             self.interner,
                         );
@@ -613,7 +613,7 @@ impl<'a> ConstraintResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region,
+                        env.region_id,
                         self.settings,
                         self.interner,
                     );
@@ -640,7 +640,7 @@ impl<'a> ConstraintResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region,
+                        env.region_id,
                         self.settings,
                         self.interner,
                     );
@@ -672,7 +672,7 @@ impl<'a> ConstraintResolver<'a> {
             let variant = self.compiler.get_variant(*member_id);
             if let Some(inner_id) = variant.type_id {
                 let ty_span = abs_enum.variants[i]
-                    .ty_expr
+                    .sp_ty_expr
                     .as_ref()
                     .expect("Already checked")
                     .span;
@@ -683,7 +683,7 @@ impl<'a> ConstraintResolver<'a> {
                             preset_reporter::report_preset(
                                 &mut self.err_vec,
                                 err,
-                                env.region,
+                                env.region_id,
                                 self.settings,
                                 self.interner,
                             );
@@ -698,7 +698,7 @@ impl<'a> ConstraintResolver<'a> {
             let variant = self.compiler.get_variant(*member_id);
             if let Some(inner_id) = variant.type_id {
                 let ty_span = abs_enum.variants[i]
-                    .ty_expr
+                    .sp_ty_expr
                     .as_ref()
                     .expect("Already checked")
                     .span;
@@ -709,7 +709,7 @@ impl<'a> ConstraintResolver<'a> {
                             preset_reporter::report_preset(
                                 &mut self.err_vec,
                                 err,
-                                env.region,
+                                env.region_id,
                                 self.settings,
                                 self.interner,
                             );
@@ -724,7 +724,7 @@ impl<'a> ConstraintResolver<'a> {
             let variant = self.compiler.get_variant(*member_id);
             if let Some(inner_id) = variant.type_id {
                 let ty_span = abs_enum.variants[i]
-                    .ty_expr
+                    .sp_ty_expr
                     .as_ref()
                     .expect("Just checked")
                     .span;
@@ -742,7 +742,7 @@ impl<'a> ConstraintResolver<'a> {
                         preset_reporter::report_preset(
                             &mut self.err_vec,
                             preset_err,
-                            env.region,
+                            env.region_id,
                             self.settings,
                             self.interner,
                         );
@@ -756,7 +756,7 @@ impl<'a> ConstraintResolver<'a> {
             let variant = self.compiler.get_variant(*member_id);
             if let Some(inner_id) = variant.type_id {
                 let abs_variant = &abs_enum.variants[i];
-                let variant_ty_span = abs_variant.ty_expr.as_ref().expect("Just checked").span;
+                let variant_ty_span = abs_variant.sp_ty_expr.as_ref().expect("Just checked").span;
 
                 for sp_directive in &variant.directives {
                     let directive = &self.compiler.directives[sp_directive.inner.id as usize];
@@ -771,7 +771,7 @@ impl<'a> ConstraintResolver<'a> {
                         preset_reporter::report_preset(
                             &mut self.err_vec,
                             preset_err,
-                            env.region,
+                            env.region_id,
                             self.settings,
                             self.interner,
                         );
@@ -1213,7 +1213,7 @@ impl<'a> ConstraintResolver<'a> {
                 let src_diag = SourceDiagnostic::basic_builder(
                     DiagnosticLevel::Error,
                     core_msg,
-                    env.region.path_id,
+                    env.region_id.path_id,
                     active_span,
                 );
                 Err(PresetErr::General(src_diag))

@@ -1,4 +1,7 @@
-use chrn_utils::{id_types::InternedId, source_map::source_span::SourceSpan};
+use chrn_utils::{
+    id_types::{InternedId, SpannedContainer},
+    source_map::source_span::SourceSpan,
+};
 
 use crate::{
     parser::ast::ast_concepts::{AbstractMemberAccess, BinaryOp, Unary},
@@ -69,17 +72,17 @@ impl ArrayExpr {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct SpannedTypeExpr {
-    pub ty_expr: TypeExpr,
-    pub span: SourceSpan,
-}
-
-impl SpannedTypeExpr {
-    pub fn new(ty_expr: TypeExpr, span: SourceSpan) -> SpannedTypeExpr {
-        SpannedTypeExpr { ty_expr, span }
-    }
-}
+// #[derive(Debug, Clone)]
+// pub struct SpannedTypeExpr {
+//     pub ty_expr: TypeExpr,
+//     pub span: SourceSpan,
+// }
+//
+// impl SpannedTypeExpr {
+//     pub fn new(ty_expr: TypeExpr, span: SourceSpan) -> SpannedTypeExpr {
+//         SpannedTypeExpr { ty_expr, span }
+//     }
+// }
 
 #[derive(Debug, Clone)]
 pub enum TypeExpr {
@@ -106,15 +109,24 @@ pub enum PathSegment {
     Generic(Generic),
 }
 
+// impl PathSegment {
+//     pub fn as_type_expr_ref(&self) -> TypeExpr {
+//         match self {
+//             PathSegment::Ident(interned_id) => &TypeExpr::Var(*interned_id),
+//             PathSegment::Generic(generic) => TypeExpr::Generic(&generic),
+//         }
+//     }
+// }
+
 #[derive(Debug, Clone)]
 pub struct Generic {
     pub base: InternedId,
     // Change to tuple or something alike since max 2?
-    pub args: Vec<SpannedTypeExpr>,
+    pub inputs: Vec<SpannedContainer<TypeExpr>>,
 }
 
 impl Generic {
-    pub fn new(base: InternedId, args: Vec<SpannedTypeExpr>) -> Generic {
-        Generic { base, args }
+    pub fn new(base: InternedId, inputs: Vec<SpannedContainer<TypeExpr>>) -> Generic {
+        Generic { base, inputs }
     }
 }

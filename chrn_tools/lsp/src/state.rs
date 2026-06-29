@@ -10,13 +10,15 @@
 //!
 //! ```text
 //! DocumentState::ensure_analyzed
-//!     ├─ ModuleFinder::collect_imports     — discover @import statements
-//!     ├─ analyser::resolve_modules_lsp     — load & recurse into imported files
-//!     ├─ ScriptCompiler::init              — initialise HIR structures
-//!     ├─ parser::parse (per module)        — build AST
-//!     ├─ NamespaceResolver::resolve        — symbol registration
-//!     ├─ TypeResolver::resolve             — type inference & checking
-//!     └─ build_symbol_map                  — populate the span → entity index
+//!     ├─ ModuleFinder::collect_imports        — discover @import statements
+//!     ├─ analyser::resolve_modules_lsp        — load & recurse into imported files
+//!     ├─ ScriptCompiler::init                 — initialise HIR structures
+//!     ├─ parser::parse (per module)           — build AST
+//!     ├─ NamespaceResolver::resolve           — symbol registration
+//!     ├─ MemberResolver::resolve              — field/variant resolution
+//!     ├─ TypeResolver::resolve                — type inference & checking
+//!     ├─ ConstraintResolver::resolve          — constraint checking
+//!     └─ build_symbol_map                     — populate the span → entity index
 //! ```
 //!
 //! ## [`SemanticEntity`]
@@ -40,6 +42,7 @@ use compilation::modules::Module;
 use compilation::parser::ast::ast_exprs::PathSegment;
 use compilation::parser::ast::ast_exprs::TypeExpr;
 use compilation::resolvers::constraint_resolver::ConstraintResolver;
+use compilation::resolvers::member_resolver::MemberResolver;
 use compilation::resolvers::name_resolver::NamespaceResolver;
 use compilation::resolvers::resolver_env::ResolverEnv;
 use compilation::resolvers::type_resolver::TypeResolver;
@@ -54,15 +57,16 @@ use compilation::token::SpannedToken;
 use compilation::token::Token as ScriptToken;
 use lang::trivia::Trivia;
 use parking_lot::RwLock;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 use std::sync::Arc;
 
 use crate::analyser;
 
 use chrn_utils::chrn_settings::ChrnSettings;
-use chrn_utils::id_types::{InternedId, ModuleId, PathId, SourceRegionId, SymbolId, TypeId};
+use chrn_utils::id_types::{
+    InternedId, ModuleId, PathId, SourceRegionId, SpannedContainer, SymbolId, TypeId,
+};
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
 use chrn_utils::source_map::source_region::{SourceRegion, SourceRegionArena};
@@ -111,7 +115,7 @@ pub enum SemanticEntity {
 ///   async suspension points if possible.
 /// * `compiler`, `asts`, and `symbol_map` are all `None` / empty until
 ///   `ensure_analyzed` completes.
-/// * Error fields (`config_errors`, `parse_errors`, `ns_errors`, `ty_errors`) hold
+/// * Error fields (`config_errors`, `parse_errors`, `ns_errors`, `member_errors`, `ty_errors`, `cn_errors`) hold
 ///   the diagnostics produced by each analysis stage; `None` means that stage either
 ///   did not run or produced no errors.
 pub struct DocumentState {
@@ -139,6 +143,8 @@ pub struct DocumentState {
     pub parse_errors: Option<Vec<SourceDiagnostic>>,
     /// Diagnostics from namespace resolution.
     pub ns_errors: Option<Vec<SourceDiagnostic>>,
+    /// Diagnostics from member (field/variant) resolution.
+    pub member_errors: Option<Vec<SourceDiagnostic>>,
     /// Diagnostics from type resolution.
     pub ty_errors: Option<Vec<SourceDiagnostic>>,
     /// Diagnostics from constraint resolution.
@@ -181,6 +187,7 @@ impl DocumentState {
             config_errors: None,
             parse_errors: None,
             ns_errors: None,
+            member_errors: None,
             ty_errors: None,
             cn_errors: None,
             symbol_map: Vec::new(),
@@ -318,7 +325,7 @@ impl DocumentState {
                 compilation::parser::parse(&settings, region, &toks, &self.interner)
             };
 
-            let (ast_info, mut errs) = parse_result;
+            let (ast_info, errs) = parse_result;
             let parse_errors = if errs.is_empty() { None } else { Some(errs) };
 
             if mod_idx == 0 {
@@ -364,42 +371,10 @@ impl DocumentState {
             }
         }
 
-        if self.parse_errors.is_none() {
-            let mut main_expr_range = 0..0;
-            for mod_idx in 0..compiler.mods.len() {
-                let ast_info = match &all_asts[mod_idx] {
-                    Some(a) => a,
-                    None => continue,
-                };
-
-                let src_region_id = match compiler.mods[mod_idx].region_id {
-                    Some(rid) => rid,
-                    None => continue,
-                };
-                let region = match self.region_arena.get_region(src_region_id) {
-                    Some(r) => r,
-                    None => continue,
-                };
-
-                let expr_start = compiler.exprs.len();
-                let mut type_resolver = TypeResolver::new(&settings, &self.interner, &mut compiler);
-
-                let env = ResolverEnv::new(ast_info, region, ModuleId::new(mod_idx));
-
-                if let Err(ty_diags) = type_resolver.resolve(&env) {
-                    if mod_idx == 0 {
-                        self.ty_errors = Some(ty_diags);
-                    }
-                }
-                let expr_end = compiler.exprs.len();
-                if mod_idx == 0 {
-                    main_expr_range = expr_start..expr_end;
-                }
-            }
-
-            self.main_expr_range = main_expr_range;
-
-            // Build resolver environments for constraint resolution
+        // Build resolver environments then run member, type, and constraint resolution.
+        // This block ensures resolver_envs (which borrows all_asts) is dropped before
+        // all_asts is moved into self.asts below.
+        {
             let mod_len = compiler.mods.len();
             let mut resolver_envs = Vec::with_capacity(mod_len);
             for mod_idx in 0..mod_len {
@@ -431,19 +406,53 @@ impl DocumentState {
                 )));
             }
 
-            // Constraint resolution for all modules
-            let mut constraint_resolver =
-                ConstraintResolver::new(&settings, &self.interner, &mut compiler);
+            // Member resolution (fields/variants) for all modules
+            let member_diags =
+                MemberResolver::new(&settings, &resolver_envs, &self.interner, &mut compiler)
+                    .resolve();
+            if !member_diags.is_empty() {
+                self.member_errors = Some(member_diags);
+            }
 
-            for mod_idx in 0..mod_len {
-                let env = match &resolver_envs[mod_idx] {
-                    Some(env) => env,
-                    None => continue,
-                };
+            if self.parse_errors.is_none() {
+                let mut main_expr_range = 0..0;
+                for mod_idx in 0..mod_len {
+                    let env = match &resolver_envs[mod_idx] {
+                        Some(e) => e,
+                        None => continue,
+                    };
 
-                if let Err(cn_diags) = constraint_resolver.resolve(env) {
+                    let expr_start = compiler.exprs.len();
+                    let mut type_resolver =
+                        TypeResolver::new(&settings, &self.interner, &mut compiler);
+
+                    if let Err(ty_diags) = type_resolver.resolve(env) {
+                        if mod_idx == 0 {
+                            self.ty_errors = Some(ty_diags);
+                        }
+                    }
+                    let expr_end = compiler.exprs.len();
                     if mod_idx == 0 {
-                        self.cn_errors = Some(cn_diags);
+                        main_expr_range = expr_start..expr_end;
+                    }
+                }
+
+                self.main_expr_range = main_expr_range;
+
+                // Constraint resolution for all modules
+                let mut constraint_resolver =
+                    ConstraintResolver::new(&settings, &self.interner, &mut compiler);
+
+                for mod_idx in 0..mod_len {
+                    let env = match &resolver_envs[mod_idx] {
+                        Some(env) => env,
+                        None => continue,
+                    };
+
+                    if let Err(cn_diags) = constraint_resolver.resolve(env) {
+                        if mod_idx == 0 {
+                            self.cn_errors = Some(cn_diags);
+                        }
                     }
                 }
             }
@@ -468,13 +477,13 @@ impl DocumentState {
         // Helper to collect type references from AST
         fn collect_type_refs(
             compiler: &ScriptCompiler,
-            type_expr: &compilation::parser::ast::ast_exprs::SpannedTypeExpr,
+            type_expr: &SpannedContainer<TypeExpr>,
             map: &mut Vec<(SourceSpan, SemanticEntity)>,
         ) {
-            match &type_expr.ty_expr {
+            match &type_expr.inner {
                 TypeExpr::Var(name_id) => {
                     let interned = *name_id;
-                    if let Some((sym_id, _)) = scopes::find_sym_id(
+                    if let Some(scopes::SymbolLookupOutput { found_sym_id: sym_id, .. }) = scopes::find_sym_id(
                         compiler,
                         AssociatedScopeKind::Module(ModuleId::new(0)),
                         interned,
@@ -482,7 +491,7 @@ impl DocumentState {
                         LookupPattern::NoRestrictions,
                     ) {
                         map.push((type_expr.span, SemanticEntity::Symbol(sym_id)));
-                    } else if let Some((sym_id, _)) = scopes::find_sym_id(
+                    } else if let Some(scopes::SymbolLookupOutput { found_sym_id: sym_id, .. }) = scopes::find_sym_id(
                         compiler,
                         AssociatedScopeKind::Module(ModuleId::new(0)),
                         interned,
@@ -505,22 +514,22 @@ impl DocumentState {
                                     SemanticEntity::Module(found_mod.mod_id),
                                 ));
                                 if let PathSegment::Ident(sym_name_id) = sym_name_part.kind {
-                                    if let Some((sym_id, _)) = scopes::find_sym_id(
+                                if let Some(scopes::SymbolLookupOutput { found_sym_id: sym_id, .. }) = scopes::find_sym_id(
+                                    compiler,
+                                    AssociatedScopeKind::Module(found_mod.mod_id),
+                                    sym_name_id,
+                                    ScopeType::Neutral,
+                                    LookupPattern::NamespaceOnly,
+                                )
+                                .or_else(|| {
+                                    scopes::find_sym_id(
                                         compiler,
                                         AssociatedScopeKind::Module(found_mod.mod_id),
                                         sym_name_id,
-                                        ScopeType::Neutral,
+                                        ScopeType::Var,
                                         LookupPattern::NamespaceOnly,
                                     )
-                                    .or_else(|| {
-                                        scopes::find_sym_id(
-                                            compiler,
-                                            AssociatedScopeKind::Module(found_mod.mod_id),
-                                            sym_name_id,
-                                            ScopeType::Var,
-                                            LookupPattern::NamespaceOnly,
-                                        )
-                                    }) {
+                                }) {
                                         map.push((
                                             sym_name_part.span,
                                             SemanticEntity::Symbol(sym_id),
@@ -533,14 +542,14 @@ impl DocumentState {
                     }
                     for part in path {
                         if let PathSegment::Generic(generic) = &part.kind {
-                            for arg in &generic.args {
+                            for arg in &generic.inputs {
                                 collect_type_refs(compiler, arg, map);
                             }
                         }
                     }
                 }
                 TypeExpr::Generic(generic) => {
-                    for arg in &generic.args {
+                    for arg in &generic.inputs {
                         collect_type_refs(compiler, arg, map);
                     }
                 }
@@ -589,7 +598,7 @@ impl DocumentState {
                                 }
                             }
 
-                            if let Some((sym_id, _)) = scopes::find_sym_id(
+                            if let Some(scopes::SymbolLookupOutput { found_sym_id: sym_id, .. }) = scopes::find_sym_id(
                                 compiler,
                                 AssociatedScopeKind::Module(found_mod.mod_id),
                                 acc.field,
@@ -645,7 +654,7 @@ impl DocumentState {
                                 )
                             });
 
-                            if let Some((sid, _)) = sym_id {
+                            if let Some(scopes::SymbolLookupOutput { found_sym_id: sid, .. }) = sym_id {
                                 if let Some(sym) = compiler.symbols.get(sid.id as usize) {
                                     let mut current_mod: Option<ModuleId> = None;
                                     let mut current_ty: Option<TypeId> = None;
@@ -688,7 +697,7 @@ impl DocumentState {
                                         for seg in &segments[1..] {
                                             if let PathSegment::Ident(seg_name_id) = seg.kind {
                                                 if let Some(mod_id) = current_mod {
-                                                    if let Some((sym_id, _)) = scopes::find_sym_id(
+                                                    if let Some(scopes::SymbolLookupOutput { found_sym_id: sym_id, .. }) = scopes::find_sym_id(
                                                         compiler,
                                                         AssociatedScopeKind::Module(mod_id),
                                                         seg_name_id,
@@ -990,7 +999,7 @@ impl DocumentState {
                             collect_expr_refs(compiler, cond, &mut map, &self.text, &self.interner);
                         }
                         for variant in &e.variants {
-                            if let Some(ty) = &variant.ty_expr {
+                            if let Some(ty) = &variant.sp_ty_expr {
                                 collect_type_refs(compiler, ty, &mut map);
                             }
                             for cond in &variant.conds {
@@ -1069,6 +1078,7 @@ impl DocumentState {
     /// | Config / import | `"chrn-config"`     |
     /// | Parser          | `"chrn-parser"`     |
     /// | Namespace       | `"chrn-namespace"`  |
+    /// | Member          | `"chrn-member"`     |
     /// | Type checker    | `"chrn-type"`       |
     pub fn get_lsp_diagnostics(&self) -> Vec<tower_lsp::lsp_types::Diagnostic> {
         let mut lsp_diags = Vec::new();
@@ -1088,6 +1098,9 @@ impl DocumentState {
                 &self.text,
                 "chrn-namespace",
             );
+        }
+        if let Some(diags) = &self.member_errors {
+            analyser::push_diagnostics(&mut lsp_diags, diags, doc_len, &self.text, "chrn-member");
         }
         if let Some(diags) = &self.ty_errors {
             analyser::push_diagnostics(&mut lsp_diags, diags, doc_len, &self.text, "chrn-type");
@@ -1248,6 +1261,43 @@ impl DocumentState {
     /// Check if a given byte offset falls within a comment (single or multi).
     /// Uses binary search for O(log n) performance.
     /// Also checks for single-line comments by looking for // before the cursor on the current line.
+    /// Finds all symbol-map entries across every cached document that share the same
+    /// definition key `(def_path, def_span, def_owner_sym_id)`.  Used by references
+    /// and rename to implement cross-module search without duplicating the iteration
+    /// logic.
+    ///
+    /// Returns `(state_uri, text_arc, span_start, span_end)` tuples so callers can
+    /// convert byte offsets to LSP positions without re‑acquiring the document state.
+    pub fn find_matching_entities(
+        doc_cache: &DocumentCache,
+        def_path: &str,
+        def_span: SourceSpan,
+        def_owner_sym_id: Option<SymbolId>,
+    ) -> Vec<(String, Arc<String>, u32, u32)> {
+        let mut results = Vec::new();
+        doc_cache.for_each_state(|state_uri, state_arc| {
+            let state = state_arc.read();
+            for (span, ent) in &state.symbol_map {
+                if let Some((other_def_path, other_def_span, other_def_owner_sym_id)) =
+                    state.get_definition_location(ent)
+                {
+                    if other_def_path == def_path
+                        && other_def_span == def_span
+                        && other_def_owner_sym_id == def_owner_sym_id
+                    {
+                        results.push((
+                            state_uri.to_string(),
+                            Arc::clone(&state.text),
+                            span.start,
+                            span.end,
+                        ));
+                    }
+                }
+            }
+        });
+        results
+    }
+
     pub fn offset_in_comment(&self, byte_offset: usize) -> bool {
         let idx = self
             .trivia
@@ -1475,15 +1525,16 @@ impl DocumentCache {
     /// Invalidate a document and all transitive dependents (BFS).
     pub fn invalidate(&self, uri: &str) {
         let mut cache = self.inner.write();
-        let mut worklist = vec![uri.to_string()];
+        let mut worklist = VecDeque::new();
+        worklist.push_back(uri.to_string());
 
-        while let Some(current) = worklist.pop() {
+        while let Some(current) = worklist.pop_front() {
             cache.docs.remove(&current);
 
             if let Some(deps) = cache.dependents.get(&current) {
                 for dep in deps {
                     if cache.docs.contains_key(dep.as_str()) {
-                        worklist.push(dep.to_string());
+                        worklist.push_back(dep.to_string());
                     }
                 }
             }

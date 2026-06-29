@@ -61,25 +61,7 @@ use crate::state::DocumentCache;
 
 const MAX_DIAGS_CACHE_SIZE: usize = 100;
 
-/// An [`std::io::Read`] adapter that reads from an `Arc<String>` without copying.
-///
-/// Used when an already-opened document is available in the [`DocumentCache`](crate::state::DocumentCache)
-/// so that the import resolver can pass the in-memory source through the same
-/// `ChrnConfigLoader` API that normally takes a file handle.
-struct ArcReader {
-    data: Arc<String>,
-    pos: usize,
-}
 
-impl std::io::Read for ArcReader {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let remaining = &self.data.as_bytes()[self.pos..];
-        let n = std::cmp::min(buf.len(), remaining.len());
-        buf[..n].copy_from_slice(&remaining[..n]);
-        self.pos += n;
-        Ok(n)
-    }
-}
 
 /// Evicts entries from the diagnostics cache if it has reached [`MAX_DIAGS_CACHE_SIZE`].
 ///
@@ -571,7 +553,7 @@ pub(crate) fn resolve_modules_lsp(
         let uri = Url::from_file_path(path).unwrap();
         let source_res: Result<Box<dyn std::io::Read + Send>, ConfigLoadError> =
             if let Some(text) = doc_cache.get_text(&uri.to_string()) {
-                Ok(Box::new(ArcReader { data: text, pos: 0 }))
+                Ok(Box::new(Cursor::new(text.as_bytes().to_vec())))
             } else {
                 // Fallback to disk
                 match std::fs::File::open(path) {

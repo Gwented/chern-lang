@@ -109,7 +109,7 @@ mod tests {
         let cache = DocumentCache::new(2);
         let uri1 = "file:///test1.chrn";
         let text1 = Arc::new("let x = 1".to_string());
-        
+
         let state1 = cache.get_or_create(uri1, text1.clone(), 0, None, 1);
         assert_eq!(state1.read().version, 1);
 
@@ -126,7 +126,10 @@ mod tests {
         cache.get_or_create(uri3, text3, 0, None, 1);
 
         assert!(cache.get(uri1).is_some(), "uri1 should be kept due to LRU");
-        assert!(cache.get(uri2).is_none(), "uri2 should be evicted due to LRU");
+        assert!(
+            cache.get(uri2).is_none(),
+            "uri2 should be evicted due to LRU"
+        );
         assert!(cache.get(uri3).is_some(), "uri3 should be present");
     }
 
@@ -138,19 +141,26 @@ mod tests {
         let text = Arc::new("let foo = 123;".to_string());
         let state = cache.get_or_create(uri, text, 0, None, 1);
         let read_state = state.read();
-        
+
         // Check finding token within a word
-        let token = read_state.get_token_at_offset(5).expect("Should find 'foo'");
+        let token = read_state
+            .get_token_at_offset(5)
+            .expect("Should find 'foo'");
         assert_eq!(token.span.start, 4);
         assert_eq!(token.span.end, 6);
-        
+
         // Check finding token at exact boundary
-        let token2 = read_state.get_token_at_offset(10).expect("Should find '123'");
+        let token2 = read_state
+            .get_token_at_offset(10)
+            .expect("Should find '123'");
         assert_eq!(token2.span.start, 10);
         assert_eq!(token2.span.end, 12);
-        
+
         // Space should return None
-        assert!(read_state.get_token_at_offset(3).is_none(), "Space should return None");
+        assert!(
+            read_state.get_token_at_offset(3).is_none(),
+            "Space should return None"
+        );
     }
 
     #[test]
@@ -172,8 +182,6 @@ mod tests {
         assert!(cache.get(uri_a).is_none());
     }
 
-    // IS THAT A CRAB
-    // ITS A CRAB
     #[test]
     fn test_utf16_positions() {
         // Emoji 🦀 is 4 bytes in UTF-8, but 2 code units in UTF-16 (surrogate pair)

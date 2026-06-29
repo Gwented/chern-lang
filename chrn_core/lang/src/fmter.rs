@@ -208,6 +208,7 @@ impl Display for Formatted {
             Formatted::Array => write!(f, "Array"),
             Formatted::In => write!(f, "in"),
             Formatted::TypeDef => write!(f, "typedef"),
+            // WARN: What
             Formatted::TypeConstraintMultiple => write!(f, "MultipleConstraints"),
             Formatted::CharacterMappable => write!(f, "CharacterMappable"),
             Formatted::HasLen => write!(f, "HasLen"),
@@ -218,8 +219,8 @@ impl Display for Formatted {
             Formatted::Ranged => write!(f, "Ranged"),
             Formatted::Comparable => write!(f, "Comparable"),
             Formatted::Ordered => write!(f, "Ordered"),
-            Formatted::Config => write!(f, "Config"),
-            Formatted::Variable => write!(f, "Variable"),
+            Formatted::Config => write!(f, "config"),
+            Formatted::Variable => write!(f, "variable"),
             Formatted::DirectiveWarn => write!(f, "warn"),
             Formatted::DirectiveIgnore => write!(f, "ignore"),
             Formatted::DirectiveScient => write!(f, "scient"),

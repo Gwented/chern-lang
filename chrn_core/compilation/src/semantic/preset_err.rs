@@ -28,6 +28,7 @@ use crate::{constraints::ArgConstraint, semantic::hir::hir_concepts::FuncKind};
 
 //TODO: Change this majorly. Make many mistakes. Hallucinate.
 // No
+// FIX: These should be structs depeneding on if the unnamed tuple is not clear enough
 #[derive(Debug)]
 pub enum PresetErr {
     /// Intended so that diagnostics can be made inline and still align with the same type
@@ -57,6 +58,8 @@ pub enum PresetErr {
     //TODO: Combine
     CircularDirective(
         SpannedContainer<Formatted>,
+        // Actual parent name
+        // SpannedContainer<InternedId>,
         SpannedContainer<Directive>,
         SourceSpan,
     ),

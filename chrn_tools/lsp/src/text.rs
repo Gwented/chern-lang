@@ -23,47 +23,25 @@ use tower_lsp::lsp_types::Position;
 use tower_lsp::lsp_types::Range;
 use tower_lsp::lsp_types::TextDocumentContentChangeEvent;
 
+fn is_word_char(c: u8) -> bool {
+    let c = c as char;
+    c.is_alphanumeric() || c == '_' || c == '#' || c == '@' || c == '<' || c == '>' || c == '-'
+}
+
 /// Extracts the word that contains position `idx` from `line`.
 ///
 /// Uses the extended word-character set (alphanumeric plus `_#@<>-`).
 /// `idx` is a **character** (byte) index into `line`; it is clamped to `line.len()`.
 pub fn extract_word_at(line: &str, idx: usize) -> String {
-    // idx is character index; clamp
     let idx = idx.min(line.len());
     let bytes = line.as_bytes();
-    // find start
     let mut start = idx;
-    while start > 0 {
-        let c = bytes[start - 1] as char;
-        if c.is_alphanumeric()
-            || c == '_'
-            || c == '#'
-            || c == '@'
-            || c == '<'
-            || c == '>'
-            || c == '-'
-        {
-            start -= 1;
-        } else {
-            break;
-        }
+    while start > 0 && is_word_char(bytes[start - 1]) {
+        start -= 1;
     }
-    // find end
     let mut end = idx;
-    while end < bytes.len() {
-        let c = bytes[end] as char;
-        if c.is_alphanumeric()
-            || c == '_'
-            || c == '#'
-            || c == '@'
-            || c == '<'
-            || c == '>'
-            || c == '-'
-        {
-            end += 1;
-        } else {
-            break;
-        }
+    while end < bytes.len() && is_word_char(bytes[end]) {
+        end += 1;
     }
 
     line[start..end].to_string()
@@ -153,38 +131,13 @@ pub fn find_word_bounds(text: &str, offset: usize) -> (usize, usize) {
         return (0, 0);
     }
     let mut start = offset.min(len);
-    // move start backward while previous char is word-like
-    while start > 0 {
-        let c = bytes[start - 1] as char;
-        if c.is_alphanumeric()
-            || c == '_'
-            || c == '#'
-            || c == '@'
-            || c == '<'
-            || c == '>'
-            || c == '-'
-        {
-            start -= 1;
-        } else {
-            break;
-        }
+    while start > 0 && is_word_char(bytes[start - 1]) {
+        start -= 1;
     }
 
     let mut end = offset.min(len);
-    while end < len {
-        let c = bytes[end] as char;
-        if c.is_alphanumeric()
-            || c == '_'
-            || c == '#'
-            || c == '@'
-            || c == '<'
-            || c == '>'
-            || c == '-'
-        {
-            end += 1;
-        } else {
-            break;
-        }
+    while end < len && is_word_char(bytes[end]) {
+        end += 1;
     }
 
     (start, end)

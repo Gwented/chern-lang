@@ -16,9 +16,69 @@
 //! After collecting all candidate [`Location`] values, overlapping/redundant ranges
 //! within each file are removed with [`crate::text::deduplicate_range_indices`].
 
-use crate::state::{DocumentCache, SemanticEntity};
+use crate::state::{DocumentCache, DocumentState, SemanticEntity};
 use crate::text::{offset_to_position, position_to_offset};
+use chrn_utils::id_types::SymbolId;
+use chrn_utils::source_map::source_span::SourceSpan;
+use std::sync::Arc;
 use tower_lsp::lsp_types::{Location, Position, Range, Url};
+
+/// Finds all symbol-map entries in the current file that share the same
+/// `(decl_span, owner_sym_id)` key — used for local bindings.
+fn collect_local_occurrences(
+    state: &DocumentState,
+    def_span: &SourceSpan,
+    def_owner_sym_id: Option<SymbolId>,
+    uri: &Url,
+) -> Vec<Location> {
+    let mut results = Vec::new();
+    for (span, ent) in &state.symbol_map {
+        if let SemanticEntity::Local {
+            decl_span,
+            owner_sym_id,
+            ..
+        } = ent
+        {
+            if *decl_span == *def_span && *owner_sym_id == def_owner_sym_id {
+                results.push(Location {
+                    uri: uri.clone(),
+                    range: Range {
+                        start: offset_to_position(&state.text, span.start as usize),
+                        end: offset_to_position(&state.text, (span.end + 1) as usize),
+                    },
+                });
+            }
+        }
+    }
+    results
+}
+
+/// Converts raw matching-entity tuples into deduplicated [`Location`] values.
+fn matching_entities_to_locations(
+    entities: Vec<(String, Arc<String>, u32, u32)>,
+) -> Vec<Location> {
+    let mut results = Vec::new();
+    // Group by URI to deduplicate per file
+    let mut by_uri: std::collections::HashMap<String, Vec<Range>> = std::collections::HashMap::new();
+    for (state_uri, text, start, end) in entities {
+        let range = Range {
+            start: offset_to_position(&text, start as usize),
+            end: offset_to_position(&text, (end + 1) as usize),
+        };
+        by_uri.entry(state_uri).or_default().push(range);
+    }
+    for (state_uri, ranges) in by_uri {
+        if let Ok(uri) = Url::parse(&state_uri) {
+            for &i in &crate::text::deduplicate_range_indices(&ranges) {
+                results.push(Location {
+                    uri: uri.clone(),
+                    range: ranges[i],
+                });
+            }
+        }
+    }
+    results
+}
 
 /// Computes the list of locations where the symbol at `position` is referenced.
 ///
@@ -56,63 +116,12 @@ pub fn compute_references(
     let (def_path, def_span, def_owner_sym_id) = state.get_definition_location(entity)?;
     let is_local = matches!(entity, SemanticEntity::Local { .. });
 
-    let mut locations = Vec::new();
-
-    if is_local {
-        // Optimization: for locals, we only need to look at the current file
-        for (span, ent) in &state.symbol_map {
-            if let SemanticEntity::Local {
-                decl_span,
-                owner_sym_id,
-                ..
-            } = ent
-            {
-                if *decl_span == def_span && *owner_sym_id == def_owner_sym_id {
-                    locations.push(Location {
-                        uri: uri.clone(),
-                        range: Range {
-                            start: offset_to_position(&state.text, span.start as usize),
-                            end: offset_to_position(&state.text, (span.end + 1) as usize),
-                        },
-                    });
-                }
-            }
-        }
+    let locations = if is_local {
+        collect_local_occurrences(&state, &def_span, def_owner_sym_id, uri)
     } else {
-        // Cross-module references: search all cached documents
-        doc_cache.for_each_state(|state_uri, other_state_arc| {
-            let other_state = other_state_arc.read();
-            let other_uri = match Url::parse(state_uri) {
-                Ok(u) => u,
-                Err(_) => return,
-            };
-
-            let mut file_locations = Vec::new();
-            for (span, ent) in &other_state.symbol_map {
-                if let Some((other_def_path, other_def_span, other_def_owner_sym_id)) =
-                    other_state.get_definition_location(ent)
-                {
-                    if other_def_path == def_path
-                        && other_def_span == def_span
-                        && other_def_owner_sym_id == def_owner_sym_id
-                    {
-                        file_locations.push(Location {
-                            uri: other_uri.clone(),
-                            range: Range {
-                                start: offset_to_position(&other_state.text, span.start as usize),
-                                end: offset_to_position(&other_state.text, (span.end + 1) as usize),
-                            },
-                        });
-                    }
-                }
-            }
-
-            let ranges: Vec<Range> = file_locations.iter().map(|l| l.range).collect();
-            for &i in &crate::text::deduplicate_range_indices(&ranges) {
-                locations.push(file_locations[i].clone());
-            }
-        });
-    }
+        let entities = DocumentState::find_matching_entities(doc_cache, &def_path, def_span, def_owner_sym_id);
+        matching_entities_to_locations(entities)
+    };
 
     if locations.is_empty() {
         return None;

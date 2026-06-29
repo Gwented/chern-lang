@@ -11,8 +11,7 @@ use crate::parser::ast::ast_concepts::{
 };
 
 use crate::parser::ast::ast_exprs::{
-    ArrayExpr, Expr, Generic, PathSegment, SpannedExpr, SpannedPathSegment, SpannedTypeExpr,
-    TypeExpr,
+    ArrayExpr, Expr, Generic, PathSegment, SpannedExpr, SpannedPathSegment, TypeExpr,
 };
 use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::ParserContext;
@@ -829,11 +828,14 @@ fn parse_expr(
 ) -> Result<SpannedExpr, Token> {
     let mut lhs = parse_unary(ctx, interner)?;
 
+    // I REFUSE TO BREAK APART TOKENS
     loop {
         // Use lookahead to detect << and >> as shift operators, avoiding conflict
         // with generic angle brackets in type contexts.
-        let is_lshift = ctx.peek_tok() == Token::OAngleBracket && ctx.peek_ahead(1).tok == Token::OAngleBracket;
-        let is_rshift = ctx.peek_tok() == Token::CAngleBracket && ctx.peek_ahead(1).tok == Token::CAngleBracket;
+        let is_lshift =
+            ctx.peek_tok() == Token::OAngleBracket && ctx.peek_ahead(1).tok == Token::OAngleBracket;
+        let is_rshift =
+            ctx.peek_tok() == Token::CAngleBracket && ctx.peek_ahead(1).tok == Token::CAngleBracket;
 
         if is_lshift || is_rshift {
             let bp = 1;
@@ -844,7 +846,11 @@ fn parse_expr(
             let start = ctx.peek_span().start;
             ctx.advance_tok();
             ctx.advance_tok();
-            let op = if is_lshift { BinaryOp::BitLeftShift } else { BinaryOp::BitRightShift };
+            let op = if is_lshift {
+                BinaryOp::BitLeftShift
+            } else {
+                BinaryOp::BitRightShift
+            };
 
             let rhs = parse_expr(ctx, bp + 1, interner)?;
 
@@ -1126,7 +1132,10 @@ fn parse_unary(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedExpr
 
 // ENFORCE TYPE NAMING FOR GENERICS AT LEAST
 /// Recursive function for parsing all type expressions
-fn parse_type_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedTypeExpr, Token> {
+fn parse_type_expr(
+    ctx: &mut ParserContext,
+    interner: &Intern,
+) -> Result<SpannedContainer<TypeExpr>, Token> {
     match ctx.peek_tok() {
         Token::Id(name_id) if ctx.peek_ahead(1).tok.kind() == TokenKind::OAngleBracket => {
             let start = ctx.advance_span().start;
@@ -1149,10 +1158,10 @@ fn parse_type_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<Spanned
                 let path_end = ctx.peek_behind(1).span.end;
                 let path_span = SourceSpan::new(ctx.region.region_id, start, path_end);
 
-                Ok(SpannedTypeExpr::new(TypeExpr::Path(ty_path), path_span))
+                Ok(SpannedContainer::new(TypeExpr::Path(ty_path), path_span))
             } else {
                 let ty_expr = TypeExpr::Generic(generic);
-                let spanned_ty_expr = SpannedTypeExpr::new(ty_expr, span);
+                let spanned_ty_expr = SpannedContainer::new(ty_expr, span);
 
                 Ok(spanned_ty_expr)
             }
@@ -1164,13 +1173,13 @@ fn parse_type_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<Spanned
 
             let span = SourceSpan::new(ctx.region.region_id, start, end);
 
-            Ok(SpannedTypeExpr::new(TypeExpr::Path(ty_path), span))
+            Ok(SpannedContainer::new(TypeExpr::Path(ty_path), span))
         }
         Token::Id(name_id) => {
             let span = ctx.advance_span();
             let ty_expr = TypeExpr::Var(name_id);
 
-            Ok(SpannedTypeExpr::new(ty_expr, span))
+            Ok(SpannedContainer::new(ty_expr, span))
         }
         Token::Str(id) | Token::Integer(id, _) => {
             let tok = ctx.advance_tok();
@@ -1283,7 +1292,7 @@ fn parse_static_path(
 fn parse_generic(
     ctx: &mut ParserContext,
     interner: &Intern,
-) -> Result<Vec<SpannedTypeExpr>, Token> {
+) -> Result<Vec<SpannedContainer<TypeExpr>>, Token> {
     ctx.expect_verbose(
         TokenKind::OAngleBracket,
         "Expected a '<' to declare generic, found ",
@@ -1292,7 +1301,7 @@ fn parse_generic(
         interner,
     )?;
 
-    let mut inputs: Vec<SpannedTypeExpr> = Vec::new();
+    let mut inputs: Vec<SpannedContainer<TypeExpr>> = Vec::new();
 
     let input = parse_type_expr(ctx, interner)?;
     inputs.push(input);
@@ -1388,7 +1397,7 @@ fn parse_variant(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractV
         interner,
     )?;
 
-    let ty_opt: Option<SpannedTypeExpr> = if ctx.peek_kind() == TokenKind::Colon {
+    let ty_opt: Option<SpannedContainer<TypeExpr>> = if ctx.peek_kind() == TokenKind::Colon {
         ctx.advance_tok();
         let ty = parse_type_expr(ctx, interner)?;
         Some(ty)

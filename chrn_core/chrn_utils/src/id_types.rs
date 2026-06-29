@@ -13,6 +13,9 @@ impl<T> SpannedContainer<T> {
     pub const fn new(inner: T, span: SourceSpan) -> SpannedContainer<T> {
         SpannedContainer { inner, span }
     }
+    pub const fn as_ref<'a>(&'a self) -> SpannedContainerRef<'a, T> {
+        SpannedContainerRef::new(&self.inner, self.span)
+    }
 }
 
 /// Generic structure for attaching a span to any type reference
@@ -22,8 +25,8 @@ pub struct SpannedContainerRef<'a, T> {
     pub span: SourceSpan,
 }
 
-impl<T> SpannedContainerRef<'_, T> {
-    pub const fn new<'a>(inner: &'a T, span: SourceSpan) -> SpannedContainerRef<'a, T> {
+impl<'a, T> SpannedContainerRef<'a, T> {
+    pub const fn new(inner: &'a T, span: SourceSpan) -> SpannedContainerRef<'a, T> {
         SpannedContainerRef { inner, span }
     }
 }

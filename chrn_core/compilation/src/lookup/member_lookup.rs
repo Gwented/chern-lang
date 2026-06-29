@@ -2,7 +2,6 @@ use chrn_utils::id_types::{InternedId, MemberId, TypeId};
 
 use crate::{script_compiler::ScriptCompiler, semantic::hir::hir_concepts::Type};
 
-//TEST:
 /// Result type for member lookups. This exists due to the fact that there is no `Ok` or `Err`
 /// inherit concept behind whether or not something was found.
 #[derive(Debug)]

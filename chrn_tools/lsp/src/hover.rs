@@ -223,7 +223,7 @@ pub fn compute_hover(
                                     let mod_name = interner.search(module.name_id);
                                     hover_text = format!("module **{}**", mod_name);
                                 }
-                                SymbolKind::Config(cfg_id) => todo!(),
+                                SymbolKind::Config(_cfg_id) => todo!(),
                                 SymbolKind::Directive(_) => {
                                     let name = interner.search(sym.name_id);
                                     hover_text = Document::directive_docs(name)

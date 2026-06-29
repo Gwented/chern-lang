@@ -4,8 +4,8 @@ use compilation::{
     lexer::Lexer,
     parser::{self, ast::ast_concepts::AstInfo},
     resolvers::{
-        constraint_resolver::ConstraintResolver, name_resolver::NamespaceResolver,
-        resolver_env::ResolverEnv, type_resolver::TypeResolver,
+        constraint_resolver::ConstraintResolver, member_resolver::MemberResolver,
+        name_resolver::NamespaceResolver, resolver_env::ResolverEnv, type_resolver::TypeResolver,
     },
     script_compiler::{ScriptCompiler, script_compiler_store::ScriptCompilerStore},
 };
@@ -42,7 +42,6 @@ pub fn run_all_cached(
         let module = &compiler.mods[mod_idx];
         let region = match &module.region_id {
             Some(region_id) => &compiler_store.region_arena.regions[region_id.id as usize],
-            // Giving current module id a None ast
             None => {
                 // Meaning it's a lib module where None should be found upon any queries
                 compiler_store.toks.push(None);
@@ -90,16 +89,29 @@ pub fn run_all_cached(
     let resolver_envs = create_envs(compiler, compiler_store, &compiler_store.asts);
 
     // if !reporter.diags.is_empty() {
-    //     return Err(ScriptError::Semantic(reporter.diags).into());
+    //     let mut diags = Vec::new();
+    //     diags.append(&mut reporter.diags);
+    //     return Err(ScriptError::Semantic(diags).into());
     // }
 
-    //TODO: Wrap this operation into a function eventually?
+    let mut member_diags = MemberResolver::new(
+        &compiler_store.settings,
+        &resolver_envs,
+        &compiler_store.interner,
+        compiler,
+    )
+    .resolve();
+    reporter.diags.append(&mut member_diags);
 
+    //TODO: Wrap some of these resolvers into convience functions?
+
+    // Storing this so that the compiler can be borrowed without conflicts and stay incremental
     let mod_len = compiler.mods.len();
     let mut ty_resolver =
         TypeResolver::new(&compiler_store.settings, &compiler_store.interner, compiler);
 
     for i in 0..mod_len {
+        // If there is no environment to use then it's not fit for resolution
         let current_env = match &resolver_envs[i] {
             Some(env) => env,
             None => continue,
@@ -108,18 +120,9 @@ pub fn run_all_cached(
         ty_resolver
             .resolve(&current_env)
             .unwrap_or_else(|mut diags| reporter.diags.append(&mut diags));
-
-        // NOTE: Brain on
-        // TypeResolver::new(
-        //     &self.settings,
-        //     env,
-        //     &mut ty_ctx,
-        //     &self.interner,
-        //     &mut self.compiler,
-        // )
-        // .resolve();
     }
 
+    //TODO: Change this
     if !reporter.diags.is_empty() {
         let mut diags = Vec::new();
         diags.append(&mut reporter.diags);
@@ -138,16 +141,6 @@ pub fn run_all_cached(
         constraint_resolver
             .resolve(&current_env)
             .unwrap_or_else(|mut diags| reporter.diags.append(&mut diags));
-        // ConstraintResolver::new(
-        //     &self.settings,
-        //     &asts[i].as_ref().expect("Has region already"),
-        //     region,
-        //     &self.interner,
-        //     module.mod_id,
-        //     &mut self.compiler,
-        // )
-        // .resolve()
-        // .unwrap_or_else(|mut diags| self.reporter.diags.append(&mut diags));
     }
 
     if !reporter.diags.is_empty() {
@@ -155,13 +148,14 @@ pub fn run_all_cached(
         diags.append(&mut reporter.diags);
         return Err(ScriptError::Semantic(diags).into());
     }
+    dbg!(reporter.diags.len());
 
     Ok(())
 }
 
 /// Creates all environments possible, which is stored aligned with all modules
 ///
-/// This leaves the `cache` and `asts` structures connected as a reference on purpose to make
+/// This leaves the `asts` structures connected as a reference on purpose to make
 /// ownership explicit.
 fn create_envs<'a>(
     compiler: &ScriptCompiler,

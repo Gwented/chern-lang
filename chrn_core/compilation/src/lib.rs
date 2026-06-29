@@ -7,6 +7,7 @@ pub mod resolvers;
 pub mod script_compiler;
 pub mod semantic;
 pub mod token;
+pub mod user_defined;
 
 #[cfg(test)]
 mod tests {
@@ -129,8 +130,38 @@ mod tests {
 
         (arena, interner, settings, compiler)
     }
-    // Builder?
-    //fn setup_multiple_modules(text: &str, ) -> (Intern, ChrnSettings, ScriptCompiler) {}
+    /// Builds resolver environments aligned with compiler modules from their ASTs
+    fn build_resolver_envs<'a>(
+        compiler: &ScriptCompiler,
+        arena: &'a SourceRegionArena,
+        asts: &'a [Option<AstInfo>],
+    ) -> Vec<Option<ResolverEnv<'a>>> {
+        compiler
+            .mods
+            .iter()
+            .enumerate()
+            .map(|(i, module)| {
+                module.region_id.map(|region_id| {
+                    let region = arena.extract_region(region_id);
+                    let ast = asts[i]
+                        .as_ref()
+                        .expect("Module with region_id should have an AstInfo entry");
+                    ResolverEnv::new(ast, region, module.mod_id)
+                })
+            })
+            .collect()
+    }
+
+    /// Runs member resolution, panicking on diagnostics
+    fn run_member_resolver(
+        settings: &ChrnSettings,
+        envs: &[Option<ResolverEnv>],
+        interner: &Intern,
+        compiler: &mut ScriptCompiler,
+    ) {
+        let diags = MemberResolver::new(settings, envs, interner, compiler).resolve();
+        assert!(diags.is_empty(), "Member resolution failed: {:?}", diags);
+    }
 
     use std::path::Path;
 
@@ -148,6 +179,7 @@ mod tests {
         modules::{Import, ImportKind, Module, ModuleState},
         parser::{self},
         resolvers::{
+            member_resolver::MemberResolver,
             name_resolver::NamespaceResolver,
             type_resolver::{TypeResolver, type_context::TypeContext},
         },
@@ -1008,7 +1040,7 @@ mod tests {
 
         let mut compiler = ScriptCompiler::init(None, vec![main_mod, sub_mod]);
 
-        let mut asts: Vec<AstInfo> = Vec::new();
+        let mut asts: Vec<Option<AstInfo>> = Vec::new();
 
         for mod_idx in 0..compiler.mods.len() {
             let module = &compiler.mods[mod_idx];
@@ -1033,21 +1065,19 @@ mod tests {
             .resolve()
             .unwrap();
 
-            asts.push(ast_info);
+            asts.push(Some(ast_info));
         }
 
-        for i in 0..compiler.mods.len() {
-            let mod_id = ModuleId::new(i);
-            let region_id = compiler.mods[mod_id.id].region_id;
+        let resolver_envs = build_resolver_envs(&compiler, &region_arena, &asts);
+        run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
 
-            let region = match region_id {
-                Some(id) => region_arena.extract_region(id),
+        for i in 0..compiler.mods.len() {
+            let current_env = match &resolver_envs[i] {
+                Some(env) => env,
                 None => continue,
             };
-
-            let env = ResolverEnv::new(&asts[i], region, mod_id);
             TypeResolver::new(&settings, &interner, &mut compiler)
-                .resolve(&env)
+                .resolve(current_env)
                 .unwrap();
         }
     }
@@ -1127,19 +1157,16 @@ mod tests {
             asts.push(Some(ast_info));
         }
 
+        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts);
+        run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
+
         for i in 0..compiler.mods.len() {
-            let module = &compiler.mods[i];
-            let region = match module.region_id {
-                Some(region_id) => arena.extract_region(region_id),
+            let current_env = match &resolver_envs[i] {
+                Some(env) => env,
                 None => continue,
             };
-            let env = ResolverEnv::new(
-                asts[i].as_ref().expect("Has metadata already"),
-                region,
-                module.mod_id,
-            );
             TypeResolver::new(&settings, &interner, &mut compiler)
-                .resolve(&env)
+                .resolve(current_env)
                 .unwrap();
         }
     }
@@ -1220,20 +1247,17 @@ mod tests {
             asts.push(Some(ast_info));
         }
 
+        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts);
+        run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
+
         let mut results = Vec::new();
 
         for i in 0..compiler.mods.len() {
-            let module = &compiler.mods[i];
-            let region = match module.region_id {
-                Some(region_id) => arena.extract_region(region_id),
+            let current_env = match &resolver_envs[i] {
+                Some(env) => env,
                 None => continue,
             };
-            let env = ResolverEnv::new(
-                asts[i].as_ref().expect("Has metadata already"),
-                region,
-                module.mod_id,
-            );
-            results.push(TypeResolver::new(&settings, &interner, &mut compiler).resolve(&env));
+            results.push(TypeResolver::new(&settings, &interner, &mut compiler).resolve(current_env));
         }
 
         assert_eq!(results[0].is_err(), true, "Not exported");
@@ -1313,20 +1337,17 @@ mod tests {
             asts.push(Some(ast_info));
         }
 
+        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts);
+        run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
+
         let mut results = Vec::new();
 
         for i in 0..compiler.mods.len() {
-            let module = &compiler.mods[i];
-            let region = match module.region_id {
-                Some(region_id) => arena.extract_region(region_id),
+            let current_env = match &resolver_envs[i] {
+                Some(env) => env,
                 None => continue,
             };
-            let env = ResolverEnv::new(
-                asts[i].as_ref().expect("Has metadata already"),
-                region,
-                module.mod_id,
-            );
-            results.push(TypeResolver::new(&settings, &interner, &mut compiler).resolve(&env));
+            results.push(TypeResolver::new(&settings, &interner, &mut compiler).resolve(current_env));
         }
 
         assert_eq!(results[0].is_ok(), true);
@@ -1610,9 +1631,11 @@ mod tests {
         .resolve()
         .unwrap();
 
-        let mod_id = compiler.mods[0].mod_id;
-        let env = ResolverEnv::new(&ast_info, region, mod_id);
-        let res = TypeResolver::new(&settings, &interner, &mut compiler).resolve(&env);
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let envs = vec![Some(env)];
+        run_member_resolver(&settings, &envs, &interner, &mut compiler);
+        let env = envs[0].as_ref().expect("Env should exist");
+        let res = TypeResolver::new(&settings, &interner, &mut compiler).resolve(env);
 
         assert_eq!(res.is_err(), true);
 
@@ -1645,9 +1668,11 @@ mod tests {
         .resolve()
         .unwrap();
 
-        let mod_id = compiler.mods[0].mod_id;
-        let env = ResolverEnv::new(&ast_info, region, mod_id);
-        let res = TypeResolver::new(&settings, &interner, &mut compiler).resolve(&env);
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let envs = vec![Some(env)];
+        run_member_resolver(&settings, &envs, &interner, &mut compiler);
+        let env = envs[0].as_ref().expect("Env should exist");
+        let res = TypeResolver::new(&settings, &interner, &mut compiler).resolve(env);
 
         assert_eq!(res.is_ok(), true);
     }
@@ -1680,8 +1705,11 @@ mod tests {
         .unwrap();
 
         let env = ResolverEnv::new(&ast_info, region, Default::default());
+        let envs = vec![Some(env)];
+        run_member_resolver(&settings, &envs, &interner, &mut compiler);
+        let env = envs[0].as_ref().expect("Env should exist");
         TypeResolver::new(&settings, &interner, &mut compiler)
-            .resolve(&env)
+            .resolve(env)
             .unwrap();
 
         assert!(compiler.symbols.len() > 0);

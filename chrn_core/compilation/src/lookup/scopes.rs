@@ -119,6 +119,22 @@ impl Scope {
         }
     }
 }
+
+#[derive(Debug)]
+pub struct SymbolLookupOutput {
+    pub found_sym_id: SymbolId,
+    pub scope_found_in: ScopeId,
+}
+
+impl SymbolLookupOutput {
+    pub fn new(found_sym_id: SymbolId, scope_found_in: ScopeId) -> SymbolLookupOutput {
+        SymbolLookupOutput {
+            found_sym_id,
+            scope_found_in,
+        }
+    }
+}
+
 /// Locally searches for the given name id. Locally searching in this context means solely
 /// searching the scope given for the identifier due to parent relationships not existing.
 pub fn find_sym_id_local(
@@ -228,7 +244,7 @@ pub fn find_sym_id(
     scope_type: ScopeType,
     lookup_pattern: LookupPattern,
     // Named struct maybe
-) -> Option<(SymbolId, ScopeId)> {
+) -> Option<SymbolLookupOutput> {
     // Avoiding vector allocations right now so it can just use a pointer offset instead based off
     // of hard-coded truths but will probably just, not do that.
     //TEST:
@@ -250,7 +266,7 @@ pub fn find_sym_id(
                     if let Some(sym_id) =
                         scope_info.scope.table.interned_to_sym.get(&target_name_id)
                     {
-                        return Some((*sym_id, scope_info.scope.scope_id));
+                        return Some(SymbolLookupOutput::new(*sym_id, scope_info.scope.scope_id));
                     }
 
                     //TODO: Make sure this works as intended
@@ -263,7 +279,10 @@ pub fn find_sym_id(
                             if let Some(sym_id) =
                                 intrinsic_scope.table.interned_to_sym.get(&target_name_id)
                             {
-                                return Some((*sym_id, scope_info.scope.scope_id));
+                                return Some(SymbolLookupOutput::new(
+                                    *sym_id,
+                                    scope_info.scope.scope_id,
+                                ));
                             }
                         }
                     }
@@ -273,7 +292,7 @@ pub fn find_sym_id(
         AssociatedScopeKind::Scope(scope_id) => {
             let scope = &compiler.scopes[scope_id.id].scope;
             if let Some(sym_id) = scope.table.interned_to_sym.get(&target_name_id) {
-                return Some((*sym_id, scope_id));
+                return Some(SymbolLookupOutput::new(*sym_id, scope_id));
             }
 
             //TODO: Make sure this works as intended
@@ -281,7 +300,7 @@ pub fn find_sym_id(
                 let intrinsic_scope = &compiler.scopes[intrinsic_scope_id.id].scope;
 
                 if let Some(sym_id) = intrinsic_scope.table.interned_to_sym.get(&target_name_id) {
-                    return Some((*sym_id, intrinsic_scope_id));
+                    return Some(SymbolLookupOutput::new(*sym_id, intrinsic_scope_id));
                 }
             }
         }

@@ -9,7 +9,11 @@ use chrn_utils::{
 };
 use lang::fmter::Formattable;
 
+use crate::lookup::scopes::AssociatedScopeKind;
+use crate::resolvers::resolver_env::ResolverEnv;
+use crate::script_compiler::ScriptCompiler;
 use crate::semantic::preset_err::PresetErr;
+use crate::semantic::resolve::{StaticAccessResult, TypeExprResult};
 
 use super::preset_err::{LookupError, MathError};
 
@@ -30,8 +34,12 @@ pub(crate) fn report_preset(
 }
 
 // The s is like that on purpose
-/// Convenience function that appends `SourceDiagnostic`s from the given `preset_errs` into the
-/// given buffer `diags`
+/// Takes an array of directives and evaluates as many as possible.
+///
+/// If any of the directives given are invalid, they will be skipped, and a diagnostic will be
+/// created.
+///
+/// Returns a tuple of any directives and diagnostics found
 pub(crate) fn report_preset_vec(
     diags: &mut Vec<SourceDiagnostic>,
     preset_errs: Vec<PresetErr>,
@@ -309,3 +317,200 @@ pub(crate) fn create_diag_builder_preset(
 //
 //     Some(help)
 // }
+
+//TODO: Make enums first some of these so steps can be ran to check compiler internals procedurely
+//like finding similar
+/// Convenience function to create general errors associated with a `TypeExprResult`
+pub fn type_expr_result_to_preset_err(
+    compiler: &ScriptCompiler,
+    interner: &Intern,
+    res: &TypeExprResult,
+    env: &ResolverEnv,
+    // Should this just return the builder?
+) -> Option<PresetErr> {
+    match res {
+        TypeExprResult::Type(_) => None,
+        TypeExprResult::NotAType {
+            sp_name_id, kind, ..
+        } => {
+            let name = interner.search(sp_name_id.inner);
+            //WARN: I don't know about this msg
+            let core_msg = format!("`{name}` is a {kind} not a type");
+
+            let src_diag = SourceDiagnostic::basic_builder(
+                DiagnosticLevel::Error,
+                core_msg,
+                env.region_id.path_id,
+                sp_name_id.span,
+            );
+
+            Some(PresetErr::General(src_diag))
+        }
+        TypeExprResult::SymbolNotFound(sp_name_id, associated) => {
+            let err_name = interner.search(sp_name_id.inner);
+            let core_msg = match associated {
+                AssociatedScopeKind::Module(mod_id) => {
+                    let err_mod = &compiler.mods[mod_id.id as usize];
+                    let err_mod_name = interner.search(err_mod.name_id);
+
+                    format!(
+                        "No symbol with the identifier `{err_name}` is defined within the module `{err_mod_name}`"
+                    )
+                }
+                //NOTE: Not current symbol exists that has it's own scope except modules
+                AssociatedScopeKind::Scope(scope_id) => {
+                    let scope_info = &compiler.scopes[scope_id.id];
+
+                    // Expects since if the current associated scope is from a symbol, that means
+                    // the previous stack frame was extracted from a symbol's namespace directly
+                    let sym_owner = scope_info
+                        .sym_owner
+                        .expect("resolve_type_expr control flow broke");
+
+                    let sym_name_id = compiler.symbols[sym_owner.id as usize].name_id;
+                    let sym_name = interner.search(sym_name_id);
+
+                    format!(
+                        "The namspace of `{sym_name}` does not contain any symbol with the the identifier `{err_name}`"
+                    )
+                }
+            };
+
+            let src_diag = SourceDiagnostic::basic_builder(
+                DiagnosticLevel::Error,
+                core_msg,
+                env.region_id.path_id,
+                sp_name_id.span,
+            );
+
+            Some(PresetErr::General(src_diag))
+        }
+        TypeExprResult::PrivateTypeAccess {
+            found_sym_id: sym_id,
+            current_mod,
+            ty_expr_span,
+            ..
+        } => {
+            // Um...
+            let current_mod = &compiler.mods[current_mod.id];
+            let current_mod_name = interner.search(current_mod.name_id);
+
+            let sym = &compiler.symbols[sym_id.id as usize];
+            let sym_name = interner.search(sym.name_id);
+
+            let core_msg =
+                format!("The type `{sym_name}` is private within the module `{current_mod_name}`");
+
+            let src_diag =
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region_id.path_id)
+                    .add_annotation(*ty_expr_span, AnnotationKind::Primary, None)
+                    // Redundant?
+                    .add_note(format!(
+                        "Consider using `export` on `{sym_name}` if that was intended"
+                    ));
+
+            Some(PresetErr::General(src_diag))
+        }
+        TypeExprResult::GenericInputCount {
+            // Could make this kind specific but $#)%@^*)
+            base,
+            expected,
+            inputs_span,
+        } => {
+            // The name based if confusing
+            let name = interner.search(*base);
+            // BRING S_IFIER IN HERE NOW
+            let core_msg = format!("`{name}` expects {expected} input(s)");
+
+            let src_diag =
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region_id.path_id)
+                    .add_annotation(*inputs_span, AnnotationKind::Primary, None);
+
+            Some(PresetErr::General(src_diag))
+        }
+        TypeExprResult::UnknownGenericIdent(sp_name_id) => {
+            let name = interner.search(sp_name_id.inner);
+            let core_msg = format!("Unknown generic identifier `{name}`");
+
+            let src_diag =
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region_id.path_id)
+                    .add_annotation(sp_name_id.span, AnnotationKind::Primary, None)
+                    // Redundant?
+                    .add_help(format!(
+                        "Only the data structures `List`, `Set`, `Map` and `Tuple` exist"
+                    ));
+
+            Some(PresetErr::General(src_diag))
+        }
+        TypeExprResult::StaticAccessFailure(static_access_res) => {
+            static_access_result_to_preset_err(interner, &static_access_res, env)
+        }
+    }
+}
+
+/// Convenience function to create general errors associated with a `StaticAccessResult`
+pub fn static_access_result_to_preset_err(
+    interner: &Intern,
+    res: &StaticAccessResult,
+    env: &ResolverEnv,
+) -> Option<PresetErr> {
+    match res {
+        StaticAccessResult::Scope(_) => None,
+        StaticAccessResult::SymNotFound {
+            current_seg,
+            prev_seg,
+        } => {
+            let current_seg_name = interner.search(current_seg.inner);
+            let src_diag = if let Some(prev) = prev_seg {
+                let prev_seg_name = interner.search(prev.inner);
+                let core_msg = format!(
+                    "Could not find the symbol `{}` in the namespace `{}`",
+                    current_seg_name, prev_seg_name
+                );
+
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region_id.path_id)
+                    .add_annotation(current_seg.span, AnnotationKind::Primary, None)
+            } else {
+                let core_msg = format!("Could not find the symbol `{current_seg_name}`");
+
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region_id.path_id)
+                    .add_annotation(current_seg.span, AnnotationKind::Primary, None)
+            };
+
+            Some(PresetErr::General(src_diag))
+        }
+        StaticAccessResult::NoNamespace(sp_name_id) => {
+            let namespace_name = interner.search(sp_name_id.inner);
+            let core_msg = format!("No namespace found in `{namespace_name}`");
+
+            let src_diag =
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region_id.path_id)
+                    .add_annotation(sp_name_id.span, AnnotationKind::Primary, None);
+
+            Some(PresetErr::General(src_diag))
+        }
+        StaticAccessResult::GenericUsingStaticPath(generic_span) => {
+            let core_msg = "Generics cannot contain namespaces".to_string();
+            let src_diag = SourceDiagnostic::basic_builder(
+                DiagnosticLevel::Error,
+                core_msg,
+                env.region_id.path_id,
+                *generic_span,
+            );
+
+            Some(PresetErr::General(src_diag))
+        } // StaticAccessResult::GenericInExpr(generic_span) => {
+          //     unreachable!("Isn't this impossible?");
+          //     let core_msg = "Generics cannot be used inside of expressions".to_string();
+          //     let src_diag = SourceDiagnostic::basic_builder(
+          //         DiagnosticLevel::Error,
+          //         core_msg,
+          //         env.region.path_id,
+          //         *generic_span,
+          //     );
+          //     todo!("TEST THIS");
+          //
+          //     Some(PresetErr::General(src_diag))
+          // }
+    }
+}

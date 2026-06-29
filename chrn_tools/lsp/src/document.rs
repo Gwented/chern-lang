@@ -6,7 +6,7 @@
 //!
 //! | Constant              | Indexed by                  | Length |
 //! |-----------------------|-----------------------------|--------|
-//! | [`KEYWORD_DOCS`]      | `Keyword as usize`          | 13     |
+//! | [`KEYWORD_DOCS`]      | `Keyword as usize`          | 14     |
 //! | [`BUILTIN_TYPE_DOCS`] | `BuiltinTypeKind as usize`  | 27     |
 //! | [`FUNC_DOCS`]         | `FuncKind as usize`         | 7      |
 //! | [`DIRECTIVE_DOCS`]    | key name (`&str`)           | 6      |
@@ -84,7 +84,7 @@ impl Document {
 /// Hover documentation for each Chern language keyword.
 ///
 /// Indexed by [`Keyword`] discriminant via [`Document::keyword_docs`].
-pub static KEYWORD_DOCS: [Document; 13] = [
+pub static KEYWORD_DOCS: [Document; 14] = [
     Document {
         key: "struct",
         description: "Defines a data structure",
@@ -163,6 +163,11 @@ pub static KEYWORD_DOCS: [Document; 13] = [
         key: "override->",
         description: "Unimplemented",
         example: Some("```chrn\n// Not yet implemented\n```"),
+    },
+    Document {
+        key: "in",
+        description: "Binds a value to a name within a scoped expression (let ... in)",
+        example: Some("```chrn\n@def\n\tlet result = let x = 10 in x * 2\n\t// result = 20\n@end\n```"),
     },
 ];
 
@@ -397,3 +402,23 @@ pub static DIRECTIVE_DOCS: [Document; 6] = [
         example: Some("```chrn\nvar->\n\tperm: u32 #octal\n```"),
     },
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_keyword_docs_len() {
+        assert_eq!(KEYWORD_DOCS.len(), 14, "KEYWORD_DOCS must have one entry per Keyword variant");
+    }
+
+    #[test]
+    fn test_builtin_type_docs_len() {
+        assert_eq!(BUILTIN_TYPE_DOCS.len(), 27, "BUILTIN_TYPE_DOCS must have one entry per BuiltinTypeKind variant");
+    }
+
+    #[test]
+    fn test_func_docs_len() {
+        assert_eq!(FUNC_DOCS.len(), 7, "FUNC_DOCS must have one entry per FuncKind variant");
+    }
+}
