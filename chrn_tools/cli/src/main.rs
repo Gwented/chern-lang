@@ -6,7 +6,10 @@ use common::color;
 
 fn main() {
     let cli_cfg = CliConfig::new();
-    let cli = args::Cli::parse();
+    let cli = match args::try_parse() {
+        Ok(c) => c,
+        Err(err) => err.exit(),
+    };
 
     match dispatcher::exec(&cli, &cli_cfg) {
         Ok(msg) => {

@@ -2,7 +2,7 @@ use chrn_utils::{
     id_types::{InternedId, SpannedContainer},
     source_map::{source_diagnostic::SourceDiagnosticBuilder, source_span::SourceSpan},
 };
-use lang::{directives::Directive, fmter::Formatted, types::type_constraints::TypeConstraintFlags};
+use lang::{directives::Directive, fmter::Formatted, types::type_constraints::TypeBoundaryFlags};
 
 use crate::{constraints::ArgConstraint, semantic::hir::hir_concepts::FuncKind};
 
@@ -26,26 +26,42 @@ use crate::{constraints::ArgConstraint, semantic::hir::hir_concepts::FuncKind};
 //     }
 // }
 
-//TODO: Change this majorly. Make many mistakes. Hallucinate.
-// No
-// FIX: These should be structs depeneding on if the unnamed tuple is not clear enough
 #[derive(Debug)]
 pub enum PresetErr {
     /// Intended so that diagnostics can be made inline and still align with the same type
     General(SourceDiagnosticBuilder),
     /// Constraint, found type(builtin or user), spans
     Lookup(LookupError),
-    FuncConstraintMismatch(ArgConstraint, Formatted, Vec<SourceSpan>),
+    FuncConstraintMismatch {
+        constraint: ArgConstraint,
+        fmtted_ty: Formatted,
+        spans: Vec<SourceSpan>,
+    },
     /// Spanned Directive
     UnknownDirective(SpannedContainer<InternedId>),
     /// Constraint, amount of incorrect params found, spans
-    DirectiveCountMismatch(ArgConstraint, u32, Vec<SourceSpan>),
+    DirectiveCountMismatch {
+        constraint: ArgConstraint,
+        count: u32,
+        spans: Vec<SourceSpan>,
+    },
     /// Constraint, Incorrect type found, spans
-    TypeConstraintMismatch(TypeConstraintFlags, Formatted, Vec<SourceSpan>),
+    TypeBoundaryMismatch {
+        given_constraints: TypeBoundaryFlags,
+        found_ty: Formatted,
+        spans: Vec<SourceSpan>,
+    },
     /// Currently inferred constraints, Conflicting other constraints, spans
-    TypeConstraintBoundConflict(TypeConstraintFlags, TypeConstraintFlags, Vec<SourceSpan>),
+    TypeBoundaryBoundConflict {
+        inferred: TypeBoundaryFlags,
+        conflicting: TypeBoundaryFlags,
+        spans: Vec<SourceSpan>,
+    },
     /// SpannedArg failed at, Error Symbol span
-    UnsupportedDirective(SpannedContainer<Directive>, SourceSpan),
+    UnsupportedDirective {
+        sp_directive: SpannedContainer<Directive>,
+        sym_span: SourceSpan,
+    },
     /// SpannedArg,
     // Interesting name
     VagueDirective(SpannedContainer<Directive>),
@@ -56,16 +72,19 @@ pub enum PresetErr {
     ///
     /// (Parent declaration span, Spanned directive failed at, Type span failed at)
     //TODO: Combine
-    CircularDirective(
-        SpannedContainer<Formatted>,
+    CircularDirective {
+        sp_fmtted_parent: SpannedContainer<Formatted>,
         // Actual parent name
         // SpannedContainer<InternedId>,
-        SpannedContainer<Directive>,
-        SourceSpan,
-    ),
+        sp_directive: SpannedContainer<Directive>,
+        err_ty_span: SourceSpan,
+    },
     /// SpannedInterned number, type overflown
     //WARN: This technically shouldn't exist since BigInt/BigFloat would exist
-    NumericOverflow(SpannedContainer<InternedId>, Formatted),
+    NumericOverflow {
+        sp_num: SpannedContainer<InternedId>,
+        fmtted_ty: Formatted,
+    },
     //TODO: Maybe option name id?
     UndefinedMember(SourceSpan),
     Math(MathError),
@@ -74,15 +93,21 @@ pub enum PresetErr {
 #[derive(Debug)]
 pub enum MathError {
     /// Spanned lhs, Spanned rhs, Op
-    BinaryOpMismatch(
-        SpannedContainer<Formatted>,
-        SpannedContainer<Formatted>,
-        Formatted,
-    ),
+    BinaryOpMismatch {
+        sp_lhs: SpannedContainer<Formatted>,
+        sp_rhs: SpannedContainer<Formatted>,
+        op: Formatted,
+    },
     /// Spanned Operand, operator
-    UnaryOpMismatch(SpannedContainer<Formatted>, Formatted),
+    UnaryOpMismatch {
+        sp_operand: SpannedContainer<Formatted>,
+        op: Formatted,
+    },
     /// lhs span, rhs span
-    DivideByZero(SourceSpan, SourceSpan),
+    DivideByZero {
+        lhs_span: SourceSpan,
+        rhs_span: SourceSpan,
+    },
 }
 
 #[derive(Debug)]
@@ -90,7 +115,10 @@ pub enum LookupError {
     /// Spanned Type that is impossible to member access
     InvalidTypeMemberAccess(SpannedContainer<Formatted>),
     /// Spanned type's identifier which has no members, Identifier of member looked up
-    MemberNotFound(SpannedContainer<InternedId>, InternedId),
+    MemberNotFound {
+        sp_parent_ty: SpannedContainer<InternedId>,
+        member: InternedId,
+    },
     /// Spanned Formatted Symbol
     /// (Symbol with no members is `Formatted` because it's a language level symbol construct, not a
     /// possibly user defined structure)
@@ -100,9 +128,19 @@ pub enum LookupError {
 #[derive(Debug)]
 pub enum FuncConstraints {
     /// Constraint, found type, function kind, spans
-    FuncConstraintMismatch(ArgConstraint, Formatted, FuncKind, Vec<SourceSpan>),
+    FuncConstraintMismatch {
+        constraint: ArgConstraint,
+        fmtted_ty: Formatted,
+        func_kind: FuncKind,
+        spans: Vec<SourceSpan>,
+    },
     /// Constraint, function type, amount of incorrect params found, spans
-    ArgCountMismatch(ArgConstraint, FuncKind, u32, Vec<SourceSpan>),
+    ArgCountMismatch {
+        constraint: ArgConstraint,
+        func_kind: FuncKind,
+        count: u32,
+        spans: Vec<SourceSpan>,
+    },
 }
 
 impl From<MathError> for PresetErr {

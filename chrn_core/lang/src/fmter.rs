@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::types::type_constraints::TypeConstraintFlags;
+use crate::types::type_constraints::TypeBoundaryFlags;
 
 // Would it be better to just have it as a singular enum, or a trait?
 
@@ -31,7 +31,7 @@ pub enum Formatted {
     I128,
     U128,
     F128,
-    Constraints(TypeConstraintFlags),
+    Boundaries(TypeBoundaryFlags),
     Integer,
     SignedInteger,
     UnsignedInteger,
@@ -113,7 +113,7 @@ pub enum Formatted {
     Ranged,
     Ordered,
     Comparable,
-    TypeConstraintMultiple,
+    TypeBoundaryMultiple,
     CharacterMappable,
     HasLen,
     Numeric,
@@ -209,7 +209,7 @@ impl Display for Formatted {
             Formatted::In => write!(f, "in"),
             Formatted::TypeDef => write!(f, "typedef"),
             // WARN: What
-            Formatted::TypeConstraintMultiple => write!(f, "MultipleConstraints"),
+            Formatted::TypeBoundaryMultiple => write!(f, "MultipleBoundaries"),
             Formatted::CharacterMappable => write!(f, "CharacterMappable"),
             Formatted::HasLen => write!(f, "HasLen"),
             Formatted::Numeric => write!(f, "Numeric"),
@@ -232,7 +232,7 @@ impl Display for Formatted {
             Formatted::Type => write!(f, "type"),
             Formatted::Section => write!(f, "section"),
             Formatted::Stmt => write!(f, "statement"),
-            Formatted::Constraints(flags) => {
+            Formatted::Boundaries(flags) => {
                 let mut out = String::new();
                 let constraints_vec = flags.to_type_constraint_vec();
 

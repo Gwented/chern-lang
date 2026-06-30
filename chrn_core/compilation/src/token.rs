@@ -38,7 +38,7 @@ pub enum Token {
     Str(InternedId),
     Integer(InternedId, Notation),
     Float(InternedId, Notation),
-    Illegal(InternedId),
+    Invalid(InternedId),
     Char(char),
     OParen,
     CParen,
@@ -123,7 +123,7 @@ impl Token {
             Token::Tilde => TokenKind::Tilde,
             Token::Dot => TokenKind::Dot,
             Token::VerticalBar => TokenKind::VerticalBar,
-            Token::Illegal(_) => TokenKind::Illegal,
+            Token::Invalid(_) => TokenKind::Invalid,
             Token::Keyword(_) => TokenKind::Keyword,
             Token::BoolLiteral(_) => TokenKind::Bool,
             Token::Def => TokenKind::Def,
@@ -201,7 +201,7 @@ pub enum TokenKind {
     Dot,
     VerticalBar,
     Bool,
-    Illegal,
+    Invalid,
     Poison,
     Def,
     End,
@@ -260,7 +260,7 @@ impl Display for TokenKind {
             TokenKind::Tilde => write!(f, "~"),
             TokenKind::Dot => write!(f, "."),
             TokenKind::VerticalBar => write!(f, "|"),
-            TokenKind::Illegal => write!(f, "illegal"),
+            TokenKind::Invalid => write!(f, "invalid"),
             TokenKind::EOF => write!(f, "<eof>"),
             TokenKind::Poison => write!(f, "<poisoned>"),
             TokenKind::Caret => write!(f, "^"),
@@ -311,7 +311,7 @@ pub(crate) const EXCLAMATION_POINT: u64 = 1 << 31;
 pub(crate) const TILDE: u64 = 1 << 32;
 pub(crate) const DOT: u64 = 1 << 33;
 pub(crate) const VERTICAL_BAR: u64 = 1 << 34;
-pub(crate) const ILLEGAL: u64 = 1 << 35;
+pub(crate) const INVALID: u64 = 1 << 35;
 pub(crate) const OR: u64 = 1 << 36;
 pub(crate) const AND: u64 = 1 << 37;
 pub(crate) const AMPERSAND: u64 = 38;
@@ -360,7 +360,7 @@ impl TokenKind {
             TokenKind::Tilde => TILDE,
             TokenKind::Dot => DOT,
             TokenKind::VerticalBar => VERTICAL_BAR,
-            TokenKind::Illegal => ILLEGAL,
+            TokenKind::Invalid => INVALID,
             TokenKind::Poison => POISON,
             TokenKind::At => AT,
             TokenKind::GreaterOrEq => GREATER_OR_EQ,

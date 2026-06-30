@@ -180,11 +180,10 @@ mod tests {
         modules::{Import, ImportKind, Module, ModuleState},
         parser::{self},
         resolvers::{
-            member_resolver::MemberResolver,
-            name_resolver::NamespaceResolver,
-            type_resolver::{TypeResolver, type_context::TypeContext},
+            member_resolver::MemberResolver, name_resolver::NamespaceResolver,
+            type_resolver::TypeResolver,
         },
-        semantic::hir::hir_concepts::{VarDef, VariableState},
+        semantic::hir::hir_concepts::VariableState,
         token::{Notation, Token},
     };
 
@@ -372,8 +371,8 @@ mod tests {
 
         assert_eq!(2, toks.len());
         assert!(
-            matches!(toks[0].tok, Token::Illegal(_),),
-            "Expected Illegal token, got {:?}",
+            matches!(toks[0].tok, Token::Invalid(_),),
+            "Expected Invalid token, got {:?}",
             toks[0].tok
         );
 
@@ -400,8 +399,8 @@ mod tests {
 
         assert_eq!(2, toks.len());
         assert!(
-            matches!(toks[0].tok, Token::Illegal(_),),
-            "Expected Illegal token, got {:?}",
+            matches!(toks[0].tok, Token::Invalid(_),),
+            "Expected Invalid token, got {:?}",
             toks[0].tok
         );
 
@@ -429,8 +428,8 @@ mod tests {
 
         assert_eq!(2, toks.len());
         assert!(
-            matches!(toks[0].tok, Token::Illegal(_),),
-            "Expected Illegal token, got {:?}",
+            matches!(toks[0].tok, Token::Invalid(_),),
+            "Expected Invalid token, got {:?}",
             toks[0].tok
         );
 
@@ -457,8 +456,8 @@ mod tests {
 
         assert_eq!(2, toks.len());
         assert!(
-            matches!(toks[0].tok, Token::Illegal(_),),
-            "Expected Illegal token, got {:?}",
+            matches!(toks[0].tok, Token::Invalid(_),),
+            "Expected Invalid token, got {:?}",
             toks[0].tok
         );
 
@@ -485,8 +484,8 @@ mod tests {
 
         assert_eq!(2, toks.len());
         assert!(
-            matches!(toks[0].tok, Token::Illegal(_),),
-            "Expected Illegal token, got {:?}",
+            matches!(toks[0].tok, Token::Invalid(_),),
+            "Expected Invalid token, got {:?}",
             toks[0].tok
         );
     }
@@ -1623,7 +1622,7 @@ mod tests {
     }
 
     #[test]
-    fn constraint_resolver_let_test() {
+    fn variable_declaration_test() {
         // let CONSTANT = 4
         let text = "
                 let CONSTANT = 4

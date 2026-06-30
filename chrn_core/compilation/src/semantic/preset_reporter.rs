@@ -63,11 +63,11 @@ pub(crate) fn create_diag_builder_preset(
 ) -> SourceDiagnosticBuilder {
     match preset_err {
         // Need to know which spans exactly now
-        PresetErr::UnsupportedDirective(sp_directive, sym_span) => {
-            let directive_constraints = sp_directive
-                .inner
-                .type_constraints()
-                .to_type_constraint_vec();
+        PresetErr::UnsupportedDirective {
+            sp_directive: directive,
+            sym_span,
+        } => {
+            let directive_constraints = directive.inner.type_constraints().to_type_constraint_vec();
 
             let mut constraints_str = String::new();
 
@@ -82,12 +82,12 @@ pub(crate) fn create_diag_builder_preset(
             let core_msg = format!(
                 "Only types that satisfy {} can use the directive `#{}`",
                 constraints_str,
-                sp_directive.inner.to_fmt()
+                directive.inner.to_fmt()
             );
 
             SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
                 .add_annotation(
-                    sp_directive.span,
+                    directive.span,
                     AnnotationKind::Secondary,
                     "Constraints required by this directive".to_string().into(),
                 )
@@ -130,7 +130,11 @@ pub(crate) fn create_diag_builder_preset(
                     .add_annotation(sp_directive.span, AnnotationKind::Primary, None)
                     .add_note("This is not allowed since it would overlap with any specifics directives given to a defined type from `nest->`".into())
         }
-        PresetErr::FuncConstraintMismatch(constraint, type_kind, spans) => {
+        PresetErr::FuncConstraintMismatch {
+            constraint,
+            fmtted_ty: type_kind,
+            spans,
+        } => {
             todo!();
             // let msg =
             //     format!("The type `{type_kind}` does not satisfy constraint `{constraint}`",);
@@ -139,23 +143,31 @@ pub(crate) fn create_diag_builder_preset(
             //     .add_annotation(sp_directive.span, AnnotationKind::Primary, None)
             //     .build()
         }
-        PresetErr::DirectiveCountMismatch(constraint, count, spans) => {
+        PresetErr::DirectiveCountMismatch {
+            constraint: _,
+            count: _,
+            spans: _,
+        } => {
             todo!();
             // let msg = format!("Expected {constraint}, found {count}");
             //
             // (msg, spans)
         }
-        PresetErr::CircularDirective(sp_parent_ty, sp_directive, err_ty_span) => {
+        PresetErr::CircularDirective {
+            sp_fmtted_parent: parent_ty,
+            sp_directive: directive,
+            err_ty_span,
+        } => {
             let core_msg = format!(
                 // Suspicious error message
                 "Cannot give type `{}` the directive `#{}` due to the circularly referenced type itself not supporting the directive",
-                sp_parent_ty.inner,
-                sp_directive.inner.to_fmt()
+                parent_ty.inner,
+                directive.inner.to_fmt()
             );
 
             SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
                 .add_annotation(
-                    sp_parent_ty.span,
+                    parent_ty.span,
                     AnnotationKind::Secondary,
                     format!("Defined here").into(),
                 )
@@ -165,7 +177,7 @@ pub(crate) fn create_diag_builder_preset(
                     "Recursive".to_string().into(),
                 )
                 .add_annotation(
-                    sp_directive.span,
+                    directive.span,
                     AnnotationKind::Primary,
                     "Conflicting directive here".to_string().into(),
                 )
@@ -173,15 +185,18 @@ pub(crate) fn create_diag_builder_preset(
             // .add_help(format!("Either `#{}` needs to be removed or `{}` needs to get rid of it's recursive field"))
         }
         // Should have the data type's cap shown as well
-        PresetErr::NumericOverflow(sp_interned_num, fmtted_ty) => {
-            let overflown_num = interner.search(sp_interned_num.inner);
+        PresetErr::NumericOverflow {
+            sp_num: spanned_num,
+            fmtted_ty: ty,
+        } => {
+            let overflown_num = interner.search(spanned_num.inner);
             let core_msg = format!(
-                "The type `{fmtted_ty}` had an overflow with the value \"{}\" ",
+                "The type `{ty}` had an overflow with the value \"{}\" ",
                 overflown_num
             );
 
             SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
-                .add_annotation(sp_interned_num.span, AnnotationKind::Primary, None)
+                .add_annotation(spanned_num.span, AnnotationKind::Primary, None)
         }
         PresetErr::General(src_diag) => src_diag,
         PresetErr::Lookup(lookup_err) => match lookup_err {
@@ -194,15 +209,18 @@ pub(crate) fn create_diag_builder_preset(
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
                     .add_annotation(sp_fmtted_ty.span, AnnotationKind::Primary, None)
             }
-            LookupError::MemberNotFound(sp_interned_ty, member_ident) => {
-                let ty_name = interner.search(sp_interned_ty.inner);
-                let member_name = interner.search(member_ident);
+            LookupError::MemberNotFound {
+                sp_parent_ty: ty,
+                member,
+            } => {
+                let ty_name = interner.search(ty.inner);
+                let member_name = interner.search(member);
                 let core_msg = format!(
                     "No member with the identifier \"{member_name}\" was found in type `{ty_name}`"
                 );
 
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
-                    .add_annotation(sp_interned_ty.span, AnnotationKind::Primary, None)
+                    .add_annotation(ty.span, AnnotationKind::Primary, None)
             }
             LookupError::InvalidSymbolMemberAccess(sp_sym) => {
                 let core_msg = format!("Symbol `{}` cannot use member access", sp_sym.inner);
@@ -211,26 +229,30 @@ pub(crate) fn create_diag_builder_preset(
             }
         },
         PresetErr::Math(math_err) => match math_err {
-            MathError::BinaryOpMismatch(sp_fmtted_lhs, sp_fmtted_rhs, fmtted_op) => {
+            MathError::BinaryOpMismatch {
+                sp_lhs: lhs,
+                sp_rhs: rhs,
+                op,
+            } => {
                 let core_msg = format!(
-                    "The type `{}` cannot apply `{fmtted_op}` to type `{}`",
-                    sp_fmtted_lhs.inner, sp_fmtted_rhs.inner,
+                    "The type `{}` cannot apply `{op}` to type `{}`",
+                    lhs.inner, rhs.inner,
                 );
 
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
-                    .add_annotation(sp_fmtted_lhs.span, AnnotationKind::Primary, None)
-                    .add_annotation(sp_fmtted_rhs.span, AnnotationKind::Primary, None)
+                    .add_annotation(lhs.span, AnnotationKind::Primary, None)
+                    .add_annotation(rhs.span, AnnotationKind::Primary, None)
             }
-            MathError::UnaryOpMismatch(fmtted_operand, fmtted_op) => {
-                let core_msg = format!(
-                    "Cannot apply `{}` to type `{}`",
-                    fmtted_op, fmtted_operand.inner
-                );
+            MathError::UnaryOpMismatch {
+                sp_operand: operand,
+                op,
+            } => {
+                let core_msg = format!("Cannot apply `{}` to type `{}`", op, operand.inner);
 
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
-                    .add_annotation(fmtted_operand.span, AnnotationKind::Primary, None)
+                    .add_annotation(operand.span, AnnotationKind::Primary, None)
             }
-            MathError::DivideByZero(lhs_span, rhs_span) => {
+            MathError::DivideByZero { lhs_span, rhs_span } => {
                 let core_msg = format!("Cannot divide by zero");
 
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
@@ -239,7 +261,11 @@ pub(crate) fn create_diag_builder_preset(
             }
         },
         // Maybe a type version too?
-        PresetErr::TypeConstraintMismatch(given_constraints, fmtted_found_ty, spans) => {
+        PresetErr::TypeBoundaryMismatch {
+            given_constraints,
+            found_ty,
+            spans: _,
+        } => {
             let given_vec = given_constraints.to_type_constraint_vec();
             let mut given_str = String::new();
 
@@ -251,10 +277,7 @@ pub(crate) fn create_diag_builder_preset(
                 }
             }
 
-            let msg = format!(
-                "`{}` does not satisfy constraint {}",
-                fmtted_found_ty, given_str
-            );
+            let msg = format!("`{}` does not satisfy constraint {}", found_ty, given_str);
 
             todo!();
         }
@@ -270,7 +293,11 @@ pub(crate) fn create_diag_builder_preset(
                         .into(),
                 )
         }
-        PresetErr::TypeConstraintBoundConflict(current_inferred, conflicting_inferred, spans) => {
+        PresetErr::TypeBoundaryBoundConflict {
+            inferred: current_inferred,
+            conflicting: conflicting_inferred,
+            spans: _,
+        } => {
             //FIXME: Fear inducing message.
             let current_bounds = current_inferred.to_type_constraint_vec();
             let conflicting_bounds = conflicting_inferred.to_type_constraint_vec();

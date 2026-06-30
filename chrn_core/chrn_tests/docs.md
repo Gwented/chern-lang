@@ -1,7 +1,7 @@
 ## Language intent
-- This is a scripting language that has a serialized data representation paired with it which allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required in-line in a language. The scripting language can either use the keyword `bind` to define where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
+- This is a scripting language that has a serialized data representation paired with it which allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required in-line in a language. The scripting language can either use the keyword [`bind`](#keywords) to define where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
 
-- Features such as type constraints, directives, and anything that is beyond just setting serialized data details or serialized data specific settings are not intended to be heavily used.
+- Features such as type boundaries, directives, and anything that is beyond just setting serialized data details or serialized data specific settings are not intended to be heavily used.
 
 - The projected main use-case of this language is as a library for inside of a programming language it is available for, which takes in a path to a script file that could contain the serialized data too, or separately having the script file and data given as arguments.
 
@@ -29,116 +29,19 @@ fn main() {
 }
 ```
 
+Would also have something similar to the pattern of cargo-clippy cargo clippy so that extending upon the tool is easier.
+
 # SCRIPT
 
 ## BEHAVIOR
-- Ends program by default when type information is incorrect unless `#warn` or `#ignore` is used.
+- Ends program by default when type information is incorrect unless [`#warn`](#directives) or [`#ignore`](#directives) is used.
 
 - `@def` and `@end` syntax is intended to lock script behavior into one block so that the language constraints can be applied without needing a dedicated outer file that uses `bind`. Everything after `@end` will be considered the serialized file. If the space above the script is not needed, `@end` alone can be used to define a script block (This was unintended behavior but may stay).
 
 - It is not recommended to type above `@def` without comments due to the initial scan needed to make this work being sensitive to accidentally unclosed comments or quotes.
 
-## Types
-i8, u8, i16, u16, i32, u32, i64, u64,
-i128, u128, f16, f32, f64, f128, sized, unsized,
-char, bool, str, struct, enum, nil, BigInt, BigFloat, List, Map, Set, Tuple
-
-`List<T>`: Holds a single generic parameter.
-`Set<T>`: Holds a single generic parameter and enforces when checking serialized data that it is in fact a valid set with only one of each value.
-`Map<K, V>`: Holds a two generic parameters.
-`Tuple<A, B, ..>`: Holds any amount of types within generic parameters.
-
-`struct`: For defining a structure of data.
-`enum`: For defining an enum type which can also hold enumerations with types.
-
-`Runtime`: Infers type and expects type consistency throughout entire given serialized data file type.
-
-## Prefix/Unary Operations
-`!`: NOT
-`-` NEGATE
-
-## Binary Operations
-`+` ADD
-`-` SUB
-`*` MULT
-`%` MOD
-`&&`: AND
-`||` OR
-`==` Equal to
-`!=` Not Equal to
-`~` bit invert
-`^` bit xor
-`|` bit or
-`&` bit and
-
-
-## Modules
-
-`::`
-
-## Workspace
-- NOT FOR COMPLEXITY, JUST FOR AN ENFORCED CONVENTION. I WANT BINARY. Make binary. Binary.
-
-### DOES NOT EXIST YET
-`_`: Match all for ignoring parameters
-
-```chrn
-alias gopher(x: Numeric, y: Numeric) = [!IsEmpty, Range(x = 0, y = 5), StartsW("ch") EndsW("ern") Contains("chrn")]
-
-var->
-    special_stir: str [gopher(2, _)] // defaults to (2, 5)
-
-    stirring: str [gopher(3, 15)] // Works as normal
-```
-
-`e#`: Name bypass for treating a keyword as an identifier.
-
-Example:
-```chrn
-var->
-    x: e#let
-nest->
-    struct e#let {
-        ptr: u8
-        len: unsized
-        capacity: unsized
-    }
-```
-
-`"::"`: Namespace pathing operator for accessing namespaces like modules, types, and variables
-
-`"."`: Member access operator for accessing fields
-
-### DOES NOT EXIST YET
-// Maybe remove this entirely
-`(range)`: Explicit range syntax. The '=' is required. `0..=5`
-
-## Predicate Keywords
-`IsEmpty`: Checks if the given array or string has a length of 0.
-
-`IsWhitespace`: Checks if a string is only white-space within UTF-8 standards
-
-## Functions
-
-- Functions cannot be defined beyond the built-in ones provided, but they can be used more extensively within an `alias` statement.
-
-# Does not exist yet
-
-`Equals(Thing)`: Checks serialized value for equality against given argument
-
-`Range(inclusive, inclusive)`: Checks if the data being viewed matches the range given. For arrays and strings, this checks the length. For numbers, this checks the numeric value.
-
-`Contains(DynType)`: Checks if the data being viewed contains the given literal or numeric.
-// Would need to retain notation if this would need to be done
-Contains("chrn") | Contains(1xF)
-
-`StartsW(DynType)`: Checks if the data being viewed starts with the given literal or numeric.
-
-`EndsW(DynType)`: Checks if the data being viewed ends with the given literal or numeric.
-
-`Regex("0-9a-zA-Z*")`
-
-# Does not exist yet
+- The module `core` is a required and implicitly loaded module which defines types, functions, etc. 
+Some of what's in `core` like functions and generics are strictly compiler level concepts with no external way of declaration.
 
 ## Keywords
 
@@ -147,13 +50,19 @@ Contains("chrn") | Contains(1xF)
 `let`: Allows the declaration of values under a re-usable variable if literals are inconvenient. The type is inferred by default.
 
 `export`: Allows for the exported value to be used externally when imported.
-This can be applied to `struct`, `enum`, `let`, and `alias`.
+This can be applied to [`struct`](#structural-types), [`enum`](#structural-types), [`let`](#keywords), and [`alias`](#keywords).
 
 `import`: Imports `.chrn` file which allows for anything exported within the imported file to be used.
 
-`alias`: Allows for predicates and directives to be stored within a single function call.
+`alias`: Allows for [predicates](#predicate-keywords) and [directives](#directives) to be stored within a single function call. Aliases much like function calls require that it's parameters have a either a type bound or concrete type given to it (Like i32/Numeric)
 
+`struct`: Declares [structural type](#structural-types)
+
+`enum`: Declares [enumeration type](#structural-types).
+
+// Maybe putting this first isn't the best idea..
 ```chrn
+// Can apply a condition and directive to itself (More later)
 alias ShortDefault() = [IsWhitespace]
 
 alias LongDefault(x: UnsignedInteger, y: UnsignedInteger) = [!IsEmpty, Range(x, y), StartsW("ch") EndsW("ern") Contains("chrn")] #warn
@@ -175,6 +84,193 @@ var->
     thing: defs::Thingy
 ```
 
+### Other
+
+### DOES NOT EXIST YET
+`_`: General purpose identifier from the `core` module
+
+
+## Types
+// Would pointer types make sense?
+
+### Basic types
+
+| Type        | Description |
+|-------------|-------------|
+| `i8`/`u8`    | Signed/unsigned 8-bit integer |
+| `i16`/`u16`  | Signed/unsigned 16-bit integer |
+| `i32`/`u32`  | Signed/unsigned 32-bit integer |
+| `i64`/`u64`  | Signed/unsigned 64-bit integer |
+| `i128`/`u128` | Signed/unsigned 128-bit integer |
+| `f16`        | 16-bit floating point |
+| `f32`        | 32-bit floating point |
+| `f64`        | 64-bit floating point |
+| `f128`       | 128-bit floating point |
+| `sized`      | 4-bit signed pointer-sized integer |
+| `unsized`    | 8-bit unsigned pointer-sized integer |
+| `char`       | A single Unicode character |
+| `bool`       | Boolean value (`true`/`false`) |
+| `str`        | UTF-8 encoded string |
+| `struct`     | User-defined structure with named fields |
+| `enum`       | User-defined enumeration with optional typed variants |
+| `nil`        | Generic `nil`/`null` value that adapts to the language it's used in if possible unless specified  |
+| `BigInt`     | Integer represented as an unbounded string |
+| `BigFloat`   | Floating point type represented as an unbounded string |
+
+### Data structures
+- It is **NOT** possible to create generic types outside of what is built-in for data structures. These are intended to be basic translation layers that are typed, which represent how serialized data should be formatted.
+
+`List<T>`: Holds a single generic parameter.
+`Set<T>`: Holds a single generic parameter and enforces when checking serialized data that it is in fact a valid set with only one of each value.
+`Map<K, V>`: Holds a two generic parameters.
+`Tuple<A, B, ..>`: Holds any amount of types within generic parameters.
+
+### Structural types
+// Would something like C/C++ conversion be fine implicitly converting an enum with types to a union type or would something like #c_union be better?
+
+- Both the structural types [`struct`](#keywords) and [`enum`](#keywords) are ONLY able to be defined within [`nest->`](#sections) sections. The only difference between these two are that structs are required to hold types, but enums can hold either have no type or a type.
+
+Example:
+```chrn
+nest->
+    // Commas are optional when defining in `var->` and `nest->`
+    struct Book {
+        title: str,
+        chapters: u16
+        pages: u16,
+        color: Color
+    }
+
+    enum Color {
+        Red,
+        Blue,
+        RGB: Tuple<u8, u8, u8>,
+        Hex: str,
+    }
+```
+
+
+// Either boundaries or concepts
+### Boundaries
+
+A "Boundary" is a set of constraints given to a type, same as a trait, interface, concept, etc.
+
+// Not sure how to best put this
+| Boundary | Kind | Description |
+|---|---|---|
+| `SignedInteger` | Boundary | Signed integer types (`i8`, `i16`, `i32`, `i64`, `i128`) |
+| `UnsignedInteger` | Boundary | Unsigned integer types (`u8`, `u16`, `u32`, `u64`, `u128`) |
+| `Float` | Boundary | Floating-point types (`f16`, `f32`, `f64`, `f128`) |
+| `Bool` | Boundary | Boolean type |
+| `Str` | Boundary | String type |
+| `Char` | Boundary | Character type |
+| `Runtime` | Boundary | Runtime-inferred type |
+| `Nil` | Boundary | nil/null type |
+| `Comparable` | Boundary | Types that support equality comparison |
+| `CharacterMappable` | Boundary | Types that can be mapped as character data |
+| `HasLen` | Boundary | Types that have a measurable length |
+| `Integer` | Boundary | Any integer type (signed or unsigned) |
+| `Numeric` | Boundary | Any numeric type (integer or float) |
+| `Ranged` | Boundary | Types that support range checks |
+| `Collection` | Boundary | Collection types (`List`, `Set`, `Map`, `Tuple`) |
+| `Ordered` | Boundary | Types with a total ordering |
+
+An example of this would be if a parameter expects `Numeric`, it accepts any signed integer, unsigned integer, or float type. If it expects `HasLen`, it accepts strings, characters, and collections.
+
+More often than not this will not actually matter for normal usage since the rules only get complicated when something like `alias` or conditions blocks "ident: type [] <- block" in general are used. Most consumption of this will be a directive sometimes pointing out it's boundaries. Please respect it's boundaries.
+
+## Operators
+
+### Prefix/Unary Operations
+`!`: NOT
+`-`: NEGATE
+`~`: bit NOT
+
+### Binary Operations
+`+`: ADD
+`-`: SUB
+`*`: MULT
+`/`: DIV
+`%`: MOD
+`>`: Greater than
+`<`: Less than
+`>=`: Greater or equal
+`<=`: Less or equal
+`==`: Equal to
+`!=`: Not Equal to
+`&&`: AND
+`||`: OR
+`&`: bit AND
+`|`: bit OR
+`^`: bit XOR
+`>>`: bit right shift
+`<<`: bit left shift
+
+### Pathing
+`"::"`: Namespace pathing operator for accessing namespaces like modules, types, and variables
+
+`"."`: Member access operator for accessing fields
+
+## Modules
+
+Syntax for accessing through a module symbol uses [`::`](#pathing) with "module::Type" just like Rust, C++, etc.
+
+### Innate module behavior
+Modules in their most basic form are an implicitly found graph with no need for anything but an import call. So, if A imports B, if B imports A, A technically knows C, and so on. This is more likely than not the most common way to use `chrn`.
+
+### Workspace :) (NON-EXISTENTENT)
+A trade-off of this design is that since there's no manifest if compilation fails at an import, everything linked to that import is entirely ignored since the import itself is broken.
+
+
+`e#`: Name bypass for treating a keyword as an identifier.
+
+Example:
+```chrn
+
+let e#export = 9
+var->
+    x: e#let
+nest->
+    struct e#let {
+        letness: u8
+        timesUsed: unsized
+    }
+```
+
+
+### DOES NOT EXIST YET
+// Maybe remove this entirely
+`(range)`: Explicit range syntax. The '=' is required. `0..=5`
+
+## Functions/Predicates
+- Functions/Predicates are a functionality only available within conditions
+
+`IsEmpty`: Checks if the given array or string has a length of 0.
+
+`IsWhitespace`: Checks if a string is only white-space within UTF-8 standards
+
+## Functions
+
+- Functions cannot be defined beyond the built-in ones provided, but they can be used more extensively within an [`alias`](#keywords) statement.
+
+# Does not exist yet
+
+`Equals(Thing)`: Checks serialized value for equality against given argument
+
+`Range(inclusive, inclusive)`: Checks if the data being viewed matches the range given. For arrays and strings, this checks the length. For numbers, this checks the numeric value.
+
+`Contains(DynType)`: Checks if the data being viewed contains the given literal or numeric.
+// Would need to retain notation if this would need to be done
+Contains("chrn") | Contains(1xF)
+
+`StartsW(DynType)`: Checks if the data being viewed starts with the given literal or numeric.
+
+`EndsW(DynType)`: Checks if the data being viewed ends with the given literal or numeric.
+
+`Regex("0-9a-zA-Z*")`
+
+# Does not exist yet
+
 ## Sections
 
 - Sections instruct how script code is interpreted, similar to how a statement would, but innately. They exist so that data is always defined in a readable, predictable manner.
@@ -186,11 +282,10 @@ var->
 `neutral`: This section has no keyword and exists until a section is explicitly used.
 
 `neutral` allows for:
-- importing
-- exporting
-- Setting bind
+- [importing](#keywords) / [exporting](#keywords)
+- Setting [bind](#keywords)
 - Variable declarations
-- Alias declarations
+- [Alias](#keywords) declarations
 
 Searchable scopes: `neutral`
 
@@ -212,8 +307,8 @@ override->
 
 `var` allows for:
 - Defining serialized data
-- Expressing type constraints ([[IsWhitespace, Regex("a-zA-Z")]])
-- Using directives (#warn/#octal)
+- Expressing [type boundaries](#predicate-keywords) ([[IsWhitespace, Regex("a-zA-Z")]])
+- Using [directives](#directives) (#warn/#octal)
 
 Searchable scopes: `neutral` and `nest`
 
@@ -234,8 +329,9 @@ var->
 
 `nest` allows for:
 - Defining nested data
-- Expressing type constraints ([[IsWhitespace, Equals("Hi")]])
-- Using directives (#warn/#octal)
+Expressing boundaries 💀💀💀💀💀💀💀
+- Expressing [type boundaries](#predicate-keywords) ([[IsWhitespace, Equals("Hi")]])
+- Using [directives](#directives) (#warn/#octal)
 
 Searchable scopes: `neutral` and `nest`
 
@@ -256,12 +352,87 @@ nest->
     }
 ```
 
-Maybe rename to config?
-`complex`: Define complex rules
+// Maybe rename to attributes or properties
+`complex`: Define complex rules associated with an already defined type. This is where settings attributes like what casing to look for or default values to assign would be set. 
 
 Searchable scopes: `neutral` and `nest`
 
-## Types & Directives
+To avoid redundancy the examples will use the following structs:
+
+```chrn
+nest->
+    struct Cat {
+        name: str
+        age: u8
+        mortgage: BigFloat
+        stressLevel: StressLevel
+    }
+
+    enum StressLevel {
+        HIGH
+        MEDIUM
+        MEDIUM_LOW
+        LOW
+    }
+
+    struct Home {
+        price: BigFloat
+        pastOwners: u16
+    }
+```
+
+
+### Options Assignments
+- Option assignments are built-in options associated with schemas, which align with what type is currently being used. (Field, struct, etc.)
+
+```chrn
+complex->
+    // This is implicitly known as the already defined "Cat" struct within a complex section
+    StressLevel {
+        // This `casing` option would check if "snake_case" is a valid preset option, then attempt to 
+        // string match multiple versions of the same name and procedurely convert it's convention.
+        // ie. "StressLevel" would be searched by "StressLevel", "stress_level" and "Stress_Level"
+        casing = ["snake_case", "UpperSnakeCase"]
+
+        // If only one value is present the outer brackets can be omitted
+        identifiers = "Happy"
+    }
+```
+
+### Nested Inner Configs
+- Configuration also allows for nesting in the case of defining special properties specific to members. This is done through "." prefixes which given the most recent parent, attempts to find the member with the identifier given.
+
+```chrn
+complex->
+    Cat {
+        casing = ["snake_case", "UpperSnakeCase"]
+
+        // Looks for member with identifier "stressLevel"
+        .stressLevel {
+            // Looks for member "HIGH" within the type of stressLevel which is the most recent parent
+            .HIGH {
+                identifiers = "High"
+            }
+        }
+
+        identifiers = "Happy"
+
+        .mortgage {/*code*/}
+    }
+```
+
+An important note is that member access CANNOT be done.
+```chrn
+    other_namespace::Thing {}
+```
+
+This is because there does not currently seem to be any intrinsic benefit to doing so other than increasing the possible complexity of code, nor is it clear how this would affect actual property setting.
+
+For example, It could be:
+* Implicitly globally applied to all usages of Thing
+* Directly mutating the external module that declared Thing so that it uses it's specific config
+* An optional external mutation where you use a directive to determine whether or not it should mutate
+None of these are very concrete to where just enforcing that the current module's defined type must be the root for any config used is currently the only way this is done (This is not final)
 
 # DOES NOT EXIST YET
 `override`: Most important part of the language which controls things such as possible namespace casing to also look for and setting language type defaults. Language defaults exist but this can change any if needed.
@@ -271,13 +442,13 @@ Searchable scopes: `neutral` and `nest`
 
 ## Directives
 
-- Dictates runtime behavior
+- Directives change how the compiler interprets certain code. This can range from changing how serialized data is represented to changing default runtime behavior.
 
 `#warn`: Would warn instead of terminating upon seeing a wrongful constraint of any kind.
 
-`#ignore`: Ignores all errors for the type this is applied to for serialized data related errors.
+`#ignore`: Ignores all errors for the what this is applied to for serialized data related errors.
 
-`#scient`, `#hex`, `#bin`, `#octal`: Numeric notations to output in serialized file.
+`#scient`, `#hex`, `#bin`, `#octal`: Numeric notations to output in serialized file instead of base ten.
 
 # DOES NOT EXIST
 `#unicode`:
@@ -290,16 +461,53 @@ Searchable scopes: `neutral` and `nest`
     var->
         name: str #warn
         age: u8
-        pets: List<Pet> [!IsEmpty, Range(5, 15)] #warn // This warn only applied to this specific field
+        // #warn is only applied to this particular field.
+        pets: List<Pet> #warn
     nest->
         struct Pet {
-            name: str [!IsWhitespace] / (Ignore this)
+            name: str
             color: Color
         } #ignore
         // #ignore is applied to everything in this struct innately
 
         // Enforces that all types within `Color` will be serialized in hex form
         enum Color {Red: Tuple<u8> Blue: Tuple<u8> Green: Tuple<u8> } #hex
+```
+
+Important examples:
+```chrn
+var->
+    // This is fine because #bin expects numeric
+    num: i32 #bin
+    // Although all of Point satisfies numeric, this is an error because it's not clear what this should
+    // apply to. Should this apply to Point, but only for this specific field instance? (Wait should it?)
+    // Adding this now :(
+    point: Point #bin
+    // This is fine because neither of these have type boundaries
+    other_point: Point #warn #ignore
+nest->
+    struct Point {
+        x: i64
+        y: i64
+    // This works fine because it's declaring this at the struct level
+    } #bin
+```
+
+## Conditions
+Conditions enforce that a type must adhere to it's conditions given or else the program will fail unless a directive is used to specifically change the default behavior behavior.
+
+The general purpose of this functionality is to allow for enforcing safety at not just types, but also an input by input basis.
+
+Directives can even further enhance conditions where (NOT DONE YET BUT WOULD REFER TO #ignore_rm)
+
+```chrn
+alias gopher(x: Numeric, y: Numeric) =
+    [!IsEmpty, Range(x = 0, y = 5), StartsW("ch") EndsW("ern") Contains("chrn")] #warn
+
+var->
+    special_stir: str [gopher(2, _)] // defaults to (2, 5)
+
+    stirring: str [gopher(3, 15)] // Works as normal
 ```
 
 #### Full example of language
@@ -336,6 +544,9 @@ var->
     capacity: Runtime #ignore
     len: Runtime #ignore
 ```
+
+
+
 
 ## FORGOT ABOUT UNICODE
 

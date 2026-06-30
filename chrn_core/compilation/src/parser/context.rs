@@ -28,7 +28,7 @@ use crate::{
 //TODO: Most optimal solution for this is to act off of only section context, so not as granular
 
 //NOTE: The basic exit sets should ONLY have tokens that will ALWAYS be stopped on.
-const C_BASE_EXIT_SET: u64 = token::EOF | token::ILLEGAL | token::KEYWORD;
+const C_BASE_EXIT_SET: u64 = token::EOF | token::INVALID | token::KEYWORD;
 const A_BASE_EXIT_SET: u64 = token::SLIM_ARROW;
 
 const C_STMT_NEUTRAL_SET: u64 = C_BASE_EXIT_SET /*| token::Keyword*/ ;
@@ -348,7 +348,7 @@ impl<'a> ParserContext<'a> {
                 },
                 NeutralBranch::Searching => match found.tok {
                     // Found stray unrecognizable identifier in neutral
-                    Token::Id(name_id) | Token::Illegal(name_id) => {
+                    Token::Id(name_id) | Token::Invalid(name_id) => {
                         let found_bytes = interner.search(name_id).as_bytes();
 
                         // Statements and sections are possible so both are tried
@@ -514,7 +514,7 @@ impl<'a> ParserContext<'a> {
                 },
                 // SectionBranch::Override => todo!(),
                 _ => match found.tok {
-                    Token::Id(ident_id) | Token::Illegal(ident_id) => {
+                    Token::Id(ident_id) | Token::Invalid(ident_id) => {
                         let found_bytes = interner.search(ident_id).as_bytes();
 
                         // Maybe this should return None if it directly IS a direct match since it is

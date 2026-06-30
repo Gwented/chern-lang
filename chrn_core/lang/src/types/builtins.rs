@@ -2,7 +2,7 @@ use chrn_utils::{id_types::TypeId, intern};
 
 use crate::{
     fmter::{Formattable, Formatted},
-    types::type_constraints::{self, TypeConstraintFlags},
+    types::type_constraints::{self, TypeBoundaryFlags},
 };
 
 pub static BUILTIN_TYPE_ARRAY: [&str; 27] = [
@@ -211,7 +211,7 @@ impl BuiltinTypeKind {
     //NOTE: UPDATE WHEN NEW CONSTRAINT IS MADE
     //No
     /// Retrieves non-recursive constraints associated with type
-    pub fn type_constraints(self) -> TypeConstraintFlags {
+    pub fn type_constraints(self) -> TypeBoundaryFlags {
         let flags = match self {
             BuiltinTypeKind::I8
             | BuiltinTypeKind::I16
@@ -299,7 +299,7 @@ impl BuiltinTypeKind {
             BuiltinTypeKind::Runtime => type_constraints::RUNTIME,
         };
 
-        TypeConstraintFlags::new(flags)
+        TypeBoundaryFlags::new(flags)
     }
 
     pub fn is_numeric(&self) -> bool {

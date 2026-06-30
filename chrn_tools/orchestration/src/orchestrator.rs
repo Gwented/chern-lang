@@ -13,7 +13,7 @@ use compilation::{
         name_resolver::NamespaceResolver, resolver_env::ResolverEnv, type_resolver::TypeResolver,
     },
     script_compiler::{ScriptCompiler, script_compiler_store::ScriptCompilerStore},
-    token::{SpannedToken, Token},
+    token::SpannedToken,
 };
 use lang::trivia::Trivia;
 
@@ -120,12 +120,12 @@ pub fn run_all(
             .unwrap_or_else(|mut diags| reporter.diags.append(&mut diags));
     }
 
-    //TODO: Change this
-    if !reporter.diags.is_empty() {
-        let mut diags = Vec::new();
-        diags.append(&mut reporter.diags);
-        return Err(ScriptError::Semantic(diags).into());
-    }
+    // //TODO: Change this
+    // if !reporter.diags.is_empty() {
+    //     let mut diags = Vec::new();
+    //     diags.append(&mut reporter.diags);
+    //     return Err(ScriptError::Semantic(diags).into());
+    // }
 
     let mut constraint_resolver =
         ConstraintResolver::new(&compiler_store.settings, &compiler_store.interner, compiler);
@@ -146,7 +146,6 @@ pub fn run_all(
         diags.append(&mut reporter.diags);
         return Err(ScriptError::Semantic(diags).into());
     }
-    dbg!(reporter.diags.len());
 
     Ok(())
 }
@@ -154,9 +153,10 @@ pub fn run_all(
 /// * reporter: To store diagnostics
 /// * current_mod_id: Current `ModuleId`
 /// * compiler: Compiler associated with the current module
+/// * compiler_store: Compiler store associated with module
 /// * compiler_cache: Optional caching structure
 // What about LexerOutput for the Lexer itself to return?
-fn run_lexer(
+pub fn run_lexer(
     compiler: &ScriptCompiler,
     // Needs to be mutable for lexer
     compiler_store: &mut ScriptCompilerStore,
@@ -189,7 +189,7 @@ fn run_lexer(
 /// * toks: Tokens associated with the given module
 /// * compiler: Compiler associated with the current module
 /// * compiler_cache: Optional caching structure
-fn run_parser(
+pub fn run_parser(
     reporter: &mut Reporter,
     compiler: &ScriptCompiler,
     // Also needs mutable for lexer

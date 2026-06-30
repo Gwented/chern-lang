@@ -319,19 +319,17 @@ impl<'a> TypeResolver<'a> {
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         // Checks if the symbol is valid later
-        let found_sym_id = if let Some(SymbolLookupOutput {
-            found_sym_id: found_sym,
-            scope_found_in,
-        }) = scopes::find_sym_id(
-            self.compiler,
-            associated_scope,
-            abs_cfg.name_id,
-            ScopeType::Complex,
-            // I don't know about this lookup. It should probably be able to search namespace by
-            // namespace, but not by #)%*@%)@(
-            LookupPattern::NamespaceOnly,
-        ) {
-            found_sym
+        let found_sym_id = if let Some(SymbolLookupOutput { found_sym_id, .. }) =
+            scopes::find_sym_id(
+                self.compiler,
+                associated_scope,
+                abs_cfg.name_id,
+                ScopeType::Complex,
+                // I don't know about this lookup. It should probably be able to search namespace by
+                // namespace, but not by #)%*@%)@(
+                LookupPattern::NamespaceOnly,
+            ) {
+            found_sym_id
         } else {
             let name = self.interner.search(abs_cfg.name_id);
             let core_msg = format!(
@@ -463,10 +461,13 @@ impl<'a> TypeResolver<'a> {
                                 .expect("Should have a span since it has members and was searched");
                             let fmtted_ty = Type::to_fmt(self.compiler, type_id);
 
-                            let preset_err = PresetErr::Lookup(LookupError::MemberNotFound(
-                                SpannedContainer::new(abs_cfg.name_id, abs_cfg.name_span),
-                                abs_inner_cfg.name_id,
-                            ));
+                            let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
+                                sp_parent_ty: SpannedContainer::new(
+                                    abs_cfg.name_id,
+                                    abs_cfg.name_span,
+                                ),
+                                member: abs_inner_cfg.name_id,
+                            });
 
                             // List available members?
                             preset_reporter::create_diag_builder_preset(
@@ -682,10 +683,13 @@ impl<'a> TypeResolver<'a> {
                         MemberLookupResult::MemberNotFoundInType(type_id) => {
                             let fmtted_ty = Type::to_fmt(self.compiler, type_id);
 
-                            let preset_err = PresetErr::Lookup(LookupError::MemberNotFound(
-                                SpannedContainer::new(parent_name_id, abs_cfg.name_span),
-                                abs_inner_cfg.name_id,
-                            ));
+                            let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
+                                sp_parent_ty: SpannedContainer::new(
+                                    parent_name_id,
+                                    abs_cfg.name_span,
+                                ),
+                                member: abs_inner_cfg.name_id,
+                            });
 
                             // List available members?
                             preset_reporter::create_diag_builder_preset(
@@ -1058,10 +1062,13 @@ impl<'a> TypeResolver<'a> {
                     match evaluator::apply_unary_op(*op, sp_const) {
                         UnaryOpResult::Output(val) => Some(val),
                         UnaryOpResult::Invalid => {
-                            return Err(MathError::UnaryOpMismatch(
-                                SpannedContainer::new(const_val.kind().to_fmt(), operand_expr.span),
-                                op.to_fmt(),
-                            ))?;
+                            return Err(MathError::UnaryOpMismatch {
+                                sp_operand: SpannedContainer::new(
+                                    const_val.kind().to_fmt(),
+                                    operand_expr.span,
+                                ),
+                                op: op.to_fmt(),
+                            })?;
                         }
                     }
                 } else {
@@ -1126,16 +1133,24 @@ impl<'a> TypeResolver<'a> {
                         match evaluator::apply_binary_op(sp_lhs_const, *op, sp_rhs_const) {
                             evaluator::BinaryOpResult::Output(val) => Some(val),
                             evaluator::BinaryOpResult::DivideByZero => {
-                                return Err(
-                                    MathError::DivideByZero(lhs_expr.span, rhs_expr.span).into()
-                                );
+                                return Err(MathError::DivideByZero {
+                                    lhs_span: lhs_expr.span,
+                                    rhs_span: rhs_expr.span,
+                                }
+                                .into());
                             }
                             evaluator::BinaryOpResult::Invalid => {
-                                return Err(MathError::BinaryOpMismatch(
-                                    SpannedContainer::new(lhs_const.kind().to_fmt(), lhs_expr.span),
-                                    SpannedContainer::new(rhs_const.kind().to_fmt(), rhs_expr.span),
-                                    op.to_fmt(),
-                                ))?;
+                                return Err(MathError::BinaryOpMismatch {
+                                    sp_lhs: SpannedContainer::new(
+                                        lhs_const.kind().to_fmt(),
+                                        lhs_expr.span,
+                                    ),
+                                    sp_rhs: SpannedContainer::new(
+                                        rhs_const.kind().to_fmt(),
+                                        rhs_expr.span,
+                                    ),
+                                    op: op.to_fmt(),
+                                })?;
                             }
                         }
                     }
@@ -2152,10 +2167,10 @@ impl<'a> TypeResolver<'a> {
 
                     Ok(expr_id)
                 } else {
-                    Err(PresetErr::NumericOverflow(
-                        SpannedContainer::new(*name_id, spanned_expr.span),
-                        Formatted::Integer,
-                    ))
+                    Err(PresetErr::NumericOverflow {
+                        sp_num: SpannedContainer::new(*name_id, spanned_expr.span),
+                        fmtted_ty: Formatted::Integer,
+                    })
                 }
             }
             Expr::Float(name_id, _) => {
@@ -2177,10 +2192,10 @@ impl<'a> TypeResolver<'a> {
 
                     Ok(expr_id)
                 } else {
-                    Err(PresetErr::NumericOverflow(
-                        SpannedContainer::new(*name_id, spanned_expr.span),
-                        Formatted::Float,
-                    ))
+                    Err(PresetErr::NumericOverflow {
+                        sp_num: SpannedContainer::new(*name_id, spanned_expr.span),
+                        fmtted_ty: Formatted::Float,
+                    })
                 }
             }
             Expr::BinaryExpr { lhs, op, rhs } => {
@@ -2229,18 +2244,26 @@ impl<'a> TypeResolver<'a> {
                         match evaluator::apply_binary_op(sp_lhs_const, *op, sp_rhs_const) {
                             evaluator::BinaryOpResult::Output(val) => Some(val),
                             evaluator::BinaryOpResult::DivideByZero => {
-                                return Err(
-                                    MathError::DivideByZero(lhs_expr.span, rhs_expr.span).into()
-                                );
+                                return Err(MathError::DivideByZero {
+                                    lhs_span: lhs_expr.span,
+                                    rhs_span: rhs_expr.span,
+                                }
+                                .into());
                             }
                             evaluator::BinaryOpResult::Invalid
                                 if !lhs_is_unknown && !rhs_is_unknown =>
                             {
-                                return Err(MathError::BinaryOpMismatch(
-                                    SpannedContainer::new(lhs_const.kind().to_fmt(), lhs_expr.span),
-                                    SpannedContainer::new(rhs_const.kind().to_fmt(), rhs_expr.span),
-                                    op.to_fmt(),
-                                ))?;
+                                return Err(MathError::BinaryOpMismatch {
+                                    sp_lhs: SpannedContainer::new(
+                                        lhs_const.kind().to_fmt(),
+                                        lhs_expr.span,
+                                    ),
+                                    sp_rhs: SpannedContainer::new(
+                                        rhs_const.kind().to_fmt(),
+                                        rhs_expr.span,
+                                    ),
+                                    op: op.to_fmt(),
+                                })?;
                             }
                             _ => None,
                         }
@@ -2416,10 +2439,13 @@ impl<'a> TypeResolver<'a> {
                     match evaluator::apply_unary_op(unary.op, sp_const) {
                         UnaryOpResult::Output(val) => Some(val),
                         UnaryOpResult::Invalid if !is_unknown => {
-                            return Err(MathError::UnaryOpMismatch(
-                                SpannedContainer::new(const_val.kind().to_fmt(), operand_expr.span),
-                                unary.op.to_fmt(),
-                            ))?;
+                            return Err(MathError::UnaryOpMismatch {
+                                sp_operand: SpannedContainer::new(
+                                    const_val.kind().to_fmt(),
+                                    operand_expr.span,
+                                ),
+                                op: unary.op.to_fmt(),
+                            })?;
                         }
                         _ => None,
                     }

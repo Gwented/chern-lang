@@ -20,9 +20,9 @@ pub(super) fn fmt_tok(tok: Token, interner: &Intern) -> String {
             format!("\"{ident}\"")
         }
         Token::Keyword(kw) => format!("keyword `{}`", kw.to_fmt().to_string()),
-        Token::Illegal(name_id) => {
-            let illegal_msg = interner.search(name_id);
-            let new_msg = format!("invalid token \"{illegal_msg}\"");
+        Token::Invalid(name_id) => {
+            let invalid_msg = interner.search(name_id);
+            let new_msg = format!("invalid token \"{invalid_msg}\"");
             new_msg
         }
         Token::Char(ch) => format!("'{ch}'"),

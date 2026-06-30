@@ -324,12 +324,12 @@ pub fn parse(
                     }
                 }
             },
-            Token::Illegal(id) => {
+            Token::Invalid(id) => {
                 ctx.advance_tok();
 
                 let err_str = interner.search(id);
 
-                let msg = format!("Found illegal token {err_str}");
+                let msg = format!("Found invalid token {err_str}");
 
                 ctx.report_verbose(&msg, Branch::Broken, interner);
             }
@@ -1042,8 +1042,8 @@ fn parse_primary(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedEx
             ctx.advance_tok();
 
             let msg = match t {
-                Token::Illegal(id) => format!(
-                    "Expected a valid expression, found illegal \"{}\"",
+                Token::Invalid(id) => format!(
+                    "Expected a valid expression, found invalid \"{}\"",
                     interner.search(id)
                 ),
                 Token::Keyword(kw) => format!(

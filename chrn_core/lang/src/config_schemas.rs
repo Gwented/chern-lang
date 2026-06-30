@@ -1,6 +1,6 @@
 use chrn_utils::{id_types::InternedId, intern};
 
-use crate::types::type_constraints::TypeConstraintFlags;
+use crate::types::type_constraints::TypeBoundaryFlags;
 
 /// Represent a configurataion description that must be followed,
 #[derive(Debug)]
@@ -25,14 +25,11 @@ impl ConfigSchema {
 #[derive(Debug)]
 pub struct OptionSchema {
     name_id: InternedId,
-    constraints: Option<TypeConstraintFlags>,
+    constraints: Option<TypeBoundaryFlags>,
 }
 
 impl OptionSchema {
-    pub const fn new(
-        name_id: InternedId,
-        constraints: Option<TypeConstraintFlags>,
-    ) -> OptionSchema {
+    pub const fn new(name_id: InternedId, constraints: Option<TypeBoundaryFlags>) -> OptionSchema {
         OptionSchema {
             name_id,
             constraints,

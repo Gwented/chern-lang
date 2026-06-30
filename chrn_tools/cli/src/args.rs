@@ -3,7 +3,17 @@
 
 use std::path::PathBuf;
 
+use clap::{Parser, error::RichFormatter};
 use clap_derive::{Args, Parser, Subcommand};
+
+/// Wrapper functions over `Cli::try_parse()` which tries to account for possible tooling that may
+/// be using naming like "chrn-*" before definitely panicking.
+pub fn try_parse() -> Result<Cli, clap::error::Error<RichFormatter>> {
+    match Cli::try_parse() {
+        Ok(cli) => Ok(cli),
+        Err(err) => Err(err),
+    }
+}
 
 //TODO: ADD ABOUT
 #[derive(Parser)]

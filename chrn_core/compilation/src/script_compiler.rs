@@ -9,7 +9,7 @@ use lang::{
     directives::{Directive, TypeDirective},
     types::{
         builtins::BuiltinType,
-        type_constraints::{TypeConstraint, TypeConstraintFlags},
+        type_constraints::{TypeBoundaryFlags, TypeBoundary},
     },
     values::ValueInfo,
 };
@@ -1020,7 +1020,7 @@ impl ScriptCompiler {
 
         // IsEmpty
         let type_id = TypeId::new(compiler.types.len() as u32);
-        let is_empty_flags = TypeConstraintFlags::new(TypeConstraint::Collection.to_u64());
+        let is_empty_flags = TypeBoundaryFlags::new(TypeBoundary::Collection.to_u64());
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
@@ -1054,7 +1054,7 @@ impl ScriptCompiler {
 
         // IsWhitespace | CharacterMappable
         let type_id = TypeId::new(compiler.types.len() as u32);
-        let ws_flags = TypeConstraintFlags::new(TypeConstraint::CharacterMappable.to_u64());
+        let ws_flags = TypeBoundaryFlags::new(TypeBoundary::CharacterMappable.to_u64());
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
@@ -1088,7 +1088,7 @@ impl ScriptCompiler {
 
         // Contains(String | char) CharacterMappable
         let type_id = TypeId::new(compiler.types.len() as u32);
-        let contains_flags = TypeConstraintFlags::new(TypeConstraint::CharacterMappable.to_u64());
+        let contains_flags = TypeBoundaryFlags::new(TypeBoundary::CharacterMappable.to_u64());
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
@@ -1122,7 +1122,7 @@ impl ScriptCompiler {
 
         // StartsW(Value) | CharacterMappable
         let type_id = TypeId::new(compiler.types.len() as u32);
-        let startsw_flags = TypeConstraintFlags::new(TypeConstraint::CharacterMappable.to_u64());
+        let startsw_flags = TypeBoundaryFlags::new(TypeBoundary::CharacterMappable.to_u64());
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
@@ -1157,7 +1157,7 @@ impl ScriptCompiler {
         // EndsW(Value) | CharacterMappable
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let type_id = TypeId::new(compiler.types.len() as u32);
-        let endsw_flags = TypeConstraintFlags::new(TypeConstraint::CharacterMappable.to_u64());
+        let endsw_flags = TypeBoundaryFlags::new(TypeBoundary::CharacterMappable.to_u64());
 
         let func_def = FuncDef::new(
             sym_id,
@@ -1192,7 +1192,7 @@ impl ScriptCompiler {
 
         // Range(inclusive, inclusive) | Numeric | Ordering
         let type_id = TypeId::new(compiler.types.len() as u32);
-        let range_flags = TypeConstraintFlags::new(TypeConstraint::Ranged.to_u64());
+        let range_flags = TypeBoundaryFlags::new(TypeBoundary::Ranged.to_u64());
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
@@ -1231,7 +1231,7 @@ impl ScriptCompiler {
 
         // Equals(Comparable)
         let type_id = TypeId::new(compiler.types.len() as u32);
-        let eq_flags = TypeConstraintFlags::new(TypeConstraint::Comparable.to_u64());
+        let eq_flags = TypeBoundaryFlags::new(TypeBoundary::Comparable.to_u64());
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
@@ -1768,7 +1768,7 @@ impl ScriptCompiler {
         // -- Type constraints --
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeConstraintFlags::new(TypeConstraint::Ranged.to_u64())),
+            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::Ranged.to_u64())),
             core_mod_id,
         ));
 
@@ -1790,8 +1790,8 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeConstraintFlags::new(
-                TypeConstraint::CharacterMappable.to_u64(),
+            Type::Constrained(TypeBoundaryFlags::new(
+                TypeBoundary::CharacterMappable.to_u64(),
             )),
             core_mod_id,
         ));
@@ -1814,9 +1814,7 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeConstraintFlags::new(
-                TypeConstraint::Collection.to_u64(),
-            )),
+            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::Collection.to_u64())),
             core_mod_id,
         ));
 
@@ -1838,7 +1836,7 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeConstraintFlags::new(TypeConstraint::HasLen.to_u64())),
+            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::HasLen.to_u64())),
             core_mod_id,
         ));
 
@@ -1860,7 +1858,7 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeConstraintFlags::new(TypeConstraint::Integer.to_u64())),
+            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::Integer.to_u64())),
             core_mod_id,
         ));
 
@@ -1883,7 +1881,7 @@ impl ScriptCompiler {
         // Numeric
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeConstraintFlags::new(TypeConstraint::Numeric.to_u64())),
+            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::Numeric.to_u64())),
             core_mod_id,
         ));
 
@@ -1905,8 +1903,8 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeConstraintFlags::new(
-                TypeConstraint::SignedInteger.to_u64(),
+            Type::Constrained(TypeBoundaryFlags::new(
+                TypeBoundary::SignedInteger.to_u64(),
             )),
             core_mod_id,
         ));
@@ -1929,8 +1927,8 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeConstraintFlags::new(
-                TypeConstraint::UnsignedInteger.to_u64(),
+            Type::Constrained(TypeBoundaryFlags::new(
+                TypeBoundary::UnsignedInteger.to_u64(),
             )),
             core_mod_id,
         ));
@@ -1953,7 +1951,7 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeConstraintFlags::new(TypeConstraint::Float.to_u64())),
+            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::Float.to_u64())),
             core_mod_id,
         ));
 
@@ -1975,7 +1973,7 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeConstraintFlags::new(TypeConstraint::Ordered.to_u64())),
+            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::Ordered.to_u64())),
             core_mod_id,
         ));
 
@@ -1997,9 +1995,7 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeConstraintFlags::new(
-                TypeConstraint::Comparable.to_u64(),
-            )),
+            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::Comparable.to_u64())),
             core_mod_id,
         ));
 

@@ -12,7 +12,7 @@ use lang::{
 
 use crate::token::{Notation, SpannedToken, Token};
 
-const MAX_ILLEGAL_TOKS: u8 = 5;
+const MAX_INVALID_TOKS: u8 = 5;
 
 // Bit-wise operations for read_num
 const NOTATION_FLOAT: u8 = 1 << 0;
@@ -46,13 +46,13 @@ impl Lexer<'_> {
         }
     }
 
-    // Maybe this should just return Result since it'd take extra work to know if there are illegal
+    // Maybe this should just return Result since it'd take extra work to know if there are invalid
     // tokens and if it failed in any form
     pub fn tokenize(&mut self, interner: &mut Intern) -> (Vec<SpannedToken>, Vec<Trivia>) {
         let mut toks: Vec<SpannedToken> = Vec::new();
 
-        // For threshold of illegal tokens before just giving up
-        let mut illegal_toks: u8 = 0;
+        // For threshold of invalid tokens before just giving up
+        let mut invalid_toks: u8 = 0;
 
         // Could be removed
         // let mut in_def = false;
@@ -60,7 +60,7 @@ impl Lexer<'_> {
         loop {
             self.handle_trivia();
 
-            if self.peek() == b'\0' || illegal_toks > MAX_ILLEGAL_TOKS {
+            if self.peek() == b'\0' || invalid_toks > MAX_INVALID_TOKS {
                 // Over-indexes if not subtracted
                 // Could be an empty file so needs saturation
                 let eof_pos = self.pos.saturating_sub(1) as u32;
@@ -78,7 +78,7 @@ impl Lexer<'_> {
 
             match ch {
                 c if c.is_alphabetic() || c == '_' => {
-                    toks.push(self.read_id(interner));
+                    toks.push(self.read_ident(interner));
                 }
                 c if c.is_ascii_digit() => {
                     toks.push(self.read_num(interner));
@@ -549,12 +549,12 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 _ => {
-                    illegal_toks += 1;
+                    invalid_toks += 1;
 
-                    toks.push(self.recover_illegal(None, interner));
-                    if illegal_toks > MAX_ILLEGAL_TOKS {
-                        // TODO: Maybe this should be at the end because technically @ is illegal too
-                        eprintln!("Maximum illegal tokens found.\nReporting then aborting...");
+                    toks.push(self.recover_invalid(None, interner));
+                    if invalid_toks > MAX_INVALID_TOKS {
+                        // TODO: Maybe this should be at the end because technically @ is invalid too
+                        eprintln!("Maximum invalid tokens found.\nReporting then aborting...");
                         // in_def = false;
 
                         toks.push(SpannedToken {
@@ -579,7 +579,9 @@ impl Lexer<'_> {
         (toks, trivia)
     }
 
-    fn read_id(&mut self, interner: &mut Intern) -> SpannedToken {
+    /// Reads a string of characters based off of language expected heuristics
+    /// May return an invalid token
+    fn read_ident(&mut self, interner: &mut Intern) -> SpannedToken {
         let mut start = self.pos;
 
         // e# for escape
@@ -608,7 +610,7 @@ impl Lexer<'_> {
         // Would it ever not be escaped if it's empty?
         // This means that we only found "e#" which is an error since it's an empty ident
         if id_str.is_empty() && is_escaped {
-            return self.recover_illegal(Some(start - 2), interner);
+            return self.recover_invalid(Some(start - 2), interner);
         }
 
         let interned_id = interner.intern(&id_str);
@@ -650,6 +652,10 @@ impl Lexer<'_> {
     //TODO: This defaults to i64 as of right now, but should stay interned in the future.
     // This could also be more readable by building up the string, but it's fine as is.
     // Unicode
+    /// Reads a string of characters and attempts to interpret it as a numeric value
+    /// based off of language expected heuristics.
+    ///
+    /// May return an invalid token.
     fn read_num(&mut self, interner: &mut Intern) -> SpannedToken {
         let start = self.pos;
 
@@ -720,7 +726,7 @@ impl Lexer<'_> {
                 // NOTE: I don't actually think this is possible. Like at all.
                 let msg_id = interner.intern("<invalid ASCII in numeric>");
                 return SpannedToken {
-                    tok: Token::Illegal(msg_id),
+                    tok: Token::Invalid(msg_id),
                     span: SourceSpan::new(self.current_region_id, start as u32, end as u32),
                     leading_trivia_indices: self.trivia_start_idx as u32
                         ..self.trivia_end_idx as u32,
@@ -770,6 +776,7 @@ impl Lexer<'_> {
     //TODO: Check if this still works if quotes are unclosed WITHOUT the loader
     // No
     // Please
+    /// Reads bytes until an end quote is reached. May return an invalid token.
     fn read_quotes(&mut self, interner: &mut Intern) -> SpannedToken {
         let start = self.pos;
 
@@ -781,7 +788,7 @@ impl Lexer<'_> {
 
                     if let Some(_) = self.read_escape() {
                     } else {
-                        return self.recover_illegal(Some(escape_start), interner);
+                        return self.recover_invalid(Some(escape_start), interner);
                     }
                 }
                 b'"' => {
@@ -814,7 +821,7 @@ impl Lexer<'_> {
                 let msg_id = interner.intern("<invalid UTF-8 in string literal>");
 
                 SpannedToken {
-                    tok: Token::Illegal(msg_id),
+                    tok: Token::Invalid(msg_id),
                     span,
                     leading_trivia_indices: self.trivia_start_idx as u32
                         ..self.trivia_end_idx as u32,
@@ -843,7 +850,7 @@ impl Lexer<'_> {
                             char_count += 1;
                         }
                         None => {
-                            return self.recover_illegal(Some(escape_start), interner);
+                            return self.recover_invalid(Some(escape_start), interner);
                         }
                     }
                 }
@@ -863,7 +870,7 @@ impl Lexer<'_> {
         }
 
         if char_count > 1 {
-            return self.recover_illegal(Some(start - 1), interner);
+            return self.recover_invalid(Some(start - 1), interner);
         }
 
         let end = self.pos - 1;
@@ -879,7 +886,7 @@ impl Lexer<'_> {
             None => {
                 let id = interner.intern("empty character literal");
                 SpannedToken {
-                    tok: Token::Illegal(id),
+                    tok: Token::Invalid(id),
                     span,
                     leading_trivia_indices: self.trivia_start_idx as u32
                         ..self.trivia_end_idx as u32,
@@ -985,7 +992,7 @@ impl Lexer<'_> {
         false
     }
 
-    fn recover_illegal(&mut self, start: Option<usize>, interner: &mut Intern) -> SpannedToken {
+    fn recover_invalid(&mut self, start: Option<usize>, interner: &mut Intern) -> SpannedToken {
         let start = if let Some(s) = start { s } else { self.pos };
 
         while self.pos < self.src_bytes.len() && !self.peek_char().is_whitespace() {
@@ -1001,7 +1008,7 @@ impl Lexer<'_> {
         let id = interner.intern(&err_str);
 
         SpannedToken {
-            tok: Token::Illegal(id),
+            tok: Token::Invalid(id),
             // Same offset reason as all other spans
             span: SourceSpan::new(self.current_region_id, start as u32, (end - 1) as u32),
             leading_trivia_indices: self.trivia_start_idx as u32..self.trivia_end_idx as u32,
@@ -1076,9 +1083,10 @@ impl Lexer<'_> {
     }
 
     // Spans are (inclusive, inclusive)
+    /// Produces (inclusive, exclusive) ranged trivia tokens so that accurate information such as
+    /// whitespace positioning, new lines, etc, are all tracked from the source.
     fn handle_trivia(&mut self) {
-        // This is (inclusive, exclusive) but may make this (inclusive, inclusive) for
-        // consistency purposes
+        // This is (inclusive, exclusive)
         self.trivia_start_idx = self.trivia.len();
         loop {
             let trivia_start = self.pos;
@@ -1178,6 +1186,8 @@ impl Lexer<'_> {
         self.trivia_end_idx = self.trivia.len();
     }
 
+    /// Using UTF-8 standards, skips whitespace until either a control character is reached or
+    /// a non-whitespace character is reached.
     fn skip_whitespace(&mut self) {
         while !self.peek().is_ascii_control() && self.peek().is_ascii_whitespace() {
             self.advance();

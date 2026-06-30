@@ -276,7 +276,7 @@ impl<'a> ConstraintResolver<'a> {
 
         // TODO: This should now just check instead of infer
 
-        // let mut found_constraints: Vec<Option<TypeConstraintFlags>> =
+        // let mut found_constraints: Vec<Option<TypeBoundaryFlags>> =
         //     vec![None; alias_def.params.len()];
         //
         // for (i, param) in alias_def.params.iter().enumerate() {
@@ -307,7 +307,7 @@ impl<'a> ConstraintResolver<'a> {
         //                     } else {
         //                         let cond_expr = &self.compiler.exprs[cond_expr_id.id as usize];
         //
-        //                         let preset_err = SemanticError::TypeConstraintBoundConflict(
+        //                         let preset_err = SemanticError::TypeBoundaryBoundConflict(
         //                             *current,
         //                             new_constraints,
         //                             vec![param_span, cond_expr.span],
@@ -339,7 +339,7 @@ impl<'a> ConstraintResolver<'a> {
         // panic!("Paraming");
 
         // Filter out duplicates in the type resolver!!
-        // let mut ty_constraint: Option<TypeConstraint> = None;
+        // let mut ty_constraint: Option<TypeBoundary> = None;
         // for (i, sp_directive) in abs_alias.args.iter().enumerate() {
         //     let param_span = abs_alias.params[i].name_span;
         //     match self.infer_type_constraint_from_arg(sp_directive, param_span) {
@@ -409,7 +409,7 @@ impl<'a> ConstraintResolver<'a> {
     //     // represents the x symbol in the local scope
     //     param_name_id: InternedId,
     //     param_span: SourceSpan,
-    // ) -> Option<TypeConstraintFlags> {
+    // ) -> Option<TypeBoundaryFlags> {
     //     let expr = &self.compiler.exprs[expr_id.id as usize];
     //     match &expr.expr_hir {
     //         ExprHir::Val(val_id) => {
@@ -525,7 +525,7 @@ impl<'a> ConstraintResolver<'a> {
     //     &self,
     //     sp_directive: &SpannedInnerArgs,
     //     param_span: SourceSpan,
-    // ) -> Result<Option<TypeConstraint>, SemanticError> {
+    // ) -> Result<Option<TypeBoundary>, SemanticError> {
     //     todo!()
     // }
 
@@ -1046,11 +1046,14 @@ impl<'a> ConstraintResolver<'a> {
                     // struct.
                     if visited.contains(&field.type_id) {
                         if spanned_directive.inner.has_restrictions() {
-                            return Err(PresetErr::CircularDirective(
-                                SpannedContainer::new(Formatted::Struct, struct_def.name_span),
-                                spanned_directive.into_owned(),
-                                field.name_span,
-                            ));
+                            return Err(PresetErr::CircularDirective {
+                                sp_fmtted_parent: SpannedContainer::new(
+                                    Formatted::Struct,
+                                    struct_def.name_span,
+                                ),
+                                sp_directive: spanned_directive.into_owned(),
+                                err_ty_span: field.name_span,
+                            });
                         }
 
                         continue;
@@ -1086,11 +1089,14 @@ impl<'a> ConstraintResolver<'a> {
                         // different context.
                         if visited.contains(&inner) {
                             if spanned_directive.inner.has_restrictions() {
-                                return Err(PresetErr::CircularDirective(
-                                    SpannedContainer::new(Formatted::Enum, enum_def.name_span),
-                                    spanned_directive.into_owned(),
-                                    variant.name_span,
-                                ));
+                                return Err(PresetErr::CircularDirective {
+                                    sp_fmtted_parent: SpannedContainer::new(
+                                        Formatted::Enum,
+                                        enum_def.name_span,
+                                    ),
+                                    sp_directive: spanned_directive.into_owned(),
+                                    err_ty_span: variant.name_span,
+                                });
                             }
 
                             continue;
@@ -1149,11 +1155,14 @@ impl<'a> ConstraintResolver<'a> {
                         for element in elements {
                             if visited.contains(&*element) {
                                 if spanned_directive.inner.has_restrictions() {
-                                    return Err(PresetErr::CircularDirective(
-                                        SpannedContainer::new(Formatted::Tuple, parent_span),
-                                        spanned_directive.into_owned(),
-                                        active_span,
-                                    ));
+                                    return Err(PresetErr::CircularDirective {
+                                        sp_fmtted_parent: SpannedContainer::new(
+                                            Formatted::Tuple,
+                                            parent_span,
+                                        ),
+                                        sp_directive: spanned_directive.into_owned(),
+                                        err_ty_span: active_span,
+                                    });
                                 }
                             }
 
@@ -1182,10 +1191,10 @@ impl<'a> ConstraintResolver<'a> {
                         let arg_constraints = spanned_directive.inner.type_constraints();
 
                         if !arg_constraints.contains(constraints) {
-                            return Err(PresetErr::UnsupportedDirective(
-                                spanned_directive.into_owned(),
-                                active_span,
-                            ));
+                            return Err(PresetErr::UnsupportedDirective {
+                                sp_directive: spanned_directive.into_owned(),
+                                sym_span: active_span,
+                            });
                         }
 
                         Ok(())
@@ -1197,11 +1206,11 @@ impl<'a> ConstraintResolver<'a> {
                 let arg_constraints = spanned_directive.inner.type_constraints();
 
                 if !arg_constraints.contains(alias_constraints) {
-                    return Err(PresetErr::TypeConstraintBoundConflict(
-                        alias_constraints,
-                        arg_constraints,
-                        vec![spanned_directive.span, active_span],
-                    ));
+                    return Err(PresetErr::TypeBoundaryBoundConflict {
+                        inferred: alias_constraints,
+                        conflicting: arg_constraints,
+                        spans: vec![spanned_directive.span, active_span],
+                    });
                 }
 
                 Ok(())
@@ -1235,11 +1244,11 @@ impl<'a> ConstraintResolver<'a> {
                 let arg_constraints = spanned_directive.inner.type_constraints();
 
                 if !arg_constraints.contains(*current_constraints) {
-                    return Err(PresetErr::TypeConstraintBoundConflict(
-                        *current_constraints,
-                        arg_constraints,
-                        vec![spanned_directive.span, active_span],
-                    ));
+                    return Err(PresetErr::TypeBoundaryBoundConflict {
+                        inferred: *current_constraints,
+                        conflicting: arg_constraints,
+                        spans: vec![spanned_directive.span, active_span],
+                    });
                 }
                 panic!("Hi");
 
@@ -1443,7 +1452,7 @@ impl<'a> ConstraintResolver<'a> {
         //                     expr_span,
         //                     cond_span,
         //                     &mut Vec::new(),
-        //                     TypeConstraintFlags::new(TypeConstraint::Comparable.to_u64()),
+        //                     TypeBoundaryFlags::new(TypeBoundary::Comparable.to_u64()),
         //                 ) {
         //                     preset_errs.push(preset_err);
         //                 };

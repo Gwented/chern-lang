@@ -10,7 +10,7 @@ use chrn_utils::{
 };
 use lang::{
     fmter::{Formattable, Formatted},
-    types::{builtins::BuiltinType, type_constraints::TypeConstraintFlags},
+    types::{builtins::BuiltinType, type_constraints::TypeBoundaryFlags},
 };
 
 use crate::{
@@ -138,7 +138,7 @@ pub enum Type {
     Func(FuncDef),
     Alias(AliasDef),
     TypeDef(TypeDef),
-    Constrained(TypeConstraintFlags),
+    Constrained(TypeBoundaryFlags),
     /// Preserved stable handle so that anything defined before a type was defined can still point
     /// to the correct type which prevents duplicating different definitions.
     Deferred(TypeId),
@@ -166,7 +166,7 @@ impl Type {
             // This is the only issue since it's not a single Formatted.
             // The next obvious decision should be to do, "Formatted::NumericIntegerRanged", etc.,
             // where we have 4000 variants which
-            Type::Constrained(flags) => Formatted::Constraints(*flags),
+            Type::Constrained(flags) => Formatted::Boundaries(*flags),
             Type::Deferred(inner) => Type::to_fmt(compiler, *inner),
             Type::Unknown => Formatted::Unknown,
         }
@@ -466,7 +466,7 @@ pub struct FuncDef {
     /// regards to
     pub affects_type_constraint: bool,
     //TEST:
-    pub type_constraints: TypeConstraintFlags,
+    pub type_constraints: TypeBoundaryFlags,
     //TEST:
     pub arg_constraints: Vec<ArgConstraint>,
     pub ret_type: TypeId,
@@ -477,7 +477,7 @@ impl FuncDef {
         sym_id: SymbolId,
         kind: FuncKind,
         is_callable: bool,
-        type_constraints: TypeConstraintFlags,
+        type_constraints: TypeBoundaryFlags,
         arg_constraints: Vec<ArgConstraint>,
         affects_type_constraint: bool,
         ret_type: TypeId,
@@ -539,7 +539,7 @@ pub struct AliasDef {
     pub sym_id: SymbolId,
     pub name_span: SourceSpan,
     pub params: Vec<Param>,
-    pub ty_constraints: TypeConstraintFlags,
+    pub ty_constraints: TypeBoundaryFlags,
     pub arg_constraints: Vec<ArgConstraint>,
     pub local_scope_id: ScopeId,
     pub directives: Vec<SpannedContainer<DirectiveId>>,
@@ -558,7 +558,7 @@ impl AliasDef {
             sym_id,
             name_span,
             params,
-            ty_constraints: TypeConstraintFlags::runtime(),
+            ty_constraints: TypeBoundaryFlags::runtime(),
             arg_constraints,
             local_scope_id,
             conds: Vec::new(),

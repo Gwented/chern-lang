@@ -5,8 +5,8 @@ use crate::{
 
 // This was a horrible idea.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TypeConstraint {
-    // Multiple(Vec<TypeConstraint>),
+pub enum TypeBoundary {
+    // Multiple(Vec<TypeBoundary>),
     Collection,
     CharacterMappable,
     HasLen,
@@ -25,25 +25,25 @@ pub enum TypeConstraint {
     Nil,
 }
 
-impl Formattable for TypeConstraint {
+impl Formattable for TypeBoundary {
     fn to_fmt(&self) -> Formatted {
         match self {
-            TypeConstraint::Collection => Formatted::Collection,
-            TypeConstraint::CharacterMappable => Formatted::CharacterMappable,
-            TypeConstraint::Numeric => Formatted::Numeric,
-            TypeConstraint::HasLen => Formatted::HasLen,
-            TypeConstraint::Integer => Formatted::Integer,
-            TypeConstraint::Float => Formatted::Float,
-            TypeConstraint::Bool => Formatted::Bool,
-            TypeConstraint::Str => Formatted::Str,
-            TypeConstraint::SignedInteger => Formatted::SignedInteger,
-            TypeConstraint::UnsignedInteger => Formatted::UnsignedInteger,
-            TypeConstraint::Char => Formatted::Char,
-            TypeConstraint::Runtime => Formatted::Runtime,
-            TypeConstraint::Ranged => Formatted::Ranged,
-            TypeConstraint::Comparable => Formatted::Comparable,
-            TypeConstraint::Ordered => Formatted::Ordered,
-            TypeConstraint::Nil => Formatted::Nil,
+            TypeBoundary::Collection => Formatted::Collection,
+            TypeBoundary::CharacterMappable => Formatted::CharacterMappable,
+            TypeBoundary::Numeric => Formatted::Numeric,
+            TypeBoundary::HasLen => Formatted::HasLen,
+            TypeBoundary::Integer => Formatted::Integer,
+            TypeBoundary::Float => Formatted::Float,
+            TypeBoundary::Bool => Formatted::Bool,
+            TypeBoundary::Str => Formatted::Str,
+            TypeBoundary::SignedInteger => Formatted::SignedInteger,
+            TypeBoundary::UnsignedInteger => Formatted::UnsignedInteger,
+            TypeBoundary::Char => Formatted::Char,
+            TypeBoundary::Runtime => Formatted::Runtime,
+            TypeBoundary::Ranged => Formatted::Ranged,
+            TypeBoundary::Comparable => Formatted::Comparable,
+            TypeBoundary::Ordered => Formatted::Ordered,
+            TypeBoundary::Nil => Formatted::Nil,
         }
     }
 }
@@ -59,7 +59,7 @@ impl TypeDomainFlags {
         TypeDomainFlags { flags }
     }
 
-    pub fn to_type_constraints_vec(self) -> Vec<TypeConstraint> {
+    pub fn to_type_constraints_vec(self) -> Vec<TypeBoundary> {
         let mut constraints = Vec::new();
         let mut flags = self.flags;
 
@@ -76,24 +76,24 @@ impl TypeDomainFlags {
     }
 }
 
-///
+//TODO: Made bitflags
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TypeConstraintFlags {
+pub struct TypeBoundaryFlags {
     pub flags: u64,
 }
 
-impl TypeConstraintFlags {
-    pub const fn new(flags: u64) -> TypeConstraintFlags {
-        TypeConstraintFlags { flags }
+impl TypeBoundaryFlags {
+    pub const fn new(flags: u64) -> TypeBoundaryFlags {
+        TypeBoundaryFlags { flags }
     }
 
-    pub const fn runtime() -> TypeConstraintFlags {
-        TypeConstraintFlags { flags: RUNTIME }
+    pub const fn runtime() -> TypeBoundaryFlags {
+        TypeBoundaryFlags { flags: RUNTIME }
     }
 
-    /// Turns bit-flags into a `TypeConstraint` enum vector by going through each of it's active
+    /// Turns bit-flags into a `TypeBoundary` enum vector by going through each of it's active
     /// bits.
-    pub fn to_type_constraint_vec(self) -> Vec<TypeConstraint> {
+    pub fn to_type_constraint_vec(self) -> Vec<TypeBoundary> {
         let mut constraints = Vec::new();
         let mut flags = self.flags;
 
@@ -109,8 +109,8 @@ impl TypeConstraintFlags {
         constraints
     }
 
-    pub fn contains_specific(self, ty_constraint: TypeConstraint) -> bool {
-        let other_constraints = TypeConstraintFlags::new(ty_constraint.to_u64());
+    pub fn contains_specific(self, ty_constraint: TypeBoundary) -> bool {
+        let other_constraints = TypeBoundaryFlags::new(ty_constraint.to_u64());
 
         self.contains(other_constraints);
         todo!()
@@ -118,7 +118,7 @@ impl TypeConstraintFlags {
 
     /// Returns true if any concrete member of `other` falls within the domain of `self`.
     /// Unlike `contains`, this expands both sides into their concrete domains before testing.
-    pub fn contains(self, other: TypeConstraintFlags) -> bool {
+    pub fn contains(self, other: TypeBoundaryFlags) -> bool {
         let self_domain = self.get_domain();
         let other_domain = other.get_domain();
         let filtered_domains = TypeDomainFlags::new(self_domain.flags & other_domain.flags);
@@ -160,7 +160,7 @@ impl TypeConstraintFlags {
     /// - If the domains partially overlap (neither is a subset of the other), returns
     ///   `Some(other)` so callers can continue narrowing with the new constraint.
     /// - Returns `None` if the two constraints are disjoint (no overlap at all).
-    pub fn try_lower_to(self, other: TypeConstraintFlags) -> Option<TypeConstraintFlags> {
+    pub fn try_lower_to(self, other: TypeBoundaryFlags) -> Option<TypeBoundaryFlags> {
         if self == other {
             return None;
         }
@@ -191,7 +191,7 @@ impl TypeConstraintFlags {
         Some(self)
     }
 
-    pub fn try_raise_to(self, other: TypeConstraintFlags) -> Option<TypeConstraintFlags> {
+    pub fn try_raise_to(self, other: TypeBoundaryFlags) -> Option<TypeBoundaryFlags> {
         todo!()
         // if self != other && self.contains(other) {
         //     return Some(other);
@@ -223,7 +223,7 @@ pub const fn to_idx(flag: u64) -> usize {
     }
 }
 
-// impl Formattable for TypeConstraintFlags {
+// impl Formattable for TypeBoundaryFlags {
 //     fn to_fmt(&self) -> Formatted {
 //         dbg!(self);
 //         match self.flags {
@@ -299,26 +299,26 @@ pub const ALL_DOMAINS: u64 = STR
     | ORDERED
     | NIL;
 
-pub static TYPE_CONSTRAINTS_ARRAY: [TypeConstraint; 16] = [
-    TypeConstraint::SignedInteger,
-    TypeConstraint::UnsignedInteger,
-    TypeConstraint::Float,
-    TypeConstraint::Bool,
-    TypeConstraint::Str,
-    TypeConstraint::Char,
-    TypeConstraint::Runtime,
-    TypeConstraint::Comparable,
-    TypeConstraint::CharacterMappable,
-    TypeConstraint::HasLen,
-    TypeConstraint::Integer,
-    TypeConstraint::Numeric,
-    TypeConstraint::Ranged,
-    TypeConstraint::Collection,
-    TypeConstraint::Ordered,
-    TypeConstraint::Nil,
+pub static TYPE_CONSTRAINTS_ARRAY: [TypeBoundary; 16] = [
+    TypeBoundary::SignedInteger,
+    TypeBoundary::UnsignedInteger,
+    TypeBoundary::Float,
+    TypeBoundary::Bool,
+    TypeBoundary::Str,
+    TypeBoundary::Char,
+    TypeBoundary::Runtime,
+    TypeBoundary::Comparable,
+    TypeBoundary::CharacterMappable,
+    TypeBoundary::HasLen,
+    TypeBoundary::Integer,
+    TypeBoundary::Numeric,
+    TypeBoundary::Ranged,
+    TypeBoundary::Collection,
+    TypeBoundary::Ordered,
+    TypeBoundary::Nil,
 ];
 
-impl TypeConstraint {
+impl TypeBoundary {
     /// Will return non-recursive check of compatibility
     pub fn supports_builtin_ty(&self, builtin: BuiltinTypeKind) -> bool {
         todo!()
@@ -328,21 +328,21 @@ impl TypeConstraint {
         //
         // false
         // match self {
-        //     TypeConstraint::CharacterMappable => builtin.is_character_mappable(),
-        //     TypeConstraint::Numeric => builtin.is_numeric(),
-        //     TypeConstraint::Integer => builtin.is_integer(),
-        //     TypeConstraint::SignedInteger => builtin.is_signed_integer(),
-        //     TypeConstraint::Float => builtin.is_float(),
-        //     TypeConstraint::Bool => builtin == BuiltinTypeKind::Bool,
-        //     TypeConstraint::Str => builtin == BuiltinTypeKind::Str,
-        //     TypeConstraint::Char => builtin == BuiltinTypeKind::Char,
-        //     TypeConstraint::Collection => builtin.is_collection(),
-        //     TypeConstraint::Ordered => builtin.is_ordered(),
-        //     TypeConstraint::HasLen => builtin.has_len(),
-        //     TypeConstraint::UnsignedInteger => builtin.is_unsigned_integer(),
-        //     TypeConstraint::Ranged => builtin.is_ranged(),
-        //     TypeConstraint::Comparable => builtin.is_comparable(),
-        //     // TypeConstraint::Multiple(type_constraints) => {
+        //     TypeBoundary::CharacterMappable => builtin.is_character_mappable(),
+        //     TypeBoundary::Numeric => builtin.is_numeric(),
+        //     TypeBoundary::Integer => builtin.is_integer(),
+        //     TypeBoundary::SignedInteger => builtin.is_signed_integer(),
+        //     TypeBoundary::Float => builtin.is_float(),
+        //     TypeBoundary::Bool => builtin == BuiltinTypeKind::Bool,
+        //     TypeBoundary::Str => builtin == BuiltinTypeKind::Str,
+        //     TypeBoundary::Char => builtin == BuiltinTypeKind::Char,
+        //     TypeBoundary::Collection => builtin.is_collection(),
+        //     TypeBoundary::Ordered => builtin.is_ordered(),
+        //     TypeBoundary::HasLen => builtin.has_len(),
+        //     TypeBoundary::UnsignedInteger => builtin.is_unsigned_integer(),
+        //     TypeBoundary::Ranged => builtin.is_ranged(),
+        //     TypeBoundary::Comparable => builtin.is_comparable(),
+        //     // TypeBoundary::Multiple(type_constraints) => {
         //     //     for constraint in type_constraints {
         //     //         if constraint.supports_builtin_ty(builtin) {
         //     //             return true;
@@ -351,98 +351,98 @@ impl TypeConstraint {
         //     //
         //     //     false
         //     // }
-        //     TypeConstraint::Any => true,
+        //     TypeBoundary::Any => true,
         // }
     }
 
     pub const fn to_u64(&self) -> u64 {
         match self {
-            TypeConstraint::Collection => COLLECTION,
-            TypeConstraint::CharacterMappable => CHARACTER_MAPPABLE,
-            TypeConstraint::HasLen => HAS_LEN,
-            TypeConstraint::Numeric => NUMERIC,
-            TypeConstraint::Integer => INTEGER,
-            TypeConstraint::SignedInteger => SIGNED_INTEGER,
-            TypeConstraint::Float => FLOAT,
-            TypeConstraint::Bool => BOOL,
-            TypeConstraint::Str => STR,
-            TypeConstraint::Char => CHAR,
-            TypeConstraint::UnsignedInteger => UNSIGNED_INTEGER,
-            TypeConstraint::Runtime => RUNTIME,
-            TypeConstraint::Ranged => RANGED,
-            TypeConstraint::Comparable => COMPARABLE,
-            TypeConstraint::Ordered => ORDERED,
-            TypeConstraint::Nil => NIL,
+            TypeBoundary::Collection => COLLECTION,
+            TypeBoundary::CharacterMappable => CHARACTER_MAPPABLE,
+            TypeBoundary::HasLen => HAS_LEN,
+            TypeBoundary::Numeric => NUMERIC,
+            TypeBoundary::Integer => INTEGER,
+            TypeBoundary::SignedInteger => SIGNED_INTEGER,
+            TypeBoundary::Float => FLOAT,
+            TypeBoundary::Bool => BOOL,
+            TypeBoundary::Str => STR,
+            TypeBoundary::Char => CHAR,
+            TypeBoundary::UnsignedInteger => UNSIGNED_INTEGER,
+            TypeBoundary::Runtime => RUNTIME,
+            TypeBoundary::Ranged => RANGED,
+            TypeBoundary::Comparable => COMPARABLE,
+            TypeBoundary::Ordered => ORDERED,
+            TypeBoundary::Nil => NIL,
         }
     }
 
-    // pub const fn from_u64(self, val: u64) -> TypeConstraint {
+    // pub const fn from_u64(self, val: u64) -> TypeBoundary {
     //     match val {
-    //         COLLECTION => TypeConstraint::Collection,
-    //         CHARACTER_MAPPABLE => TypeConstraint::CharacterMappable,
-    //         HAS_LEN => TypeConstraint::HasLen,
-    //         NUMERIC => TypeConstraint::Numeric,
-    //         INTEGER => TypeConstraint::Integer,
-    //         SIGNED_INTEGER => TypeConstraint::SignedInteger,
-    //         FLOAT => TypeConstraint::Float,
-    //         BOOL => TypeConstraint::Bool,
-    //         STR => TypeConstraint::Str,
-    //         CHAR => TypeConstraint::Char,
-    //         UNSIGNED_INTEGER => TypeConstraint::UnsignedInteger,
-    //         RUNTIME => TypeConstraint::Runtime,
-    //         RANGED => TypeConstraint::Ranged,
-    //         COMPARABLE => TypeConstraint::Comparable,
-    //         ORDERED => TypeConstraint::Ordered,
-    //         NIL => TypeConstraint::Nil,
-    //         _ => unreachable!("try_from failed to turn u64 constraint into enum `TypeConstraint`"),
+    //         COLLECTION => TypeBoundary::Collection,
+    //         CHARACTER_MAPPABLE => TypeBoundary::CharacterMappable,
+    //         HAS_LEN => TypeBoundary::HasLen,
+    //         NUMERIC => TypeBoundary::Numeric,
+    //         INTEGER => TypeBoundary::Integer,
+    //         SIGNED_INTEGER => TypeBoundary::SignedInteger,
+    //         FLOAT => TypeBoundary::Float,
+    //         BOOL => TypeBoundary::Bool,
+    //         STR => TypeBoundary::Str,
+    //         CHAR => TypeBoundary::Char,
+    //         UNSIGNED_INTEGER => TypeBoundary::UnsignedInteger,
+    //         RUNTIME => TypeBoundary::Runtime,
+    //         RANGED => TypeBoundary::Ranged,
+    //         COMPARABLE => TypeBoundary::Comparable,
+    //         ORDERED => TypeBoundary::Ordered,
+    //         NIL => TypeBoundary::Nil,
+    //         _ => unreachable!("try_from failed to turn u64 constraint into enum `TypeBoundary`"),
     //     }
     // }
 
     pub const fn to_u64_domain(&self) -> u64 {
         match self {
-            TypeConstraint::Collection => COLLECTION_DOMAIN,
-            TypeConstraint::CharacterMappable => CHARACTER_MAPPABLE_DOMAIN,
-            TypeConstraint::HasLen => HAS_LEN_DOMAIN,
-            TypeConstraint::Numeric => NUMERIC_DOMAIN,
-            TypeConstraint::Integer => INTEGER_DOMAIN,
-            TypeConstraint::SignedInteger => SIGNED_INTEGER,
-            TypeConstraint::Float => FLOAT,
-            TypeConstraint::Bool => BOOL,
-            TypeConstraint::Str => STR,
-            TypeConstraint::Char => CHAR,
-            TypeConstraint::UnsignedInteger => UNSIGNED_INTEGER,
-            TypeConstraint::Runtime => RUNTIME,
-            TypeConstraint::Ranged => RANGED_DOMAIN,
-            TypeConstraint::Comparable => COMPARABLE_DOMAIN,
-            TypeConstraint::Ordered => ORDERED_DOMAIN,
-            TypeConstraint::Nil => NIL,
+            TypeBoundary::Collection => COLLECTION_DOMAIN,
+            TypeBoundary::CharacterMappable => CHARACTER_MAPPABLE_DOMAIN,
+            TypeBoundary::HasLen => HAS_LEN_DOMAIN,
+            TypeBoundary::Numeric => NUMERIC_DOMAIN,
+            TypeBoundary::Integer => INTEGER_DOMAIN,
+            TypeBoundary::SignedInteger => SIGNED_INTEGER,
+            TypeBoundary::Float => FLOAT,
+            TypeBoundary::Bool => BOOL,
+            TypeBoundary::Str => STR,
+            TypeBoundary::Char => CHAR,
+            TypeBoundary::UnsignedInteger => UNSIGNED_INTEGER,
+            TypeBoundary::Runtime => RUNTIME,
+            TypeBoundary::Ranged => RANGED_DOMAIN,
+            TypeBoundary::Comparable => COMPARABLE_DOMAIN,
+            TypeBoundary::Ordered => ORDERED_DOMAIN,
+            TypeBoundary::Nil => NIL,
         }
     }
 }
 
 // No
-impl TryFrom<u64> for TypeConstraint {
+impl TryFrom<u64> for TypeBoundary {
     type Error = ();
 
     fn try_from(val: u64) -> Result<Self, Self::Error> {
         match val {
-            COLLECTION => Ok(TypeConstraint::Collection),
-            CHARACTER_MAPPABLE => Ok(TypeConstraint::CharacterMappable),
-            HAS_LEN => Ok(TypeConstraint::HasLen),
-            NUMERIC => Ok(TypeConstraint::Numeric),
-            INTEGER => Ok(TypeConstraint::Integer),
-            SIGNED_INTEGER => Ok(TypeConstraint::SignedInteger),
-            FLOAT => Ok(TypeConstraint::Float),
-            BOOL => Ok(TypeConstraint::Bool),
-            STR => Ok(TypeConstraint::Str),
-            CHAR => Ok(TypeConstraint::Char),
-            UNSIGNED_INTEGER => Ok(TypeConstraint::UnsignedInteger),
-            RUNTIME => Ok(TypeConstraint::Runtime),
-            RANGED => Ok(TypeConstraint::Ranged),
-            COMPARABLE => Ok(TypeConstraint::Comparable),
-            ORDERED => Ok(TypeConstraint::Ordered),
-            NIL => Ok(TypeConstraint::Nil),
-            _ => unreachable!("try_from failed to turn u64 constraint into enum `TypeConstraint`"),
+            COLLECTION => Ok(TypeBoundary::Collection),
+            CHARACTER_MAPPABLE => Ok(TypeBoundary::CharacterMappable),
+            HAS_LEN => Ok(TypeBoundary::HasLen),
+            NUMERIC => Ok(TypeBoundary::Numeric),
+            INTEGER => Ok(TypeBoundary::Integer),
+            SIGNED_INTEGER => Ok(TypeBoundary::SignedInteger),
+            FLOAT => Ok(TypeBoundary::Float),
+            BOOL => Ok(TypeBoundary::Bool),
+            STR => Ok(TypeBoundary::Str),
+            CHAR => Ok(TypeBoundary::Char),
+            UNSIGNED_INTEGER => Ok(TypeBoundary::UnsignedInteger),
+            RUNTIME => Ok(TypeBoundary::Runtime),
+            RANGED => Ok(TypeBoundary::Ranged),
+            COMPARABLE => Ok(TypeBoundary::Comparable),
+            ORDERED => Ok(TypeBoundary::Ordered),
+            NIL => Ok(TypeBoundary::Nil),
+            _ => unreachable!("try_from failed to turn u64 constraint into enum `TypeBoundary`"),
         }
     }
 }

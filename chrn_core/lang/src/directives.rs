@@ -4,7 +4,7 @@ use crate::{
     fmter::{Formattable, Formatted},
     types::{
         builtins::BuiltinType,
-        type_constraints::{self, TypeConstraintFlags},
+        type_constraints::{self, TypeBoundaryFlags},
     },
 };
 
@@ -39,10 +39,10 @@ impl Directive {
         }
     }
 
-    pub fn type_constraints(self) -> TypeConstraintFlags {
+    pub fn type_constraints(self) -> TypeBoundaryFlags {
         let flags = match self {
             Directive::Warn | Directive::Ignore => {
-                TypeConstraintFlags::new(type_constraints::ALL_DOMAINS)
+                TypeBoundaryFlags::new(type_constraints::ALL_DOMAINS)
             }
             Directive::Type(type_directive) => type_directive.type_constraints(),
         };
@@ -137,34 +137,34 @@ impl TypeDirective {
         }
     }
 
-    // pub fn supports_type_constraint(&self, constraint_flags: TypeConstraintFlags) -> bool {
+    // pub fn supports_type_constraint(&self, constraint_flags: TypeBoundaryFlags) -> bool {
     //     todo!()
     // match self {
     //     InnerArgs::Scientific | InnerArgs::Hex | InnerArgs::Binary | InnerArgs::Octal => {
     //         match constraint_flags.flags {
-    //             TypeConstraint::Collection | TypeConstraint::HasLen if is_rec => true,
-    //             TypeConstraint::Numeric
-    //             | TypeConstraint::Integer
-    //             | TypeConstraint::SignedInteger
-    //             | TypeConstraint::UnsignedInteger
-    //             | TypeConstraint::Float
-    //             | TypeConstraint::Ordered
-    //             | TypeConstraint::Any => true,
-    //             TypeConstraint::Bool
-    //             | TypeConstraint::Collection
-    //             | TypeConstraint::HasLen
-    //             | TypeConstraint::CharacterMappable
-    //             | TypeConstraint::Char
-    //             | TypeConstraint::Ranged
-    //             | TypeConstraint::Comparable
-    //             | TypeConstraint::Str => false,
+    //             TypeBoundary::Collection | TypeBoundary::HasLen if is_rec => true,
+    //             TypeBoundary::Numeric
+    //             | TypeBoundary::Integer
+    //             | TypeBoundary::SignedInteger
+    //             | TypeBoundary::UnsignedInteger
+    //             | TypeBoundary::Float
+    //             | TypeBoundary::Ordered
+    //             | TypeBoundary::Any => true,
+    //             TypeBoundary::Bool
+    //             | TypeBoundary::Collection
+    //             | TypeBoundary::HasLen
+    //             | TypeBoundary::CharacterMappable
+    //             | TypeBoundary::Char
+    //             | TypeBoundary::Ranged
+    //             | TypeBoundary::Comparable
+    //             | TypeBoundary::Str => false,
     //         }
     //     }
     //     InnerArgs::Ignore | InnerArgs::Warn => true,
     // }
     // }
 
-    pub fn type_constraints(self) -> TypeConstraintFlags {
+    pub fn type_constraints(self) -> TypeBoundaryFlags {
         let flags = match self {
             TypeDirective::Scient
             | TypeDirective::Hex
@@ -172,7 +172,7 @@ impl TypeDirective {
             | TypeDirective::Octal => type_constraints::NUMERIC,
         };
 
-        TypeConstraintFlags::new(flags)
+        TypeBoundaryFlags::new(flags)
     }
 
     pub fn try_from_interned_str(interned_id: InternedId) -> Option<TypeDirective> {

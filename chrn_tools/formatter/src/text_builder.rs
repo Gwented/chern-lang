@@ -254,7 +254,7 @@ impl TextBuilder<'_> {
     // Need to track where invalid is within ast in some form
     fn append_invalid(&mut self, abs_span: SourceSpan, all_text_hirs: &mut Vec<TextHir>) {
         // while self.peek_spanned().span.start < abs_span.start {
-        //     panic!("Illegal");
+        //     panic!("Invalid");
         // }
     }
 

@@ -42,7 +42,7 @@ use compilation::semantic::hir::hir_concepts::{self, SymbolKind, Type, VariableS
 use compilation::token::Token as ScriptToken;
 use lang::fmter::Formattable;
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
-use lang::types::type_constraints::TypeConstraint;
+use lang::types::type_constraints::TypeBoundary;
 use lang::values::Value;
 use tower_lsp::lsp_types;
 
@@ -444,7 +444,7 @@ pub fn compute_hover(
             Some((span_start, span_end.saturating_add(1))),
         ),
         ScriptToken::HashSymbol => (
-            "**#** — Argument prefix (#warn/#ignore)".into(),
+            "**#** — Directive prefix".into(),
             Some((span_start, span_end.saturating_add(1))),
         ),
         ScriptToken::SlimArrow => (
@@ -633,7 +633,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                         .ty_constraints
                         .to_type_constraint_vec()
                         .iter()
-                        .map(|c: &TypeConstraint| c.to_fmt().to_string())
+                        .map(|c: &TypeBoundary| c.to_fmt().to_string())
                         .collect::<Vec<_>>()
                         .join(" | ");
                     format!("{}: {}", p_name, p_constraint)
@@ -649,7 +649,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
         Type::Constrained(flags) => flags
             .to_type_constraint_vec()
             .iter()
-            .map(|c: &TypeConstraint| c.to_fmt().to_string())
+            .map(|c: &TypeBoundary| c.to_fmt().to_string())
             .collect::<Vec<_>>()
             .join(" | "),
         Type::Deferred(type_id) => {

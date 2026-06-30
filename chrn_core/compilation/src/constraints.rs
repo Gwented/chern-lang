@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use chrn_utils::{id_types::TypeId, source_map::source_span::SourceSpan};
-use lang::{fmter::Formattable, types::type_constraints::TypeConstraintFlags};
+use lang::{fmter::Formattable, types::type_constraints::TypeBoundaryFlags};
 
 use crate::{
     script_compiler::ScriptCompiler,
@@ -16,7 +16,7 @@ pub(super) fn check_type_constraint(
     ty_span: SourceSpan,
     cond_span: SourceSpan,
     visited: &mut Vec<TypeId>,
-    given_constraints: TypeConstraintFlags,
+    given_constraints: TypeBoundaryFlags,
 ) -> Result<(), PresetErr> {
     let ty = &compiler.types[type_id.id as usize].ty;
     match ty {
@@ -96,11 +96,11 @@ pub(super) fn check_type_constraint(
         Type::Alias(alias_def) => {
             // Misleading error message
             if given_constraints.contains(alias_def.ty_constraints) {
-                return Err(PresetErr::TypeConstraintBoundConflict(
-                    given_constraints,
-                    alias_def.ty_constraints,
-                    vec![ty_span, cond_span],
-                ));
+                return Err(PresetErr::TypeBoundaryBoundConflict {
+                    inferred: given_constraints,
+                    conflicting: alias_def.ty_constraints,
+                    spans: vec![ty_span, cond_span],
+                });
             }
             panic!("Is does not contain given");
 
@@ -112,22 +112,22 @@ pub(super) fn check_type_constraint(
             let constraints = builtin_ty.kind().type_constraints();
 
             if !given_constraints.contains(constraints) {
-                return Err(PresetErr::TypeConstraintMismatch(
+                return Err(PresetErr::TypeBoundaryMismatch {
                     given_constraints,
-                    builtin_ty.kind().to_fmt(),
-                    vec![ty_span, cond_span],
-                ));
+                    found_ty: builtin_ty.kind().to_fmt(),
+                    spans: vec![ty_span, cond_span],
+                });
             }
 
             Ok(())
         }
         Type::Constrained(constraints) => {
             if !given_constraints.contains(*constraints) {
-                return Err(PresetErr::TypeConstraintBoundConflict(
-                    given_constraints,
-                    *constraints,
-                    vec![ty_span, cond_span],
-                ));
+                return Err(PresetErr::TypeBoundaryBoundConflict {
+                    inferred: given_constraints,
+                    conflicting: *constraints,
+                    spans: vec![ty_span, cond_span],
+                });
             }
 
             Ok(())
@@ -143,7 +143,7 @@ pub fn get_type_constraints(
     type_id: TypeId,
     ty_span: SourceSpan,
     is_rec: bool,
-) -> Option<TypeConstraintFlags> {
+) -> Option<TypeBoundaryFlags> {
     let ty = &compiler.types[type_id.id as usize].ty;
     match ty {
         Type::BuiltinType(builtin_ty) => Some(builtin_ty.kind().type_constraints()),

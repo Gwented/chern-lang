@@ -4,7 +4,7 @@ use chrn_utils::{
 };
 use lang::{
     fmter::{Formattable, Formatted},
-    types::type_constraints::{self, TypeConstraintFlags},
+    types::type_constraints::{self, TypeBoundaryFlags},
 };
 
 use crate::parser::ast::ast_exprs::{SpannedExpr, TypeExpr};
@@ -645,14 +645,14 @@ pub enum UnaryOp {
 }
 
 impl UnaryOp {
-    pub fn type_constraints(&self) -> TypeConstraintFlags {
+    pub fn type_constraints(&self) -> TypeBoundaryFlags {
         let flags = match self {
             UnaryOp::Not => type_constraints::BOOL,
             UnaryOp::Negate => type_constraints::NUMERIC,
             UnaryOp::BitNot => type_constraints::INTEGER,
         };
 
-        TypeConstraintFlags::new(flags)
+        TypeBoundaryFlags::new(flags)
     }
 }
 
