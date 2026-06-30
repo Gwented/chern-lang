@@ -507,13 +507,18 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '!' => {
+                    let (start, mut end) = (self.pos as u32, self.pos);
+                    let tok = if self.peek_ahead(1) == b'=' {
+                        self.advance();
+                        end = self.pos;
+                        Token::NotEq
+                    } else {
+                        Token::ExclamationPoint
+                    };
+
                     toks.push(SpannedToken {
-                        tok: Token::ExclamationPoint,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            self.pos as u32,
-                        ),
+                        tok,
+                        span: SourceSpan::new(self.current_region_id, start, end as u32),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
@@ -736,8 +741,17 @@ impl Lexer<'_> {
 
         let (id_str, num_notation) =
             if (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCTAL)) != 0 {
-                let digits_start = if raw_str.len() > 2 { 2 } else { 0 };
-                let digits = &raw_str[digits_start..].replace('_', "");
+                let digits = raw_str[2..].replace('_', "");
+
+                if digits.is_empty() {
+                    let msg_id = interner.intern("<empty numeric literal>");
+                    return SpannedToken {
+                        tok: Token::Invalid(msg_id),
+                        span: SourceSpan::new(self.current_region_id, start as u32, end as u32),
+                        leading_trivia_indices: self.trivia_start_idx as u32
+                            ..self.trivia_end_idx as u32,
+                    };
+                }
 
                 let (radix, num_notation) = if (notation & NOTATION_HEX) != 0 {
                     (16, Notation::Hex)
@@ -747,7 +761,18 @@ impl Lexer<'_> {
                     (8, Notation::Octal)
                 };
 
-                let num = i64::from_str_radix(digits, radix).unwrap_or(0);
+                let num = match i64::from_str_radix(&digits, radix) {
+                    Ok(n) => n,
+                    Err(_) => {
+                        let msg_id = interner.intern("<invalid numeric literal>");
+                        return SpannedToken {
+                            tok: Token::Invalid(msg_id),
+                            span: SourceSpan::new(self.current_region_id, start as u32, end as u32),
+                            leading_trivia_indices: self.trivia_start_idx as u32
+                                ..self.trivia_end_idx as u32,
+                        };
+                    }
+                };
                 (num.to_string(), num_notation)
             } else {
                 (raw_str.replace('_', ""), Notation::Decimal)
@@ -931,31 +956,56 @@ impl Lexer<'_> {
                 let mut count = 0;
 
                 while count < 2 {
-                    let c = self.peek();
-
-                    let digit = match c {
-                        b'0'..=b'9' => c - b'0',
-                        b'a'..=b'f' => c - b'a' + 10,
-                        b'A'..=b'F' => c - b'A' + 10,
-                        _ => break,
-                    };
-
+                    let digit = Self::hex_val(self.peek())?;
                     val = (val << 4) | digit;
                     self.advance();
                     count += 1;
                 }
 
-                if count == 2 {
-                    let next = self.peek();
-                    if matches!(next, b'0'..=b'9' | b'a'..=b'f' | b'A'..=b'F') {
-                        None
-                    } else {
-                        Some(val as char)
-                    }
-                } else {
+                if Self::hex_val(self.peek()).is_some() {
                     None
+                } else {
+                    Some(val as char)
                 }
             }
+            b'u' => {
+                if self.peek_ahead(1) != b'{' {
+                    return None;
+                }
+                self.skip(2);
+
+                let mut val: u32 = 0;
+                let mut count: usize = 0;
+
+                loop {
+                    let c = self.peek();
+
+                    if c == b'}' && count > 0 {
+                        self.advance();
+                        break;
+                    }
+
+                    let digit = Self::hex_val(c)? as u32;
+                    val = (val << 4) | digit;
+                    self.advance();
+                    count += 1;
+
+                    if count > 6 {
+                        return None;
+                    }
+                }
+
+                char::from_u32(val)
+            }
+            _ => None,
+        }
+    }
+
+    fn hex_val(c: u8) -> Option<u8> {
+        match c {
+            b'0'..=b'9' => Some(c - b'0'),
+            b'a'..=b'f' => Some(c - b'a' + 10),
+            b'A'..=b'F' => Some(c - b'A' + 10),
             _ => None,
         }
     }
@@ -1010,6 +1060,7 @@ impl Lexer<'_> {
         SpannedToken {
             tok: Token::Invalid(id),
             // Same offset reason as all other spans
+            // WARN: Could this be an error at some poitn where end - 1 < 0?
             span: SourceSpan::new(self.current_region_id, start as u32, (end - 1) as u32),
             leading_trivia_indices: self.trivia_start_idx as u32..self.trivia_end_idx as u32,
         }

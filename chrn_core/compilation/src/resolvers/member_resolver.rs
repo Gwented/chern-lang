@@ -4,7 +4,7 @@
 
 use chrn_utils::{
     chrn_settings::ChrnSettings,
-    id_types::{AstId, ExprId, InternedId, MemberId, ModuleId, SymbolId, TypeId},
+    id_types::{AstId, InternedId, MemberId, TypeId},
     intern::Intern,
     source_map::source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
 };
@@ -38,6 +38,7 @@ pub struct MemberResolver<'a> {
 }
 
 impl MemberResolver<'_> {
+    /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new<'a>(
         settings: &'a ChrnSettings,
         envs: &'a [Option<ResolverEnv>],

@@ -1,18 +1,66 @@
 // THIS WAS PASTED FROM AN OLD PROJECT MANY OF THIS IS LIKELY OFF
 //TODO: ADD RELEVANT COMMANDS
 
-use std::path::PathBuf;
+use std::{env, path::PathBuf};
 
 use clap::{Parser, error::RichFormatter};
 use clap_derive::{Args, Parser, Subcommand};
 
+// Not sure where to put this...
 /// Wrapper functions over `Cli::try_parse()` which tries to account for possible tooling that may
-/// be using naming like "chrn-*" before definitely panicking.
+/// using naming like "chrn-*" before returning an error
 pub fn try_parse() -> Result<Cli, clap::error::Error<RichFormatter>> {
+    let args: Vec<String> = env::args().collect();
+
+    // If the binary was executed as chrn-<cmd> (e.g. chrn-fmt), it attempts to extract the
+    // subcommand from the binary name and re-parse.
+    if let Some(bin_name) = args.first().and_then(|s| s.strip_prefix("chrn-")) {
+        let mut new_args = vec!["chrn".to_string(), bin_name.to_string()];
+        new_args.extend_from_slice(&args[1..]);
+        return Cli::try_parse_from(new_args);
+    }
+
     match Cli::try_parse() {
         Ok(cli) => Ok(cli),
-        Err(err) => Err(err),
+        Err(err) => {
+            // Parsing failed so checking whether args[1] matches an external binary
+            // named chrn-<subcommand> and, if so, delegates to it.
+            if let Some(candidate) = args.get(1) {
+                //FIX: MAKE SURE WINDOWS IS ALIVE
+                if let Some(path) = find_external_binary(candidate) {
+                    let status = std::process::Command::new(&path)
+                        .args(&args[2..])
+                        .status()
+                        .unwrap_or_else(|_| std::process::exit(1));
+                    std::process::exit(status.code().unwrap_or(1));
+                }
+            }
+            // This saddens me greatly.
+            Err(err)
+        }
     }
+}
+
+// CHECK WINDOWS
+/// Looks up `chrn-{subcommand}` in every directory listed in PATH variable depending on OS
+fn find_external_binary(subcommand: &str) -> Option<PathBuf> {
+    let bin_name = format!("chrn-{subcommand}");
+    env::var_os("PATH").and_then(|paths| {
+        env::split_paths(&paths).find_map(|dir| {
+            let full = dir.join(&bin_name);
+            if full.is_file() {
+                return Some(full);
+            }
+            #[cfg(windows)]
+            {
+                let full_exe = dir.join(format!("{bin_name}.exe"));
+                if full_exe.is_file() {
+                    return Some(full_exe);
+                }
+            }
+            None
+        })
+    })
 }
 
 //TODO: ADD ABOUT

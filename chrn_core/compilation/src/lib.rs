@@ -1933,4 +1933,139 @@ mod tests {
         assert!(matches!(find_val("CONSTANT_FALSE"), Value::Bool(false)));
         assert!(matches!(find_val("CONSTANT_CHAR"), Value::Char('c')));
     }
+
+    #[test]
+    fn all_operators_test() {
+        let eval = |text: &str| -> Value {
+            let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
+            let module = &compiler.mods[0];
+            let region = get_module_region(&arena, module);
+            let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+                .tokenize(&mut interner);
+            let ast_info = parser::parse(&settings, region, &toks, &interner).0;
+            let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+            NamespaceResolver::new(&settings, &interner, &mut compiler)
+                .resolve(&env)
+                .unwrap();
+            let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+            let envs = vec![Some(env)];
+            run_member_resolver(&settings, &envs, &interner, &mut compiler);
+            let env = envs[0].as_ref().expect("Env should exist");
+            TypeResolver::new(&settings, &interner, &mut compiler)
+                .resolve(env)
+                .unwrap();
+            ConstraintResolver::new(&settings, &interner, &mut compiler)
+                .resolve(env)
+                .unwrap();
+            let name_id = interner.try_search_str("X").unwrap();
+            let var_def = compiler
+                .variables
+                .iter()
+                .find(|v| v.name_id == name_id)
+                .expect("Variable 'X' not found");
+            match &var_def.state {
+                VariableState::Known(value_id) => compiler.values[value_id.id as usize]
+                    .const_val
+                    .clone()
+                    .expect("Variable 'X' has no const_val"),
+                _ => panic!("Variable 'X' is not resolved"),
+            }
+        };
+
+        // -- Unary: ! (Not) --
+        assert!(matches!(eval("let X = !true"), Value::Bool(false)));
+        assert!(matches!(eval("let X = !false"), Value::Bool(true)));
+        // -- Unary: - (Negate) --
+        assert!(matches!(eval("let X = -5"), Value::I64(-5)));
+        assert!(matches!(eval("let X = -3.14"), Value::F64(v) if v == -3.14));
+        // -- Unary: ~ (BitNot) --
+        assert!(matches!(eval("let X = ~5"), Value::I64(x) if x == !5));
+
+        // -- Binary: + --
+        assert!(matches!(eval("let X = 10 + 20"), Value::I64(30)));
+        assert!(matches!(eval("let X = 1.5 + 2.5"), Value::F64(v) if v == 4.0));
+        // -- Binary: - --
+        assert!(matches!(eval("let X = 10 - 3"), Value::I64(7)));
+        assert!(matches!(eval("let X = 5.5 - 1.5"), Value::F64(v) if v == 4.0));
+        // -- Binary: * --
+        assert!(matches!(eval("let X = 3 * 7"), Value::I64(21)));
+        assert!(matches!(eval("let X = 2.5 * 4.0"), Value::F64(v) if v == 10.0));
+        // -- Binary: / --
+        assert!(matches!(eval("let X = 10 / 3"), Value::I64(3)));
+        assert!(matches!(eval("let X = 10.0 / 4.0"), Value::F64(v) if v == 2.5));
+        // -- Binary: % --
+        assert!(matches!(eval("let X = 10 % 3"), Value::I64(1)));
+
+        // -- Binary: > --
+        assert!(matches!(eval("let X = 5 > 3"), Value::Bool(true)));
+        assert!(matches!(eval("let X = 3 > 5"), Value::Bool(false)));
+        // -- Binary: < --
+        assert!(matches!(eval("let X = 5 < 3"), Value::Bool(false)));
+        assert!(matches!(eval("let X = 3 < 5"), Value::Bool(true)));
+        // -- Binary: >= --
+        assert!(matches!(eval("let X = 5 >= 3"), Value::Bool(true)));
+        assert!(matches!(eval("let X = 5 >= 5"), Value::Bool(true)));
+        assert!(matches!(eval("let X = 3 >= 5"), Value::Bool(false)));
+        // -- Binary: <= --
+        assert!(matches!(eval("let X = 3 <= 5"), Value::Bool(true)));
+        assert!(matches!(eval("let X = 5 <= 5"), Value::Bool(true)));
+        assert!(matches!(eval("let X = 5 <= 3"), Value::Bool(false)));
+        // -- Binary: == --
+        assert!(matches!(eval("let X = 5 == 5"), Value::Bool(true)));
+        assert!(matches!(eval("let X = 5 == 3"), Value::Bool(false)));
+        // -- Binary: != --
+        assert!(matches!(eval("let X = 5 != 3"), Value::Bool(true)));
+        assert!(matches!(eval("let X = 5 != 5"), Value::Bool(false)));
+
+        // -- Binary: && --
+        assert!(matches!(eval("let X = true && true"), Value::Bool(true)));
+        assert!(matches!(eval("let X = true && false"), Value::Bool(false)));
+        // -- Binary: || --
+        assert!(matches!(eval("let X = true || false"), Value::Bool(true)));
+        assert!(matches!(eval("let X = false || false"), Value::Bool(false)));
+
+        // -- Binary: | (BitOr) --
+        assert!(matches!(eval("let X = 5 | 3"), Value::I64(7)));
+        // -- Binary: & (BitAnd) --
+        assert!(matches!(eval("let X = 5 & 3"), Value::I64(1)));
+        // -- Binary: ^ (BitXor) --
+        assert!(matches!(eval("let X = 5 ^ 3"), Value::I64(6)));
+        // -- Binary: << (BitLeftShift) --
+        assert!(matches!(eval("let X = 1 << 2"), Value::I64(4)));
+        // -- Binary: >> (BitRightShift) --
+        assert!(matches!(eval("let X = 8 >> 1"), Value::I64(4)));
+
+        // -- String comparison (!= only) --
+        assert!(matches!(
+            eval("let X = \"hello\" != \"world\""),
+            Value::Bool(true)
+        ));
+        assert!(matches!(
+            eval("let X = \"hello\" != \"hello\""),
+            Value::Bool(false)
+        ));
+
+        // -- Char comparison --
+        assert!(matches!(eval("let X = 'b' > 'a'"), Value::Bool(true)));
+        assert!(matches!(eval("let X = 'a' == 'a'"), Value::Bool(true)));
+        assert!(matches!(eval("let X = 'a' != 'b'"), Value::Bool(true)));
+        assert!(matches!(eval("let X = 'a' < 'b'"), Value::Bool(true)));
+        assert!(matches!(eval("let X = 'a' <= 'b'"), Value::Bool(true)));
+        assert!(matches!(eval("let X = 'b' >= 'a'"), Value::Bool(true)));
+        assert!(matches!(eval("let X = 'a' <= 'a'"), Value::Bool(true)));
+        assert!(matches!(eval("let X = 'b' >= 'b'"), Value::Bool(true)));
+
+        // -- Bool comparison (==, !=) --
+        assert!(matches!(eval("let X = true == true"), Value::Bool(true)));
+        assert!(matches!(eval("let X = true == false"), Value::Bool(false)));
+        assert!(matches!(eval("let X = true != false"), Value::Bool(true)));
+
+        // -- Float comparison --
+        assert!(matches!(eval("let X = 3.14 > 2.0"), Value::Bool(true)));
+        assert!(matches!(eval("let X = 3.14 == 3.14"), Value::Bool(true)));
+        assert!(matches!(eval("let X = 3.14 != 2.0"), Value::Bool(true)));
+
+        // -- Float mod --
+        assert!(matches!(eval("let X = 5.5 % 2.0"), Value::F64(v) if v == 1.5));
+    }
 }

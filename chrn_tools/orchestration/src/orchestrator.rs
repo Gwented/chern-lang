@@ -94,6 +94,10 @@ pub fn run_all(
             .unwrap_or_else(|mut diags| reporter.diags.append(&mut diags));
     }
 
+    //NOTE: Up to here would be parallelizable since at most they would need to wait asynchronously
+    //for the lexer and ast part, then they can do the same here but the next parts would need
+    //efficient locking?
+
     let mut member_diags = MemberResolver::new(
         &compiler_store.settings,
         &resolver_envs,

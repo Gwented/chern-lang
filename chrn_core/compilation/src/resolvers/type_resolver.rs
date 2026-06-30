@@ -53,6 +53,7 @@ pub struct TypeResolver<'a> {
 }
 
 impl<'a> TypeResolver<'a> {
+    /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new(
         settings: &'a ChrnSettings,
         interner: &'a Intern,
@@ -302,7 +303,6 @@ impl<'a> TypeResolver<'a> {
     }
 
     fn resolve_cfg(&mut self, abs_cfg: &AbstractConfig, env: &ResolverEnv) -> Result<(), ()> {
-        todo!("Stop using cfg");
         let mut opt_assignments: Vec<MemberId> = Vec::new();
         let mut inner_field_cfgs: Vec<ConfigId> = Vec::new();
 

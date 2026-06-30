@@ -30,6 +30,7 @@ pub struct ConstraintResolver<'a> {
 }
 
 impl<'a> ConstraintResolver<'a> {
+    /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new(
         settings: &'a ChrnSettings,
         interner: &'a Intern,

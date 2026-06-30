@@ -31,7 +31,7 @@ pub struct NamespaceResolver<'a> {
 }
 
 impl NamespaceResolver<'_> {
-    /// Returns `Err` if the state of the given compiler does not align
+    /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new<'a>(
         settings: &'a ChrnSettings,
         interner: &'a Intern,
