@@ -18,6 +18,7 @@ use crate::{
     constraints::ArgConstraint,
     lookup::scopes::{self, AssociatedScopeKind, IntrinsicRegistry, Scope, ScopeInfo, ScopeType},
     modules::{Bind, Import, ImportKind, Module, ModuleState},
+    resolvers::resolver_state::ResolverState,
     semantic::hir::{
         hir_concepts::{
             AliasDef, ConfigDef, ConfigOptionAssignment, EnumDef, FieldRepre, FuncDef, FuncKind,
@@ -64,6 +65,8 @@ pub struct ScriptCompiler {
     pub scopes: Vec<ScopeInfo>,
     /// Information regarding intrinsic data such as core's `ModuleId`
     pub intrinsic_registry: IntrinsicRegistry,
+    /// The current stage the compiler is in
+    pub resolver_state: ResolverState,
 }
 
 // -- CORE TYPE CONSTANTS --
@@ -122,10 +125,11 @@ pub fn directive_to_id(directive: &Directive) -> DirectiveId {
     DirectiveId::new(idx as u32)
 }
 
-// ----
+// ---- DIRECTIVE CONSTANTS END ---
+
 // NOTE: May turn this into an innate option type inside of HIR
 // Ok now this really needs to be an option
-pub const VALUE_UNKNOWN: usize = 0;
+// pub const VALUE_UNKNOWN: usize = 0;
 
 impl ScriptCompiler {
     //FIX: Arbitrary ordering of pushes tied to the actual order of the enums. Should not be tied
@@ -149,6 +153,7 @@ impl ScriptCompiler {
             directives: Vec::new(),
             //TEST:
             intrinsic_registry,
+            resolver_state: ResolverState::NAMESPACE,
         };
 
         // Should this lazy load the section intrinsics though?

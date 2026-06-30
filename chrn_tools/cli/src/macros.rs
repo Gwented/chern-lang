@@ -3,6 +3,6 @@
 #[macro_export]
 macro_rules! s_ifier {
     ($len:expr) => {
-        if $len == 1 { "s" } else { "" }
+        if $len == 1 { "" } else { "s" }
     };
 }

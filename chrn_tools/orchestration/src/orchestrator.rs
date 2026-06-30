@@ -1,14 +1,21 @@
 //TEST: TEST
-use chrn_utils::{core_error::ScriptError, source_map::source_diagnostic::Reporter};
+use chrn_utils::{
+    core_error::ScriptError,
+    id_types::ModuleId,
+    source_map::{source_diagnostic::Reporter, source_region::SourceRegion},
+};
 use compilation::{
     lexer::Lexer,
+    modules::Module,
     parser::{self, ast::ast_concepts::AstInfo},
     resolvers::{
         constraint_resolver::ConstraintResolver, member_resolver::MemberResolver,
         name_resolver::NamespaceResolver, resolver_env::ResolverEnv, type_resolver::TypeResolver,
     },
     script_compiler::{ScriptCompiler, script_compiler_store::ScriptCompilerStore},
+    token::{SpannedToken, Token},
 };
+use lang::trivia::Trivia;
 
 use crate::script_compiler_cache::ScriptCompilerCache;
 
@@ -23,14 +30,14 @@ use crate::script_compiler_cache::ScriptCompilerCache;
 // Ok...
 // TODO: This should, um
 /// Runs every compiler step associated with script
-pub fn run_all_cached(
+pub fn run_all(
     reporter: &mut Reporter,
     compiler: &mut ScriptCompiler,
     compiler_store: &mut ScriptCompilerStore,
     // Could make this optional
     // More like "Orchestrator"
     //TODO: I don't think this can stay external and maintain usefulness
-    compiler_cache: &mut ScriptCompilerCache,
+    compiler_cache: Option<&mut ScriptCompilerCache>,
 ) -> Result<(), ScriptError> {
     // Doing this first since if modules were identified during the parsing stage any
     // syntax error within another module would not be reportable since the parser failed.
@@ -39,48 +46,28 @@ pub fn run_all_cached(
     // aren't resolved first, then type resolution isn't possible since it could be using types
     // from elsewhere, which are not known yet.
     for mod_idx in 0..compiler.mods.len() {
-        let module = &compiler.mods[mod_idx];
-        let region = match &module.region_id {
-            Some(region_id) => &compiler_store.region_arena.regions[region_id.id as usize],
-            None => {
-                // Meaning it's a lib module where None should be found upon any queries
-                compiler_store.toks.push(None);
-                compiler_store.trivias.push(None);
-                continue;
-            }
+        let mod_id = ModuleId::new(mod_idx);
+        let (toks_opt, trivia_opt) = run_lexer(compiler, compiler_store, &compiler_cache, mod_id);
+
+        let ast_info_opt = if let Some(toks) = &toks_opt {
+            let ast_info_opt = run_parser(
+                reporter,
+                compiler,
+                compiler_store,
+                &compiler_cache,
+                mod_id,
+                toks,
+            );
+            ast_info_opt
+        } else {
+            None
         };
 
-        // Should the lexer just own the interner? This looks weird.
-        let (toks, trivia) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-            .tokenize(&mut compiler_store.interner);
-
-        let (ast_info, mut diags) = parser::parse(
-            &compiler_store.settings,
-            &region,
-            &toks,
-            &mut compiler_store.interner,
-        );
-
-        reporter.diags.append(&mut diags);
-
-        // Compiler store stores this as persistent state in the case of any indexing needing to be
+        // Compiler store stores these as persistent state in the case of any indexing needing to be
         // done.
-        compiler_store.toks.push(Some(toks));
-        compiler_store.trivias.push(Some(trivia));
-
-        NamespaceResolver::new(
-            &compiler_store.settings,
-            &ast_info,
-            region,
-            &compiler_store.interner,
-            module.mod_id,
-            compiler,
-        )
-        .resolve()
-        .unwrap_or_else(|mut diags| reporter.diags.append(&mut diags));
-
-        // Storing ast for the same reason
-        compiler_store.asts.push(Some(ast_info));
+        compiler_store.toks.push(toks_opt);
+        compiler_store.trivias.push(trivia_opt);
+        compiler_store.asts.push(ast_info_opt);
     }
 
     // This should be stored internally
@@ -88,11 +75,24 @@ pub fn run_all_cached(
     // Creates envs so that resolvers can maintain their state, given the current environment of modules
     let resolver_envs = create_envs(compiler, compiler_store, &compiler_store.asts);
 
-    // if !reporter.diags.is_empty() {
-    //     let mut diags = Vec::new();
-    //     diags.append(&mut reporter.diags);
-    //     return Err(ScriptError::Semantic(diags).into());
-    // }
+    // Storing this so that the compiler can be borrowed without conflicts and keep resolution incremental
+    let mod_len = compiler.mods.len();
+
+    let mut ns_resolver =
+        NamespaceResolver::new(&compiler_store.settings, &compiler_store.interner, compiler);
+
+    for i in 0..mod_len {
+        // If there is no environment to use then it's not fit for resolution
+        // This is a dense array so it works fine
+        let current_env = match &resolver_envs[i] {
+            Some(env) => env,
+            None => continue,
+        };
+
+        ns_resolver
+            .resolve(&current_env)
+            .unwrap_or_else(|mut diags| reporter.diags.append(&mut diags));
+    }
 
     let mut member_diags = MemberResolver::new(
         &compiler_store.settings,
@@ -105,8 +105,6 @@ pub fn run_all_cached(
 
     //TODO: Wrap some of these resolvers into convience functions?
 
-    // Storing this so that the compiler can be borrowed without conflicts and stay incremental
-    let mod_len = compiler.mods.len();
     let mut ty_resolver =
         TypeResolver::new(&compiler_store.settings, &compiler_store.interner, compiler);
 
@@ -151,6 +149,77 @@ pub fn run_all_cached(
     dbg!(reporter.diags.len());
 
     Ok(())
+}
+
+/// * reporter: To store diagnostics
+/// * current_mod_id: Current `ModuleId`
+/// * compiler: Compiler associated with the current module
+/// * compiler_cache: Optional caching structure
+// What about LexerOutput for the Lexer itself to return?
+fn run_lexer(
+    compiler: &ScriptCompiler,
+    // Needs to be mutable for lexer
+    compiler_store: &mut ScriptCompilerStore,
+    // Could make this optional
+    // More like "Orchestrator"
+    //TODO: I don't think this can stay external and maintain usefulness
+    compiler_cache: &Option<&mut ScriptCompilerCache>,
+    current_mod_id: ModuleId,
+) -> (Option<Vec<SpannedToken>>, Option<Vec<Trivia>>) {
+    let module = &compiler.mods[current_mod_id.id];
+    let region = match &module.region_id {
+        Some(region_id) => &compiler_store.region_arena.regions[region_id.id as usize],
+        None => {
+            // Meaning it's a lib module where None should be found upon any queries
+            return (None, None);
+        }
+    };
+
+    // Should the lexer just own the interner? This looks weird.
+    let (toks, trivia) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut compiler_store.interner);
+
+    (Some(toks), Some(trivia))
+}
+
+/// * reporter: To store diagnostics
+/// * current_mod_id: Current `ModuleId`
+/// * toks_opt: Tokens which are an Option due to pipelines themselves possibly not knowing if their
+/// tokens are `Some` or not.
+/// * toks: Tokens associated with the given module
+/// * compiler: Compiler associated with the current module
+/// * compiler_cache: Optional caching structure
+fn run_parser(
+    reporter: &mut Reporter,
+    compiler: &ScriptCompiler,
+    // Also needs mutable for lexer
+    compiler_store: &mut ScriptCompilerStore,
+    // Could make this optional
+    // More like "Orchestrator"
+    //TODO: I don't think this can stay external and maintain usefulness
+    compiler_cache: &Option<&mut ScriptCompilerCache>,
+    current_mod_id: ModuleId,
+    toks: &[SpannedToken],
+) -> Option<AstInfo> {
+    let module = &compiler.mods[current_mod_id.id];
+    let region = match &module.region_id {
+        Some(region_id) => &compiler_store.region_arena.regions[region_id.id as usize],
+        None => {
+            // Meaning it's a lib module where None should be found upon any queries
+            return None;
+        }
+    };
+
+    let (ast_info, mut diags) = parser::parse(
+        &compiler_store.settings,
+        &region,
+        &toks,
+        &mut compiler_store.interner,
+    );
+
+    reporter.diags.append(&mut diags);
+
+    Some(ast_info)
 }
 
 /// Creates all environments possible, which is stored aligned with all modules

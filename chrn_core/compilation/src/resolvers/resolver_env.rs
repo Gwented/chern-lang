@@ -9,19 +9,19 @@ use crate::parser::ast::ast_concepts::AstInfo;
 pub struct ResolverEnv<'a> {
     // Should be ids
     pub(crate) ast_info: &'a AstInfo,
-    pub(crate) region_id: &'a SourceRegion,
+    pub(crate) region: &'a SourceRegion,
     pub(crate) current_mod: ModuleId,
 }
 
 impl ResolverEnv<'_> {
     pub fn new<'a>(
         ast_info: &'a AstInfo,
-        region_id: &'a SourceRegion,
+        region: &'a SourceRegion,
         current_mod: ModuleId,
     ) -> ResolverEnv<'a> {
         ResolverEnv {
             ast_info,
-            region_id,
+            region,
             current_mod,
         }
     }

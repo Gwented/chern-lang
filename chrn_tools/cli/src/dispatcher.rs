@@ -60,11 +60,11 @@ fn exec_check(
             },
         };
 
-    match orchestrator::run_all_cached(
+    match orchestrator::run_all(
         &mut reporter,
         &mut compiler,
         &mut compiler_store,
-        &mut compiler_cache,
+        Some(&mut compiler_cache),
     ) {
         Ok(_) => {
             let msg = format!("No errors found");

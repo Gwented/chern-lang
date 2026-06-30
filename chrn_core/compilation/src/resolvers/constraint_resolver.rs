@@ -15,7 +15,7 @@ use crate::{
     parser::ast::ast_concepts::{
         AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, Item,
     },
-    resolvers::resolver_env::ResolverEnv,
+    resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
     script_compiler::ScriptCompiler,
     semantic::{hir::hir_concepts::Type, preset_err::PresetErr, preset_reporter},
 };
@@ -35,6 +35,7 @@ impl<'a> ConstraintResolver<'a> {
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,
     ) -> ConstraintResolver<'a> {
+        debug_assert_eq!(ResolverState::CONSTRAINT, compiler.resolver_state);
         ConstraintResolver {
             settings,
             interner,
@@ -160,7 +161,7 @@ impl<'a> ConstraintResolver<'a> {
                     let src_diag = SourceDiagnostic::basic(
                         DiagnosticLevel::Error,
                         core_msg,
-                        env.region_id.path_id,
+                        env.region.path_id,
                         *ast_span,
                     );
                     // semantic_reporter::report_semantic(
@@ -187,7 +188,7 @@ impl<'a> ConstraintResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         err,
-                        env.region_id,
+                        env.region,
                         self.settings,
                         self.interner,
                     );
@@ -208,7 +209,7 @@ impl<'a> ConstraintResolver<'a> {
                         preset_reporter::report_preset(
                             &mut self.err_vec,
                             preset_err,
-                            env.region_id,
+                            env.region,
                             self.settings,
                             self.interner,
                         );
@@ -230,7 +231,7 @@ impl<'a> ConstraintResolver<'a> {
                 preset_reporter::report_preset(
                     &mut self.err_vec,
                     preset_err,
-                    env.region_id,
+                    env.region,
                     self.settings,
                     self.interner,
                 );
@@ -385,7 +386,7 @@ impl<'a> ConstraintResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         err,
-                        env.region_id,
+                        env.region,
                         self.settings,
                         self.interner,
                     );
@@ -566,7 +567,7 @@ impl<'a> ConstraintResolver<'a> {
                         preset_reporter::report_preset(
                             &mut self.err_vec,
                             err,
-                            env.region_id,
+                            env.region,
                             self.settings,
                             self.interner,
                         );
@@ -586,7 +587,7 @@ impl<'a> ConstraintResolver<'a> {
                         preset_reporter::report_preset(
                             &mut self.err_vec,
                             err,
-                            env.region_id,
+                            env.region,
                             self.settings,
                             self.interner,
                         );
@@ -613,7 +614,7 @@ impl<'a> ConstraintResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region_id,
+                        env.region,
                         self.settings,
                         self.interner,
                     );
@@ -640,7 +641,7 @@ impl<'a> ConstraintResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region_id,
+                        env.region,
                         self.settings,
                         self.interner,
                     );
@@ -683,7 +684,7 @@ impl<'a> ConstraintResolver<'a> {
                             preset_reporter::report_preset(
                                 &mut self.err_vec,
                                 err,
-                                env.region_id,
+                                env.region,
                                 self.settings,
                                 self.interner,
                             );
@@ -709,7 +710,7 @@ impl<'a> ConstraintResolver<'a> {
                             preset_reporter::report_preset(
                                 &mut self.err_vec,
                                 err,
-                                env.region_id,
+                                env.region,
                                 self.settings,
                                 self.interner,
                             );
@@ -742,7 +743,7 @@ impl<'a> ConstraintResolver<'a> {
                         preset_reporter::report_preset(
                             &mut self.err_vec,
                             preset_err,
-                            env.region_id,
+                            env.region,
                             self.settings,
                             self.interner,
                         );
@@ -771,7 +772,7 @@ impl<'a> ConstraintResolver<'a> {
                         preset_reporter::report_preset(
                             &mut self.err_vec,
                             preset_err,
-                            env.region_id,
+                            env.region,
                             self.settings,
                             self.interner,
                         );
@@ -1213,7 +1214,7 @@ impl<'a> ConstraintResolver<'a> {
                 let src_diag = SourceDiagnostic::basic_builder(
                     DiagnosticLevel::Error,
                     core_msg,
-                    env.region_id.path_id,
+                    env.region.path_id,
                     active_span,
                 );
                 Err(PresetErr::General(src_diag))

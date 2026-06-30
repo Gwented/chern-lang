@@ -340,7 +340,7 @@ pub fn type_expr_result_to_preset_err(
             let src_diag = SourceDiagnostic::basic_builder(
                 DiagnosticLevel::Error,
                 core_msg,
-                env.region_id.path_id,
+                env.region.path_id,
                 sp_name_id.span,
             );
 
@@ -379,7 +379,7 @@ pub fn type_expr_result_to_preset_err(
             let src_diag = SourceDiagnostic::basic_builder(
                 DiagnosticLevel::Error,
                 core_msg,
-                env.region_id.path_id,
+                env.region.path_id,
                 sp_name_id.span,
             );
 
@@ -402,7 +402,7 @@ pub fn type_expr_result_to_preset_err(
                 format!("The type `{sym_name}` is private within the module `{current_mod_name}`");
 
             let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region_id.path_id)
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
                     .add_annotation(*ty_expr_span, AnnotationKind::Primary, None)
                     // Redundant?
                     .add_note(format!(
@@ -423,7 +423,7 @@ pub fn type_expr_result_to_preset_err(
             let core_msg = format!("`{name}` expects {expected} input(s)");
 
             let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region_id.path_id)
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
                     .add_annotation(*inputs_span, AnnotationKind::Primary, None);
 
             Some(PresetErr::General(src_diag))
@@ -433,7 +433,7 @@ pub fn type_expr_result_to_preset_err(
             let core_msg = format!("Unknown generic identifier `{name}`");
 
             let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region_id.path_id)
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
                     .add_annotation(sp_name_id.span, AnnotationKind::Primary, None)
                     // Redundant?
                     .add_help(format!(
@@ -468,12 +468,12 @@ pub fn static_access_result_to_preset_err(
                     current_seg_name, prev_seg_name
                 );
 
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region_id.path_id)
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
                     .add_annotation(current_seg.span, AnnotationKind::Primary, None)
             } else {
                 let core_msg = format!("Could not find the symbol `{current_seg_name}`");
 
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region_id.path_id)
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
                     .add_annotation(current_seg.span, AnnotationKind::Primary, None)
             };
 
@@ -484,7 +484,7 @@ pub fn static_access_result_to_preset_err(
             let core_msg = format!("No namespace found in `{namespace_name}`");
 
             let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region_id.path_id)
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
                     .add_annotation(sp_name_id.span, AnnotationKind::Primary, None);
 
             Some(PresetErr::General(src_diag))
@@ -494,7 +494,7 @@ pub fn static_access_result_to_preset_err(
             let src_diag = SourceDiagnostic::basic_builder(
                 DiagnosticLevel::Error,
                 core_msg,
-                env.region_id.path_id,
+                env.region.path_id,
                 *generic_span,
             );
 

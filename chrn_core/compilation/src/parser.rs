@@ -32,7 +32,7 @@ use lang::keywords::Keyword;
 pub fn parse(
     settings: &ChrnSettings,
     metadata: &SourceRegion,
-    tokens: &Vec<SpannedToken>,
+    tokens: &[SpannedToken],
     interner: &Intern,
 ) -> (AstInfo, Vec<SourceDiagnostic>) {
     let mut ast_info = AstInfo::new();

@@ -200,13 +200,14 @@ impl VarDef {
 }
 
 /// This enum is used inside of variables to create the separation between a variable that has only
-/// been defined, and a variable that has actually been seen in some form (not resolved)
+/// been registered, and a variable that has actually been seen in some form (not resolved)
 ///
-/// This abstraction was chosen to avoid having to directly update `VarDef` everytime a `Value` or
+/// This abstraction was chosen to avoid having to directly update `VarDef` everytime a `ValueInfo` or
 /// `ResolvedExpr` needed an update. If this enum were not used, that would mean every resolution
 /// incremental buildup would need the tree to start at the original variable symbol, which makes
 /// propagation much more complex, in comparison to the current route where it removes that concern
 /// entirely from the `VarDef` itself.
+// I cannot read
 #[derive(Debug)]
 pub enum VariableState {
     ReservedTypeSlot(TypeId),

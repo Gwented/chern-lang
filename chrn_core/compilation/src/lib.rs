@@ -12,7 +12,8 @@ pub mod user_defined;
 #[cfg(test)]
 mod tests {
     use crate::{
-        parser::ast::ast_concepts::AstInfo, resolvers::resolver_env::ResolverEnv,
+        parser::ast::ast_concepts::AstInfo,
+        resolvers::{constraint_resolver::ConstraintResolver, resolver_env::ResolverEnv},
         script_compiler::ScriptCompiler,
     };
     // -- Helpers --
@@ -167,11 +168,11 @@ mod tests {
 
     use chrn_utils::{
         chrn_settings::ChrnSettings,
-        id_types::{InternedId, ModuleId, PathId, SourceRegionId},
+        id_types::{InternedId, ModuleId, PathId, SourceRegionId, ValueId},
         intern::Intern,
         source_map::source_region::{SourceRegion, SourceRegionArena},
     };
-    use lang::config_loader::ChrnConfigLoader;
+    use lang::{config_loader::ChrnConfigLoader, values::Value};
 
     use crate::{
         lexer::Lexer,
@@ -183,6 +184,7 @@ mod tests {
             name_resolver::NamespaceResolver,
             type_resolver::{TypeResolver, type_context::TypeContext},
         },
+        semantic::hir::hir_concepts::{VarDef, VariableState},
         token::{Notation, Token},
     };
 
@@ -810,15 +812,8 @@ mod tests {
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let res = NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            region,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve();
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        let res = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&env);
 
         assert_eq!(res.is_err(), true);
 
@@ -837,15 +832,8 @@ mod tests {
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let res = NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            region,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve();
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        let res = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&env);
 
         assert_eq!(res.is_ok(), true);
 
@@ -868,15 +856,8 @@ mod tests {
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let res = NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            region,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve();
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        let res = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&env);
 
         assert_eq!(res.is_err(), true);
 
@@ -896,15 +877,8 @@ mod tests {
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let res = NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            region,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve();
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        let res = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&env);
 
         assert_eq!(res.is_ok(), true);
 
@@ -926,15 +900,8 @@ mod tests {
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let res = NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            region,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve();
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        let res = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&env);
 
         assert_eq!(res.is_err(), true);
 
@@ -954,15 +921,8 @@ mod tests {
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let res = NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            region,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve();
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        let res = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&env);
 
         assert_eq!(res.is_ok(), true);
         //TEST: -- COMPLEX --
@@ -1046,39 +1006,38 @@ mod tests {
             let module = &compiler.mods[mod_idx];
             let region = match module.region_id {
                 Some(id) => region_arena.extract_region(id),
-                None => continue,
+                None => {
+                    asts.push(None);
+                    continue;
+                }
             };
 
             let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
                 .tokenize(&mut interner);
 
-            let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-            NamespaceResolver::new(
-                &settings,
-                &ast_info,
-                region,
-                &interner,
-                module.mod_id,
-                &mut compiler,
-            )
-            .resolve()
-            .unwrap();
-
-            asts.push(Some(ast_info));
+            asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
         }
 
         let resolver_envs = build_resolver_envs(&compiler, &region_arena, &asts);
+
+        {
+            let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
+            for env in resolver_envs.iter() {
+                if let Some(env) = env {
+                    ns_resolver.resolve(env).unwrap();
+                }
+            }
+        }
+
         run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
 
-        for i in 0..compiler.mods.len() {
-            let current_env = match &resolver_envs[i] {
-                Some(env) => env,
-                None => continue,
-            };
-            TypeResolver::new(&settings, &interner, &mut compiler)
-                .resolve(current_env)
-                .unwrap();
+        {
+            let mut ty_resolver = TypeResolver::new(&settings, &interner, &mut compiler);
+            for env in resolver_envs.iter() {
+                if let Some(env) = env {
+                    ty_resolver.resolve(env).unwrap();
+                }
+            }
         }
     }
 
@@ -1141,33 +1100,29 @@ mod tests {
             let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
                 .tokenize(&mut interner);
 
-            let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-            NamespaceResolver::new(
-                &settings,
-                &ast_info,
-                region,
-                &interner,
-                module.mod_id,
-                &mut compiler,
-            )
-            .resolve()
-            .unwrap();
-
-            asts.push(Some(ast_info));
+            asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
         }
 
         let resolver_envs = build_resolver_envs(&compiler, &arena, &asts);
+
+        {
+            let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
+            for env in resolver_envs.iter() {
+                if let Some(env) = env {
+                    ns_resolver.resolve(env).unwrap();
+                }
+            }
+        }
+
         run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
 
-        for i in 0..compiler.mods.len() {
-            let current_env = match &resolver_envs[i] {
-                Some(env) => env,
-                None => continue,
-            };
-            TypeResolver::new(&settings, &interner, &mut compiler)
-                .resolve(current_env)
-                .unwrap();
+        {
+            let mut ty_resolver = TypeResolver::new(&settings, &interner, &mut compiler);
+            for env in resolver_envs.iter() {
+                if let Some(env) = env {
+                    ty_resolver.resolve(env).unwrap();
+                }
+            }
         }
     }
 
@@ -1231,33 +1186,31 @@ mod tests {
             let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
                 .tokenize(&mut interner);
 
-            let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-            NamespaceResolver::new(
-                &settings,
-                &ast_info,
-                region,
-                &interner,
-                module.mod_id,
-                &mut compiler,
-            )
-            .resolve()
-            .unwrap();
-
-            asts.push(Some(ast_info));
+            asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
         }
 
         let resolver_envs = build_resolver_envs(&compiler, &arena, &asts);
+
+        {
+            let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
+            for env in resolver_envs.iter() {
+                if let Some(env) = env {
+                    ns_resolver.resolve(env).unwrap();
+                }
+            }
+        }
+
         run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
 
         let mut results = Vec::new();
 
-        for i in 0..compiler.mods.len() {
-            let current_env = match &resolver_envs[i] {
-                Some(env) => env,
-                None => continue,
-            };
-            results.push(TypeResolver::new(&settings, &interner, &mut compiler).resolve(current_env));
+        {
+            let mut ty_resolver = TypeResolver::new(&settings, &interner, &mut compiler);
+            for env in resolver_envs.iter() {
+                if let Some(env) = env {
+                    results.push(ty_resolver.resolve(env));
+                }
+            }
         }
 
         assert_eq!(results[0].is_err(), true, "Not exported");
@@ -1321,33 +1274,31 @@ mod tests {
             let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
                 .tokenize(&mut interner);
 
-            let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-            NamespaceResolver::new(
-                &settings,
-                &ast_info,
-                region,
-                &interner,
-                module.mod_id,
-                &mut compiler,
-            )
-            .resolve()
-            .unwrap();
-
-            asts.push(Some(ast_info));
+            asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
         }
 
         let resolver_envs = build_resolver_envs(&compiler, &arena, &asts);
+
+        {
+            let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
+            for env in resolver_envs.iter() {
+                if let Some(env) = env {
+                    ns_resolver.resolve(env).unwrap();
+                }
+            }
+        }
+
         run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
 
         let mut results = Vec::new();
 
-        for i in 0..compiler.mods.len() {
-            let current_env = match &resolver_envs[i] {
-                Some(env) => env,
-                None => continue,
-            };
-            results.push(TypeResolver::new(&settings, &interner, &mut compiler).resolve(current_env));
+        {
+            let mut ty_resolver = TypeResolver::new(&settings, &interner, &mut compiler);
+            for env in resolver_envs.iter() {
+                if let Some(env) = env {
+                    results.push(ty_resolver.resolve(env));
+                }
+            }
         }
 
         assert_eq!(results[0].is_ok(), true);
@@ -1371,16 +1322,10 @@ mod tests {
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            region,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve()
-        .unwrap();
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        NamespaceResolver::new(&settings, &interner, &mut compiler)
+            .resolve(&env)
+            .unwrap();
 
         let module = &compiler.mods[0];
 
@@ -1406,16 +1351,10 @@ mod tests {
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            region,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve()
-        .unwrap();
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        NamespaceResolver::new(&settings, &interner, &mut compiler)
+            .resolve(&env)
+            .unwrap();
 
         let module = &compiler.mods[0];
 
@@ -1442,16 +1381,10 @@ mod tests {
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            region,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve()
-        .unwrap();
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        NamespaceResolver::new(&settings, &interner, &mut compiler)
+            .resolve(&env)
+            .unwrap();
 
         let module = &compiler.mods[0];
 
@@ -1489,14 +1422,13 @@ mod tests {
         // let ast_info = parser::parse(&settings, &module, &toks, &mut interner).0;
         //
         // // Calls `reporter` internally but the path is fake so this fails
+        // let env = ResolverEnv::new(&ast_info, region, module.mod_id);
         // NamespaceResolver::new(
         //     &settings,
-        //     &ast_info,
         //     &interner,
-        //     module.mod_id,
         //     &mut compiler,
         // )
-        // .resolve()
+        // .resolve(&env)
         // .unwrap();
         //
         // let module = &compiler.mods[0];
@@ -1535,14 +1467,13 @@ mod tests {
         // let ast_info = parser::parse(&settings, &module, &toks, &mut interner).0;
         //
         // // Calls `reporter` internally but the path is fake so this fails
+        // let env = ResolverEnv::new(&ast_info, region, module.mod_id);
         // NamespaceResolver::new(
         //     &settings,
-        //     &ast_info,
         //     &interner,
-        //     module.mod_id,
         //     &mut compiler,
         // )
-        // .resolve()
+        // .resolve(&env)
         // .unwrap();
         //
         // let module = &compiler.mods[0];
@@ -1574,16 +1505,10 @@ mod tests {
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            region,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve()
-        .unwrap();
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        NamespaceResolver::new(&settings, &interner, &mut compiler)
+            .resolve(&env)
+            .unwrap();
 
         //TODO: Override and Complex
         let module = &compiler.mods[0];
@@ -1620,16 +1545,10 @@ mod tests {
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            region,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve()
-        .unwrap();
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        NamespaceResolver::new(&settings, &interner, &mut compiler)
+            .resolve(&env)
+            .unwrap();
 
         let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
         let envs = vec![Some(env)];
@@ -1657,16 +1576,10 @@ mod tests {
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            region,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve()
-        .unwrap();
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        NamespaceResolver::new(&settings, &interner, &mut compiler)
+            .resolve(&env)
+            .unwrap();
 
         let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
         let envs = vec![Some(env)];
@@ -1693,16 +1606,10 @@ mod tests {
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        NamespaceResolver::new(
-            &settings,
-            &ast_info,
-            region,
-            &interner,
-            module.mod_id,
-            &mut compiler,
-        )
-        .resolve()
-        .unwrap();
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        NamespaceResolver::new(&settings, &interner, &mut compiler)
+            .resolve(&env)
+            .unwrap();
 
         let env = ResolverEnv::new(&ast_info, region, Default::default());
         let envs = vec![Some(env)];
@@ -1712,284 +1619,319 @@ mod tests {
             .resolve(env)
             .unwrap();
 
-        assert!(compiler.symbols.len() > 0);
+        assert_eq!(compiler.values.len(), 1);
     }
-    //
-    // #[test]
-    // fn constraint_resolver_let_test() {
-    //     let text = "
-    //             let CONSTANT = 4
-    //             ";
-    //
-    //     let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
-    //
-    //     let pre_loaded_values = compiler.values.len();
-    //
-    //     let module = &compiler.mods[0];
-    //
-    //     let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
-    //         .tokenize(&mut interner);
-    //
-    //     let ast_info = parser::parse(&settings, &module, &toks, &mut interner).0;
-    //
-    //     NamespaceResolver::new(
-    //         &settings,
-    //         &ast_info,
-    //         &interner,
-    //         module.mod_id,
-    //         &mut compiler,
-    //     )
-    //     .resolve()
-    //     .unwrap();
-    //
-    //     TypeResolver::new(
-    //         &settings,
-    //         &ast_info,
-    //         Default::default(),
-    //         &interner,
-    //         &mut compiler,
-    //     )
-    //     .resolve()
-    //     .unwrap();
-    //
-    //     let mut val_ctx = ValueContext::new();
-    //
-    //     ConstraintResolver::new(
-    //         &settings,
-    //         &[ast_info],
-    //         &interner,
-    //         Default::default(),
-    //         &mut val_ctx,
-    //         &mut compiler,
-    //     )
-    //     .resolve()
-    //     .unwrap();
-    //
-    //     assert_eq!(compiler.symbols.len(), 1);
-    //     assert_eq!(compiler.values.len() - pre_loaded_values, 1);
-    //     match &compiler.values[compiler.values.len() - 1]
-    //         .const_val
-    //         .as_ref()
-    //         .unwrap()
-    //     {
-    //         Value::I128(_) => (),
-    //         _ => panic!("Value mistmatch"),
-    //     };
-    //
-    //     let text = "
-    //             let CONSTANT = \"Hallo\"
-    //         ";
-    //
-    //     let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
-    //
-    //     let pre_loaded_values = compiler.values.len();
-    //
-    //     let module = &compiler.mods[0];
-    //
-    //     let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
-    //         .tokenize(&mut interner);
-    //
-    //     let ast_info = parser::parse(&settings, &module, &toks, &mut interner).0;
-    //
-    //     NamespaceResolver::new(
-    //         &settings,
-    //         &ast_info,
-    //         &interner,
-    //         module.mod_id,
-    //         &mut compiler,
-    //     )
-    //     .resolve()
-    //     .unwrap();
-    //
-    //     TypeResolver::new(
-    //         &settings,
-    //         &ast_info,
-    //         Default::default(),
-    //         &interner,
-    //         &mut compiler,
-    //     )
-    //     .resolve()
-    //     .unwrap();
-    //
-    //     ConstraintResolver::new(
-    //         &settings,
-    //         &[ast_info],
-    //         &interner,
-    //         Default::default(),
-    //         &mut val_ctx,
-    //         &mut compiler,
-    //     )
-    //     .resolve()
-    //     .unwrap();
-    //
-    //     assert_eq!(compiler.symbols.len(), 1);
-    //     assert_eq!(compiler.values.len() - pre_loaded_values, 1);
-    //     match &compiler.values[compiler.values.len() - 1]
-    //         .const_val
-    //         .as_ref()
-    //         .unwrap()
-    //     {
-    //         Value::InternedStr(_) => (),
-    //         _ => panic!("Value mistmatch"),
-    //     };
-    //
-    //     let text = "
-    //             let CONSTANT = 0e-5
-    //         ";
-    //
-    //     let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
-    //
-    //     let pre_loaded_values = compiler.values.len();
-    //
-    //     let module = &compiler.mods[0];
-    //
-    //     let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
-    //         .tokenize(&mut interner);
-    //
-    //     let ast_info = parser::parse(&settings, &module, &toks, &mut interner).0;
-    //
-    //     NamespaceResolver::new(
-    //         &settings,
-    //         &ast_info,
-    //         &interner,
-    //         module.mod_id,
-    //         &mut compiler,
-    //     )
-    //     .resolve()
-    //     .unwrap();
-    //
-    //     TypeResolver::new(
-    //         &settings,
-    //         &ast_info,
-    //         Default::default(),
-    //         &interner,
-    //         &mut compiler,
-    //     )
-    //     .resolve()
-    //     .unwrap();
-    //
-    //     ConstraintResolver::new(
-    //         &settings,
-    //         &[ast_info],
-    //         &interner,
-    //         Default::default(),
-    //         &mut val_ctx,
-    //         &mut compiler,
-    //     )
-    //     .resolve()
-    //     .unwrap();
-    //
-    //     assert_eq!(compiler.symbols.len(), 1);
-    //     assert_eq!(compiler.values.len() - pre_loaded_values, 1);
-    //     match &compiler.values[compiler.values.len() - 1]
-    //         .const_val
-    //         .as_ref()
-    //         .unwrap()
-    //     {
-    //         Value::F64(_) => (),
-    //         _ => panic!("Value mistmatch"),
-    //     };
-    //
-    //     let text = "
-    //             let CONSTANT = true
-    //         ";
-    //
-    //     let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
-    //
-    //     let module = &compiler.mods[0];
-    //
-    //     let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
-    //         .tokenize(&mut interner);
-    //
-    //     let ast_info = parser::parse(&settings, &module, &toks, &mut interner).0;
-    //
-    //     NamespaceResolver::new(
-    //         &settings,
-    //         &ast_info,
-    //         &interner,
-    //         module.mod_id,
-    //         &mut compiler,
-    //     )
-    //     .resolve()
-    //     .unwrap();
-    //
-    //     TypeResolver::new(
-    //         &settings,
-    //         &ast_info,
-    //         Default::default(),
-    //         &interner,
-    //         &mut compiler,
-    //     )
-    //     .resolve()
-    //     .unwrap();
-    //
-    //     ConstraintResolver::new(
-    //         &settings,
-    //         &[ast_info],
-    //         &interner,
-    //         Default::default(),
-    //         &mut val_ctx,
-    //         &mut compiler,
-    //     )
-    //     .resolve()
-    //     .unwrap();
-    //
-    //     assert_eq!(compiler.symbols.len(), 1);
-    //     assert_eq!(VALUE_TRUE_POS, 1);
-    //     match &compiler.values[VALUE_TRUE_POS].const_val.as_ref().unwrap() {
-    //         Value::Bool(true) => (),
-    //         _ => panic!("Value mistmatch"),
-    //     };
-    //
-    //     let text = "
-    //             let CONSTANT = false
-    //         ";
-    //
-    //     let (mut interner, settings, mut compiler) = mock_single_module_compiler(text);
-    //
-    //     let module = &compiler.mods[0];
-    //
-    //     let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
-    //         .tokenize(&mut interner);
-    //
-    //     let ast_info = parser::parse(&settings, &module, &toks, &mut interner).0;
-    //
-    //     NamespaceResolver::new(
-    //         &settings,
-    //         &ast_info,
-    //         &interner,
-    //         module.mod_id,
-    //         &mut compiler,
-    //     )
-    //     .resolve()
-    //     .unwrap();
-    //
-    //     TypeResolver::new(
-    //         &settings,
-    //         &ast_info,
-    //         Default::default(),
-    //         &interner,
-    //         &mut compiler,
-    //     )
-    //     .resolve()
-    //     .unwrap();
-    //
-    //     ConstraintResolver::new(
-    //         &settings,
-    //         &[ast_info],
-    //         &interner,
-    //         Default::default(),
-    //         &mut val_ctx,
-    //         &mut compiler,
-    //     )
-    //     .resolve()
-    //     .unwrap();
-    //
-    //     assert_eq!(compiler.symbols.len(), 1);
-    //     assert_eq!(VALUE_FALSE_POS, 0);
-    //     match &compiler.values[VALUE_FALSE_POS].const_val.as_ref().unwrap() {
-    //         Value::Bool(false) => (),
-    //         _ => panic!("Value mistmatch"),
-    //     };
-    // }
+
+    #[test]
+    fn constraint_resolver_let_test() {
+        // let CONSTANT = 4
+        let text = "
+                let CONSTANT = 4
+                ";
+
+        let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
+
+        let module = &compiler.mods[0];
+        let region = get_module_region(&arena, module);
+
+        let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
+
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        NamespaceResolver::new(&settings, &interner, &mut compiler)
+            .resolve(&env)
+            .unwrap();
+
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let envs = vec![Some(env)];
+        run_member_resolver(&settings, &envs, &interner, &mut compiler);
+        let env = envs[0].as_ref().expect("Env should exist");
+
+        TypeResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env)
+            .unwrap();
+
+        ConstraintResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env)
+            .unwrap();
+
+        assert_eq!(compiler.values.len(), 1);
+        let last_val = &compiler.values[0];
+        match &last_val.const_val {
+            Some(Value::I64(4)) => (),
+            _ => panic!("Value mismatch, expected I64(4)"),
+        };
+
+        // let CONSTANT = "Hallo"
+        let text = "
+                let CONSTANT = \"Hallo\"
+            ";
+
+        let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
+
+        let module = &compiler.mods[0];
+        let region = get_module_region(&arena, module);
+
+        let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
+
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        NamespaceResolver::new(&settings, &interner, &mut compiler)
+            .resolve(&env)
+            .unwrap();
+
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let envs = vec![Some(env)];
+        run_member_resolver(&settings, &envs, &interner, &mut compiler);
+        let env = envs[0].as_ref().expect("Env should exist");
+
+        TypeResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env)
+            .unwrap();
+
+        ConstraintResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env)
+            .unwrap();
+
+        assert_eq!(compiler.values.len(), 1);
+        let last_val = &compiler.values[0];
+        match &last_val.const_val {
+            Some(Value::InternedStr(id)) => {
+                assert_eq!("Hallo", interner.search(*id));
+            }
+            _ => panic!("Value mismatch, expected InternedStr(\"Hallo\")"),
+        };
+
+        // let CONSTANT = 0e-5
+        let text = "
+                let CONSTANT = 0e-5
+            ";
+
+        let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
+
+        let module = &compiler.mods[0];
+        let region = get_module_region(&arena, module);
+
+        let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
+
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        NamespaceResolver::new(&settings, &interner, &mut compiler)
+            .resolve(&env)
+            .unwrap();
+
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let envs = vec![Some(env)];
+        run_member_resolver(&settings, &envs, &interner, &mut compiler);
+        let env = envs[0].as_ref().expect("Env should exist");
+
+        TypeResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env)
+            .unwrap();
+
+        ConstraintResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env)
+            .unwrap();
+
+        assert_eq!(compiler.values.len(), 1);
+        let last_val = &compiler.values[0];
+        match &last_val.const_val {
+            Some(Value::F64(v)) if *v == 0e-5 => (),
+            _ => panic!("Value mismatch, expected F64(0e-5)"),
+        };
+
+        // let CONSTANT = true
+        let text = "
+                let CONSTANT = true
+            ";
+
+        let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
+
+        let module = &compiler.mods[0];
+        let region = get_module_region(&arena, module);
+
+        let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
+
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        NamespaceResolver::new(&settings, &interner, &mut compiler)
+            .resolve(&env)
+            .unwrap();
+
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let envs = vec![Some(env)];
+        run_member_resolver(&settings, &envs, &interner, &mut compiler);
+        let env = envs[0].as_ref().expect("Env should exist");
+
+        TypeResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env)
+            .unwrap();
+
+        ConstraintResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env)
+            .unwrap();
+
+        assert_eq!(compiler.values.len(), 1);
+        let last_val = &compiler.values[0];
+        match &last_val.const_val {
+            Some(Value::Bool(true)) => (),
+            _ => panic!("Value mismatch, expected Bool(true)"),
+        };
+
+        // let CONSTANT = false
+        let text = "
+                let CONSTANT = false
+            ";
+
+        let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
+
+        let module = &compiler.mods[0];
+        let region = get_module_region(&arena, module);
+
+        let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
+
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        NamespaceResolver::new(&settings, &interner, &mut compiler)
+            .resolve(&env)
+            .unwrap();
+
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let envs = vec![Some(env)];
+        run_member_resolver(&settings, &envs, &interner, &mut compiler);
+        let env = envs[0].as_ref().expect("Env should exist");
+
+        TypeResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env)
+            .unwrap();
+
+        ConstraintResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env)
+            .unwrap();
+
+        assert_eq!(compiler.values.len(), 1);
+        let last_val = &compiler.values[0];
+        match &last_val.const_val {
+            Some(Value::Bool(false)) => (),
+            _ => panic!("Value mismatch, expected Bool(false)"),
+        };
+
+        // let character = 'c'
+        let text = "
+                let character = 'c'
+            ";
+
+        let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
+
+        let module = &compiler.mods[0];
+        let region = get_module_region(&arena, module);
+
+        let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
+
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        NamespaceResolver::new(&settings, &interner, &mut compiler)
+            .resolve(&env)
+            .unwrap();
+
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let envs = vec![Some(env)];
+        run_member_resolver(&settings, &envs, &interner, &mut compiler);
+        let env = envs[0].as_ref().expect("Env should exist");
+
+        TypeResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env)
+            .unwrap();
+
+        ConstraintResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env)
+            .unwrap();
+
+        assert_eq!(compiler.values.len(), 1);
+        let last_val = &compiler.values[0];
+        match &last_val.const_val {
+            Some(Value::Char('c')) => (),
+            _ => panic!("Value mismatch, expected Char('c')"),
+        };
+    }
+
+    #[test]
+    fn constraint_resolver_all_values_test() {
+        let text = "
+                let CONSTANT_INT = 4
+                let CONSTANT_STR = \"Hallo\"
+                let CONSTANT_FLOAT = 0e-5
+                let CONSTANT_TRUE = true
+                let CONSTANT_FALSE = false
+                let CONSTANT_CHAR = 'c'
+            ";
+
+        let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
+
+        let module = &compiler.mods[0];
+        let region = get_module_region(&arena, module);
+
+        let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
+
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        NamespaceResolver::new(&settings, &interner, &mut compiler)
+            .resolve(&env)
+            .unwrap();
+
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let envs = vec![Some(env)];
+        run_member_resolver(&settings, &envs, &interner, &mut compiler);
+        let env = envs[0].as_ref().expect("Env should exist");
+
+        TypeResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env)
+            .unwrap();
+
+        ConstraintResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env)
+            .unwrap();
+
+        let find_val = |name: &str| -> &Value {
+            let name_id = interner.try_search_str(name).unwrap();
+            let var_def = compiler
+                .variables
+                .iter()
+                .find(|v| v.name_id == name_id)
+                .expect("Variable '{name}' not found");
+            match &var_def.state {
+                VariableState::Known(value_id) => compiler.values[value_id.id as usize]
+                    .const_val
+                    .as_ref()
+                    .expect("Variable '{name}' has no const_val"),
+                VariableState::ReservedTypeSlot(_) => {
+                    panic!("Variable '{name}' is not yet resolved")
+                }
+            }
+        };
+
+        assert_eq!(compiler.values.len(), 6);
+        assert!(matches!(find_val("CONSTANT_INT"), Value::I64(4)));
+        assert!(
+            matches!(find_val("CONSTANT_STR"), Value::InternedStr(id) if interner.search(*id) == "Hallo")
+        );
+        assert!(matches!(find_val("CONSTANT_FLOAT"), Value::F64(v) if *v == 0e-5));
+        assert!(matches!(find_val("CONSTANT_TRUE"), Value::Bool(true)));
+        assert!(matches!(find_val("CONSTANT_FALSE"), Value::Bool(false)));
+        assert!(matches!(find_val("CONSTANT_CHAR"), Value::Char('c')));
+    }
 }

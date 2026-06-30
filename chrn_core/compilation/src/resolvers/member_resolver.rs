@@ -11,7 +11,7 @@ use chrn_utils::{
 
 use crate::{
     lookup::scopes::{AssociatedScopeKind, LookupPattern, ScopeType},
-    resolvers::resolver_env::ResolverEnv,
+    resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
     script_compiler::{self, ScriptCompiler},
     semantic::{
         hir::hir_concepts::{FieldRepre, MemberSymbolKind, SymbolKind, Type, VariantRepre},
@@ -44,6 +44,8 @@ impl MemberResolver<'_> {
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,
     ) -> MemberResolver<'a> {
+        debug_assert_eq!(ResolverState::MEMBER, compiler.resolver_state);
+        compiler.resolver_state.advance();
         MemberResolver {
             settings,
             envs,
@@ -169,7 +171,7 @@ impl MemberResolver<'_> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region_id,
+                        env.region,
                         self.settings,
                         self.interner,
                     );
@@ -189,23 +191,20 @@ impl MemberResolver<'_> {
                     "More than one field has the identifier \"{dup_name}\" within struct `{struct_name}`"
                 );
 
-                let src_diag = SourceDiagnostic::builder(
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    env.region_id.path_id,
-                )
-                .add_annotation(
-                    abs_struct.name_span,
-                    AnnotationKind::Secondary,
-                    "Found inside this struct".to_string().into(),
-                )
-                .add_annotation(
-                    orig_span,
-                    AnnotationKind::Secondary,
-                    format!("Original usage of identifier `{dup_name}` here").into(),
-                )
-                .add_annotation(field_span, AnnotationKind::Primary, None)
-                .build();
+                let src_diag =
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+                        .add_annotation(
+                            abs_struct.name_span,
+                            AnnotationKind::Secondary,
+                            "Found inside this struct".to_string().into(),
+                        )
+                        .add_annotation(
+                            orig_span,
+                            AnnotationKind::Secondary,
+                            format!("Original usage of identifier `{dup_name}` here").into(),
+                        )
+                        .add_annotation(field_span, AnnotationKind::Primary, None)
+                        .build();
 
                 self.err_vec.push(src_diag);
             }
@@ -265,23 +264,20 @@ impl MemberResolver<'_> {
                     "More than one variant has the identifier \"{dup_name}\" within enum `{enum_name}`"
                 );
 
-                let src_diag = SourceDiagnostic::builder(
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    env.region_id.path_id,
-                )
-                .add_annotation(
-                    abs_enum.name_span,
-                    AnnotationKind::Secondary,
-                    "Found inside this enum".to_string().into(),
-                )
-                .add_annotation(
-                    orig_span,
-                    AnnotationKind::Secondary,
-                    format!("Original usage of identifier `{dup_name}` here").into(),
-                )
-                .add_annotation(variant_span, AnnotationKind::Primary, None)
-                .build();
+                let src_diag =
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+                        .add_annotation(
+                            abs_enum.name_span,
+                            AnnotationKind::Secondary,
+                            "Found inside this enum".to_string().into(),
+                        )
+                        .add_annotation(
+                            orig_span,
+                            AnnotationKind::Secondary,
+                            format!("Original usage of identifier `{dup_name}` here").into(),
+                        )
+                        .add_annotation(variant_span, AnnotationKind::Primary, None)
+                        .build();
 
                 self.err_vec.push(src_diag);
             }
@@ -311,7 +307,7 @@ impl MemberResolver<'_> {
                         preset_reporter::report_preset(
                             &mut self.err_vec,
                             preset_err,
-                            env.region_id,
+                            env.region,
                             self.settings,
                             self.interner,
                         );

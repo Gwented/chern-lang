@@ -25,6 +25,7 @@ use crate::parser::ast::ast_concepts::{
 };
 use crate::parser::ast::ast_exprs::{Expr, PathSegment, SpannedExpr};
 use crate::resolvers::resolver_env::ResolverEnv;
+use crate::resolvers::resolver_state::ResolverState;
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::evaluator::UnaryOpResult;
 use crate::semantic::hir::hir_concepts::{ConfigOptionAssignment, MemberSymbolKind, VariableState};
@@ -57,6 +58,8 @@ impl<'a> TypeResolver<'a> {
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,
     ) -> TypeResolver<'a> {
+        debug_assert_eq!(ResolverState::TYPE, compiler.resolver_state);
+        compiler.resolver_state.advance();
         TypeResolver {
             settings,
             ty_ctx: TypeContext::new(),
@@ -336,7 +339,7 @@ impl<'a> TypeResolver<'a> {
             );
 
             let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region_id.path_id)
+                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
                     .add_annotation(abs_cfg.name_span, AnnotationKind::Primary, None)
                     .build();
 
@@ -370,7 +373,7 @@ impl<'a> TypeResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region_id,
+                        env.region,
                         self.settings,
                         self.interner,
                     );
@@ -437,7 +440,7 @@ impl<'a> TypeResolver<'a> {
                             preset_reporter::create_diag_builder_preset(
                                 &mut self.err_vec,
                                 preset_err,
-                                env.region_id,
+                                env.region,
                                 self.settings,
                                 self.interner,
                             )
@@ -469,7 +472,7 @@ impl<'a> TypeResolver<'a> {
                             preset_reporter::create_diag_builder_preset(
                                 &mut self.err_vec,
                                 preset_err,
-                                env.region_id,
+                                env.region,
                                 self.settings,
                                 self.interner,
                             )
@@ -572,7 +575,7 @@ impl<'a> TypeResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region_id,
+                        env.region,
                         self.settings,
                         self.interner,
                     );
@@ -660,7 +663,7 @@ impl<'a> TypeResolver<'a> {
                             preset_reporter::create_diag_builder_preset(
                                 &mut self.err_vec,
                                 preset_err,
-                                env.region_id,
+                                env.region,
                                 self.settings,
                                 self.interner,
                             )
@@ -688,7 +691,7 @@ impl<'a> TypeResolver<'a> {
                             preset_reporter::create_diag_builder_preset(
                                 &mut self.err_vec,
                                 preset_err,
-                                env.region_id,
+                                env.region,
                                 self.settings,
                                 self.interner,
                             )
@@ -944,7 +947,7 @@ impl<'a> TypeResolver<'a> {
                         preset_reporter::report_preset(
                             &mut self.err_vec,
                             preset_err,
-                            env.region_id,
+                            env.region,
                             self.settings,
                             self.interner,
                         );
@@ -1270,7 +1273,7 @@ impl<'a> TypeResolver<'a> {
                 preset_reporter::report_preset(
                     &mut self.err_vec,
                     preset_err,
-                    env.region_id,
+                    env.region,
                     self.settings,
                     self.interner,
                 );
@@ -1342,7 +1345,7 @@ impl<'a> TypeResolver<'a> {
                 preset_reporter::report_preset(
                     &mut self.err_vec,
                     preset_err,
-                    env.region_id,
+                    env.region,
                     self.settings,
                     self.interner,
                 );
@@ -1370,7 +1373,7 @@ impl<'a> TypeResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region_id,
+                        env.region,
                         self.settings,
                         self.interner,
                     );
@@ -1382,7 +1385,7 @@ impl<'a> TypeResolver<'a> {
         preset_reporter::report_preset_vec(
             &mut self.err_vec,
             preset_errs,
-            env.region_id,
+            env.region,
             self.settings,
             self.interner,
         );
@@ -1438,7 +1441,7 @@ impl<'a> TypeResolver<'a> {
                         preset_reporter::report_preset(
                             &mut self.err_vec,
                             preset_err,
-                            env.region_id,
+                            env.region,
                             self.settings,
                             self.interner,
                         );
@@ -1450,7 +1453,7 @@ impl<'a> TypeResolver<'a> {
             preset_reporter::report_preset_vec(
                 &mut self.err_vec,
                 preset_errs,
-                env.region_id,
+                env.region,
                 self.settings,
                 self.interner,
             );
@@ -1481,7 +1484,7 @@ impl<'a> TypeResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region_id,
+                        env.region,
                         self.settings,
                         self.interner,
                     );
@@ -1495,7 +1498,7 @@ impl<'a> TypeResolver<'a> {
         preset_reporter::report_preset_vec(
             &mut self.err_vec,
             preset_errs,
-            env.region_id,
+            env.region,
             self.settings,
             self.interner,
         );
@@ -1542,7 +1545,7 @@ impl<'a> TypeResolver<'a> {
                         preset_reporter::report_preset(
                             &mut self.err_vec,
                             preset_err,
-                            env.region_id,
+                            env.region,
                             self.settings,
                             self.interner,
                         );
@@ -1559,7 +1562,7 @@ impl<'a> TypeResolver<'a> {
             preset_reporter::report_preset_vec(
                 &mut self.err_vec,
                 preset_errs,
-                env.region_id,
+                env.region,
                 self.settings,
                 self.interner,
             );
@@ -1589,7 +1592,7 @@ impl<'a> TypeResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region_id,
+                        env.region,
                         self.settings,
                         self.interner,
                     );
@@ -1606,7 +1609,7 @@ impl<'a> TypeResolver<'a> {
         preset_reporter::report_preset_vec(
             &mut self.err_vec,
             preset_errs,
-            env.region_id,
+            env.region,
             self.settings,
             self.interner,
         );
@@ -1649,7 +1652,7 @@ impl<'a> TypeResolver<'a> {
                 );
 
                 let src_diag =
-                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region_id.path_id)
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
                         .add_annotation(
                             abs_alias.name_span,
                             AnnotationKind::Secondary,
@@ -1693,7 +1696,7 @@ impl<'a> TypeResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region_id,
+                        env.region,
                         self.settings,
                         self.interner,
                     );
@@ -1766,7 +1769,7 @@ impl<'a> TypeResolver<'a> {
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
-                        env.region_id,
+                        env.region,
                         self.settings,
                         self.interner,
                     );
@@ -1783,7 +1786,7 @@ impl<'a> TypeResolver<'a> {
         preset_reporter::report_preset_vec(
             &mut self.err_vec,
             preset_errs,
-            env.region_id,
+            env.region,
             self.settings,
             self.interner,
         );
@@ -1913,7 +1916,7 @@ impl<'a> TypeResolver<'a> {
                         let src_diag = SourceDiagnostic::builder(
                             DiagnosticLevel::Error,
                             core_msg,
-                            env.region_id.path_id,
+                            env.region.path_id,
                         )
                         .add_annotation(parent_span, AnnotationKind::Primary, None)
                         .add_annotation(
@@ -1964,7 +1967,7 @@ impl<'a> TypeResolver<'a> {
                                     let src_diag = SourceDiagnostic::builder(
                                         DiagnosticLevel::Error,
                                         core_msg,
-                                        env.region_id.path_id,
+                                        env.region.path_id,
                                     )
                                     .add_annotation(
                                         spanned_expr.span,
@@ -2071,7 +2074,7 @@ impl<'a> TypeResolver<'a> {
                             let src_diag = SourceDiagnostic::builder(
                                 DiagnosticLevel::Error,
                                 core_msg,
-                                env.region_id.path_id,
+                                env.region.path_id,
                             )
                             .add_annotation(
                                 spanned_expr.span,
@@ -2114,7 +2117,7 @@ impl<'a> TypeResolver<'a> {
                     let src_diag = SourceDiagnostic::builder(
                         DiagnosticLevel::Error,
                         core_msg,
-                        env.region_id.path_id,
+                        env.region.path_id,
                     )
                     .add_annotation(
                         spanned_expr.span,
@@ -2600,7 +2603,7 @@ impl<'a> TypeResolver<'a> {
                         let src_diag = SourceDiagnostic::builder(
                             DiagnosticLevel::Error,
                             core_msg,
-                            env.region_id.path_id,
+                            env.region.path_id,
                         )
                         .add_annotation(
                             last_seg.span,
@@ -2829,7 +2832,7 @@ impl<'a> TypeResolver<'a> {
                     let src_diag = SourceDiagnostic::builder(
                         DiagnosticLevel::Error,
                         core_msg,
-                        env.region_id.path_id,
+                        env.region.path_id,
                     )
                     .add_annotation(
                         cycled_span,

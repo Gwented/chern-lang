@@ -4,5 +4,6 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+bitflags = "2.13.0"
 chrn_utils = {path = "../chrn_utils/"}
 lang =  { path = "../lang/" }

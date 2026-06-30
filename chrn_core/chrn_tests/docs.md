@@ -66,6 +66,10 @@ char, bool, str, struct, enum, nil, BigInt, BigFloat, List, Map, Set, Tuple
 `||` OR
 `==` Equal to
 `!=` Not Equal to
+`~` bit invert
+`^` bit xor
+`|` bit or
+`&` bit and
 
 
 ## Modules
@@ -136,7 +140,7 @@ Contains("chrn") | Contains(1xF)
 
 # Does not exist yet
 
-## Statements
+## Keywords
 
 `bind`: Defines where a serialized file is located that should be checked, or deserialized. This is not needed if the script file is situated within the serialized data itself.
 
@@ -157,6 +161,18 @@ alias LongDefault(x: UnsignedInteger, y: UnsignedInteger) = [!IsEmpty, Range(x, 
 var->
     special_string: str [LongDefault(0, 5)]
     some_str: str [ShortDefault()]
+```
+
+`as`: Allows for aliasing imports
+
+```chrn
+import "definitions.chrn" as defs
+import "invalid_utf8_name.chrn" as valid_name
+
+export let VALUE = defs::MAGIC_NUMBER + valid_name::OTHER_MAGICAL_NUMBER
+
+var->
+    thing: defs::Thingy
 ```
 
 ## Sections
@@ -219,7 +235,7 @@ var->
 `nest` allows for:
 - Defining nested data
 - Expressing type constraints ([[IsWhitespace, Equals("Hi")]])
-- Using type constraint directives (#warn/#octal)
+- Using directives (#warn/#octal)
 
 Searchable scopes: `neutral` and `nest`
 
@@ -249,7 +265,6 @@ Searchable scopes: `neutral` and `nest`
 
 # DOES NOT EXIST YET
 `override`: Most important part of the language which controls things such as possible namespace casing to also look for and setting language type defaults. Language defaults exist but this can change any if needed.
-
 
 # DOES NOT EXIST YET
 -------------------------------
@@ -285,19 +300,6 @@ Searchable scopes: `neutral` and `nest`
 
         // Enforces that all types within `Color` will be serialized in hex form
         enum Color {Red: Tuple<u8> Blue: Tuple<u8> Green: Tuple<u8> } #hex
-```
-
-## Other keywords
-`as`: Allows for aliasing imports
-
-```
-import "definitions.chrn" as defs
-import "invalid_utf8_name.chrn" as valid_name
-
-export let VALUE = defs::MAGIC_NUMBER + valid_name::OTHER_MAGICAL_NUMBER
-
-var->
-    thing: defs::Thingy
 ```
 
 #### Full example of language

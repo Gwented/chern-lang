@@ -355,16 +355,14 @@ impl DocumentState {
                 None => continue,
             };
 
+            let env = ResolverEnv::new(ast_info, region, ModuleId::new(mod_idx));
             let mut ns_resolver = NamespaceResolver::new(
                 &settings,
-                ast_info,
-                region,
                 &self.interner,
-                ModuleId::new(mod_idx),
                 &mut compiler,
             );
 
-            if let Err(ns_diags) = ns_resolver.resolve() {
+            if let Err(ns_diags) = ns_resolver.resolve(&env) {
                 if mod_idx == 0 {
                     self.ns_errors = Some(ns_diags);
                 }
