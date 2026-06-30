@@ -4,6 +4,7 @@ mod context;
 mod parse_fmt;
 mod parser_state;
 
+use crate::lexer::token::{SpannedToken, Token, TokenKind};
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractDirective, AbstractEnum, AbstractMemberAccess,
     AbstractOptionAssignment, AbstractParam, AbstractStruct, AbstractTypeDef, AbstractVar,
@@ -16,7 +17,6 @@ use crate::parser::ast::ast_exprs::{
 use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::ParserContext;
 use crate::parser::parser_state::ParserState;
-use crate::token::{SpannedToken, Token, TokenKind};
 use chrn_utils::chrn_settings::ChrnSettings;
 use chrn_utils::id_types::SpannedContainer;
 use chrn_utils::intern::Intern;
@@ -26,9 +26,9 @@ use chrn_utils::source_map::source_span::SourceSpan;
 use lang::fmter::{Formattable, Formatted};
 use lang::keywords::Keyword;
 
-/// Returns `AstInfo` and Diagnostics, if any exist.
-///
-/// Whether or not the `AstInfo` is unfinished is dependent on if diagnostics are empty.
+// The CST.
+/// Returns a tuple of `AstInfo` and Diagnostics, where `AstInfo` may or may not be unfinished,
+/// depending on if diagnostics > 0
 pub fn parse(
     settings: &ChrnSettings,
     metadata: &SourceRegion,
@@ -1561,7 +1561,8 @@ fn handle_conds(ctx: &mut ParserContext, interner: &Intern) -> Result<Vec<Spanne
 
 //NOTE: Could make the first pass only resolve the basics so that module resolution for local
 //imports are handled without giving the module passer too much syntax knowledge, but fine for now.
-/// Only does syntax checking for import since modules are resolved on first pass.
+/// Parses the only language-known prefix `export` and returns an error in the case of an issue like
+/// duplicate exports, otherwise will return `is_priv` on `Ok`
 fn parse_export(ctx: &mut ParserContext, interner: &Intern) -> Result<bool, ()> {
     let mut is_priv = true;
 
@@ -1587,7 +1588,7 @@ fn parse_export(ctx: &mut ParserContext, interner: &Intern) -> Result<bool, ()> 
     Ok(is_priv)
 }
 
-/// Helper for solely reporting export
+/// Helper for solely reporting export errors
 fn report_export(ctx: &mut ParserContext, fmtted: Formatted, branch: Branch, interner: &Intern) {
     ctx.report_verbose(
         &format!("Cannot use `export` on `{}`", fmtted),

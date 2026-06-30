@@ -37,9 +37,9 @@
 //! the semantic entity lookup yields no result.
 
 use chrn_utils::intern::Intern;
+use compilation::lexer::token::Token as ScriptToken;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::{self, SymbolKind, Type, VariableState};
-use compilation::token::Token as ScriptToken;
 use lang::fmter::Formattable;
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
 use lang::types::type_constraints::TypeBoundary;

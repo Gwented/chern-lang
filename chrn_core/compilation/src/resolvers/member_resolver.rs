@@ -62,9 +62,10 @@ impl MemberResolver<'_> {
     // compiler has, should this be cached?
     //
     // Should this be incremental module-wise?
-    /// Goes through all types within `self.compiler` and appends fields/variants
+    /// Goes through all types within `self.compiler` and appends fields/variants where possible
     ///
     /// If diagnostics > 0 then an error occured
+    // Would options be ok here?
     pub fn resolve(&mut self) -> Vec<SourceDiagnostic> {
         // A loop intended to move the required checks to see if a field can actually be resolved at
         // this stage outside the call site and turned into general metadata expected by the call sites.

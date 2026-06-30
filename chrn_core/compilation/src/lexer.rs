@@ -1,3 +1,5 @@
+pub mod token;
+pub mod trivia;
 // TODO: Maybe give this diagnostics
 
 use chrn_utils::{
@@ -5,12 +7,12 @@ use chrn_utils::{
     intern::{self, Intern},
     source_map::source_span::SourceSpan,
 };
-use lang::{
-    keywords::{self, Keyword},
+use lang::keywords::{self, Keyword};
+
+use crate::lexer::{
+    token::{Notation, SpannedToken, Token},
     trivia::{Trivia, TriviaKind},
 };
-
-use crate::token::{Notation, SpannedToken, Token};
 
 const MAX_INVALID_TOKS: u8 = 5;
 

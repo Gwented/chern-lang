@@ -1,2 +1,2 @@
-pub mod inconsistent_comma;
 pub mod linter;
+pub mod linter_config;

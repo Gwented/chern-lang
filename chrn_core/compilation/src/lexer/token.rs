@@ -1,3 +1,4 @@
+// TRIVIA IS NOT A LANGUAGE CONCEPT
 use std::{fmt::Display, ops::Range};
 
 use chrn_utils::{id_types::InternedId, source_map::source_span::SourceSpan};

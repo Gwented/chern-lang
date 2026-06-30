@@ -244,15 +244,23 @@ impl<'a> TypeResolver<'a> {
         // if env.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
         //     dbg!(&self.ty_ctx);
         //     for symbol in &self.compiler.symbols {
-        //         if self.interner.search(symbol.name_id) == "a" {
+        //         if self.interner.search(symbol.name_id) == "C" {
         //             let name = self.interner.search(symbol.name_id);
         //             dbg!(name);
         //             match symbol.kind {
-        //                 SymbolKind::Val(value_id) => {
-        //                     let val = &self.compiler.values[value_id.id as usize];
-        //                     let expr = &self.compiler.exprs[val.expr_id.id as usize];
-        //                     // dbg!(expr.val_id, expr);
-        //                     dbg!(expr, val);
+        //                 SymbolKind::Variable(var_id) => {
+        //                     let state = &self.compiler.variables[var_id.id as usize].state;
+        //                     match state {
+        //                         VariableState::ReservedTypeSlot(type_id) => {
+        //                             dbg!("Reserved variable but not seen");
+        //                         }
+        //                         VariableState::Known(val_id) => {
+        //                             let val = &self.compiler.values[val_id.id as usize];
+        //                             let expr = &self.compiler.exprs[val.expr_id.id as usize];
+        //                             // dbg!(expr.val_id, expr);
+        //                             dbg!(expr, val);
+        //                         }
+        //                     }
         //                 }
         //                 SymbolKind::Type(type_id) => {
         //                     let ty_info = &self.compiler.types[type_id.id as usize];
@@ -278,6 +286,7 @@ impl<'a> TypeResolver<'a> {
         //         }
         //     }
         // }
+        // panic!("Sigh");
 
         //     for ty in &self.compiler.types {
         //         dbg!(ty);
@@ -291,6 +300,7 @@ impl<'a> TypeResolver<'a> {
         //         dbg!(val);
         //     }
         // }
+        dbg!(&self.ty_ctx);
 
         if !self.err_vec.is_empty() {
             let mut diags = Vec::new();
@@ -303,6 +313,7 @@ impl<'a> TypeResolver<'a> {
     }
 
     fn resolve_cfg(&mut self, abs_cfg: &AbstractConfig, env: &ResolverEnv) -> Result<(), ()> {
+        todo!("No cfg");
         let mut opt_assignments: Vec<MemberId> = Vec::new();
         let mut inner_field_cfgs: Vec<ConfigId> = Vec::new();
 
@@ -318,8 +329,8 @@ impl<'a> TypeResolver<'a> {
         let parent_sym_id = table.interned_to_sym[&abs_cfg.name_id];
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
-        // Checks if the symbol is valid later
-        let found_sym_id = if let Some(SymbolLookupOutput { found_sym_id, .. }) =
+        // Checks if the symbol is valid after
+        let found_sym_id_opt = if let Some(SymbolLookupOutput { found_sym_id, .. }) =
             scopes::find_sym_id(
                 self.compiler,
                 associated_scope,
@@ -329,8 +340,11 @@ impl<'a> TypeResolver<'a> {
                 // namespace, but not by #)%*@%)@(
                 LookupPattern::NamespaceOnly,
             ) {
-            found_sym_id
+            Some(found_sym_id)
         } else {
+            // Is terminal because this means nothing inside the symbol itself can actually be examined
+            // NOTE: But maybe it shouldn't be since the options can be checked for validity even
+            // with no root
             let name = self.interner.search(abs_cfg.name_id);
             let core_msg = format!(
                 "Could not find a symbol with the identifier `{name}` in all complex searchable scopes"
@@ -343,7 +357,7 @@ impl<'a> TypeResolver<'a> {
 
             self.err_vec.push(src_diag);
 
-            return Err(());
+            None
         };
 
         // Right...
@@ -363,7 +377,6 @@ impl<'a> TypeResolver<'a> {
                 associated_scope,
                 // This purposeful setting is done on purpose.
                 ScopeType::Complex,
-                &mut vec![],
                 env,
             ) {
                 Ok(expr_id) => expr_id,
@@ -395,9 +408,14 @@ impl<'a> TypeResolver<'a> {
             opt_assignments.push(member_id);
         }
 
+        let found_sym_id = match found_sym_id_opt {
+            Some(sym_id) => sym_id,
+            None => return Err(()),
+        };
+
         for abs_inner_cfg in &abs_cfg.inner_field_cfg {
             // Safe unwrap (This is not safe)
-            let found_type_id = self.compiler.get_sym_type_id(found_sym_id).unwrap();
+            let found_type_id = self.compiler.get_sym_type_id(found_sym_id).expect("?");
             let member_id = match member_lookup::lookup_member(
                 self.compiler,
                 found_type_id,
@@ -436,7 +454,6 @@ impl<'a> TypeResolver<'a> {
                             );
 
                             preset_reporter::create_diag_builder_preset(
-                                &mut self.err_vec,
                                 preset_err,
                                 env.region,
                                 self.settings,
@@ -471,7 +488,6 @@ impl<'a> TypeResolver<'a> {
 
                             // List available members?
                             preset_reporter::create_diag_builder_preset(
-                                &mut self.err_vec,
                                 preset_err,
                                 env.region,
                                 self.settings,
@@ -526,7 +542,11 @@ impl<'a> TypeResolver<'a> {
             };
 
             // Result doesn't matter since we continue either way
-            _ = self.resolve_cfg_inner(parent_sym_id, member_id, abs_inner_cfg, env);
+            match self.resolve_cfg_inner(parent_sym_id, member_id, abs_inner_cfg, env) {
+                Ok(id) => inner_field_cfgs.push(id),
+                Err(_) => (),
+            };
+            debug_assert!(inner_field_cfgs[0].id != 0);
         }
 
         // dbg!(&abs_cfg);
@@ -538,7 +558,7 @@ impl<'a> TypeResolver<'a> {
         cfg_def.opt_assignments = opt_assignments;
         cfg_def.inner_field_cfgs = inner_field_cfgs;
         dbg!(&cfg_def);
-        // panic!();
+        panic!();
 
         Ok(())
     }
@@ -550,7 +570,7 @@ impl<'a> TypeResolver<'a> {
         parent_member_id: MemberId,
         abs_cfg: &AbstractConfig,
         env: &ResolverEnv,
-    ) -> Result<(), ()> {
+    ) -> Result<ConfigId, ()> {
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         let mut opt_assignments: Vec<MemberId> = Vec::new();
@@ -568,7 +588,6 @@ impl<'a> TypeResolver<'a> {
                 associated_scope,
                 // This purposeful setting is done on purpose.
                 ScopeType::Complex,
-                &mut vec![],
                 env,
             ) {
                 Ok(expr_id) => expr_id,
@@ -603,21 +622,21 @@ impl<'a> TypeResolver<'a> {
 
         for abs_inner_cfg in &abs_cfg.inner_field_cfg {
             let parent_type_id = self.compiler.get_member_type_id(parent_member_id).unwrap();
-            let name = self.interner.search(abs_inner_cfg.name_id);
-            dbg!(name);
-            let Type::Struct(structure) = &self.compiler.types[parent_type_id.id as usize].ty
-            else {
-                todo!();
-            };
-            let name = self
-                .interner
-                .search(self.compiler.symbols[structure.sym_id.id as usize].name_id);
-            dbg!(name);
+            // let name = self.interner.search(abs_inner_cfg.name_id);
+            // dbg!(name);
+            // let Type::Struct(structure) = &self.compiler.types[parent_type_id.id as usize].ty
+            // else {
+            //     todo!();
+            // };
+            // let name = self
+            //     .interner
+            //     .search(self.compiler.symbols[structure.sym_id.id as usize].name_id);
+            // dbg!(name);
             // Person fields are not available since the config is not gauranteed to be touchign a
             // type that is known yet
-            let person_fields = member_lookup::collect_all_members(self.compiler, parent_type_id);
-            dbg!(person_fields);
-            panic!();
+            // let person_fields = member_lookup::collect_all_members(self.compiler, parent_type_id);
+            // dbg!(person_fields);
+            // panic!();
             let member_id = match member_lookup::lookup_member(
                 self.compiler,
                 parent_type_id,
@@ -662,7 +681,6 @@ impl<'a> TypeResolver<'a> {
                             );
 
                             preset_reporter::create_diag_builder_preset(
-                                &mut self.err_vec,
                                 preset_err,
                                 env.region,
                                 self.settings,
@@ -693,7 +711,6 @@ impl<'a> TypeResolver<'a> {
 
                             // List available members?
                             preset_reporter::create_diag_builder_preset(
-                                &mut self.err_vec,
                                 preset_err,
                                 env.region,
                                 self.settings,
@@ -744,8 +761,13 @@ impl<'a> TypeResolver<'a> {
             };
 
             // Result doesn't matter since we continue either way
-            let cfg_id = self.resolve_cfg_inner(parent_sym_id, member_id, abs_inner_cfg, env);
-            // inner_field_cfgs.push(cfg_id);
+            let cfg_id = match self.resolve_cfg_inner(parent_sym_id, member_id, abs_inner_cfg, env)
+            {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+
+            inner_field_cfgs.push(cfg_id);
         }
 
         // dbg!(&abs_cfg);
@@ -758,7 +780,7 @@ impl<'a> TypeResolver<'a> {
         cfg_def.opt_assignments = opt_assignments;
         cfg_def.inner_field_cfgs = inner_field_cfgs;
 
-        Ok(())
+        Ok(ConfigId::new(0))
     }
 
     // fn should_wait(&self, abs_cfg: &AbstractConfig, env: &ResolverEnv) -> bool {
@@ -890,12 +912,21 @@ impl<'a> TypeResolver<'a> {
                         let val_info = &self.compiler.values[val_id.id as usize];
                         let other_type_id = val_info.type_id;
 
-                        self.compiler.types[root_expr.type_id.id as usize].ty =
-                            Type::Deferred(other_type_id);
+                        // Avoid creating a self-referential `Deferred` type when the pending
+                        // reference expression shares the same type slot as the symbol it depends on
+                        //
+                        // Could be a real issue that this needs to do this in the first place, but
+                        // it's fine for now
+                        if root_expr.type_id != other_type_id {
+                            self.compiler.types[root_expr.type_id.id as usize].ty =
+                                Type::Deferred(other_type_id);
+                        }
 
                         let inner_val = &mut self.compiler.values[root_expr.val_id.id as usize];
-                        self.compiler.types[inner_val.type_id.id as usize].ty =
-                            Type::Deferred(other_type_id);
+                        if inner_val.type_id != other_type_id {
+                            self.compiler.types[inner_val.type_id.id as usize].ty =
+                                Type::Deferred(other_type_id);
+                        }
                     }
 
                     if pending_sym.has_const_val {
@@ -1280,7 +1311,6 @@ impl<'a> TypeResolver<'a> {
             None,
             associated_scope,
             ScopeType::Neutral,
-            &mut vec![sym_id],
             env,
         ) {
             Ok(expr_id) => expr_id,
@@ -1378,7 +1408,6 @@ impl<'a> TypeResolver<'a> {
                 None,
                 associated_scope,
                 ScopeType::Neutral,
-                &mut vec![sym_id],
                 env,
             ) {
                 // For allowing for more diagnostics instead of just leaving the rest of the struct
@@ -1448,7 +1477,6 @@ impl<'a> TypeResolver<'a> {
                     None,
                     associated_scope,
                     ScopeType::Nest,
-                    &mut vec![sym_id],
                     env,
                 ) {
                     Ok(c) => conds.push(c),
@@ -1485,15 +1513,7 @@ impl<'a> TypeResolver<'a> {
         let mut glob_conds: Vec<ExprId> = Vec::new();
 
         for cond in &abs_struct.glob_conds {
-            match self.register_expr(
-                sym_id,
-                cond,
-                None,
-                associated_scope,
-                ScopeType::Nest,
-                &mut vec![sym_id],
-                env,
-            ) {
+            match self.register_expr(sym_id, cond, None, associated_scope, ScopeType::Nest, env) {
                 Ok(c) => glob_conds.push(c),
                 Err(preset_err) => {
                     preset_reporter::report_preset(
@@ -1552,7 +1572,6 @@ impl<'a> TypeResolver<'a> {
                     None,
                     associated_scope,
                     ScopeType::Nest,
-                    &mut vec![sym_id],
                     env,
                 ) {
                     Ok(c) => Some(c),
@@ -1599,7 +1618,6 @@ impl<'a> TypeResolver<'a> {
                 None,
                 associated_scope,
                 ScopeType::Nest,
-                &mut vec![sym_id],
                 env,
             ) {
                 Ok(c) => Some(c),
@@ -1776,7 +1794,6 @@ impl<'a> TypeResolver<'a> {
                 //NOTE: Could this change?
                 associated_scope,
                 ScopeType::Neutral,
-                &mut vec![alias_sym_id],
                 env,
             ) {
                 Ok(c) => Some(c),
@@ -1843,7 +1860,6 @@ impl<'a> TypeResolver<'a> {
         local_scope_id: Option<ScopeId>,
         associated_scope: AssociatedScopeKind,
         scope_type: ScopeType,
-        seen: &mut Vec<SymbolId>,
         env: &ResolverEnv,
     ) -> Result<ExprId, PresetErr> {
         match &spanned_expr.expr {
@@ -1903,10 +1919,8 @@ impl<'a> TypeResolver<'a> {
                 ) {
                     //WARN: Constant iteration upon seeing any symbol instead of a single check
                     //elsewhere
-                    seen.push(found_sym_id);
-
                     // Code duplication reduction
-                    self.check_cycle(seen, parent_sym_id, found_sym_id, env)?;
+                    self.check_cycle(parent_sym_id, found_sym_id, env)?;
 
                     //NOTE: Only the PendingSymbol struct carries the PendingExpr struct, meaning
                     //there is no way to check for cycles outside of `TypeContext`, so this has to
@@ -2205,7 +2219,6 @@ impl<'a> TypeResolver<'a> {
                     local_scope_id,
                     associated_scope,
                     scope_type,
-                    seen,
                     env,
                 )?;
 
@@ -2215,7 +2228,6 @@ impl<'a> TypeResolver<'a> {
                     local_scope_id,
                     associated_scope,
                     scope_type,
-                    seen,
                     env,
                 )?;
 
@@ -2251,6 +2263,8 @@ impl<'a> TypeResolver<'a> {
                                 .into());
                             }
                             evaluator::BinaryOpResult::Invalid
+                                // If either are unknown then that would mean it can't confidentally
+                                // say the resolution failed since neither have definitive values yet.
                                 if !lhs_is_unknown && !rhs_is_unknown =>
                             {
                                 return Err(MathError::BinaryOpMismatch {
@@ -2358,7 +2372,6 @@ impl<'a> TypeResolver<'a> {
                     local_scope_id,
                     associated_scope,
                     scope_type,
-                    seen,
                     env,
                 )?;
 
@@ -2368,7 +2381,6 @@ impl<'a> TypeResolver<'a> {
                     local_scope_id,
                     associated_scope,
                     scope_type,
-                    seen,
                     env,
                 )?;
 
@@ -2424,7 +2436,6 @@ impl<'a> TypeResolver<'a> {
                     local_scope_id,
                     associated_scope,
                     scope_type,
-                    seen,
                     env,
                 )?;
 
@@ -2531,7 +2542,6 @@ impl<'a> TypeResolver<'a> {
                     local_scope_id,
                     associated_scope,
                     scope_type,
-                    seen,
                     env,
                 )?;
                 //WARN: Does this need something?
@@ -2545,7 +2555,6 @@ impl<'a> TypeResolver<'a> {
                         local_scope_id,
                         associated_scope,
                         scope_type,
-                        seen,
                         env,
                     )?;
 
@@ -2575,7 +2584,6 @@ impl<'a> TypeResolver<'a> {
                     local_scope_id,
                     associated_scope,
                     scope_type,
-                    seen,
                     env,
                 )? {
                     // Maybe this shouldn't be allowed here since parsing types is different from
@@ -2647,7 +2655,6 @@ impl<'a> TypeResolver<'a> {
                     local_scope_id,
                     last_scope,
                     scope_type,
-                    seen,
                     env,
                 )
             }
@@ -2665,7 +2672,6 @@ impl<'a> TypeResolver<'a> {
                         local_scope_id,
                         associated_scope,
                         scope_type,
-                        seen,
                         env,
                     )?;
 
@@ -2758,7 +2764,6 @@ impl<'a> TypeResolver<'a> {
         local_scope: Option<ScopeId>,
         associated_scope: AssociatedScopeKind,
         scope_type: ScopeType,
-        seen: &mut Vec<SymbolId>,
         env: &ResolverEnv,
     ) -> Result<PossibleMember, PresetErr> {
         let res = self.register_expr(
@@ -2767,7 +2772,6 @@ impl<'a> TypeResolver<'a> {
             local_scope,
             associated_scope,
             scope_type,
-            seen,
             env,
         )?;
         dbg!(res);
@@ -2779,7 +2783,6 @@ impl<'a> TypeResolver<'a> {
             local_scope,
             associated_scope,
             scope_type,
-            seen,
             env,
         ) {
             let resolved_expr = &self.compiler.exprs[expr_id.id as usize];
@@ -2814,64 +2817,61 @@ impl<'a> TypeResolver<'a> {
     // Helper
     fn check_cycle(
         &self,
-        seen: &Vec<SymbolId>,
         parent_sym_id: SymbolId,
         found_sym_id: SymbolId,
         env: &ResolverEnv,
     ) -> Result<(), PresetErr> {
-        for seen_sym_id in seen.iter() {
-            // In:
-            // ```
-            // let a = b
-            // let b = c
-            // let c = b
-            // ```
-            // Within b, it checks of the symbol a is inside of `TypeContext`, and
-            // if that a depends on symbol b
-            if let Some(pending_sym) = self.ty_ctx.sym_queue.get(seen_sym_id) {
-                let has_cycle = pending_sym
-                    .pending_exprs
-                    .iter()
-                    .any(|pend_expr| pend_expr.parent_sym == found_sym_id);
+        // DFS over pending. An edge A -> B means A's expression
+        // references B. If `found_sym_id` can reach `parent_sym_id`, adding the new reference
+        // would close a cycle.
+        let mut stack: Vec<SymbolId> = vec![found_sym_id];
+        let mut visited: Vec<SymbolId> = Vec::new();
 
-                // In, "let a = b, let b = a"
-                // a would be cycled
-                // b would be current
-                //TODO: Would be changed if symbols were given Option span directly
-                if has_cycle {
-                    let current_sym = &self.compiler.symbols[parent_sym_id.id as usize];
-                    let current_name = self.interner.search(current_sym.name_id);
-                    let current_ast_id = current_sym.ast_id.expect("core should not be resolved");
+        while let Some(current) = stack.pop() {
+            if current == parent_sym_id {
+                let current_sym = &self.compiler.symbols[parent_sym_id.id as usize];
+                let current_name = self.interner.search(current_sym.name_id);
+                let current_ast_id = current_sym.ast_id.expect("core should not be resolved");
 
-                    let cycled_sym = &self.compiler.symbols[found_sym_id.id as usize];
-                    let cycled_ast_id = cycled_sym.ast_id.expect("core should not be resolved");
-                    let cycled_name = self.interner.search(cycled_sym.name_id);
+                let cycled_sym = &self.compiler.symbols[found_sym_id.id as usize];
+                let cycled_ast_id = cycled_sym.ast_id.expect("core should not be resolved");
+                let cycled_name = self.interner.search(cycled_sym.name_id);
 
-                    let cycled_span = env.ast_info.get_sym_span(cycled_ast_id);
-                    let current_span = env.ast_info.get_sym_span(current_ast_id);
+                let cycled_span = env.ast_info.get_sym_span(cycled_ast_id);
+                let current_span = env.ast_info.get_sym_span(current_ast_id);
 
-                    let core_msg = format!(
-                        "`{}` depends on itself through `{}`",
-                        current_name, cycled_name
-                    );
+                let core_msg = format!(
+                    "`{}` depends on itself through `{}`",
+                    current_name, cycled_name
+                );
 
-                    let src_diag = SourceDiagnostic::builder(
-                        DiagnosticLevel::Error,
-                        core_msg,
-                        env.region.path_id,
-                    )
-                    .add_annotation(
-                        cycled_span,
-                        AnnotationKind::Secondary,
-                        "This has no value yet".to_string().into(),
-                    )
-                    .add_annotation(
-                        current_span,
-                        AnnotationKind::Primary,
-                        format!("Uses `{cycled_name}` before it has a value").into(),
-                    );
+                let src_diag =
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+                        .add_annotation(
+                            cycled_span,
+                            AnnotationKind::Secondary,
+                            "This has no value yet".to_string().into(),
+                        )
+                        .add_annotation(
+                            current_span,
+                            AnnotationKind::Primary,
+                            format!("Uses `{cycled_name}` before it has a value").into(),
+                        );
 
-                    return Err(PresetErr::General(src_diag));
+                return Err(PresetErr::General(src_diag));
+            }
+
+            if visited.contains(&current) {
+                continue;
+            }
+            visited.push(current);
+
+            // Find every symbol that `current` depends on by scanning the pending queue.
+            for (sym_id, pending_sym) in &self.ty_ctx.sym_queue {
+                for pending_expr in &pending_sym.pending_exprs {
+                    if pending_expr.parent_sym == current {
+                        stack.push(*sym_id);
+                    }
                 }
             }
         }

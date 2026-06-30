@@ -29,7 +29,7 @@ pub(crate) fn report_preset(
     settings: &ChrnSettings,
     interner: &Intern,
 ) {
-    let diag_builder = create_diag_builder_preset(diags, preset_err, region, settings, interner);
+    let diag_builder = create_diag_builder_preset(preset_err, region, settings, interner);
     diags.push(diag_builder.build());
 }
 
@@ -48,14 +48,13 @@ pub(crate) fn report_preset_vec(
     interner: &Intern,
 ) {
     for preset in preset_errs {
-        let diag_builder = create_diag_builder_preset(diags, preset, region, settings, interner);
+        let diag_builder = create_diag_builder_preset(preset, region, settings, interner);
         diags.push(diag_builder.build());
     }
 }
 
 /// Creates `SourceDiagnostic` with the preset associated with it's `SemanticError`
 pub(crate) fn create_diag_builder_preset(
-    reporter: &mut Vec<SourceDiagnostic>,
     preset_err: PresetErr,
     region: &SourceRegion,
     settings: &ChrnSettings,

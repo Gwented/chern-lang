@@ -1,4 +1,5 @@
 pub mod constraints;
+pub mod cst;
 pub mod lexer;
 pub mod lookup;
 pub mod modules;
@@ -6,12 +7,12 @@ pub mod parser;
 pub mod resolvers;
 pub mod script_compiler;
 pub mod semantic;
-pub mod token;
 pub mod user_defined;
 
 #[cfg(test)]
 mod tests {
     use crate::{
+        lexer::token::{Notation, Token},
         parser::ast::ast_concepts::AstInfo,
         resolvers::{constraint_resolver::ConstraintResolver, resolver_env::ResolverEnv},
         script_compiler::ScriptCompiler,
@@ -170,6 +171,7 @@ mod tests {
         chrn_settings::ChrnSettings,
         id_types::{InternedId, ModuleId, PathId, SourceRegionId, ValueId},
         intern::Intern,
+        source_map::source_diagnostic::SourceDiagnostic,
         source_map::source_region::{SourceRegion, SourceRegionArena},
     };
     use lang::{config_loader::ChrnConfigLoader, values::Value};
@@ -184,8 +186,97 @@ mod tests {
             type_resolver::TypeResolver,
         },
         semantic::hir::hir_concepts::VariableState,
-        token::{Notation, Token},
     };
+
+    // -- Const dependency test helpers --
+
+    /// Parses a single-module script and runs the full resolution pipeline up to and including
+    /// constraints. Panics on any resolution error so that the returned compiler state is known to
+    /// be fully resolved.
+    fn compile_and_resolve_single_module(text: &str) -> (ScriptCompiler, Intern) {
+        let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
+
+        let module = &compiler.mods[0];
+        let region = get_module_region(&arena, module);
+
+        let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
+
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        NamespaceResolver::new(&settings, &interner, &mut compiler)
+            .resolve(&env)
+            .unwrap();
+
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let envs = vec![Some(env)];
+        run_member_resolver(&settings, &envs, &interner, &mut compiler);
+        let env = envs[0].as_ref().expect("Env should exist");
+
+        TypeResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env)
+            .unwrap();
+        ConstraintResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env)
+            .unwrap();
+
+        (compiler, interner)
+    }
+
+    /// Returns the constant value of a resolved `let` variable by name.
+    fn value_of(compiler: &ScriptCompiler, interner: &Intern, name: &str) -> Value {
+        let name_id = interner
+            .try_search_str(name)
+            .unwrap_or_else(|| panic!("Variable '{}' was not interned", name));
+        let var_def = compiler
+            .variables
+            .iter()
+            .find(|v| v.name_id == name_id)
+            .unwrap_or_else(|| panic!("Variable '{}' not found", name));
+
+        match &var_def.state {
+            VariableState::Known(value_id) => compiler.values[value_id.id as usize]
+                .const_val
+                .clone()
+                .unwrap_or_else(|| panic!("Variable '{}' has no constant value", name)),
+            VariableState::ReservedTypeSlot(_) => {
+                panic!("Variable '{}' is still a reserved type slot", name)
+            }
+        }
+    }
+
+    /// Runs namespace and member resolution, then returns the result of type resolution. This is
+    /// useful for tests that want to assert that type resolution fails (e.g. circular const
+    /// dependencies) without the constraint pass running.
+    fn type_resolve_single_module(
+        text: &str,
+    ) -> Result<(ScriptCompiler, Intern), Vec<SourceDiagnostic>> {
+        let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
+
+        let module = &compiler.mods[0];
+        let region = get_module_region(&arena, module);
+
+        let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+            .tokenize(&mut interner);
+
+        let ast_info = parser::parse(&settings, region, &toks, &interner).0;
+
+        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        NamespaceResolver::new(&settings, &interner, &mut compiler)
+            .resolve(&env)
+            .unwrap();
+
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let envs = vec![Some(env)];
+        run_member_resolver(&settings, &envs, &interner, &mut compiler);
+        let env = envs[0].as_ref().expect("Env should exist");
+
+        match TypeResolver::new(&settings, &interner, &mut compiler).resolve(env) {
+            Ok(()) => Ok((compiler, interner)),
+            Err(diags) => Err(diags),
+        }
+    }
 
     #[test]
     fn lex_tok_test() {
@@ -2067,5 +2158,194 @@ mod tests {
 
         // -- Float mod --
         assert!(matches!(eval("let X = 5.5 % 2.0"), Value::F64(v) if v == 1.5));
+    }
+
+    #[test]
+    fn const_dependency_resolution_test() {
+        let approx_eq = |a: f64, b: f64| (a - b).abs() < 1e-9;
+
+        // 1) Reverse-ordered linear chain: each variable depends on the previous one, and the
+        //    literal is declared last. This exercises the pending-expression propagation loop.
+        let (compiler, interner) = compile_and_resolve_single_module(
+            "
+                let A = E + 2
+                let B = A * 3
+                let C = B - 1
+                let D = C / 2
+                let E = 4
+            ",
+        );
+        assert!(matches!(value_of(&compiler, &interner, "D"), Value::I64(8)));
+
+        // 2) Diamond dependency: one base value feeds two branches that are later combined.
+        let (compiler, interner) = compile_and_resolve_single_module(
+            "
+                let BASE = 2
+                let LEFT = BASE * 3
+                let RIGHT = BASE + 5
+                let TOP = LEFT + RIGHT
+            ",
+        );
+        assert!(matches!(
+            value_of(&compiler, &interner, "TOP"),
+            Value::I64(13)
+        ));
+
+        // 3) Expression declared before its dependencies, referencing multiple pending variables.
+        let (compiler, interner) = compile_and_resolve_single_module(
+            "
+                let Z = (X + Y) * (Y - W)
+                let W = 2
+                let X = W + 3
+                let Y = X * W
+            ",
+        );
+        assert!(matches!(
+            value_of(&compiler, &interner, "Z"),
+            Value::I64(120)
+        ));
+
+        // 4) Long chain of pure references.
+        let (compiler, interner) = compile_and_resolve_single_module(
+            "
+                let N1 = 7
+                let N2 = N1
+                let N3 = N2
+                let N4 = N3
+                let N5 = N4 + N3 * 2
+            ",
+        );
+        assert!(matches!(
+            value_of(&compiler, &interner, "N5"),
+            Value::I64(21)
+        ));
+
+        // 5) Boolean values derived from numeric comparisons.
+        let (compiler, interner) = compile_and_resolve_single_module(
+            "
+                let THRESH = 5
+                let VAL = 10
+                let IS_BIG = VAL > THRESH
+                let RESULT = IS_BIG || false
+            ",
+        );
+        assert!(matches!(
+            value_of(&compiler, &interner, "RESULT"),
+            Value::Bool(true)
+        ));
+
+        // 6) Floating-point dependency chain.
+        let (compiler, interner) = compile_and_resolve_single_module(
+            "
+                let PI = 3.14
+                let R = 2.0
+                let AREA = PI * R * R
+            ",
+        );
+        match value_of(&compiler, &interner, "AREA") {
+            Value::F64(v) => assert!(approx_eq(v, 12.56), "AREA was {}", v),
+            other => panic!("Expected F64 for AREA, got {:?}", other),
+        }
+
+        // 7) Unary operator propagation through a dependency.
+        let (compiler, interner) = compile_and_resolve_single_module(
+            "
+                let NEG = -5
+                let POS = -NEG + 1
+            ",
+        );
+        assert!(matches!(
+            value_of(&compiler, &interner, "POS"),
+            Value::I64(6)
+        ));
+
+        // 8) Mixed int/bool independent chains in the same module.
+        let (compiler, interner) = compile_and_resolve_single_module(
+            "
+                let A = 3
+                let B = 4
+                let C = A > B
+                let D = !C
+                let E = (A + B) * 2
+                let F = E > 10
+            ",
+        );
+        assert!(matches!(
+            value_of(&compiler, &interner, "D"),
+            Value::Bool(true)
+        ));
+        assert!(matches!(
+            value_of(&compiler, &interner, "F"),
+            Value::Bool(true)
+        ));
+    }
+
+    #[test]
+    fn const_dependency_circular_test() {
+        // Exact scenario requested: `let x = y let y = x`
+        assert!(
+            type_resolve_single_module("let x = y\nlet y = x").is_err(),
+            "Two-variable cycle should be rejected"
+        );
+
+        // Direct self reference.
+        assert!(
+            type_resolve_single_module("let X = X").is_err(),
+            "Self-referencing constant should be rejected"
+        );
+
+        // Three-variable cycle.
+        assert!(
+            type_resolve_single_module("let A = B + 1\nlet B = C * 2\nlet C = A").is_err(),
+            "Three-variable cycle should be rejected"
+        );
+
+        // Long indirect cycle.
+        assert!(
+            type_resolve_single_module(
+                "
+                    let A = B
+                    let B = C
+                    let C = D
+                    let D = E
+                    let E = A
+                ",
+            )
+            .is_err(),
+            "Long indirect cycle should be rejected"
+        );
+
+        // Cycle hidden inside a larger expression.
+        assert!(
+            type_resolve_single_module("let X = (Y + 2) * 3\nlet Y = X - 1").is_err(),
+            "Cycle inside a complex expression should be rejected"
+        );
+
+        // Multiple independent cycles in the same module.
+        assert!(
+            type_resolve_single_module(
+                "
+                    let A = B
+                    let B = A
+                    let C = D + 1
+                    let D = C
+                ",
+            )
+            .is_err(),
+            "Multiple independent cycles should be rejected"
+        );
+
+        // A chain that leads into a cycle.
+        assert!(
+            type_resolve_single_module(
+                "
+                    let A = B + 1
+                    let B = C
+                    let C = B
+                ",
+            )
+            .is_err(),
+            "Chain leading into a cycle should be rejected"
+        );
     }
 }

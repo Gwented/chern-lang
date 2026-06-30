@@ -1,21 +1,16 @@
 //TEST: TEST
 use chrn_utils::{
-    core_error::ScriptError,
-    id_types::ModuleId,
-    source_map::{source_diagnostic::Reporter, source_region::SourceRegion},
+    core_error::ScriptError, id_types::ModuleId, source_map::source_diagnostic::Reporter,
 };
 use compilation::{
-    lexer::Lexer,
-    modules::Module,
+    lexer::{Lexer, token::SpannedToken, trivia::Trivia},
     parser::{self, ast::ast_concepts::AstInfo},
     resolvers::{
         constraint_resolver::ConstraintResolver, member_resolver::MemberResolver,
         name_resolver::NamespaceResolver, resolver_env::ResolverEnv, type_resolver::TypeResolver,
     },
     script_compiler::{ScriptCompiler, script_compiler_store::ScriptCompilerStore},
-    token::SpannedToken,
 };
-use lang::trivia::Trivia;
 
 use crate::script_compiler_cache::ScriptCompilerCache;
 

@@ -1,11 +1,8 @@
 use chrn_utils::{
     chrn_settings::ChrnSettings,
-    id_types::{AstId, ConfigId, ModuleId, ScopeId, SymbolId, TypeId, VariableId},
+    id_types::{AstId, ConfigId, ScopeId, SymbolId, TypeId, VariableId},
     intern::Intern,
-    source_map::{
-        source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
-        source_region::SourceRegion,
-    },
+    source_map::source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
 };
 
 use crate::{
@@ -79,7 +76,9 @@ impl NamespaceResolver<'_> {
         let scope_id = self
             .compiler
             .push_scope(ScopeType::Complex, env.current_mod);
+
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+        let cfg_id = ConfigId::new(self.compiler.configs.len() as u32);
 
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
         let orig_sym_opt = table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
@@ -88,12 +87,11 @@ impl NamespaceResolver<'_> {
         let cfg_def = ConfigDef::new(
             abs_cfg.name_id,
             abs_cfg.name_span,
+            cfg_id,
             None,
             Vec::new(),
             Vec::new(),
         );
-
-        let cfg_id = ConfigId::new(self.compiler.configs.len() as u32);
 
         let sym = Symbol::new(
             abs_cfg.name_id,

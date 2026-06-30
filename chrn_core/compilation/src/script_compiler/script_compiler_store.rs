@@ -1,9 +1,11 @@
 use chrn_utils::{
     chrn_settings::ChrnSettings, intern::Intern, source_map::source_region::SourceRegionArena,
 };
-use lang::trivia::Trivia;
 
-use crate::{parser::ast::ast_concepts::AstInfo, token::SpannedToken};
+use crate::{
+    lexer::{token::SpannedToken, trivia::Trivia},
+    parser::ast::ast_concepts::AstInfo,
+};
 
 /// Stores all essential data collected through compilation stages
 ///

@@ -5,6 +5,5 @@ pub mod directives;
 pub mod fmter;
 pub mod keywords;
 pub mod lang_config;
-pub mod trivia;
 pub mod types;
 pub mod values;

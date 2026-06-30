@@ -24,6 +24,7 @@ pub struct ChrnConfigLoader<'a, R: Read> {
     current_path_id: PathId,
     handle: BufReader<R>,
     settings: &'a ChrnSettings,
+    // TODO: Remove this?
     interner: &'a Intern,
     pos: usize,
 }

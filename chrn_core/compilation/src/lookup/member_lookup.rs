@@ -1,4 +1,7 @@
-use chrn_utils::id_types::{InternedId, MemberId, TypeId};
+use chrn_utils::{
+    id_types::{InternedId, MemberId, TypeId},
+    loop_abort,
+};
 
 use crate::{script_compiler::ScriptCompiler, semantic::hir::hir_concepts::Type};
 
@@ -6,8 +9,9 @@ use crate::{script_compiler::ScriptCompiler, semantic::hir::hir_concepts::Type};
 /// inherit concept behind whether or not something was found.
 #[derive(Debug)]
 pub enum MemberLookupResult {
+    /// `MemberId` found with no issues
     Found(MemberId),
-    /// A module does not have members as a field would
+    /// A type that does not have members
     InvalidTypeMemberAccess(TypeId),
     /// A type having members, but not having the field identifier specified
     MemberNotFoundInType(TypeId),
@@ -41,38 +45,45 @@ pub fn lookup_member(
     target_name_id: InternedId,
 ) -> MemberLookupResult {
     // Max loops will strike here.
-    match &compiler.types[type_id.id as usize].ty {
-        Type::BuiltinType(builtin_ty) => {
-            // Members/Methods do not exist for types yet
-            MemberLookupResult::InvalidTypeMemberAccess(type_id)
-        }
-        Type::Struct(struct_def) => {
-            for member_id in &struct_def.fields {
-                let field = compiler.get_field(*member_id);
-                if field.name_id == target_name_id {
-                    return MemberLookupResult::Found(field.member_id);
-                }
+    // Soon.
+    for _ in 0..chrn_utils::MAX_LOOPS {
+        match &compiler.types[type_id.id as usize].ty {
+            Type::BuiltinType(_) => {
+                // Members/Methods do not exist for types yet
+                return MemberLookupResult::InvalidTypeMemberAccess(type_id);
             }
-
-            MemberLookupResult::MemberNotFoundInType(type_id)
-        }
-        // But enums aren't fields..they're namespaces
-        Type::Enum(enum_def) => {
-            for member_id in &enum_def.variants {
-                let variant = compiler.get_field(*member_id);
-                if variant.name_id == target_name_id {
-                    return MemberLookupResult::Found(variant.member_id);
+            Type::Struct(struct_def) => {
+                for member_id in &struct_def.fields {
+                    let field = compiler.get_field(*member_id);
+                    if field.name_id == target_name_id {
+                        return MemberLookupResult::Found(field.member_id);
+                    }
                 }
-            }
 
-            todo!()
+                return MemberLookupResult::MemberNotFoundInType(type_id);
+            }
+            // But enums aren't fields..they're namespaces
+            Type::Enum(enum_def) => {
+                for member_id in &enum_def.variants {
+                    let variant = compiler.get_field(*member_id);
+                    if variant.name_id == target_name_id {
+                        return MemberLookupResult::Found(variant.member_id);
+                    }
+                }
+
+                todo!()
+            }
+            Type::Alias(alias_def) => todo!(),
+            Type::Func(func_def) => todo!(),
+            Type::TypeDef(_) => return MemberLookupResult::InvalidTypeMemberAccess(type_id),
+            Type::Constrained(type_constraint_flags) => todo!(),
+            // WARN: DANGEROUS
+            Type::Deferred(inner_type_id) => {
+                type_id = *inner_type_id;
+            }
+            Type::Unknown => return MemberLookupResult::Unknown(type_id),
         }
-        Type::Alias(alias_def) => todo!(),
-        Type::Func(func_def) => todo!(),
-        Type::TypeDef(_) => MemberLookupResult::InvalidTypeMemberAccess(type_id),
-        Type::Constrained(type_constraint_flags) => todo!(),
-        // WARN: DANGEROUS
-        Type::Deferred(inner_type_id) => lookup_member(compiler, *inner_type_id, target_name_id),
-        Type::Unknown => MemberLookupResult::Unknown(type_id),
     }
+
+    loop_abort!()
 }

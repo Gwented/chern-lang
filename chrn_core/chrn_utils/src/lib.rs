@@ -4,7 +4,13 @@ pub mod files;
 pub mod help_model;
 pub mod id_types;
 pub mod intern;
+pub mod macros;
 pub mod source_map;
+
+// IGNORE THIS
+/// Max loops before what would be considered a broken mutation loop.
+/// Arbitrarily high number to help examine recursive bugs better
+pub const MAX_LOOPS: u32 = 10000004;
 
 #[cfg(test)]
 pub mod tests {

@@ -221,12 +221,14 @@ pub struct ConfigDef {
     /// Is a name id instead of symbol id since `NameResolver` merely registers names, with no
     /// knowledge of symbol specifics. A dependency system may be used in the future.
     pub name_id: InternedId,
+    // This is not a `SpannedContainer` because it may become an Option
+    pub name_span: SourceSpan,
+    /// ConfigId of `self`
+    pub cfg_id: ConfigId,
     /// During name resolution, we can't actually lookup the symbol since it may or may not be
     /// registered, so it's Option since it actually is `None` at some point, and could remain
     /// `None` if in a later stage it doesn't have it's target symbol found.
-    ///
     pub sym_id: Option<SymbolId>,
-    pub name_span: SourceSpan,
     /// Expects `ConfigOptionAssignment`
     pub opt_assignments: Vec<MemberId>,
     pub inner_field_cfgs: Vec<ConfigId>,
@@ -236,6 +238,7 @@ impl ConfigDef {
     pub fn new(
         name_id: InternedId,
         name_span: SourceSpan,
+        cfg_id: ConfigId,
         sym_id: Option<SymbolId>,
         option_assignments: Vec<MemberId>,
         inner_field_cfg: Vec<ConfigId>,
@@ -243,6 +246,7 @@ impl ConfigDef {
         ConfigDef {
             name_id,
             name_span,
+            cfg_id,
             sym_id,
             opt_assignments: option_assignments,
             inner_field_cfgs: inner_field_cfg,

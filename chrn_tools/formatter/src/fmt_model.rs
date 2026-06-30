@@ -1,4 +1,6 @@
-use std::ops::{Range, RangeInclusive};
+use std::ops::RangeInclusive;
+
+use compilation::lexer;
 
 use crate::text_hir::TextType;
 
@@ -314,9 +316,9 @@ pub(crate) fn embed_text_type(text_type: TextType) -> TextClass {
         TextType::Whitespace => TextClass::Whitespace,
         TextType::Newline => TextClass::Newline,
         TextType::Comment(location, _) => match location {
-            lang::trivia::CommentLocation::Inline => TextClass::CommentInline,
-            lang::trivia::CommentLocation::Trailing => TextClass::CommentTrailing,
-            lang::trivia::CommentLocation::SingleLine => TextClass::CommentSingleLine,
+            lexer::trivia::CommentLocation::Inline => TextClass::CommentInline,
+            lexer::trivia::CommentLocation::Trailing => TextClass::CommentTrailing,
+            lexer::trivia::CommentLocation::SingleLine => TextClass::CommentSingleLine,
         },
     }
 }

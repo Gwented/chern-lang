@@ -1,21 +1,28 @@
-// THIS WAS PASTED FROM AN OLD PROJECT MANY OF THIS IS LIKELY OFF
 //TODO: ADD RELEVANT COMMANDS
 
-use std::{env, path::PathBuf};
+use std::env;
+use std::path::PathBuf;
 
 use clap::{Parser, error::RichFormatter};
 use clap_derive::{Args, Parser, Subcommand};
 
-// Not sure where to put this...
-/// Wrapper functions over `Cli::try_parse()` which tries to account for possible tooling that may
-/// using naming like "chrn-*" before returning an error
+use crate::detect;
+
+/// Wraps `Cli::try_parse()` and layers two extension hooks on top of it:
+///
+/// 1. If the binary itself is named `chrn-<subcommand>`, treat the trailing
+///    portion as the subcommand and re-parse as if the user had typed
+///    `chrn <subcommand> ...`.
+/// 2. If clap rejects the input because of an unknown subcommand, fall back
+///    to looking up `chrn-<subcommand>` on `PATH` and hand control to that
+///    external binary if it exists.
 pub fn try_parse() -> Result<Cli, clap::error::Error<RichFormatter>> {
     let args: Vec<String> = env::args().collect();
 
-    // If the binary was executed as chrn-<cmd> (e.g. chrn-fmt), it attempts to extract the
-    // subcommand from the binary name and re-parse.
-    if let Some(bin_name) = args.first().and_then(|s| s.strip_prefix("chrn-")) {
-        let mut new_args = vec!["chrn".to_string(), bin_name.to_string()];
+    if let Some(sub) = detect::subcommand_from_bin_name(&args) {
+        let mut new_args = Vec::with_capacity(args.len() + 1);
+        new_args.push("chrn".to_string());
+        new_args.push(sub.to_string());
         new_args.extend_from_slice(&args[1..]);
         return Cli::try_parse_from(new_args);
     }
@@ -23,44 +30,25 @@ pub fn try_parse() -> Result<Cli, clap::error::Error<RichFormatter>> {
     match Cli::try_parse() {
         Ok(cli) => Ok(cli),
         Err(err) => {
-            // Parsing failed so checking whether args[1] matches an external binary
-            // named chrn-<subcommand> and, if so, delegates to it.
-            if let Some(candidate) = args.get(1) {
-                //FIX: MAKE SURE WINDOWS IS ALIVE
-                if let Some(path) = find_external_binary(candidate) {
-                    let status = std::process::Command::new(&path)
-                        .args(&args[2..])
-                        .status()
-                        .unwrap_or_else(|_| std::process::exit(1));
-                    std::process::exit(status.code().unwrap_or(1));
-                }
+            if let Some(candidate) = args.get(1)
+                && let Some(path) = detect::find_external_binary(candidate)
+            {
+                delegate_to_external(&path, &args[2..]);
             }
-            // This saddens me greatly.
             Err(err)
         }
     }
 }
 
-// CHECK WINDOWS
-/// Looks up `chrn-{subcommand}` in every directory listed in PATH variable depending on OS
-fn find_external_binary(subcommand: &str) -> Option<PathBuf> {
-    let bin_name = format!("chrn-{subcommand}");
-    env::var_os("PATH").and_then(|paths| {
-        env::split_paths(&paths).find_map(|dir| {
-            let full = dir.join(&bin_name);
-            if full.is_file() {
-                return Some(full);
-            }
-            #[cfg(windows)]
-            {
-                let full_exe = dir.join(format!("{bin_name}.exe"));
-                if full_exe.is_file() {
-                    return Some(full_exe);
-                }
-            }
-            None
-        })
-    })
+/// Spawns `path` with the supplied `forwarded_args`, mirroring the spawned
+/// process's exit status into the current process. If the spawn itself
+/// fails, the process exits with code `1`. This function does not return.
+fn delegate_to_external(path: &std::path::Path, forwarded_args: &[String]) -> ! {
+    let status = std::process::Command::new(path)
+        .args(forwarded_args)
+        .status()
+        .unwrap_or_else(|_| std::process::exit(1));
+    std::process::exit(status.code().unwrap_or(1));
 }
 
 //TODO: ADD ABOUT

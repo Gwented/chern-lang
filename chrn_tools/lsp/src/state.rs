@@ -33,7 +33,9 @@
 //! string.  It also maintains a forward (`imports`) and reverse (`dependents`) index
 //! of cross-module dependency edges so that editing a shared import file correctly
 //! invalidates all documents that import it.
-use compilation::lexer::Lexer;
+use compilation::lexer::token::SpannedToken;
+use compilation::lexer::token::Token as ScriptToken;
+use compilation::lexer::trivia::Trivia;
 use compilation::lookup::scopes;
 use compilation::lookup::scopes::AssociatedScopeKind;
 use compilation::lookup::scopes::LookupPattern;
@@ -53,9 +55,7 @@ use compilation::semantic::hir::hir_concepts::SymbolOrigin;
 use compilation::semantic::hir::hir_concepts::Type;
 use compilation::semantic::hir::hir_concepts::VariableState;
 use compilation::semantic::hir::hir_exprs::ExprHir;
-use compilation::token::SpannedToken;
-use compilation::token::Token as ScriptToken;
-use lang::trivia::Trivia;
+use compilation::{lexer::Lexer, lexer::trivia};
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
@@ -356,11 +356,7 @@ impl DocumentState {
             };
 
             let env = ResolverEnv::new(ast_info, region, ModuleId::new(mod_idx));
-            let mut ns_resolver = NamespaceResolver::new(
-                &settings,
-                &self.interner,
-                &mut compiler,
-            );
+            let mut ns_resolver = NamespaceResolver::new(&settings, &self.interner, &mut compiler);
 
             if let Err(ns_diags) = ns_resolver.resolve(&env) {
                 if mod_idx == 0 {
@@ -481,7 +477,10 @@ impl DocumentState {
             match &type_expr.inner {
                 TypeExpr::Var(name_id) => {
                     let interned = *name_id;
-                    if let Some(scopes::SymbolLookupOutput { found_sym_id: sym_id, .. }) = scopes::find_sym_id(
+                    if let Some(scopes::SymbolLookupOutput {
+                        found_sym_id: sym_id,
+                        ..
+                    }) = scopes::find_sym_id(
                         compiler,
                         AssociatedScopeKind::Module(ModuleId::new(0)),
                         interned,
@@ -489,7 +488,10 @@ impl DocumentState {
                         LookupPattern::NoRestrictions,
                     ) {
                         map.push((type_expr.span, SemanticEntity::Symbol(sym_id)));
-                    } else if let Some(scopes::SymbolLookupOutput { found_sym_id: sym_id, .. }) = scopes::find_sym_id(
+                    } else if let Some(scopes::SymbolLookupOutput {
+                        found_sym_id: sym_id,
+                        ..
+                    }) = scopes::find_sym_id(
                         compiler,
                         AssociatedScopeKind::Module(ModuleId::new(0)),
                         interned,
@@ -512,22 +514,25 @@ impl DocumentState {
                                     SemanticEntity::Module(found_mod.mod_id),
                                 ));
                                 if let PathSegment::Ident(sym_name_id) = sym_name_part.kind {
-                                if let Some(scopes::SymbolLookupOutput { found_sym_id: sym_id, .. }) = scopes::find_sym_id(
-                                    compiler,
-                                    AssociatedScopeKind::Module(found_mod.mod_id),
-                                    sym_name_id,
-                                    ScopeType::Neutral,
-                                    LookupPattern::NamespaceOnly,
-                                )
-                                .or_else(|| {
-                                    scopes::find_sym_id(
+                                    if let Some(scopes::SymbolLookupOutput {
+                                        found_sym_id: sym_id,
+                                        ..
+                                    }) = scopes::find_sym_id(
                                         compiler,
                                         AssociatedScopeKind::Module(found_mod.mod_id),
                                         sym_name_id,
-                                        ScopeType::Var,
+                                        ScopeType::Neutral,
                                         LookupPattern::NamespaceOnly,
                                     )
-                                }) {
+                                    .or_else(|| {
+                                        scopes::find_sym_id(
+                                            compiler,
+                                            AssociatedScopeKind::Module(found_mod.mod_id),
+                                            sym_name_id,
+                                            ScopeType::Var,
+                                            LookupPattern::NamespaceOnly,
+                                        )
+                                    }) {
                                         map.push((
                                             sym_name_part.span,
                                             SemanticEntity::Symbol(sym_id),
@@ -596,7 +601,10 @@ impl DocumentState {
                                 }
                             }
 
-                            if let Some(scopes::SymbolLookupOutput { found_sym_id: sym_id, .. }) = scopes::find_sym_id(
+                            if let Some(scopes::SymbolLookupOutput {
+                                found_sym_id: sym_id,
+                                ..
+                            }) = scopes::find_sym_id(
                                 compiler,
                                 AssociatedScopeKind::Module(found_mod.mod_id),
                                 acc.field,
@@ -652,7 +660,10 @@ impl DocumentState {
                                 )
                             });
 
-                            if let Some(scopes::SymbolLookupOutput { found_sym_id: sid, .. }) = sym_id {
+                            if let Some(scopes::SymbolLookupOutput {
+                                found_sym_id: sid, ..
+                            }) = sym_id
+                            {
                                 if let Some(sym) = compiler.symbols.get(sid.id as usize) {
                                     let mut current_mod: Option<ModuleId> = None;
                                     let mut current_ty: Option<TypeId> = None;
@@ -695,7 +706,10 @@ impl DocumentState {
                                         for seg in &segments[1..] {
                                             if let PathSegment::Ident(seg_name_id) = seg.kind {
                                                 if let Some(mod_id) = current_mod {
-                                                    if let Some(scopes::SymbolLookupOutput { found_sym_id: sym_id, .. }) = scopes::find_sym_id(
+                                                    if let Some(scopes::SymbolLookupOutput {
+                                                        found_sym_id: sym_id,
+                                                        ..
+                                                    }) = scopes::find_sym_id(
                                                         compiler,
                                                         AssociatedScopeKind::Module(mod_id),
                                                         seg_name_id,

@@ -2,14 +2,14 @@
 pub mod script_compiler_store;
 use chrn_utils::{
     id_types::{DirectiveId, InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId},
-    intern,
+    intern, loop_abort,
     source_map::source_span::SourceSpan,
 };
 use lang::{
     directives::{Directive, TypeDirective},
     types::{
         builtins::BuiltinType,
-        type_constraints::{TypeBoundaryFlags, TypeBoundary},
+        type_constraints::{TypeBoundary, TypeBoundaryFlags},
     },
     values::ValueInfo,
 };
@@ -552,7 +552,7 @@ impl ScriptCompiler {
 
     /// Attempts to get a `SymbolId` out of a `TypeId`
     pub(super) fn get_sym_id_from_type_id(&self, mut type_id: TypeId) -> Option<SymbolId> {
-        for _ in 0..Self::MAX_LOOPS {
+        for _ in 0..chrn_utils::MAX_LOOPS {
             match &self.types[type_id.id as usize].ty {
                 Type::Struct(struct_def) => return Some(struct_def.sym_id),
                 Type::Enum(enum_def) => return Some(enum_def.sym_id),
@@ -569,10 +569,7 @@ impl ScriptCompiler {
             };
         }
 
-        panic!(
-            "`get_type_decl_span` reached [`MAX_LOOPS`: {}]",
-            Self::MAX_LOOPS
-        );
+        loop_abort!();
     }
 
     /// Attempts to get a `TypeId` out of the given symbol if possible
@@ -753,11 +750,10 @@ impl ScriptCompiler {
         }
     }
 
-    const MAX_LOOPS: u32 = 10000003;
     /// Returns `true` if the type is unknown, false otherwise
     pub fn check_unknown(&self, mut type_id: TypeId) -> bool {
         // This limit is semi-random
-        for _ in 0..Self::MAX_LOOPS {
+        for _ in 0..chrn_utils::MAX_LOOPS {
             let ty = &self.types[type_id.id as usize].ty;
             match ty {
                 Type::Deferred(inner) => type_id = *inner,
@@ -766,7 +762,7 @@ impl ScriptCompiler {
             }
         }
 
-        panic!("`check_unknown` reached [`MAX_LOOPS`: {}]", Self::MAX_LOOPS);
+        loop_abort!();
     }
 
     /// Loads all compiler known directives
@@ -1903,9 +1899,7 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeBoundaryFlags::new(
-                TypeBoundary::SignedInteger.to_u64(),
-            )),
+            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::SignedInteger.to_u64())),
             core_mod_id,
         ));
 

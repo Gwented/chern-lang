@@ -4,8 +4,8 @@ use chrn_utils::{
 };
 
 use crate::{
+    lexer::token::Notation,
     parser::ast::ast_concepts::{AbstractMemberAccess, BinaryOp, Unary},
-    token::Notation,
 };
 
 #[derive(Debug)]

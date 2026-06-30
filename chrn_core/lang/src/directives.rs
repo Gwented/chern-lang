@@ -8,7 +8,7 @@ use crate::{
     },
 };
 
-/// If a new argument is added ensure this is updated
+/// If a new directive is added ensure this is updated
 pub static BUILTIN_DIRECTIVE_STRS: [&str; 6] = ["warn", "scient", "hex", "bin", "octal", "ignore"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

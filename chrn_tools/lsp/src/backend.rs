@@ -36,10 +36,10 @@
 //! carry the version they were spawned for; stale results are discarded in
 //! [`crate::analyser::publish_if_current`].
 
+use compilation::lexer::token::Token as ScriptToken;
 use compilation::lookup::scopes;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::{Symbol, SymbolKind, Type, VariableState};
-use compilation::token::Token as ScriptToken;
 use lang::config_loader::ChrnConfigLoader;
 use parking_lot::RwLock;
 use std::time::Duration;
@@ -244,10 +244,7 @@ impl Backend {
     /// Ensures the file where a symbol is defined is analyzed and cached,
     /// enabling cross-module operations (rename, references) to find
     /// occurrences in the definition file even when it hasn't been opened.
-    async fn ensure_definition_file_analyzed(
-        &self,
-        def_path_str: &str,
-    ) {
+    async fn ensure_definition_file_analyzed(&self, def_path_str: &str) {
         let def_path = std::path::Path::new(def_path_str);
         if let Ok(def_uri) = tower_lsp::lsp_types::Url::from_file_path(def_path) {
             if let Ok(text) = tokio::fs::read_to_string(def_path).await {
@@ -748,11 +745,20 @@ impl LanguageServer for Backend {
             } else if start_pos.line == *prev_line {
                 (0, start_pos.character.saturating_sub(*prev_start))
             } else {
-                (start_pos.line.saturating_sub(*prev_line), start_pos.character)
+                (
+                    start_pos.line.saturating_sub(*prev_line),
+                    start_pos.character,
+                )
             };
             *prev_line = start_pos.line;
             *prev_start = start_pos.character;
-            tokens.push(SemanticToken { delta_line, delta_start, length, token_type, token_modifiers_bitset: 0 });
+            tokens.push(SemanticToken {
+                delta_line,
+                delta_start,
+                length,
+                token_type,
+                token_modifiers_bitset: 0,
+            });
         }
 
         // Interleave tokens and comment trivia in strictly increasing file order.
@@ -785,9 +791,21 @@ impl LanguageServer for Backend {
                 }
                 let start_pos =
                     crate::text::offset_to_position(&state.text, triv.span.start as usize);
-                let length = triv.span.end.saturating_add(1).saturating_sub(triv.span.start);
+                let length = triv
+                    .span
+                    .end
+                    .saturating_add(1)
+                    .saturating_sub(triv.span.start);
 
-                push_semantic_token(&mut tokens, &mut prev_line, &mut prev_start, &mut first, start_pos, length, SemanticTokenType::Comment.as_u32());
+                push_semantic_token(
+                    &mut tokens,
+                    &mut prev_line,
+                    &mut prev_start,
+                    &mut first,
+                    start_pos,
+                    length,
+                    SemanticTokenType::Comment.as_u32(),
+                );
             } else if tok_idx < toks_vec.len() {
                 let st = &toks_vec[tok_idx];
                 tok_idx += 1;
@@ -855,7 +873,15 @@ impl LanguageServer for Backend {
                     _ => continue,
                 };
 
-                push_semantic_token(&mut tokens, &mut prev_line, &mut prev_start, &mut first, start_pos, length, token_type);
+                push_semantic_token(
+                    &mut tokens,
+                    &mut prev_line,
+                    &mut prev_start,
+                    &mut first,
+                    start_pos,
+                    length,
+                    token_type,
+                );
             } else {
                 break;
             }
@@ -894,7 +920,9 @@ impl LanguageServer for Backend {
                 None
             } else {
                 state.get_entity_at_offset(byte_offset).and_then(|entity| {
-                    state.get_definition_location(entity).map(|(dp, ds, _)| (dp, ds))
+                    state
+                        .get_definition_location(entity)
+                        .map(|(dp, ds, _)| (dp, ds))
                 })
             }
         };
@@ -917,12 +945,16 @@ impl LanguageServer for Backend {
                 Some(Arc::clone(&state.text))
             } else {
                 let target_uri_str = target_uri.to_string();
-                let from_cache = self.doc_cache
+                let from_cache = self
+                    .doc_cache
                     .get_text(&target_uri_str)
                     .or_else(|| self.docs.read().get(&target_uri_str).map(Arc::clone));
                 match from_cache {
                     Some(t) => Some(t),
-                    None => tokio::fs::read_to_string(&def_path).await.ok().map(Arc::new),
+                    None => tokio::fs::read_to_string(&def_path)
+                        .await
+                        .ok()
+                        .map(Arc::new),
                 }
             };
 

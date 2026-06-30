@@ -76,7 +76,8 @@ impl TypeDomainFlags {
     }
 }
 
-//TODO: Made bitflags
+//TODO: Make bitflags
+//I'm so scared
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TypeBoundaryFlags {
     pub flags: u64,

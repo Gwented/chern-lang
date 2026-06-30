@@ -4,3 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+orchestration = { path = "../orchestration/"}
+chrn_utils = {path = "../../chrn_core/chrn_utils/"}
+lang = { path = "../../chrn_core/lang/" }
+compilation = { path = "../../chrn_core/compilation/" }

@@ -1,7 +1,7 @@
 use chrn_utils::intern::Intern;
 use lang::fmter::Formattable;
 
-use crate::token::Token;
+use crate::lexer::token::Token;
 
 /// Helper to reduce boiler-plate of formatting a given token
 ///

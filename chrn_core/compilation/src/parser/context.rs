@@ -18,8 +18,8 @@ use lang::{
 };
 
 use crate::{
+    lexer::token::{self, SpannedToken, Token, TokenKind},
     parser::{NeutralBranch, SectionBranch, branch::Branch, parse_fmt},
-    token::{self, SpannedToken, Token, TokenKind},
 };
 
 // C_ == current. A_ == ahead
