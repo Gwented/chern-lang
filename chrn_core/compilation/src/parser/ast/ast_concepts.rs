@@ -7,7 +7,10 @@ use lang::{
     types::type_constraints::{self, TypeBoundaryFlags},
 };
 
-use crate::parser::ast::ast_exprs::{SpannedExpr, TypeExpr};
+use crate::{
+    lookup::scopes::{LookupPattern, ScopeType},
+    parser::ast::ast_exprs::{SpannedExpr, TypeExpr},
+};
 
 // Maybe this type of thing should go into an ast_concepts module?
 #[derive(Debug)]
@@ -501,11 +504,15 @@ pub struct AbstractConfig {
     // In regards to "var->" defined variables, I think just allowing for, "var.inner" would be the
     // best in regards to accessing and changing fields
     // Could be a "Outer.a { }" where it is defining it's fields config specifically
-    /// Name of structural type to configure
+    /// Name of assumed structural type to configure
     pub name_id: InternedId,
+    /// Span assocaited with name to configure
     pub name_span: SourceSpan,
-    /// Configuration for the current parent to apply
+    /// Configuration options for the current parent to apply
     pub opt_assignments: Vec<AbstractOptionAssignment>,
+    /// `ScopeType` that should be looked within for the given identifier
+    /// Can only be from var and nest
+    pub lookup_pattern: LookupPattern,
     /// Configuration for inner fields to define recursively
     pub inner_field_cfg: Vec<AbstractConfig>,
 }
@@ -514,17 +521,60 @@ impl AbstractConfig {
     pub fn new(
         name_id: InternedId,
         name_span: SourceSpan,
+        lookup_pattern: LookupPattern,
         opt_assignments: Vec<AbstractOptionAssignment>,
         inner_field_cfg: Vec<AbstractConfig>,
     ) -> AbstractConfig {
         AbstractConfig {
             name_id,
             name_span,
+            lookup_pattern,
             opt_assignments,
             inner_field_cfg,
         }
     }
 }
+
+//TEST: Might need this if these are genuinely distinctly different types if an origin is
+//accounted for beep
+// #[derive(Debug)]
+// pub struct AbstractConfigInner {
+//     // In regards to "var->" defined variables, I think just allowing for, "var.inner" would be the
+//     // best in regards to accessing and changing fields
+//     // Could be a "Outer.a { }" where it is defining it's fields config specifically
+//     /// Name of assumed member to configure
+//     pub name_id: InternedId,
+//     /// Span assocaited with name to configure
+//     pub name_span: SourceSpan,
+//     /// Configuration options for the current member to apply
+//     pub opt_assignments: Vec<AbstractOptionAssignment>,
+//     /// Configuration for inner fields to define recursively
+//     pub inner_field_cfg: Vec<AbstractConfigInner>,
+// }
+//
+// impl AbstractConfigInner {
+//     pub fn new(
+//         name_id: InternedId,
+//         name_span: SourceSpan,
+//         opt_assignments: Vec<AbstractOptionAssignment>,
+//         inner_field_cfg: Vec<AbstractConfigInner>,
+//     ) -> AbstractConfigInner {
+//         AbstractConfigInner {
+//             name_id,
+//             name_span,
+//             opt_assignments,
+//             inner_field_cfg,
+//         }
+//     }
+// }
+//
+// // Would not be ScopeType since the other scope types would be marked as unreachable to where it
+// // would seeming be non-productive.
+// // Or maybe not?
+// // pub enum RootConfigOrigin {
+// //      Var,
+// //      Nest
+// // }
 
 /// outer { .inner = Expr }
 #[derive(Debug)]

@@ -6,10 +6,10 @@ use chrn_utils::{
 };
 
 use crate::{
-    lookup::scopes::{Scope, ScopeInfo, ScopeType},
+    lookup::scopes::{LookupPattern, Scope, ScopeInfo, ScopeType},
     parser::ast::ast_concepts::{
         AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
-        AstInfo, Item,
+        Item,
     },
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
     script_compiler::ScriptCompiler,
@@ -34,6 +34,11 @@ impl NamespaceResolver<'_> {
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,
     ) -> NamespaceResolver<'a> {
+        // TODO: But this also kind of means that a user CAN'T instantiate a resolver without doing
+        // everything at once, or storing the resolver, but then that means the compiler stays
+        // borrowed mutably
+        //
+        // Remove the compiler internal?
         debug_assert_eq!(ResolverState::NAMESPACE, compiler.resolver_state);
         compiler.resolver_state.advance();
 
@@ -73,6 +78,15 @@ impl NamespaceResolver<'_> {
     }
 
     fn register_config(&mut self, abs_cfg: &AbstractConfig, ast_id: AstId, env: &ResolverEnv) {
+        debug_assert!(
+            matches!(
+                abs_cfg.lookup_pattern,
+                LookupPattern::NamespaceOnly | LookupPattern::OnlyVar
+            ),
+            "Either configuration of `abs_cfg` was done wrong or a core language change did not update this assertion.\nExpected `LookupPattern::NoRestrictions/OnlyVar`, found {:?}",
+            abs_cfg.lookup_pattern
+        );
+
         let scope_id = self
             .compiler
             .push_scope(ScopeType::Complex, env.current_mod);
@@ -89,6 +103,7 @@ impl NamespaceResolver<'_> {
             abs_cfg.name_span,
             cfg_id,
             None,
+            abs_cfg.lookup_pattern,
             Vec::new(),
             Vec::new(),
         );
@@ -139,7 +154,12 @@ impl NamespaceResolver<'_> {
         // May or may not be able to use the reserved Unknown spot
         let inner_type_id = TypeId::new((self.compiler.types.len() + 1) as u32);
 
-        let type_def_repre = TypeDef::new(sym_id, abs_typedef.name_span, inner_type_id);
+        let type_def_repre = TypeDef::new(
+            sym_id,
+            abs_typedef.name_id,
+            abs_typedef.name_span,
+            inner_type_id,
+        );
 
         let symbol = Symbol::new(
             abs_typedef.name_id,

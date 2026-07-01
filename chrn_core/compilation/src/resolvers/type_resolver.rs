@@ -339,7 +339,7 @@ impl<'a> TypeResolver<'a> {
                 ScopeType::Complex,
                 // I don't know about this lookup. It should probably be able to search namespace by
                 // namespace, but not by #)%*@%)@(
-                LookupPattern::NamespaceOnly,
+                abs_cfg.lookup_pattern,
             ) {
             Some(found_sym_id)
         } else {
@@ -348,7 +348,7 @@ impl<'a> TypeResolver<'a> {
             // with no root
             let name = self.interner.search(abs_cfg.name_id);
             let core_msg = format!(
-                "Could not find a symbol with the identifier `{name}` in all complex searchable scopes"
+                "Could not find a symbol with the identifier `{name}` in complex searchable scopes"
             );
 
             let src_diag =
@@ -412,6 +412,7 @@ impl<'a> TypeResolver<'a> {
             opt_assignments.push(member_id);
         }
 
+        // Releasing after affirming the options were at least valid expressions
         let found_sym_id = match found_sym_id_opt {
             Some(sym_id) => sym_id,
             None => return Err(()),
@@ -466,7 +467,7 @@ impl<'a> TypeResolver<'a> {
                     let mut should_break = false;
 
                     let src_diag = match lookup_res {
-                        MemberLookupResult::InvalidTypeMemberAccess(type_id) => {
+                        MemberLookupResult::ImpossibleTypeMemberAccess(type_id) => {
                             should_break = true;
                             //FIX: This has odd phrasing and pointers
                             // If we get a variable, this is matched, but the error is more so, you
@@ -480,7 +481,7 @@ impl<'a> TypeResolver<'a> {
                             let found_name = self.interner.search(found_sym.name_id);
 
                             let preset_err = PresetErr::Lookup(
-                                LookupError::InvalidTypeMemberAccess(SpannedContainer::new(
+                                LookupError::ImpossibleTypeMemberAccess(SpannedContainer::new(
                                     Type::to_fmt(self.compiler, type_id),
                                     decl_span,
                                 )),
@@ -502,6 +503,7 @@ impl<'a> TypeResolver<'a> {
                                 AnnotationKind::Secondary,
                                 "member searched for".to_string().into(),
                             )
+                            .add_help(format!("If this was meant for a `var` defined variable, prefix with \"{found_name} var\""))
                             .build()
                         }
                         MemberLookupResult::MemberNotFoundInType(type_id) => {
@@ -697,7 +699,7 @@ impl<'a> TypeResolver<'a> {
                     panic!("Context");
 
                     let src_diag = match lookup_res {
-                        MemberLookupResult::InvalidTypeMemberAccess(type_id) => {
+                        MemberLookupResult::ImpossibleTypeMemberAccess(type_id) => {
                             should_break = true;
                             //FIX: This has odd phrasing and pointers
                             // If we get a variable, this is matched, but the error is more so, you
@@ -708,7 +710,7 @@ impl<'a> TypeResolver<'a> {
                             let found_name = self.interner.search(found_sym.name_id);
 
                             let preset_err = PresetErr::Lookup(
-                                LookupError::InvalidTypeMemberAccess(SpannedContainer::new(
+                                LookupError::ImpossibleTypeMemberAccess(SpannedContainer::new(
                                     Type::to_fmt(self.compiler, type_id),
                                     parent_decl_span,
                                 )),

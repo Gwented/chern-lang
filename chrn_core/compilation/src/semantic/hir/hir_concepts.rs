@@ -15,7 +15,7 @@ use lang::{
 
 use crate::{
     constraints::ArgConstraint,
-    lookup::scopes::{AssociatedScopeKind, ScopeType},
+    lookup::scopes::{AssociatedScopeKind, LookupPattern, ScopeType},
     script_compiler::ScriptCompiler,
     semantic::hir::hir_exprs::Param,
 };
@@ -231,6 +231,7 @@ pub struct ConfigDef {
     pub sym_id: Option<SymbolId>,
     /// Expects `ConfigOptionAssignment`
     pub opt_assignments: Vec<MemberId>,
+    pub lookup_pattern: LookupPattern,
     pub inner_field_cfgs: Vec<ConfigId>,
 }
 
@@ -240,6 +241,7 @@ impl ConfigDef {
         name_span: SourceSpan,
         cfg_id: ConfigId,
         sym_id: Option<SymbolId>,
+        lookup_pattern: LookupPattern,
         option_assignments: Vec<MemberId>,
         inner_field_cfg: Vec<ConfigId>,
     ) -> ConfigDef {
@@ -247,6 +249,7 @@ impl ConfigDef {
             name_id,
             name_span,
             cfg_id,
+            lookup_pattern,
             sym_id,
             opt_assignments: option_assignments,
             inner_field_cfgs: inner_field_cfg,
@@ -446,6 +449,9 @@ impl VariantRepre {
 #[derive(Debug)]
 pub struct TypeDef {
     pub sym_id: SymbolId,
+    // The padding fills this to 72 bytes anyways so this does nothing but give convenience and
+    // reduce lookup
+    pub name_id: InternedId,
     pub name_span: SourceSpan,
     /// Represents the str in "var-> name: str"
     pub type_id: TypeId,
@@ -454,9 +460,15 @@ pub struct TypeDef {
 }
 
 impl TypeDef {
-    pub fn new(sym_id: SymbolId, name_span: SourceSpan, type_id: TypeId) -> TypeDef {
+    pub fn new(
+        sym_id: SymbolId,
+        name_id: InternedId,
+        name_span: SourceSpan,
+        type_id: TypeId,
+    ) -> TypeDef {
         TypeDef {
             sym_id,
+            name_id,
             name_span,
             type_id,
             conds: Vec::new(),

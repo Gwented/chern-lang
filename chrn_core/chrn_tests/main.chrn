@@ -39,7 +39,6 @@ let x = 5*/
 // Same-line spanning.
 // Collisions.
 @def
-let x = 3// #warn
 
 
 import "../chrn_core/chrn_tests/def.chrn" as defs
@@ -55,18 +54,18 @@ var->
             // p: defs::Person
         } #bin
 
-    complex->
+    /*complex->
         // I don't know about this
-        in x {
+        var x {
             .default_value = 2
-            p {
+            /* p {
                 out {
                     // p {}
 
                 }
-            }
+            }*/
             // .extra = def::e#2
-        }
+        }*/
 @end
 
 /*let a = b

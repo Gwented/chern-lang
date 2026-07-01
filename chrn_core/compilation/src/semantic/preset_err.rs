@@ -113,7 +113,7 @@ pub enum MathError {
 #[derive(Debug)]
 pub enum LookupError {
     /// Spanned Type that is impossible to member access
-    InvalidTypeMemberAccess(SpannedContainer<Formatted>),
+    ImpossibleTypeMemberAccess(SpannedContainer<Formatted>),
     /// Spanned type's identifier which has no members, Identifier of member looked up
     MemberNotFound {
         sp_parent_ty: SpannedContainer<InternedId>,

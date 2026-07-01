@@ -5,6 +5,7 @@ mod parse_fmt;
 mod parser_state;
 
 use crate::lexer::token::{SpannedToken, Token, TokenKind};
+use crate::lookup::scopes::{LookupPattern, ScopeType};
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractDirective, AbstractEnum, AbstractMemberAccess,
     AbstractOptionAssignment, AbstractParam, AbstractStruct, AbstractTypeDef, AbstractVar,
@@ -247,11 +248,16 @@ pub fn parse(
                     while !ctx.peek_kind().is_terminator() {
                         if let Token::Keyword(kw) = ctx.peek_tok()
                             && kw.is_sect()
+                                // Deciding to use `in` just because it conflicts with breaks seems
+                                // like a flaw internally where var SHOULD be able to be used
+                                // outside of sections, even if it is integral...or at least
+                                // probably should be able to
+                            && ctx.peek_ahead(1).tok == Token::SlimArrow
                         {
                             break;
                         }
 
-                        if let Ok(abs_cfg) = parse_config_expr(&mut ctx, interner) {
+                        if let Ok(abs_cfg) = parse_cfg_expr(&mut ctx, interner) {
                             ast_info.push_item(SectionKind::Complex, Item::Config(abs_cfg));
                         }
                     }
@@ -630,14 +636,16 @@ fn parse_nest_sect(
 //TODO: Better complex branching tracking so that help messages can be made
 //
 //No other branches exist right now so it just parses expecting uh, stuff.
-fn parse_config_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractConfig, Token> {
-    //TEST: May not exist
-    let in_var = if ctx.peek_tok() == Token::Keyword(Keyword::In) {
+fn parse_cfg_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractConfig, Token> {
+    // If the prefix is something like "var x {}" then it for this special case allows for another
+    // section to lookup var
+    let lookup_pattern = if ctx.peek_tok() == Token::Keyword(Keyword::Var) {
         ctx.advance_tok();
-        panic!("Inside");
-        true
+        LookupPattern::OnlyVar
     } else {
-        false
+        // By default
+        // Is this an ok pattern to use for this config context?
+        LookupPattern::NamespaceOnly
     };
 
     let name_span = ctx.peek_span();
@@ -669,7 +677,7 @@ fn parse_config_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<Abstr
         // for "inner {/*assignments*/}"
         } else if ctx.peek_kind() == TokenKind::Id || ctx.peek_tok() == Token::Keyword(Keyword::In)
         {
-            let abs_cfg = parse_config_expr(ctx, interner)?;
+            let abs_cfg = parse_cfg_expr(ctx, interner)?;
             inner_field_cfg.push(abs_cfg);
         } else {
             // If no consumable token for this branch is seen
@@ -688,6 +696,7 @@ fn parse_config_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<Abstr
     Ok(AbstractConfig::new(
         name_id,
         name_span,
+        lookup_pattern,
         option_assignments,
         inner_field_cfg,
     ))

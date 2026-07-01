@@ -56,6 +56,7 @@ pub static SCOPE_COMPLEX_ACCESSIBLE: [ScopeType; 5] = [
 
 //WARN: Suspicious accessibility
 pub static SCOPE_LOCAL_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Local];
+pub static VAR_ONLY_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Var];
 
 pub static SCOPE_REST_ACCESSIBLE: [ScopeType; 5] = [
     ScopeType::Neutral,
@@ -174,6 +175,7 @@ pub fn find_type_id(
         }
         // If it's core then it'll only have access to core anyways so this is fine
         LookupPattern::NoRestrictions | LookupPattern::NamespaceOnly => accessible_scopes,
+        LookupPattern::OnlyVar => &VAR_ONLY_ACCESSIBLE,
     };
     // I don't think this can fail. Should maybe expect for clarity.
     //     let scope = &compiler.scopes[scope_id.id].scope;
@@ -259,6 +261,7 @@ pub fn find_sym_id(
                 }
                 // If it's core then it'll only have access to core anyways so this is fine
                 LookupPattern::NoRestrictions | LookupPattern::NamespaceOnly => accessible_scopes,
+                LookupPattern::OnlyVar => &VAR_ONLY_ACCESSIBLE,
             };
 
             for allowed_scope_type in accessible_scopes.iter() {
@@ -536,7 +539,7 @@ impl ScopeType {
 /// without the explicit noting of whether we are searching a singular module's namespace it would
 /// innately allow for main.i32 to be interpreted the same as if just i32 was written, which is
 /// wrong since the namespace "main" owns no such thing.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LookupPattern {
     /// Applies no restriction to lookups. Meaning, core is automatically searched since it's
     /// intrinsic, any scope's accessible scopes can be searched with no restriction.
@@ -545,6 +548,9 @@ pub enum LookupPattern {
     /// Restricts lookup to only search what is within the given namespace, which restricts modules
     /// such as core, or anything not declared within the symbol's scope containment?
     NamespaceOnly,
+    /// Lookup that not only allows for var to be searched, but also enforces it's the only section
+    /// that can be searched
+    OnlyVar,
 }
 
 // TODO: Formattable

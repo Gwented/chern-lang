@@ -153,22 +153,21 @@ pub(crate) fn create_diag_builder_preset(
             // (msg, spans)
         }
         PresetErr::CircularDirective {
-            sp_fmtted_parent: parent_ty,
-            sp_directive: directive,
+            sp_fmtted_parent,
+            sp_directive,
             err_ty_span,
         } => {
             let core_msg = format!(
                 // Suspicious error message
-                "Cannot give type `{}` the directive `#{}` due to the circularly referenced type itself not supporting the directive",
-                parent_ty.inner,
-                directive.inner.to_fmt()
+                "The directive `#{}` cannot be applied to recursive types",
+                sp_directive.inner.to_fmt()
             );
 
             SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
                 .add_annotation(
-                    parent_ty.span,
+                    sp_fmtted_parent.span,
                     AnnotationKind::Secondary,
-                    format!("Defined here").into(),
+                    format!("{} defined here", sp_fmtted_parent.inner).into(),
                 )
                 .add_annotation(
                     err_ty_span,
@@ -176,10 +175,12 @@ pub(crate) fn create_diag_builder_preset(
                     "Recursive".to_string().into(),
                 )
                 .add_annotation(
-                    directive.span,
+                    sp_directive.span,
                     AnnotationKind::Primary,
                     "Conflicting directive here".to_string().into(),
                 )
+            // I feel like a note should be here though
+            //
             // This is a little hard to do since now all circulars. maybe this should be inline then
             // .add_help(format!("Either `#{}` needs to be removed or `{}` needs to get rid of it's recursive field"))
         }
@@ -199,7 +200,7 @@ pub(crate) fn create_diag_builder_preset(
         }
         PresetErr::General(src_diag) => src_diag,
         PresetErr::Lookup(lookup_err) => match lookup_err {
-            LookupError::InvalidTypeMemberAccess(sp_fmtted_ty) => {
+            LookupError::ImpossibleTypeMemberAccess(sp_fmtted_ty) => {
                 let core_msg = format!(
                     "Type `{}` does not have the ability to hold members",
                     sp_fmtted_ty.inner,

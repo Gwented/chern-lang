@@ -12,7 +12,7 @@ pub enum MemberLookupResult {
     /// `MemberId` found with no issues
     Found(MemberId),
     /// A type that does not have members
-    InvalidTypeMemberAccess(TypeId),
+    ImpossibleTypeMemberAccess(TypeId),
     /// A type having members, but not having the field identifier specified
     MemberNotFoundInType(TypeId),
     // Seems like a bit of a jump
@@ -50,16 +50,16 @@ pub fn collect_all_members(compiler: &ScriptCompiler, mut type_id: TypeId) -> Ve
 /// Look for the identifier given as a member for the given `TypeId`
 pub fn lookup_member(
     compiler: &ScriptCompiler,
-    mut type_id: TypeId,
+    mut current_type_id: TypeId,
     target_name_id: InternedId,
 ) -> MemberLookupResult {
     // Max loops will strike here.
     // Soon.
     for _ in 0..chrn_utils::MAX_LOOPS {
-        match &compiler.types[type_id.id as usize].ty {
+        match &compiler.types[current_type_id.id as usize].ty {
             Type::BuiltinType(_) => {
                 // Members/Methods do not exist for types yet
-                return MemberLookupResult::InvalidTypeMemberAccess(type_id);
+                return MemberLookupResult::ImpossibleTypeMemberAccess(current_type_id);
             }
             Type::Struct(struct_def) => {
                 for member_id in &struct_def.fields {
@@ -69,7 +69,7 @@ pub fn lookup_member(
                     }
                 }
 
-                return MemberLookupResult::MemberNotFoundInType(type_id);
+                return MemberLookupResult::MemberNotFoundInType(current_type_id);
             }
             // But enums aren't fields..they're namespaces
             Type::Enum(enum_def) => {
@@ -84,13 +84,22 @@ pub fn lookup_member(
             }
             Type::Alias(alias_def) => todo!(),
             Type::Func(func_def) => todo!(),
-            Type::TypeDef(_) => return MemberLookupResult::InvalidTypeMemberAccess(type_id),
+            Type::TypeDef(type_def) => {
+                if type_def.name_id == target_name_id {
+                    todo!();
+                    // Not being considered a member itself is a bit of an issue..
+                    // return MemberLookupResult::Found(type_def.type_id);
+                }
+
+                // This should be the typedef's type id itself
+                return MemberLookupResult::MemberNotFoundInType(current_type_id);
+            }
             Type::Constrained(type_constraint_flags) => todo!(),
             // WARN: DANGEROUS
             Type::Deferred(inner_type_id) => {
-                type_id = *inner_type_id;
+                current_type_id = *inner_type_id;
             }
-            Type::Unknown => return MemberLookupResult::Unknown(type_id),
+            Type::Unknown => return MemberLookupResult::Unknown(current_type_id),
         }
     }
 
