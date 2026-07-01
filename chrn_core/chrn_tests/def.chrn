@@ -2,10 +2,6 @@ export let READ = 0b0
 export let WRITE = 0b1
 
 // import "../chrn_core/chrn_tests/core.chrn"
-let A = B
-let B = C
-let C = A
-
 
 let x = 2 != 3
 
@@ -15,11 +11,10 @@ nest->
     export struct Person {
         // state: State
         p: Person
-        out: i32
-        // n: l
+        out: k
         // name: str
         // age: u8
-    } // #bin
+    } //#bin
 
     export enum State {
         Ready: str [] #warn

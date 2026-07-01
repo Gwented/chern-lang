@@ -135,7 +135,7 @@ fn form_diag(
         }
     }
 
-    let mut ln_layouts = layout::create_render_line_layout(diag, &group_manager);
+    let mut ln_layouts = layout::create_render_line_layout(&group_manager);
     let ln_num_width = line_mapping::get_num_width(highest_ln_num as usize);
 
     for layout in &mut ln_layouts {
@@ -151,9 +151,12 @@ fn form_diag(
     // Remove layouts that ended up with no annotations after layer assignment
     // (intermediate lines of multi-line spans)
     ln_layouts.retain(|lay| !lay.render_info.is_empty());
-    //TODO: Need to have it so line layouts greedily have their region priority chosen.
-    //So, if any region has a primary, that primary region is printed before all other layout
-    //regions, and if 2 regions have a primary, the region first seen is the one that goes first.
+    // What if there was some general set of instructions held by diagnostics where they could
+    // optionally give recommendations to render them in a certain way? So, if there is a diagnostic
+    // that points to an original declaration, and an error, it could say, even if you have
+    // heuristics I would still like for you to display this first, or at least after the previous
+    // diagnostic, but that sounds too complicated for this.
+    layout::sort_layouts_by_region_priority(&mut ln_layouts);
 
     render_text(
         diag,

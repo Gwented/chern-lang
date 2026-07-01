@@ -1,5 +1,5 @@
 use chrn_utils::{
-    id_types::{InternedId, MemberId, TypeId},
+    id_types::{InternedId, MemberId, SymbolId, TypeId},
     loop_abort,
 };
 
@@ -15,6 +15,7 @@ pub enum MemberLookupResult {
     InvalidTypeMemberAccess(TypeId),
     /// A type having members, but not having the field identifier specified
     MemberNotFoundInType(TypeId),
+    // Seems like a bit of a jump
     /// A symbol not having the capability of holding members at the language level
     Unknown(TypeId),
 }
@@ -22,23 +23,31 @@ pub enum MemberLookupResult {
 /// Collects all members if possible from a given type id
 ///
 /// Return type is empty if the given type cannot carry members
-pub fn collect_all_members(compiler: &ScriptCompiler, type_id: TypeId) -> Vec<MemberId> {
-    // here too
-    match &compiler.types[type_id.id as usize].ty {
-        Type::BuiltinType(builtin_type) => todo!(),
-        Type::Struct(struct_def) => struct_def.fields.clone(),
-        Type::Enum(enum_def) => enum_def.variants.clone(),
-        Type::Func(func_def) => todo!(),
-        Type::Alias(alias_def) => todo!(),
-        Type::TypeDef(type_def) => todo!(),
-        Type::Constrained(type_constraint_flags) => todo!(),
-        Type::Deferred(type_id) => collect_all_members(compiler, *type_id),
-        Type::Unknown => todo!(),
+pub fn collect_all_members(compiler: &ScriptCompiler, mut type_id: TypeId) -> Vec<MemberId> {
+    for _ in 0..chrn_utils::MAX_LOOPS {
+        match &compiler.types[type_id.id as usize].ty {
+            Type::BuiltinType(builtin_type) => todo!(),
+            Type::Struct(struct_def) => return struct_def.fields.clone(),
+            Type::Enum(enum_def) => return enum_def.variants.clone(),
+            // Count members as params or maybe attach a variant?
+            Type::Func(func_def) => todo!(),
+            Type::Alias(alias_def) => todo!(),
+            Type::TypeDef(type_def) => return Vec::new(),
+            Type::Constrained(type_constraint_flags) => return Vec::new(),
+            Type::Deferred(inner_type_id) => type_id = *inner_type_id,
+            Type::Unknown => return Vec::new(),
+        }
     }
+
+    loop_abort!()
 }
 
 // Naming has a little collision since member runtime lookup has the same name as this,
 // realistically, const lookup.
+//
+// Not sure about the distinction here yet since member lookup could also mean enum lookup but we'll
+// see
+/// Look for the identifier given as a member for the given `TypeId`
 pub fn lookup_member(
     compiler: &ScriptCompiler,
     mut type_id: TypeId,
@@ -86,4 +95,22 @@ pub fn lookup_member(
     }
 
     loop_abort!()
+}
+
+// DO THE HYPERLINKS CHANGE WITH RENAME? No :(
+// Maybe this should be removed it seems weirdly specific now
+/// Convenience function for handling member lookups from the symbol level, calls [`lookup_member`]
+pub fn lookup_member_from_sym_id(
+    compiler: &ScriptCompiler,
+    sym_id: SymbolId,
+    target_name_id: InternedId,
+) -> Option<MemberLookupResult> {
+    // Max loops will strike here.
+    // Soon.
+    let type_id = match compiler.get_type_id_from_sym_id(sym_id) {
+        Some(id) => id,
+        None => return None,
+    };
+
+    Some(lookup_member(compiler, type_id, target_name_id))
 }

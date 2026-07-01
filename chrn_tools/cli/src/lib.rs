@@ -1,6 +1,6 @@
 pub mod args;
 pub mod config;
-pub mod detect;
+mod detect;
 pub mod dispatcher;
 mod files;
 mod macros;

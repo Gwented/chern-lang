@@ -300,7 +300,6 @@ impl<'a> TypeResolver<'a> {
         //         dbg!(val);
         //     }
         // }
-        dbg!(&self.ty_ctx);
 
         if !self.err_vec.is_empty() {
             let mut diags = Vec::new();
@@ -313,7 +312,7 @@ impl<'a> TypeResolver<'a> {
     }
 
     fn resolve_cfg(&mut self, abs_cfg: &AbstractConfig, env: &ResolverEnv) -> Result<(), ()> {
-        todo!("No cfg");
+        // todo!("No cfg");
         let mut opt_assignments: Vec<MemberId> = Vec::new();
         let mut inner_field_cfgs: Vec<ConfigId> = Vec::new();
 
@@ -329,7 +328,9 @@ impl<'a> TypeResolver<'a> {
         let parent_sym_id = table.interned_to_sym[&abs_cfg.name_id];
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
-        // Checks if the symbol is valid after
+        // Checks if the symbol is a valid config consumer later.
+        // Returns an `Option` so that the option assignments can still be checked before
+        // returning.
         let found_sym_id_opt = if let Some(SymbolLookupOutput { found_sym_id, .. }) =
             scopes::find_sym_id(
                 self.compiler,
@@ -369,6 +370,9 @@ impl<'a> TypeResolver<'a> {
         // never fail unless the current module does not have the type having it's config defined
         // declared anywhere. If this were to ever be lifted as a syntax enforced rule, this would
         // break.
+        //
+        // I believe this was talking about "def::Other {}" where it's using complex scoped member
+        // access as the config root
         for abs_opt in &abs_cfg.opt_assignments {
             let expr_id = match self.register_expr(
                 parent_sym_id,
@@ -413,9 +417,38 @@ impl<'a> TypeResolver<'a> {
             None => return Err(()),
         };
 
+        // Maybe fundamentally, like here, the inner config should still have it's id stored and
+        // just have a very incomplete version of itself rather than just quitting, but at the same
+        // time - ,fa-034 nevermind it stopped working
         for abs_inner_cfg in &abs_cfg.inner_field_cfg {
             // Safe unwrap (This is not safe)
-            let found_type_id = self.compiler.get_sym_type_id(found_sym_id).expect("?");
+            // Attempts to get type id out of symbol id which is required for lookup
+            let found_type_id = match self.compiler.get_type_id_from_sym_id(found_sym_id) {
+                Some(id) => id,
+                None => {
+                    let kind_fmt = SymbolKind::to_fmt(self.compiler, found_sym_id);
+                    let core_msg = format!(
+                        "Cannot use symbol `{}` as the root or inner of a config block",
+                        kind_fmt
+                    );
+
+                    let src_diag = SourceDiagnostic::builder(
+                        DiagnosticLevel::Error,
+                        core_msg,
+                        env.region.path_id,
+                    )
+                    .add_annotation(abs_cfg.name_span, AnnotationKind::Primary, None)
+                    // Right...var needs to be usable here..$#$*IjdjalndIPOIPO.
+                    .add_help(
+                        "Config roots must be a struct, enum, or from the scope `var`".into(),
+                    );
+                    self.err_vec.push(src_diag.build());
+                    // Terminates here because this means that the symbol being looked at can't
+                    // actually use config at all
+                    return Err(());
+                }
+            };
+
             let member_id = match member_lookup::lookup_member(
                 self.compiler,
                 found_type_id,
@@ -654,13 +687,14 @@ impl<'a> TypeResolver<'a> {
                     let mut should_break = false;
 
                     let parent_sym_id =
-                        self.compiler.members[parent_member_id.id as usize].parent_sym_id();
+                        self.compiler.members[parent_member_id.id as usize].local_parent_sym_id();
                     let parent_decl_span = self
                         .compiler
                         .get_sym_decl_span(parent_sym_id)
                         .expect("Should exist in an ast searching context");
                     let parent_name_id = self.compiler.symbols[parent_sym_id.id as usize].name_id;
                     let parent_name = self.interner.search(parent_name_id);
+                    panic!("Context");
 
                     let src_diag = match lookup_res {
                         MemberLookupResult::InvalidTypeMemberAccess(type_id) => {
@@ -2814,20 +2848,24 @@ impl<'a> TypeResolver<'a> {
         Err(PresetErr::UndefinedMember(member.span))
     }
 
-    // Helper
+    /// Helper that checks for dependency cycle
+    /// * parent_sym_id: The root symbol being evaluated as an expr.
+    /// (i.e. "let x = 3 + y" would mean x is the root and y would be `found_sym_id`)
+    /// * found_sym_id: A symbol that was found during expression evaluation, which innately is
+    /// always a candidate for being circular.
     fn check_cycle(
         &self,
         parent_sym_id: SymbolId,
         found_sym_id: SymbolId,
         env: &ResolverEnv,
     ) -> Result<(), PresetErr> {
-        // DFS over pending. An edge A -> B means A's expression
-        // references B. If `found_sym_id` can reach `parent_sym_id`, adding the new reference
+        // If `found_sym_id` can reach `parent_sym_id`, adding the new reference
         // would close a cycle.
         let mut stack: Vec<SymbolId> = vec![found_sym_id];
         let mut visited: Vec<SymbolId> = Vec::new();
 
         while let Some(current) = stack.pop() {
+            // Directly checking if a cycle was had
             if current == parent_sym_id {
                 let current_sym = &self.compiler.symbols[parent_sym_id.id as usize];
                 let current_name = self.interner.search(current_sym.name_id);

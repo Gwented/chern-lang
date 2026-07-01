@@ -116,16 +116,16 @@ pub static KEYWORD_DOCS: [Document; 14] = [
     },
     Document {
         key: "alias",
-        description: "Creates reusable predicate functions",
+        description: "Stores predicates and directives in a single reusable call. Parameters require a type Boundary or concrete type",
         example: Some(
-            "```chrn\nalias Positive() = [Range(0.0, 100.0)]\n// Can also be exported\nexport alias ValidName() = [!IsEmpty, StartsW(\"chrn\")]\n```",
+            "```chrn\nalias ShortDefault() = [IsWhitespace]\nalias LongDefault(x: UnsignedInteger, y: UnsignedInteger) = [!IsEmpty, Range(x, y), StartsW(\"ch\") EndsW(\"ern\") Contains(\"chrn\")] #warn\n```",
         ),
     },
     Document {
         key: "let",
         description: "Declares reusable values",
         example: Some(
-            "```chrn\n@def\n\tlet count = 10\n\tlet name = \"chrning\"\n\tlet result = VALUE * 2\n// Can be used for any conditions\nvar->\n\tx: i32 [Equals(result)]\n@end\n```",
+            "```chrn\n@def\n\tlet count = 10\n\tlet name = \"chrning\"\n\tlet result = VALUE * 2\n// Can be used as values within type Boundaries or conditions\nvar->\n\tx: i32 [Equals(result)]\n@end\n```",
         ),
     },
     Document {
@@ -135,21 +135,21 @@ pub static KEYWORD_DOCS: [Document; 14] = [
     },
     Document {
         key: "as",
-        description: "Aliases imported module names",
+        description: "Allows for aliasing imports",
         example: Some(
             "```chrn\n@def\n\timport \"module.chrn\" as mod\n\t\tlet x = mod.MAGIC_NUM - 2\nvar->\n\tfield: mod.EXTERN_TYPE\n@end\n```",
         ),
     },
     Document {
         key: "var->",
-        description: "Defines serializable fields section",
+        description: "Defines serializable fields section that can apply type Boundaries and directives",
         example: Some(
             "```chrn\nvar->\n\tname: str\n\tage: u8 #warn\n\tscore: f64 [Range(0.0, 100.0)]\n```",
         ),
     },
     Document {
         key: "nest->",
-        description: "Defines structs and enums section",
+        description: "Defines structs and enums section that can apply type Boundaries and directives",
         example: Some(
             "```chrn\nnest->\n\tstruct Address {\n\t\tcity: str\n\t\tzip: u32\n\t}\n\tenum Color {Red Blue Green}\n\n```",
         ),
@@ -326,37 +326,37 @@ pub static BUILTIN_TYPE_DOCS: [Document; 27] = [
 pub static FUNC_DOCS: [Document; 7] = [
     Document {
         key: "IsEmpty",
-        description: "Checks if a value is empty",
+        description: "Checks if the given array or string has a length of 0",
         example: None,
     },
     Document {
         key: "IsWhitespace",
-        description: "Checks if a string contains only whitespace characters",
+        description: "Checks if a string is only white-space within UTF-8 standards",
         example: None,
     },
     Document {
         key: "Contains",
-        description: "Checks if a value contains a specified pattern",
+        description: "Checks if a value contains a given literal or numeric",
         example: None,
     },
     Document {
         key: "Range",
-        description: "Checks if a value falls within a specified range",
+        description: "Checks if a value falls within a given range. For arrays and strings, checks the length; for numbers, checks the numeric value",
         example: None,
     },
     Document {
         key: "StartsW",
-        description: "Checks if a string starts with a specified prefix",
+        description: "Checks if a value starts with a given literal or numeric",
         example: None,
     },
     Document {
         key: "EndsW",
-        description: "Checks if a string ends with a specified suffix",
+        description: "Checks if a value ends with a given literal or numeric",
         example: None,
     },
     Document {
         key: "Equals",
-        description: "Checks if a value equals another value",
+        description: "Checks serialized value for equality against given argument",
         example: None,
     },
 ];
@@ -371,12 +371,12 @@ pub static FUNC_DOCS: [Document; 7] = [
 pub static DIRECTIVE_DOCS: [Document; 6] = [
     Document {
         key: "warn",
-        description: "Warns instead of terminating on constraint violations",
+        description: "Warns instead of terminating upon seeing a wrongful constraint of any kind",
         example: Some("```chrn\nvar->\n\tscore: f64 [Range(0.0, 100.0)] #warn\n```"),
     },
     Document {
         key: "ignore",
-        description: "Ignores all serialization errors for the applied type",
+        description: "Ignores all errors for what this is applied to regarding serialized data",
         example: Some("```chrn\nvar->\n\tptr: Runtime #ignore\n\tlen: Runtime #ignore\n```"),
     },
     Document {

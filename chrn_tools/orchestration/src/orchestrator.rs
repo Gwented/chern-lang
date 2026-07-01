@@ -120,11 +120,11 @@ pub fn run_all(
     }
 
     // //TODO: Change this
-    // if !reporter.diags.is_empty() {
-    //     let mut diags = Vec::new();
-    //     diags.append(&mut reporter.diags);
-    //     return Err(ScriptError::Semantic(diags).into());
-    // }
+    if !reporter.diags.is_empty() {
+        let mut diags = Vec::new();
+        diags.append(&mut reporter.diags);
+        return Err(ScriptError::Semantic(diags).into());
+    }
 
     let mut constraint_resolver =
         ConstraintResolver::new(&compiler_store.settings, &compiler_store.interner, compiler);

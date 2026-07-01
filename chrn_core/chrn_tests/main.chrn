@@ -44,7 +44,7 @@ let x = 3// #warn
 
 import "../chrn_core/chrn_tests/def.chrn" as defs
 var->
-
+    x: i32
 // Should warn
 // import "../../chrn_core/chrn_tests/core.chrn"
 // import "../../chrn_core/chrn_tests/def.chrn" as defs
@@ -53,11 +53,11 @@ var->
             p: def::Person
             // Breaks reporting since cross module spanning is NOT possible right now
             // p: defs::Person
-        }
+        } #bin
 
     complex->
         // I don't know about this
-        Forb {
+        in x {
             .default_value = 2
             p {
                 out {

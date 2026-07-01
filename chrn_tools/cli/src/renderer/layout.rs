@@ -1,6 +1,9 @@
-use chrn_utils::source_map::{
-    line_mapping::{self, Line, LineView},
-    source_diagnostic::{Annotation, AnnotationKind, SourceDiagnostic},
+use chrn_utils::{
+    id_types::SourceRegionId,
+    source_map::{
+        line_mapping::{self, Line, LineView},
+        source_diagnostic::{Annotation, AnnotationKind, SourceDiagnostic},
+    },
 };
 
 /// Groups annotations by the line they appear on, so spans that share a line
@@ -178,7 +181,6 @@ pub(super) fn assign_layers_in_layout(ln_layout: &mut RenderLineLayout, src_str:
 /// Converts grouped annotations into a sorted list of line layouts, one per source line
 /// with annotations
 pub(super) fn create_render_line_layout<'a>(
-    diag: &SourceDiagnostic,
     group_manager: &'a RenderGroupManager,
 ) -> Vec<RenderLineLayout<'a>> {
     let mut ln_layouts = Vec::new();
@@ -195,4 +197,58 @@ pub(super) fn create_render_line_layout<'a>(
 
     ln_layouts.sort_by_key(|lay| lay.ln.ln_num);
     ln_layouts
+}
+
+/// Greedily sorts layouts so that any region containing an `AnnotationKind::Primary`
+/// is rendered before regions that don't. For example, if we have 3 regions where 2 have primaries
+/// and one only has a secondary annotation, the 2 primary containing regions along with any other
+/// annotation associated with them on the same line layout will be prioritized depending on
+/// whichever comes first, and the region with only a secondary will be rendered last.
+/// and within a region layouts are ordered by line number.
+pub(super) fn sort_layouts_by_region_priority<'a>(ln_layouts: &mut [RenderLineLayout<'a>]) {
+    // Leaves early to avoid allocations if no elements are present
+    if ln_layouts.is_empty() {
+        return;
+    }
+
+    // Tracks the first-seen encounter order of each unique region encountered while
+    // walking the layouts. The position of a region in this Vec is its priority index where
+    // smaller = encountered earlier in the input.
+    let mut region_order: Vec<SourceRegionId> = Vec::new();
+    // Vec which greedily stores any `RegionId` that has a primary annotation
+    let mut region_has_primary: Vec<SourceRegionId> = Vec::new();
+
+    // Single pass over the layouts to record region order and which regions are primary.
+    for layout in ln_layouts.iter() {
+        let region_id = layout.ln.ln_span.region_id;
+        // First time we see this region, record its position in the encounter order.
+        if !region_order.contains(&region_id) {
+            region_order.push(region_id);
+        }
+        // Check if this layout's annotations contain a primary, if so, store the `RegionId` if not
+        // already present
+        let contains_primary = layout
+            .render_info
+            .iter()
+            .any(|info| info.annotation.kind == AnnotationKind::Primary);
+        if contains_primary && !region_has_primary.contains(&region_id) {
+            region_has_primary.push(region_id);
+        }
+    }
+
+    //  Sorts by primary regions first.
+    //  Sorts by region_idx next to preserve the original encounter order which separates
+    //  regions that have a primary
+    //  Sorts by line number to ensure order is still retained on a region basis in line number
+    ln_layouts.sort_by_key(|layout| {
+        let region_id = layout.ln.ln_span.region_id;
+        // Look up this region's priority index from the encounter order; should always
+        // be found since we built `region_order` from the same layouts.
+        let region_idx = region_order
+            .iter()
+            .position(|id| *id == region_id)
+            .unwrap_or(0);
+        let is_primary = region_has_primary.contains(&region_id);
+        (!is_primary, region_idx, layout.ln.ln_num)
+    });
 }

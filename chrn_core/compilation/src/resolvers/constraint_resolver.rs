@@ -221,7 +221,7 @@ impl<'a> ConstraintResolver<'a> {
                 _ => (),
             }
 
-            if let Err(preset_err) = self.check_directive(
+            if let Err(Some(preset_err)) = self.check_directive(
                 type_def.type_id,
                 abs_typedef.name_span,
                 ty_span,
@@ -604,7 +604,7 @@ impl<'a> ConstraintResolver<'a> {
 
             for sp_directive in &struct_def.glob_directives {
                 let directive = &self.compiler.directives[sp_directive.inner.id as usize];
-                if let Err(preset_err) = self.check_directive(
+                if let Err(Some(preset_err)) = self.check_directive(
                     field.type_id,
                     abs_struct.name_span,
                     ty_span,
@@ -631,7 +631,7 @@ impl<'a> ConstraintResolver<'a> {
 
             for sp_directive in &field.directives {
                 let directive = &self.compiler.directives[sp_directive.inner.id as usize];
-                if let Err(preset_err) = self.check_directive(
+                if let Err(Some(preset_err)) = self.check_directive(
                     field.type_id,
                     abs_struct.name_span,
                     *field_ty_span,
@@ -733,7 +733,7 @@ impl<'a> ConstraintResolver<'a> {
 
                 for sp_directive in &enum_def.glob_directives {
                     let directive = &self.compiler.directives[sp_directive.inner.id as usize];
-                    if let Err(preset_err) = self.check_directive(
+                    if let Err(Some(preset_err)) = self.check_directive(
                         inner_id,
                         abs_enum.name_span,
                         ty_span,
@@ -762,7 +762,7 @@ impl<'a> ConstraintResolver<'a> {
 
                 for sp_directive in &variant.directives {
                     let directive = &self.compiler.directives[sp_directive.inner.id as usize];
-                    if let Err(preset_err) = self.check_directive(
+                    if let Err(Some(preset_err)) = self.check_directive(
                         inner_id,
                         abs_enum.name_span,
                         variant_ty_span,
@@ -1034,7 +1034,7 @@ impl<'a> ConstraintResolver<'a> {
         env: &ResolverEnv,
         // Making this vec makes error messages painful depending on which message failed, so it
         // needs some signal to say to stop going.
-    ) -> Result<(), PresetErr> {
+    ) -> Result<(), Option<PresetErr>> {
         match &self.compiler.types[type_id.id as usize].ty {
             Type::Struct(struct_def) => {
                 visited.push(type_id);
@@ -1047,14 +1047,14 @@ impl<'a> ConstraintResolver<'a> {
                     // struct.
                     if visited.contains(&field.type_id) {
                         if spanned_directive.inner.has_restrictions() {
-                            return Err(PresetErr::CircularDirective {
+                            return Err(Some(PresetErr::CircularDirective {
                                 sp_fmtted_parent: SpannedContainer::new(
                                     Formatted::Struct,
                                     struct_def.name_span,
                                 ),
                                 sp_directive: spanned_directive.into_owned(),
                                 err_ty_span: field.name_span,
-                            });
+                            }));
                         }
 
                         continue;
@@ -1090,14 +1090,14 @@ impl<'a> ConstraintResolver<'a> {
                         // different context.
                         if visited.contains(&inner) {
                             if spanned_directive.inner.has_restrictions() {
-                                return Err(PresetErr::CircularDirective {
+                                return Err(Some(PresetErr::CircularDirective {
                                     sp_fmtted_parent: SpannedContainer::new(
                                         Formatted::Enum,
                                         enum_def.name_span,
                                     ),
                                     sp_directive: spanned_directive.into_owned(),
                                     err_ty_span: variant.name_span,
-                                });
+                                }));
                             }
 
                             continue;
@@ -1156,14 +1156,14 @@ impl<'a> ConstraintResolver<'a> {
                         for element in elements {
                             if visited.contains(&*element) {
                                 if spanned_directive.inner.has_restrictions() {
-                                    return Err(PresetErr::CircularDirective {
+                                    return Err(Some(PresetErr::CircularDirective {
                                         sp_fmtted_parent: SpannedContainer::new(
                                             Formatted::Tuple,
                                             parent_span,
                                         ),
                                         sp_directive: spanned_directive.into_owned(),
                                         err_ty_span: active_span,
-                                    });
+                                    }));
                                 }
                             }
 
@@ -1192,10 +1192,10 @@ impl<'a> ConstraintResolver<'a> {
                         let arg_constraints = spanned_directive.inner.type_constraints();
 
                         if !arg_constraints.contains(constraints) {
-                            return Err(PresetErr::UnsupportedDirective {
+                            return Err(Some(PresetErr::UnsupportedDirective {
                                 sp_directive: spanned_directive.into_owned(),
                                 sym_span: active_span,
-                            });
+                            }));
                         }
 
                         Ok(())
@@ -1207,17 +1207,17 @@ impl<'a> ConstraintResolver<'a> {
                 let arg_constraints = spanned_directive.inner.type_constraints();
 
                 if !arg_constraints.contains(alias_constraints) {
-                    return Err(PresetErr::TypeBoundaryBoundConflict {
+                    return Err(Some(PresetErr::TypeBoundaryBoundConflict {
                         inferred: alias_constraints,
                         conflicting: arg_constraints,
                         spans: vec![spanned_directive.span, active_span],
-                    });
+                    }));
                 }
 
                 Ok(())
             }
-            // Uhhhhhhh.
-            Type::Unknown => todo!("Unknowned"),
+            // I kinda would rather it just did nothing rather than report
+            Type::Unknown => Err(None),
             Type::Func(_) => {
                 let core_msg = "Functions can only be placed within type constraints".to_string();
 
@@ -1227,7 +1227,7 @@ impl<'a> ConstraintResolver<'a> {
                     env.region.path_id,
                     active_span,
                 );
-                Err(PresetErr::General(src_diag))
+                Err(Some(PresetErr::General(src_diag)))
             }
             // Function.
             Type::TypeDef(_) => {
@@ -1245,11 +1245,11 @@ impl<'a> ConstraintResolver<'a> {
                 let arg_constraints = spanned_directive.inner.type_constraints();
 
                 if !arg_constraints.contains(*current_constraints) {
-                    return Err(PresetErr::TypeBoundaryBoundConflict {
+                    return Err(Some(PresetErr::TypeBoundaryBoundConflict {
                         inferred: *current_constraints,
                         conflicting: arg_constraints,
                         spans: vec![spanned_directive.span, active_span],
-                    });
+                    }));
                 }
                 panic!("Hi");
 

@@ -1,11 +1,11 @@
 //TODO: Eventually will have it's own cli backend but not priority
 // Maybe not?
 use chrn::{args, config::CliConfig, dispatcher};
-use clap::Parser;
 use common::color;
 
 fn main() {
     let cli_cfg = CliConfig::new();
+    // Checks this first so external tooling syntax can be affirmed
     let cli = match args::try_parse() {
         Ok(c) => c,
         Err(err) => err.exit(),

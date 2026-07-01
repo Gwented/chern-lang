@@ -304,10 +304,10 @@ impl MemberSymbolKind {
         }
     }
 
-    pub fn parent_sym_id(&self) -> SymbolId {
+    pub fn local_parent_sym_id(&self) -> SymbolId {
         match self {
-            MemberSymbolKind::Field(field_repre) => field_repre.parent_sym_id,
-            MemberSymbolKind::Variant(variant_repre) => variant_repre.parent_sym_id,
+            MemberSymbolKind::Field(field_repre) => field_repre.local_parent_sym_id,
+            MemberSymbolKind::Variant(variant_repre) => variant_repre.local_parent_sym_id,
             MemberSymbolKind::OptionAssignment(option_assignment) => {
                 option_assignment.parent_sym_id
             }
@@ -390,7 +390,21 @@ impl Formattable for EnumDef {
 /// A HIR of enum variants created by script semantics
 #[derive(Debug)]
 pub struct VariantRepre {
-    pub parent_sym_id: SymbolId,
+    // TODO: Need to maybe bundle this with the Option TypeId since they both mean the same thing in
+    // that there is some other type declared, but at the same time it could be a built in type,
+    // which doesn't have a declaration location but does have a type id so these are still
+    // disconnected. Most importantly, would it be bad to leave this as NOT an option where the
+    // caller can choose to care if the local parent is the actual parent?
+    // Maybe this shouldn't
+    // exist at all and the caller should have to explicitly look for the origin with the same
+    // compiler method.
+    /// SymbolId of the type in which this variant was locally declared in, not the symbol
+    /// id of the original declaration location of the type associated with this variant.
+    /// So if struct `Person` had a field of `State`, `State` would consider `Person` it's local
+    /// parent, but the actual declaration location of `State` as a struct/enum itself would be in
+    /// an entirely different place
+    pub local_parent_sym_id: SymbolId,
+    /// MemberId of `self`
     pub member_id: MemberId,
     pub name_id: InternedId,
     pub name_span: SourceSpan,
@@ -406,7 +420,7 @@ pub struct VariantRepre {
 
 impl VariantRepre {
     pub fn new(
-        parent_sym_id: SymbolId,
+        local_parent_sym_id: SymbolId,
         member_id: MemberId,
         name_id: InternedId,
         name_span: SourceSpan,
@@ -415,7 +429,7 @@ impl VariantRepre {
         ast_id: AstId,
     ) -> VariantRepre {
         VariantRepre {
-            parent_sym_id,
+            local_parent_sym_id,
             member_id,
             name_id,
             name_span,
@@ -506,7 +520,13 @@ impl Formattable for FuncDef {
 
 #[derive(Debug)]
 pub struct FieldRepre {
-    pub parent_sym_id: SymbolId,
+    /// SymbolId of the type in which this field was locally declared in, not the symbol
+    /// id of the original declaration location of the type associated with this field.
+    /// So if struct `Person` had a field of `State`, `State` would consider `Person` it's local
+    /// parent, but the actual declaration location of `State` as a struct/enum itself would be in
+    /// an entirely different place
+    pub local_parent_sym_id: SymbolId,
+    /// MemberId of `self`
     pub member_id: MemberId,
     pub name_id: InternedId,
     pub name_span: SourceSpan,
@@ -520,14 +540,14 @@ pub struct FieldRepre {
 
 impl FieldRepre {
     pub fn new(
-        parent_sym_id: SymbolId,
+        local_parent_sym_id: SymbolId,
         member_id: MemberId,
         name_id: InternedId,
         name_span: SourceSpan,
         type_id: TypeId,
     ) -> FieldRepre {
         FieldRepre {
-            parent_sym_id,
+            local_parent_sym_id,
             member_id,
             name_id,
             name_span,

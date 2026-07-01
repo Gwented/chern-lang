@@ -1958,7 +1958,7 @@ mod tests {
     }
 
     #[test]
-    fn constraint_resolver_all_values_test() {
+    fn type_resolver_values_test() {
         let text = "
                 let CONSTANT_INT = 4
                 let CONSTANT_STR = \"Hallo\"
@@ -2162,6 +2162,7 @@ mod tests {
 
     #[test]
     fn const_dependency_resolution_test() {
+        // Ok buddy
         let approx_eq = |a: f64, b: f64| (a - b).abs() < 1e-9;
 
         // 1) Reverse-ordered linear chain: each variable depends on the previous one, and the
@@ -2282,7 +2283,7 @@ mod tests {
 
     #[test]
     fn const_dependency_circular_test() {
-        // Exact scenario requested: `let x = y let y = x`
+        // Linear dependency cycle should be rejected
         assert!(
             type_resolve_single_module("let x = y\nlet y = x").is_err(),
             "Two-variable cycle should be rejected"

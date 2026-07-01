@@ -52,7 +52,7 @@ pub fn find_external_binary(subcommand: &str) -> Option<PathBuf> {
     })
 }
 
-/// returns `true` when `path` is a regular file the OS will let us execute.
+/// Returns `true` when `path` is a regular file the OS will let us execute.
 fn is_runnable(path: &Path) -> bool {
     if !path.is_file() {
         return false;

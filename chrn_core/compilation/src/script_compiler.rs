@@ -536,7 +536,7 @@ impl ScriptCompiler {
 
     // Maybe return option?
     /// Attempts to get a `TypeId` out of the given symbol if possible
-    pub(super) fn get_sym_type_id(&self, sym_id: SymbolId) -> Option<TypeId> {
+    pub(super) fn get_type_id_from_sym_id(&self, sym_id: SymbolId) -> Option<TypeId> {
         match &self.symbols[sym_id.id as usize] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => Some(*type_id),

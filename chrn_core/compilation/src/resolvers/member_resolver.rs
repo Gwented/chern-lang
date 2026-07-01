@@ -62,7 +62,8 @@ impl MemberResolver<'_> {
     // compiler has, should this be cached?
     //
     // Should this be incremental module-wise?
-    /// Goes through all types within `self.compiler` and appends fields/variants where possible
+    /// Goes through all types within `self.compiler` and appends fields/variants where possible,
+    /// only resolving their types
     ///
     /// If diagnostics > 0 then an error occured
     // Would options be ok here?
@@ -178,7 +179,12 @@ impl MemberResolver<'_> {
                         self.interner,
                     );
 
-                    continue;
+                    //NOTE: If this weren't done then it would ruin the alignment of fields with future
+                    // ast to field alignment related checks. This could be circumvented eventually
+                    // by making the ast flat so that it carries a member id to an ast member, which
+                    // would never cause an issue here since it doesn't have to depend on an inner
+                    // part hopefully existing in an ast.
+                    TypeId::new(script_compiler::CORE_UNKNOWN)
                 }
             };
 
@@ -215,15 +221,19 @@ impl MemberResolver<'_> {
 
             let member_id = MemberId::new(self.compiler.members.len() as u32);
 
-            //TODO: Uh
-            // Attempts to get a more accurate parent symbol location.
-            let parent_sym_id = if let Some(found) = self.compiler.get_sym_id_from_type_id(type_id)
-            {
-                found
-            } else {
-                parent_sym_id
-            };
+            // Attempts to get a more accurate parent symbol location, this is not semantically required
+            // anywhere. The idea behind this is that say, we had:
+            //
+            // struct Person {
+            //      state: State
+            // }
+            //
+            // If an error ocurred at state, and a diagnostic wanted a look at where it's actual
+            // original field declaration is, it would instead get "Person" which is NOT the
+            // declaration location, but just the spot where the particular member was used.
 
+            //TODO: The stored parent symbol id does in fact point to the nearest root basically,
+            //but it probably still should hold it's local parent
             let field = FieldRepre::new(
                 parent_sym_id,
                 member_id,
@@ -318,13 +328,6 @@ impl MemberResolver<'_> {
                     }
                 };
 
-                let parent_sym_id =
-                    if let Some(found) = self.compiler.get_sym_id_from_type_id(type_id) {
-                        found
-                    } else {
-                        parent_sym_id
-                    };
-
                 VariantRepre::new(
                     parent_sym_id,
                     member_id,
@@ -333,6 +336,7 @@ impl MemberResolver<'_> {
                     Some(type_id),
                     AstId::new(i as u32),
                 )
+                // No type case
             } else {
                 VariantRepre::new(
                     parent_sym_id,

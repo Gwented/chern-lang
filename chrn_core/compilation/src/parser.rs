@@ -593,14 +593,20 @@ fn parse_nest_sect(
                 Vec::new()
             };
 
-            let glob_args = if ctx.peek_kind() == TokenKind::HashSymbol {
+            let glob_directives = if ctx.peek_kind() == TokenKind::HashSymbol {
                 handle_args(ctx, interner).unwrap_or_default()
             } else {
                 Vec::new()
             };
 
-            let enumeration =
-                AbstractEnum::new(name_id, name_span, variants, glob_conds, glob_args, is_priv);
+            let enumeration = AbstractEnum::new(
+                name_id,
+                name_span,
+                variants,
+                glob_conds,
+                glob_directives,
+                is_priv,
+            );
 
             Item::Enum(enumeration)
         }
@@ -625,6 +631,7 @@ fn parse_nest_sect(
 //
 //No other branches exist right now so it just parses expecting uh, stuff.
 fn parse_config_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractConfig, Token> {
+    //TEST: May not exist
     let in_var = if ctx.peek_tok() == Token::Keyword(Keyword::In) {
         ctx.advance_tok();
         panic!("Inside");
