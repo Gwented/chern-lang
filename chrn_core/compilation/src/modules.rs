@@ -10,7 +10,7 @@ use chrn_utils::{
     id_types::{InternedId, ModuleId, PathId, ScopeId, SourceRegionId, SymbolId},
     intern::{self, Intern},
     source_map::{
-        source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
+        source_diagnostic::{DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind},
         source_region::SourceRegionArena,
         source_span::SourceSpan,
     },

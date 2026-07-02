@@ -8,25 +8,29 @@ use chrn_utils::{
     intern::Intern,
     source_map::{
         line_mapping::{self, Line, LineView},
-        source_diagnostic::{Annotation, AnnotationKind, SourceDiagnostic},
+        source_diagnostic::{SourceDiagnostic, annotations::Annotation, footers::FooterKind},
         source_region::SourceRegionArena,
         source_span::SourceSpan,
     },
 };
 use common::color;
 
-use crate::renderer::layout::{RenderInfo, RenderLineLayout};
 use crate::renderer::render_settings::RenderSettings;
+use crate::{
+    renderer::layout::{RenderInfo, RenderLineLayout},
+    s_ifier,
+};
 
 /// 60 dashes used as a visual separator between diagnostics
 const DEFAULT_VISUAL_SEPARATORS: &str =
     "------------------------------------------------------------";
 
-/// Renders a slice of source diagnostics into formatted CLI output strings.
+/// Renders a slice of source diagnostics into this renderer's heuristic styling, output as strings.
 /// When no region arena is provided, only the diagnostic header and message are emitted.
-/// Otherwise, annotated source code is rendered inline.
+// Why was "inline" relevant here?
 pub(crate) fn render_cli_diags(
     diags: &[SourceDiagnostic],
+    footers: &[FooterKind],
     settings: &RenderSettings,
     region_arena_opt: Option<&SourceRegionArena>,
     interner: &Intern,
@@ -78,7 +82,7 @@ pub(crate) fn render_cli_diags(
         ln_views.push(ln_view);
         let src_str = match str::from_utf8(&region.src_bytes) {
             Ok(s) => s,
-            Err(_) => unreachable!("Should already have UTF-8 validity at this stage"),
+            Err(_) => unreachable!("Should already have UTF-8 validity at this stage from lexer"),
         };
 
         all_src_strs.push(src_str);
@@ -96,6 +100,10 @@ pub(crate) fn render_cli_diags(
             interner,
         );
         rendered_diags.push(rendered_diag);
+    }
+
+    for footer in footers {
+        rendered_diags.push(render_footer(footer, settings));
     }
 
     // Might just return a new line joined string of a single diagnostic
@@ -420,5 +428,20 @@ fn render_line_layout_text(
         }
     }
 
+    // I don't like how this space is here but can't remember how this even became a requirement.
+    // After moving to pointers and having several bugs related wrong source mapping this just stuck
+    // afterwards, which seems like a bad thing.
     format!("\n{fmtted_ln_num}| {plain_ln}\n{all_ptrs_str}")
+}
+
+/// Renders given footer into a string
+fn render_footer(footer: &FooterKind, settings: &RenderSettings) -> String {
+    let footer = match footer {
+        FooterKind::DiagnosticsExceeded(amt_exceeded) => {
+            let s_suffix = s_ifier!(*amt_exceeded);
+            format!("{amt_exceeded} diagnostic{s_suffix} suppressed")
+        }
+    };
+
+    style::standardize_warn(&footer, settings.can_color, settings.terminal_type)
 }

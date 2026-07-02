@@ -5,7 +5,7 @@ use chrn_utils::{
     intern::Intern,
     source_map::{
         source_diagnostic::{
-            AnnotationKind, DiagnosticLevel, SourceDiagnostic, SourceDiagnosticBuilder,
+            DiagnosticLevel, SourceDiagnostic, SourceDiagnosticBuilder, annotations::AnnotationKind,
         },
         source_region::SourceRegion,
         source_span::SourceSpan,

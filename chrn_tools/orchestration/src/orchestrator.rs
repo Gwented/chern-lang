@@ -1,6 +1,7 @@
 //TEST: TEST
 use chrn_utils::{
-    core_error::ScriptError, id_types::ModuleId, source_map::source_diagnostic::Reporter,
+    budget::mem_cost::MemoryCost, core_error::ScriptError, id_types::ModuleId,
+    source_map::source_diagnostic::Reporter,
 };
 use compilation::{
     lexer::{Lexer, token::SpannedToken, trivia::Trivia},
@@ -60,6 +61,7 @@ pub fn run_all(
 
         // Compiler store stores these as persistent state in the case of any indexing needing to be
         // done.
+        // Should it budget here too?
         compiler_store.toks.push(toks_opt);
         compiler_store.trivias.push(trivia_opt);
         compiler_store.asts.push(ast_info_opt);
@@ -86,7 +88,9 @@ pub fn run_all(
 
         ns_resolver
             .resolve(&current_env)
-            .unwrap_or_else(|mut diags| reporter.diags.append(&mut diags));
+            .unwrap_or_else(|mut diags| {
+                reporter.diags.append(&mut diags);
+            });
     }
 
     //NOTE: Up to here would be parallelizable since at most they would need to wait asynchronously
@@ -100,7 +104,8 @@ pub fn run_all(
         compiler,
     )
     .resolve();
-    reporter.diags.append(&mut member_diags);
+
+    reporter.append_safe(&mut member_diags);
 
     //TODO: Wrap some of these resolvers into convience functions?
 
@@ -116,7 +121,9 @@ pub fn run_all(
 
         ty_resolver
             .resolve(&current_env)
-            .unwrap_or_else(|mut diags| reporter.diags.append(&mut diags));
+            .unwrap_or_else(|mut diags| {
+                reporter.append_safe(&mut diags);
+            });
     }
 
     // //TODO: Change this
@@ -137,7 +144,9 @@ pub fn run_all(
 
         constraint_resolver
             .resolve(&current_env)
-            .unwrap_or_else(|mut diags| reporter.diags.append(&mut diags));
+            .unwrap_or_else(|mut diags| {
+                reporter.append_safe(&mut diags);
+            });
     }
 
     if !reporter.diags.is_empty() {
@@ -216,7 +225,7 @@ pub fn run_parser(
         &mut compiler_store.interner,
     );
 
-    reporter.diags.append(&mut diags);
+    reporter.append_safe(&mut diags);
 
     Some(ast_info)
 }

@@ -4,6 +4,7 @@ mod detect;
 pub mod dispatcher;
 mod files;
 mod macros;
+mod presentation;
 mod renderer;
 
 #[cfg(test)]

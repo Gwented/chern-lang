@@ -1,7 +1,8 @@
 use chrn_utils::{
+    budget::mem_budget::MemoryBudget,
     chrn_settings::ChrnSettings,
     core_error::{ConfigLoadError, ScriptError},
-    source_map::source_diagnostic::Reporter,
+    source_map::source_diagnostic::{Reporter, footers::FooterKind},
 };
 use orchestration::{
     orchestrator,
@@ -11,10 +12,14 @@ use orchestration::{
 use crate::{
     args::{CheckCmd, Cli, Commands, FmtCmd, GlobalArgs, QueryCmd},
     config::CliConfig,
-    files,
+    files, presentation, print_diags,
     renderer::{self, render_settings::RenderSettings},
     s_ifier,
 };
+
+// Argument to nullify this should exist
+/// Max diagnostics that can be held by the reporter
+const MAX_DIAGNOSTICS: usize = 80;
 
 pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, String> {
     match &cli.command {
@@ -32,9 +37,9 @@ fn exec_check(
     cli_cfg: &CliConfig,
 ) -> Result<String, String> {
     let chrn_settings = ChrnSettings::new();
-    let path = files::make_canon(&check_cmd.path)?;
-    let mut reporter = Reporter::default();
+    let mut reporter = Reporter::new(MemoryBudget::new(MAX_DIAGNOSTICS));
     let render_settings = RenderSettings::new(glob_args.can_color, cli_cfg.terminal_color_type);
+    let path = files::make_canon(&check_cmd.path)?;
 
     // Please please please
     let (mut compiler, mut compiler_store, mut compiler_cache) =
@@ -43,14 +48,17 @@ fn exec_check(
             Ok(data) => data,
             Err(init_err) => match init_err.cfg_err {
                 ConfigLoadError::General(diag) => {
+                    let footers = presentation::make_footers(&reporter);
                     let rendered_diags = renderer::render_cli_diags(
                         &[diag],
+                        &footers,
                         &render_settings,
+                        // reporter.budget.amt_exceeded,
                         init_err.region.as_ref(),
                         &init_err.interner,
                     );
 
-                    print_diags(&rendered_diags);
+                    print_diags!(&rendered_diags);
                     return Err("Failed to parse configuration file".to_string());
                 }
                 ConfigLoadError::IO(err) => {
@@ -72,22 +80,23 @@ fn exec_check(
         }
         Err(script_err) => match script_err {
             ScriptError::Parser(diags) | ScriptError::Semantic(diags) => {
-                // For now
-                // Should print rendered diagnostics here
+                let footers = presentation::make_footers(&reporter);
                 let rendered_diags = renderer::render_cli_diags(
                     &diags,
+                    &footers,
                     &render_settings,
                     Some(&compiler_store.region_arena),
                     &compiler_store.interner,
                 );
 
-                print_diags(&rendered_diags);
-
+                //TODO: Internally cut error message strings in the parser
                 let s_suffix = s_ifier!(diags.len());
+                print_diags!(&rendered_diags);
 
                 let msg = format!("Reported {} error{s_suffix}", diags.len());
                 return Err(msg);
             }
+            // Enforces that only one diagnostic is emitted so this is fine
             ScriptError::IO(e) => {
                 let msg = format!("Process exited unsuccessfully.\nReason: {e}");
                 return Err(msg);
@@ -126,11 +135,18 @@ fn exec_check(
     // }
 }
 
-fn print_diags(rendered_diags: &[String]) {
-    for diag in rendered_diags {
-        println!("{diag}");
-    }
-}
+// /// Convenience function that iterates through slice and prints
+// fn print_diags(rendered_diags: &[String], amt_exceeded: usize) {
+//     for diag in rendered_diags {
+//         eprintln!("{diag}");
+//     }
+//
+//     if amt_exceeded > 0 {
+//         // renderer's job?
+//         let s_suffix = s_ifier!(amt_exceeded);
+//         eprintln!("{amt_exceeded} other error{s_suffix} exist");
+//     }
+// }
 
 fn exec_fmt(fmt_cmd: &FmtCmd, cli_cfg: &CliConfig) -> Result<String, String> {
     todo!("gofmt");

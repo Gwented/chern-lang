@@ -1,8 +1,5 @@
 use std::{collections::HashSet, ops::RangeInclusive};
-//BUG: The byte position of EOF is inherently not trackable due to the nature of how line views are
-//collected, so it would need to have some conditionals that just for the token. Fixable.
-//
-//FIX: Needs to handle eof. please.
+//WARN: Handles EOF in a possibly weird manner
 
 use unicode_width::UnicodeWidthChar;
 
@@ -229,7 +226,9 @@ pub fn something(src_bytes: &[u8], span: &SourceSpan) -> LineGroupManager {
     todo!()
 }
 
-// I know this doesn't show up correctly
+//TODO: This, but diagnostics have a set of special instructions that display this graphic.
+//So, there would be an "add_graphic(AnnotationGraphic::HelpTransform(args))" where the args are
+//specific to the enum. The renderer can just decide if graphics should be ignored.
 /// Error message type:
 /// X -> X()
 ///      +++

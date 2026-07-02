@@ -82,6 +82,8 @@ impl From<std::io::Error> for ScriptError {
     }
 }
 
+// Since it's external maybe this shouldn't exist, or should at least act more so as a compatibility
+// layer?
 #[derive(Debug)]
 pub enum SerialError {
     Lexer(Vec<SourceDiagnostic>),

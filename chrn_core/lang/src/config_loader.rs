@@ -6,7 +6,7 @@ use chrn_utils::{
     id_types::{PathId, SourceRegionId},
     intern::Intern,
     source_map::{
-        source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
+        source_diagnostic::{DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind},
         source_region::SourceRegion,
         source_span::SourceSpan,
     },
@@ -14,7 +14,8 @@ use chrn_utils::{
 
 use crate::keywords::DEFINITION_SIZE;
 
-const READ_LIMIT_OFFSET: usize = 500;
+/// 8kb read limit before aborting looking for @end in script file
+const READ_LIMIT: usize = 8192;
 
 pub struct ChrnConfigLoader<'a, R: Read> {
     // Since region ids are not used by the loader for diagnostics, this is safe. Only the path id
@@ -73,6 +74,18 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
         self.handle.fill_buf()?;
 
         while let Some(b) = self.peek() {
+            //TODO: New error enum would need to exist which specifically needs to say whether
+            //or not the program should keep going.
+            // I am Mythos now :fish:
+            if self.pos >= READ_LIMIT {
+                let script_type = if requires_end { "block" } else { "file" };
+                dbg!(requires_end);
+
+                panic!(
+                    "Exceeded read limit `{READ_LIMIT}` while attempting to read script {script_type}"
+                );
+            }
+
             if b == b'\0' {
                 break;
             }

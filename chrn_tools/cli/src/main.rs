@@ -5,7 +5,7 @@ use common::color;
 
 fn main() {
     let cli_cfg = CliConfig::new();
-    // Checks this first so external tooling syntax can be affirmed
+    // Checks this first so external tooling syntax can be checked before exiting
     let cli = match args::try_parse() {
         Ok(c) => c,
         Err(err) => err.exit(),

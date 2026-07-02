@@ -1,29 +1,92 @@
+pub mod annotations;
+pub mod footers;
 // What if there was said, ".attach()" in the builder of diags to where I could tell renderers,
 // do not detach or mutate this ordering in any form by file found in
-use crate::{id_types::PathId, source_map::source_span::SourceSpan};
+use crate::{
+    budget::{
+        mem_budget::{BudgetResult, MemoryBudget},
+        mem_cost::{self, MemoryCost},
+    },
+    id_types::PathId,
+    source_map::{
+        source_diagnostic::annotations::{Annotation, AnnotationKind},
+        source_span::SourceSpan,
+    },
+};
 
 /// This exists in case other methods or fields are considered, but is just a Vec<Diagnostic>
 /// wrapper as of right now
 #[derive(Debug, Default)]
 pub struct Reporter {
+    /// Stored diagnostics
     pub diags: Vec<SourceDiagnostic>,
+    /// Maximum bytes worth of diagnostics that can be pushed before denying
+    pub budget: MemoryBudget,
 }
 
 impl Reporter {
-    pub const fn new(diags: Vec<SourceDiagnostic>) -> Reporter {
-        Reporter { diags }
+    pub const fn new(budget: MemoryBudget) -> Reporter {
+        Reporter {
+            diags: Vec::new(),
+            budget,
+        }
+    }
+
+    /// Checks if max budget has been exceeded before appending.
+    ///
+    /// `true` means there were no issues
+    /// `false` means as many diagnostics as possible were appended, but there was an overage in budget
+    ///
+    /// This method by default assumes that the usage should be per-diagnostic, with no deeper
+    /// control over if it should account for bytes. May change.
+    // Maybe return ok and the amount of space left?
+    pub fn append_safe(&mut self, diags: &mut Vec<SourceDiagnostic>) -> bool {
+        // Budgeting is always done through the total amount of diagnostics rather than bytes. May
+        // change to be more customizable. Is that necessary?
+        let amt = diags.len();
+
+        match self.budget.checked_consume(amt) {
+            BudgetResult::Stable | BudgetResult::LimitReached => {
+                self.diags.append(diags);
+                true
+            }
+            BudgetResult::Overage(overage) => {
+                let can_append = amt - overage;
+                for i in diags.drain(..can_append) {
+                    self.diags.push(i);
+                }
+
+                false
+            }
+            BudgetResult::Overflow => false,
+            // Ok(_) => {
+            //     self.diags.append(diags);
+            //     true
+            // }
+            // Err(overage_opt) => {
+            //     self.budget.amt_exceeded = self.budget.amt_exceeded.saturating_add(amt);
+            //     // If the overeage
+            //     if let Some(overage) = overage_opt {
+            //         let can_append = overage - amt;
+            //         dbg!(can_append);
+            //         panic!()
+            //     } else {
+            //         false
+            //     }
+            // }
+        }
     }
 }
 
-/// Although there are error types that say where the error came from, all of `CoreError` needs to
-/// still returns `Diagnostic` as a vector, which could have other areas inside of it, making this
-/// serve as persistent metadata.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Area {
-    ConfigLoad,
-    Script,
-    Serial,
-}
+// /// Although there are error types that say where the error came from, all of `CoreError` needs to
+// /// still returns `Diagnostic` as a vector, which could have other areas inside of it, making this
+// /// serve as persistent metadata.
+// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// pub enum Area {
+//     ConfigLoad,
+//     Script,
+//     Serial,
+// }
 
 /// Diagnostic intended to represent a set of instructions to be rendered.
 #[derive(Debug)]
@@ -131,6 +194,33 @@ impl SourceDiagnostic {
     }
 }
 
+impl MemoryCost for SourceDiagnostic {
+    fn cost(&self) -> usize {
+        // Yes this is 1 byte and will probably never have an inner but. But um. Um.
+        let level_cost = size_of::<DiagnosticLevel>();
+        let core_msg_cost = mem_cost::string_cost(&self.core_msg);
+        let path_id_cost = size_of::<PathId>();
+        let ann_cost: usize = self.annotations.iter().map(|ann| ann.cost()).sum();
+
+        let help_cost: usize = self
+            .help
+            .iter()
+            .map(|help| mem_cost::string_cost(help))
+            .sum();
+
+        let notes_cost: usize = self
+            .notes
+            .iter()
+            .map(|note| mem_cost::string_cost(note))
+            .sum();
+
+        // maybe DIAGNOSTIC_FIELDS can be asserted and enforce adding to the cost?
+        // debug_assert!();
+        // Ok this will definitely be checked eventually
+        level_cost + core_msg_cost + path_id_cost + ann_cost + help_cost + notes_cost
+    }
+}
+
 /// Optional structure that uses builder pattern to create a `SourceDiagnostic` as opposed to a regular
 /// constructor
 #[derive(Debug)]
@@ -177,72 +267,6 @@ impl SourceDiagnosticBuilder {
         }
     }
 }
-
-#[derive(Debug)]
-/// Structure intended to add context to a span beyond just where to point
-pub struct Annotation {
-    pub span: SourceSpan,
-    pub kind: AnnotationKind,
-    /// Optional message like, note or, uh, um
-    pub label: Option<String>,
-}
-
-impl Annotation {
-    pub const fn new(span: SourceSpan, kind: AnnotationKind, label: Option<String>) -> Annotation {
-        Annotation { span, kind, label }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// Can this be replaced with DiagnosticKind?
-pub enum AnnotationKind {
-    /// Main part of error
-    Primary,
-    // Kind of help, but not help?
-    /// Secondary information related to the error that could help fix it
-    Secondary,
-    Note,
-    Help,
-}
-
-impl AnnotationKind {
-    pub const fn is_higher_priority(self, other: AnnotationKind) -> bool {
-        let self_priority = self.priority();
-        let other_priority = other.priority();
-
-        self_priority > other_priority
-    }
-
-    pub const fn is_lower_priority(self, other: AnnotationKind) -> bool {
-        let self_priority = self.priority();
-        let other_priority = other.priority();
-
-        self_priority < other_priority
-    }
-
-    pub fn is_eq_priority(self, other: AnnotationKind) -> bool {
-        let self_priority = self.priority();
-        let other_priority = other.priority();
-
-        self_priority == other_priority
-    }
-
-    pub const fn priority(&self) -> u8 {
-        match self {
-            AnnotationKind::Primary => 2,
-            AnnotationKind::Secondary => 1,
-            AnnotationKind::Note => 0,
-            AnnotationKind::Help => 0,
-        }
-    }
-}
-
-// pub enum PointerKind {
-//     Carot,
-//     Hyphen,
-//     Tilde,
-//     Plus,
-// }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagnosticLevel {

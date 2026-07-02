@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chrn_utils::source_map::source_diagnostic::{AnnotationKind, DiagnosticLevel};
+use chrn_utils::source_map::source_diagnostic::{DiagnosticLevel, annotations::AnnotationKind};
 use common::color::{self, TerminalColorType};
 
 use crate::renderer::render_settings::RenderSettings;
@@ -97,23 +97,18 @@ pub(super) fn get_annotation_kind_ptr(kind: AnnotationKind) -> &'static str {
 /// Formats a help message with heuristic styling
 pub(super) fn standardize_help(msg: &str, can_color: bool, terminal: TerminalColorType) -> String {
     let (orange, nc) = color::get_orange(can_color, terminal);
+    format!("{orange}help{nc}: {msg}")
+}
 
-    if can_color {
-        format!("{orange}help{nc}: {msg}")
-    } else {
-        format!("help: {msg}")
-    }
+pub(super) fn standardize_warn(msg: &str, can_color: bool, terminal: TerminalColorType) -> String {
+    let (orange, nc) = color::get_orange(can_color, terminal);
+    format!("{orange}warn{nc}: {msg}")
 }
 
 /// Formats a note message with heuristic styling
 pub(super) fn standardize_note(msg: &str, can_color: bool, terminal: TerminalColorType) -> String {
     let (cyan, nc) = color::get_cyan(can_color, terminal);
-
-    if can_color {
-        format!("{cyan}note{nc}: {msg}")
-    } else {
-        format!("note: {msg}")
-    }
+    format!("{cyan}note{nc}: {msg}")
 }
 
 /// Creates a template header with with given path

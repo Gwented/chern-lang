@@ -8,9 +8,8 @@ use chrn_utils::id_types::{
     SpannedContainerRef, SymbolId, TypeId, ValueId, VariableId,
 };
 use chrn_utils::intern::Intern;
-use chrn_utils::source_map::source_diagnostic::{
-    AnnotationKind, DiagnosticLevel, SourceDiagnostic,
-};
+use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
+use chrn_utils::source_map::source_diagnostic::{DiagnosticLevel, SourceDiagnostic};
 use lang::fmter::{Formattable, Formatted};
 use lang::values::{Value, ValueInfo};
 
@@ -1086,6 +1085,10 @@ impl<'a> TypeResolver<'a> {
         //TODO: Should use the booleans to prevent costly traversal operations
         match &self.compiler.exprs[current_expr_id.id as usize].expr_hir {
             ExprHir::Val(val_id) => {
+                // The root before traversal MUST be a singular expr that has a SymbolId inside of
+                // it, which means anything further up the tree cannot reach that singular symbol
+                // point again.
+                unreachable!();
                 // This is unreachable
                 let val_info = &self.compiler.values[val_id.id as usize];
 
@@ -1256,7 +1259,10 @@ impl<'a> TypeResolver<'a> {
             }
             ExprHir::Call(expr_id, expr_ids) => todo!(),
             ExprHir::Var(sym_id) => {
-                todo!("What is a varrrble")
+                // The root before traversal MUST be a singular expr that has a SymbolId inside of
+                // it, which means anything further up the tree cannot reach that singular symbol
+                // point again.
+                unreachable!()
             }
             ExprHir::Default(sym_id, expr_id) => {
                 todo!("Default not finished")

@@ -6,7 +6,9 @@ use chrn_utils::{
     chrn_settings::ChrnSettings,
     id_types::{AstId, InternedId, MemberId, TypeId},
     intern::Intern,
-    source_map::source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
+    source_map::source_diagnostic::{
+        DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind,
+    },
 };
 
 use crate::{

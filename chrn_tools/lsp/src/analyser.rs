@@ -35,6 +35,8 @@
 //! new publish is skipped when the serialised form is identical to the cached one,
 //! avoiding unnecessary LSP notifications for no-op edits.
 
+use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
+use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use compilation::modules::ImportKind;
 use compilation::modules::Module;
 use lang::config_loader::ChrnConfigLoader;
@@ -49,9 +51,7 @@ use tower_lsp::lsp_types;
 use chrn_utils::chrn_settings::ChrnSettings;
 use chrn_utils::id_types::{ModuleId, PathId, SourceRegionId};
 use chrn_utils::intern::Intern;
-use chrn_utils::source_map::source_diagnostic::{
-    AnnotationKind, DiagnosticLevel, SourceDiagnostic,
-};
+use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
 use chrn_utils::source_map::source_region::SourceRegionArena;
 use compilation::modules::mod_finder::ModuleFinder;
 use std::io::Cursor;
@@ -60,8 +60,6 @@ use tower_lsp::lsp_types::Url;
 use crate::state::DocumentCache;
 
 const MAX_DIAGS_CACHE_SIZE: usize = 100;
-
-
 
 /// Evicts entries from the diagnostics cache if it has reached [`MAX_DIAGS_CACHE_SIZE`].
 ///

@@ -40,8 +40,12 @@ let x = 5*/
 // Collisions.
 @def
 
+let b = c
+let c = d
+as
+let as = n
 
-import "../chrn_core/chrn_tests/def.chrn" as defs
+// import "../chrn_core/chrn_tests/def.chrn" as defs
 var->
     x: i32
 // Should warn
@@ -50,6 +54,7 @@ var->
     nest->
         struct Forb {
             p: def::Person
+            n: m
             // Breaks reporting since cross module spanning is NOT possible right now
             // p: defs::Person
         } #bin

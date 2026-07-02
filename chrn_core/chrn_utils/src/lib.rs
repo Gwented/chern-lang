@@ -1,3 +1,4 @@
+pub mod budget;
 pub mod chrn_settings;
 pub mod core_error;
 pub mod files;

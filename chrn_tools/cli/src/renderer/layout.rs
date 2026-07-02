@@ -2,7 +2,10 @@ use chrn_utils::{
     id_types::SourceRegionId,
     source_map::{
         line_mapping::{self, Line, LineView},
-        source_diagnostic::{Annotation, AnnotationKind, SourceDiagnostic},
+        source_diagnostic::{
+            SourceDiagnostic,
+            annotations::{Annotation, AnnotationKind},
+        },
     },
 };
 

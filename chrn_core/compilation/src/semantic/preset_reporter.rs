@@ -1,11 +1,11 @@
 use chrn_utils::chrn_settings::ChrnSettings;
-use chrn_utils::source_map::source_diagnostic::{Reporter, SourceDiagnosticBuilder};
+use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
+use chrn_utils::source_map::source_diagnostic::{
+    DiagnosticLevel, Reporter, SourceDiagnosticBuilder,
+};
 use chrn_utils::{
     intern::Intern,
-    source_map::{
-        source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
-        source_region::SourceRegion,
-    },
+    source_map::{source_diagnostic::SourceDiagnostic, source_region::SourceRegion},
 };
 use lang::fmter::Formattable;
 

@@ -2,14 +2,14 @@
 use std::{ffi::OsStr, path::PathBuf, str::FromStr};
 
 use chrn_utils::chrn_settings::ChrnSettings;
+use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
+use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::{
     core_error::{self},
     id_types::{InternedId, ModuleId, PathId},
     intern::Intern,
     source_map::{
-        source_diagnostic::{AnnotationKind, DiagnosticLevel, SourceDiagnostic},
-        source_region::SourceRegion,
-        source_span::SourceSpan,
+        source_diagnostic::SourceDiagnostic, source_region::SourceRegion, source_span::SourceSpan,
     },
 };
 

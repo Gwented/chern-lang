@@ -1,3 +1,6 @@
+//NOTE: Loader enforces size constraints so the lexer doesn't have to track any activity to ensure
+//the program is running safely
+// At most there could be some indexing errors although unlikely
 pub mod token;
 pub mod trivia;
 // TODO: Maybe give this diagnostics
@@ -14,7 +17,7 @@ use crate::lexer::{
     trivia::{Trivia, TriviaKind},
 };
 
-const MAX_INVALID_TOKS: u8 = 5;
+const MAX_INVALID_TOKS: u8 = 10;
 
 // Bit-wise operations for read_num
 const NOTATION_FLOAT: u8 = 1 << 0;
@@ -23,6 +26,7 @@ const NOTATION_BIN: u8 = 1 << 2;
 const NOTATION_OCTAL: u8 = 1 << 3;
 
 pub struct Lexer<'a> {
+    // Should be &str
     src_bytes: &'a [u8],
     pos: usize,
     current_region_id: SourceRegionId,
@@ -561,6 +565,7 @@ impl Lexer<'_> {
                     toks.push(self.recover_invalid(None, interner));
                     if invalid_toks > MAX_INVALID_TOKS {
                         // TODO: Maybe this should be at the end because technically @ is invalid too
+                        // Is this still needed?
                         eprintln!("Maximum invalid tokens found.\nReporting then aborting...");
                         // in_def = false;
 
@@ -1054,8 +1059,8 @@ impl Lexer<'_> {
         let end = self.pos;
 
         let err_str = str::from_utf8(&self.src_bytes[start..end])
-            //FIX:
-            .expect("Invalid UTF-8");
+            //FIX: This DOES actually panic depending on the file being read, like an image
+            .unwrap_or("<INVALID UTF-8>");
 
         let id = interner.intern(&err_str);
 
