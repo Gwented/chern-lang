@@ -37,8 +37,9 @@ impl From<SerialError> for CoreError {
 // More like startup error now
 #[derive(Debug)]
 pub enum ConfigLoadError {
-    // Is this separation really needed?
     General(SourceDiagnostic),
+    //// Contains whether or not the program can continue after critical error
+    // Critical(bool),
     IO(std::io::Error),
 }
 impl From<std::io::Error> for ConfigLoadError {
@@ -96,6 +97,8 @@ impl From<std::io::Error> for SerialError {
         SerialError::IO(err)
     }
 }
+
+pub enum CriticalError {}
 
 // Naming naming naming namingnamingnamign
 /// Preset of error messages to reduce code duplication for file io errors. Returns a `Some` type

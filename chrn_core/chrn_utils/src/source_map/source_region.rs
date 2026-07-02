@@ -8,6 +8,7 @@ pub struct SourceRegion {
     pub region_id: SourceRegionId,
     /// Bytes from chrn config file
     pub src_bytes: Vec<u8>,
+    /// Path of this region
     pub path_id: PathId,
     // / Amount of \n within config file so binary search can be done by error reporter
     // pub new_lines: Vec<usize>,

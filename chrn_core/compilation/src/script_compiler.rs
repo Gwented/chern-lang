@@ -8,8 +8,8 @@ use chrn_utils::{
 use lang::{
     directives::{Directive, TypeDirective},
     types::{
+        boundaries::{TypeBoundary, TypeBoundaryFlags},
         builtins::BuiltinType,
-        type_constraints::{TypeBoundary, TypeBoundaryFlags},
     },
     values::ValueInfo,
 };

@@ -3,8 +3,8 @@ use chrn_utils::{id_types::InternedId, intern};
 use crate::{
     fmter::{Formattable, Formatted},
     types::{
+        boundaries::{self, TypeBoundaryFlags},
         builtins::BuiltinType,
-        type_constraints::{self, TypeBoundaryFlags},
     },
 };
 
@@ -41,9 +41,7 @@ impl Directive {
 
     pub fn type_constraints(self) -> TypeBoundaryFlags {
         let flags = match self {
-            Directive::Warn | Directive::Ignore => {
-                TypeBoundaryFlags::new(type_constraints::ALL_DOMAINS)
-            }
+            Directive::Warn | Directive::Ignore => TypeBoundaryFlags::new(boundaries::ALL_DOMAINS),
             Directive::Type(type_directive) => type_directive.type_constraints(),
         };
 
@@ -169,7 +167,7 @@ impl TypeDirective {
             TypeDirective::Scient
             | TypeDirective::Hex
             | TypeDirective::Bin
-            | TypeDirective::Octal => type_constraints::NUMERIC,
+            | TypeDirective::Octal => boundaries::NUMERIC,
         };
 
         TypeBoundaryFlags::new(flags)

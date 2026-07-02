@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::types::type_constraints::TypeBoundaryFlags;
+use crate::types::boundaries::TypeBoundaryFlags;
 
 // Would it be better to just have it as a singular enum, or a trait?
 

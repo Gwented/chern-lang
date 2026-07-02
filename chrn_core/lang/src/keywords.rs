@@ -5,7 +5,7 @@ use chrn_utils::{id_types::InternedId, intern};
 use crate::fmter::{self, Formattable, Formatted};
 
 /// Size in bytes for `@def` and `@end`
-pub const DEFINITION_SIZE: usize = 4;
+pub const ANNOTATION_CLAUSE_SIZE: usize = 4;
 
 // To add a keyword, it must be added as a Keyword enum. The interner must intern it's identifier.
 /// All keywords for `chrn`

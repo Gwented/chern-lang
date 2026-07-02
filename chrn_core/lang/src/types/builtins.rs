@@ -2,7 +2,7 @@ use chrn_utils::{id_types::TypeId, intern};
 
 use crate::{
     fmter::{Formattable, Formatted},
-    types::type_constraints::{self, TypeBoundaryFlags},
+    types::boundaries::{self, TypeBoundaryFlags},
 };
 
 pub static BUILTIN_TYPE_ARRAY: [&str; 27] = [
@@ -220,11 +220,11 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::I128
             | BuiltinTypeKind::Sized
             | BuiltinTypeKind::BigInt => {
-                type_constraints::SIGNED_INTEGER
-                    | type_constraints::INTEGER
-                    | type_constraints::RANGED
-                    | type_constraints::NUMERIC
-                    | type_constraints::COMPARABLE
+                boundaries::SIGNED_INTEGER
+                    | boundaries::INTEGER
+                    | boundaries::RANGED
+                    | boundaries::NUMERIC
+                    | boundaries::COMPARABLE
             }
             BuiltinTypeKind::U8
             | BuiltinTypeKind::U16
@@ -232,51 +232,51 @@ impl BuiltinTypeKind {
             | BuiltinTypeKind::U64
             | BuiltinTypeKind::U128
             | BuiltinTypeKind::Unsized => {
-                type_constraints::UNSIGNED_INTEGER
-                    | type_constraints::INTEGER
-                    | type_constraints::RANGED
-                    | type_constraints::NUMERIC
-                    | type_constraints::COMPARABLE
+                boundaries::UNSIGNED_INTEGER
+                    | boundaries::INTEGER
+                    | boundaries::RANGED
+                    | boundaries::NUMERIC
+                    | boundaries::COMPARABLE
             }
             BuiltinTypeKind::F16
             | BuiltinTypeKind::F32
             | BuiltinTypeKind::F64
             | BuiltinTypeKind::F128
             | BuiltinTypeKind::BigFloat => {
-                type_constraints::FLOAT
-                    | type_constraints::RANGED
-                    | type_constraints::NUMERIC
-                    | type_constraints::COMPARABLE
+                boundaries::FLOAT
+                    | boundaries::RANGED
+                    | boundaries::NUMERIC
+                    | boundaries::COMPARABLE
             }
             BuiltinTypeKind::Str => {
-                type_constraints::STR
-                    | type_constraints::HAS_LEN
-                    | type_constraints::RANGED
-                    | type_constraints::COMPARABLE
-                    | type_constraints::CHARACTER_MAPPABLE
+                boundaries::STR
+                    | boundaries::HAS_LEN
+                    | boundaries::RANGED
+                    | boundaries::COMPARABLE
+                    | boundaries::CHARACTER_MAPPABLE
             }
             BuiltinTypeKind::Char => {
-                type_constraints::CHAR
-                    | type_constraints::HAS_LEN
-                    | type_constraints::RANGED
-                    | type_constraints::COMPARABLE
-                    | type_constraints::CHARACTER_MAPPABLE
+                boundaries::CHAR
+                    | boundaries::HAS_LEN
+                    | boundaries::RANGED
+                    | boundaries::COMPARABLE
+                    | boundaries::CHARACTER_MAPPABLE
             }
-            BuiltinTypeKind::Bool => type_constraints::COMPARABLE,
+            BuiltinTypeKind::Bool => boundaries::COMPARABLE,
             // "non-recursive" because may allow recursive finding of inner of list if labeled
             // explicitly but not sure
             BuiltinTypeKind::List | BuiltinTypeKind::Set | BuiltinTypeKind::Tuple => {
-                type_constraints::HAS_LEN
-                    | type_constraints::RANGED
+                boundaries::HAS_LEN
+                    | boundaries::RANGED
                     // | type_constraints::COMPARABLE
-                    | type_constraints::CHARACTER_MAPPABLE
-                    | type_constraints::COLLECTION
+                    | boundaries::CHARACTER_MAPPABLE
+                    | boundaries::COLLECTION
             }
             BuiltinTypeKind::Map => {
-                type_constraints::HAS_LEN
-                    | type_constraints::RANGED
+                boundaries::HAS_LEN
+                    | boundaries::RANGED
                     // | type_constraints::COMPARABLE
-                    | type_constraints::COLLECTION
+                    | boundaries::COLLECTION
             }
             // Maybe make this a 0
             // type_constraints::SIGNED_INTEGER
@@ -295,8 +295,8 @@ impl BuiltinTypeKind {
             //     | type_constraints::COLLECTION
             //     | type_constraints::ORDERED
             // Not sure about this
-            BuiltinTypeKind::Nil => type_constraints::NIL,
-            BuiltinTypeKind::Runtime => type_constraints::RUNTIME,
+            BuiltinTypeKind::Nil => boundaries::NIL,
+            BuiltinTypeKind::Runtime => boundaries::RUNTIME,
         };
 
         TypeBoundaryFlags::new(flags)

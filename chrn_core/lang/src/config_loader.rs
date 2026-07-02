@@ -12,9 +12,9 @@ use chrn_utils::{
     },
 };
 
-use crate::keywords::DEFINITION_SIZE;
+use crate::keywords::ANNOTATION_CLAUSE_SIZE;
 
-/// 8kb read limit before aborting looking for @end in script file
+/// 8KB read limit before aborting looking for @end in script file
 const READ_LIMIT: usize = 8192;
 
 pub struct ChrnConfigLoader<'a, R: Read> {
@@ -76,15 +76,17 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
         while let Some(b) = self.peek() {
             //TODO: New error enum would need to exist which specifically needs to say whether
             //or not the program should keep going.
-            // I am Mythos now :fish:
-            if self.pos >= READ_LIMIT {
+            // Yes, I am Mythos for partaking in a form of security detection, that is the condition.
+            //
+            // This should also not be terminal
+            if self.pos > READ_LIMIT {
                 let script_type = if requires_end { "block" } else { "file" };
-                dbg!(requires_end);
 
                 panic!(
                     "Exceeded read limit `{READ_LIMIT}` while attempting to read script {script_type}"
                 );
             }
+            dbg!(self.pos);
 
             if b == b'\0' {
                 break;
@@ -99,7 +101,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                     let quote_start = self.pos;
                     // Even though this can't fail
                     // Reward hacking
-                    let quote_type = self.advance().unwrap_or(b'\0');
+                    let quote_type = self.advance().expect("Confirmed by match arm");
 
                     double_quotes_seen += 1;
 
@@ -139,7 +141,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                 }
                 b'\'' => {
                     let quote_start = self.pos;
-                    let quote_type = self.advance().unwrap_or(b'\0');
+                    let quote_type = self.advance().expect("Confirmed by match arm");
 
                     single_quotes_seen += 1;
 
@@ -194,23 +196,30 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                     // Helper boolean
                     // Is less than or equal to because the actual slice is start..end so
                     // self.pos could be equal to buffer.len()
-                    let can_check = if self.pos + DEFINITION_SIZE <= self.handle.buffer().len() {
-                        true
-                    } else {
-                        false
-                    };
+                    let can_check =
+                        if self.pos + ANNOTATION_CLAUSE_SIZE <= self.handle.buffer().len() {
+                            true
+                        } else {
+                            false
+                        };
 
                     // If there was an '@def' spotted but there's nothing enough space in the
                     // file to check
                     if requires_end && !can_check {
+                        self.skip((self.handle.buffer().len() - self.pos) - 1);
                         break;
                     } else if requires_end
-                        && &self.handle.buffer()[self.pos..self.pos + DEFINITION_SIZE] == b"@end"
+                        && &self.handle.buffer()[self.pos..self.pos + ANNOTATION_CLAUSE_SIZE]
+                            == b"@end"
                     {
-                        let serial_start = self.pos + DEFINITION_SIZE;
+                        //TEST: TESTING THIS
+                        let s = str::from_utf8(
+                            &self.handle.buffer()[..self.pos + ANNOTATION_CLAUSE_SIZE],
+                        );
+                        let serial_start = self.pos + ANNOTATION_CLAUSE_SIZE;
 
                         let region = SourceRegion::new(
-                            self.handle.buffer()[..self.pos + DEFINITION_SIZE].to_vec(),
+                            self.handle.buffer()[..self.pos + ANNOTATION_CLAUSE_SIZE].to_vec(),
                             self.current_region_id,
                             self.current_path_id,
                             script_start,
@@ -219,15 +228,28 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
 
                         return Ok(region);
                     }
+                    // Why does it suddenly read the correct bytes ahead when @en is used in comparison to @e
 
                     if !requires_end && !can_check {
+                        // If this is the case, then there are two truths:
+                        // - self.pos having 4 added to it WILL exceed the handle's len
+                        // - We have not consumed @ or anything after it
+                        //
+                        // So the difference of buffer len - self.pos is
+                        self.skip(self.handle.buffer().len() - self.pos);
+                        let s = str::from_utf8(&self.handle.buffer()[..self.pos]).unwrap();
+                        // dbg!(s);
+                        // panic!();
+                        // Reaches this on @e which ignores the @ and e
                         break;
                     } else if !requires_end
-                        && &self.handle.buffer()[self.pos..self.pos + DEFINITION_SIZE] == b"@def"
+                        && &self.handle.buffer()[self.pos..self.pos + ANNOTATION_CLAUSE_SIZE]
+                            == b"@def"
                     {
                         requires_end = true;
                         script_start = self.pos;
-                        self.skip(DEFINITION_SIZE);
+                        // What if they were called directive blocks?
+                        self.skip(ANNOTATION_CLAUSE_SIZE);
                         // self.pos + DEFINITION_SIZE stops exactly at the 'f' in '@def' which
                         // doesn't align with (inclusive, exclusive) spanning within the lexer so
                         // it needs to be taken down by 1.
@@ -247,9 +269,11 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
         }
         // TODO: Assert this...
 
+        // panic!("Wait");
         // Case of no @def and no @end which requires a '0' return since the entire file should be
         // read. This does not mean it is correct, it only means the read limit wasn't reached.
         if !requires_end {
+            let buffer = &self.handle.buffer()[..self.pos];
             let region = SourceRegion::new(
                 self.handle.buffer()[..self.pos].to_vec(),
                 self.current_region_id,
@@ -257,6 +281,8 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                 script_start,
                 None,
             );
+            // let s = str::from_utf8(buffer);
+            // dbg!(s);
 
             Ok(region)
         } else {
@@ -266,14 +292,17 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
             // Explicitly declaring this so the end of the file can be pointed at too
 
             // Ensuring an indexable character is the last character
-            // FIX: This is a flaw of the reporter not spanning over EOF
-            let eof_pos = if self.pos == self.handle.buffer().len() {
-                self.pos - 1
-            } else {
-                self.pos
-            } as u32;
+            //WARN: Need to make sure this doesn't break things
+            // let eof_pos = if self.pos == self.handle.buffer().len() {
+            //     self.pos - 1
+            // } else {
+            //     self.pos
+            // } as u32;
+            // WARN: ENSURE THIS DOES NOT BREAK ANYTHING
+            let eof_pos = self.pos as u32;
 
             let eof_span = SourceSpan::new(self.current_region_id, eof_pos, eof_pos);
+            // panic!("Wait");
 
             let src_diag =
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.current_path_id)
@@ -285,7 +314,7 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                     .add_annotation(
                         eof_span,
                         AnnotationKind::Primary,
-                        "Unexpected `@end`".to_string().into(),
+                        "Unexpected <eof>".to_string().into(),
                     )
                     .build();
 

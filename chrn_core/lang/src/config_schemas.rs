@@ -1,6 +1,6 @@
 use chrn_utils::{id_types::InternedId, intern};
 
-use crate::types::type_constraints::TypeBoundaryFlags;
+use crate::types::boundaries::TypeBoundaryFlags;
 
 /// Represent a configurataion description that must be followed,
 #[derive(Debug)]

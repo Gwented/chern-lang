@@ -65,6 +65,8 @@ impl Lexer<'_> {
 
         loop {
             self.handle_trivia();
+            // dbg!(&self.trivia);
+            // panic!();
 
             if self.peek() == b'\0' || invalid_toks > MAX_INVALID_TOKS {
                 // Over-indexes if not subtracted
@@ -267,13 +269,13 @@ impl Lexer<'_> {
                                 self.pos as u32,
                                 // If - 1 isn't done then it will always be 1 above the actually
                                 // last byte of a given source
-                                (self.pos + keywords::DEFINITION_SIZE - 1) as u32,
+                                (self.pos + keywords::ANNOTATION_CLAUSE_SIZE - 1) as u32,
                             ),
                             leading_trivia_indices: self.trivia_start_idx as u32
                                 ..self.trivia_end_idx as u32,
                         });
 
-                        self.skip(keywords::DEFINITION_SIZE);
+                        self.skip(keywords::ANNOTATION_CLAUSE_SIZE);
                     } else if self.is_def_end() {
                         // in_def = false;
 
@@ -284,7 +286,7 @@ impl Lexer<'_> {
                                 self.pos as u32,
                                 // If - 1 isn't done then it will always be 1 above the actually
                                 // last byte of a given source
-                                (self.pos + keywords::DEFINITION_SIZE - 1) as u32,
+                                (self.pos + keywords::ANNOTATION_CLAUSE_SIZE - 1) as u32,
                             ),
                             leading_trivia_indices: self.trivia_start_idx as u32
                                 ..self.trivia_end_idx as u32,
@@ -1022,11 +1024,11 @@ impl Lexer<'_> {
     }
 
     fn is_def_start(&self) -> bool {
-        if self.pos + 3 > self.src_bytes.len() {
+        if self.pos + 3 >= self.src_bytes.len() {
             return false;
         }
 
-        let possible_start = &self.src_bytes[self.pos..=self.pos + 3];
+        let possible_start = &self.src_bytes[self.pos..self.pos + keywords::ANNOTATION_CLAUSE_SIZE];
 
         if possible_start == "@def".as_bytes() {
             return true;
@@ -1036,7 +1038,7 @@ impl Lexer<'_> {
     }
 
     fn is_def_end(&mut self) -> bool {
-        if self.pos + 3 > self.src_bytes.len() {
+        if self.pos + 3 >= self.src_bytes.len() {
             return false;
         }
 

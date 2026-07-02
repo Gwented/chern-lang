@@ -32,14 +32,14 @@ use lang::keywords::Keyword;
 /// depending on if diagnostics > 0
 pub fn parse(
     settings: &ChrnSettings,
-    metadata: &SourceRegion,
+    region: &SourceRegion,
     tokens: &[SpannedToken],
     interner: &Intern,
 ) -> (AstInfo, Vec<SourceDiagnostic>) {
     let mut ast_info = AstInfo::new();
 
     let mut state = ParserState::new();
-    let mut ctx = ParserContext::new(settings, metadata, tokens);
+    let mut ctx = ParserContext::new(settings, region, tokens);
 
     // Skipping possible @def first since it is recognized as it's own token
     if ctx.peek_tok() == Token::Def {

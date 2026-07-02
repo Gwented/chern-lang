@@ -1,7 +1,7 @@
 ## Language intent
-- This is a scripting language that has a serialized data representation paired with it which allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required in-line in a language. The scripting language can either use the keyword [`bind`](#keywords) to define where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
+- This is a scripting language that is meant to have a serialized data representation paired with it which allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required inline in a language, and most favorably allows for cross-language serial configuration. The scripting language can either use the keyword [`bind`](#keywords) to define where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
 
-- Features such as type boundaries, directives, and anything that is beyond just setting serialized data details or serialized data specific settings are not intended to be heavily used.
+- Features such as boundaries, directives, and anything that is beyond just setting serialized data details or serialized data specific settings are not intended to be heavily used.
 
 - The projected main use-case of this language is as a library for inside of a programming language it is available for, which takes in a path to a script file that could contain the serialized data too, or separately having the script file and data given as arguments.
 
@@ -11,7 +11,7 @@ So something like:
 use chrn;
 
 struct User {
-    id: u32,
+    id: u32
     age: u8
 }
 
@@ -156,27 +156,28 @@ nest->
 // Either boundaries or concepts
 ### Boundaries
 
-A "Boundary" is a set of constraints given to a type, same as a trait, interface, concept, etc.
+A `Boundary` is a set of constraints given to a type, same as a trait, interface, concept, etc.
 
-// Not sure how to best put this
-| Boundary | Kind | Description |
+The `Encapsulates` column shows how each boundary is built from other boundaries, with `+` meaning "or". A blank cell means the boundary is atomic — its concrete types are listed in the `Description` column.
+
+| Boundary | Encapsulates | Description |
 |---|---|---|
-| `SignedInteger` | Boundary | Signed integer types (`i8`, `i16`, `i32`, `i64`, `i128`) |
-| `UnsignedInteger` | Boundary | Unsigned integer types (`u8`, `u16`, `u32`, `u64`, `u128`) |
-| `Float` | Boundary | Floating-point types (`f16`, `f32`, `f64`, `f128`) |
-| `Bool` | Boundary | Boolean type |
-| `Str` | Boundary | String type |
-| `Char` | Boundary | Character type |
-| `Runtime` | Boundary | Runtime-inferred type |
-| `Nil` | Boundary | nil/null type |
-| `Comparable` | Boundary | Types that support equality comparison |
-| `CharacterMappable` | Boundary | Types that can be mapped as character data |
-| `HasLen` | Boundary | Types that have a measurable length |
-| `Integer` | Boundary | Any integer type (signed or unsigned) |
-| `Numeric` | Boundary | Any numeric type (integer or float) |
-| `Ranged` | Boundary | Types that support range checks |
-| `Collection` | Boundary | Collection types (`List`, `Set`, `Map`, `Tuple`) |
-| `Ordered` | Boundary | Types with a total ordering |
+| `SignedInteger` | `SignedInteger` | Signed integer types (`i8`, `i16`, `i32`, `i64`, `i128`) |
+| `UnsignedInteger` | `UnsignedInteger` | Unsigned integer types (`u8`, `u16`, `u32`, `u64`, `u128`) |
+| `Float` | `Float` | Floating-point types (`f16`, `f32`, `f64`, `f128`) |
+| `Bool` | `Bool` | Boolean type |
+| `Str` | `Str` | String type |
+| `Char` | `Char` | Character type |
+| `Runtime` | `Runtime` | Runtime-inferred type |
+| `Nil` | `Nil` | nil/null type |
+| `Comparable` | `Ordered + CharacterMappable + Bool` | Types that support equality comparison |
+| `CharacterMappable` | `Str + Char` | Types that can be mapped as character data |
+| `HasLen` | `CharacterMappable + Collection` | Types that have a measurable length |
+| `Integer` | `SignedInteger + UnsignedInteger` | Any integer type |
+| `Numeric` | `Integer + Float` | Any numeric type |
+| `Ranged` | `Numeric + Collection + CharacterMappable` | Types that support range checks |
+| `Collection` | `List + Set + Map + Tuple` | Collection types (`List`, `Set`, `Map`, `Tuple`) |
+| `Ordered` | `Numeric` | Types with a total ordering |
 
 An example of this would be if a parameter expects `Numeric`, it accepts any signed integer, unsigned integer, or float type. If it expects `HasLen`, it accepts strings, characters, and collections.
 

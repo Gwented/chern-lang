@@ -346,6 +346,54 @@ mod tests {
     }
 
     #[test]
+    fn cfg_test() {
+        // Properly closed @def and @end
+        let correct = "\n     @e\n";
+        let mut interner = mock_interner(1, 1);
+        let path_id = interner.intern_path(Path::new(""));
+        let region_id = SourceRegionId::new(0);
+        let settings = ChrnSettings::default();
+        let region = ChrnConfigLoader::new(
+            region_id,
+            correct.as_bytes(),
+            path_id,
+            &ChrnSettings::default(),
+            &interner,
+        )
+        .load_config()
+        .expect(
+            "Should be fine since there is nothing inherently wrong with an @ being inside a file",
+        );
+        let region_str = str::from_utf8(&region.src_bytes[..]).unwrap();
+        assert_eq!(region_str, correct);
+
+        let (toks, _) =
+            Lexer::new(region_id, &region.src_bytes, region.script_start).tokenize(&mut interner);
+        let (_, diags) = parser::parse(&settings, &region, &toks, &interner);
+        assert_eq!(
+            diags.len(),
+            1,
+            "`ChrnConfigLoader` should have picked up only one error"
+        );
+
+        // Improper @def without an @end
+        // This type of error is more likely to break the diagnostic reporting but is fixed for
+        // now.
+        // let wrong = r#"@defbind "./some/path""#;
+        //
+        // let opt = ChrnConfigLoader::new(
+        //     region_id,
+        //     wrong.as_bytes(),
+        //     path_id,
+        //     &ChrnSettings::default(),
+        //     &interner,
+        // )
+        // .load_config();
+        //
+        // assert_eq!(true, opt.is_err());
+    }
+
+    #[test]
     fn char_literal_test() {
         // Valid single character
         let text = "'a'";
@@ -2221,6 +2269,7 @@ mod tests {
             Value::I64(21)
         ));
 
+        // What is thresh 😭
         // 5) Boolean values derived from numeric comparisons.
         let (compiler, interner) = compile_and_resolve_single_module(
             "

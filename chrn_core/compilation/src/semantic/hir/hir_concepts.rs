@@ -10,7 +10,7 @@ use chrn_utils::{
 };
 use lang::{
     fmter::{Formattable, Formatted},
-    types::{builtins::BuiltinType, type_constraints::TypeBoundaryFlags},
+    types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
 };
 
 use crate::{

@@ -15,15 +15,21 @@ pub struct MemoryBudget {
     pub times_exceeded: usize,
     /// If the budget was exceeded at any point, all future usage adds will increment this counter
     pub amt_exceeded: usize,
+    // /// If `None`, it means no overflow has ocurred yet
+    // /// If `Some`, the counter inside reflects how many times `amt_exceeded` reached an overflown value
+    // ///
+    // /// So, each incremental value represents usize::MAX being exceeded
+    // pub times_overflown: Option<usize>,
 }
 
 impl MemoryBudget {
     pub const fn new(limit: usize) -> MemoryBudget {
         MemoryBudget {
             limit,
-            times_exceeded: 0,
             usage: 0,
+            times_exceeded: 0,
             amt_exceeded: 0,
+            // times_overflown: None,
         }
     }
 
@@ -135,6 +141,7 @@ impl Default for MemoryBudget {
             usage: Default::default(),
             amt_exceeded: Default::default(),
             times_exceeded: Default::default(),
+            // times_overflown: Default::default(),
         }
     }
 }

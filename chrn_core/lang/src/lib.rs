@@ -7,3 +7,11 @@ pub mod keywords;
 pub mod lang_config;
 pub mod types;
 pub mod values;
+
+#[cfg(test)]
+mod tests {
+    // #[test]
+    // fn specific_name() {
+    //     panic!();
+    // }
+}

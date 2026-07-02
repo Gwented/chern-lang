@@ -2,7 +2,7 @@ use chrn_utils::{
     id_types::{InternedId, SpannedContainer},
     source_map::{source_diagnostic::SourceDiagnosticBuilder, source_span::SourceSpan},
 };
-use lang::{directives::Directive, fmter::Formatted, types::type_constraints::TypeBoundaryFlags};
+use lang::{directives::Directive, fmter::Formatted, types::boundaries::TypeBoundaryFlags};
 
 use crate::{constraints::ArgConstraint, semantic::hir::hir_concepts::FuncKind};
 
