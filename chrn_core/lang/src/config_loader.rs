@@ -86,7 +86,6 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                     "Exceeded read limit `{READ_LIMIT}` while attempting to read script {script_type}"
                 );
             }
-            dbg!(self.pos);
 
             if b == b'\0' {
                 break;
@@ -193,29 +192,43 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                     }
                 }
                 b'@' => {
+                    // This @ is not skipped for the sake of keeping self.pos at the same starting point.
+                    // If we are at @def, we need to read (inclusive, inclusive)
+                    // where the second inclusive adds ANNOTATION_CLAUSE_SIZE to itself
+
+                    // dbg!(self.handle.buffer()[self.pos + ANNOTATION_CLAUSE_SIZE - 1] as char);
                     // Helper boolean
-                    // Is less than or equal to because the actual slice is start..end so
-                    // self.pos could be equal to buffer.len()
+
+                    // let buffer = &self.handle.buffer()[self.pos..];
+                    // let s = str::from_utf8(buffer);
+                    // WARN: Suspicious
+                    //
+                    // Possible source of indexing bug could be that ANNOTATION_CLAUSE_SIZE, which
+                    // is sliced exclusively here, would exceed the length since it didn't ensure
+                    // it's length was inside the constraints of the buffer.
+                    //
+                    // This is hard to track since the overwhelming majority of the time, there's at
+                    // least a '\n' after @def and @end, making most operations succeed anyways
+                    // since it's impossible to get the error unless the environment specifically
+                    // does not have at most one extra byte
                     let can_check =
-                        if self.pos + ANNOTATION_CLAUSE_SIZE <= self.handle.buffer().len() {
+                        // DID THE - 1 FIX?
+                        if self.pos + (ANNOTATION_CLAUSE_SIZE - 1) < self.handle.buffer().len() {
                             true
                         } else {
                             false
                         };
 
-                    // If there was an '@def' spotted but there's nothing enough space in the
-                    // file to check
-                    if requires_end && !can_check {
-                        self.skip((self.handle.buffer().len() - self.pos) - 1);
-                        break;
-                    } else if requires_end
+                    // If `@def` was seen, there is enough space to check, and `@end` aligns with
+                    // the bytes seen, set the serial start to the position 1 after `@end`
+                    if requires_end
+                        && can_check
                         && &self.handle.buffer()[self.pos..self.pos + ANNOTATION_CLAUSE_SIZE]
                             == b"@end"
                     {
-                        //TEST: TESTING THIS
-                        let s = str::from_utf8(
-                            &self.handle.buffer()[..self.pos + ANNOTATION_CLAUSE_SIZE],
-                        );
+                        // Starts exactly 1 byte after "@end"
+                        // This variable being set is proof there was a script block, but not proof
+                        // there's serial data
                         let serial_start = self.pos + ANNOTATION_CLAUSE_SIZE;
 
                         let region = SourceRegion::new(
@@ -228,38 +241,46 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
 
                         return Ok(region);
                     }
-                    // Why does it suddenly read the correct bytes ahead when @en is used in comparison to @e
 
-                    if !requires_end && !can_check {
-                        // If this is the case, then there are two truths:
-                        // - self.pos having 4 added to it WILL exceed the handle's len
-                        // - We have not consumed @ or anything after it
-                        //
-                        // So the difference of buffer len - self.pos is
-                        self.skip(self.handle.buffer().len() - self.pos);
-                        let s = str::from_utf8(&self.handle.buffer()[..self.pos]).unwrap();
-                        // dbg!(s);
-                        // panic!();
-                        // Reaches this on @e which ignores the @ and e
-                        break;
-                    } else if !requires_end
+                    // If no @def has been seen yet, there is enough space to check, and the next 4
+                    // bytes are "@def", set a requirement for an "@end", set the `script_start` to
+                    // the "@" in "@def", skip "@def", then set the Option def_span to the current
+                    // position span
+                    if !requires_end
+                        && can_check
+                        // Since we are at "@" if we want to read "@def"/"@end" it's an
+                        // (inclusive, exclusive) spanning operation since "@def".len() + 4 would be
+                        // 1 above the actual length
                         && &self.handle.buffer()[self.pos..self.pos + ANNOTATION_CLAUSE_SIZE]
                             == b"@def"
                     {
                         requires_end = true;
                         script_start = self.pos;
-                        // What if they were called directive blocks?
+
+                        // WARN:
+                        // Stops at "f" because there may not be a byte after f, which should be
+                        // handled by the main loop.
+                        //
+                        // Skips "@def" to the byte after it. This is safe since it will eithe
+                        // return '\0' or `None` which both avoid over-indexing being a possibility
                         self.skip(ANNOTATION_CLAUSE_SIZE);
-                        // self.pos + DEFINITION_SIZE stops exactly at the 'f' in '@def' which
-                        // doesn't align with (inclusive, exclusive) spanning within the lexer so
-                        // it needs to be taken down by 1.
+
                         def_span = Some(SourceSpan::new(
                             self.current_region_id,
                             span_start as u32,
+                            // Needs - 1 since it stops one after the f in def
                             (self.pos - 1) as u32,
                         ));
+
+                        // Needs to continue or the last advance causes one-off errors since it
+                        // conflicts with @def which already deals with itself
+                        continue;
                     }
 
+                    // This should not fail since if `@def` and `@end` fail, it should not consume
+                    // anything in the process and just treat this as though it were a singular @ to
+                    // skip
+                    debug_assert_eq!(self.handle.buffer()[self.pos], b'@');
                     self.advance();
                 }
                 _ => {
@@ -273,7 +294,6 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
         // Case of no @def and no @end which requires a '0' return since the entire file should be
         // read. This does not mean it is correct, it only means the read limit wasn't reached.
         if !requires_end {
-            let buffer = &self.handle.buffer()[..self.pos];
             let region = SourceRegion::new(
                 self.handle.buffer()[..self.pos].to_vec(),
                 self.current_region_id,
@@ -281,8 +301,6 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
                 script_start,
                 None,
             );
-            // let s = str::from_utf8(buffer);
-            // dbg!(s);
 
             Ok(region)
         } else {

@@ -4,9 +4,9 @@ use chrn::{args, config::CliConfig, dispatcher};
 use common::color;
 
 fn main() {
-    let cli_cfg = CliConfig::new();
+    let cli_cfg = CliConfig::init();
     // Checks this first so external tooling syntax can be checked before exiting
-    let cli = match args::try_parse() {
+    let cli = match args::try_parse(&cli_cfg) {
         Ok(c) => c,
         Err(err) => err.exit(),
     };

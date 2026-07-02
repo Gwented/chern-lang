@@ -6,44 +6,66 @@ use std::path::PathBuf;
 use clap::{Parser, error::RichFormatter};
 use clap_derive::{Args, Parser, Subcommand};
 
-use crate::detect;
+use crate::{config::CliConfig, detect, env_vars};
 
-/// Wraps `Cli::try_parse()` and layers two extension hooks on top of it:
+/// Parses argv with clap first; only if clap rejects the input do the
+/// two extension hooks get a chance to recover:
 ///
-/// 1. If the binary itself is named `chrn-<subcommand>`, treat the trailing
-///    portion as the subcommand and re-parse as if the user had typed
-///    `chrn <subcommand> ...`.
-/// 2. If clap rejects the input because of an unknown subcommand, fall back
-///    to looking up `chrn-<subcommand>` on `PATH` and hand control to that
-///    external binary if it exists.
-pub fn try_parse() -> Result<Cli, clap::error::Error<RichFormatter>> {
+/// 1. If the binary itself was invoked as `chrn-<subcommand>`, the
+///    trailing portion is treated as the subcommand and clap is re-run
+///    as if the user had typed `chrn <subcommand> ...`.
+/// 2. Otherwise, look up `chrn-<subcommand>` on `PATH` and hand control
+///    to that external binary if it exists.
+pub fn try_parse(cli_cfg: &CliConfig) -> Result<Cli, clap::error::Error<RichFormatter>> {
+    let err = match Cli::try_parse() {
+        Ok(cli) => return Ok(cli),
+        Err(err) => {
+            //SAFETY
+            // If user has not explicitly checked extensions as a feature it will not execute
+            // arbitrary code
+            if !cli_cfg.env_var_repo.chrn_extensions {
+                return Err(err);
+            }
+
+            err
+        }
+    };
+
+    // Cheap to collect once and reuse for both extension hooks.
     let args: Vec<String> = env::args().collect();
 
-    if let Some(sub) = detect::subcommand_from_bin_name(&args) {
-        let mut new_args = Vec::with_capacity(args.len() + 1);
-        new_args.push("chrn".to_string());
-        new_args.push(sub.to_string());
-        new_args.extend_from_slice(&args[1..]);
-        return Cli::try_parse_from(new_args);
-    }
-
-    match Cli::try_parse() {
-        Ok(cli) => Ok(cli),
-        Err(err) => {
-            if let Some(candidate) = args.get(1)
-                && let Some(path) = detect::find_external_binary(candidate)
-            {
-                delegate_to_external(&path, &args[2..]);
-            }
-            Err(err)
+    // 1. `chrn-<sub>` binary alias: synthesize the missing subcommand
+    //    and let clap try again on the rewritten argv.
+    if let Some(first_arg) = args.first() {
+        if let Some(sub) = detect::subcommand_from_bin_name(first_arg) {
+            let mut rewritten = Vec::with_capacity(args.len() + 1);
+            rewritten.push("chrn".to_string());
+            rewritten.push(sub.to_string());
+            rewritten.extend_from_slice(&args[1..]);
+            return Cli::try_parse_from(rewritten);
         }
     }
+
+    // 2. External `chrn-<sub>` on `PATH` for a subcommand clap doesn't
+    //    know about. `find_external_binary` will simply miss for any
+    //    candidate that isn't a real `chrn-<x>` on `PATH`, so unrelated
+    //    clap errors (bad flag, missing value, etc.) fall through to
+    //    the original error below.
+    if let Some(candidate) = args.get(1)
+        && let Some(path) = detect::find_external_binary(candidate)
+    {
+        delegate_to_external(&path, &args[2..]);
+    }
+
+    Err(err)
 }
 
 /// Spawns `path` with the supplied `forwarded_args`, mirroring the spawned
 /// process's exit status into the current process. If the spawn itself
 /// fails, the process exits with code `1`. This function does not return.
 fn delegate_to_external(path: &std::path::Path, forwarded_args: &[String]) -> ! {
+    // Kind of want to enforce that this requires a chrn env variable so that arbitrary code can't
+    // be executed just because it manipulates itself to use the chrn suffix
     let status = std::process::Command::new(path)
         .args(forwarded_args)
         .status()

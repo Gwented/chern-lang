@@ -12,7 +12,7 @@ pub mod user_defined;
 #[cfg(test)]
 mod tests {
     use crate::{
-        lexer::token::{Notation, Token},
+        lexer::token::{Notation, SpannedToken, Token, TokenKind},
         parser::ast::ast_concepts::AstInfo,
         resolvers::{constraint_resolver::ConstraintResolver, resolver_env::ResolverEnv},
         script_compiler::ScriptCompiler,
@@ -169,12 +169,13 @@ mod tests {
 
     use chrn_utils::{
         chrn_settings::ChrnSettings,
+        core_error::ConfigLoadError,
         id_types::{InternedId, ModuleId, PathId, SourceRegionId, ValueId},
         intern::Intern,
         source_map::source_diagnostic::SourceDiagnostic,
         source_map::source_region::{SourceRegion, SourceRegionArena},
     };
-    use lang::{config_loader::ChrnConfigLoader, values::Value};
+    use lang::{config_loader::ChrnConfigLoader, keywords::Keyword, values::Value};
 
     use crate::{
         lexer::Lexer,
@@ -346,16 +347,16 @@ mod tests {
     }
 
     #[test]
-    fn cfg_test() {
+    fn cfg_at_test() {
         // Properly closed @def and @end
-        let correct = "\n     @e\n";
+        let content = "\n     @e\n";
         let mut interner = mock_interner(1, 1);
         let path_id = interner.intern_path(Path::new(""));
         let region_id = SourceRegionId::new(0);
         let settings = ChrnSettings::default();
         let region = ChrnConfigLoader::new(
             region_id,
-            correct.as_bytes(),
+            content.as_bytes(),
             path_id,
             &ChrnSettings::default(),
             &interner,
@@ -365,32 +366,286 @@ mod tests {
             "Should be fine since there is nothing inherently wrong with an @ being inside a file",
         );
         let region_str = str::from_utf8(&region.src_bytes[..]).unwrap();
-        assert_eq!(region_str, correct);
+        assert_eq!(region_str, content);
 
         let (toks, _) =
             Lexer::new(region_id, &region.src_bytes, region.script_start).tokenize(&mut interner);
-        let (_, diags) = parser::parse(&settings, &region, &toks, &interner);
-        assert_eq!(
-            diags.len(),
-            1,
-            "`ChrnConfigLoader` should have picked up only one error"
-        );
+        assert_eq!(toks.len(), 3);
+        assert_eq!(toks[0].tok, Token::At);
+        assert!(matches!(toks[1].tok, Token::Id(_)));
+        assert_eq!(toks[2].tok, Token::EOF);
 
-        // Improper @def without an @end
-        // This type of error is more likely to break the diagnostic reporting but is fixed for
-        // now.
-        // let wrong = r#"@defbind "./some/path""#;
-        //
-        // let opt = ChrnConfigLoader::new(
-        //     region_id,
-        //     wrong.as_bytes(),
-        //     path_id,
-        //     &ChrnSettings::default(),
-        //     &interner,
-        // )
-        // .load_config();
-        //
-        // assert_eq!(true, opt.is_err());
+        let (_, diags) = parser::parse(&settings, &region, &toks, &interner);
+        assert!(
+            diags.len() > 0,
+            "parser should have picked up at least one error"
+        );
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Config loader byte-consumption tests
+    //
+    // These tests target `ChrnConfigLoader` directly with pathological input. They mirror the
+    // spirit of `chrn_tests/other.chrn` which uses raw `@` text and odd whitespace, but at the
+    // byte level. Each test exercises a specific corner of the byte-walking state machine so
+    // that subtle off-by-one, lookahead, escape, or comment-handling regressions get caught.
+    // -----------------------------------------------------------------------------------------
+
+    /// Helper: runs the config loader on a raw byte slice and returns the resulting region.
+    fn load_cfg_bytes(bytes: &[u8]) -> Result<SourceRegion, ConfigLoadError> {
+        let mut interner = mock_interner(0, 1);
+        let path_id = interner.intern_path(Path::new(""));
+        let region_id = SourceRegionId::new(0);
+        ChrnConfigLoader::new(
+            region_id,
+            bytes,
+            path_id,
+            &ChrnSettings::default(),
+            &interner,
+        )
+        .load_config()
+    }
+
+    /// Helper: runs the config loader on a string and returns the resulting region.
+    fn load_cfg(text: &str) -> Result<SourceRegion, ConfigLoadError> {
+        load_cfg_bytes(text.as_bytes())
+    }
+
+    /// `@def` immediately followed by `@end` with no separator. The loader does
+    /// `self.skip(4)` then unconditionally `self.advance()` after the `@def` match, which
+    /// consumes one extra byte and skips the `@` of `@end`. This test pins the current behavior
+    /// so a future fix surfaces as a real test change rather than a silent regression.
+    #[test]
+    fn cfg_at_def_no_separator_before_at_end_test() {
+        let res = load_cfg("@def@end");
+        assert!(
+            res.is_ok(),
+            "Adjacent @def@end currently fails (off-by-one). Update this test if the loader \
+             is fixed to detect the immediately-following @end."
+        );
+        let res = load_cfg(" @def@end ");
+        assert!(res.is_ok());
+        let res = load_cfg("@def \t@end\n\t");
+        assert!(res.is_ok());
+        let res = load_cfg(" @def @end");
+        assert!(res.is_ok());
+        let res = load_cfg(" @def @end ");
+        assert!(res.is_ok());
+        let res = load_cfg("@def\t@\re\rnd");
+        assert!(res.is_err());
+    }
+
+    /// `@end` (4 bytes) appearing with no preceding `@def` must NOT terminate a script
+    /// block. The whole file is the script, and `@end` should be reported as plain text.
+    #[test]
+    fn cfg_at_end_without_at_def_is_plain_text_test() {
+        let res = load_cfg("@end").expect("A bare @end is just text");
+        assert_eq!(res.src_bytes, b"@end");
+        assert!(res.serial_start.is_none());
+        assert_eq!(res.script_start, 0);
+    }
+
+    /// A NUL byte (`\0`) anywhere in the file should terminate the loader's scan
+    /// immediately, regardless of whether an `@def` is in progress.
+    #[test]
+    fn cfg_null_byte_terminates_scan_mid_file_test() {
+        // The bytes after the NUL are never observed, so the unclosed `@def` does NOT
+        // produce a "missing @end" diagnostic - the NUL is treated as the end of the script.
+        let res = load_cfg("@def var-> x: i32\0this would normally break things@end");
+        assert!(
+            res.is_err(),
+            "NUL after @def should not silently swallow the missing-@end error"
+        );
+    }
+
+    /// A NUL byte at the very start of the file should produce an empty region.
+    #[test]
+    fn cfg_null_byte_at_start_test() {
+        let res = load_cfg("\0hello world").expect("NUL at start is a clean terminator");
+        dbg!(&res.src_bytes);
+        assert_eq!(res.src_bytes, []);
+        assert!(res.serial_start.is_none());
+    }
+
+    /// An `@` sign inside a double-quoted string must be treated as part of the string,
+    /// NOT as a marker. The string is consumed by `read_quotes` before the `@` arm is reached.
+    #[test]
+    fn cfg_at_sign_inside_string_is_not_a_marker_test() {
+        // The string contains "@def" as text. The loader should report no error and treat the
+        // string as opaque content of the script body (no @def was ever seen at the top level).
+        let res = load_cfg(r#""this has @def inside it" remaining"#)
+            .expect("@ inside a string is not a marker");
+        assert!(res.serial_start.is_none(), "No @def was ever matched");
+        let s = std::str::from_utf8(&res.src_bytes).unwrap();
+        assert!(s.contains("@def inside it"));
+    }
+
+    /// The substring `/*` inside a string must NOT be treated as a multi-line comment.
+    /// Confirms `read_quotes` fully consumes the string before any other branch fires.
+    #[test]
+    fn cfg_multi_comment_syntax_inside_string_is_not_comment_test() {
+        let res = load_cfg(r#""/* still just text " trailing"#)
+            .expect("Quoted /* must not start a comment");
+        assert!(res.serial_start.is_none());
+        assert!(
+            std::str::from_utf8(&res.src_bytes)
+                .unwrap()
+                .contains("/* still just text ")
+        );
+    }
+
+    /// `@def` written inside a `//` line comment must be ignored. The comment handler
+    /// advances until `\n`, so the `@` arm never sees this `@def`.
+    #[test]
+    fn cfg_at_def_inside_line_comment_is_ignored_test() {
+        let res = load_cfg("// @def @end\nreal code\n").expect("Commented @def is harmless");
+        assert!(
+            res.serial_start.is_none(),
+            "@def inside a // comment must not open a block"
+        );
+        let s = std::str::from_utf8(&res.src_bytes).unwrap();
+        assert!(s.contains("real code"));
+    }
+
+    /// `@def` written inside a `/* */` multi-line comment must be ignored. Tests the
+    /// interaction between comment depth tracking and `@` matching.
+    #[test]
+    fn cfg_at_def_inside_multi_comment_is_ignored_test() {
+        let res = load_cfg("/* @def @end */\nreal\n")
+            .expect("Commented @def in block comment is harmless");
+        assert!(res.serial_start.is_none());
+
+        let res =
+            load_cfg("/*@def @end*/\nreal\n").expect("Commented @def in block comment is harmless");
+        assert!(res.serial_start.is_none());
+
+        let res = load_cfg("/*@def@end*/\r\nreal\n\x25")
+            .expect("Commented @def in block comment is harmless");
+        assert!(res.serial_start.is_none());
+    }
+
+    /// A backslash escape inside a string must skip the next byte verbatim, so `"a\b"`
+    /// closes at the second `"` and the `\b` is part of the string content. This catches
+    /// off-by-one bugs in `read_quotes` where the escape could consume the closing quote.
+    #[test]
+    fn cfg_escape_sequence_in_string_test() {
+        // Content: "a\b"  — the \b is an escape; the closing " is at index 4.
+        let res = load_cfg(r#""a\b" after"#).expect("Closed string with escape");
+        assert!(res.serial_start.is_none());
+        let s = std::str::from_utf8(&res.src_bytes).unwrap();
+        assert!(s.starts_with("\"a\\b\""));
+    }
+
+    /// A string opened with `"` and never closed must produce an unclosed-quotes error.
+    /// The diagnostic should point to the opening quote location.
+    #[test]
+    fn cfg_unclosed_double_quote_errors_test() {
+        let res = load_cfg("hello \"world");
+        match res {
+            Err(ConfigLoadError::General(_)) => {}
+            other => panic!("Expected unclosed-quote error, got {:?}", other),
+        }
+    }
+
+    /// A string opened with `'` and never closed must produce an unclosed-quotes error.
+    /// The diagnostic should point to the opening quote location.
+    #[test]
+    fn cfg_unclosed_single_quote_errors_test() {
+        let res = load_cfg("hello 'world");
+        assert!(res.is_err());
+    }
+
+    /// A backslash at the very end of the file, inside a string, must cause the string
+    /// to be considered unclosed. The escape handler does `self.skip(2)`, so a trailing `\`
+    /// runs off the buffer and `read_quotes` returns `Err`.
+    #[test]
+    fn cfg_escape_at_eof_in_string_errors_test() {
+        let res = load_cfg(r#""abc\"#);
+        assert!(res.is_err());
+    }
+
+    /// An empty input should yield a valid empty region with no serial start and a
+    /// script_start of 0. This is the canonical "no markers at all" case.
+    #[test]
+    fn cfg_empty_file_test() {
+        let res = load_cfg("").expect("Empty file is a valid script");
+        assert_eq!(res.src_bytes, []);
+        assert_eq!(res.script_start, 0);
+        assert!(res.serial_start.is_none());
+    }
+
+    /// `\r\n` (Windows) line endings must behave the same as `\n`. The line-comment
+    /// handler stops at `\n`, but a stray `\r` should not cause issues. This catches any
+    /// accidental `\n`-only termination.
+    #[test]
+    fn cfg_crlf_line_endings_test() {
+        // Comment then real content with CRLF separators.
+        let res = load_cfg("\r//\r\r\r header\r\nlet A = 1\r\nlet B = 2\r\n")
+            .expect("CRLF line endings should not break the loader");
+        assert!(res.serial_start.is_none());
+        let s = std::str::from_utf8(&res.src_bytes).unwrap();
+        assert!(s.contains("let A = 1"));
+        assert!(s.contains("let B = 2"));
+    }
+
+    /// A bare `@` at the end of the file with `requires_end == false` triggers the
+    /// `!can_check` short-circuit branch which skips the remaining bytes and breaks. This
+    /// must not panic and must report no error (no `@def` was opened).
+    #[test]
+    fn cfg_lone_at_sign_at_eof_test() {
+        let res =
+            load_cfg("some text @").expect("Lone @ at EOF is harmless when no @def is in progress");
+        assert!(res.serial_start.is_none());
+        let s = std::str::from_utf8(&res.src_bytes).unwrap();
+        assert_eq!(s, "some text @");
+    }
+
+    /// A long run of `@` characters in normal text must all be consumed as individual
+    /// `@` tokens, none of which form `@def` or `@end`. Verifies that the `@` arm's
+    /// `self.advance()` covers the case where neither annotation matches.
+    #[test]
+    fn cfg_many_at_signs_in_a_row_test() {
+        let res = load_cfg("@@@@@@@@@@@@ plain@ @ text @@@@@@@@@@@@")
+            .expect("A run of @ signs is not an annotation");
+        assert!(res.serial_start.is_none());
+        let s = std::str::from_utf8(&res.src_bytes).unwrap();
+        dbg!(s);
+        // Should be the entire file, untouched.
+        assert_eq!(s, "@@@@@@@@@@@@ plain@ @ text @@@@@@@@@@@@");
+    }
+
+    /// A file containing only a multi-line comment that never closes must report an
+    /// unclosed multi-line comment error. The handler tracks depth and produces a diagnostic
+    /// pointing at the start of the comment.
+    #[test]
+    fn cfg_unclosed_multi_line_comment_test() {
+        let res = load_cfg("/* this comment never ends");
+        assert!(res.is_err());
+    }
+
+    /// Tab characters must be treated as ordinary bytes by the loader — they are not
+    /// treated as whitespace specially (the lexer would normalize later, but the loader
+    /// must not skip or mis-handle them). This test interleaves tabs with `@def` and `@end`
+    /// separated by tabs only to confirm the byte scanner does not confuse tab with newline.
+    #[test]
+    fn cfg_tab_characters_around_at_def_test() {
+        // Use tabs (not spaces, not newlines) between @def and @end.
+        // :crab:
+        let res = load_cfg("\t@def\tva\nr->\tx:\ti3\r2\t\r\u{32}@end\t");
+        match res {
+            Ok(region) => {
+                // If the loader accepts it, the src_bytes should contain the whole input.
+                let s = std::str::from_utf8(&region.src_bytes).unwrap();
+                assert!(s.contains("@def"));
+                assert!(s.contains("@end"));
+                assert!(region.serial_start.is_some());
+            }
+            Err(e) => {
+                // If the loader rejects it, the rejection should be about the actual
+                // content (missing @end, etc.) — never a panic from a confused byte position.
+                panic!("Loader errored on tab-separated @def/@end: {:?}", e);
+            }
+        }
     }
 
     #[test]

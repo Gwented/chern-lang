@@ -16,8 +16,7 @@ const UNIX_EXEC_BITS: u32 = 0o111;
 /// The file name is taken from the leading path component of `args[0]` so the
 /// alias is recognized whether the binary was invoked by bare name, relative
 /// path, or absolute path.
-pub fn subcommand_from_bin_name(args: &[String]) -> Option<&str> {
-    let bin_name = args.first()?;
+pub fn subcommand_from_bin_name(bin_name: &str) -> Option<&str> {
     let file_name = Path::new(bin_name).file_name()?.to_str()?;
     file_name.strip_prefix(CHRN_BIN_PREFIX)
 }

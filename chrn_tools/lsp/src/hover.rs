@@ -41,8 +41,8 @@ use compilation::lexer::token::Token as ScriptToken;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::{self, SymbolKind, Type, VariableState};
 use lang::fmter::Formattable;
+use lang::types::boundaries::TypeBoundary;
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
-use lang::types::type_constraints::TypeBoundary;
 use lang::values::Value;
 use tower_lsp::lsp_types;
 
@@ -175,7 +175,7 @@ pub fn compute_hover(
                                                     let raw_mod_name =
                                                         interner.search(module.name_id);
                                                     final_text.push_str(&format!(
-                                                        "module: **{}**\n\n",
+                                                        "module **{}**\n\n",
                                                         raw_mod_name
                                                     ));
                                                     final_text.push_str(&format!(
