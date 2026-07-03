@@ -2,7 +2,7 @@ use chrn_utils::{
     budget::mem_budget::MemoryBudget,
     chrn_settings::ChrnSettings,
     core_error::{ConfigLoadError, ScriptError},
-    source_map::source_diagnostic::{Reporter, footers::FooterKind},
+    source_map::source_diagnostic::Reporter,
 };
 use orchestration::{
     orchestrator,

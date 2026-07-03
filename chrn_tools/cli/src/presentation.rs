@@ -8,9 +8,9 @@ use chrn_utils::source_map::source_diagnostic::{Reporter, footers::FooterKind};
 /// Makes footers, given internal information
 pub fn make_footers(reporter: &Reporter) -> Vec<FooterKind> {
     let mut footers: Vec<FooterKind> = Vec::new();
-    if reporter.budget.amt_exceeded > 0 {
+    if reporter.budget.amt_exceeded() > 0 {
         footers.push(FooterKind::DiagnosticsExceeded(
-            reporter.budget.amt_exceeded as u32,
+            reporter.budget.amt_exceeded() as u32,
         ));
     }
 

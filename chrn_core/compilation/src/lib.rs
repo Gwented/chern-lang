@@ -52,7 +52,7 @@ mod tests {
         let region_id = SourceRegionId::new(0);
 
         let source_region =
-            ChrnConfigLoader::new(region_id, text.as_bytes(), path_id, &settings, &interner)
+            ConfigLoader::new(region_id, text.as_bytes(), path_id, &settings, &interner)
                 .load_config()
                 .unwrap();
 
@@ -103,7 +103,7 @@ mod tests {
         let region_id = SourceRegionId::new(mod_id as u32);
 
         let source_region =
-            ChrnConfigLoader::new(region_id, text.as_bytes(), path_id, &settings, interner)
+            ConfigLoader::new(region_id, text.as_bytes(), path_id, &settings, interner)
                 .load_config()
                 .unwrap();
 
@@ -175,7 +175,7 @@ mod tests {
         source_map::source_diagnostic::SourceDiagnostic,
         source_map::source_region::{SourceRegion, SourceRegionArena},
     };
-    use lang::{config_loader::ChrnConfigLoader, keywords::Keyword, values::Value};
+    use lang::{config_loader::ConfigLoader, keywords::Keyword, values::Value};
 
     use crate::{
         lexer::Lexer,
@@ -286,7 +286,7 @@ mod tests {
         let mut interner = Intern::init();
         let path_id = interner.intern_path(Path::new(""));
         let region_id = SourceRegionId::new(0);
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -318,7 +318,7 @@ mod tests {
         let mut interner = mock_interner(1, 1);
         let path_id = interner.intern_path(Path::new(""));
         let region_id = SourceRegionId::new(0);
-        let opt = ChrnConfigLoader::new(
+        let opt = ConfigLoader::new(
             region_id,
             correct.as_bytes(),
             path_id,
@@ -334,7 +334,7 @@ mod tests {
         // now.
         let wrong = r#"@defbind "./some/path""#;
 
-        let opt = ChrnConfigLoader::new(
+        let opt = ConfigLoader::new(
             region_id,
             wrong.as_bytes(),
             path_id,
@@ -354,7 +354,7 @@ mod tests {
         let path_id = interner.intern_path(Path::new(""));
         let region_id = SourceRegionId::new(0);
         let settings = ChrnSettings::default();
-        let region = ChrnConfigLoader::new(
+        let region = ConfigLoader::new(
             region_id,
             content.as_bytes(),
             path_id,
@@ -385,7 +385,7 @@ mod tests {
     // -----------------------------------------------------------------------------------------
     // Config loader byte-consumption tests
     //
-    // These tests target `ChrnConfigLoader` directly with pathological input. They mirror the
+    // These tests target `ConfigLoader` directly with pathological input. They mirror the
     // spirit of `chrn_tests/other.chrn` which uses raw `@` text and odd whitespace, but at the
     // byte level. Each test exercises a specific corner of the byte-walking state machine so
     // that subtle off-by-one, lookahead, escape, or comment-handling regressions get caught.
@@ -396,7 +396,7 @@ mod tests {
         let mut interner = mock_interner(0, 1);
         let path_id = interner.intern_path(Path::new(""));
         let region_id = SourceRegionId::new(0);
-        ChrnConfigLoader::new(
+        ConfigLoader::new(
             region_id,
             bytes,
             path_id,
@@ -657,7 +657,7 @@ mod tests {
         let path_id = interner.intern_path(Path::new(""));
         let region_id = SourceRegionId::new(0);
 
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -687,7 +687,7 @@ mod tests {
         let path_id = interner.intern_path(Path::new(""));
         let region_id = SourceRegionId::new(0);
 
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -718,7 +718,7 @@ mod tests {
         let path_id = interner.intern_path(Path::new(""));
         let region_id = SourceRegionId::new(0);
 
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -747,7 +747,7 @@ mod tests {
         let mut interner = Intern::init();
         let path_id = interner.intern_path(Path::new(""));
         let region_id = SourceRegionId::new(0);
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -775,7 +775,7 @@ mod tests {
         let mut interner = Intern::init();
         let path_id = interner.intern_path(Path::new(""));
         let region_id = SourceRegionId::new(0);
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -804,7 +804,7 @@ mod tests {
         let mut interner = Intern::init();
         let path_id = interner.intern_path(Path::new(""));
         let region_id = SourceRegionId::new(0);
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -832,7 +832,7 @@ mod tests {
         let mut interner = Intern::init();
         let path_id = interner.intern_path(Path::new(""));
         let region_id = SourceRegionId::new(0);
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -860,7 +860,7 @@ mod tests {
         let mut interner = Intern::init();
         let path_id = interner.intern_path(Path::new(""));
         let region_id = SourceRegionId::new(0);
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -901,7 +901,7 @@ mod tests {
         let mut interner = mock_interner(0, 2);
         let region_id = SourceRegionId::new(0);
 
-        let correct = ChrnConfigLoader::new(
+        let correct = ConfigLoader::new(
             region_id,
             correct,
             PathId::default(),
@@ -910,7 +910,7 @@ mod tests {
         )
         .load_config();
 
-        let wrong = ChrnConfigLoader::new(
+        let wrong = ConfigLoader::new(
             region_id,
             wrong,
             PathId::default(),
@@ -929,7 +929,7 @@ mod tests {
         let interner = mock_interner(0, 1);
         let region_id = SourceRegionId::new(0);
 
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             PathId::default(),
@@ -953,7 +953,7 @@ mod tests {
         let path_id = PathId::new(0);
         let region_id = SourceRegionId::new(0);
 
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -980,7 +980,7 @@ mod tests {
 
         // Binary
         let text = "0b1010";
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -1006,7 +1006,7 @@ mod tests {
 
         // Octal
         let text = "0o77";
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -1032,7 +1032,7 @@ mod tests {
 
         // Decimal
         let text = "42";
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -1058,7 +1058,7 @@ mod tests {
 
         // Float with decimal
         let text = "3.14";
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -1084,7 +1084,7 @@ mod tests {
 
         // Positive Scientific Notation
         let text = "1e+23";
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -1110,7 +1110,7 @@ mod tests {
 
         // Negative Scientific Notation
         let text = "1e-23";
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -1136,7 +1136,7 @@ mod tests {
 
         // Underscored Numbers
         let text = "1_000_000";
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -1162,7 +1162,7 @@ mod tests {
 
         // Underscored Hex
         let text = "0x_ff_ff";
-        let metadata = ChrnConfigLoader::new(
+        let metadata = ConfigLoader::new(
             region_id,
             text.as_bytes(),
             path_id,
@@ -1334,7 +1334,7 @@ mod tests {
             ";
 
         let main_region_id = SourceRegionId::new(0);
-        let main_meta = ChrnConfigLoader::new(
+        let main_meta = ConfigLoader::new(
             main_region_id,
             main_txt.as_bytes(),
             Default::default(),
@@ -1368,7 +1368,7 @@ mod tests {
             ";
 
         let sub_region_id = SourceRegionId::new(1);
-        let sub_meta = ChrnConfigLoader::new(
+        let sub_meta = ConfigLoader::new(
             sub_region_id,
             sub_txt.as_bytes(),
             import_path_id,
@@ -1796,7 +1796,7 @@ mod tests {
         //
         //     ";
         //
-        // let metadata = ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+        // let metadata = ConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
         //     .load_config()
         //     .unwrap();
         //
@@ -1841,7 +1841,7 @@ mod tests {
         //
         //     ";
         //
-        // let metadata = ChrnConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
+        // let metadata = ConfigLoader::new(Path::new(""), text.as_bytes(), &settings)
         //     .load_config()
         //     .unwrap();
         //
@@ -2652,5 +2652,72 @@ mod tests {
             .is_err(),
             "Chain leading into a cycle should be rejected"
         );
+    }
+
+    #[test]
+    fn read_ident_includes_trailing_underscore() {
+        let src: &[u8] = b"foo_";
+        let mut interner = Intern::init();
+        let mut lex = Lexer::new(SourceRegionId::new(0), src, 0);
+        let (toks, _) = lex.tokenize(&mut interner);
+
+        // Expect at least one identifier token: "foo_"
+        let id_tok = toks
+            .iter()
+            .find_map(|st| match st.tok {
+                Token::Id(id) => Some((id, st.span)),
+                _ => None,
+            })
+            .expect("expected an Id token for \"foo_\"");
+
+        let (id, span) = id_tok;
+        let lexed = interner.search(id);
+        assert_eq!(lexed, "foo_", "underscore should be included in ident");
+
+        // Span must cover exactly the four bytes "foo_".
+        assert_eq!(span.start, 0);
+        assert_eq!(span.end, 3);
+    }
+
+    /// A bare `_` at the end of input must lex without panicking.
+    #[test]
+    fn read_ident_handles_bare_underscore() {
+        let src: &[u8] = b"_";
+        let mut interner = Intern::init();
+        let mut lex = Lexer::new(SourceRegionId::new(0), src, 0);
+        let (toks, _) = lex.tokenize(&mut interner);
+
+        let id = toks
+            .iter()
+            .find_map(|st| match st.tok {
+                Token::Id(id) => Some(id),
+                _ => None,
+            })
+            .expect("expected an Id token for \"_\"");
+
+        assert_eq!(interner.search(id), "_");
+    }
+
+    /// Identifiers that mix alphanumerics and underscores in various positions
+    /// must all be lexed correctly.
+    #[test]
+    fn read_ident_mixed_alphanumeric_and_underscore() {
+        // Separators between identifiers are tokens that don't contain
+        // alphanumerics or underscores, so each Id token in the source
+        // becomes one Id in the output.
+        let src: &[u8] = b"foo_bar+_qux+a_b_c_";
+        let mut interner = Intern::init();
+        let mut lex = Lexer::new(SourceRegionId::new(0), src, 0);
+        let (toks, _) = lex.tokenize(&mut interner);
+
+        let names: Vec<String> = toks
+            .iter()
+            .filter_map(|st| match st.tok {
+                Token::Id(id) => Some(interner.search(id).to_string()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(names, vec!["foo_bar", "_qux", "a_b_c_"]);
     }
 }

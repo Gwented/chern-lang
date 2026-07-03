@@ -1,6 +1,8 @@
 //NOTE: Loader enforces size constraints so the lexer doesn't have to track any activity to ensure
 //the program is running safely
 // At most there could be some indexing errors although unlikely
+
+//TODO: MAX_READ makes it so there is no quote reading risk here, probably?
 pub mod token;
 pub mod trivia;
 // TODO: Maybe give this diagnostics
@@ -267,8 +269,14 @@ impl Lexer<'_> {
                             span: SourceSpan::new(
                                 self.current_region_id,
                                 self.pos as u32,
-                                // If - 1 isn't done then it will always be 1 above the actually
-                                // last byte of a given source
+                                // This is - 1 for  the same reason only (inclusive, exclusive)
+                                // slicing is used within the config loader. The byte size goes from
+                                // "@" to "f" making "@def" but the conventional spanning for the
+                                // codebase is (inclusive, inclusive), meaning the byte size is
+                                // RIGHT, but the spanning rules require the span be "@de"/"@en" not
+                                // the full thing
+                                //
+                                // Considering making spanning (inclusive, exclusive)
                                 (self.pos + keywords::ANNOTATION_CLAUSE_SIZE - 1) as u32,
                             ),
                             leading_trivia_indices: self.trivia_start_idx as u32
@@ -284,8 +292,12 @@ impl Lexer<'_> {
                             span: SourceSpan::new(
                                 self.current_region_id,
                                 self.pos as u32,
-                                // If - 1 isn't done then it will always be 1 above the actually
-                                // last byte of a given source
+                                // This is - 1 for  the same reason only (inclusive, exclusive)
+                                // slicing is used within the config loader. The byte size goes from
+                                // "@" to "f" making "@def" but the conventional spanning for the
+                                // codebase is (inclusive, inclusive), meaning the byte size is
+                                // RIGHT, but the spanning rules require the span be "@de"/"@en" not
+                                // the full thing
                                 (self.pos + keywords::ANNOTATION_CLAUSE_SIZE - 1) as u32,
                             ),
                             leading_trivia_indices: self.trivia_start_idx as u32
@@ -317,7 +329,7 @@ impl Lexer<'_> {
                         end = self.pos;
                         self.advance();
 
-                        Token::DotRange
+                        Token::DotRangeInclusive
                     } else {
                         self.advance();
                         Token::Dot
@@ -607,8 +619,8 @@ impl Lexer<'_> {
             false
         };
 
-        while self.pos < self.src_bytes.len() && self.peek_char().is_alphanumeric()
-            || self.peek() == b'_'
+        while (self.pos < self.src_bytes.len() && self.peek_char().is_alphanumeric())
+            || (self.pos < self.src_bytes.len() && self.peek() == b'_')
         {
             self.advance_char();
         }

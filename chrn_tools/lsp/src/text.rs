@@ -102,9 +102,8 @@ pub fn apply_text_change(
 /// of the end of that line (including the newline) is returned.
 pub fn position_to_offset(text: &str, pos: Position) -> usize {
     let mut offset = 0;
-    let mut line = 0;
-    for ln in text.split_inclusive('\n') {
-        if line == pos.line {
+    for (line, ln) in text.split_inclusive('\n').enumerate() {
+        if line as u32 == pos.line {
             let mut current_utf16_idx = 0;
             for (byte_idx, c) in ln.char_indices() {
                 if current_utf16_idx >= pos.character as usize {
@@ -116,7 +115,6 @@ pub fn position_to_offset(text: &str, pos: Position) -> usize {
             return offset + ln.len();
         }
         offset += ln.len();
-        line += 1;
     }
 
     // If line beyond text, return len
@@ -189,25 +187,21 @@ pub fn deduplicate_range_indices(ranges: &[Range]) -> Vec<usize> {
     for i in 0..ranges.len() {
         let r1 = &ranges[i];
         let mut is_redundant = false;
-        for j in 0..ranges.len() {
+        for (j, r2) in ranges.iter().enumerate() {
             if i == j {
                 continue;
             }
-            let r2 = &ranges[j];
 
             let starts_after_or_at = r2.start.line > r1.start.line
                 || (r2.start.line == r1.start.line && r2.start.character >= r1.start.character);
             let ends_before_or_at = r2.end.line < r1.end.line
                 || (r2.end.line == r1.end.line && r2.end.character <= r1.end.character);
 
-            if starts_after_or_at && ends_before_or_at {
-                if r1.start != r2.start || r1.end != r2.end {
-                    is_redundant = true;
-                    break;
-                } else if j < i {
-                    is_redundant = true;
-                    break;
-                }
+            if starts_after_or_at && ends_before_or_at
+                && (r1.start != r2.start || r1.end != r2.end || j < i)
+            {
+                is_redundant = true;
+                break;
             }
         }
         if !is_redundant {

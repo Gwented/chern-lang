@@ -45,6 +45,7 @@ impl Reporter {
         // change to be more customizable. Is that necessary?
         let amt = diags.len();
 
+        dbg!(self.budget.remaining());
         match self.budget.checked_consume(amt) {
             BudgetResult::Stable | BudgetResult::LimitReached => {
                 self.diags.append(diags);
@@ -55,6 +56,9 @@ impl Reporter {
                 for i in diags.drain(..can_append) {
                     self.diags.push(i);
                 }
+                // Since the budget doesn't set itself to the limit the user must manually use the
+                // set to limit after compensating for said limit.
+                self.budget.set_to_limit();
 
                 false
             }

@@ -15,7 +15,7 @@ use chrn_utils::{
         source_span::SourceSpan,
     },
 };
-use lang::config_loader::ChrnConfigLoader;
+use lang::config_loader::ConfigLoader;
 
 use crate::{
     modules::mod_finder::ModuleFinder,
@@ -191,7 +191,7 @@ pub fn extract_modules(
 
     // Using region id before pushing
     let main_region =
-        match ChrnConfigLoader::new(main_region_id, src, main_path_id, &settings, &interner)
+        match ConfigLoader::new(main_region_id, src, main_path_id, &settings, &interner)
             .load_config()
         {
             Ok(reg) => reg,
@@ -489,35 +489,31 @@ fn resolve_modules(
         let sub_mod_name_id = interner.intern(&file_name);
 
         // Using region id before pushing
-        let sub_region =
-            match ChrnConfigLoader::new(sub_region_id, src, path_id, settings, interner)
-                .load_config()
-            {
-                Ok(reg) => reg,
-                Err(cfg_err) => {
-                    match cfg_err {
-                        ConfigLoadError::General(diag) => {
-                            diags.push(diag);
-                        }
-                        ConfigLoadError::IO(e) => {
-                            let path = interner.search_path(path_id);
-                            let core_msg = core_error::form_string_from_io_err(&e, path)
-                                .unwrap_or(e.to_string());
-                            let src_diag = SourceDiagnostic::builder(
-                                DiagnosticLevel::Error,
-                                core_msg,
-                                path_id,
-                            )
-                            .add_annotation(path_span, AnnotationKind::Primary, None)
-                            .build();
-
-                            diags.push(src_diag);
-                        }
+        let sub_region = match ConfigLoader::new(sub_region_id, src, path_id, settings, interner)
+            .load_config()
+        {
+            Ok(reg) => reg,
+            Err(cfg_err) => {
+                match cfg_err {
+                    ConfigLoadError::General(diag) => {
+                        diags.push(diag);
                     }
+                    ConfigLoadError::IO(e) => {
+                        let path = interner.search_path(path_id);
+                        let core_msg =
+                            core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
+                        let src_diag =
+                            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
+                                .add_annotation(path_span, AnnotationKind::Primary, None)
+                                .build();
 
-                    continue;
+                        diags.push(src_diag);
+                    }
                 }
-            };
+
+                continue;
+            }
+        };
 
         let (_, sub_imports, mut found_diags) = ModuleFinder::new(
             &sub_region.src_bytes,

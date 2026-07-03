@@ -38,8 +38,8 @@ fn collect_local_occurrences(
             owner_sym_id,
             ..
         } = ent
+            && *decl_span == *def_span && *owner_sym_id == def_owner_sym_id
         {
-            if *decl_span == *def_span && *owner_sym_id == def_owner_sym_id {
                 results.push(Location {
                     uri: uri.clone(),
                     range: Range {
@@ -47,7 +47,6 @@ fn collect_local_occurrences(
                         end: offset_to_position(&state.text, (span.end + 1) as usize),
                     },
                 });
-            }
         }
     }
     results

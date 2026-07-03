@@ -39,8 +39,8 @@ fn collect_local_edits(
             owner_sym_id,
             ..
         } = ent
+            && *decl_span == *def_span && *owner_sym_id == def_owner_sym_id
         {
-            if *decl_span == *def_span && *owner_sym_id == def_owner_sym_id {
                 edits.push(TextEdit {
                     range: Range {
                         start: offset_to_position(&state.text, span.start as usize),
@@ -48,7 +48,6 @@ fn collect_local_edits(
                     },
                     new_text: new_name.to_string(),
                 });
-            }
         }
     }
     edits

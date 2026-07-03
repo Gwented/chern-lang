@@ -346,8 +346,7 @@ impl Intern {
 
     /// Method for `self` to intern all of `other`'s stored strings and paths
     pub fn append(&mut self, other: &Intern) {
-        // Is this supposed to be inclusive?
-        for i in INTERNER_PRELOAD_SIZE..=other.stored_strs.len() {
+        for i in INTERNER_PRELOAD_SIZE..other.stored_strs.len() {
             let current = &other.stored_strs[i];
             self.intern(current);
         }

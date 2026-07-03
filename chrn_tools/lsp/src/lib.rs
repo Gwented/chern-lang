@@ -26,7 +26,7 @@
 //! ```text
 //! did_open / did_change
 //!     └─ analyser::analyze_and_publish_task (async, debounced on change)
-//!         ├─ ChrnConfigLoader::load_config   — lex config header, find @def/@end
+//!         ├─ ConfigLoader::load_config   — lex config header, find @def/@end
 //!         ├─ DocumentCache::get_or_create    — tokenise script section
 //!         ├─ DocumentState::ensure_analyzed  — resolve modules, parse, name-resolve, type-check
 //!         └─ publish_if_current              — send diagnostics only when not superseded
@@ -53,8 +53,10 @@ pub mod text;
 
 #[cfg(test)]
 mod tests {
-    use crate::state::DocumentCache;
-    use crate::text::{extract_word_at, offset_to_position, position_to_offset};
+    use crate::{
+        state::DocumentCache,
+        text::{extract_word_at, offset_to_position, position_to_offset},
+    };
     use std::sync::Arc;
     use tower_lsp::lsp_types::Position;
 
@@ -112,6 +114,26 @@ mod tests {
 
         let state1 = cache.get_or_create(uri1, text1.clone(), 0, None, 1);
         assert_eq!(state1.read().version, 1);
+
+        // Cache hit: a second get_or_create with the same URI must return
+        // the existing DocumentState (pointer-equal Arc) without re-tokenising.
+        // Re-tokenising on every request would dominate the cost of every
+        // hover / completion / goto / rename call.  This guards against a
+        // regression where the "same text cached" short-circuit is removed
+        // and every did_open silently re-lexes the document.
+        let state1_again = cache.get_or_create(uri1, text1.clone(), 0, None, 1);
+        assert!(
+            Arc::ptr_eq(&state1, &state1_again),
+            "cache hit must return the same DocumentState Arc"
+        );
+        // The version stored on the existing state must also be preserved
+        // on a cache hit — the second call's `version` argument must not
+        // overwrite the state already in the cache.
+        assert_eq!(
+            state1_again.read().version,
+            1,
+            "cache hit must preserve the original version"
+        );
 
         let uri2 = "file:///test2.chrn";
         let text2 = Arc::new("let y = 2".to_string());

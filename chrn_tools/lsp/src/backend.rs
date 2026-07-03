@@ -40,7 +40,7 @@ use compilation::lexer::token::Token as ScriptToken;
 use compilation::lookup::scopes;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::{Symbol, SymbolKind, Type, VariableState};
-use lang::config_loader::ChrnConfigLoader;
+use lang::config_loader::ConfigLoader;
 use parking_lot::RwLock;
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
@@ -185,12 +185,12 @@ impl Backend {
 
         let mut interner = Intern::init();
         let path_id = interner.intern_path(&path_buf);
-        let region = match ChrnConfigLoader::new(
+        let region = match ConfigLoader::new(
             chrn_utils::id_types::SourceRegionId::new(0),
             Cursor::new(text.as_bytes()),
             path_id,
             &settings,
-            &mut interner,
+            &interner,
         )
         .load_config()
         {
@@ -201,12 +201,20 @@ impl Backend {
             }
         };
 
+        // SAFETY: Pass the real per-URI version, not `0`. The previous
+        // hardcoded `0` made the synchronous `get_analyzed_state` path win
+        // the version race every time: the async debounced task's
+        // `publish_if_current` saw `0 != my_version` and silently dropped
+        // every subsequent diagnostics publish — which is exactly why
+        // diagnostics "stop working" after the first synchronous request
+        // (hover, goto, etc.) on a file.
+        let my_version = self.bump_version(&uri_str);
         let state_arc = self.doc_cache.get_or_create(
             &uri_str,
             Arc::clone(&text),
             region.script_start,
             region.serial_start,
-            0,
+            my_version,
         );
 
         let imported_uris = {
@@ -841,7 +849,7 @@ impl LanguageServer for Backend {
                     | ScriptToken::EqualTo
                     | ScriptToken::Walrus
                     | ScriptToken::Comma
-                    | ScriptToken::DotRange
+                    | ScriptToken::DotRangeInclusive
                     | ScriptToken::Slash
                     | ScriptToken::Percent
                     | ScriptToken::Plus

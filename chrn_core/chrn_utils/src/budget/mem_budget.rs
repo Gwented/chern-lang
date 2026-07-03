@@ -8,13 +8,13 @@
 pub struct MemoryBudget {
     // u32?
     /// Amount that the usage cannot be greater than
-    pub limit: usize,
+    limit: usize,
     /// Metric that must be less than `self.limit`
-    pub usage: usize,
+    usage: usize,
     /// Times limit was exceeded
-    pub times_exceeded: usize,
+    times_exceeded: usize,
     /// If the budget was exceeded at any point, all future usage adds will increment this counter
-    pub amt_exceeded: usize,
+    amt_exceeded: usize,
     // /// If `None`, it means no overflow has ocurred yet
     // /// If `Some`, the counter inside reflects how many times `amt_exceeded` reached an overflown value
     // ///
@@ -66,26 +66,28 @@ impl MemoryBudget {
         }
     }
 
-    //// Assumes the consumption operation won't exceed
-    // pub fn consume(&mut self, to_apply: usize) -> bool {
-    // self.usage -= to_apply;
-    // if let Some(proposed_sum) = self.usage.checked_add(to_apply) {
-    //     if self.would_exceed(proposed_sum) {
-    //         let overage = proposed_sum - self.limit;
-    //         self.times_exceeded += 1;
-    //         self.amt_exceeded = self.amt_exceeded.saturating_add(overage);
-    //         return BudgetResult::Overage(overage);
-    //     } else {
-    //         BudgetResult::Stable
-    //     }
-    // } else {
-    //     self.times_exceeded += 1;
-    //     // Should this be done?
-    //     self.amt_exceeded = usize::MAX;
-    //     // Denoting that it was an overflow
-    //     BudgetResult::Overflow
-    // }
-    // }
+    /// Assumes the consumption operation won't overflow and avoids doing checked operations.
+    /// This cannot return `BudgetResult::Overflow`
+    ///
+    /// This will panic on any overflow
+    pub fn consume(&mut self, to_apply: usize) -> BudgetResult {
+        let proposed_sum = self.usage + to_apply;
+        if self.would_exceed(proposed_sum) {
+            let overage = proposed_sum - self.limit;
+            self.times_exceeded += 1;
+            self.amt_exceeded = self.amt_exceeded.saturating_add(overage);
+
+            return BudgetResult::Overage(overage);
+        } else {
+            self.usage = proposed_sum;
+
+            if self.usage == self.limit {
+                return BudgetResult::LimitReached;
+            }
+
+            BudgetResult::Stable
+        }
+    }
 
     // fn increment_times_exceeded(&mut self) {
     //     self.times_exceeded += 1;
@@ -111,20 +113,51 @@ impl MemoryBudget {
         Err(underflow)
     }
 
+    // DO NOT QUESTION THIS
+    /// Checks if `proposed` > `self.limit`
+    pub const fn would_exceed(&self, proposed: usize) -> bool {
+        proposed > self.limit
+    }
+
     /// Sets `self.usage` to `self.limit`
     ///
     /// A use case would be an overage occuring, since `MemoryBudget` does not make any assumptions and keeps
     /// it's usage as what it was before the overage, only returning the overage. If the data being
     /// tracked can be externally used to perhaps use the amount right until it reaches the overage,
     /// this would be useful to just set it to the limit manually.
-    pub fn set_to_limit(&mut self) {
+    pub const fn set_to_limit(&mut self) {
         self.usage = self.limit;
     }
 
-    // DO NOT QUESTION THIS
-    /// Checks if `proposed` > `self.limit`
-    pub fn would_exceed(&self, proposed: usize) -> bool {
-        proposed > self.limit
+    /// The exact amount of `self.usage` needed to fill the defined `self.limit`
+    pub const fn remaining(&self) -> usize {
+        self.limit - self.usage
+    }
+
+    /// Sets `self.usage` to 0
+    pub const fn reset(&mut self) {
+        self.usage = 0;
+    }
+
+    // TEST:
+    /// Amount that the usage cannot be greater than
+    pub fn limit(&self) -> usize {
+        self.limit
+    }
+
+    /// Metric that must be less than `self.limit`
+    pub fn usage(&self) -> usize {
+        self.usage
+    }
+
+    /// Times limit was exceeded
+    pub fn times_exceeded(&self) -> usize {
+        self.times_exceeded
+    }
+
+    /// If the budget was exceeded at any point, all future usage adds will increment this counter
+    pub fn amt_exceeded(&self) -> usize {
+        self.amt_exceeded
     }
 }
 

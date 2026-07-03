@@ -17,7 +17,7 @@ use crate::keywords::ANNOTATION_CLAUSE_SIZE;
 /// 8KB read limit before aborting looking for @end in script file
 const READ_LIMIT: usize = 8192;
 
-pub struct ChrnConfigLoader<'a, R: Read> {
+pub struct ConfigLoader<'a, R: Read> {
     // Since region ids are not used by the loader for diagnostics, this is safe. Only the path id
     // is used.
     current_region_id: SourceRegionId,
@@ -32,7 +32,7 @@ pub struct ChrnConfigLoader<'a, R: Read> {
 
 //NOTE: This forces paths to be given, but if the chern file itself doesn't have a path given
 //then the language doesn't work anyways. May leave as is.
-impl<R: Read> ChrnConfigLoader<'_, R> {
+impl<R: Read> ConfigLoader<'_, R> {
     /// Uses `PathId` for error location reporting purposes
     pub fn new<'a>(
         current_region_id: SourceRegionId,
@@ -40,8 +40,8 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
         current_path_id: PathId,
         settings: &'a ChrnSettings,
         interner: &'a Intern,
-    ) -> ChrnConfigLoader<'a, R> {
-        ChrnConfigLoader {
+    ) -> ConfigLoader<'a, R> {
+        ConfigLoader {
             current_region_id,
             settings,
             interner,
@@ -290,7 +290,6 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
         }
         // TODO: Assert this...
 
-        // panic!("Wait");
         // Case of no @def and no @end which requires a '0' return since the entire file should be
         // read. This does not mean it is correct, it only means the read limit wasn't reached.
         if !requires_end {
@@ -320,7 +319,6 @@ impl<R: Read> ChrnConfigLoader<'_, R> {
             let eof_pos = self.pos as u32;
 
             let eof_span = SourceSpan::new(self.current_region_id, eof_pos, eof_pos);
-            // panic!("Wait");
 
             let src_diag =
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.current_path_id)

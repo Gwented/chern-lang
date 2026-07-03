@@ -39,7 +39,7 @@ use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use compilation::modules::ImportKind;
 use compilation::modules::Module;
-use lang::config_loader::ChrnConfigLoader;
+use lang::config_loader::ConfigLoader;
 use parking_lot::RwLock;
 use serde_json;
 use std::collections::HashMap;
@@ -86,7 +86,7 @@ fn evict_cache_if_needed(cache: &mut HashMap<String, String>) {
 /// # Parameters
 /// * `err`  — The error returned by [`ChrnConfigLoader::load_config`].
 /// * `text` — The raw source text of the document, used to convert byte offsets to
-///            LSP line/character positions.
+///   LSP line/character positions.
 ///
 /// # Behaviour
 /// * A `ConfigLoadError::General` diagnostic is expanded into one primary diagnostic
@@ -220,7 +220,7 @@ pub(crate) fn config_load_error_to_diagnostics(
 /// * `uri`             — The document URI being analysed.
 /// * `text`            — The current source text.
 /// * `diags_cache`     — Shared JSON cache of last-published diagnostics per URI;
-///                       prevents redundant notifications.
+///   prevents redundant notifications.
 /// * `doc_cache`       — Shared analysis cache; provides tokenisation and semantic
 ///                       analysis results.
 /// * `pending_versions`— Monotonic per-URI version counter used to discard stale results.
@@ -253,12 +253,12 @@ pub async fn analyze_and_publish_task(
     let mut interner = Intern::init();
     let path_id = interner.intern_path(&path_buf);
     // 1. Initial config load to find boundaries
-    let region = match ChrnConfigLoader::new(
+    let region = match ConfigLoader::new(
         SourceRegionId::new(0),
         Cursor::new(text.as_bytes()),
         path_id,
         &settings,
-        &mut interner,
+        &interner,
     )
     .load_config()
     {
@@ -280,7 +280,7 @@ pub async fn analyze_and_publish_task(
 
     // 2. Use DocumentCache for heavy lifting
     let state_arc = doc_cache.get_or_create(
-        &uri.to_string(),
+        uri.as_ref(),
         text,
         region.script_start,
         region.serial_start,
@@ -293,7 +293,7 @@ pub async fn analyze_and_publish_task(
     };
 
     if !imported_uris.is_empty() {
-        doc_cache.register_dependencies(&uri.to_string(), &imported_uris);
+        doc_cache.register_dependencies(uri.as_ref(), &imported_uris);
     }
 
     // 3. Get diagnostics and publish if still current
@@ -332,10 +332,10 @@ async fn publish_if_current(
     // Check version
     {
         let vers = pending_versions.read();
-        if let Some(&v) = vers.get(&uri.to_string()) {
-            if v != version {
-                return; // Newer version exists, discard these results
-            }
+        if let Some(&v) = vers.get(uri.as_ref())
+            && v != version
+        {
+            return; // Newer version exists, discard these results
         }
     }
 
@@ -366,6 +366,34 @@ async fn publish_if_current(
     }
 }
 
+/// Resolves the source text for a [`SourceDiagnostic`] by looking up the
+/// [`SourceRegion`](chrn_utils::source_map::source_region::SourceRegion) whose
+/// `path_id` matches the diagnostic's `path_id`.
+///
+/// Returns `(text, doc_len)` where:
+/// * `text` is the raw source bytes of the matching region, decoded as UTF-8.
+/// * `doc_len` is `text.len()`.
+///
+/// Falls back to `fallback_text` / `fallback_doc_len` if no matching region is
+/// found. This is the case for diagnostics emitted by the compiler intrinsics
+/// (which never correspond to a user file) or for diagnostics whose region has
+/// been evicted from the arena.
+fn resolve_diag_text<'a>(
+    arena: &'a SourceRegionArena,
+    diag: &SourceDiagnostic,
+    fallback_text: &'a str,
+    fallback_doc_len: usize,
+) -> (&'a str, usize) {
+    // SAFETY: The arena is built from the same `Intern` instance that produced
+    // the diagnostic's `path_id` (see `DocumentState::ensure_analyzed`).
+    // Therefore `region.path_id == diag.path_id` is a correct comparison.
+    if let Some(region) = arena.regions.iter().find(|r| r.path_id == diag.path_id) {
+        let text = std::str::from_utf8(&region.src_bytes).unwrap_or(fallback_text);
+        return (text, region.src_bytes.len());
+    }
+    (fallback_text, fallback_doc_len)
+}
+
 /// Converts a slice of core [`SourceDiagnostic`] values and appends the resulting LSP
 /// diagnostics to `lsp_diags`.
 ///
@@ -375,20 +403,40 @@ async fn publish_if_current(
 /// * One `INFORMATION`-severity diagnostic per note (at the primary span).
 /// * One `HINT`-severity diagnostic per help message (at the primary span).
 ///
+/// # Region resolution
+///
+/// Each `SourceDiagnostic` carries a `path_id` identifying which file the
+/// diagnostic came from. The byte spans in its annotations are offsets into
+/// *that* file's bytes, not the main document's. To produce a correct LSP
+/// range, we look up the matching [`SourceRegion`](chrn_utils::source_map::source_region::SourceRegion)
+/// in `arena` and convert the span against that region's text.
+///
+/// Diagnostics whose `path_id` does not match any region (e.g. compiler-intrinsic
+/// diagnostics, or regions that have been evicted) fall back to `fallback_text`.
+///
 /// # Parameters
-/// * `lsp_diags` — Output vector; diagnostics are appended, not replaced.
-/// * `diags`     — Core diagnostics produced by parsing / name-resolution / type-checking.
-/// * `doc_len`   — Total byte length of the document, used to clamp spans safely.
-/// * `text`      — Raw source text for byte-offset → LSP position conversion.
-/// * `source`    — Value for the LSP `source` field (e.g. `"chrn-parser"`).
+/// * `lsp_diags`        — Output vector; diagnostics are appended, not replaced.
+/// * `diags`            — Core diagnostics produced by parsing / name-resolution / type-checking.
+/// * `arena`            — Region arena for the document being analyzed; used to resolve
+///   the correct source text per diagnostic.
+/// * `fallback_text`    — Main document text, used when no matching region is found.
+/// * `fallback_doc_len` — Length of the main document, used to clamp spans safely.
+/// * `source`           — Value for the LSP `source` field (e.g. `"chrn-parser"`).
 pub(crate) fn push_diagnostics(
     lsp_diags: &mut Vec<tower_lsp::lsp_types::Diagnostic>,
     diags: &[SourceDiagnostic],
-    doc_len: usize,
-    text: &str,
+    arena: &SourceRegionArena,
+    fallback_text: &str,
+    fallback_doc_len: usize,
     source: &str,
 ) {
     for core_diag in diags {
+        // Resolve the correct source text for THIS diagnostic. A diagnostic
+        // originating in an imported module has spans in that module's bytes,
+        // not the main document's, so we must look up the matching region.
+        let (text, doc_len) =
+            resolve_diag_text(arena, core_diag, fallback_text, fallback_doc_len);
+
         let severity = match core_diag.level {
             DiagnosticLevel::Error => lsp_types::DiagnosticSeverity::ERROR,
             DiagnosticLevel::Warn => lsp_types::DiagnosticSeverity::WARNING,
@@ -513,6 +561,7 @@ pub(crate) fn push_diagnostics(
 /// # Errors
 /// All errors are appended to `diags` rather than returned.  The function always
 /// attempts to continue resolving remaining siblings after an error.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn resolve_modules_lsp(
     reserved_mod_ids: &mut Vec<(PathId, ModuleId)>,
     seen: &mut Vec<PathId>,
@@ -532,7 +581,7 @@ pub(crate) fn resolve_modules_lsp(
             continue;
         };
 
-        if seen.iter().any(|p_id| *p_id == path_id) {
+        if seen.contains(&path_id) {
             continue;
         }
 
@@ -550,7 +599,7 @@ pub(crate) fn resolve_modules_lsp(
         // Try to get from doc_cache first
         let uri = Url::from_file_path(path).unwrap();
         let source_res: Result<Box<dyn std::io::Read + Send>, ConfigLoadError> =
-            if let Some(text) = doc_cache.get_text(&uri.to_string()) {
+            if let Some(text) = doc_cache.get_text(uri.as_ref()) {
                 Ok(Box::new(Cursor::new(text.as_bytes().to_vec())))
             } else {
                 // Fallback to disk
@@ -602,33 +651,29 @@ pub(crate) fn resolve_modules_lsp(
 
         let sub_region_id = SourceRegionId::new(region_arena.regions.len() as u32);
 
-        let sub_region =
-            match ChrnConfigLoader::new(sub_region_id, src, path_id, settings, interner)
-                .load_config()
-            {
-                Ok(reg) => reg,
-                Err(cfg_err) => {
-                    match cfg_err {
-                        ConfigLoadError::General(diag) => {
-                            diags.push(diag);
-                        }
-                        ConfigLoadError::IO(e) => {
-                            let path = interner.search_path(path_id);
-                            let core_msg = core_error::form_string_from_io_err(&e, path)
-                                .unwrap_or(e.to_string());
-                            let src_diag = SourceDiagnostic::builder(
-                                DiagnosticLevel::Error,
-                                core_msg,
-                                path_id,
-                            )
-                            .add_annotation(path_span, AnnotationKind::Primary, None)
-                            .build();
-                            diags.push(src_diag);
-                        }
+        let sub_region = match ConfigLoader::new(sub_region_id, src, path_id, settings, interner)
+            .load_config()
+        {
+            Ok(reg) => reg,
+            Err(cfg_err) => {
+                match cfg_err {
+                    ConfigLoadError::General(diag) => {
+                        diags.push(diag);
                     }
-                    continue;
+                    ConfigLoadError::IO(e) => {
+                        let path = interner.search_path(path_id);
+                        let core_msg =
+                            core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
+                        let src_diag =
+                            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
+                                .add_annotation(path_span, AnnotationKind::Primary, None)
+                                .build();
+                        diags.push(src_diag);
+                    }
                 }
-            };
+                continue;
+            }
+        };
 
         let file_name = match path.file_prefix().and_then(|n| n.to_str()) {
             Some(p) => p.to_string(),

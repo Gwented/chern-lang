@@ -1097,32 +1097,62 @@ impl DocumentState {
         let doc_len = self.text.len();
 
         if let Some(diags) = &self.config_errors {
-            analyser::push_diagnostics(&mut lsp_diags, diags, doc_len, &self.text, "chrn-config");
+            analyser::push_diagnostics(
+                &mut lsp_diags,
+                diags,
+                &self.region_arena,
+                &self.text,
+                doc_len,
+                "chrn-config",
+            );
         }
         if let Some(diags) = &self.parse_errors {
-            analyser::push_diagnostics(&mut lsp_diags, diags, doc_len, &self.text, "chrn-parser");
+            analyser::push_diagnostics(
+                &mut lsp_diags,
+                diags,
+                &self.region_arena,
+                &self.text,
+                doc_len,
+                "chrn-parser",
+            );
         }
         if let Some(diags) = &self.ns_errors {
             analyser::push_diagnostics(
                 &mut lsp_diags,
                 diags,
-                doc_len,
+                &self.region_arena,
                 &self.text,
+                doc_len,
                 "chrn-namespace",
             );
         }
         if let Some(diags) = &self.member_errors {
-            analyser::push_diagnostics(&mut lsp_diags, diags, doc_len, &self.text, "chrn-member");
+            analyser::push_diagnostics(
+                &mut lsp_diags,
+                diags,
+                &self.region_arena,
+                &self.text,
+                doc_len,
+                "chrn-member",
+            );
         }
         if let Some(diags) = &self.ty_errors {
-            analyser::push_diagnostics(&mut lsp_diags, diags, doc_len, &self.text, "chrn-type");
+            analyser::push_diagnostics(
+                &mut lsp_diags,
+                diags,
+                &self.region_arena,
+                &self.text,
+                doc_len,
+                "chrn-type",
+            );
         }
         if let Some(diags) = &self.cn_errors {
             analyser::push_diagnostics(
                 &mut lsp_diags,
                 diags,
-                doc_len,
+                &self.region_arena,
                 &self.text,
+                doc_len,
                 "chrn-constraint",
             );
         }

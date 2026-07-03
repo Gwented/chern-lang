@@ -15,7 +15,12 @@ pub const MAX_LOOPS: u32 = 10000004;
 
 #[cfg(test)]
 pub mod tests {
-    use crate::intern::{self, Intern};
+    use crate::{
+        budget::mem_budget::MemoryBudget,
+        id_types::PathId,
+        intern::{self, Intern},
+        source_map::source_diagnostic::{DiagnosticLevel, Reporter, SourceDiagnostic},
+    };
 
     #[test]
     fn keyword_intern_alignment() {
@@ -130,6 +135,58 @@ pub mod tests {
             "Equals",
             interner.search_idx(intern::INTERNED_EQUALS as usize),
             "INTERNED_EQUALS (21) should be 'Equals'"
+        );
+    }
+
+    /// Regression test for the out-of-bounds read in `Intern::append`.
+    ///
+    /// Before the fix, the loop was `INTERNER_PRELOAD_SIZE..=other.stored_strs.len()`,
+    /// which iterated past the end of the vector whenever `other` had more than
+    /// `INTERNER_PRELOAD_SIZE` (= 64) interned strings. This manifested as the
+    /// LSP observing "xThingState2026", "vairableo", and other corrupt identifiers
+    /// during rapid editing (see `chrn_tools/lsp/stop_removing_this_file`).
+    ///
+    /// With the fix, `append` only iterates `INTERNER_PRELOAD_SIZE..len` (exclusive)
+    /// so we can build a fully-populated second interner, append it into a third,
+    /// and assert every string round-trips correctly.
+    #[test]
+    fn append_does_not_read_out_of_bounds() {
+        let mut donor = Intern::init();
+
+        // Add 200 user-defined strings to `donor`. This is well past the
+        // 64-slot preloaded range, which is what triggers the original bug.
+        for i in 0..200 {
+            donor.intern(&format!("user_string_{i}"));
+        }
+
+        let mut receiver = Intern::init();
+        receiver.append(&donor);
+
+        // Every user-defined string must round-trip.
+        for i in 0..200 {
+            let original = format!("user_string_{i}");
+            let id = receiver
+                .try_search_str(&original)
+                .expect("missing {original} after append");
+            assert_eq!(receiver.search(id), original);
+        }
+    }
+
+    /// Specifically targets the case where the donor has *exactly* the
+    /// preloaded size, so the buggy `..=` would have iterated i = N, the
+    /// single illegal index.
+    #[test]
+    fn append_donor_at_exact_preload_size_boundary() {
+        let mut donor = Intern::init();
+        // Intern exactly one user string so the donor has INTERNER_PRELOAD_SIZE + 1 entries.
+        donor.intern("boundary_string");
+
+        let mut receiver = Intern::init();
+        receiver.append(&donor);
+
+        assert_eq!(
+            receiver.try_search_str("boundary_string"),
+            Some(receiver.try_search_str("boundary_string").unwrap()),
         );
     }
 
@@ -313,5 +370,49 @@ pub mod tests {
             51,
             "INTERNER_PRELOAD_SIZE should match number of preloaded interned strings"
         );
+    }
+    // -- BUDGET --
+    /// Makes diagnostics with as many `Default` values as possible of level `Error`
+    fn make_diagnostics(amt: usize) -> Vec<SourceDiagnostic> {
+        let mut diags = Vec::new();
+        for i in 0..amt {
+            diags.push(SourceDiagnostic::new(
+                DiagnosticLevel::Error,
+                Default::default(),
+                PathId::new(i as u32),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+            ));
+        }
+        diags
+    }
+
+    #[test]
+    fn general_budget_test() {
+        let mut reporter = Reporter::new(MemoryBudget::new(5));
+        let res = reporter.append_safe(&mut make_diagnostics(5));
+        assert_eq!(
+            res, true,
+            "Should only be LimitReached which should not return `false`"
+        );
+
+        let mut reporter = Reporter::new(MemoryBudget::new(5));
+        let res = reporter.append_safe(&mut make_diagnostics(5));
+        assert_eq!(res, true, "Should be an overflow");
+    }
+
+    #[test]
+    fn reporter_budget_test() {
+        let mut reporter = Reporter::new(MemoryBudget::new(5));
+        let res = reporter.append_safe(&mut make_diagnostics(5));
+        assert_eq!(
+            res, true,
+            "Should only be LimitReached which should not return `false`"
+        );
+
+        let mut reporter = Reporter::new(MemoryBudget::new(5));
+        let res = reporter.append_safe(&mut make_diagnostics(5));
+        assert_eq!(res, true, "Should be an overflow");
     }
 }

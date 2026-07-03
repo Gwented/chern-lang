@@ -139,7 +139,8 @@ impl ScriptCompiler {
         //TEST:
         let core_mod_id = ModuleId::new(mods.len());
         let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None, None);
-        let mut script_compiler = ScriptCompiler {
+
+        let mut compiler = ScriptCompiler {
             bind,
             mods,
             types: Vec::new(),
@@ -157,10 +158,11 @@ impl ScriptCompiler {
         };
 
         // Should this lazy load the section intrinsics though?
-        Self::load_core(&mut script_compiler);
-        Self::create_module_symbols(&mut script_compiler);
+        Self::load_core(&mut compiler);
+        let directives = Self::load_directives(&mut compiler);
+        Self::create_module_symbols(&mut compiler);
 
-        script_compiler
+        compiler
     }
 
     /// Creates the symbols needed for modules to be able to access to access their imports
@@ -716,7 +718,6 @@ impl ScriptCompiler {
             None,
         );
 
-        Self::load_directives(compiler);
         Self::load_core_types(compiler, &core_mod, &mut table);
         Self::load_core_funcs(compiler, &core_mod, &mut table);
         // Self::load_complex_constants(compiler, &mut core_mod, &mut table);

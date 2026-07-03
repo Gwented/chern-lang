@@ -1,1 +1,52 @@
-@def@end
+@def
+let x = 3
+
+nest->
+    struct Person {
+        s: i32
+        i32: i32
+    }
+
+@end
+// import "main.chrn"
+let WRITING = "@end" // let x = core.
+@def
+
+
+
+// Not showing diagnostics for this despite it not existing
+// and emitting diagnostics
+// import "other.chrerb"
+
+// let e#58 = 1 << 2
+
+let a = b
+let b = c
+let c = d + 3
+let d = e
+let e = 4
+let x = 2
+/* 3 */
+
+nest->
+    // Maybe have glob args appear separately WITH the internal fields as a separate by proxy 
+    // argument applied piece of info?
+    export struct e#5 {
+        // Should show all diagnostics at the main diagnostic, but the others shouldn't show?
+
+        e#6: other::a
+
+    } #scient
+
+    export struct Thing {
+        // Says does not satisfying {constraint} but does not say whcih is enforcing it
+        name: Runtime
+    } [] #warn
+
+    // Not sure how argumetns should consume this yet
+    export enum State {
+        Ready
+        thing: i32
+        Failed
+    }
+@end

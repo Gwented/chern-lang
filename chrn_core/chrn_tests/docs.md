@@ -261,7 +261,7 @@ nest->
 
 `Equals(Thing)`: Checks serialized value for equality against given argument
 
-`Range(inclusive, inclusive)`: Checks if the data being viewed matches the range given. For arrays and strings, this checks the length. For numbers, this checks the numeric value.
+`Range(inclusive, exclusive)`: Checks if the data being viewed matches the range given. For arrays and strings, this checks the length. For numbers, this checks the numeric value.
 
 `Contains(DynType)`: Checks if the data being viewed contains the given literal or numeric.
 // Would need to retain notation if this would need to be done
