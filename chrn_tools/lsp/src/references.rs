@@ -44,7 +44,7 @@ fn collect_local_occurrences(
                     uri: uri.clone(),
                     range: Range {
                         start: offset_to_position(&state.text, span.start as usize),
-                        end: offset_to_position(&state.text, (span.end + 1) as usize),
+                        end: offset_to_position(&state.text, span.end as usize),
                     },
                 });
         }
@@ -62,7 +62,7 @@ fn matching_entities_to_locations(
     for (state_uri, text, start, end) in entities {
         let range = Range {
             start: offset_to_position(&text, start as usize),
-            end: offset_to_position(&text, (end + 1) as usize),
+            end: offset_to_position(&text, end as usize),
         };
         by_uri.entry(state_uri).or_default().push(range);
     }

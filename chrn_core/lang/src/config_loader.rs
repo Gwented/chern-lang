@@ -141,7 +141,7 @@ impl<R: Read> ConfigLoader<'_, R> {
 
                         let quote_start = quote_start as u32;
                         let q_span =
-                            SourceSpan::new(self.current_region_id, quote_start, quote_start);
+                            SourceSpan::new(self.current_region_id, quote_start, quote_start + 1);
 
                         let mut diag_builder = SourceDiagnostic::builder(
                             DiagnosticLevel::Error,
@@ -160,8 +160,6 @@ impl<R: Read> ConfigLoader<'_, R> {
                         };
 
                         let src_diag = diag_builder.build();
-                        //TEMP: Exclusive spanning will be used here :(
-                        self.pos -= 1;
                         let broken_region = self.create_region(script_start, None);
 
                         return ConfigLoaderOutput::Broken(
@@ -188,7 +186,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                         let q_span = SourceSpan::new(
                             self.current_region_id,
                             quote_start as u32,
-                            quote_start as u32,
+                            quote_start as u32 + 1,
                         );
 
                         let mut diag_builder = SourceDiagnostic::builder(
@@ -238,14 +236,8 @@ impl<R: Read> ConfigLoader<'_, R> {
                 }
                 b'@' => {
                     // This @ is not skipped for the sake of keeping self.pos at the same starting point.
-                    // If we are at @def, we need to read (inclusive, inclusive)
-                    // where the second inclusive adds ANNOTATION_CLAUSE_SIZE to itself
 
-                    // dbg!(self.handle.buffer()[self.pos + ANNOTATION_CLAUSE_SIZE - 1] as char);
                     // Helper boolean
-
-                    // let buffer = &self.handle.buffer()[self.pos..];
-                    // let s = str::from_utf8(buffer);
                     // WARN: Suspicious
                     //
                     // Possible source of indexing bug could be that ANNOTATION_CLAUSE_SIZE, which
@@ -317,7 +309,8 @@ impl<R: Read> ConfigLoader<'_, R> {
                             self.current_region_id,
                             span_start as u32,
                             // Needs - 1 since it stops one after the f in def
-                            (self.pos - 1) as u32,
+                            // WARN: - 1 REMOVED FOR EXCLUSIVE SPANNING
+                            self.pos as u32,
                         ));
 
                         // Needs to continue or the last advance causes one-off errors since it
@@ -356,18 +349,13 @@ impl<R: Read> ConfigLoader<'_, R> {
             //WARN: Need to make sure this doesn't break things
             // WARN: ENSURE THIS DOES NOT BREAK ANYTHING
 
-            // This - 1 has the same reason as many times in the lexer, where since spans are
-            // (inclusive, inclusive), when we use advance, and then break, that means we are
-            // technically the length of the point of interest + 1, but since we need an inclusive
-            // end it needs to - 1 itself.
+            // (inclusive, exclusive) end
             //
-            // So, if we have "text\0", it advances "t" stopping at "\0", then it breaks, but since it's inclusive,
-            // that would mean it's over-indexing the actual span, so we need to - 1 to go back to
-            // the last "t" in "text"
-            //
-            //
+            //  If we have "text\0", it advances "t" stopping at "\0", which naturally fits
+            //  exclusive
             // TODO: Change everything to exclusive.
-            let eof_pos = (self.pos - 1) as u32;
+            //WARN: - 1 REMOVED FOR EXCLUSIVE SPANNING
+            let eof_pos = self.pos as u32;
 
             let eof_span = SourceSpan::new(self.current_region_id, eof_pos, eof_pos);
 
@@ -401,7 +389,16 @@ impl<R: Read> ConfigLoader<'_, R> {
         while let Some(b) = self.peek() {
             match b {
                 b'\\' => {
-                    self.skip(2);
+                    // I AM NEVER STOPPING THE TESTS THIS WOULD HAVE BEEN UNCAUGHT
+                    // ANOTHER 5000 REGRESSION TESTS (Curated of course)
+                    //
+                    // If this isn't checked for then in the scenario "Hello\" it'll go past eof
+                    // since it's assuming something is being escaped.
+                    if self.peek_ahead(1).is_some() {
+                        self.skip(2);
+                    } else {
+                        self.advance();
+                    }
                 }
                 b if b == quote_type => {
                     self.advance();
@@ -468,7 +465,9 @@ impl<R: Read> ConfigLoader<'_, R> {
                 SourceSpan::new(self.current_region_id, comment_start, comment_start + 1);
 
             let current_pos = self.pos as u32;
-            let eof_span = SourceSpan::new(self.current_region_id, current_pos, current_pos);
+            //WARN: + 1 EXCLUSIVE SPANNING CHANGE, current_pos -> current_pos + 1
+            // Intended to allow it to at least cover one byte since its an exclusive span end
+            let eof_span = SourceSpan::new(self.current_region_id, current_pos, current_pos + 1);
 
             let src_diag =
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.current_path_id)
@@ -496,9 +495,7 @@ impl<R: Read> ConfigLoader<'_, R> {
 
     fn advance(&mut self) -> Option<u8> {
         let b = self.peek();
-
         self.pos += 1;
-
         b
     }
 

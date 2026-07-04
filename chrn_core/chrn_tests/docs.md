@@ -160,7 +160,7 @@ A `Boundary` is a set of constraints given to a type, same as a trait, interface
 
 The `Encapsulates` column shows how each boundary is built from other boundaries, with `+` meaning "or". A blank cell means the boundary is atomic — its concrete types are listed in the `Description` column.
 
-| Boundary | Encapsulates | Description |
+| Boundaries | Bounds | Description |
 |---|---|---|
 | `SignedInteger` | `SignedInteger` | Signed integer types (`i8`, `i16`, `i32`, `i64`, `i128`) |
 | `UnsignedInteger` | `UnsignedInteger` | Unsigned integer types (`u8`, `u16`, `u32`, `u64`, `u128`) |

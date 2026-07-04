@@ -1,3 +1,4 @@
+use std::path;
 // Has weird behavior and silent errors when it comes to import keyword usage
 use std::{ffi::OsStr, path::PathBuf, str::FromStr};
 
@@ -159,13 +160,17 @@ impl ModuleFinder<'_> {
             }
         }
 
-        // - 1 to include quotes since that happens in the lexer. No other reason.
+        // - 1 for same reason as in lexer. Before breaking the last quote is skipped, and since
+        // span ends are exclusive, the end pos would be one after the end quote, so we need to go
+        // back 1 to properly sit at the end quote
         let end = self.pos - 1;
 
         let path_span = SourceSpan::new(
             self.current_region.region_id,
+            // To include start quote
             (start - 1) as u32,
-            end as u32,
+            // To include end quote
+            self.pos as u32,
         );
 
         if saw_backslash {
@@ -239,9 +244,13 @@ impl ModuleFinder<'_> {
         let import_kind = ImportKind::Source(path_id, path_span);
 
         let mod_id =
+            // If there exists a module attached to the path seen, the import being viewed has
+            // already been processed and should maintain the same module id
             if let Some((_, inner_mod_id)) = self.seen.iter().find(|(p_id, _)| *p_id == path_id) {
                 *inner_mod_id
             } else {
+            // First time seeing this path, so a new key = PathId, Value = ModuleId relationship is
+            // made
                 let new_mod_id = ModuleId::new(self.seen.len());
                 self.seen.push((path_id, new_mod_id));
                 new_mod_id
@@ -288,7 +297,7 @@ impl ModuleFinder<'_> {
         }
 
         match str::from_utf8(slice) {
-            Ok(s) => Ok(PathBuf::from_str(&s).expect("Unwrapped twice")),
+            Ok(s) => Ok(PathBuf::from_str(&s).expect("Infallible")),
             Err(_) => {
                 let msg = "Invalid UTF-8 found within file".to_string();
                 let src_diag = SourceDiagnostic::builder(
@@ -298,7 +307,7 @@ impl ModuleFinder<'_> {
                 )
                 .build();
 
-                return Err(src_diag);
+                Err(src_diag)
             }
         }
     }
@@ -330,7 +339,7 @@ impl ModuleFinder<'_> {
         let path_span = SourceSpan::new(
             self.current_region.region_id,
             (start - 1) as u32,
-            end as u32,
+            (end + 1) as u32,
         );
 
         if saw_backslash {
@@ -347,18 +356,16 @@ impl ModuleFinder<'_> {
             return Err(src_diag);
         }
 
-        // Um uh
-        let path_buf = self.create_pathbuf(&self.src_bytes[start..end]).unwrap();
+        // WHY WAS THIS UNWRAP FOR SO LONG
+        let path_buf = self.create_pathbuf(&self.src_bytes[start..end])?;
 
         //WARN: WRONG PATH NAME
         // Please..
         let bind_path = match path_buf.canonicalize() {
             Ok(p) => p,
             Err(e) => {
-                let path = interner.search_path(self.current_region.path_id);
-                // todo!("Correct the name with it's region's path name");
                 let core_msg =
-                    core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
+                    core_error::form_string_from_io_err(&e, &path_buf).unwrap_or(e.to_string());
 
                 let src_diag = SourceDiagnostic::builder(
                     DiagnosticLevel::Error,

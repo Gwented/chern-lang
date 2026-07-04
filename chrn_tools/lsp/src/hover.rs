@@ -90,7 +90,7 @@ pub fn compute_hover(
                 document::HOVER_DASHES
             );
 
-            (msg, Some((span_start, span_end.saturating_add(1))))
+            (msg, Some((span_start, span_end)))
         }
         ScriptToken::End => {
             let msg = format!(
@@ -98,13 +98,13 @@ pub fn compute_hover(
                 document::HOVER_DASHES
             );
 
-            (msg, Some((span_start, span_end.saturating_add(1))))
+            (msg, Some((span_start, span_end)))
         }
         ScriptToken::Keyword(kw) => {
             let doc = Document::keyword_docs(kw);
             (
                 doc.compose(),
-                Some((span_start, span_end.saturating_add(1))),
+                Some((span_start, span_end)),
             )
         }
         ScriptToken::Id(id) => {
@@ -400,52 +400,52 @@ pub fn compute_hover(
                 hover_text = Document::builtin_type_docs(kind).compose();
             }
 
-            (hover_text, Some((span_start, span_end.saturating_add(1))))
+            (hover_text, Some((span_start, span_end)))
         }
         ScriptToken::Str(id) => {
             let s = state.interner.search(id);
             (
                 format!("string literal: \"{}\"", s),
-                Some((span_start, span_end.saturating_add(1))),
+                Some((span_start, span_end)),
             )
         }
         ScriptToken::Integer(id, _) => {
             let s = state.interner.search(id);
             (
                 format!("Integer literal: {}", s),
-                Some((span_start, span_end.saturating_add(1))),
+                Some((span_start, span_end)),
             )
         }
         ScriptToken::Float(id, _) => {
             let s = state.interner.search(id);
             (
                 format!("Float literal: {}", s),
-                Some((span_start, span_end.saturating_add(1))),
+                Some((span_start, span_end)),
             )
         }
         ScriptToken::BoolLiteral(b) => (
             format!("bool literal: {}", b),
-            Some((span_start, span_end.saturating_add(1))),
+            Some((span_start, span_end)),
         ),
         ScriptToken::Char(c) => (
             format!("char literal: '{}'", c),
-            Some((span_start, span_end.saturating_add(1))),
+            Some((span_start, span_end)),
         ),
         ScriptToken::At => (
             "**@** — Directive marker (e.g. @def/@end)".into(),
-            Some((span_start, span_end.saturating_add(1))),
+            Some((span_start, span_end)),
         ),
         ScriptToken::HashSymbol => (
             "**#** — Directive prefix".into(),
-            Some((span_start, span_end.saturating_add(1))),
+            Some((span_start, span_end)),
         ),
         ScriptToken::SlimArrow => (
             "**->** — Section declaration operator".into(),
-            Some((span_start, span_end.saturating_add(1))),
+            Some((span_start, span_end)),
         ),
         _ => (
             String::new(),
-            Some((span_start, span_end.saturating_add(1))),
+            Some((span_start, span_end)),
         ),
     };
 

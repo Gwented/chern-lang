@@ -47,7 +47,7 @@ impl MemoryBudget {
                 self.times_exceeded += 1;
                 self.amt_exceeded = self.amt_exceeded.saturating_add(overage);
 
-                return BudgetResult::Overage(overage);
+                BudgetResult::Overage(overage)
             } else {
                 self.usage = proposed_sum;
 
@@ -77,7 +77,7 @@ impl MemoryBudget {
             self.times_exceeded += 1;
             self.amt_exceeded = self.amt_exceeded.saturating_add(overage);
 
-            return BudgetResult::Overage(overage);
+            BudgetResult::Overage(overage)
         } else {
             self.usage = proposed_sum;
 

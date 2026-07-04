@@ -44,7 +44,6 @@ pub fn run_all(
     for mod_idx in 0..compiler.mods.len() {
         //TEST: The error messages get worse when they are allowed  to be read with a broken region
         let (mod_id, state) = (ModuleId::new(mod_idx), compiler.mods[mod_idx].state);
-        dbg!(state);
         let (toks_opt, trivia_opt) = run_lexer(compiler, compiler_store, &compiler_cache, mod_id);
 
         let ast_info_opt = if let Some(toks) = &toks_opt {

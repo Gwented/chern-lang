@@ -121,7 +121,7 @@ pub(crate) fn config_load_error_to_diagnostics(
             {
                 let s_pos = crate::text::offset_to_position(text, annotation.span.start as usize);
                 let e_pos =
-                    crate::text::offset_to_position(text, (annotation.span.end + 1) as usize);
+                    crate::text::offset_to_position(text, annotation.span.end as usize);
                 (s_pos, e_pos)
             } else {
                 (start, start)
@@ -152,7 +152,7 @@ pub(crate) fn config_load_error_to_diagnostics(
                 let ann_start =
                     crate::text::offset_to_position(text, annotation.span.start as usize);
                 let ann_end =
-                    crate::text::offset_to_position(text, (annotation.span.end + 1) as usize);
+                    crate::text::offset_to_position(text, annotation.span.end as usize);
                 let ann_sev = match annotation.kind {
                     AnnotationKind::Primary => severity,
                     AnnotationKind::Secondary => lsp_types::DiagnosticSeverity::WARNING,
@@ -222,7 +222,7 @@ pub(crate) fn config_load_error_to_diagnostics(
 /// * `diags_cache`     — Shared JSON cache of last-published diagnostics per URI;
 ///   prevents redundant notifications.
 /// * `doc_cache`       — Shared analysis cache; provides tokenisation and semantic
-///                       analysis results.
+///   analysis results.
 /// * `pending_versions`— Monotonic per-URI version counter used to discard stale results.
 /// * `version`         — The version token assigned to this particular analysis run.
 ///
@@ -465,7 +465,6 @@ pub(crate) fn push_diagnostics(
         {
             let s = (annotation.span.start as usize).min(doc_len);
             let e = (annotation.span.end as usize)
-                .saturating_add(1)
                 .min(doc_len);
             (s, e)
         } else {
@@ -499,7 +498,6 @@ pub(crate) fn push_diagnostics(
 
             let ann_start = (annotation.span.start as usize).min(doc_len);
             let ann_end = (annotation.span.end as usize)
-                .saturating_add(1)
                 .min(doc_len);
             let ann_sev = match annotation.kind {
                 AnnotationKind::Primary => severity,

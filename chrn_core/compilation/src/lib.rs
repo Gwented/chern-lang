@@ -1240,7 +1240,7 @@ mod tests {
 
         // Span must cover exactly the four bytes "foo_".
         assert_eq!(span.start, 0);
-        assert_eq!(span.end, 3);
+        assert_eq!(span.end, 4);
     }
 
     /// A bare `_` at the end of input must lex without panicking.

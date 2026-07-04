@@ -169,14 +169,14 @@ mod tests {
             .get_token_at_offset(5)
             .expect("Should find 'foo'");
         assert_eq!(token.span.start, 4);
-        assert_eq!(token.span.end, 6);
+        assert_eq!(token.span.end, 7);
 
         // Check finding token at exact boundary
         let token2 = read_state
             .get_token_at_offset(10)
             .expect("Should find '123'");
         assert_eq!(token2.span.start, 10);
-        assert_eq!(token2.span.end, 12);
+        assert_eq!(token2.span.end, 13);
 
         // Space should return None
         assert!(

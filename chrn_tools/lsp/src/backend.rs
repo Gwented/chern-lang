@@ -241,7 +241,7 @@ impl Backend {
 
     /// Convenience: retrieves the document text and runs [`get_analyzed_state`](Self::get_analyzed_state).
     fn get_state(&self, uri: &tower_lsp::lsp_types::Url) -> Option<Arc<RwLock<DocumentState>>> {
-        let text = self.get_document_text(&uri.to_string())?;
+        let text = self.get_document_text(uri.as_ref())?;
         self.get_analyzed_state(uri, text)
     }
 
@@ -253,15 +253,40 @@ impl Backend {
         *v
     }
 
+    /// Applies LSP content changes to a document, updating the docs map.
+    /// Returns the new `Arc<String>` on success, or shows an error message
+    /// and returns `None` on failure.
+    fn apply_content_changes(
+        &self,
+        params: &tower_lsp::lsp_types::DidChangeTextDocumentParams,
+        uri_str: &str,
+    ) -> Option<Arc<String>> {
+        let mut docs = self.docs.write();
+        let existing = docs.remove(uri_str).unwrap_or_default();
+        let mut updated = (*existing).clone();
+        for change in params.content_changes.iter() {
+            match apply_text_change(&updated, change) {
+                Ok(next) => updated = next,
+                Err(_e) => {
+                    docs.insert(uri_str.to_string(), existing);
+                    return None;
+                }
+            }
+        }
+        let updated_arc = Arc::new(updated);
+        docs.insert(uri_str.to_string(), Arc::clone(&updated_arc));
+        Some(updated_arc)
+    }
+
     /// Ensures the file where a symbol is defined is analyzed and cached,
     /// enabling cross-module operations (rename, references) to find
     /// occurrences in the definition file even when it hasn't been opened.
     async fn ensure_definition_file_analyzed(&self, def_path_str: &str) {
         let def_path = std::path::Path::new(def_path_str);
-        if let Ok(def_uri) = tower_lsp::lsp_types::Url::from_file_path(def_path) {
-            if let Ok(text) = tokio::fs::read_to_string(def_path).await {
-                self.get_analyzed_state(&def_uri, Arc::new(text));
-            }
+        if let Ok(def_uri) = tower_lsp::lsp_types::Url::from_file_path(def_path)
+            && let Ok(text) = tokio::fs::read_to_string(def_path).await
+        {
+            self.get_analyzed_state(&def_uri, Arc::new(text));
         }
     }
 }
@@ -543,24 +568,16 @@ impl LanguageServer for Backend {
         let uri_str = params.text_document.uri.to_string();
 
         // Apply all content changes in order. If a change has no range, it is a full text replace.
-        let mut docs = self.docs.write();
-        let existing = docs.remove(&uri_str).unwrap_or_default();
-        let mut updated = (*existing).clone();
-        for change in params.content_changes.into_iter() {
-            match apply_text_change(&updated, &change) {
-                Ok(next) => updated = next,
-                Err(e) => {
-                    let _ = self.client.show_message(
-                        tower_lsp::lsp_types::MessageType::ERROR,
-                        format!("Failed to apply text change: {}", e),
-                    );
-                    return;
-                }
-            }
-        }
-        let updated_arc = Arc::new(updated);
-        docs.insert(uri_str.clone(), Arc::clone(&updated_arc));
-        drop(docs);
+        let Some(updated_arc) = self.apply_content_changes(&params, &uri_str) else {
+            let _ = self
+                .client
+                .show_message(
+                    tower_lsp::lsp_types::MessageType::ERROR,
+                    "Failed to apply text change",
+                )
+                .await;
+            return;
+        };
 
         self.doc_cache.invalidate(&uri_str);
 
@@ -584,10 +601,7 @@ impl LanguageServer for Backend {
 
             let still_current = {
                 let vers = pv.read();
-                match vers.get(&inner_uri_str) {
-                    Some(&v) if v == my_version => true,
-                    _ => false,
-                }
+                matches!(vers.get(&inner_uri_str), Some(&v) if v == my_version)
             };
 
             if still_current {
@@ -617,7 +631,7 @@ impl LanguageServer for Backend {
     ) -> jsonrpc::Result<Option<tower_lsp::lsp_types::Hover>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
-        let Some(text) = self.get_document_text(&uri.to_string()) else {
+        let Some(text) = self.get_document_text(uri.as_ref()) else {
             return Ok(None);
         };
         let Some(state_arc) = self.get_analyzed_state(&uri, text) else {
@@ -638,7 +652,7 @@ impl LanguageServer for Backend {
         let pos = params.text_document_position.position;
         let new_name = params.new_name;
 
-        let Some(text) = self.get_document_text(&uri.to_string()) else {
+        let Some(text) = self.get_document_text(uri.as_ref()) else {
             return Ok(None);
         };
         let Some(state_arc) = self.get_analyzed_state(&uri, text) else {
@@ -680,7 +694,7 @@ impl LanguageServer for Backend {
         let uri = params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
 
-        let Some(text) = self.get_document_text(&uri.to_string()) else {
+        let Some(text) = self.get_document_text(uri.as_ref()) else {
             return Ok(None);
         };
         let Some(state_arc) = self.get_analyzed_state(&uri, text) else {
@@ -720,7 +734,7 @@ impl LanguageServer for Backend {
         params: tower_lsp::lsp_types::SemanticTokensParams,
     ) -> jsonrpc::Result<Option<tower_lsp::lsp_types::SemanticTokensResult>> {
         let uri = params.text_document.uri;
-        let Some(text) = self.get_document_text(&uri.to_string()) else {
+        let Some(text) = self.get_document_text(uri.as_ref()) else {
             return Ok(None);
         };
         let Some(state_arc) = self.get_analyzed_state(&uri, text) else {
@@ -803,11 +817,7 @@ impl LanguageServer for Backend {
                 }
                 let start_pos =
                     crate::text::offset_to_position(&state.text, triv.span.start as usize);
-                let length = triv
-                    .span
-                    .end
-                    .saturating_add(1)
-                    .saturating_sub(triv.span.start);
+                let length = triv.span.end.saturating_sub(triv.span.start);
 
                 push_semantic_token(
                     &mut tokens,
@@ -823,7 +833,7 @@ impl LanguageServer for Backend {
                 tok_idx += 1;
                 let span = st.span;
                 let start_pos = crate::text::offset_to_position(&state.text, span.start as usize);
-                let length = span.end.saturating_add(1).saturating_sub(span.start);
+                let length = span.end.saturating_sub(span.start);
 
                 let token_type: u32 = match st.tok {
                     ScriptToken::Def | ScriptToken::End => SemanticTokenType::Macro.as_u32(),
@@ -918,14 +928,14 @@ impl LanguageServer for Backend {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
-        let Some(text) = self.get_document_text(&uri.to_string()) else {
+        let Some(text) = self.get_document_text(uri.as_ref()) else {
             return Ok(None);
         };
         let Some(state_arc) = self.get_analyzed_state(&uri, text) else {
             return Ok(None);
         };
 
-        let def_info = {
+        let def_path_str = {
             let state = state_arc.read();
             let byte_offset = crate::text::position_to_offset(&state.text, pos);
             if state.offset_in_comment(byte_offset) {
@@ -939,13 +949,13 @@ impl LanguageServer for Backend {
             }
         };
 
-        if def_info.is_none() {
+        if def_path_str.is_none() {
             return Ok(None);
         }
 
         let mut links: Vec<LocationLink> = Vec::new();
 
-        if let Some((def_path, def_span)) = def_info {
+        if let Some((def_path, def_span)) = def_path_str {
             let target_uri = match Url::from_file_path(&def_path) {
                 Ok(u) => u,
                 Err(_) => uri.clone(),
@@ -972,7 +982,7 @@ impl LanguageServer for Backend {
 
             if let Some(t_text) = target_text {
                 let start_pos = crate::text::offset_to_position(&t_text, def_span.start as usize);
-                let end_pos = crate::text::offset_to_position(&t_text, (def_span.end + 1) as usize);
+                let end_pos = crate::text::offset_to_position(&t_text, def_span.end as usize);
 
                 links.push(LocationLink {
                     origin_selection_range: Some(Range {
@@ -1055,38 +1065,43 @@ impl LanguageServer for Backend {
 
         if let Some(target_name) = target_name {
             let mut items: Vec<CompletionItem> = Vec::new();
-            if let Some(target_id) = state.interner.try_search_str(target_name) {
-                if let Some(compiler) = &state.compiler {
-                    if let Some(module) = compiler.mods.iter().find(|m| m.name_id == target_id) {
-                        if module.mod_id.id == 0 {
-                            // Current module: show all symbols except ScopeType::Var
-                            for sym in &compiler.symbols {
-                                if (matches!(sym.sym_origin, compilation::semantic::hir::hir_concepts::SymbolOrigin::Module(mid) if mid.id == 0) || matches!(sym.sym_origin, compilation::semantic::hir::hir_concepts::SymbolOrigin::Compiler)) && sym.scope_origin != scopes::ScopeType::Var {
-                                    let sym_name = state.interner.search(sym.name_id);
-                                    if prefix.is_empty() || sym_name.starts_with(prefix) {
-                                        let kind = symbol_completion_kind(compiler, sym);
-                                        items.push(CompletionItem {
-                                            label: sym_name.to_string(),
-                                            kind: Some(kind),
-                                            ..Default::default()
-                                        });
-                                    }
-                                }
+            if let Some(target_id) = state.interner.try_search_str(target_name)
+                && let Some(compiler) = &state.compiler
+                && let Some(module) = compiler.mods.iter().find(|m| m.name_id == target_id)
+            {
+                if module.mod_id.id == 0 {
+                    // Current module: show all symbols except ScopeType::Var
+                    for sym in &compiler.symbols {
+                        if (matches!(sym.sym_origin, compilation::semantic::hir::hir_concepts::SymbolOrigin::Module(mid) if mid.id == 0)
+                            || matches!(
+                                sym.sym_origin,
+                                compilation::semantic::hir::hir_concepts::SymbolOrigin::Compiler
+                            ))
+                            && sym.scope_origin != scopes::ScopeType::Var
+                        {
+                            let sym_name = state.interner.search(sym.name_id);
+                            if prefix.is_empty() || sym_name.starts_with(prefix) {
+                                let kind = symbol_completion_kind(compiler, sym);
+                                items.push(CompletionItem {
+                                    label: sym_name.to_string(),
+                                    kind: Some(kind),
+                                    ..Default::default()
+                                });
                             }
-                        } else {
-                            // Other modules: show only exported symbols
-                            for sym_id in &module.exports {
-                                if let Some(sym) = compiler.symbols.get(sym_id.id as usize) {
-                                    let sym_name = state.interner.search(sym.name_id);
-                                    if prefix.is_empty() || sym_name.starts_with(prefix) {
-                                        let kind = symbol_completion_kind(compiler, sym);
-                                        items.push(CompletionItem {
-                                            label: sym_name.to_string(),
-                                            kind: Some(kind),
-                                            ..Default::default()
-                                        });
-                                    }
-                                }
+                        }
+                    }
+                } else {
+                    // Other modules: show only exported symbols
+                    for sym_id in &module.exports {
+                        if let Some(sym) = compiler.symbols.get(sym_id.id as usize) {
+                            let sym_name = state.interner.search(sym.name_id);
+                            if prefix.is_empty() || sym_name.starts_with(prefix) {
+                                let kind = symbol_completion_kind(compiler, sym);
+                                items.push(CompletionItem {
+                                    label: sym_name.to_string(),
+                                    kind: Some(kind),
+                                    ..Default::default()
+                                });
                             }
                         }
                     }
@@ -1135,22 +1150,21 @@ impl LanguageServer for Backend {
 
         //TODO: Should auto-complete any module that has a src of "None"
         // Add core library exports (types, functions, and constants from the core module)
-        if let Some(compiler) = &state.compiler {
-            if let Some(core_mod) = compiler
+        if let Some(compiler) = &state.compiler
+            && let Some(core_mod) = compiler
                 .mods
                 .get(compiler.intrinsic_registry.core_mod_id.id)
-            {
-                for sym_id in &core_mod.exports {
-                    if let Some(sym) = compiler.symbols.get(sym_id.id as usize) {
-                        let name = state.interner.search(sym.name_id);
-                        if prefix.is_empty() || name.starts_with(prefix) {
-                            let kind = symbol_completion_kind(compiler, sym);
-                            items.push(CompletionItem {
-                                label: name.to_string(),
-                                kind: Some(kind),
-                                ..Default::default()
-                            });
-                        }
+        {
+            for sym_id in &core_mod.exports {
+                if let Some(sym) = compiler.symbols.get(sym_id.id as usize) {
+                    let name = state.interner.search(sym.name_id);
+                    if prefix.is_empty() || name.starts_with(prefix) {
+                        let kind = symbol_completion_kind(compiler, sym);
+                        items.push(CompletionItem {
+                            label: name.to_string(),
+                            kind: Some(kind),
+                            ..Default::default()
+                        });
                     }
                 }
             }
@@ -1181,9 +1195,10 @@ impl LanguageServer for Backend {
                 let name = state.interner.search(module.name_id);
 
                 let is_self = module.mod_id.id == 0;
-                let is_imported = current_module.imports.iter().any(|i| {
-                    i.name_id == module.name_id || i.alias_id.map_or(false, |a| a == module.name_id)
-                });
+                let is_imported = current_module
+                    .imports
+                    .iter()
+                    .any(|i| i.name_id == module.name_id || i.alias_id == Some(module.name_id));
 
                 if !is_imported && !is_self {
                     continue;

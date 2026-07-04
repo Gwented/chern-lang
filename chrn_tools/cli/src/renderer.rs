@@ -307,7 +307,8 @@ fn render_line_layout_text(
     // -- FIRST --
     // If the current line is the last line then it may or may not contain a new line as it's eof
     // byte, which needs to be removed if present
-    let ln_end = if src_str.as_bytes()[ln_span.end] == b'\n' {
+    //WARN: SPANNING IS (INCLUSIVE, EXCLUSIVE) SO THIS NEEDS - 1 TO NOT GO OUT OF BOUNDS
+    let ln_end = if src_str.as_bytes()[ln_span.end - 1] == b'\n' {
         ln_span.end - 1
     } else {
         ln_span.end
@@ -316,7 +317,7 @@ fn render_line_layout_text(
     // The line mapping functions used within `chrn_core` ONLY keeps a new line if the line is a
     // single empty line, so this just skips any empty lines.
     if src_str.as_bytes()[ln_span.start] != b'\n' {
-        plain_ln.push_str(&src_str[ln_span.start..=ln_end]);
+        plain_ln.push_str(&src_str[ln_span.start..ln_end]);
 
         // Not sure if this eof specific character is really needed. It's already pretty obvious
         // looking.
@@ -366,7 +367,9 @@ fn render_line_layout_text(
             let clamped_start = span.start.max(ln_span.start);
             let clamped_end = span.end.min(ln_end);
             let visual_start = line_mapping::get_chars_width(src_str, ln_span.start, clamped_start);
-            let visual_len = line_mapping::get_chars_width(src_str, clamped_start, clamped_end + 1);
+            //WARN: CHANGED
+            // let visual_len = line_mapping::get_chars_width(src_str, clamped_start, clamped_end + 1);
+            let visual_len = line_mapping::get_chars_width(src_str, clamped_start, clamped_end);
             let visual_end = visual_start + visual_len;
 
             let fmtted_ptrs = format!("{ptr_color}{}", ptr_str.repeat(visual_len));

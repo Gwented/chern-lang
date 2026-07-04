@@ -1,7 +1,7 @@
 @def
 
-import ../chrn_core/chrn_tests/def.chrn'
-let x = 3
+
+bind "k"
 nest->
     export struct Person {
         s: i32

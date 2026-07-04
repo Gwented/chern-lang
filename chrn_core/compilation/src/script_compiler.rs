@@ -1187,7 +1187,7 @@ impl ScriptCompiler {
         compiler.symbols.push(symbol);
         table.interned_to_sym.insert(interned_id, sym_id);
 
-        // Range(inclusive, inclusive) | Numeric | Ordering
+        // Range(inclusive, exclusive) | Numeric | Ordering
         let type_id = TypeId::new(compiler.types.len() as u32);
         let range_flags = TypeBoundaryFlags::new(TypeBoundary::Ranged.to_u64());
 

@@ -87,7 +87,6 @@ pub(super) fn find_annotation_lines<'a>(
         .find(|lv| lv.region_id == annotation.span.region_id)
         .expect("Should already have mapped the given annotation's ln_view");
 
-    dbg!(&current_ln_view, annotation);
     let mut current_idx = current_ln_view
         .lines
         .iter()
@@ -140,7 +139,9 @@ pub(super) fn assign_layers_in_layout(ln_layout: &mut RenderLineLayout, src_str:
                 let clamped_start = span.start.max(ln_start);
                 let clamped_end = span.end.min(ln_end);
                 let start = line_mapping::get_chars_width(src_str, ln_start, clamped_start);
-                let len = line_mapping::get_chars_width(src_str, clamped_start, clamped_end + 1);
+                //WARN: CHANGED
+                // let len = line_mapping::get_chars_width(src_str, clamped_start, clamped_end + 1);
+                let len = line_mapping::get_chars_width(src_str, clamped_start, clamped_end);
                 layer_occupied[0] = layer_occupied[0].max(start + len);
 
                 render_info.layer = 0;
@@ -152,7 +153,7 @@ pub(super) fn assign_layers_in_layout(ln_layout: &mut RenderLineLayout, src_str:
                 let clamped_start = span.start.max(ln_start);
                 let clamped_end = span.end.min(ln_end);
                 let start = line_mapping::get_chars_width(src_str, ln_start, clamped_start);
-                let len = line_mapping::get_chars_width(src_str, clamped_start, clamped_end + 1);
+                let len = line_mapping::get_chars_width(src_str, clamped_start, clamped_end);
                 let end = start + len;
 
                 if layer_occupied.is_empty() {
@@ -251,7 +252,7 @@ pub(super) fn sort_layouts_by_region_priority<'a>(ln_layouts: &mut [RenderLineLa
         let region_idx = region_order
             .iter()
             .position(|id| *id == region_id)
-            .unwrap_or(0);
+            .expect("Setup before-hand pushes every region id in `ln_layouts`");
         let is_primary = region_has_primary.contains(&region_id);
         (!is_primary, region_idx, layout.ln.ln_num)
     });

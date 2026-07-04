@@ -1,5 +1,6 @@
 // Should maybe not be specifically inside source_map
 use std::ops::{Range, RangeInclusive};
+//WARN: CHANGED FOR EXCLUSIVE END
 
 use crate::id_types::SourceRegionId;
 
@@ -27,7 +28,7 @@ use crate::id_types::SourceRegionId;
 // Could this be u32?
 /// Span structure used for source mapping
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-// Should this type enforce inclusive by using RangeInclusive<u32>?
+// Should this type enforce exclusive by using RangeExclusive<u32>?
 pub struct SourceSpan {
     pub region_id: SourceRegionId,
     pub start: u32,
@@ -94,12 +95,12 @@ impl SourceSpan {
 
     /// Checks if `self` is either a superset or equal to `other`
     pub const fn contains(&self, other: SourceSpan) -> bool {
-        self.start <= other.start && self.end >= other.end
+        self.start <= other.start && self.end > other.end
     }
 
     /// Checks if `self` contains `other`
     pub fn contains_part(&self, other: u32) -> bool {
-        self.start <= other && self.end >= other
+        self.start <= other && self.end > other
     }
 }
 

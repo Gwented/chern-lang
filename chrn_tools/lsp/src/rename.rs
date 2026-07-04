@@ -44,7 +44,7 @@ fn collect_local_edits(
                 edits.push(TextEdit {
                     range: Range {
                         start: offset_to_position(&state.text, span.start as usize),
-                        end: offset_to_position(&state.text, (span.end + 1) as usize),
+                        end: offset_to_position(&state.text, span.end as usize),
                     },
                     new_text: new_name.to_string(),
                 });
@@ -63,7 +63,7 @@ fn matching_entities_to_edits(
     for (state_uri, text, start, end) in &entities {
         let range = Range {
             start: offset_to_position(text, *start as usize),
-            end: offset_to_position(text, (*end + 1) as usize),
+            end: offset_to_position(text, *end as usize),
         };
         by_uri.entry(state_uri.clone()).or_default().push(range);
         text_map.entry(state_uri.clone()).or_insert_with(|| Arc::clone(text));
