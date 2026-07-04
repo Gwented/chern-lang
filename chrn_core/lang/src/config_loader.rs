@@ -1,3 +1,7 @@
+// TEST SHOULD COVER THESE DIAGNOSTICS NOT DESTROYING THINGS
+/// This module represents the stage of `chrn` processing where there it may read an entire file, or
+/// it may read between `@def` and `@end`. This exists so that if there is serial data within the
+/// file, the entire file isn't forced to be loaded into memory, which would be a net negative.
 use std::io::{BufRead, BufReader, Read};
 
 use chrn_utils::{
@@ -30,6 +34,26 @@ pub struct ConfigLoader<'a, R: Read> {
     pos: usize,
 }
 
+// Gorf
+/// This also exists as a local output return, which may or may not hold an error that is local to
+/// this stage since the caller cares about and uses the region, but the external caller
+/// (like a CLI) only wants the specific `ConfigLoaderError` that may exist.
+#[derive(Debug)]
+pub enum ConfigLoaderOutput {
+    // Should this just be Option ConfigLoaderError?
+    /// Loaded region with no issues
+    Success(SourceRegion),
+    /// A region that experienced an error during the loading process.
+    ///
+    /// This is not called "partial" because an error like `@def` without `@end` isn't a partial
+    /// viewing, it's just a broken viewing.
+    Broken(SourceRegion, ConfigLoadError),
+    /// A region that at some point got an error to where
+    /// Loading failed too early so no part of the region was read.
+    UnrecoverableErr(ConfigLoadError),
+    // If err != nil { return err }
+}
+
 //NOTE: This forces paths to be given, but if the chern file itself doesn't have a path given
 //then the language doesn't work anyways. May leave as is.
 impl<R: Read> ConfigLoader<'_, R> {
@@ -55,7 +79,7 @@ impl<R: Read> ConfigLoader<'_, R> {
     /// `@def` is present, and the offset of where to start reading the serialized data if an
     /// `@def` and `@end` is present. Returns a `ConfigLoadError` upon failure that has internal
     /// error details.
-    pub fn load_config(&mut self) -> Result<SourceRegion, ConfigLoadError> {
+    pub fn load_config(&mut self) -> ConfigLoaderOutput {
         // Doesn't NEED definition but will error if declared and not closed
         let mut requires_end = false;
 
@@ -71,7 +95,13 @@ impl<R: Read> ConfigLoader<'_, R> {
 
         let mut def_span: Option<SourceSpan> = None;
 
-        self.handle.fill_buf()?;
+        // The only unrecoverable region error since it failed before and reads
+        match self.handle.fill_buf() {
+            Ok(_) => (),
+            Err(err) => {
+                return ConfigLoaderOutput::UnrecoverableErr(ConfigLoadError::IO(err));
+            }
+        };
 
         while let Some(b) = self.peek() {
             //TODO: New error enum would need to exist which specifically needs to say whether
@@ -121,7 +151,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                         .add_annotation(
                             q_span,
                             AnnotationKind::Secondary,
-                            "Possible unclosed quotes".to_string().into(),
+                            "Possible start of unclosed quote".to_string().into(),
                         );
 
                         if double_quotes_seen > 1 {
@@ -130,8 +160,14 @@ impl<R: Read> ConfigLoader<'_, R> {
                         };
 
                         let src_diag = diag_builder.build();
+                        //TEMP: Exclusive spanning will be used here :(
+                        self.pos -= 1;
+                        let broken_region = self.create_region(script_start, None);
 
-                        return Err(ConfigLoadError::General(src_diag));
+                        return ConfigLoaderOutput::Broken(
+                            broken_region,
+                            ConfigLoadError::Diagnostic(src_diag),
+                        );
                     }
 
                     if double_quotes_seen == 1 {
@@ -163,7 +199,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                         .add_annotation(
                             q_span,
                             AnnotationKind::Secondary,
-                            "Possible unclosed quotes".to_string().into(),
+                            "Possible start of unclosed quote".to_string().into(),
                         );
 
                         if single_quotes_seen > 1 {
@@ -173,7 +209,12 @@ impl<R: Read> ConfigLoader<'_, R> {
 
                         let src_diag = diag_builder.build();
 
-                        return Err(ConfigLoadError::General(src_diag));
+                        let broken_region = self.create_region(script_start, None);
+
+                        return ConfigLoaderOutput::Broken(
+                            broken_region,
+                            ConfigLoadError::Diagnostic(src_diag),
+                        );
                     }
 
                     if single_quotes_seen == 1 {
@@ -188,7 +229,11 @@ impl<R: Read> ConfigLoader<'_, R> {
                         self.handle_comment();
                     } else if self.peek() == Some(b'*') {
                         self.advance();
-                        self.handle_multi_comment()?;
+                        match self.handle_multi_comment() {
+                            Ok(_) => (),
+                            // Can only return err on unexpected <eof>
+                            Err(cfg_err) => return ConfigLoaderOutput::UnrecoverableErr(cfg_err),
+                        };
                     }
                 }
                 b'@' => {
@@ -231,6 +276,9 @@ impl<R: Read> ConfigLoader<'_, R> {
                         // there's serial data
                         let serial_start = self.pos + ANNOTATION_CLAUSE_SIZE;
 
+                        //WARN: Doesn't use helper because the helper doesn't take in a position
+                        //argument. It doesn't take one because it doesn't seem meaningful, it seems
+                        //like a forced compatibility later for this one singular case.
                         let region = SourceRegion::new(
                             self.handle.buffer()[..self.pos + ANNOTATION_CLAUSE_SIZE].to_vec(),
                             self.current_region_id,
@@ -239,7 +287,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                             Some(serial_start),
                         );
 
-                        return Ok(region);
+                        return ConfigLoaderOutput::Success(region);
                     }
 
                     // If no @def has been seen yet, there is enough space to check, and the next 4
@@ -290,19 +338,15 @@ impl<R: Read> ConfigLoader<'_, R> {
         }
         // TODO: Assert this...
 
-        // Case of no @def and no @end which requires a '0' return since the entire file should be
+        let region = self.create_region(script_start, None);
+
+        // Case of no @def and no @end which requires a '\0' return since the entire file should be
         // read. This does not mean it is correct, it only means the read limit wasn't reached.
         if !requires_end {
-            let region = SourceRegion::new(
-                self.handle.buffer()[..self.pos].to_vec(),
-                self.current_region_id,
-                self.current_path_id,
-                script_start,
-                None,
-            );
-
-            Ok(region)
+            ConfigLoaderOutput::Success(region)
         } else {
+            // Case of end <eof> being reached, which means it is within `READ_LIMIT` since it
+            // didn't actively reach it
             let core_msg = format!("Could not find `@end` after `@def`");
 
             let def_span = def_span.expect("@def must exist for this branch to be seen");
@@ -310,13 +354,20 @@ impl<R: Read> ConfigLoader<'_, R> {
 
             // Ensuring an indexable character is the last character
             //WARN: Need to make sure this doesn't break things
-            // let eof_pos = if self.pos == self.handle.buffer().len() {
-            //     self.pos - 1
-            // } else {
-            //     self.pos
-            // } as u32;
             // WARN: ENSURE THIS DOES NOT BREAK ANYTHING
-            let eof_pos = self.pos as u32;
+
+            // This - 1 has the same reason as many times in the lexer, where since spans are
+            // (inclusive, inclusive), when we use advance, and then break, that means we are
+            // technically the length of the point of interest + 1, but since we need an inclusive
+            // end it needs to - 1 itself.
+            //
+            // So, if we have "text\0", it advances "t" stopping at "\0", then it breaks, but since it's inclusive,
+            // that would mean it's over-indexing the actual span, so we need to - 1 to go back to
+            // the last "t" in "text"
+            //
+            //
+            // TODO: Change everything to exclusive.
+            let eof_pos = (self.pos - 1) as u32;
 
             let eof_span = SourceSpan::new(self.current_region_id, eof_pos, eof_pos);
 
@@ -334,13 +385,15 @@ impl<R: Read> ConfigLoader<'_, R> {
                     )
                     .build();
 
-            Err(ConfigLoadError::General(src_diag))
+            ConfigLoaderOutput::Broken(region, ConfigLoadError::Diagnostic(src_diag))
         }
     }
 
     /// Returns a result instead of an option because if there are unclosed quotes and this method
     /// fails, it would need return a Some value which DOESN'T represent a failure, making it
     /// misleading.
+    ///
+    //// Returns `true` on success, `false` on failure (Maybe?)
     // TODO: LEXER SHOULD ALSO HANDLE THIS ALONE
     fn read_quotes(&mut self, quote_type: u8) -> Result<(), ()> {
         // let mut read_bytes = 0;
@@ -361,6 +414,17 @@ impl<R: Read> ConfigLoader<'_, R> {
         }
 
         Err(())
+    }
+
+    /// Helper for reducing region creation boiler-plate
+    fn create_region(&self, script_start: usize, serial_start_opt: Option<usize>) -> SourceRegion {
+        SourceRegion::new(
+            self.handle.buffer()[..self.pos].to_vec(),
+            self.current_region_id,
+            self.current_path_id,
+            script_start,
+            serial_start_opt,
+        )
     }
 
     fn handle_comment(&mut self) {
@@ -420,7 +484,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                     )
                     .build();
 
-            return Err(ConfigLoadError::General(src_diag));
+            return Err(ConfigLoadError::Diagnostic(src_diag));
         }
 
         Ok(())

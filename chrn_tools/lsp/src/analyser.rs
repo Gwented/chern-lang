@@ -39,7 +39,7 @@ use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use compilation::modules::ImportKind;
 use compilation::modules::Module;
-use lang::config_loader::ConfigLoader;
+use lang::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use parking_lot::RwLock;
 use serde_json;
 use std::collections::HashMap;
@@ -89,7 +89,7 @@ fn evict_cache_if_needed(cache: &mut HashMap<String, String>) {
 ///   LSP line/character positions.
 ///
 /// # Behaviour
-/// * A `ConfigLoadError::General` diagnostic is expanded into one primary diagnostic
+/// * A `ConfigLoadError::Diagnostic` diagnostic is expanded into one primary diagnostic
 ///   (using the `primary` annotation span if present) plus one additional diagnostic
 ///   per secondary annotation, note, and help message.
 /// * A `ConfigLoadError::IO` error is reported at position `(0, 0)` because no span
@@ -105,7 +105,7 @@ pub(crate) fn config_load_error_to_diagnostics(
     };
 
     match err {
-        chrn_utils::core_error::ConfigLoadError::General(diag) => {
+        chrn_utils::core_error::ConfigLoadError::Diagnostic(diag) => {
             let severity = match diag.level {
                 DiagnosticLevel::Error => lsp_types::DiagnosticSeverity::ERROR,
                 DiagnosticLevel::Warn => lsp_types::DiagnosticSeverity::WARNING,
@@ -262,9 +262,22 @@ pub async fn analyze_and_publish_task(
     )
     .load_config()
     {
-        Ok(m) => m,
-        Err(e) => {
-            let diags = config_load_error_to_diagnostics(e, &text);
+        ConfigLoaderOutput::Success(region) => region,
+        ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
+            let diags = config_load_error_to_diagnostics(cfg_err, &text);
+            publish_if_current(
+                &client,
+                &uri,
+                diags,
+                &diags_cache,
+                &pending_versions,
+                version,
+            )
+            .await;
+            broken_region
+        }
+        ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
+            let diags = config_load_error_to_diagnostics(cfg_err, &text);
             publish_if_current(
                 &client,
                 &uri,
@@ -614,7 +627,7 @@ pub(crate) fn resolve_modules_lsp(
                                     "Caused by this import".to_string().into(),
                                 )
                                 .build();
-                        Err(ConfigLoadError::General(src_diag))
+                        Err(ConfigLoadError::Diagnostic(src_diag))
                     }
                     Ok(f) => Ok(Box::new(f) as Box<dyn std::io::Read + Send>),
                     Err(e) => {
@@ -628,14 +641,14 @@ pub(crate) fn resolve_modules_lsp(
                                     "Caused by this import".to_string().into(),
                                 )
                                 .build();
-                        Err(ConfigLoadError::General(src_diag))
+                        Err(ConfigLoadError::Diagnostic(src_diag))
                     }
                 }
             };
 
         let src = match source_res {
             Ok(s) => s,
-            Err(ConfigLoadError::General(diag)) => {
+            Err(ConfigLoadError::Diagnostic(diag)) => {
                 diags.push(diag);
                 continue;
             }
@@ -654,10 +667,28 @@ pub(crate) fn resolve_modules_lsp(
         let sub_region = match ConfigLoader::new(sub_region_id, src, path_id, settings, interner)
             .load_config()
         {
-            Ok(reg) => reg,
-            Err(cfg_err) => {
+            ConfigLoaderOutput::Success(region) => region,
+            ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
                 match cfg_err {
-                    ConfigLoadError::General(diag) => {
+                    ConfigLoadError::Diagnostic(diag) => {
+                        diags.push(diag);
+                    }
+                    ConfigLoadError::IO(e) => {
+                        let path = interner.search_path(path_id);
+                        let core_msg =
+                            core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
+                        let src_diag =
+                            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
+                                .add_annotation(path_span, AnnotationKind::Primary, None)
+                                .build();
+                        diags.push(src_diag);
+                    }
+                }
+                broken_region
+            }
+            ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
+                match cfg_err {
+                    ConfigLoadError::Diagnostic(diag) => {
                         diags.push(diag);
                     }
                     ConfigLoadError::IO(e) => {

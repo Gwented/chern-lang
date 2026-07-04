@@ -39,6 +39,47 @@ impl<T: Clone> SpannedContainerRef<'_, T> {
     }
 }
 
+// No, no this will not be named "AgnosticId"
+//// Wrapper structure over an id type to enforce type-safe indexing
+// #[derive(Debug)]
+// pub struct AgnosticId<T, I>
+// where
+//     T: Default + PartialEq + Eq + Clone + Copy + Into<usize> + From<usize> + Copy,
+// {
+//     pub inner: T,
+//     _marker: I,
+// }
+//
+// // NOT MAKING A DERIVE MACRO FOR THIS. PROBABLY.
+// #[derive(Debug)]
+// pub struct InternedId;
+// #[derive(Debug)]
+// pub struct SymbolId;
+// #[derive(Debug)]
+// pub struct SourceRegionId;
+// #[derive(Debug)]
+// pub struct PathId;
+// #[derive(Debug)]
+// pub struct TypeId;
+// #[derive(Debug)]
+// pub struct VariableId;
+// #[derive(Debug)]
+// pub struct ConfigId;
+// #[derive(Debug)]
+// pub struct DirectiveId;
+// #[derive(Debug)]
+// pub struct ModuleId;
+// #[derive(Debug)]
+// pub struct ScopeId;
+// #[derive(Debug)]
+// pub struct AstId;
+// #[derive(Debug)]
+// pub struct MemberId;
+// #[derive(Debug)]
+// pub struct ExprId;
+// #[derive(Debug)]
+// pub struct ValueId;
+
 /// Type-safe wrapper for using an index that contains a valid index into `Intern`
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InternedId {

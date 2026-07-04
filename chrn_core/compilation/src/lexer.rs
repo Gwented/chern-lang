@@ -645,6 +645,9 @@ impl Lexer<'_> {
         let span_start = if is_escaped { start - 2 } else { start } as u32;
 
         // end Offset due to advance being done before leaving the loop.
+        //
+        // Spanning is purely visual and for external tooling, hence the "e#" in escape is still
+        // kept inside the span, just as quotes are kept inside their span in `read_quotes`
         let span = SourceSpan::new(self.current_region_id, span_start, (end - 1) as u32);
 
         if interned_id.id == intern::INTERNED_TRUE && !is_escaped {

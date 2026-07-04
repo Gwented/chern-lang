@@ -1,12 +1,14 @@
 use crate::id_types::{PathId, SourceRegionId};
 
+// Should these have identifiers?
+/// Byte region structure
 #[derive(Debug)]
 pub struct SourceRegion {
     // /// Identifier associated with file that the region is in
     // pub name_id: InternedId,
     /// Index of `self`
     pub region_id: SourceRegionId,
-    /// Bytes from chrn config file
+    /// Bytes assocaited with this region, which specifically point to the script portion
     pub src_bytes: Vec<u8>,
     /// Path of this region
     pub path_id: PathId,
@@ -14,7 +16,10 @@ pub struct SourceRegion {
     // pub new_lines: Vec<usize>,
     /// The script language start which can be different depending on if @def is used
     pub script_start: usize,
-    /// The serial start which can be None if there is no serialized file within the config file
+    /// The serial start, which can be `None` if there is no serialized file within the config file
+    ///
+    /// On `Some`, this variable is just an assumption that anything after an `@end` seen is
+    /// the serial portion.
     pub serial_start: Option<usize>,
 }
 

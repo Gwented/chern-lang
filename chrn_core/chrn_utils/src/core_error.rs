@@ -37,11 +37,12 @@ impl From<SerialError> for CoreError {
 // More like startup error now
 #[derive(Debug)]
 pub enum ConfigLoadError {
-    General(SourceDiagnostic),
+    Diagnostic(SourceDiagnostic),
     //// Contains whether or not the program can continue after critical error
     // Critical(bool),
     IO(std::io::Error),
 }
+
 impl From<std::io::Error> for ConfigLoadError {
     fn from(err: std::io::Error) -> Self {
         ConfigLoadError::IO(err)

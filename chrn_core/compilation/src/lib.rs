@@ -36,6 +36,19 @@ mod tests {
         interner
     }
 
+    trait ConfigLoaderOutputExt {
+        fn expect_success(self) -> SourceRegion;
+    }
+
+    impl ConfigLoaderOutputExt for ConfigLoaderOutput {
+        fn expect_success(self) -> SourceRegion {
+            match self {
+                ConfigLoaderOutput::Success(region) => region,
+                other => panic!("expected ConfigLoaderOutput::Success, got {other:?}"),
+            }
+        }
+    }
+
     fn get_module_region<'a>(arena: &'a SourceRegionArena, module: &Module) -> &'a SourceRegion {
         let region_id = module
             .region_id
@@ -54,7 +67,7 @@ mod tests {
         let source_region =
             ConfigLoader::new(region_id, text.as_bytes(), path_id, &settings, &interner)
                 .load_config()
-                .unwrap();
+                .expect_success();
 
         let module = Module::new(
             Default::default(),
@@ -105,7 +118,7 @@ mod tests {
         let source_region =
             ConfigLoader::new(region_id, text.as_bytes(), path_id, &settings, interner)
                 .load_config()
-                .unwrap();
+                .expect_success();
 
         let module = Module::new(
             interner.intern(name),
@@ -175,7 +188,11 @@ mod tests {
         source_map::source_diagnostic::SourceDiagnostic,
         source_map::source_region::{SourceRegion, SourceRegionArena},
     };
-    use lang::{config_loader::ConfigLoader, keywords::Keyword, values::Value};
+    use lang::{
+        config_loader::{ConfigLoader, ConfigLoaderOutput},
+        keywords::Keyword,
+        values::Value,
+    };
 
     use crate::{
         lexer::Lexer,
@@ -294,7 +311,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
 
         let (toks, _) = Lexer::new(
             metadata.region_id,
@@ -327,7 +344,10 @@ mod tests {
         )
         .load_config();
 
-        assert_eq!(true, opt.is_ok());
+        assert!(
+            matches!(opt, ConfigLoaderOutput::Success(_)),
+            "properly closed @def and @end should succeed"
+        );
 
         // Improper @def without an @end
         // This type of error is more likely to break the diagnostic reporting but is fixed for
@@ -343,7 +363,10 @@ mod tests {
         )
         .load_config();
 
-        assert_eq!(true, opt.is_err());
+        assert!(
+            matches!(opt, ConfigLoaderOutput::Broken(_, _)),
+            "improper @def without @end should produce a Broken region"
+        );
     }
 
     #[test]
@@ -362,9 +385,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .expect(
-            "Should be fine since there is nothing inherently wrong with an @ being inside a file",
-        );
+        .expect_success();
         let region_str = str::from_utf8(&region.src_bytes[..]).unwrap();
         assert_eq!(region_str, content);
 
@@ -392,7 +413,7 @@ mod tests {
     // -----------------------------------------------------------------------------------------
 
     /// Helper: runs the config loader on a raw byte slice and returns the resulting region.
-    fn load_cfg_bytes(bytes: &[u8]) -> Result<SourceRegion, ConfigLoadError> {
+    fn load_cfg_bytes(bytes: &[u8]) -> ConfigLoaderOutput {
         let mut interner = mock_interner(0, 1);
         let path_id = interner.intern_path(Path::new(""));
         let region_id = SourceRegionId::new(0);
@@ -407,7 +428,7 @@ mod tests {
     }
 
     /// Helper: runs the config loader on a string and returns the resulting region.
-    fn load_cfg(text: &str) -> Result<SourceRegion, ConfigLoadError> {
+    fn load_cfg(text: &str) -> ConfigLoaderOutput {
         load_cfg_bytes(text.as_bytes())
     }
 
@@ -419,27 +440,27 @@ mod tests {
     fn cfg_at_def_no_separator_before_at_end_test() {
         let res = load_cfg("@def@end");
         assert!(
-            res.is_ok(),
+            matches!(res, ConfigLoaderOutput::Success(_)),
             "Adjacent @def@end currently fails (off-by-one). Update this test if the loader \
              is fixed to detect the immediately-following @end."
         );
         let res = load_cfg(" @def@end ");
-        assert!(res.is_ok());
+        assert!(matches!(res, ConfigLoaderOutput::Success(_)));
         let res = load_cfg("@def \t@end\n\t");
-        assert!(res.is_ok());
+        assert!(matches!(res, ConfigLoaderOutput::Success(_)));
         let res = load_cfg(" @def @end");
-        assert!(res.is_ok());
+        assert!(matches!(res, ConfigLoaderOutput::Success(_)));
         let res = load_cfg(" @def @end ");
-        assert!(res.is_ok());
+        assert!(matches!(res, ConfigLoaderOutput::Success(_)));
         let res = load_cfg("@def\t@\re\rnd");
-        assert!(res.is_err());
+        assert!(matches!(res, ConfigLoaderOutput::Broken(_, _)));
     }
 
     /// `@end` (4 bytes) appearing with no preceding `@def` must NOT terminate a script
     /// block. The whole file is the script, and `@end` should be reported as plain text.
     #[test]
     fn cfg_at_end_without_at_def_is_plain_text_test() {
-        let res = load_cfg("@end").expect("A bare @end is just text");
+        let res = load_cfg("@end").expect_success();
         assert_eq!(res.src_bytes, b"@end");
         assert!(res.serial_start.is_none());
         assert_eq!(res.script_start, 0);
@@ -453,15 +474,15 @@ mod tests {
         // produce a "missing @end" diagnostic - the NUL is treated as the end of the script.
         let res = load_cfg("@def var-> x: i32\0this would normally break things@end");
         assert!(
-            res.is_err(),
-            "NUL after @def should not silently swallow the missing-@end error"
+            matches!(res, ConfigLoaderOutput::Broken(_, _)),
+            "NUL after @def should produce a Broken region, not silently swallow the missing-@end error"
         );
     }
 
     /// A NUL byte at the very start of the file should produce an empty region.
     #[test]
     fn cfg_null_byte_at_start_test() {
-        let res = load_cfg("\0hello world").expect("NUL at start is a clean terminator");
+        let res = load_cfg("\0hello world").expect_success();
         dbg!(&res.src_bytes);
         assert_eq!(res.src_bytes, []);
         assert!(res.serial_start.is_none());
@@ -473,8 +494,7 @@ mod tests {
     fn cfg_at_sign_inside_string_is_not_a_marker_test() {
         // The string contains "@def" as text. The loader should report no error and treat the
         // string as opaque content of the script body (no @def was ever seen at the top level).
-        let res = load_cfg(r#""this has @def inside it" remaining"#)
-            .expect("@ inside a string is not a marker");
+        let res = load_cfg(r#""this has @def inside it" remaining"#).expect_success();
         assert!(res.serial_start.is_none(), "No @def was ever matched");
         let s = std::str::from_utf8(&res.src_bytes).unwrap();
         assert!(s.contains("@def inside it"));
@@ -484,8 +504,7 @@ mod tests {
     /// Confirms `read_quotes` fully consumes the string before any other branch fires.
     #[test]
     fn cfg_multi_comment_syntax_inside_string_is_not_comment_test() {
-        let res = load_cfg(r#""/* still just text " trailing"#)
-            .expect("Quoted /* must not start a comment");
+        let res = load_cfg(r#""/* still just text " trailing"#).expect_success();
         assert!(res.serial_start.is_none());
         assert!(
             std::str::from_utf8(&res.src_bytes)
@@ -498,7 +517,7 @@ mod tests {
     /// advances until `\n`, so the `@` arm never sees this `@def`.
     #[test]
     fn cfg_at_def_inside_line_comment_is_ignored_test() {
-        let res = load_cfg("// @def @end\nreal code\n").expect("Commented @def is harmless");
+        let res = load_cfg("// @def @end\nreal code\n").expect_success();
         assert!(
             res.serial_start.is_none(),
             "@def inside a // comment must not open a block"
@@ -511,16 +530,13 @@ mod tests {
     /// interaction between comment depth tracking and `@` matching.
     #[test]
     fn cfg_at_def_inside_multi_comment_is_ignored_test() {
-        let res = load_cfg("/* @def @end */\nreal\n")
-            .expect("Commented @def in block comment is harmless");
+        let res = load_cfg("/* @def @end */\nreal\n").expect_success();
         assert!(res.serial_start.is_none());
 
-        let res =
-            load_cfg("/*@def @end*/\nreal\n").expect("Commented @def in block comment is harmless");
+        let res = load_cfg("/*@def @end*/\nreal\n").expect_success();
         assert!(res.serial_start.is_none());
 
-        let res = load_cfg("/*@def@end*/\r\nreal\n\x25")
-            .expect("Commented @def in block comment is harmless");
+        let res = load_cfg("/*@def@end*/\r\nreal\n\x25").expect_success();
         assert!(res.serial_start.is_none());
     }
 
@@ -530,7 +546,7 @@ mod tests {
     #[test]
     fn cfg_escape_sequence_in_string_test() {
         // Content: "a\b"  — the \b is an escape; the closing " is at index 4.
-        let res = load_cfg(r#""a\b" after"#).expect("Closed string with escape");
+        let res = load_cfg(r#""a\b" after"#).expect_success();
         assert!(res.serial_start.is_none());
         let s = std::str::from_utf8(&res.src_bytes).unwrap();
         assert!(s.starts_with("\"a\\b\""));
@@ -542,8 +558,8 @@ mod tests {
     fn cfg_unclosed_double_quote_errors_test() {
         let res = load_cfg("hello \"world");
         match res {
-            Err(ConfigLoadError::General(_)) => {}
-            other => panic!("Expected unclosed-quote error, got {:?}", other),
+            ConfigLoaderOutput::Broken(_, ConfigLoadError::Diagnostic(_)) => {}
+            other => panic!("Expected unclosed-quote error, got {other:?}"),
         }
     }
 
@@ -552,7 +568,13 @@ mod tests {
     #[test]
     fn cfg_unclosed_single_quote_errors_test() {
         let res = load_cfg("hello 'world");
-        assert!(res.is_err());
+        assert!(
+            matches!(
+                res,
+                ConfigLoaderOutput::Broken(_, ConfigLoadError::Diagnostic(_))
+            ),
+            "unclosed single quotes should produce a Broken region with a Diagnostic"
+        );
     }
 
     /// A backslash at the very end of the file, inside a string, must cause the string
@@ -561,14 +583,20 @@ mod tests {
     #[test]
     fn cfg_escape_at_eof_in_string_errors_test() {
         let res = load_cfg(r#""abc\"#);
-        assert!(res.is_err());
+        assert!(
+            matches!(
+                res,
+                ConfigLoaderOutput::Broken(_, ConfigLoadError::Diagnostic(_))
+            ),
+            "escape at EOF in string should produce a Broken region with a Diagnostic"
+        );
     }
 
     /// An empty input should yield a valid empty region with no serial start and a
     /// script_start of 0. This is the canonical "no markers at all" case.
     #[test]
     fn cfg_empty_file_test() {
-        let res = load_cfg("").expect("Empty file is a valid script");
+        let res = load_cfg("").expect_success();
         assert_eq!(res.src_bytes, []);
         assert_eq!(res.script_start, 0);
         assert!(res.serial_start.is_none());
@@ -580,8 +608,7 @@ mod tests {
     #[test]
     fn cfg_crlf_line_endings_test() {
         // Comment then real content with CRLF separators.
-        let res = load_cfg("\r//\r\r\r header\r\nlet A = 1\r\nlet B = 2\r\n")
-            .expect("CRLF line endings should not break the loader");
+        let res = load_cfg("\r//\r\r\r header\r\nlet A = 1\r\nlet B = 2\r\n").expect_success();
         assert!(res.serial_start.is_none());
         let s = std::str::from_utf8(&res.src_bytes).unwrap();
         assert!(s.contains("let A = 1"));
@@ -593,8 +620,7 @@ mod tests {
     /// must not panic and must report no error (no `@def` was opened).
     #[test]
     fn cfg_lone_at_sign_at_eof_test() {
-        let res =
-            load_cfg("some text @").expect("Lone @ at EOF is harmless when no @def is in progress");
+        let res = load_cfg("some text @").expect_success();
         assert!(res.serial_start.is_none());
         let s = std::str::from_utf8(&res.src_bytes).unwrap();
         assert_eq!(s, "some text @");
@@ -605,8 +631,7 @@ mod tests {
     /// `self.advance()` covers the case where neither annotation matches.
     #[test]
     fn cfg_many_at_signs_in_a_row_test() {
-        let res = load_cfg("@@@@@@@@@@@@ plain@ @ text @@@@@@@@@@@@")
-            .expect("A run of @ signs is not an annotation");
+        let res = load_cfg("@@@@@@@@@@@@ plain@ @ text @@@@@@@@@@@@").expect_success();
         assert!(res.serial_start.is_none());
         let s = std::str::from_utf8(&res.src_bytes).unwrap();
         dbg!(s);
@@ -620,7 +645,10 @@ mod tests {
     #[test]
     fn cfg_unclosed_multi_line_comment_test() {
         let res = load_cfg("/* this comment never ends");
-        assert!(res.is_err());
+        assert!(
+            matches!(res, ConfigLoaderOutput::UnrecoverableErr(_)),
+            "unclosed multi-line comment should produce an UnrecoverableErr"
+        );
     }
 
     /// Tab characters must be treated as ordinary bytes by the loader — they are not
@@ -633,17 +661,17 @@ mod tests {
         // :crab:
         let res = load_cfg("\t@def\tva\nr->\tx:\ti3\r2\t\r\u{32}@end\t");
         match res {
-            Ok(region) => {
+            ConfigLoaderOutput::Success(region) => {
                 // If the loader accepts it, the src_bytes should contain the whole input.
                 let s = std::str::from_utf8(&region.src_bytes).unwrap();
                 assert!(s.contains("@def"));
                 assert!(s.contains("@end"));
                 assert!(region.serial_start.is_some());
             }
-            Err(e) => {
+            other => {
                 // If the loader rejects it, the rejection should be about the actual
                 // content (missing @end, etc.) — never a panic from a confused byte position.
-                panic!("Loader errored on tab-separated @def/@end: {:?}", e);
+                panic!("Loader errored on tab-separated @def/@end: {other:?}");
             }
         }
     }
@@ -665,7 +693,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
         let (toks, _) = Lexer::new(
             metadata.region_id,
             &metadata.src_bytes,
@@ -695,7 +723,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
 
         let (toks, _) = Lexer::new(
             metadata.region_id,
@@ -726,7 +754,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
 
         let (toks, _) = Lexer::new(
             metadata.region_id,
@@ -755,7 +783,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
         let (toks, _) = Lexer::new(
             metadata.region_id,
             &metadata.src_bytes,
@@ -783,7 +811,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
         let (toks, _) = Lexer::new(
             metadata.region_id,
             &metadata.src_bytes,
@@ -812,7 +840,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
         let (toks, _) = Lexer::new(
             metadata.region_id,
             &metadata.src_bytes,
@@ -840,7 +868,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
         let (toks, _) = Lexer::new(
             metadata.region_id,
             &metadata.src_bytes,
@@ -868,7 +896,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
         let (toks, _) = Lexer::new(
             metadata.region_id,
             &metadata.src_bytes,
@@ -919,8 +947,11 @@ mod tests {
         )
         .load_config();
 
-        assert_eq!(true, correct.is_ok());
-        assert_eq!(true, wrong.is_err());
+        assert!(matches!(correct, ConfigLoaderOutput::Success(_)));
+        assert!(
+            matches!(wrong, ConfigLoaderOutput::UnrecoverableErr(_)),
+            "unclosed multi-line comment should produce an UnrecoverableErr"
+        );
     }
 
     #[test]
@@ -937,7 +968,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
 
         assert_eq!(&text[4..], &text[metadata.script_start..]);
         assert_eq!("hi", &text[metadata.serial_start.unwrap()..]);
@@ -961,7 +992,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
 
         let (toks, _) = Lexer::new(
             metadata.region_id,
@@ -988,7 +1019,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
         let (toks, _) = Lexer::new(
             metadata.region_id,
             &metadata.src_bytes,
@@ -1014,7 +1045,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
         let (toks, _) = Lexer::new(
             metadata.region_id,
             &metadata.src_bytes,
@@ -1040,7 +1071,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
         let (toks, _) = Lexer::new(
             metadata.region_id,
             &metadata.src_bytes,
@@ -1066,7 +1097,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
         let (toks, _) = Lexer::new(
             metadata.region_id,
             &metadata.src_bytes,
@@ -1092,7 +1123,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
         let (toks, _) = Lexer::new(
             metadata.region_id,
             &metadata.src_bytes,
@@ -1118,7 +1149,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
         let (toks, _) = Lexer::new(
             metadata.region_id,
             &metadata.src_bytes,
@@ -1144,7 +1175,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
         let (toks, _) = Lexer::new(
             metadata.region_id,
             &metadata.src_bytes,
@@ -1170,7 +1201,7 @@ mod tests {
             &interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
         let (toks, _) = Lexer::new(
             metadata.region_id,
             &metadata.src_bytes,
@@ -1185,6 +1216,73 @@ mod tests {
             }
             _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
         }
+    }
+
+    #[test]
+    fn read_ident_includes_trailing_underscore() {
+        let src: &[u8] = b"foo_";
+        let mut interner = Intern::init();
+        let mut lex = Lexer::new(SourceRegionId::new(0), src, 0);
+        let (toks, _) = lex.tokenize(&mut interner);
+
+        // Expect at least one identifier token: "foo_"
+        let id_tok = toks
+            .iter()
+            .find_map(|st| match st.tok {
+                Token::Id(id) => Some((id, st.span)),
+                _ => None,
+            })
+            .expect("expected an Id token for \"foo_\"");
+
+        let (id, span) = id_tok;
+        let lexed = interner.search(id);
+        assert_eq!(lexed, "foo_", "underscore should be included in ident");
+
+        // Span must cover exactly the four bytes "foo_".
+        assert_eq!(span.start, 0);
+        assert_eq!(span.end, 3);
+    }
+
+    /// A bare `_` at the end of input must lex without panicking.
+    #[test]
+    fn read_ident_handles_bare_underscore() {
+        let src: &[u8] = b"_";
+        let mut interner = Intern::init();
+        let mut lex = Lexer::new(SourceRegionId::new(0), src, 0);
+        let (toks, _) = lex.tokenize(&mut interner);
+
+        let id = toks
+            .iter()
+            .find_map(|st| match st.tok {
+                Token::Id(id) => Some(id),
+                _ => None,
+            })
+            .expect("expected an Id token for \"_\"");
+
+        assert_eq!(interner.search(id), "_");
+    }
+
+    /// Identifiers that mix alphanumerics and underscores in various positions
+    /// must all be lexed correctly.
+    #[test]
+    fn read_ident_mixed_alphanumeric_and_underscore() {
+        // Separators between identifiers are tokens that don't contain
+        // alphanumerics or underscores, so each Id token in the source
+        // becomes one Id in the output.
+        let src: &[u8] = b"foo_bar+_qux+a_b_c_";
+        let mut interner = Intern::init();
+        let mut lex = Lexer::new(SourceRegionId::new(0), src, 0);
+        let (toks, _) = lex.tokenize(&mut interner);
+
+        let names: Vec<String> = toks
+            .iter()
+            .filter_map(|st| match st.tok {
+                Token::Id(id) => Some(interner.search(id).to_string()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(names, vec!["foo_bar", "_qux", "a_b_c_"]);
     }
 
     #[test]
@@ -1342,7 +1440,7 @@ mod tests {
             &mut interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
 
         // Doing this first since if modules were identified during the parsing stage any
         // syntax error within another module would not be reportable since the parser failed.
@@ -1376,7 +1474,7 @@ mod tests {
             &mut interner,
         )
         .load_config()
-        .unwrap();
+        .expect_success();
 
         let sub_mod_name_id = InternedId::new(1);
         let sub_mod_id = ModuleId::new(1);
@@ -2652,72 +2750,5 @@ mod tests {
             .is_err(),
             "Chain leading into a cycle should be rejected"
         );
-    }
-
-    #[test]
-    fn read_ident_includes_trailing_underscore() {
-        let src: &[u8] = b"foo_";
-        let mut interner = Intern::init();
-        let mut lex = Lexer::new(SourceRegionId::new(0), src, 0);
-        let (toks, _) = lex.tokenize(&mut interner);
-
-        // Expect at least one identifier token: "foo_"
-        let id_tok = toks
-            .iter()
-            .find_map(|st| match st.tok {
-                Token::Id(id) => Some((id, st.span)),
-                _ => None,
-            })
-            .expect("expected an Id token for \"foo_\"");
-
-        let (id, span) = id_tok;
-        let lexed = interner.search(id);
-        assert_eq!(lexed, "foo_", "underscore should be included in ident");
-
-        // Span must cover exactly the four bytes "foo_".
-        assert_eq!(span.start, 0);
-        assert_eq!(span.end, 3);
-    }
-
-    /// A bare `_` at the end of input must lex without panicking.
-    #[test]
-    fn read_ident_handles_bare_underscore() {
-        let src: &[u8] = b"_";
-        let mut interner = Intern::init();
-        let mut lex = Lexer::new(SourceRegionId::new(0), src, 0);
-        let (toks, _) = lex.tokenize(&mut interner);
-
-        let id = toks
-            .iter()
-            .find_map(|st| match st.tok {
-                Token::Id(id) => Some(id),
-                _ => None,
-            })
-            .expect("expected an Id token for \"_\"");
-
-        assert_eq!(interner.search(id), "_");
-    }
-
-    /// Identifiers that mix alphanumerics and underscores in various positions
-    /// must all be lexed correctly.
-    #[test]
-    fn read_ident_mixed_alphanumeric_and_underscore() {
-        // Separators between identifiers are tokens that don't contain
-        // alphanumerics or underscores, so each Id token in the source
-        // becomes one Id in the output.
-        let src: &[u8] = b"foo_bar+_qux+a_b_c_";
-        let mut interner = Intern::init();
-        let mut lex = Lexer::new(SourceRegionId::new(0), src, 0);
-        let (toks, _) = lex.tokenize(&mut interner);
-
-        let names: Vec<String> = toks
-            .iter()
-            .filter_map(|st| match st.tok {
-                Token::Id(id) => Some(interner.search(id).to_string()),
-                _ => None,
-            })
-            .collect();
-
-        assert_eq!(names, vec!["foo_bar", "_qux", "a_b_c_"]);
     }
 }

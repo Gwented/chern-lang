@@ -47,7 +47,7 @@ fn exec_check(
         {
             Ok(data) => data,
             Err(init_err) => match init_err.cfg_err {
-                ConfigLoadError::General(diag) => {
+                ConfigLoadError::Diagnostic(diag) => {
                     let footers = presentation::make_footers(&reporter);
                     let rendered_diags = renderer::render_cli_diags(
                         &[diag],
@@ -166,7 +166,7 @@ fn exec_query(query_cmd: &QueryCmd, cli_cfg: &CliConfig) -> Result<String, Strin
     // let mut chrn_manager = match ScriptCompilerCache::new(&path, chrn_settings) {
     //     Ok(m) => m,
     //     Err(ChrnManagerInitFailure { interner, init_err }) => match init_err.cfg_err {
-    //         ConfigLoadError::General(diag) => {
+    //         ConfigLoadError::Diagnostic(diag) => {
     //             let render_settings =
     //                 RenderSettings::new(cli_cfg.can_color, cli_cfg.terminal_color_type);
     //             let rendered_diags =

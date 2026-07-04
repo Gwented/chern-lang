@@ -42,7 +42,9 @@ pub fn run_all(
     // aren't resolved first, then type resolution isn't possible since it could be using types
     // from elsewhere, which are not known yet.
     for mod_idx in 0..compiler.mods.len() {
-        let mod_id = ModuleId::new(mod_idx);
+        //TEST: The error messages get worse when they are allowed  to be read with a broken region
+        let (mod_id, state) = (ModuleId::new(mod_idx), compiler.mods[mod_idx].state);
+        dbg!(state);
         let (toks_opt, trivia_opt) = run_lexer(compiler, compiler_store, &compiler_cache, mod_id);
 
         let ast_info_opt = if let Some(toks) = &toks_opt {

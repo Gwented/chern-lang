@@ -1,4 +1,8 @@
+// FIX: Being able to use @end by itself with @def is technically a bug since the lexer is the one
+// quitting after seeing @end, not the other way around. Either the loader needs to stop caring
+// about if @end has an @def, or the emergent feature needs to be removed.
 // TODO: This should be split but not sure what would be best since it is fairly local and small
+//TODO: This needs tests
 use std::{fs, path::Path};
 
 pub mod mod_finder;
@@ -15,7 +19,7 @@ use chrn_utils::{
         source_span::SourceSpan,
     },
 };
-use lang::config_loader::ConfigLoader;
+use lang::config_loader::{ConfigLoader, ConfigLoaderOutput};
 
 use crate::{
     modules::mod_finder::ModuleFinder,
@@ -101,7 +105,7 @@ pub enum ModuleKind {
 // May or may not add more specific states like parsed and such, but this is fine
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModuleState {
-    Error,
+    BrokenRegion,
     #[default]
     Loading,
     Loaded,
@@ -178,24 +182,43 @@ pub fn extract_modules(
             let path_id = interner.intern_path(path);
             let src_diag =
                 SourceDiagnostic::builder(DiagnosticLevel::Error, err_msg, path_id).build();
-            let cfg_err = ConfigLoadError::General(src_diag);
+            let cfg_err = ConfigLoadError::Diagnostic(src_diag);
 
             return Err(ModuleInitError::new(None, interner, cfg_err));
         }
     };
+
+    // Maybe the reporter should just be used
+    let mut diags = Vec::new();
 
     let main_path_id = interner.intern_path(&path);
 
     let mut region_arena: SourceRegionArena = SourceRegionArena::new(Default::default());
     let main_region_id = SourceRegionId::new(0);
 
-    // Using region id before pushing
-    let main_region =
+    // Not sure if main should even recover from this beyond having an existent region
+    let (main_region, main_mod_state) =
         match ConfigLoader::new(main_region_id, src, main_path_id, &settings, &interner)
             .load_config()
         {
-            Ok(reg) => reg,
-            Err(cfg_err) => {
+            ConfigLoaderOutput::Success(region) => (region, ModuleState::Loaded),
+            // This could be pretty bad to leave here because
+            ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
+                // Odd handling..
+                let diag = match cfg_err {
+                    ConfigLoadError::Diagnostic(diag) => diag,
+                    ConfigLoadError::IO(io_err) => {
+                        let err_str = core_error::form_string_from_io_err(&io_err, path)
+                            .unwrap_or(io_err.to_string());
+                        SourceDiagnostic::builder(DiagnosticLevel::Error, err_str, main_path_id)
+                            .build()
+                    }
+                };
+
+                diags.push(diag);
+                (broken_region, ModuleState::BrokenRegion)
+            }
+            ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
                 return Err(ModuleInitError::new(None, interner, cfg_err));
             }
         };
@@ -212,7 +235,7 @@ pub fn extract_modules(
             let src_diag =
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, main_path_id).build();
 
-            let cfg_err = ConfigLoadError::General(src_diag);
+            let cfg_err = ConfigLoadError::Diagnostic(src_diag);
             //NOTE: Not sure what behavior to expect from this since, the region is available, but
             //the cli renderer may or may not properly innately just create a diagnostic that
             //simply has no extra information besides the error msg
@@ -239,7 +262,7 @@ pub fn extract_modules(
     // Maybe don't inherently declare here since it's a little odd to use a returned variable as
     // the main variable to then collect future diagnostics?
     // Maybe not?
-    let (bind, main_imports, mut diags) = ModuleFinder::new(
+    let (bind, main_imports, mut finder_diags) = ModuleFinder::new(
         &main_region.src_bytes,
         &settings,
         &mut reserved_mod_ids,
@@ -249,11 +272,13 @@ pub fn extract_modules(
         main_region.serial_start,
     )
     .collect_imports(&mut interner);
+    diags.append(&mut finder_diags);
 
-    // No errors are immediately terminal after this point
+    // No errors are immediately terminal after this point since the main entry point now exists and
+    // can be viewed even if it's the only module that was successfully created
     let main_mod = Module::new(
         name_id,
-        ModuleState::Loading,
+        main_mod_state,
         main_mod_id,
         main_imports,
         Some(main_region_id),
@@ -300,10 +325,7 @@ pub fn extract_modules(
             //
             // This is needed because modules are processed in alignment with their id, which isn't
             // inherently isn't required depending on how a tool uses it, but still retained explicitly here.
-            if inner.mod_id.id != next_id {
-                inner.mod_id.id = next_id;
-            }
-
+            inner.mod_id.id = next_id;
             all_mods.push(inner);
         }
 
@@ -358,7 +380,7 @@ pub fn extract_modules(
     //         // File system gui!
     //         let src_diag =
     //             SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id).build();
-    //         return Err(ConfigLoadError::General(src_diag));
+    //         return Err(ConfigLoadError::Diagnostic(src_diag));
     //     }
     // }
 
@@ -402,6 +424,8 @@ fn resolve_modules(
     interner: &mut Intern,
 ) {
     for import in &prev_mod.imports {
+        // Should this be unreachable!'d? If something gets in here and it really isn't a source
+        // import, then something major probably happened that's actively wrong
         let ImportKind::Source(path_id, path_span) = import.kind else {
             continue;
         };
@@ -436,6 +460,7 @@ fn resolve_modules(
                     .build();
 
                 diags.push(src_diag);
+                // Skips import on this error since this means the import is entirely invalid
                 continue;
             }
             Ok(f) => f,
@@ -456,11 +481,12 @@ fn resolve_modules(
             }
         };
 
+        // Creating region id for the current module on this level in the recursive stacke
         let sub_region_id = SourceRegionId::new(region_arena.regions.len() as u32);
 
         //Oh my
-        let file_name = match path.file_prefix().map(|n| n.to_str()) {
-            Some(Some(p)) => p.to_string(),
+        let file_name = match path.file_prefix().map(|n| n.to_str()).flatten() {
+            Some(p) => p.to_string(),
             _ => {
                 if let Some(name_id) = import.alias_id {
                     interner.search(name_id).to_string()
@@ -489,19 +515,57 @@ fn resolve_modules(
         let sub_mod_name_id = interner.intern(&file_name);
 
         // Using region id before pushing
-        let sub_region = match ConfigLoader::new(sub_region_id, src, path_id, settings, interner)
-            .load_config()
+        let (sub_region, sub_state) = match ConfigLoader::new(
+            sub_region_id,
+            src,
+            path_id,
+            settings,
+            interner,
+        )
+        .load_config()
         {
-            Ok(reg) => reg,
-            Err(cfg_err) => {
+            ConfigLoaderOutput::Success(region) => (region, ModuleState::Loaded),
+            //FIX: Works but code liability
+            ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
                 match cfg_err {
-                    ConfigLoadError::General(diag) => {
+                    ConfigLoadError::Diagnostic(diag) => {
                         diags.push(diag);
                     }
                     ConfigLoadError::IO(e) => {
+                        // FIX:
+                        // If this case is met, an index out of bounds error occurs inside of the
+                        // cli because this uses the region id of the source itself, which is valid
+                        // because the source does exist, but the region is never pushed, hence it's
+                        // still out of bounds despite being correct.
                         let path = interner.search_path(path_id);
                         let core_msg =
                             core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
+                        let src_diag =
+                            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
+                                .add_annotation(path_span, AnnotationKind::Primary, None)
+                                .build();
+
+                        diags.push(src_diag);
+                    }
+                }
+
+                (broken_region, ModuleState::BrokenRegion)
+            }
+            ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
+                match cfg_err {
+                    ConfigLoadError::Diagnostic(diag) => {
+                        diags.push(diag);
+                    }
+                    ConfigLoadError::IO(e) => {
+                        // FIX:
+                        // If this case is met, an index out of bounds error occurs inside of the
+                        // cli because this uses the region id of the source itself, which is valid
+                        // because the source does exist, but the region is never pushed, hence it's
+                        // still out of bounds despite being correct.
+                        let path = interner.search_path(path_id);
+                        let core_msg =
+                            core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
+                        //FIX: THIS MAY NOT BE COVERED
                         let src_diag =
                             SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
                                 .add_annotation(path_span, AnnotationKind::Primary, None)

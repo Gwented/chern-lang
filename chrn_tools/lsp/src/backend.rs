@@ -40,7 +40,7 @@ use compilation::lexer::token::Token as ScriptToken;
 use compilation::lookup::scopes;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::{Symbol, SymbolKind, Type, VariableState};
-use lang::config_loader::ConfigLoader;
+use lang::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use parking_lot::RwLock;
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
@@ -194,9 +194,13 @@ impl Backend {
         )
         .load_config()
         {
-            Ok(m) => m,
-            Err(e) => {
-                publish_config_load_error(self.client.clone(), uri.clone(), &text, e);
+            ConfigLoaderOutput::Success(region) => region,
+            ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
+                publish_config_load_error(self.client.clone(), uri.clone(), &text, cfg_err);
+                broken_region
+            }
+            ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
+                publish_config_load_error(self.client.clone(), uri.clone(), &text, cfg_err);
                 return None;
             }
         };

@@ -7,6 +7,7 @@ use crate::{
         mem_budget::{BudgetResult, MemoryBudget},
         mem_cost::{self, MemoryCost},
     },
+    core_error::{self, ConfigLoadError},
     id_types::PathId,
     source_map::{
         source_diagnostic::annotations::{Annotation, AnnotationKind},
@@ -45,7 +46,6 @@ impl Reporter {
         // change to be more customizable. Is that necessary?
         let amt = diags.len();
 
-        dbg!(self.budget.remaining());
         match self.budget.checked_consume(amt) {
             BudgetResult::Stable | BudgetResult::LimitReached => {
                 self.diags.append(diags);
@@ -279,3 +279,19 @@ pub enum DiagnosticLevel {
     Note,
     Help,
 }
+
+//// Convenience function for converting a `ConfigLoadError` into a `SourceDiagnosticBuilder`
+// pub fn cfg_err_to_builder(
+//     cfg_err: ConfigLoadError,
+//     path: &std::path::Path,
+//     path_id: PathId,
+// ) -> SourceDiagnosticBuilder {
+//     match cfg_load_err {
+//         ConfigLoadError::Diagnostic(diag) => diag,
+//         ConfigLoadError::IO(io_err) => {
+//             let err_str =
+//                 core_error::form_string_from_io_err(&io_err, path).unwrap_or(io_err.to_string());
+//             SourceDiagnostic::builder(DiagnosticLevel::Error, err_str, path)
+//         }
+//     }
+// }
