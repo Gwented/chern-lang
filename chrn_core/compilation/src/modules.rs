@@ -8,6 +8,7 @@ use std::{fs, path::Path};
 pub mod mod_finder;
 
 use chrn_utils::{
+    arena::Arena,
     chrn_settings::ChrnSettings,
     core_error::{self, ConfigLoadError, ModuleInitError},
     files::file_ops,
@@ -15,7 +16,7 @@ use chrn_utils::{
     intern::{self, Intern},
     source_map::{
         source_diagnostic::{DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind},
-        source_region::SourceRegionArena,
+        source_region::SourceRegion,
         source_span::SourceSpan,
     },
 };
@@ -193,7 +194,7 @@ pub fn extract_modules(
 
     let main_path_id = interner.intern_path(&path);
 
-    let mut region_arena: SourceRegionArena = SourceRegionArena::new(Default::default());
+    let mut region_arena: Arena<SourceRegion, SourceRegionId> = Arena::new();
     let main_region_id = SourceRegionId::new(0);
 
     // Not sure if main should even recover from this beyond having an existent region
@@ -284,7 +285,7 @@ pub fn extract_modules(
         Some(main_region_id),
     );
 
-    region_arena.regions.push(main_region);
+    region_arena.push(main_region);
 
     // Will incur borrowing issues unless the main_mod is put in last since the list of it's
     // imports is needed to start recursive process
@@ -311,7 +312,7 @@ pub fn extract_modules(
     // May change
     // Please change
     // NOT yet
-    let mut all_mods: Vec<Module> = vec![main_mod];
+    let mut all_mods: Arena<Module, ModuleId> = vec![main_mod].into();
     // debug_assert!(
     //     other_mods.iter().all(|e| e.is_some()),
     //     "`None` found in other_mods: {other_mods:?}"
@@ -348,15 +349,15 @@ pub fn extract_modules(
     // for module in &all_mods {
     //     println!(
     //         "Module \"{}\" -> {}",
-    //         interner.search(module.name_id.id as usize),
+    //         interner.search(module.name_id ),
     //         interner
-    //             .search_path(module.src_metadata.as_ref().unwrap().path_id.id as usize)
+    //             .search_path(module.src_metadata.as_ref().unwrap().path_id )
     //             .display()
     //     );
     //     for import in &module.imports {
     //         println!(
     //             "\tImport -> {}",
-    //             interner.search_path(import.path_id.id as usize).display()
+    //             interner.search_path(import.path_id ).display()
     //         );
     //     }
     //     println!("_______\n")
@@ -418,7 +419,7 @@ fn resolve_modules(
     seen: &mut Vec<PathId>,
     other_mods: &mut Vec<Option<Module>>,
     prev_mod: &Module,
-    region_arena: &mut SourceRegionArena,
+    region_arena: &mut Arena<SourceRegion, SourceRegionId>,
     diags: &mut Vec<SourceDiagnostic>,
     settings: &ChrnSettings,
     interner: &mut Intern,
@@ -482,7 +483,7 @@ fn resolve_modules(
         };
 
         // Creating region id for the current module on this level in the recursive stacke
-        let sub_region_id = SourceRegionId::new(region_arena.regions.len() as u32);
+        let sub_region_id = SourceRegionId::new(region_arena.len() as u32);
 
         //Oh my
         let file_name = match path.file_prefix().map(|n| n.to_str()).flatten() {
@@ -603,7 +604,7 @@ fn resolve_modules(
 
         // As opposed to how modules are pushed, regions are pushed before recursively descending
         // so no special cases needed for indexing it
-        region_arena.regions.push(sub_region);
+        region_arena.push(sub_region);
 
         let sub_mod = Module::new(
             sub_mod_name_id,

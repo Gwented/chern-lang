@@ -49,6 +49,8 @@ use tokio::time::sleep;
 use tower_lsp::lsp_types::{CompletionItemKind, Position, SemanticToken};
 use tower_lsp::{Client, LanguageServer, jsonrpc};
 
+use chrn_utils::id_types::ModuleId;
+
 use crate::analyser::analyze_and_publish_task;
 use crate::state::DocumentCache;
 use crate::state::DocumentState;
@@ -296,7 +298,7 @@ impl Backend {
 /// Used by the completion handler to assign icons to items shown in the editor UI.
 fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> CompletionItemKind {
     match sym.kind {
-        SymbolKind::Type(type_id) => match &compiler.types[type_id.id as usize].ty {
+        SymbolKind::Type(type_id) => match &compiler.types[type_id ].ty {
             Type::Struct(_) | Type::Enum(_) | Type::TypeDef(_) | Type::BuiltinType(_) => {
                 CompletionItemKind::STRUCT
             }
@@ -308,12 +310,12 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
             }
         },
         SymbolKind::Variable(var_id) => {
-            let var = &compiler.variables[var_id.id as usize];
+            let var = &compiler.variables[var_id ];
             let VariableState::Known(val_id) = var.state else {
                 return CompletionItemKind::VARIABLE;
             };
-            let type_id = compiler.values[val_id.id as usize].type_id;
-            match &compiler.types[type_id.id as usize].ty {
+            let type_id = compiler.values[val_id ].type_id;
+            match &compiler.types[type_id ].ty {
                 Type::BuiltinType(_) | Type::Struct(_) | Type::TypeDef(_) | Type::Enum(_) => {
                     CompletionItemKind::VARIABLE
                 }
@@ -351,10 +353,12 @@ fn classify_id_token(
     if let Some(entity) = entity {
         match entity {
             SemanticEntity::Symbol(sym_id) => {
-                if let Some(sym) = compiler.symbols.get(sym_id.id as usize) {
+                // `entity: &SemanticEntity` so `sym_id: &SymbolId` — dereference
+                // before passing to `Arena::get`, which takes the id by value.
+                if let Some(sym) = compiler.symbols.get(*sym_id ) {
                     match sym.kind {
                         SymbolKind::Type(tid) => {
-                            let ty = &compiler.types[tid.id as usize].ty;
+                            let ty = &compiler.types[tid ].ty;
                             match ty {
                                 Type::BuiltinType(_)
                                 | Type::TypeDef(_)
@@ -1080,8 +1084,10 @@ impl LanguageServer for Backend {
                 && let Some(module) = compiler.mods.iter().find(|m| m.name_id == target_id)
             {
                 if module.mod_id.id == 0 {
-                    // Current module: show all symbols except ScopeType::Var
-                    for sym in &compiler.symbols {
+                    // Current module: show all symbols except ScopeType::Var.
+                    // `Arena` does not implement `IntoIterator`; iterate over its
+                    // inner `items` vector.
+                    for sym in &compiler.symbols.items {
                         if (matches!(sym.sym_origin, compilation::semantic::hir::hir_concepts::SymbolOrigin::Module(mid) if mid.id == 0)
                             || matches!(
                                 sym.sym_origin,
@@ -1104,7 +1110,9 @@ impl LanguageServer for Backend {
                 } else {
                     // Other modules: show only exported symbols
                     for sym_id in &module.exports {
-                        if let Some(sym) = compiler.symbols.get(sym_id.id as usize) {
+                        // `sym_id: &SymbolId` (from iterating over `Vec<SymbolId>`),
+                        // dereference before calling `Arena::get`.
+                        if let Some(sym) = compiler.symbols.get(*sym_id ) {
                             let sym_name = state.interner.search(sym.name_id);
                             if prefix.is_empty() || sym_name.starts_with(prefix) {
                                 let kind = symbol_completion_kind(compiler, sym);
@@ -1164,10 +1172,12 @@ impl LanguageServer for Backend {
         if let Some(compiler) = &state.compiler
             && let Some(core_mod) = compiler
                 .mods
-                .get(compiler.intrinsic_registry.core_mod_id.id)
+                // `core_mod_id` is already a `ModuleId` — pass it directly.
+                .get(compiler.intrinsic_registry.core_mod_id)
         {
             for sym_id in &core_mod.exports {
-                if let Some(sym) = compiler.symbols.get(sym_id.id as usize) {
+                // `sym_id: &SymbolId` — dereference for the typed `Arena::get` call.
+                if let Some(sym) = compiler.symbols.get(*sym_id ) {
                     let name = state.interner.search(sym.name_id);
                     if prefix.is_empty() || name.starts_with(prefix) {
                         let kind = symbol_completion_kind(compiler, sym);
@@ -1184,7 +1194,8 @@ impl LanguageServer for Backend {
         // Add compiler-origin directives (e.g. #warn, #ignore, #scient, etc.)
         // Read dynamically from the compiler symbol registry instead of hard-coding.
         if let Some(compiler) = &state.compiler {
-            for sym in &compiler.symbols {
+            // `Arena` is not an iterator; iterate over the inner `items` vec.
+            for sym in &compiler.symbols.items {
                 if matches!(sym.kind, SymbolKind::Directive(_)) {
                     let name = state.interner.search(sym.name_id);
                     let label = format!("#{}", name);
@@ -1201,8 +1212,11 @@ impl LanguageServer for Backend {
 
         // Add all modules (using already-analyzed compiler state)
         if let Some(compiler) = &state.compiler {
-            let current_module = &compiler.mods[0];
-            for module in &compiler.mods {
+            // Index the `Arena` with a typed `ModuleId` (the only impl the
+            // primary `Index` for `Arena` provides).
+            let current_module = &compiler.mods[ModuleId::new(0)];
+            // `Arena` itself is not iterable; iterate over the inner `items` vec.
+            for module in &compiler.mods.items {
                 let name = state.interner.search(module.name_id);
 
                 let is_self = module.mod_id.id == 0;

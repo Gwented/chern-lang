@@ -1,4 +1,4 @@
-// pub mod arena;
+pub mod arena;
 pub mod budget;
 pub mod chrn_settings;
 pub mod core_error;

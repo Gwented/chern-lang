@@ -1,6 +1,6 @@
 use chrn_utils::{
     chrn_settings::ChrnSettings,
-    id_types::{AstId, ConfigId, ScopeId, SymbolId, TypeId, VariableId},
+    id_types::{AstId, ConfigRootId, ScopeId, SymbolId, TypeId, VariableId},
     intern::Intern,
     source_map::source_diagnostic::{
         DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind,
@@ -94,7 +94,7 @@ impl NamespaceResolver<'_> {
             .push_scope(ScopeType::Complex, env.current_mod);
 
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
-        let cfg_id = ConfigId::new(self.compiler.configs.len() as u32);
+        let cfg_id = ConfigRootId::new(self.compiler.configs.len() as u32);
 
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
         let orig_sym_opt = table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
@@ -197,7 +197,7 @@ impl NamespaceResolver<'_> {
         let orig_sym_opt = table.interned_to_sym.insert(abs_struct.name_id, sym_id);
 
         if !abs_struct.is_priv {
-            let module = &mut self.compiler.mods[env.current_mod.id];
+            let module = &mut self.compiler.mods[env.current_mod];
             module.exports.push(sym_id);
         }
 
@@ -236,7 +236,7 @@ impl NamespaceResolver<'_> {
         let orig_sym_opt = table.interned_to_sym.insert(abs_enum.name_id, sym_id);
 
         if !abs_enum.is_priv {
-            let module = &mut self.compiler.mods[env.current_mod.id];
+            let module = &mut self.compiler.mods[env.current_mod];
             module.exports.push(sym_id);
         }
 
@@ -276,7 +276,7 @@ impl NamespaceResolver<'_> {
         let orig_sym_opt = table.interned_to_sym.insert(abs_alias.name_id, sym_id);
 
         if !abs_alias.is_priv {
-            let module = &mut self.compiler.mods[env.current_mod.id];
+            let module = &mut self.compiler.mods[env.current_mod];
             module.exports.push(sym_id);
         }
 
@@ -289,7 +289,7 @@ impl NamespaceResolver<'_> {
             .scopes
             .push(ScopeInfo::new(local_scope, Some(sym_id), env.current_mod));
 
-        let current_mod = &mut self.compiler.mods[env.current_mod.id];
+        let current_mod = &mut self.compiler.mods[env.current_mod];
         current_mod.scopes.push(local_scope_id);
 
         // Ok ok
@@ -333,7 +333,7 @@ impl NamespaceResolver<'_> {
         let orig_sym_opt = table.interned_to_sym.insert(abs_var.name_id, sym_id);
 
         if !abs_var.is_priv {
-            let module = &mut self.compiler.mods[env.current_mod.id];
+            let module = &mut self.compiler.mods[env.current_mod];
             module.exports.push(sym_id);
         }
 
@@ -379,18 +379,18 @@ impl NamespaceResolver<'_> {
     //FIX: CHANGE TO NAME ID
     fn report_duplicate(&mut self, orig_sym_id: SymbolId, dup_sym_id: SymbolId, env: &ResolverEnv) {
         //NOTE: Suspicious
-        let orig_sym = &self.compiler.symbols[orig_sym_id.id as usize];
+        let orig_sym = &self.compiler.symbols[orig_sym_id];
         let orig_ast_id = orig_sym.ast_id.expect("Core should not be resolved");
 
-        let dup_ast_id = &self.compiler.symbols[dup_sym_id.id as usize]
+        let dup_ast_id = self.compiler.symbols[dup_sym_id]
             .ast_id
             .expect("Core should not be resolved");
 
         let dup_name = self.interner.search(orig_sym.name_id);
         let scope_type = orig_sym.scope_origin;
 
-        let orig_span = env.ast_info.items[orig_ast_id.id as usize].span();
-        let dup_span = env.ast_info.items[dup_ast_id.id as usize].span();
+        let orig_span = env.ast_info.items[orig_ast_id].span();
+        let dup_span = env.ast_info.items[dup_ast_id].span();
 
         let core_msg = format!(
             "Found more than one symbol with identifier \"{dup_name}\" in the section `{}`",

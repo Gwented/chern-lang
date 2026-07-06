@@ -145,7 +145,7 @@ pub fn find_sym_id_local(
 ) -> Option<SymbolId> {
     // There are no parent hierarchiable (Is this a word?) language semantics yet other than single
     // local scopes so this is just a single scope search.
-    let local_scope = &compiler.scopes[scope_id.id as usize].scope;
+    let local_scope = &compiler.scopes[scope_id].scope;
 
     for (current_name_id, current_sym_id) in &local_scope.table.interned_to_sym {
         if *current_name_id == target_name_id {
@@ -165,7 +165,7 @@ pub fn find_type_id(
     scope_type: ScopeType,
     lookup_pattern: LookupPattern,
 ) -> Option<TypeId> {
-    let current_mod = &compiler.mods[owner_id.id];
+    let current_mod = &compiler.mods[owner_id];
     //WARN: Core is always the last scope so this is kept so an owned vec isn't created
     //May change
     let accessible_scopes = scope_type.accessible_scopes();
@@ -186,16 +186,14 @@ pub fn find_type_id(
         // another module
         if let Some(scope_info) = find_scope(compiler, allowed_scope_type, current_mod.mod_id) {
             for current_sym_id in scope_info.scope.table.interned_to_sym.values() {
-                let current_sym = &compiler.symbols[current_sym_id.id as usize];
+                let current_sym = &compiler.symbols[*current_sym_id];
                 if current_sym.name_id == target_name_id {
-                    match &compiler.symbols[current_sym_id.id as usize].kind {
+                    match &compiler.symbols[*current_sym_id].kind {
                         SymbolKind::Type(type_id) => return Some(*type_id),
                         SymbolKind::Variable(var_id) => {
-                            let type_id = match compiler.variables[var_id.id as usize].state {
+                            let type_id = match compiler.variables[*var_id].state {
                                 VariableState::ReservedTypeSlot(type_id) => type_id,
-                                VariableState::Known(val_id) => {
-                                    compiler.values[val_id.id as usize].type_id
-                                }
+                                VariableState::Known(val_id) => compiler.values[val_id].type_id,
                             };
 
                             return Some(type_id);
@@ -219,9 +217,9 @@ pub fn find_scope(
     scope_type: ScopeType,
     owner_id: ModuleId,
 ) -> Option<&ScopeInfo> {
-    let mod_owner = &compiler.mods[owner_id.id];
+    let mod_owner = &compiler.mods[owner_id];
     for scope_id in &mod_owner.scopes {
-        let scope_info = &compiler.scopes[scope_id.id];
+        let scope_info = &compiler.scopes[*scope_id];
         if scope_info.scope.scope_type == scope_type {
             return Some(scope_info);
         }
@@ -252,7 +250,7 @@ pub fn find_sym_id(
     //TEST:
     match associated_scope {
         AssociatedScopeKind::Module(mod_id) => {
-            let current_mod = &compiler.mods[mod_id.id];
+            let current_mod = &compiler.mods[mod_id];
 
             let accessible_scopes = scope_type.accessible_scopes();
             let accessible_scopes = match lookup_pattern {
@@ -274,7 +272,7 @@ pub fn find_sym_id(
 
                     //TODO: Make sure this works as intended
                     if let Some(intrinsic_scope_id) = scope_info.scope.intrinsic_scope {
-                        let intrinsic_scope = &compiler.scopes[intrinsic_scope_id.id].scope;
+                        let intrinsic_scope = &compiler.scopes[intrinsic_scope_id].scope;
 
                         // So if in override, but searching complex, it will not try to look at the
                         // intrinsic scope unless it's looking at it's own scope
@@ -293,14 +291,14 @@ pub fn find_sym_id(
             }
         }
         AssociatedScopeKind::Scope(scope_id) => {
-            let scope = &compiler.scopes[scope_id.id].scope;
+            let scope = &compiler.scopes[scope_id].scope;
             if let Some(sym_id) = scope.table.interned_to_sym.get(&target_name_id) {
                 return Some(SymbolLookupOutput::new(*sym_id, scope_id));
             }
 
             //TODO: Make sure this works as intended
             if let Some(intrinsic_scope_id) = scope.intrinsic_scope {
-                let intrinsic_scope = &compiler.scopes[intrinsic_scope_id.id].scope;
+                let intrinsic_scope = &compiler.scopes[intrinsic_scope_id].scope;
 
                 if let Some(sym_id) = intrinsic_scope.table.interned_to_sym.get(&target_name_id) {
                     return Some(SymbolLookupOutput::new(*sym_id, intrinsic_scope_id));
@@ -318,7 +316,7 @@ pub fn find_symbols_named<'a>(
     target_name_id: InternedId,
 ) -> (Vec<SymbolId>, Vec<&'a MemberSymbolKind>) {
     let mut found: Vec<SymbolId> = Vec::new();
-    for sym in &compiler.symbols {
+    for sym in &compiler.symbols.items {
         if sym.name_id == target_name_id {
             found.push(sym.sym_id);
         }
@@ -335,7 +333,7 @@ pub fn find_symbols_named_ref<'a>(
     let mut found_syms: Vec<&Symbol> = Vec::new();
     let mut found_members: Vec<&MemberSymbolKind> = Vec::new();
 
-    for sym in &compiler.symbols {
+    for sym in &compiler.symbols.items {
         if sym.name_id == target_name_id {
             found_syms.push(&sym);
         }
@@ -346,7 +344,7 @@ pub fn find_symbols_named_ref<'a>(
                 found_members.append(
                     &mut new_members
                         .iter()
-                        .map(|m_id| &compiler.members[m_id.id as usize])
+                        .map(|m_id| &compiler.members[*m_id])
                         .collect(),
                 );
             }
@@ -371,11 +369,11 @@ pub fn find_symbols_named_from_module<'a>(
         None => return (Vec::new(), Vec::new()),
     };
 
-    let module = &compiler.mods[target_mod_id.id];
+    let module = &compiler.mods[target_mod_id];
 
     let mut found_symbols = Vec::new();
     for scope_id in &module.scopes {
-        let scope = &compiler.scopes[scope_id.id].scope;
+        let scope = &compiler.scopes[*scope_id].scope;
         for (interned_id, sym_id) in &scope.table.interned_to_sym {
             if *interned_id == target_name_id {
                 found_symbols.push(*sym_id);
@@ -401,12 +399,12 @@ pub fn find_symbols_named_from_module_ref<'a>(
     let mut found_syms: Vec<&Symbol> = Vec::new();
     let mut found_members: Vec<&MemberSymbolKind> = Vec::new();
 
-    let module = &compiler.mods[target_mod_id.id];
+    let module = &compiler.mods[target_mod_id];
 
     for scope_id in &module.scopes {
-        let scope = &compiler.scopes[scope_id.id].scope;
+        let scope = &compiler.scopes[*scope_id].scope;
         for sym_id in scope.table.interned_to_sym.values() {
-            let sym = &compiler.symbols[sym_id.id as usize];
+            let sym = &compiler.symbols[*sym_id];
 
             if sym.name_id == target_name_id {
                 found_syms.push(&sym);
@@ -418,7 +416,7 @@ pub fn find_symbols_named_from_module_ref<'a>(
                     found_members.append(
                         &mut new_members
                             .iter()
-                            .map(|m_id| &compiler.members[m_id.id as usize])
+                            .map(|m_id| &compiler.members[*m_id])
                             .collect(),
                     );
                 }
@@ -439,7 +437,7 @@ fn collect_inner_symbols<'a>(
     // Um, 20 mb?
     let mut found: Vec<MemberId> = Vec::new();
 
-    match &compiler.types[type_id.id as usize].ty {
+    match &compiler.types[type_id].ty {
         Type::Struct(struct_def) => {
             for member_id in &struct_def.fields {
                 let field = compiler.get_field(*member_id);

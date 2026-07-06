@@ -124,7 +124,7 @@ impl ScriptCompilerCache {
     //     for mod_idx in 0..self.compiler.mods.len() {
     //         let module = &self.compiler.mods[mod_idx];
     //         let region = match &module.region_id {
-    //             Some(region_id) => &self.region_arena.regions[region_id.id as usize],
+    //             Some(region_id) => &self.region_arena.regions[region_id ],
     //             // Giving current module id a None ast
     //             None => {
     //                 // Meaning it's a lib module where None should be found upon any queries
@@ -180,7 +180,7 @@ impl ScriptCompilerCache {
     //     for i in 0..self.compiler.mods.len() {
     //         let module = &self.compiler.mods[i];
     //         let current_region = match &module.region_id {
-    //             Some(region_id) => &self.region_arena.regions[region_id.id as usize],
+    //             Some(region_id) => &self.region_arena.regions[region_id ],
     //             None => continue,
     //         };
     //
@@ -214,12 +214,12 @@ impl ScriptCompilerCache {
     //     for i in 0..self.compiler.mods.len() {
     //         let module = &self.compiler.mods[i];
     //         let region = match &module.region_id {
-    //             Some(region_id) => &self.region_arena.regions[region_id.id as usize],
+    //             Some(region_id) => &self.region_arena.regions[region_id ],
     //             None => continue,
     //         };
     //
     //         let current_region = match &module.region_id {
-    //             Some(region_id) => &self.region_arena.regions[region_id.id as usize],
+    //             Some(region_id) => &self.region_arena.regions[region_id ],
     //             None => continue,
     //         };
     //
@@ -275,7 +275,7 @@ impl ScriptCompilerCache {
 //     for mod_idx in 0..script_compiler.mods.len() {
 //         let module = &script_compiler.mods[mod_idx];
 //         let metadata = match &module.region_id {
-//             Some(region_id) => &region_arena.regions[region_id.id as usize],
+//             Some(region_id) => &region_arena.regions[region_id ],
 //             None => continue,
 //         };
 //
@@ -317,7 +317,7 @@ impl ScriptCompilerCache {
 //     for i in 0..script_compiler.mods.len() {
 //         let module = &script_compiler.mods[i];
 //         let metadata = match &module.region_id {
-//             Some(region_id) => &region_arena.regions[region_id.id as usize],
+//             Some(region_id) => &region_arena.regions[region_id ],
 //             None => continue,
 //         };
 //
@@ -342,7 +342,7 @@ impl ScriptCompilerCache {
 //     for i in 0..script_compiler.mods.len() {
 //         let module = &script_compiler.mods[i];
 //         let region = match &module.region_id {
-//             Some(region_id) => &region_arena.regions[region_id.id as usize],
+//             Some(region_id) => &region_arena.regions[region_id ],
 //             None => continue,
 //         };
 //

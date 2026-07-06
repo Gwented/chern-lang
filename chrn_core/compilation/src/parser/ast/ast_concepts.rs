@@ -1,4 +1,5 @@
 use chrn_utils::{
+    arena::Arena,
     id_types::{AstId, InternedId, SpannedContainer},
     source_map::source_span::SourceSpan,
 };
@@ -19,14 +20,14 @@ pub struct AstInfo {
     // Maybe eventually just use a 5 sized array since there are max 5 sections
     /// Array that holds all 5 `chrn` sections.
     pub sections: [Option<Section>; 5],
-    pub items: Vec<Item>,
+    pub items: Arena<Item, AstId>,
 }
 
 impl AstInfo {
     pub fn new() -> AstInfo {
         AstInfo {
             sections: [None, None, None, None, None],
-            items: Vec::new(),
+            items: Arena::new(),
         }
     }
 
@@ -69,11 +70,12 @@ impl AstInfo {
     }
 
     pub fn items(&self) -> &Vec<Item> {
-        &self.items
+        // Oh my
+        &self.items.items
     }
 
     pub fn get_typedef(&self, ast_id: AstId) -> &AbstractTypeDef {
-        match &self.items[ast_id.id as usize] {
+        match &self.items[ast_id] {
             item => match item {
                 Item::TypeDef(abs_typedef) => abs_typedef,
                 _ => unreachable!(),
@@ -82,7 +84,7 @@ impl AstInfo {
     }
 
     pub fn get_struct(&self, ast_id: AstId) -> &AbstractStruct {
-        match &self.items[ast_id.id as usize] {
+        match &self.items[ast_id] {
             item => match item {
                 Item::Struct(abs_struct) => abs_struct,
                 _ => unreachable!(),
@@ -91,7 +93,7 @@ impl AstInfo {
     }
 
     pub fn get_const(&self, ast_id: AstId) -> &AbstractVar {
-        match &self.items[ast_id.id as usize] {
+        match &self.items[ast_id] {
             item => match item {
                 Item::Var(abs_var) => abs_var,
                 _ => unreachable!(),
@@ -100,7 +102,7 @@ impl AstInfo {
     }
 
     // pub(super) fn get_func(&self, ast_id: AstId) -> &AbstractFunc {
-    //     match &self.items[ast_id.id as usize] {
+    //     match &self.items[ast_id ] {
     //         item => match item {
     //             Item::Func(abs_struct) => abs_struct,
     //             _ => unreachable!(),
@@ -109,7 +111,7 @@ impl AstInfo {
     // }
 
     pub fn get_enum(&self, ast_id: AstId) -> &AbstractEnum {
-        match &self.items[ast_id.id as usize] {
+        match &self.items[ast_id] {
             item => match item {
                 Item::Enum(abs_enum) => abs_enum,
                 _ => unreachable!(),
@@ -118,7 +120,7 @@ impl AstInfo {
     }
 
     pub fn get_alias(&self, ast_id: AstId) -> &AbstractAlias {
-        match &self.items[ast_id.id as usize] {
+        match &self.items[ast_id] {
             item => match item {
                 Item::Alias(abs_alias) => abs_alias,
                 _ => unreachable!(),
@@ -127,7 +129,7 @@ impl AstInfo {
     }
 
     pub fn get_sym_span(&self, ast_id: AstId) -> SourceSpan {
-        match &self.items[ast_id.id as usize] {
+        match &self.items[ast_id] {
             Item::TypeDef(abs_typedef) => abs_typedef.name_span,
             Item::Struct(abs_struct) => abs_struct.name_span,
             Item::Enum(abs_enum) => abs_enum.name_span,

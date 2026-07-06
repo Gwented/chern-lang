@@ -44,23 +44,3 @@ impl SourceRegion {
         }
     }
 }
-
-/// Type-safe wrapper for indexing regions
-#[derive(Debug)]
-pub struct SourceRegionArena {
-    pub regions: Vec<SourceRegion>,
-}
-
-impl SourceRegionArena {
-    pub fn new(regions: Vec<SourceRegion>) -> SourceRegionArena {
-        SourceRegionArena { regions }
-    }
-
-    pub fn extract_region(&self, region_id: SourceRegionId) -> &SourceRegion {
-        &self.regions[region_id.id as usize]
-    }
-
-    pub fn get_region(&self, region_id: SourceRegionId) -> Option<&SourceRegion> {
-        self.regions.get(region_id.id as usize)
-    }
-}

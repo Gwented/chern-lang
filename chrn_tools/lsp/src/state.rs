@@ -63,13 +63,14 @@ use std::sync::Arc;
 
 use crate::analyser;
 
+use chrn_utils::arena::Arena;
 use chrn_utils::chrn_settings::ChrnSettings;
 use chrn_utils::id_types::{
     InternedId, ModuleId, PathId, SourceRegionId, SpannedContainer, SymbolId, TypeId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
-use chrn_utils::source_map::source_region::{SourceRegion, SourceRegionArena};
+use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
 
 /// Identifies the semantic construct that occupies a particular source span.
@@ -128,7 +129,7 @@ pub struct DocumentState {
     /// String/path interner shared by all analysis stages for this document.
     pub interner: Intern,
     /// Arena holding the `SourceRegion` for this file and every imported file.
-    pub region_arena: SourceRegionArena,
+    pub region_arena: Arena<SourceRegion, SourceRegionId>,
     /// Byte offset of the first token in the script section (`@def`).
     pub script_start: usize,
     /// Byte offset of the serial section start (after `@end`), or `None` if absent.
@@ -179,7 +180,7 @@ impl DocumentState {
             tokens,
             trivia,
             interner,
-            region_arena: SourceRegionArena::new(Default::default()),
+            region_arena: Arena::new(),
             script_start,
             serial_start,
             compiler: None,
@@ -239,8 +240,7 @@ impl DocumentState {
             self.config_errors = Some(finder_diags);
         }
 
-        let main_region_id = SourceRegionId::new(self.region_arena.regions.len() as u32);
-        self.region_arena.regions.push(main_region);
+        let main_region_id = self.region_arena.push(main_region);
 
         let main_mod = Module::new(
             name_id,
@@ -279,7 +279,7 @@ impl DocumentState {
             .filter_map(|mod_opt| {
                 let m = mod_opt.as_ref()?;
                 let region_id = m.region_id?;
-                let region = self.region_arena.get_region(region_id)?;
+                let region = self.region_arena.get(region_id)?;
                 let p = self.interner.search_path(region.path_id);
                 tower_lsp::lsp_types::Url::from_file_path(p)
                     .ok()
@@ -300,7 +300,10 @@ impl DocumentState {
             next_id += 1;
         }
 
-        let mut compiler = ScriptCompiler::init(bind, all_mods);
+        // `ScriptCompiler::init` takes an `Arena<Module, ModuleId>`.  The compiler
+        // assigns `ModuleId`s sequentially in push order, so converting from a
+        // `Vec<Module>` (via `Arena::from`) preserves the index → id invariant.
+        let mut compiler = ScriptCompiler::init(bind, Arena::from(all_mods));
 
         let mut all_asts = Vec::with_capacity(compiler.mods.len());
         for _ in 0..compiler.mods.len() {
@@ -312,7 +315,13 @@ impl DocumentState {
                 Some(rid) => rid,
                 None => continue,
             };
-            let region = self.region_arena.extract_region(src_region_id);
+            // The old `extract_region` method was misleadingly named — it
+            // simply returned a reference rather than removing anything.  Use
+            // `get` to preserve the region in the arena for later stages.
+            let region = match self.region_arena.get(src_region_id) {
+                Some(r) => r,
+                None => continue,
+            };
 
             let parse_result = if mod_idx == 0 {
                 // Reuse pre-computed tokens for main module
@@ -345,11 +354,11 @@ impl DocumentState {
                 None => continue,
             };
 
-            let src_region_id = match compiler.mods[mod_idx].region_id {
+            let src_region_id = match compiler.mods[ModuleId::new(mod_idx)].region_id {
                 Some(rid) => rid,
                 None => continue,
             };
-            let region = match self.region_arena.get_region(src_region_id) {
+            let region = match self.region_arena.get(src_region_id) {
                 Some(r) => r,
                 None => continue,
             };
@@ -378,14 +387,14 @@ impl DocumentState {
                         continue;
                     }
                 };
-                let src_region_id = match compiler.mods[mod_idx].region_id {
+                let src_region_id = match compiler.mods[ModuleId::new(mod_idx)].region_id {
                     Some(rid) => rid,
                     None => {
                         resolver_envs.push(None);
                         continue;
                     }
                 };
-                let region = match self.region_arena.get_region(src_region_id) {
+                let region = match self.region_arena.get(src_region_id) {
                     Some(r) => r,
                     None => {
                         resolver_envs.push(None);
@@ -421,8 +430,7 @@ impl DocumentState {
                 }
 
                 let expr_start = compiler.exprs.len();
-                let mut type_resolver =
-                    TypeResolver::new(&settings, &self.interner, &mut compiler);
+                let mut type_resolver = TypeResolver::new(&settings, &self.interner, &mut compiler);
 
                 if let Err(ty_diags) = type_resolver.resolve(env)
                     && mod_idx == 0
@@ -664,7 +672,7 @@ impl DocumentState {
                         if let Some(scopes::SymbolLookupOutput {
                             found_sym_id: sid, ..
                         }) = sym_id
-                            && let Some(sym) = compiler.symbols.get(sid.id as usize)
+                            && let Some(sym) = compiler.symbols.get(sid)
                         {
                             let mut current_mod: Option<ModuleId> = None;
                             let mut current_ty: Option<TypeId> = None;
@@ -681,10 +689,9 @@ impl DocumentState {
                                     matched = true;
                                 }
                                 SymbolKind::Variable(var_id) => {
-                                    let var = &compiler.variables[var_id.id as usize];
+                                    let var = &compiler.variables[var_id];
                                     if let VariableState::Known(val_id) = var.state
-                                        && let Some(val_info) =
-                                            compiler.values.get(val_id.id as usize)
+                                        && let Some(val_info) = compiler.values.get(val_id)
                                     {
                                         map.push((segments[0].span, SemanticEntity::Symbol(sid)));
                                         current_ty = Some(val_info.type_id);
@@ -716,9 +723,7 @@ impl DocumentState {
                                                     LookupPattern::NamespaceOnly,
                                                 )
                                             }) {
-                                                if let Some(sym) =
-                                                    compiler.symbols.get(sym_id.id as usize)
-                                                {
+                                                if let Some(sym) = compiler.symbols.get(sym_id) {
                                                     match sym.kind {
                                                         SymbolKind::Module(mid) => {
                                                             map.push((
@@ -737,8 +742,7 @@ impl DocumentState {
                                                             current_ty = Some(tid);
                                                         }
                                                         SymbolKind::Variable(var_id) => {
-                                                            let var = &compiler.variables
-                                                                [var_id.id as usize];
+                                                            let var = &compiler.variables[var_id];
                                                             if let VariableState::Known(val_id) =
                                                                 var.state
                                                             {
@@ -748,9 +752,7 @@ impl DocumentState {
                                                                 ));
                                                                 current_mod = None;
                                                                 current_ty = Some(
-                                                                    compiler.values
-                                                                        [val_id.id as usize]
-                                                                        .type_id,
+                                                                    compiler.values[val_id].type_id,
                                                                 );
                                                             }
                                                         }
@@ -772,9 +774,7 @@ impl DocumentState {
                                                 current_ty = None;
                                             }
                                         } else if let Some(type_id) = current_ty {
-                                            if let Some(type_info) =
-                                                compiler.types.get(type_id.id as usize)
-                                            {
+                                            if let Some(type_info) = compiler.types.get(type_id) {
                                                 match &type_info.ty {
                                                     Type::Struct(sdef) => {
                                                         let field_idx = sdef
@@ -783,7 +783,7 @@ impl DocumentState {
                                                             .position(|member_id| {
                                                                 compiler
                                                                     .members
-                                                                    .get(member_id.id as usize)
+                                                                    .get(*member_id)
                                                                     .and_then(|m| match m {
                                                                         MemberSymbolKind::Field(
                                                                             f,
@@ -799,7 +799,7 @@ impl DocumentState {
                                                             let member_id = sdef.fields[field_idx];
                                                             let field_type_id = compiler
                                                                 .members
-                                                                .get(member_id.id as usize)
+                                                                .get(member_id)
                                                                 .and_then(|m| match m {
                                                                     MemberSymbolKind::Field(f) => {
                                                                         Some(f.type_id)
@@ -824,7 +824,7 @@ impl DocumentState {
                                                                      .iter()
                                                                      .position(|member_id| {
                                                                          compiler.members
-                                                                             .get(member_id.id as usize)
+                                                                             .get(*member_id )
                                                                              .and_then(|m| match m {
                                                                                  MemberSymbolKind::Variant(v) => Some(v.name_id == seg_name_id),
                                                                                  _ => None,
@@ -835,7 +835,7 @@ impl DocumentState {
                                                             let member_id = edef.variants[v_idx];
                                                             let variant_type_id = compiler
                                                                 .members
-                                                                .get(member_id.id as usize)
+                                                                .get(member_id)
                                                                 .and_then(|m| match m {
                                                                     MemberSymbolKind::Variant(
                                                                         v,
@@ -888,20 +888,23 @@ impl DocumentState {
         }
 
         // 2. Variable Usages
-        for expr in &compiler.exprs[self.main_expr_range.clone()] {
+        // `Arena` only implements `Index<I>` and `Index<usize>`, not `Index<Range<usize>>`,
+        // so we slice into `compiler.exprs.items` directly.
+        for expr in &compiler.exprs.items[self.main_expr_range.clone()] {
             if let ExprHir::Var(sym_id) = expr.expr_hir {
                 map.push((expr.span, SemanticEntity::Symbol(sym_id)));
             }
         }
 
         // 3. Field and Variant Definitions
-        for ty_info in &compiler.types {
+        // `Arena` does not implement `IntoIterator`, so iterate over its inner `items` vec.
+        for ty_info in &compiler.types.items {
             if ty_info.owner.id != 0 {
                 continue;
             }
             match &ty_info.ty {
                 Type::Struct(sdef) => {
-                    let sym = &compiler.symbols[sdef.sym_id.id as usize];
+                    let sym = &compiler.symbols[sdef.sym_id];
                     if let Some(Some(ast)) = self.asts.first()
                         && let Some(ast_id) = sym.ast_id
                     {
@@ -918,7 +921,7 @@ impl DocumentState {
                     }
                 }
                 Type::Enum(edef) => {
-                    let sym = &compiler.symbols[edef.sym_id.id as usize];
+                    let sym = &compiler.symbols[edef.sym_id];
                     if let Some(Some(ast)) = self.asts.first()
                         && let Some(ast_id) = sym.ast_id
                     {
@@ -935,7 +938,7 @@ impl DocumentState {
                     }
                 }
                 Type::Alias(adef) => {
-                    let sym = &compiler.symbols[adef.sym_id.id as usize];
+                    let sym = &compiler.symbols[adef.sym_id];
                     if let Some(Some(ast)) = self.asts.first()
                         && let Some(ast_id) = sym.ast_id
                     {
@@ -1199,7 +1202,7 @@ impl DocumentState {
         let compiler = self.compiler.as_ref()?;
         match entity {
             SemanticEntity::Symbol(sym_id) => {
-                let sym = compiler.symbols.get(sym_id.id as usize)?;
+                let sym = compiler.symbols.get(*sym_id)?;
                 // Compiler-origin symbols (directives) have ast_id = None, so
                 // they intentionally return no definition location — they are
                 // built-in names without a user-visible definition site.
@@ -1210,8 +1213,8 @@ impl DocumentState {
                 };
                 let ast = self.asts.get(owner_id)?.as_ref()?;
                 let span = ast.get_sym_span(ast_id);
-                let module = compiler.mods.get(owner_id)?;
-                let region = self.region_arena.get_region(module.region_id?)?;
+                let module = compiler.mods.get(ModuleId::new(owner_id))?;
+                let region = self.region_arena.get(module.region_id?)?;
                 let path = self.interner.search_path(region.path_id);
                 Some((path.to_string_lossy().to_string(), span, None))
             }
@@ -1219,7 +1222,7 @@ impl DocumentState {
                 owner_sym_id,
                 field_idx,
             } => {
-                let sym = compiler.symbols.get(owner_sym_id.id as usize)?;
+                let sym = compiler.symbols.get(*owner_sym_id)?;
                 let ast_id = sym.ast_id?;
                 let owner_id = match sym.sym_origin {
                     SymbolOrigin::Module(mid) => mid.id,
@@ -1228,8 +1231,8 @@ impl DocumentState {
                 let ast = self.asts.get(owner_id)?.as_ref()?;
                 let abs_struct = ast.get_struct(ast_id);
                 let field = abs_struct.fields.get(*field_idx)?;
-                let module = compiler.mods.get(owner_id)?;
-                let region = self.region_arena.get_region(module.region_id?)?;
+                let module = compiler.mods.get(ModuleId::new(owner_id))?;
+                let region = self.region_arena.get(module.region_id?)?;
                 let path = self.interner.search_path(region.path_id);
                 Some((
                     path.to_string_lossy().to_string(),
@@ -1241,7 +1244,7 @@ impl DocumentState {
                 owner_sym_id,
                 variant_idx,
             } => {
-                let sym = compiler.symbols.get(owner_sym_id.id as usize)?;
+                let sym = compiler.symbols.get(*owner_sym_id)?;
                 let ast_id = sym.ast_id?;
                 let owner_id = match sym.sym_origin {
                     SymbolOrigin::Module(mid) => mid.id,
@@ -1250,8 +1253,8 @@ impl DocumentState {
                 let ast = self.asts.get(owner_id)?.as_ref()?;
                 let abs_enum = ast.get_enum(ast_id);
                 let variant = abs_enum.variants.get(*variant_idx)?;
-                let module = compiler.mods.get(owner_id)?;
-                let region = self.region_arena.get_region(module.region_id?)?;
+                let module = compiler.mods.get(ModuleId::new(owner_id))?;
+                let region = self.region_arena.get(module.region_id?)?;
                 let path = self.interner.search_path(region.path_id);
                 Some((
                     path.to_string_lossy().to_string(),
@@ -1264,10 +1267,12 @@ impl DocumentState {
                 owner_sym_id,
                 ..
             } => {
-                // For locals, they are defined in module 0 of the current state
+                // For locals, they are defined in module 0 of the current state.
+                // `Arena` does not expose a `first()` method, so access the inner
+                // `items` vec directly.
                 let region = self
                     .region_arena
-                    .get_region(compiler.mods.first()?.region_id?)?;
+                    .get(compiler.mods.items.first()?.region_id?)?;
                 let path = self.interner.search_path(region.path_id);
                 Some((
                     path.to_string_lossy().to_string(),
@@ -1278,7 +1283,7 @@ impl DocumentState {
             SemanticEntity::Module(mod_id) => {
                 let region = self
                     .region_arena
-                    .get_region(compiler.mods.get(mod_id.id)?.region_id?)?;
+                    .get(compiler.mods.get(*mod_id)?.region_id?)?;
                 let path = self.interner.search_path(region.path_id);
                 Some((
                     path.to_string_lossy().to_string(),

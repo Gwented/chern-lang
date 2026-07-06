@@ -1,7 +1,12 @@
 // TODO: MAYBE eventually change from SipHash
 pub mod script_compiler_store;
 use chrn_utils::{
-    id_types::{DirectiveId, InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId},
+    arena::Arena,
+    budget::mem_cost::MemoryCost,
+    id_types::{
+        ConfigRootId, DirectiveId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SymbolId,
+        TypeId, ValueId, VariableId,
+    },
     intern, loop_abort,
     source_map::source_span::SourceSpan,
 };
@@ -42,28 +47,28 @@ pub struct ScriptCompiler {
     // Can this be removed? Probably.
     // pub mod_map: HashMap<PathId, ModuleId>,
     /// All modules found during compilation
-    pub mods: Vec<Module>,
+    pub mods: Arena<Module, ModuleId>,
     /// Type table which contains every module's stored types
-    pub types: Vec<TypeInfo>,
+    pub types: Arena<TypeInfo, TypeId>,
     /// All values that were cached
-    pub values: Vec<ValueInfo>,
+    pub values: Arena<ValueInfo, ValueId>,
     /// All expressions that were found
-    pub exprs: Vec<ResolvedExpr>,
+    pub exprs: Arena<ResolvedExpr, ExprId>,
     /// All symbols that were found
-    pub symbols: Vec<Symbol>,
+    pub symbols: Arena<Symbol, SymbolId>,
     /// All symbols considered a "member" of another. This is here to serve the same purpose of a
     /// collection that would be considered fields, but more general since the language is small
     /// scale and would likely not benefit much from such a wide variety of collections.
-    pub members: Vec<MemberSymbolKind>,
+    pub members: Arena<MemberSymbolKind, MemberId>,
     /// All variables that were found
-    pub variables: Vec<VarDef>,
+    pub variables: Arena<VarDef, VariableId>,
     /// All user defined configuration. Is considered it's own class instead of a type since it
     /// behaves uniquely
-    pub configs: Vec<ConfigDefRoot>,
+    pub configs: Arena<ConfigDefRoot, ConfigRootId>,
     /// All directives that were found
-    pub directives: Vec<Directive>,
+    pub directives: Arena<Directive, DirectiveId>,
     /// Scope arena
-    pub scopes: Vec<ScopeInfo>,
+    pub scopes: Arena<ScopeInfo, ScopeId>,
     /// Information regarding intrinsic data such as core's `ModuleId`
     pub intrinsic_registry: IntrinsicRegistry,
     /// The current stage the compiler is in
@@ -136,7 +141,7 @@ impl ScriptCompiler {
     //FIX: Arbitrary ordering of pushes tied to the actual order of the enums. Should not be tied
     //to anything, similar to the interner's constants.
     /// Loads core library and builds script specific compiler with parameters given
-    pub fn init(bind: Option<Bind>, mods: Vec<Module>) -> ScriptCompiler {
+    pub fn init(bind: Option<Bind>, mods: Arena<Module, ModuleId>) -> ScriptCompiler {
         //TEST:
         let core_mod_id = ModuleId::new(mods.len());
         let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None, None);
@@ -144,15 +149,15 @@ impl ScriptCompiler {
         let mut compiler = ScriptCompiler {
             bind,
             mods,
-            types: Vec::new(),
-            values: Vec::new(),
-            exprs: Vec::new(),
-            symbols: Vec::new(),
-            variables: Vec::new(),
-            members: Vec::new(),
-            configs: Vec::new(),
-            scopes: Vec::new(),
-            directives: Vec::new(),
+            types: Arena::new(),
+            values: Arena::new(),
+            exprs: Arena::new(),
+            symbols: Arena::new(),
+            variables: Arena::new(),
+            members: Arena::new(),
+            configs: Arena::new(),
+            scopes: Arena::new(),
+            directives: Arena::new(),
             //TEST:
             intrinsic_registry,
             resolver_state: ResolverState::NAMESPACE,
@@ -181,7 +186,8 @@ impl ScriptCompiler {
         // If there is an alias, that is also ensured to be pushed as a symbol connected to the
         // module "other"
         for i in 0..compiler.mods.len() {
-            let module = &compiler.mods[i];
+            let current_mod_id = ModuleId::new(i);
+            let module = &compiler.mods[current_mod_id];
 
             // Avoiding borrow issues by just storing the ids earlier
             let current_mod_name_id = module.name_id;
@@ -212,7 +218,7 @@ impl ScriptCompiler {
             compiler.symbols.push(symbol);
 
             // Re-borrowing for iteration
-            let module = &compiler.mods[i];
+            let module = &compiler.mods[current_mod_id];
 
             // Clone..
             for import in module.imports.clone() {
@@ -270,9 +276,9 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_typedef(&self, sym_id: SymbolId) -> &TypeDef {
-        match &self.symbols[sym_id.id as usize] {
+        match &self.symbols[sym_id] {
             sym_info => match &sym_info.kind {
-                SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
+                SymbolKind::Type(type_id) => match &self.types[*type_id].ty {
                     Type::TypeDef(type_def) => type_def,
                     _ => unreachable!(),
                 },
@@ -282,9 +288,9 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_typedef_mut(&mut self, sym_id: SymbolId) -> &mut TypeDef {
-        match &self.symbols.get_mut(sym_id.id as usize).expect("misusage") {
+        match &self.symbols[sym_id] {
             sym_info => match &sym_info.kind {
-                SymbolKind::Type(type_id) => match &mut self.types[type_id.id as usize].ty {
+                SymbolKind::Type(type_id) => match &mut self.types[*type_id].ty {
                     Type::TypeDef(type_def) => type_def,
                     _ => unreachable!(),
                 },
@@ -294,9 +300,9 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_struct(&self, sym_id: SymbolId) -> &StructDef {
-        match &self.symbols[sym_id.id as usize] {
+        match &self.symbols[sym_id] {
             sym_info => match &sym_info.kind {
-                SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
+                SymbolKind::Type(type_id) => match &self.types[*type_id].ty {
                     Type::Struct(struct_def) => struct_def,
                     _ => unreachable!(),
                 },
@@ -306,9 +312,9 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_struct_mut(&mut self, sym_id: SymbolId) -> &mut StructDef {
-        match self.symbols.get_mut(sym_id.id as usize).expect("misusage") {
+        match self.symbols.get_mut(sym_id).expect("misusage") {
             sym_info => match &mut sym_info.kind {
-                SymbolKind::Type(type_id) => match &mut self.types[type_id.id as usize].ty {
+                SymbolKind::Type(type_id) => match &mut self.types[*type_id].ty {
                     Type::Struct(struct_def) => struct_def,
                     _ => unreachable!(),
                 },
@@ -318,9 +324,9 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_func(&self, sym_id: SymbolId) -> &FuncDef {
-        match &self.symbols[sym_id.id as usize] {
+        match &self.symbols[sym_id] {
             sym_info => match &sym_info.kind {
-                SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
+                SymbolKind::Type(type_id) => match &self.types[*type_id].ty {
                     Type::Func(func_def) => func_def,
                     _ => unreachable!(),
                 },
@@ -330,9 +336,9 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_func_mut(&mut self, sym_id: SymbolId) -> &mut FuncDef {
-        match self.symbols.get_mut(sym_id.id as usize).expect("misusage") {
+        match self.symbols.get_mut(sym_id).expect("misusage") {
             sym_info => match &mut sym_info.kind {
-                SymbolKind::Type(type_id) => match &mut self.types[type_id.id as usize].ty {
+                SymbolKind::Type(type_id) => match &mut self.types[*type_id].ty {
                     Type::Func(func_def) => func_def,
                     _ => unreachable!(),
                 },
@@ -342,9 +348,9 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_enum(&self, sym_id: SymbolId) -> &EnumDef {
-        match &self.symbols[sym_id.id as usize] {
+        match &self.symbols[sym_id] {
             sym_info => match &sym_info.kind {
-                SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
+                SymbolKind::Type(type_id) => match &self.types[*type_id].ty {
                     Type::Enum(enum_def) => enum_def,
                     _ => unreachable!(),
                 },
@@ -354,9 +360,9 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_enum_mut(&mut self, sym_id: SymbolId) -> &mut EnumDef {
-        match self.symbols.get_mut(sym_id.id as usize).expect("misusage") {
+        match self.symbols.get_mut(sym_id).expect("misusage") {
             sym_info => match &mut sym_info.kind {
-                SymbolKind::Type(type_id) => match &mut self.types[type_id.id as usize].ty {
+                SymbolKind::Type(type_id) => match &mut self.types[*type_id].ty {
                     Type::Enum(enum_def) => enum_def,
                     _ => unreachable!(),
                 },
@@ -366,9 +372,9 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_alias(&self, sym_id: SymbolId) -> &AliasDef {
-        match &self.symbols[sym_id.id as usize] {
+        match &self.symbols[sym_id] {
             sym_info => match &sym_info.kind {
-                SymbolKind::Type(type_id) => match &self.types[type_id.id as usize].ty {
+                SymbolKind::Type(type_id) => match &self.types[*type_id].ty {
                     Type::Alias(alias_def) => alias_def,
                     _ => unreachable!(),
                 },
@@ -378,9 +384,9 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_alias_mut(&mut self, sym_id: SymbolId) -> &mut AliasDef {
-        match self.symbols.get_mut(sym_id.id as usize).expect("Misusage") {
+        match self.symbols.get_mut(sym_id).expect("Misusage") {
             sym_info => match &mut sym_info.kind {
-                SymbolKind::Type(type_id) => match &mut self.types[type_id.id as usize].ty {
+                SymbolKind::Type(type_id) => match &mut self.types[*type_id].ty {
                     Type::Alias(alias_def) => alias_def,
                     _ => unreachable!(),
                 },
@@ -391,9 +397,9 @@ impl ScriptCompiler {
 
     /// Assumes the symbol given is a variable, meaning a symbol with a value inside of it
     pub(super) fn get_var(&self, sym_id: SymbolId) -> &VarDef {
-        match &self.symbols[sym_id.id as usize] {
+        match &self.symbols[sym_id] {
             sym_info => match &sym_info.kind {
-                SymbolKind::Variable(var_id) => &self.variables[var_id.id as usize],
+                SymbolKind::Variable(var_id) => &self.variables[*var_id],
                 _ => unreachable!(),
             },
         }
@@ -401,50 +407,50 @@ impl ScriptCompiler {
 
     /// Assumes the symbol given is a variable, meaning a symbol with a value inside of it
     pub(super) fn get_var_mut(&mut self, sym_id: SymbolId) -> &mut VarDef {
-        match &self.symbols[sym_id.id as usize] {
+        match &self.symbols[sym_id] {
             sym_info => match &sym_info.kind {
-                SymbolKind::Variable(var_id) => &mut self.variables[var_id.id as usize],
+                SymbolKind::Variable(var_id) => &mut self.variables[*var_id],
                 _ => unreachable!(),
             },
         }
     }
 
     pub(super) fn get_cfg_def_root(&self, sym_id: SymbolId) -> &ConfigDefRoot {
-        match &self.symbols[sym_id.id as usize] {
+        match &self.symbols[sym_id] {
             sym_info => match &sym_info.kind {
-                SymbolKind::Config(cfg_id) => &self.configs[cfg_id.id as usize],
+                SymbolKind::Config(cfg_id) => &self.configs[*cfg_id],
                 _ => unreachable!(),
             },
         }
     }
 
     pub(super) fn get_cfg_def_mut(&mut self, sym_id: SymbolId) -> &mut ConfigDefRoot {
-        match &self.symbols[sym_id.id as usize] {
+        match &self.symbols[sym_id] {
             sym_info => match &sym_info.kind {
-                SymbolKind::Config(cfg_id) => &mut self.configs[cfg_id.id as usize],
+                SymbolKind::Config(cfg_id) => &mut self.configs[*cfg_id],
                 _ => unreachable!(),
             },
         }
     }
 
     pub(super) fn get_directive(&self, sym_id: SymbolId) -> &Directive {
-        match &self.symbols[sym_id.id as usize] {
+        match &self.symbols[sym_id] {
             sym_info => match &sym_info.kind {
-                SymbolKind::Directive(directive_id) => &self.directives[directive_id.id as usize],
+                SymbolKind::Directive(directive_id) => &self.directives[*directive_id],
                 _ => unreachable!(),
             },
         }
     }
 
     // pub(super) fn get_cfg_schema(&self, cfg_id: ConfigId) -> &ConfigSchema {
-    //     match &self.configs[cfg_id.id as usize] {
+    //     match &self.configs[cfg_id ] {
     //         ConfigKind::Schema(cfg_schema) => cfg_schema,
     //         ConfigKind::Def(_) => unreachable!(),
     //     }
     // }
     //
     // pub(super) fn get_cfg_schema_mut(&mut self, cfg_id: ConfigId) -> &mut ConfigSchema {
-    //     match &mut self.configs[cfg_id.id as usize] {
+    //     match &mut self.configs[cfg_id ] {
     //         ConfigKind::Schema(cfg_schema) => cfg_schema,
     //         ConfigKind::Def(_) => unreachable!(),
     //     }
@@ -452,7 +458,7 @@ impl ScriptCompiler {
 
     /// Assumes the member symbol given is a field
     pub(super) fn get_field(&self, member_id: MemberId) -> &FieldRepre {
-        match &self.members[member_id.id as usize] {
+        match &self.members[member_id] {
             MemberSymbolKind::Field(field_repre) => field_repre,
             MemberSymbolKind::Variant(_)
             | MemberSymbolKind::OptAssignmentRoot(_)
@@ -464,7 +470,7 @@ impl ScriptCompiler {
 
     /// Assumes the member symbol given is a field
     pub(super) fn get_field_mut(&mut self, member_id: MemberId) -> &mut FieldRepre {
-        match &mut self.members[member_id.id as usize] {
+        match &mut self.members[member_id] {
             MemberSymbolKind::Field(field_repre) => field_repre,
             _ => unreachable!(),
         }
@@ -472,7 +478,7 @@ impl ScriptCompiler {
 
     /// Assumes the member symbol given is a variant
     pub(super) fn get_variant(&self, member_id: MemberId) -> &VariantRepre {
-        match &self.members[member_id.id as usize] {
+        match &self.members[member_id] {
             MemberSymbolKind::Variant(variant_repre) => variant_repre,
             _ => unreachable!(),
         }
@@ -480,7 +486,7 @@ impl ScriptCompiler {
 
     /// Assumes the member symbol given is a variant
     pub(super) fn get_variant_mut(&mut self, member_id: MemberId) -> &mut VariantRepre {
-        match &mut self.members[member_id.id as usize] {
+        match &mut self.members[member_id] {
             MemberSymbolKind::Variant(variant_repre) => variant_repre,
             _ => unreachable!(),
         }
@@ -488,7 +494,7 @@ impl ScriptCompiler {
 
     /// Assumes the member symbol given is a field
     pub(super) fn get_cfg_def_member(&self, member_id: MemberId) -> &ConfigDefMember {
-        match &self.members[member_id.id as usize] {
+        match &self.members[member_id] {
             MemberSymbolKind::ConfigDefMember(cfg_def_member) => cfg_def_member,
             _ => unreachable!(),
         }
@@ -496,7 +502,7 @@ impl ScriptCompiler {
 
     /// Assumes the member symbol given is a field
     pub(super) fn get_cfg_def_member_mut(&mut self, member_id: MemberId) -> &mut ConfigDefMember {
-        match &mut self.members[member_id.id as usize] {
+        match &mut self.members[member_id] {
             MemberSymbolKind::ConfigDefMember(cfg_def_member) => cfg_def_member,
             _ => unreachable!(),
         }
@@ -504,7 +510,7 @@ impl ScriptCompiler {
 
     // /// Assumes the member symbol given is a parameter
     // pub(super) fn get_param(&self, member_id: MemberId) -> &Param {
-    //     match &self.members[member_id.id as usize] {
+    //     match &self.members[member_id ] {
     //         MemberSymbolKind::Param(param) => &param,
     //         _ => unreachable!(),
     //     }
@@ -512,7 +518,7 @@ impl ScriptCompiler {
     //
     // /// Assumes the member symbol given is a parameter
     // pub(super) fn get_param_mut(&mut self, member_id: MemberId) -> &mut Param {
-    //     match &mut self.members[member_id.id as usize] {
+    //     match &mut self.members[member_id ] {
     //         MemberSymbolKind::Param(param) => param,
     //         _ => unreachable!(),
     //     }
@@ -520,7 +526,7 @@ impl ScriptCompiler {
 
     /// Assumes the member symbol given is a field
     pub(super) fn get_opt_assignment_root(&self, member_id: MemberId) -> &OptionAssignmentRoot {
-        match &self.members[member_id.id as usize] {
+        match &self.members[member_id] {
             MemberSymbolKind::OptAssignmentRoot(opt_root) => opt_root,
             _ => unreachable!(),
         }
@@ -531,7 +537,7 @@ impl ScriptCompiler {
         &mut self,
         member_id: MemberId,
     ) -> &mut OptionAssignmentRoot {
-        match &mut self.members[member_id.id as usize] {
+        match &mut self.members[member_id] {
             MemberSymbolKind::OptAssignmentRoot(opt_root) => opt_root,
             _ => unreachable!(),
         }
@@ -539,7 +545,7 @@ impl ScriptCompiler {
 
     /// Assumes the member symbol given is a field
     pub(super) fn get_opt_assignment_member(&self, member_id: MemberId) -> &OptionAssignmentMember {
-        match &self.members[member_id.id as usize] {
+        match &self.members[member_id] {
             MemberSymbolKind::OptAssignmentMember(opt_member) => opt_member,
             _ => unreachable!(),
         }
@@ -550,7 +556,7 @@ impl ScriptCompiler {
         &mut self,
         member_id: MemberId,
     ) -> &mut OptionAssignmentMember {
-        match &mut self.members[member_id.id as usize] {
+        match &mut self.members[member_id] {
             MemberSymbolKind::OptAssignmentMember(opt_member) => opt_member,
             _ => unreachable!(),
         }
@@ -560,12 +566,12 @@ impl ScriptCompiler {
     /// Assumes the symbol given has a `TypeId` attached. Will return a `TypeId` of `Unknown` if
     /// the `SymbolKind` is unknown.
     pub(super) fn extract_type_id(&self, sym_id: SymbolId) -> TypeId {
-        match &self.symbols[sym_id.id as usize] {
+        match &self.symbols[sym_id] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => *type_id,
-                SymbolKind::Variable(var_id) => match self.variables[var_id.id as usize].state {
+                SymbolKind::Variable(var_id) => match self.variables[*var_id].state {
                     VariableState::ReservedTypeSlot(type_id) => type_id,
-                    VariableState::Known(val_id) => self.values[val_id.id as usize].type_id,
+                    VariableState::Known(val_id) => self.values[val_id].type_id,
                 },
                 SymbolKind::Module(_) | SymbolKind::Config(_) | SymbolKind::Directive(_) => {
                     unreachable!()
@@ -577,12 +583,12 @@ impl ScriptCompiler {
     // Maybe return option?
     /// Attempts to get a `TypeId` out of the given symbol if possible
     pub(super) fn get_type_id_from_sym_id(&self, sym_id: SymbolId) -> Option<TypeId> {
-        match &self.symbols[sym_id.id as usize] {
+        match &self.symbols[sym_id] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => Some(*type_id),
-                SymbolKind::Variable(var_id) => match self.variables[var_id.id as usize].state {
+                SymbolKind::Variable(var_id) => match self.variables[*var_id].state {
                     VariableState::ReservedTypeSlot(type_id) => Some(type_id),
-                    VariableState::Known(val_id) => Some(self.values[val_id.id as usize].type_id),
+                    VariableState::Known(val_id) => Some(self.values[val_id].type_id),
                 },
                 // Not a type, just a symbol with a scope
                 SymbolKind::Directive(_) | SymbolKind::Module(_) | SymbolKind::Config(_) => None,
@@ -593,7 +599,7 @@ impl ScriptCompiler {
     /// Attempts to get a `SymbolId` out of a `TypeId`
     pub(super) fn get_sym_id_from_type_id(&self, mut type_id: TypeId) -> Option<SymbolId> {
         for _ in 0..chrn_utils::MAX_LOOPS {
-            match &self.types[type_id.id as usize].ty {
+            match &self.types[type_id].ty {
                 Type::Struct(struct_def) => return Some(struct_def.sym_id),
                 Type::Enum(enum_def) => return Some(enum_def.sym_id),
                 Type::Func(func_def) => return Some(func_def.sym_id),
@@ -614,7 +620,7 @@ impl ScriptCompiler {
 
     /// Attempts to get a `TypeId` out of the given `MemberId` if possible
     pub(super) fn get_type_id_from_member_id(&self, member_id: MemberId) -> Option<TypeId> {
-        match &self.members[member_id.id as usize] {
+        match &self.members[member_id] {
             MemberSymbolKind::Field(field_repre) => Some(field_repre.type_id),
             MemberSymbolKind::Variant(variant_repre) => variant_repre.type_id,
             MemberSymbolKind::ConfigDefMember(_)
@@ -625,16 +631,16 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_span_from_sym_id(&self, sym_id: SymbolId) -> Option<SourceSpan> {
-        match &self.symbols[sym_id.id as usize].kind {
+        match &self.symbols[sym_id].kind {
             SymbolKind::Type(type_id) => self.get_span_from_type_id(*type_id),
-            SymbolKind::Variable(var_id) => Some(self.variables[var_id.id as usize].name_span),
-            SymbolKind::Config(cfg_id) => Some(self.configs[cfg_id.id as usize].name_span),
+            SymbolKind::Variable(var_id) => Some(self.variables[*var_id].name_span),
+            SymbolKind::Config(cfg_id) => Some(self.configs[*cfg_id].name_span),
             SymbolKind::Module(_) | SymbolKind::Directive(_) => None,
         }
     }
 
     pub(super) fn get_span_from_member_id(&self, member_id: MemberId) -> Option<SourceSpan> {
-        match &self.members[member_id.id as usize] {
+        match &self.members[member_id] {
             MemberSymbolKind::Field(field_repre) => Some(field_repre.name_span),
             MemberSymbolKind::Variant(variant_repre) => Some(variant_repre.name_span),
             MemberSymbolKind::OptAssignmentRoot(cfg_opt) => Some(cfg_opt.name_span),
@@ -647,7 +653,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_span_from_type_id(&self, type_id: TypeId) -> Option<SourceSpan> {
-        match &self.types[type_id.id as usize].ty {
+        match &self.types[type_id].ty {
             Type::BuiltinType(builtin_type) => None,
             Type::Struct(struct_def) => Some(struct_def.name_span),
             Type::Enum(enum_def) => Some(enum_def.name_span),
@@ -663,7 +669,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_owner(&self, sym_id: SymbolId) -> ModuleId {
-        match self.symbols[sym_id.id as usize].sym_origin {
+        match self.symbols[sym_id].sym_origin {
             SymbolOrigin::Module(mod_id) => mod_id,
             SymbolOrigin::Compiler => self.intrinsic_registry.core_mod_id,
         }
@@ -691,12 +697,12 @@ impl ScriptCompiler {
 
     /// Get's scope using a `ScopeId`
     pub fn get_scope(&self, scope_id: ScopeId) -> &ScopeInfo {
-        &self.scopes[scope_id.id]
+        &self.scopes[scope_id]
     }
 
     /// Returns mutably borrowed `ScopeInfo` using a `ScopeId`
     pub fn get_scope_mut(&mut self, scope_id: ScopeId) -> &mut ScopeInfo {
-        &mut self.scopes[scope_id.id]
+        &mut self.scopes[scope_id]
     }
 
     /// Pushes new scope with given scope type and returns the `ScopeId`. If the scope already
@@ -741,7 +747,7 @@ impl ScriptCompiler {
         let scope_info = ScopeInfo::new(scope, None, owner_id);
         self.scopes.push(scope_info);
 
-        let owner_mod = &mut self.mods[owner_id.id];
+        let owner_mod = &mut self.mods[owner_id];
         owner_mod.scopes.push(scope_id);
         // owner_mod.held_scopes |= scope_type.to_u8();
         // BRAIN OFF
@@ -788,7 +794,7 @@ impl ScriptCompiler {
         let core_import = Import::new(core_name_id, core_mod_id, ImportKind::Core, None);
 
         // Injecting core as an import and pushing it's scope so user modules can search it
-        for user_mod in &mut compiler.mods {
+        for user_mod in &mut compiler.mods.items {
             if user_mod.name_id == core_name_id {
                 continue;
             }
@@ -802,7 +808,7 @@ impl ScriptCompiler {
     pub fn check_unknown(&self, mut type_id: TypeId) -> bool {
         // This limit is semi-random
         for _ in 0..chrn_utils::MAX_LOOPS {
-            let ty = &self.types[type_id.id as usize].ty;
+            let ty = &self.types[type_id].ty;
             match ty {
                 Type::Deferred(inner) => type_id = *inner,
                 Type::Unknown => return true,
@@ -2058,3 +2064,41 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
     }
 }
+
+impl MemoryCost for ScriptCompiler {
+    fn cost(&self) -> usize {
+        let bind_cost = size_of::<Bind>();
+        let mod_metadata_cost = size_of::<Vec<Module>>();
+        dbg!(mod_metadata_cost);
+        usize::MAX;
+        todo!()
+    }
+}
+
+// /// All modules found during compilation
+// pub mods: Vec<Module>,
+// /// Type table which contains every module's stored types
+// pub types: Vec<TypeInfo>,
+// /// All values that were cached
+// pub values: Vec<ValueInfo>,
+// /// All expressions that were found
+// pub exprs: Vec<ResolvedExpr>,
+// /// All symbols that were found
+// pub symbols: Vec<Symbol>,
+// /// All symbols considered a "member" of another. This is here to serve the same purpose of a
+// /// collection that would be considered fields, but more general since the language is small
+// /// scale and would likely not benefit much from such a wide variety of collections.
+// pub members: Vec<MemberSymbolKind>,
+// /// All variables that were found
+// pub variables: Vec<VarDef>,
+// /// All user defined configuration. Is considered it's own class instead of a type since it
+// /// behaves uniquely
+// pub configs: Vec<ConfigDefRoot>,
+// /// All directives that were found
+// pub directives: Vec<Directive>,
+// /// Scope arena
+// pub scopes: Vec<ScopeInfo>,
+// /// Information regarding intrinsic data such as core's `ModuleId`
+// pub intrinsic_registry: IntrinsicRegistry,
+// /// The current stage the compiler is in
+// pub resolver_state: ResolverState,

@@ -18,10 +18,10 @@ pub(super) fn check_type_constraint(
     visited: &mut Vec<TypeId>,
     given_constraints: TypeBoundaryFlags,
 ) -> Result<(), PresetErr> {
-    let ty = &compiler.types[type_id.id as usize].ty;
+    let ty = &compiler.types[type_id ].ty;
     match ty {
         Type::Struct(struct_def) => {
-            // let symbol = &script_compiler.symbols[struct_def.sym_id.id as usize];
+            // let symbol = &script_compiler.symbols[struct_def.sym_id ];
             // let ast_id = symbol.ast_id.expect("Core should not be resolved");
             // let abs_struct = &self.ast_info.get_struct(ast_id);
             visited.push(type_id);
@@ -32,7 +32,7 @@ pub(super) fn check_type_constraint(
                 // Not sure if this incurs any errors this time
                 if visited.contains(&field.type_id) {
                     // if spanned_directive.arg.has_restrictions() {
-                    //     let name = self.interner.search(symbol.name_id.id as usize);
+                    //     let name = self.interner.search(symbol.name_id );
                     //
                     //     let msg = format!(
                     //         "The type `{name}` cannot have `#{}` applied due to recursively relying on itself satisfying the argument",
@@ -144,7 +144,7 @@ pub fn get_type_constraints(
     ty_span: SourceSpan,
     is_rec: bool,
 ) -> Option<TypeBoundaryFlags> {
-    let ty = &compiler.types[type_id.id as usize].ty;
+    let ty = &compiler.types[type_id ].ty;
     match ty {
         Type::BuiltinType(builtin_ty) => Some(builtin_ty.kind().type_constraints()),
         // Is it?

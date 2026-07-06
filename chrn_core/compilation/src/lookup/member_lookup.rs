@@ -25,7 +25,7 @@ pub enum MemberLookupResult {
 /// Return type is empty if the given type cannot carry members
 pub fn collect_all_members(compiler: &ScriptCompiler, mut type_id: TypeId) -> Vec<MemberId> {
     for _ in 0..chrn_utils::MAX_LOOPS {
-        match &compiler.types[type_id.id as usize].ty {
+        match &compiler.types[type_id ].ty {
             Type::BuiltinType(builtin_type) => todo!(),
             Type::Struct(struct_def) => return struct_def.fields.clone(),
             Type::Enum(enum_def) => return enum_def.variants.clone(),
@@ -57,7 +57,7 @@ pub fn lookup_member(
     // Max loops will strike here.
     // Soon.
     for _ in 0..chrn_utils::MAX_LOOPS {
-        match &compiler.types[current_type_id.id as usize].ty {
+        match &compiler.types[current_type_id ].ty {
             Type::BuiltinType(_) => {
                 // Members/Methods do not exist for types yet
                 return MemberLookupResult::ImpossibleTypeMemberAccess(current_type_id);

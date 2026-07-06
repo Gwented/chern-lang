@@ -379,16 +379,14 @@ pub fn type_expr_result_to_preset_err(
             let err_name = interner.search(sp_name_id.inner);
             let core_msg = match associated {
                 AssociatedScopeKind::Module(mod_id) => {
-                    let err_mod = &compiler.mods[mod_id.id as usize];
+                    let err_mod = &compiler.mods[*mod_id];
                     let err_mod_name = interner.search(err_mod.name_id);
 
-                    format!(
-                        "No type with the identifier `{err_name}` is defined within the module `{err_mod_name}`"
-                    )
+                    format!("No type `{err_name}` is defined in module `{err_mod_name}`")
                 }
                 //NOTE: Not current symbol exists that has it's own scope except modules
                 AssociatedScopeKind::Scope(scope_id) => {
-                    let scope_info = &compiler.scopes[scope_id.id];
+                    let scope_info = &compiler.scopes[*scope_id];
 
                     // Expects since if the current associated scope is from a symbol, that means
                     // the previous stack frame was extracted from a symbol's namespace directly
@@ -396,7 +394,7 @@ pub fn type_expr_result_to_preset_err(
                         .sym_owner
                         .expect("resolve_type_expr control flow broke");
 
-                    let sym_name_id = compiler.symbols[sym_owner.id as usize].name_id;
+                    let sym_name_id = compiler.symbols[sym_owner].name_id;
                     let sym_name = interner.search(sym_name_id);
 
                     format!(
@@ -421,10 +419,10 @@ pub fn type_expr_result_to_preset_err(
             ..
         } => {
             // Um...
-            let current_mod = &compiler.mods[current_mod.id];
+            let current_mod = &compiler.mods[*current_mod];
             let current_mod_name = interner.search(current_mod.name_id);
 
-            let sym = &compiler.symbols[sym_id.id as usize];
+            let sym = &compiler.symbols[*sym_id];
             let sym_name = interner.search(sym.name_id);
 
             let core_msg =
@@ -440,7 +438,7 @@ pub fn type_expr_result_to_preset_err(
 
             Some(PresetErr::General(src_diag))
         }
-        TypeExprResult::GenericInputCount {
+        TypeExprResult::InvalidGenericArgCount {
             // Could make this kind specific but $#)%@^*)
             base,
             expected,

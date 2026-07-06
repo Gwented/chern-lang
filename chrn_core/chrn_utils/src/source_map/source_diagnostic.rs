@@ -95,10 +95,12 @@ impl Reporter {
 /// Diagnostic intended to represent a set of instructions to be rendered.
 #[derive(Debug)]
 pub struct SourceDiagnostic {
+    /// Severity of the given diagnostic
     pub level: DiagnosticLevel,
+    /// Header message for this diagnostic
     pub core_msg: String,
-    // Stores a `PathId` instead of `SourceRegionId` because a diagnostic can exist without a region
-    // existing, such as if there was an io error before being able to read any regions.
+    /// Stores a `PathId` instead of `SourceRegionId` because a diagnostic can exist without a region
+    /// existing, such as if there was an io error before being able to read any regions.
     pub path_id: PathId,
     pub annotations: Vec<Annotation>,
     pub help: Vec<String>,

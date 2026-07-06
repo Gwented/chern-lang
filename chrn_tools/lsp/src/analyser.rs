@@ -48,11 +48,12 @@ use std::sync::Arc;
 use tower_lsp::Client;
 use tower_lsp::lsp_types;
 
+use chrn_utils::arena::Arena;
 use chrn_utils::chrn_settings::ChrnSettings;
 use chrn_utils::id_types::{ModuleId, PathId, SourceRegionId};
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
-use chrn_utils::source_map::source_region::SourceRegionArena;
+use chrn_utils::source_map::source_region::SourceRegion;
 use compilation::modules::mod_finder::ModuleFinder;
 use std::io::Cursor;
 use tower_lsp::lsp_types::Url;
@@ -120,8 +121,7 @@ pub(crate) fn config_load_error_to_diagnostics(
                 .or_else(|| diag.annotations.first())
             {
                 let s_pos = crate::text::offset_to_position(text, annotation.span.start as usize);
-                let e_pos =
-                    crate::text::offset_to_position(text, annotation.span.end as usize);
+                let e_pos = crate::text::offset_to_position(text, annotation.span.end as usize);
                 (s_pos, e_pos)
             } else {
                 (start, start)
@@ -151,8 +151,7 @@ pub(crate) fn config_load_error_to_diagnostics(
 
                 let ann_start =
                     crate::text::offset_to_position(text, annotation.span.start as usize);
-                let ann_end =
-                    crate::text::offset_to_position(text, annotation.span.end as usize);
+                let ann_end = crate::text::offset_to_position(text, annotation.span.end as usize);
                 let ann_sev = match annotation.kind {
                     AnnotationKind::Primary => severity,
                     AnnotationKind::Secondary => lsp_types::DiagnosticSeverity::WARNING,
@@ -392,7 +391,7 @@ async fn publish_if_current(
 /// (which never correspond to a user file) or for diagnostics whose region has
 /// been evicted from the arena.
 fn resolve_diag_text<'a>(
-    arena: &'a SourceRegionArena,
+    arena: &'a Arena<SourceRegion, SourceRegionId>,
     diag: &SourceDiagnostic,
     fallback_text: &'a str,
     fallback_doc_len: usize,
@@ -400,7 +399,7 @@ fn resolve_diag_text<'a>(
     // SAFETY: The arena is built from the same `Intern` instance that produced
     // the diagnostic's `path_id` (see `DocumentState::ensure_analyzed`).
     // Therefore `region.path_id == diag.path_id` is a correct comparison.
-    if let Some(region) = arena.regions.iter().find(|r| r.path_id == diag.path_id) {
+    if let Some(region) = arena.items.iter().find(|r| r.path_id == diag.path_id) {
         let text = std::str::from_utf8(&region.src_bytes).unwrap_or(fallback_text);
         return (text, region.src_bytes.len());
     }
@@ -438,7 +437,7 @@ fn resolve_diag_text<'a>(
 pub(crate) fn push_diagnostics(
     lsp_diags: &mut Vec<tower_lsp::lsp_types::Diagnostic>,
     diags: &[SourceDiagnostic],
-    arena: &SourceRegionArena,
+    arena: &Arena<SourceRegion, SourceRegionId>,
     fallback_text: &str,
     fallback_doc_len: usize,
     source: &str,
@@ -447,8 +446,7 @@ pub(crate) fn push_diagnostics(
         // Resolve the correct source text for THIS diagnostic. A diagnostic
         // originating in an imported module has spans in that module's bytes,
         // not the main document's, so we must look up the matching region.
-        let (text, doc_len) =
-            resolve_diag_text(arena, core_diag, fallback_text, fallback_doc_len);
+        let (text, doc_len) = resolve_diag_text(arena, core_diag, fallback_text, fallback_doc_len);
 
         let severity = match core_diag.level {
             DiagnosticLevel::Error => lsp_types::DiagnosticSeverity::ERROR,
@@ -464,8 +462,7 @@ pub(crate) fn push_diagnostics(
             .or_else(|| core_diag.annotations.first())
         {
             let s = (annotation.span.start as usize).min(doc_len);
-            let e = (annotation.span.end as usize)
-                .min(doc_len);
+            let e = (annotation.span.end as usize).min(doc_len);
             (s, e)
         } else {
             (0, 0)
@@ -497,8 +494,7 @@ pub(crate) fn push_diagnostics(
             };
 
             let ann_start = (annotation.span.start as usize).min(doc_len);
-            let ann_end = (annotation.span.end as usize)
-                .min(doc_len);
+            let ann_end = (annotation.span.end as usize).min(doc_len);
             let ann_sev = match annotation.kind {
                 AnnotationKind::Primary => severity,
                 AnnotationKind::Secondary | AnnotationKind::Help => {
@@ -581,7 +577,7 @@ pub(crate) fn resolve_modules_lsp(
     settings: &ChrnSettings,
     interner: &mut Intern,
     doc_cache: &DocumentCache,
-    region_arena: &mut SourceRegionArena,
+    region_arena: &mut Arena<SourceRegion, SourceRegionId>,
     diags: &mut Vec<SourceDiagnostic>,
 ) {
     use chrn_utils::core_error::{self, ConfigLoadError};
@@ -660,7 +656,9 @@ pub(crate) fn resolve_modules_lsp(
             }
         };
 
-        let sub_region_id = SourceRegionId::new(region_arena.regions.len() as u32);
+        // `ConfigLoader::new` requires the region's id up front.  The arena assigns
+        // ids in `push` order, so the next id is the current length of the arena.
+        let sub_region_id = SourceRegionId::new(region_arena.len() as u32);
 
         let sub_region = match ConfigLoader::new(sub_region_id, src, path_id, settings, interner)
             .load_config()
@@ -746,7 +744,11 @@ pub(crate) fn resolve_modules_lsp(
             modules.resize(expected_len, None);
         }
 
-        region_arena.regions.push(sub_region);
+        let assigned_id = region_arena.push(sub_region);
+        debug_assert_eq!(
+            assigned_id, sub_region_id,
+            "Sub-region id assigned by arena must match the pre-computed id"
+        );
 
         let sub_mod = Module::new(
             sub_mod_name_id,

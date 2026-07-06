@@ -4,27 +4,6 @@ use std::ops::{Range, RangeInclusive};
 
 use crate::id_types::SourceRegionId;
 
-// pub struct SpanArena {
-//     pub spans: Vec<SourceSpan>,
-// }
-//
-// impl SpanArena {
-//     pub fn new(spans: Vec<SourceSpan>) -> SpanArena {
-//         SpanArena { spans }
-//     }
-//
-//     pub fn push_span(&mut self, span: SourceSpan) -> SpanId {
-//         let span_id = SpanId::new(self.spans.len() as u32);
-//         self.spans.push(span);
-//         span_id
-//     }
-//
-//     /// Returns owned spane
-//     pub fn get_span(&self, span_id: SpanId) -> SourceSpan {
-//         self.spans[span_id.id as usize]
-//     }
-// }
-
 // Could this be u32?
 /// Span structure used for source mapping
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

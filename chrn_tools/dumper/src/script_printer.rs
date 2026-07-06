@@ -21,7 +21,7 @@ impl ScriptPrinter<'_> {
     // Needs to exist for correctness assurance reasons mostly
     pub fn fmt_details(&mut self) -> String {
         let mut details = String::new();
-        for module in &self.script_compiler.mods {
+        for module in &self.script_compiler.mods.items {
             todo!("Hi modules")
         }
         panic!();

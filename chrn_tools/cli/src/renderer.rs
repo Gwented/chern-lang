@@ -4,12 +4,13 @@ pub(super) mod render_settings;
 pub(super) mod style;
 
 use chrn_utils::{
+    arena::Arena,
     id_types::SourceRegionId,
     intern::Intern,
     source_map::{
         line_mapping::{self, Line, LineView},
         source_diagnostic::{SourceDiagnostic, annotations::Annotation, footers::FooterKind},
-        source_region::SourceRegionArena,
+        source_region::SourceRegion,
         source_span::SourceSpan,
     },
 };
@@ -32,7 +33,7 @@ pub(crate) fn render_cli_diags(
     diags: &[SourceDiagnostic],
     footers: &[FooterKind],
     settings: &RenderSettings,
-    region_arena_opt: Option<&SourceRegionArena>,
+    region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     interner: &Intern,
 ) -> Vec<String> {
     let region_arena = match region_arena_opt {
@@ -56,7 +57,7 @@ pub(crate) fn render_cli_diags(
     // Merge overlapping spans per region. SourceSpan stores its own region_id, so we
     // can merge annotations that refer to the same source region into a single span
     // that covers all of them. This determines how much source text we need to map.
-    let mut required_mapping: Vec<SourceSpan> = Vec::with_capacity(region_arena.regions.len());
+    let mut required_mapping: Vec<SourceSpan> = Vec::with_capacity(region_arena.len());
 
     for diag in diags {
         for annotation in &diag.annotations {
@@ -77,7 +78,7 @@ pub(crate) fn render_cli_diags(
     let mut all_src_strs = Vec::new();
 
     for span in &required_mapping {
-        let region = region_arena.extract_region(span.region_id);
+        let region = &region_arena[span.region_id];
         let ln_view = line_mapping::form_ln_view(&region.src_bytes, &span);
         ln_views.push(ln_view);
         let src_str = match str::from_utf8(&region.src_bytes) {
@@ -118,7 +119,7 @@ fn form_diag(
     src_strs: &[&str],
     ln_views: &[LineView],
     settings: &RenderSettings,
-    region_arena: &SourceRegionArena,
+    region_arena: &Arena<SourceRegion, SourceRegionId>,
     interner: &Intern,
 ) -> String {
     // For tracking max line width needed for rendering
@@ -187,7 +188,7 @@ fn render_text(
     ln_views: &[LineView],
     settings: &RenderSettings,
     ln_num_width: usize,
-    region_arena: &SourceRegionArena,
+    region_arena: &Arena<SourceRegion, SourceRegionId>,
     interner: &Intern,
 ) -> String {
     // Spaces prefixing the `---` gap separator (line-number column width). The bar lines use
@@ -221,7 +222,7 @@ fn render_text(
         }
 
         if !placed_path {
-            let new_region = region_arena.extract_region(current_region_id);
+            let new_region = &region_arena[current_region_id];
             let path = interner.search_path(new_region.path_id);
             let path_header_sep = style::create_path_header(path, settings);
 

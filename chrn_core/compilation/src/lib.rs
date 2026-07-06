@@ -49,16 +49,19 @@ mod tests {
         }
     }
 
-    fn get_module_region<'a>(arena: &'a SourceRegionArena, module: &Module) -> &'a SourceRegion {
+    fn get_module_region<'a>(
+        arena: &'a Arena<SourceRegion, SourceRegionId>,
+        module: &Module,
+    ) -> &'a SourceRegion {
         let region_id = module
             .region_id
             .expect("Module should have a source region");
-        arena.extract_region(region_id)
+        &arena[region_id]
     }
 
     fn mock_single_module_compiler(
         text: &str,
-    ) -> (SourceRegionArena, Intern, ChrnSettings, ScriptCompiler) {
+    ) -> (Arena<SourceRegion, SourceRegionId>, Intern, ChrnSettings, ScriptCompiler) {
         let interner = mock_interner(0, 1);
         let settings = ChrnSettings::default();
         let path_id = PathId::new(0);
@@ -78,11 +81,12 @@ mod tests {
         );
 
         // Should use compiler store now
-        let arena = SourceRegionArena::new(vec![source_region]);
-        let compiler = ScriptCompiler::init(None, vec![module]);
+        let mut arena = Arena::<SourceRegion, SourceRegionId>::new();
+        arena.push(source_region);
+    let compiler = ScriptCompiler::init(None, Arena::<Module, ModuleId>::from(vec![module]));
 
-        (arena, interner, settings, compiler)
-    }
+    (arena, interner, settings, compiler)
+}
 
     fn mock_import(
         name: &str,
@@ -133,22 +137,25 @@ mod tests {
 
     fn mock_multiple_module_compiler(
         modules_with_regions: Vec<(Module, SourceRegion)>,
-    ) -> (SourceRegionArena, Intern, ChrnSettings, ScriptCompiler) {
+    ) -> (Arena<SourceRegion, SourceRegionId>, Intern, ChrnSettings, ScriptCompiler) {
         let interner = mock_interner(0, modules_with_regions.len());
         let settings = ChrnSettings::default();
 
         let (modules, regions): (Vec<Module>, Vec<SourceRegion>) =
             modules_with_regions.into_iter().unzip();
 
-        let arena = SourceRegionArena::new(regions);
-        let compiler = ScriptCompiler::init(None, modules);
+        let mut arena = Arena::<SourceRegion, SourceRegionId>::new();
+        for region in regions {
+            arena.push(region);
+        }
+    let compiler = ScriptCompiler::init(None, Arena::<Module, ModuleId>::from(modules));
 
-        (arena, interner, settings, compiler)
-    }
+    (arena, interner, settings, compiler)
+}
     /// Builds resolver environments aligned with compiler modules from their ASTs
     fn build_resolver_envs<'a>(
         compiler: &ScriptCompiler,
-        arena: &'a SourceRegionArena,
+        arena: &'a Arena<SourceRegion, SourceRegionId>,
         asts: &'a [Option<AstInfo>],
     ) -> Vec<Option<ResolverEnv<'a>>> {
         compiler
@@ -157,7 +164,7 @@ mod tests {
             .enumerate()
             .map(|(i, module)| {
                 module.region_id.map(|region_id| {
-                    let region = arena.extract_region(region_id);
+                    let region = &arena[region_id];
                     let ast = asts[i]
                         .as_ref()
                         .expect("Module with region_id should have an AstInfo entry");
@@ -181,12 +188,13 @@ mod tests {
     use std::path::Path;
 
     use chrn_utils::{
+        arena::Arena,
         chrn_settings::ChrnSettings,
         core_error::ConfigLoadError,
         id_types::{InternedId, ModuleId, PathId, SourceRegionId, ValueId},
         intern::Intern,
         source_map::source_diagnostic::SourceDiagnostic,
-        source_map::source_region::{SourceRegion, SourceRegionArena},
+        source_map::source_region::SourceRegion,
     };
     use lang::{
         config_loader::{ConfigLoader, ConfigLoaderOutput},
@@ -214,7 +222,7 @@ mod tests {
     fn compile_and_resolve_single_module(text: &str) -> (ScriptCompiler, Intern) {
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
         let region = get_module_region(&arena, module);
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -227,7 +235,7 @@ mod tests {
             .resolve(&env)
             .unwrap();
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
         let envs = vec![Some(env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
@@ -254,7 +262,7 @@ mod tests {
             .unwrap_or_else(|| panic!("Variable '{}' not found", name));
 
         match &var_def.state {
-            VariableState::Known(value_id) => compiler.values[value_id.id as usize]
+            VariableState::Known(value_id) => compiler.values[*value_id]
                 .const_val
                 .clone()
                 .unwrap_or_else(|| panic!("Variable '{}' has no constant value", name)),
@@ -272,7 +280,7 @@ mod tests {
     ) -> Result<(ScriptCompiler, Intern), Vec<SourceDiagnostic>> {
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
         let region = get_module_region(&arena, module);
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -285,7 +293,7 @@ mod tests {
             .resolve(&env)
             .unwrap();
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
         let envs = vec![Some(env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
@@ -1295,7 +1303,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
 
         let region = get_module_region(&arena, module);
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -1315,7 +1323,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
 
         let region = get_module_region(&arena, module);
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -1339,7 +1347,7 @@ mod tests {
         // syntax error within another module would not be reportable since the parser failed.
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
 
         let region = get_module_region(&arena, module);
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -1360,7 +1368,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
 
         let region = get_module_region(&arena, module);
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -1383,7 +1391,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
 
         let region = get_module_region(&arena, module);
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -1404,7 +1412,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
 
         let region = get_module_region(&arena, module);
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -1487,16 +1495,18 @@ mod tests {
             Some(sub_region_id),
         );
 
-        let region_arena = SourceRegionArena::new(vec![main_meta, sub_meta]);
+        let mut region_arena = Arena::<SourceRegion, SourceRegionId>::new();
+        region_arena.push(main_meta);
+        region_arena.push(sub_meta);
 
-        let mut compiler = ScriptCompiler::init(None, vec![main_mod, sub_mod]);
+        let mut compiler = ScriptCompiler::init(None, Arena::<Module, ModuleId>::from(vec![main_mod, sub_mod]));
 
         let mut asts: Vec<Option<AstInfo>> = Vec::new();
 
         for mod_idx in 0..compiler.mods.len() {
-            let module = &compiler.mods[mod_idx];
+            let module = &compiler.mods[ModuleId::new(mod_idx)];
             let region = match module.region_id {
-                Some(id) => region_arena.extract_region(id),
+                Some(id) => &region_arena[id],
                 None => {
                     asts.push(None);
                     continue;
@@ -1580,9 +1590,9 @@ mod tests {
         let mut asts: Vec<Option<AstInfo>> = Vec::new();
 
         for mod_idx in 0..compiler.mods.len() {
-            let module = &compiler.mods[mod_idx];
+            let module = &compiler.mods[ModuleId::new(mod_idx)];
             let region = match module.region_id {
-                Some(region_id) => arena.extract_region(region_id),
+                Some(region_id) => &arena[region_id],
                 None => {
                     asts.push(None);
                     continue;
@@ -1666,9 +1676,9 @@ mod tests {
         let mut asts: Vec<Option<AstInfo>> = Vec::new();
 
         for mod_idx in 0..compiler.mods.len() {
-            let module = &compiler.mods[mod_idx];
+            let module = &compiler.mods[ModuleId::new(mod_idx)];
             let region = match module.region_id {
-                Some(region_id) => arena.extract_region(region_id),
+                Some(region_id) => &arena[region_id],
                 None => {
                     asts.push(None);
                     continue;
@@ -1754,9 +1764,9 @@ mod tests {
         let mut asts: Vec<Option<AstInfo>> = Vec::new();
 
         for mod_idx in 0..compiler.mods.len() {
-            let module = &compiler.mods[mod_idx];
+            let module = &compiler.mods[ModuleId::new(mod_idx)];
             let region = match module.region_id {
-                Some(region_id) => arena.extract_region(region_id),
+                Some(region_id) => &arena[region_id],
                 None => {
                     asts.push(None);
                     continue;
@@ -1805,7 +1815,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
         let region = get_module_region(&arena, module);
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -1818,7 +1828,7 @@ mod tests {
             .resolve(&env)
             .unwrap();
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
 
         assert_eq!(module.scopes.len(), 2);
         assert_eq!(
@@ -1834,7 +1844,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
         let region = get_module_region(&arena, module);
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -1847,7 +1857,7 @@ mod tests {
             .resolve(&env)
             .unwrap();
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
 
         assert_eq!(module.scopes.len(), 3);
         assert_eq!(
@@ -1864,7 +1874,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
         let region = get_module_region(&arena, module);
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -1877,7 +1887,7 @@ mod tests {
             .resolve(&env)
             .unwrap();
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
 
         assert_eq!(module.scopes.len(), 3);
         assert_eq!(
@@ -1905,7 +1915,7 @@ mod tests {
         //
         // let mut compiler = ScriptCompiler::init(None, HashMap::default(), vec![module]);
         //
-        // let module = &compiler.mods[0];
+        // let module = &compiler.mods[ModuleId::new(0)];
         //
         // let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
         //     .tokenize(&mut interner);
@@ -1922,7 +1932,7 @@ mod tests {
         // .resolve(&env)
         // .unwrap();
         //
-        // let module = &compiler.mods[0];
+        // let module = &compiler.mods[ModuleId::new(0)];
         //
         // assert_eq!(module.scope_manager.scopes.len(), 1);
         // assert_eq!(
@@ -1950,7 +1960,7 @@ mod tests {
         //
         // let mut compiler = ScriptCompiler::init(None, HashMap::default(), vec![module]);
         //
-        // let module = &compiler.mods[0];
+        // let module = &compiler.mods[ModuleId::new(0)];
         //
         // let (toks, _) = Lexer::new(&module.metadata.src_bytes, module.metadata.script_start)
         //     .tokenize(&mut interner);
@@ -1967,7 +1977,7 @@ mod tests {
         // .resolve(&env)
         // .unwrap();
         //
-        // let module = &compiler.mods[0];
+        // let module = &compiler.mods[ModuleId::new(0)];
         //
         // assert_eq!(module.scope_manager.scopes.len(), 1);
         // assert_eq!(
@@ -1988,7 +1998,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
         let region = get_module_region(&arena, module);
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -2002,7 +2012,7 @@ mod tests {
             .unwrap();
 
         //TODO: Override and Complex
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
         assert_eq!(module.scopes.len(), 4);
         assert_eq!(
             compiler.get_scope(module.scopes[1]).scope.scope_type,
@@ -2028,7 +2038,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
         let region = get_module_region(&arena, module);
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -2041,7 +2051,7 @@ mod tests {
             .resolve(&env)
             .unwrap();
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
         let envs = vec![Some(env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
@@ -2059,7 +2069,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
         let region = get_module_region(&arena, module);
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -2072,7 +2082,7 @@ mod tests {
             .resolve(&env)
             .unwrap();
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
         let envs = vec![Some(env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
@@ -2089,7 +2099,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
         let region = get_module_region(&arena, module);
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -2122,7 +2132,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
         let region = get_module_region(&arena, module);
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -2135,7 +2145,7 @@ mod tests {
             .resolve(&env)
             .unwrap();
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
         let envs = vec![Some(env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
@@ -2149,7 +2159,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(compiler.values.len(), 1);
-        let last_val = &compiler.values[0];
+        let last_val = &compiler.values[ValueId::new(0)];
         match &last_val.const_val {
             Some(Value::I64(4)) => (),
             _ => panic!("Value mismatch, expected I64(4)"),
@@ -2162,7 +2172,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
         let region = get_module_region(&arena, module);
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -2175,7 +2185,7 @@ mod tests {
             .resolve(&env)
             .unwrap();
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
         let envs = vec![Some(env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
@@ -2189,7 +2199,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(compiler.values.len(), 1);
-        let last_val = &compiler.values[0];
+        let last_val = &compiler.values[ValueId::new(0)];
         match &last_val.const_val {
             Some(Value::InternedStr(id)) => {
                 assert_eq!("Hallo", interner.search(*id));
@@ -2204,7 +2214,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
         let region = get_module_region(&arena, module);
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -2217,7 +2227,7 @@ mod tests {
             .resolve(&env)
             .unwrap();
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
         let envs = vec![Some(env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
@@ -2231,7 +2241,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(compiler.values.len(), 1);
-        let last_val = &compiler.values[0];
+        let last_val = &compiler.values[ValueId::new(0)];
         match &last_val.const_val {
             Some(Value::F64(v)) if *v == 0e-5 => (),
             _ => panic!("Value mismatch, expected F64(0e-5)"),
@@ -2244,7 +2254,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
         let region = get_module_region(&arena, module);
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -2257,7 +2267,7 @@ mod tests {
             .resolve(&env)
             .unwrap();
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
         let envs = vec![Some(env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
@@ -2271,7 +2281,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(compiler.values.len(), 1);
-        let last_val = &compiler.values[0];
+        let last_val = &compiler.values[ValueId::new(0)];
         match &last_val.const_val {
             Some(Value::Bool(true)) => (),
             _ => panic!("Value mismatch, expected Bool(true)"),
@@ -2284,7 +2294,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
         let region = get_module_region(&arena, module);
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -2297,7 +2307,7 @@ mod tests {
             .resolve(&env)
             .unwrap();
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
         let envs = vec![Some(env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
@@ -2311,7 +2321,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(compiler.values.len(), 1);
-        let last_val = &compiler.values[0];
+        let last_val = &compiler.values[ValueId::new(0)];
         match &last_val.const_val {
             Some(Value::Bool(false)) => (),
             _ => panic!("Value mismatch, expected Bool(false)"),
@@ -2324,7 +2334,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
         let region = get_module_region(&arena, module);
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -2337,7 +2347,7 @@ mod tests {
             .resolve(&env)
             .unwrap();
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
         let envs = vec![Some(env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
@@ -2351,7 +2361,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(compiler.values.len(), 1);
-        let last_val = &compiler.values[0];
+        let last_val = &compiler.values[ValueId::new(0)];
         match &last_val.const_val {
             Some(Value::Char('c')) => (),
             _ => panic!("Value mismatch, expected Char('c')"),
@@ -2371,7 +2381,7 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[0];
+        let module = &compiler.mods[ModuleId::new(0)];
         let region = get_module_region(&arena, module);
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
@@ -2384,7 +2394,7 @@ mod tests {
             .resolve(&env)
             .unwrap();
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
         let envs = vec![Some(env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
@@ -2405,7 +2415,7 @@ mod tests {
                 .find(|v| v.name_id == name_id)
                 .expect("Variable '{name}' not found");
             match &var_def.state {
-                VariableState::Known(value_id) => compiler.values[value_id.id as usize]
+                VariableState::Known(value_id) => compiler.values[*value_id]
                     .const_val
                     .as_ref()
                     .expect("Variable '{name}' has no const_val"),
@@ -2430,7 +2440,7 @@ mod tests {
     fn all_operators_test() {
         let eval = |text: &str| -> Value {
             let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
-            let module = &compiler.mods[0];
+            let module = &compiler.mods[ModuleId::new(0)];
             let region = get_module_region(&arena, module);
             let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
                 .tokenize(&mut interner);
@@ -2439,7 +2449,7 @@ mod tests {
             NamespaceResolver::new(&settings, &interner, &mut compiler)
                 .resolve(&env)
                 .unwrap();
-            let env = ResolverEnv::new(&ast_info, region, compiler.mods[0].mod_id);
+            let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
             let envs = vec![Some(env)];
             run_member_resolver(&settings, &envs, &interner, &mut compiler);
             let env = envs[0].as_ref().expect("Env should exist");
@@ -2456,7 +2466,7 @@ mod tests {
                 .find(|v| v.name_id == name_id)
                 .expect("Variable 'X' not found");
             match &var_def.state {
-                VariableState::Known(value_id) => compiler.values[value_id.id as usize]
+                VariableState::Known(value_id) => compiler.values[*value_id]
                     .const_val
                     .clone()
                     .expect("Variable 'X' has no const_val"),
@@ -2749,6 +2759,460 @@ mod tests {
             )
             .is_err(),
             "Chain leading into a cycle should be rejected"
+        );
+    }
+
+    // -- Cross-module expression dependency tests --
+
+    /// Parses and fully resolves a two-module system where the main module imports the sub
+    /// module (no alias). Panics on any resolution error.
+    fn compile_and_resolve_cross_module(
+        main_text: &str,
+        sub_text: &str,
+    ) -> (ScriptCompiler, Intern) {
+        let mut interner = Intern::init();
+
+        let import = mock_import(
+            "sub_module",
+            "sub_path",
+            ModuleId::new(1),
+            None,
+            &mut interner,
+        );
+
+        let (main_mod, main_region) = mock_single_module(
+            "main",
+            "main_path",
+            vec![import],
+            0,
+            main_text,
+            &mut interner,
+        );
+
+        let (sub_mod, sub_region) = mock_single_module(
+            "sub_module",
+            "sub_path",
+            Default::default(),
+            1,
+            sub_text,
+            &mut interner,
+        );
+
+        let (arena, _, settings, mut compiler) =
+            mock_multiple_module_compiler(vec![(main_mod, main_region), (sub_mod, sub_region)]);
+
+        let mut asts: Vec<Option<AstInfo>> = Vec::new();
+        for mod_idx in 0..compiler.mods.len() {
+            let module = &compiler.mods[ModuleId::new(mod_idx)];
+            let region = match module.region_id {
+                Some(region_id) => &arena[region_id],
+                None => {
+                    asts.push(None);
+                    continue;
+                }
+            };
+            let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+                .tokenize(&mut interner);
+            asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
+        }
+
+        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts);
+
+        let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
+        for env in resolver_envs.iter() {
+            if let Some(env) = env {
+                ns_resolver.resolve(env).unwrap();
+            }
+        }
+
+        run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
+
+        let mut ty_resolver = TypeResolver::new(&settings, &interner, &mut compiler);
+        for env in resolver_envs.iter() {
+            if let Some(env) = env {
+                ty_resolver.resolve(env).unwrap();
+            }
+        }
+
+        for env in resolver_envs.iter().flatten() {
+            ConstraintResolver::new(&settings, &interner, &mut compiler)
+                .resolve(env)
+                .unwrap();
+        }
+
+        (compiler, interner)
+    }
+
+    /// Runs namespace and member resolution across two modules, then type resolution.
+    /// Returns Ok if all type resolutions pass, Err with all diagnostics otherwise.
+    fn type_resolve_cross_module(
+        main_text: &str,
+        sub_text: &str,
+    ) -> Result<(ScriptCompiler, Intern), Vec<SourceDiagnostic>> {
+        let mut interner = Intern::init();
+
+        let import = mock_import(
+            "sub_module",
+            "sub_path",
+            ModuleId::new(1),
+            None,
+            &mut interner,
+        );
+
+        let (main_mod, main_region) = mock_single_module(
+            "main",
+            "main_path",
+            vec![import],
+            0,
+            main_text,
+            &mut interner,
+        );
+
+        let (sub_mod, sub_region) = mock_single_module(
+            "sub_module",
+            "sub_path",
+            Default::default(),
+            1,
+            sub_text,
+            &mut interner,
+        );
+
+        let (arena, _, settings, mut compiler) =
+            mock_multiple_module_compiler(vec![(main_mod, main_region), (sub_mod, sub_region)]);
+
+        let mut asts: Vec<Option<AstInfo>> = Vec::new();
+        for mod_idx in 0..compiler.mods.len() {
+            let module = &compiler.mods[ModuleId::new(mod_idx)];
+            let region = match module.region_id {
+                Some(region_id) => &arena[region_id],
+                None => {
+                    asts.push(None);
+                    continue;
+                }
+            };
+            let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+                .tokenize(&mut interner);
+            asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
+        }
+
+        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts);
+
+        {
+            let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
+            for env in resolver_envs.iter() {
+                if let Some(env) = env {
+                    ns_resolver.resolve(env).unwrap();
+                }
+            }
+        }
+
+        run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
+
+        let mut all_diags = Vec::new();
+
+        let mut ty_resolver = TypeResolver::new(&settings, &interner, &mut compiler);
+        for env in resolver_envs.iter() {
+            if let Some(env) = env {
+                if let Err(diags) = ty_resolver.resolve(env) {
+                    all_diags.extend(diags);
+                }
+            }
+        }
+
+        if all_diags.is_empty() {
+            Ok((compiler, interner))
+        } else {
+            Err(all_diags)
+        }
+    }
+
+    #[test]
+    fn const_dependency_cross_module_resolution_test() {
+        let approx_eq = |a: f64, b: f64| (a - b).abs() < 1e-9;
+
+        // 1) Basic: sub defines a literal, main references it in an expression.
+        let (compiler, interner) =
+            compile_and_resolve_cross_module("let RESULT = sub_module::BASE + 3", "let BASE = 5");
+        assert!(matches!(
+            value_of(&compiler, &interner, "BASE"),
+            Value::I64(5)
+        ));
+        assert!(matches!(
+            value_of(&compiler, &interner, "RESULT"),
+            Value::I64(8)
+        ));
+
+        // 2) Pending resolution: main references a sub constant before it textually appears in
+        //    the sub module source. The resolver should retry pending symbols across modules.
+        let (compiler, interner) =
+            compile_and_resolve_cross_module("let RESULT = sub_module::BASE * 2", "let BASE = 7");
+        assert!(matches!(
+            value_of(&compiler, &interner, "BASE"),
+            Value::I64(7)
+        ));
+        assert!(matches!(
+            value_of(&compiler, &interner, "RESULT"),
+            Value::I64(14)
+        ));
+
+        // 3) Diamond: one sub literal feeds two branches in main that are later combined.
+        //    LEFT = 3 + 1 = 4, RIGHT = 3 * 2 = 6, TOP = 4 + 6 = 10
+        let (compiler, interner) = compile_and_resolve_cross_module(
+            "\
+                let LEFT = sub_module::BASE + 1\n\
+                let RIGHT = sub_module::BASE * 2\n\
+                let TOP = LEFT + RIGHT\
+            ",
+            "let BASE = 3",
+        );
+        assert!(matches!(
+            value_of(&compiler, &interner, "LEFT"),
+            Value::I64(4)
+        ));
+        assert!(matches!(
+            value_of(&compiler, &interner, "RIGHT"),
+            Value::I64(6)
+        ));
+        assert!(matches!(
+            value_of(&compiler, &interner, "TOP"),
+            Value::I64(10)
+        ));
+
+        // 4) Chain originating in sub, continuing through main.
+        let (compiler, interner) = compile_and_resolve_cross_module(
+            "\
+                let B = sub_module::A + 3\n\
+                let C = B * 2\
+            ",
+            "let A = 5",
+        );
+        assert!(matches!(value_of(&compiler, &interner, "B"), Value::I64(8)));
+        assert!(matches!(
+            value_of(&compiler, &interner, "C"),
+            Value::I64(16)
+        ));
+
+        // 5) Multiple cross-module references in a single expression.
+        let (compiler, interner) = compile_and_resolve_cross_module(
+            "let SUM = sub_module::X + sub_module::Y",
+            "let X = 10\nlet Y = 20",
+        );
+        assert!(matches!(
+            value_of(&compiler, &interner, "X"),
+            Value::I64(10)
+        ));
+        assert!(matches!(
+            value_of(&compiler, &interner, "Y"),
+            Value::I64(20)
+        ));
+        assert!(matches!(
+            value_of(&compiler, &interner, "SUM"),
+            Value::I64(30)
+        ));
+
+        // 6) Floating-point cross-module dependency.
+        let (compiler, interner) = compile_and_resolve_cross_module(
+            "let AREA = sub_module::PI * sub_module::R * sub_module::R",
+            "let PI = 3.14\nlet R = 2.0",
+        );
+        match value_of(&compiler, &interner, "PI") {
+            Value::F64(v) => assert!(approx_eq(v, 3.14), "PI was {}", v),
+            other => panic!("Expected F64 for PI, got {:?}", other),
+        }
+        match value_of(&compiler, &interner, "R") {
+            Value::F64(v) => assert!(approx_eq(v, 2.0), "R was {}", v),
+            other => panic!("Expected F64 for R, got {:?}", other),
+        }
+        match value_of(&compiler, &interner, "AREA") {
+            Value::F64(v) => assert!(approx_eq(v, 12.56), "AREA was {}", v),
+            other => panic!("Expected F64 for AREA, got {:?}", other),
+        }
+
+        // 7) Bool derived from cross-module numeric comparison with a local literal.
+        let (compiler, interner) =
+            compile_and_resolve_cross_module("let IS_BIG = sub_module::VAL > 5", "let VAL = 10");
+        assert!(matches!(
+            value_of(&compiler, &interner, "VAL"),
+            Value::I64(10)
+        ));
+        assert!(matches!(
+            value_of(&compiler, &interner, "IS_BIG"),
+            Value::Bool(true)
+        ));
+
+        // 8) Unary operator on a cross-module reference.
+        let (compiler, interner) =
+            compile_and_resolve_cross_module("let NEG = -sub_module::BASE", "let BASE = 5");
+        assert!(matches!(
+            value_of(&compiler, &interner, "BASE"),
+            Value::I64(5)
+        ));
+        assert!(matches!(
+            value_of(&compiler, &interner, "NEG"),
+            Value::I64(-5)
+        ));
+    }
+
+    #[test]
+    fn const_dependency_cross_module_circular_test() {
+        // 1) Bidirectional circular: main references sub, sub references main.
+        //    Main: let X = sub_module::Y + 1
+        //    Sub:  let Y = main_module::X * 2
+        let mut interner = Intern::init();
+
+        let sub_import = mock_import(
+            "sub_module",
+            "sub_path",
+            ModuleId::new(1),
+            None,
+            &mut interner,
+        );
+        let main_import = mock_import(
+            "main_module",
+            "main_path",
+            ModuleId::new(0),
+            None,
+            &mut interner,
+        );
+
+        let (main_mod, main_region) = mock_single_module(
+            "main",
+            "main_path",
+            vec![sub_import],
+            0,
+            "let X = sub_module::Y + 1",
+            &mut interner,
+        );
+
+        let (sub_mod, sub_region) = mock_single_module(
+            "sub_module",
+            "sub_path",
+            vec![main_import],
+            1,
+            "let Y = main_module::X * 2",
+            &mut interner,
+        );
+
+        let (arena, _, settings, mut compiler) =
+            mock_multiple_module_compiler(vec![(main_mod, main_region), (sub_mod, sub_region)]);
+
+        let mut asts: Vec<Option<AstInfo>> = Vec::new();
+        for mod_idx in 0..compiler.mods.len() {
+            let module = &compiler.mods[ModuleId::new(mod_idx)];
+            let region = match module.region_id {
+                Some(region_id) => &arena[region_id],
+                None => {
+                    asts.push(None);
+                    continue;
+                }
+            };
+            let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+                .tokenize(&mut interner);
+            asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
+        }
+
+        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts);
+
+        let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
+        for env in resolver_envs.iter() {
+            if let Some(env) = env {
+                ns_resolver.resolve(env).unwrap();
+            }
+        }
+
+        run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
+
+        let mut results = Vec::new();
+        let mut ty_resolver = TypeResolver::new(&settings, &interner, &mut compiler);
+        for env in resolver_envs.iter() {
+            if let Some(env) = env {
+                results.push(ty_resolver.resolve(env));
+            }
+        }
+
+        assert!(
+            results.iter().any(|r| r.is_err()),
+            "Cross-module circular dependency should be rejected: {:?}",
+            results
+        );
+
+        // 2) Cross-module direct cycle: let A = sub::B, let B = main::A
+        let mut interner = Intern::init();
+
+        let sub_import = mock_import(
+            "sub_module",
+            "sub_path",
+            ModuleId::new(1),
+            None,
+            &mut interner,
+        );
+        let main_import = mock_import(
+            "main_module",
+            "main_path",
+            ModuleId::new(0),
+            None,
+            &mut interner,
+        );
+
+        let (main_mod, main_region) = mock_single_module(
+            "main",
+            "main_path",
+            vec![sub_import],
+            0,
+            "let A = sub_module::B",
+            &mut interner,
+        );
+
+        let (sub_mod, sub_region) = mock_single_module(
+            "sub_module",
+            "sub_path",
+            vec![main_import],
+            1,
+            "let B = main_module::A",
+            &mut interner,
+        );
+
+        let (arena, _, settings, mut compiler) =
+            mock_multiple_module_compiler(vec![(main_mod, main_region), (sub_mod, sub_region)]);
+
+        let mut asts: Vec<Option<AstInfo>> = Vec::new();
+        for mod_idx in 0..compiler.mods.len() {
+            let module = &compiler.mods[ModuleId::new(mod_idx)];
+            let region = match module.region_id {
+                Some(region_id) => &arena[region_id],
+                None => {
+                    asts.push(None);
+                    continue;
+                }
+            };
+            let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+                .tokenize(&mut interner);
+            asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
+        }
+
+        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts);
+
+        let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
+        for env in resolver_envs.iter() {
+            if let Some(env) = env {
+                ns_resolver.resolve(env).unwrap();
+            }
+        }
+
+        run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
+
+        let mut results = Vec::new();
+        let mut ty_resolver = TypeResolver::new(&settings, &interner, &mut compiler);
+        for env in resolver_envs.iter() {
+            if let Some(env) = env {
+                results.push(ty_resolver.resolve(env));
+            }
+        }
+
+        assert!(
+            results.iter().any(|r| r.is_err()),
+            "Cross-module direct cycle should be rejected: {:?}",
+            results
         );
     }
 }

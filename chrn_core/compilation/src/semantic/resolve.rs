@@ -17,6 +17,8 @@ use crate::{
     semantic::hir::hir_concepts::{SymbolKind, SymbolOrigin, Type, TypeInfo},
 };
 
+//TODO: As of right now this is basically entirely hinging off of being usable for reporting, which
+//is probably not the most concise design but it works for now so may not need changing.
 /// Result type for type expr resolution attempts. This exists due to the fact that there is no `Ok` or `Err`
 /// inherit concept behind whether or not something was found.
 pub enum TypeExprResult {
@@ -39,7 +41,7 @@ pub enum TypeExprResult {
         ty_expr_span: SourceSpan,
     },
     /// Found a valid data structure but the inputs exceed the expected
-    GenericInputCount {
+    InvalidGenericArgCount {
         base: InternedId,
         expected: usize,
         inputs_span: SourceSpan,
@@ -58,7 +60,7 @@ impl TypeExprResult {
             TypeExprResult::Type(type_id) => Some(*type_id),
             TypeExprResult::NotAType { .. }
             | TypeExprResult::PrivateTypeAccess { .. }
-            | TypeExprResult::GenericInputCount { .. }
+            | TypeExprResult::InvalidGenericArgCount { .. }
             | TypeExprResult::SymbolNotFound(_, _)
             | TypeExprResult::UnknownGenericIdent(_)
             | TypeExprResult::StaticAccessFailure(_) => None,
@@ -127,9 +129,9 @@ pub fn resolve_type_expr(
                     found_sym_id: sym_id,
                     ..
                 }) => {
-                    match compiler.symbols[sym_id.id as usize].kind {
+                    match compiler.symbols[sym_id].kind {
                         SymbolKind::Type(type_id) => {
-                            let sym = &compiler.symbols[sym_id.id as usize];
+                            let sym = &compiler.symbols[sym_id];
 
                             // If the symbol being looked up is private and the owner isn't the current
                             // module then failed
@@ -187,7 +189,7 @@ pub fn resolve_type_expr(
                 Some(kind) => match kind {
                     BuiltinTypeKind::List | BuiltinTypeKind::Set => {
                         if generic.inputs.len() != 1 {
-                            return TypeExprResult::GenericInputCount {
+                            return TypeExprResult::InvalidGenericArgCount {
                                 base: generic.base,
                                 expected: 1,
                                 inputs_span: sp_ty_expr.span,
@@ -244,7 +246,7 @@ pub fn resolve_type_expr(
                     }
                     BuiltinTypeKind::Map => {
                         if generic.inputs.len() != 2 {
-                            return TypeExprResult::GenericInputCount {
+                            return TypeExprResult::InvalidGenericArgCount {
                                 base: generic.base,
                                 expected: 2,
                                 inputs_span: sp_ty_expr.span,
@@ -353,7 +355,7 @@ pub fn resolve_static_access(
                     scope_type,
                     LookupPattern::NamespaceOnly,
                 ) {
-                    let sym = &compiler.symbols[found_sym_id.id as usize];
+                    let sym = &compiler.symbols[found_sym_id];
                     match sym.associated_scope {
                         Some(new_scope) => {
                             current_scope = new_scope;

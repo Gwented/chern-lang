@@ -36,6 +36,7 @@
 //! A name-based fallback for modules and a builtin-type fallback are applied when
 //! the semantic entity lookup yields no result.
 
+use chrn_utils::id_types::ModuleId;
 use chrn_utils::intern::Intern;
 use compilation::lexer::token::Token as ScriptToken;
 use compilation::script_compiler::ScriptCompiler;
@@ -122,15 +123,17 @@ pub fn compute_hover(
             if let Some(entity) = entity {
                 match entity {
                     SemanticEntity::Symbol(sym_id) => {
-                        if let Some(sym) = compiler.symbols.get(sym_id.id as usize) {
+                        // `entity: &SemanticEntity`, so `sym_id: &SymbolId`.  The
+                        // Arena's `get` takes the index by value, so dereference.
+                        if let Some(sym) = compiler.symbols.get(*sym_id ) {
                             match sym.kind {
                                 SymbolKind::Type(type_id) => {
-                                    let ty_info = &compiler.types[type_id.id as usize];
+                                    let ty_info = &compiler.types[type_id ];
                                     let t = format_type(&ty_info.ty, compiler, interner, false);
                                     match &ty_info.ty {
                                         hir_concepts::Type::TypeDef(type_def) => {
                                             let inner =
-                                                &compiler.types[type_def.type_id.id as usize].ty;
+                                                &compiler.types[type_def.type_id ].ty;
                                             let shallow_t = strip_struct_enum_prefix(&format_type(
                                                 inner, compiler, interner, true,
                                             ));
@@ -171,7 +174,10 @@ pub fn compute_hover(
                                                         }
                                                         hir_concepts::SymbolOrigin::Compiler => 0,
                                                     };
-                                                    let module = &compiler.mods[owner_id];
+                                                    // The `Arena` is parameterised by `ModuleId`; the
+                                                    // primary `Index` impl expects a `ModuleId` by value,
+                                                    // so wrap the raw `usize`.
+                                                    let module = &compiler.mods[ModuleId::new(owner_id)];
                                                     let raw_mod_name =
                                                         interner.search(module.name_id);
                                                     final_text.push_str(&format!(
@@ -191,12 +197,12 @@ pub fn compute_hover(
                                     }
                                 }
                                 SymbolKind::Variable(var_id) => {
-                                    let var = &compiler.variables[var_id.id as usize];
+                                    let var = &compiler.variables[var_id ];
                                     match var.state {
                                         VariableState::Known(val_id) => {
-                                            let val_info = &compiler.values[val_id.id as usize];
+                                            let val_info = &compiler.values[val_id ];
                                             let ty_info =
-                                                &compiler.types[val_info.type_id.id as usize];
+                                                &compiler.types[val_info.type_id ];
 
                                             let var_name = interner.search(sym.name_id);
                                             let type_str = strip_struct_enum_prefix(&format_type(
@@ -219,7 +225,9 @@ pub fn compute_hover(
                                     }
                                 }
                                 SymbolKind::Module(mod_id) => {
-                                    let module = &compiler.mods[mod_id.id];
+                                    // `SymbolKind::Module` carries the `ModuleId` directly;
+                                    // index the `Arena` with the typed id.
+                                    let module = &compiler.mods[mod_id];
                                     let mod_name = interner.search(module.name_id);
                                     hover_text = format!("module **{}**", mod_name);
                                 }
@@ -247,7 +255,7 @@ pub fn compute_hover(
                         owner_sym_id,
                         field_idx,
                     } => {
-                        if let Some(sym) = compiler.symbols.get(owner_sym_id.id as usize)
+                        if let Some(sym) = compiler.symbols.get(*owner_sym_id )
                             && let Some(ast_id) = sym.ast_id
                         {
                             let owner_id = match sym.sym_origin {
@@ -261,12 +269,12 @@ pub fn compute_hover(
                                     // We need the resolved type from the compiler, not just AST
                                     if let SymbolKind::Type(tid) = sym.kind
                                         && let Type::Struct(sdef) =
-                                            &compiler.types[tid.id as usize].ty
+                                            &compiler.types[tid ].ty
                                         && let Some(member_id) = sdef.fields.get(*field_idx)
-                                        && let Some(compilation::semantic::hir::hir_concepts::MemberSymbolKind::Field(field_repre)) = compiler.members.get(member_id.id as usize)
+                                        && let Some(compilation::semantic::hir::hir_concepts::MemberSymbolKind::Field(field_repre)) = compiler.members.get(*member_id )
                                     {
                                         let type_str = strip_struct_enum_prefix(&format_type(
-                                            &compiler.types[field_repre.type_id.id as usize].ty,
+                                            &compiler.types[field_repre.type_id ].ty,
                                             compiler,
                                             interner,
                                             true,
@@ -285,7 +293,7 @@ pub fn compute_hover(
                         owner_sym_id,
                         variant_idx,
                     } => {
-                        if let Some(sym) = compiler.symbols.get(owner_sym_id.id as usize)
+                        if let Some(sym) = compiler.symbols.get(*owner_sym_id )
                             && let Some(ast_id) = sym.ast_id
                         {
                             let owner_id = match sym.sym_origin {
@@ -298,14 +306,14 @@ pub fn compute_hover(
                                     let variant_name = interner.search(variant.name_id);
                                     if let SymbolKind::Type(tid) = sym.kind
                                         && let Type::Enum(edef) =
-                                            &compiler.types[tid.id as usize].ty
+                                            &compiler.types[tid ].ty
                                         && let Some(member_id) =
                                             edef.variants.get(*variant_idx)
-                                        && let Some(compilation::semantic::hir::hir_concepts::MemberSymbolKind::Variant(variant_repre)) = compiler.members.get(member_id.id as usize)
+                                        && let Some(compilation::semantic::hir::hir_concepts::MemberSymbolKind::Variant(variant_repre)) = compiler.members.get(*member_id )
                                     {
                                         if let Some(vty_id) = variant_repre.type_id {
                                             let type_str = strip_struct_enum_prefix(&format_type(
-                                                &compiler.types[vty_id.id as usize].ty,
+                                                &compiler.types[vty_id ].ty,
                                                 compiler,
                                                 interner,
                                                 true,
@@ -323,10 +331,12 @@ pub fn compute_hover(
                         }
                     }
                     SemanticEntity::Module(mod_id) => {
-                        let module = &compiler.mods[mod_id.id];
+                        // `entity: &SemanticEntity` so `mod_id: &ModuleId`.  Dereference
+                        // to pass the typed `ModuleId` to the `Arena` index operator.
+                        let module = &compiler.mods[*mod_id];
                         let mod_name = interner.search(module.name_id);
                         let mod_path = if let Some(region_id) = module.region_id {
-                            if let Some(region) = state.region_arena.get_region(region_id) {
+                            if let Some(region) = state.region_arena.get(region_id) {
                                 interner.search_path(region.path_id).display().to_string()
                             } else {
                                 "<builtin>".to_string()
@@ -335,7 +345,7 @@ pub fn compute_hover(
                             "<builtin>".to_string()
                         };
 
-                        let alias_prefix = compiler.mods[0]
+                        let alias_prefix = compiler.mods[ModuleId::new(0)]
                             .imports
                             .iter()
                             .find_map(|i| {
@@ -366,7 +376,7 @@ pub fn compute_hover(
             {
                 let raw_mod_name = interner.search(module.name_id);
                 let mod_path = if let Some(region_id) = module.region_id {
-                    if let Some(region) = state.region_arena.get_region(region_id) {
+                    if let Some(region) = state.region_arena.get(region_id) {
                         interner.search_path(region.path_id).display().to_string()
                     } else {
                         "<builtin>".to_string()
@@ -375,7 +385,7 @@ pub fn compute_hover(
                     "<builtin>".to_string()
                 };
 
-                let alias_prefix = compiler.mods[0]
+                let alias_prefix = compiler.mods[ModuleId::new(0)]
                     .imports
                     .iter()
                     .find_map(|i| {
@@ -486,24 +496,27 @@ pub fn compute_hover(
 /// wrappers call this function recursively with `shallow = true` for inner types.
 fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow: bool) -> String {
     match ty {
+        // The inner `Type::BuiltinType(builtin_ty)` match binds `builtin_ty: &BuiltinType`
+        // because `ty: &Type`, so the destructured `TypeId`s are `&TypeId` references.
+        // The `Arena` index takes `TypeId` by value, so each binding must be dereferenced.
         Type::BuiltinType(builtin_ty) => match builtin_ty {
             BuiltinType::List(type_id) => {
-                let inner = &compiler.types[type_id.id as usize].ty;
+                let inner = &compiler.types[*type_id].ty;
                 format!(
                     "List<{}>",
                     strip_struct_enum_prefix(&format_type(inner, compiler, interner, true))
                 )
             }
             BuiltinType::Set(type_id) => {
-                let inner = &compiler.types[type_id.id as usize].ty;
+                let inner = &compiler.types[*type_id].ty;
                 format!(
                     "Set<{}>",
                     strip_struct_enum_prefix(&format_type(inner, compiler, interner, true))
                 )
             }
             BuiltinType::Map(kid, vid) => {
-                let k = &compiler.types[kid.id as usize].ty;
-                let v = &compiler.types[vid.id as usize].ty;
+                let k = &compiler.types[*kid].ty;
+                let v = &compiler.types[*vid].ty;
                 format!(
                     "Map<{}, {}>",
                     strip_struct_enum_prefix(&format_type(k, compiler, interner, true)),
@@ -514,7 +527,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                 let elems: Vec<String> = type_ids
                     .iter()
                     .map(|type_id| {
-                        let ty = &compiler.types[type_id.id as usize].ty;
+                        let ty = &compiler.types[*type_id].ty;
                         strip_struct_enum_prefix(&format_type(ty, compiler, interner, true))
                     })
                     .collect();
@@ -526,7 +539,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
         Type::Struct(struct_def) => {
             let name = compiler
                 .symbols
-                .get(struct_def.sym_id.id as usize)
+                .get(struct_def.sym_id )
                 .map(|sym| interner.search(sym.name_id))
                 .unwrap_or("<struct>");
 
@@ -541,12 +554,12 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                     .fields
                     .iter()
                     .filter_map(
-                        |member_id| match compiler.members.get(member_id.id as usize)? {
+                        |member_id| match compiler.members.get(*member_id)? {
                             compilation::semantic::hir::hir_concepts::MemberSymbolKind::Field(
                                 field,
                             ) => {
                                 let field_name = interner.search(field.name_id);
-                                let field_ty = &compiler.types[field.type_id.id as usize].ty;
+                                let field_ty = &compiler.types[field.type_id].ty;
                                 let field_ty_str = strip_struct_enum_prefix(&format_type(
                                     field_ty, compiler, interner, true,
                                 ));
@@ -562,7 +575,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
         Type::Enum(enum_def) => {
             let name = compiler
                 .symbols
-                .get(enum_def.sym_id.id as usize)
+                .get(enum_def.sym_id)
                 .map(|sym| interner.search(sym.name_id))
                 .unwrap_or("<enum>");
 
@@ -577,14 +590,14 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                     .variants
                     .iter()
                     .filter_map(
-                        |member_id| match compiler.members.get(member_id.id as usize)? {
+                        |member_id| match compiler.members.get(*member_id)? {
                             compilation::semantic::hir::hir_concepts::MemberSymbolKind::Variant(
                                 v,
                             ) => {
                                 let variant_name = interner.search(v.name_id);
 
                                 if let Some(type_id) = v.type_id {
-                                    let variant_ty = &compiler.types[type_id.id as usize].ty;
+                                    let variant_ty = &compiler.types[type_id].ty;
                                     let variant_ty_str = strip_struct_enum_prefix(&format_type(
                                         variant_ty, compiler, interner, true,
                                     ));
@@ -604,7 +617,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
         Type::Alias(alias_def) => {
             let name = compiler
                 .symbols
-                .get(alias_def.sym_id.id as usize)
+                .get(alias_def.sym_id )
                 .map(|sym| interner.search(sym.name_id))
                 .unwrap_or("<alias>");
 
@@ -618,7 +631,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                 .map(|p| {
                     let p_name = compiler
                         .symbols
-                        .get(p.sym_id.id as usize)
+                        .get(p.sym_id )
                         .map(|sym| interner.search(sym.name_id))
                         .unwrap_or("<param>");
                     let p_constraint = alias_def
@@ -635,7 +648,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
             format!("alias {}({})", name, params.join(", "))
         }
         Type::TypeDef(type_def) => {
-            let inner = &compiler.types[type_def.type_id.id as usize].ty;
+            let inner = &compiler.types[type_def.type_id ].ty;
             format_type(inner, compiler, interner, shallow)
         }
         Type::Constrained(flags) => flags
@@ -645,7 +658,8 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
             .collect::<Vec<_>>()
             .join(" | "),
         Type::Deferred(type_id) => {
-            let inner = &compiler.types[type_id.id as usize].ty;
+            // `Type::Deferred(type_id)` here matches through `&Type`, so `type_id: &TypeId`.
+            let inner = &compiler.types[*type_id].ty;
             format_type(inner, compiler, interner, shallow)
         }
         Type::Unknown => "Unknown".into(),

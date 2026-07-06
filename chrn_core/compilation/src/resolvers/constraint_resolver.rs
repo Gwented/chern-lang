@@ -115,10 +115,10 @@ impl<'a> ConstraintResolver<'a> {
         let table = &self.compiler.get_scope(scope_id).scope.table;
         let sym_id = table.ast_to_sym[&ast_id];
 
-        let symbol = &self.compiler.symbols[sym_id.id as usize];
+        let symbol = &self.compiler.symbols[sym_id];
 
         // let val_info = self.compiler.get_var(sym_id);
-        // let ty = &self.compiler.types[val_info.type_id.id as usize].ty;
+        // let ty = &self.compiler.types[val_info.type_id ].ty;
 
         // Not sure what to do with this yet
         // if let Type::Unknown = ty {
@@ -140,9 +140,9 @@ impl<'a> ConstraintResolver<'a> {
         let table = &self.compiler.get_scope(scope_id).scope.table;
         let sym_id = table.ast_to_sym[&ast_id];
 
-        let module = &self.compiler.mods[env.current_mod.id];
+        let module = &self.compiler.mods[env.current_mod];
         let type_def = self.compiler.get_typedef(sym_id);
-        let ty_info = &self.compiler.types[type_def.type_id.id as usize];
+        let ty_info = &self.compiler.types[type_def.type_id];
 
         // Checking if condition is valid for the given type
         // Using the Ast node's condition so that the span information is not lost
@@ -198,7 +198,7 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         for sp_directive in &type_def.directives {
-            let directive = &self.compiler.directives[sp_directive.inner.id as usize];
+            let directive = &self.compiler.directives[sp_directive.inner];
             match &ty_info.ty {
                 Type::Struct(_) | Type::Enum(_) => {
                     if directive.has_restrictions() {
@@ -286,7 +286,7 @@ impl<'a> ConstraintResolver<'a> {
         //     for cond_expr_id in alias_def.conds.iter().copied() {
         //         let param_span = abs_alias.params[i].name_span;
         //
-        //         let name_id = self.compiler.symbols[param.sym_id.id as usize].name_id;
+        //         let name_id = self.compiler.symbols[param.sym_id ].name_id;
         //         // New constraints were found which would need to be lowerable
         //         match self.infer_type_constraint_from_expr(cond_expr_id, name_id, param_span) {
         //             Some(new_constraints) => {
@@ -306,7 +306,7 @@ impl<'a> ConstraintResolver<'a> {
         //                             todo!("Beep");
         //                         }
         //                     } else {
-        //                         let cond_expr = &self.compiler.exprs[cond_expr_id.id as usize];
+        //                         let cond_expr = &self.compiler.exprs[cond_expr_id ];
         //
         //                         let preset_err = SemanticError::TypeBoundaryBoundConflict(
         //                             *current,
@@ -374,7 +374,7 @@ impl<'a> ConstraintResolver<'a> {
         // Need a system where it takes a local variable, looks through each expression, sees if
         // it's used, then if so attempts to assign the constraint to the used argument.
 
-        let module = &self.compiler.mods[env.current_mod.id];
+        let module = &self.compiler.mods[env.current_mod];
         // NO
         unimplemented!("Stop using the alias please");
 
@@ -411,16 +411,16 @@ impl<'a> ConstraintResolver<'a> {
     //     param_name_id: InternedId,
     //     param_span: SourceSpan,
     // ) -> Option<TypeBoundaryFlags> {
-    //     let expr = &self.compiler.exprs[expr_id.id as usize];
+    //     let expr = &self.compiler.exprs[expr_id ];
     //     match &expr.expr_hir {
     //         ExprHir::Val(val_id) => {
     //             panic!("Val id");
     //         }
     //         ExprHir::Var(sym_id) => {
-    //             let symbol = &self.compiler.symbols[sym_id.id as usize];
+    //             let symbol = &self.compiler.symbols[sym_id ];
     //
-    //             match &self.compiler.symbols[sym_id.id as usize].kind {
-    //                 SymbolKind::Type(type_id) => match &self.compiler.types[type_id.id as usize].ty
+    //             match &self.compiler.symbols[sym_id ].kind {
+    //                 SymbolKind::Type(type_id) => match &self.compiler.types[type_id ].ty
     //                 {
     //                     Type::BuiltinType(builtin_ty) => {
     //                         // If we go from symbol -> Type, that means the previous symbol can be
@@ -458,9 +458,9 @@ impl<'a> ConstraintResolver<'a> {
     //                 },
     //                 SymbolKind::Val(_) => {
     //                     // Need a function to get this
-    //                     let symbol = &self.compiler.symbols[sym_id.id as usize];
+    //                     let symbol = &self.compiler.symbols[sym_id ];
     //                     if param_name_id == symbol.name_id {
-    //                         let type_id = self.compiler.exprs[expr_id.id as usize].type_id;
+    //                         let type_id = self.compiler.exprs[expr_id ].type_id;
     //                         return constraints::get_type_constraints(
     //                             self.compiler,
     //                             type_id,
@@ -482,9 +482,9 @@ impl<'a> ConstraintResolver<'a> {
     //             let mut has_param_name = false;
     //
     //             for arg_expr_id in arg_ids {
-    //                 let expr_hir = &self.compiler.exprs[arg_expr_id.id as usize].expr_hir;
+    //                 let expr_hir = &self.compiler.exprs[arg_expr_id ].expr_hir;
     //                 if let ExprHir::Var(sym_id) = expr_hir {
-    //                     let sym = &self.compiler.symbols[sym_id.id as usize];
+    //                     let sym = &self.compiler.symbols[sym_id ];
     //                     if sym.name_id == param_name_id {
     //                         has_param_name = true;
     //                     }
@@ -507,7 +507,7 @@ impl<'a> ConstraintResolver<'a> {
     //             self.infer_type_constraint_from_expr(*operand, param_name_id, param_span)
     //         }
     //         ExprHir::BinaryExpr { lhs, op, rhs } => {
-    //             let ty = &self.compiler.types[expr.type_id.id as usize].ty;
+    //             let ty = &self.compiler.types[expr.type_id ].ty;
     //             match ty {
     //                 Type::BuiltinType(builtin_ty) => Some(builtin_ty.kind().type_constraints()),
     //                 Type::Struct(struct_def) => todo!(),
@@ -555,7 +555,7 @@ impl<'a> ConstraintResolver<'a> {
         let sym_id = table.ast_to_sym[&ast_id];
         let struct_def = self.compiler.get_struct(sym_id);
 
-        let module = &self.compiler.mods[env.current_mod.id];
+        let module = &self.compiler.mods[env.current_mod];
 
         // Glob conds
         for (i, member_id) in struct_def.fields.iter().enumerate() {
@@ -603,7 +603,7 @@ impl<'a> ConstraintResolver<'a> {
             let ty_span = abs_struct.fields[i].sp_ty_expr.span;
 
             for sp_directive in &struct_def.glob_directives {
-                let directive = &self.compiler.directives[sp_directive.inner.id as usize];
+                let directive = &self.compiler.directives[sp_directive.inner];
                 if let Err(Some(preset_err)) = self.check_directive(
                     field.type_id,
                     abs_struct.name_span,
@@ -630,7 +630,7 @@ impl<'a> ConstraintResolver<'a> {
             let field_ty_span = &abs_struct.fields[i].sp_ty_expr.span;
 
             for sp_directive in &field.directives {
-                let directive = &self.compiler.directives[sp_directive.inner.id as usize];
+                let directive = &self.compiler.directives[sp_directive.inner];
                 if let Err(Some(preset_err)) = self.check_directive(
                     field.type_id,
                     abs_struct.name_span,
@@ -667,7 +667,7 @@ impl<'a> ConstraintResolver<'a> {
         let sym_id = table.ast_to_sym[&ast_id];
 
         let enum_def = &self.compiler.get_enum(sym_id);
-        let module = &self.compiler.mods[env.current_mod.id];
+        let module = &self.compiler.mods[env.current_mod];
 
         // Glob conds
         for (i, member_id) in enum_def.variants.iter().enumerate() {
@@ -732,7 +732,7 @@ impl<'a> ConstraintResolver<'a> {
                     .span;
 
                 for sp_directive in &enum_def.glob_directives {
-                    let directive = &self.compiler.directives[sp_directive.inner.id as usize];
+                    let directive = &self.compiler.directives[sp_directive.inner];
                     if let Err(Some(preset_err)) = self.check_directive(
                         inner_id,
                         abs_enum.name_span,
@@ -761,7 +761,7 @@ impl<'a> ConstraintResolver<'a> {
                 let variant_ty_span = abs_variant.sp_ty_expr.as_ref().expect("Just checked").span;
 
                 for sp_directive in &variant.directives {
-                    let directive = &self.compiler.directives[sp_directive.inner.id as usize];
+                    let directive = &self.compiler.directives[sp_directive.inner];
                     if let Err(Some(preset_err)) = self.check_directive(
                         inner_id,
                         abs_enum.name_span,
@@ -792,11 +792,11 @@ impl<'a> ConstraintResolver<'a> {
         parent_span: SourceSpan,
         cond_expr_id: ExprId,
     ) -> Result<(), Vec<PresetErr>> {
-        // let cond_expr = &self.compiler.exprs[cond_expr_id.id as usize];
+        // let cond_expr = &self.compiler.exprs[cond_expr_id ];
         //
         // // if visited.contains(&field.type_id) {
         // //     if spanned_directive.arg.has_restrictions() {
-        // //         let name = self.interner.search(symbol.name_id.id as usize);
+        // //         let name = self.interner.search(symbol.name_id );
         // //
         // //         let msg = format!(
         // //             "The type `{name}` cannot have `#{}` applied due to recursively relying on itself satisfying the argument",
@@ -810,8 +810,8 @@ impl<'a> ConstraintResolver<'a> {
         // //     }
         // match &cond_expr.expr_hir {
         //     ExprHir::Call(callee_expr_id, arg_expr_ids) => {
-        //         let callee = &self.compiler.exprs[callee_expr_id.id as usize];
-        //         let ty = &self.compiler.types[callee.type_id.id as usize].ty;
+        //         let callee = &self.compiler.exprs[callee_expr_id ];
+        //         let ty = &self.compiler.types[callee.type_id ].ty;
         //
         //         match ty {
         //             Type::Func(func_def) => {
@@ -822,7 +822,7 @@ impl<'a> ConstraintResolver<'a> {
         //
         //                 // Top level functions or predicates used within type constraints must
         //                 // evaluate to a boolean
-        //                 let ret_type = &self.compiler.types[func_def.ret_type.id as usize].ty;
+        //                 let ret_type = &self.compiler.types[func_def.ret_type ].ty;
         //
         //                 if let Type::BuiltinType(BuiltinType::Bool) = ret_type {
         //                     // Maybbe tturrnrn in tot a fucntinson
@@ -886,7 +886,7 @@ impl<'a> ConstraintResolver<'a> {
         //                 // corresponding argument
         //                 for (i, param) in alias_def.params.iter().enumerate() {
         //                     let constraint_flags =
-        //                         match self.compiler.types[param.type_id.id as usize].ty {
+        //                         match self.compiler.types[param.type_id ].ty {
         //                             Type::Constrained(constraint) => constraint,
         //                             // Type::BuiltinType(builtin_type) => todo!(),
         //                             // Type::Struct(struct_def) => todo!(),
@@ -899,9 +899,9 @@ impl<'a> ConstraintResolver<'a> {
         //                         };
         //
         //                     let arg_expr_id = arg_expr_ids[i];
-        //                     let arg_ty_id = &self.compiler.exprs[arg_expr_id.id as usize].type_id;
+        //                     let arg_ty_id = &self.compiler.exprs[arg_expr_id ].type_id;
         //
-        //                     dbg!(&self.compiler.types[arg_ty_id.id as usize]);
+        //                     dbg!(&self.compiler.types[arg_ty_id ]);
         //                     panic!();
         //
         //                     if let Err(preset_err) = constraints::check_type_constraint(
@@ -932,13 +932,13 @@ impl<'a> ConstraintResolver<'a> {
         //     }
         //     // Ok
         //     ExprHir::Var(sym_id) => {
-        //         let sym = &self.compiler.symbols[sym_id.id as usize];
+        //         let sym = &self.compiler.symbols[sym_id ];
         //         match sym.kind {
-        //             SymbolKind::Type(type_id) => match &self.compiler.types[type_id.id as usize].ty
+        //             SymbolKind::Type(type_id) => match &self.compiler.types[type_id ].ty
         //             {
         //                 Type::Func(func_def) => {
         //                     // Anything used in a condition must return a boolean
-        //                     let ret_type = &self.compiler.types[func_def.ret_type.id as usize].ty;
+        //                     let ret_type = &self.compiler.types[func_def.ret_type ].ty;
         //
         //                     if let Type::BuiltinType(BuiltinType::Bool) = ret_type {
         //                         // self.check_arg_constraints(
@@ -978,8 +978,8 @@ impl<'a> ConstraintResolver<'a> {
         //                 Type::Constrained(type_constraint) => todo!(),
         //             },
         //             SymbolKind::Val(_) | SymbolKind::Unknown => {
-        //                 let type_id = &self.compiler.values[cond_expr.val_id.id as usize].type_id;
-        //                 let ty = &self.compiler.types[type_id.id as usize].ty;
+        //                 let type_id = &self.compiler.values[cond_expr.val_id ].type_id;
+        //                 let ty = &self.compiler.types[type_id ].ty;
         //
         //                 if let Type::BuiltinType(BuiltinType::Bool) = ty {
         //                     Ok(())
@@ -995,8 +995,8 @@ impl<'a> ConstraintResolver<'a> {
         //     }
         //     // Only `BinaryExpr` can actually evaluate to a boolean here, just re-using the logic
         //     ExprHir::BinaryExpr { .. } | ExprHir::Unary { .. } | ExprHir::Default(..) => {
-        //         let type_id = &self.compiler.values[cond_expr.val_id.id as usize].type_id;
-        //         let ty = &self.compiler.types[type_id.id as usize].ty;
+        //         let type_id = &self.compiler.values[cond_expr.val_id ].type_id;
+        //         let ty = &self.compiler.types[type_id ].ty;
         //
         //         if let Type::BuiltinType(BuiltinType::Bool) = ty {
         //             Ok(())
@@ -1008,8 +1008,8 @@ impl<'a> ConstraintResolver<'a> {
         //         }
         //     }
         //     ExprHir::Val(_) => {
-        //         let type_id = &self.compiler.values[cond_expr.val_id.id as usize].type_id;
-        //         let ty = &self.compiler.types[type_id.id as usize].ty;
+        //         let type_id = &self.compiler.values[cond_expr.val_id ].type_id;
+        //         let ty = &self.compiler.types[type_id ].ty;
         //
         //         if let Type::BuiltinType(BuiltinType::Bool) = ty {
         //             Ok(())
@@ -1035,7 +1035,7 @@ impl<'a> ConstraintResolver<'a> {
         // Making this vec makes error messages painful depending on which message failed, so it
         // needs some signal to say to stop going.
     ) -> Result<(), Option<PresetErr>> {
-        match &self.compiler.types[type_id.id as usize].ty {
+        match &self.compiler.types[type_id].ty {
             Type::Struct(struct_def) => {
                 visited.push(type_id);
 
@@ -1060,7 +1060,7 @@ impl<'a> ConstraintResolver<'a> {
                         continue;
                     }
 
-                    let ty = &self.compiler.types[field.type_id.id as usize].ty;
+                    let ty = &self.compiler.types[field.type_id].ty;
                     match ty {
                         Type::BuiltinType(_) => (),
                         _ => visited.push(field.type_id),
@@ -1103,7 +1103,7 @@ impl<'a> ConstraintResolver<'a> {
                             continue;
                         }
 
-                        let ty = &self.compiler.types[inner.id as usize].ty;
+                        let ty = &self.compiler.types[inner].ty;
                         match ty {
                             Type::BuiltinType(_) => (),
                             _ => visited.push(inner),
@@ -1167,7 +1167,7 @@ impl<'a> ConstraintResolver<'a> {
                                 }
                             }
 
-                            let ty = &self.compiler.types[element.id as usize].ty;
+                            let ty = &self.compiler.types[*element].ty;
                             match ty {
                                 Type::BuiltinType(_) => (),
                                 _ => visited.push(*element),
@@ -1286,11 +1286,11 @@ impl<'a> ConstraintResolver<'a> {
         //             if found_arg_count != *arg_count_constraint {
         //                 let mut spans: Vec<SourceSpan> = expr_id_args
         //                     .iter()
-        //                     .map(|ex_id| self.compiler.exprs[ex_id.id as usize].span)
+        //                     .map(|ex_id| self.compiler.exprs[ex_id ].span)
         //                     .collect();
         //
         //                 if spans.is_empty() {
-        //                     let cond_span = &self.compiler.exprs[cond_expr_id.id as usize].span;
+        //                     let cond_span = &self.compiler.exprs[cond_expr_id ].span;
         //                     spans.push(*cond_span);
         //                 }
         //
@@ -1311,16 +1311,16 @@ impl<'a> ConstraintResolver<'a> {
         //                 None => continue,
         //             };
         //
-        //             let req_type_id = self.compiler.exprs[req_expr_id.id as usize].type_id;
+        //             let req_type_id = self.compiler.exprs[req_expr_id ].type_id;
         //
         //             for expr_id in expr_id_args.iter().skip(1) {
-        //                 let other_type_id = self.compiler.exprs[expr_id.id as usize].type_id;
+        //                 let other_type_id = self.compiler.exprs[expr_id ].type_id;
         //
         //                 if req_type_id != other_type_id {
-        //                     let req_span = self.compiler.exprs[req_expr_id.id as usize].span;
-        //                     let other_span = self.compiler.exprs[expr_id.id as usize].span;
+        //                     let req_span = self.compiler.exprs[req_expr_id ].span;
+        //                     let other_span = self.compiler.exprs[expr_id ].span;
         //
-        //                     let ty = &self.compiler.types[req_type_id.id as usize].ty;
+        //                     let ty = &self.compiler.types[req_type_id ].ty;
         //
         //                     preset_errs.push(SemanticError::FuncConstraintMismatch(
         //                         *constraint,
@@ -1332,12 +1332,12 @@ impl<'a> ConstraintResolver<'a> {
         //         }
         //         ArgConstraint::Numeric => {
         //             for expr_id in expr_id_args {
-        //                 let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
-        //                 let ty = &self.compiler.types[type_id.id as usize].ty;
+        //                 let type_id = &self.compiler.exprs[expr_id ].type_id;
+        //                 let ty = &self.compiler.types[type_id ].ty;
         //
         //                 if let Type::BuiltinType(builtin_ty) = ty {
         //                     if !builtin_ty.kind().is_numeric() {
-        //                         let span = self.compiler.exprs[expr_id.id as usize].span;
+        //                         let span = self.compiler.exprs[expr_id ].span;
         //
         //                         preset_errs.push(SemanticError::FuncConstraintMismatch(
         //                             *constraint,
@@ -1350,12 +1350,12 @@ impl<'a> ConstraintResolver<'a> {
         //         }
         //         ArgConstraint::Integer => {
         //             for expr_id in expr_id_args {
-        //                 let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
-        //                 let ty = &self.compiler.types[type_id.id as usize].ty;
+        //                 let type_id = &self.compiler.exprs[expr_id ].type_id;
+        //                 let ty = &self.compiler.types[type_id ].ty;
         //
         //                 if let Type::BuiltinType(builtin_ty) = ty {
         //                     if !builtin_ty.kind().is_integer() {
-        //                         let span = self.compiler.exprs[expr_id.id as usize].span;
+        //                         let span = self.compiler.exprs[expr_id ].span;
         //
         //                         preset_errs.push(SemanticError::FuncConstraintMismatch(
         //                             *constraint,
@@ -1368,12 +1368,12 @@ impl<'a> ConstraintResolver<'a> {
         //         }
         //         ArgConstraint::Float => {
         //             for expr_id in expr_id_args {
-        //                 let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
-        //                 let ty = &self.compiler.types[type_id.id as usize].ty;
+        //                 let type_id = &self.compiler.exprs[expr_id ].type_id;
+        //                 let ty = &self.compiler.types[type_id ].ty;
         //
         //                 if let Type::BuiltinType(builtin_ty) = ty {
         //                     if !builtin_ty.kind().is_float() {
-        //                         let span = self.compiler.exprs[expr_id.id as usize].span;
+        //                         let span = self.compiler.exprs[expr_id ].span;
         //
         //                         preset_errs.push(SemanticError::FuncConstraintMismatch(
         //                             *constraint,
@@ -1386,12 +1386,12 @@ impl<'a> ConstraintResolver<'a> {
         //         }
         //         ArgConstraint::Str => {
         //             for expr_id in expr_id_args {
-        //                 let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
-        //                 let ty = &self.compiler.types[type_id.id as usize].ty;
+        //                 let type_id = &self.compiler.exprs[expr_id ].type_id;
+        //                 let ty = &self.compiler.types[type_id ].ty;
         //
         //                 if let Type::BuiltinType(builtin_ty) = ty {
         //                     if builtin_ty.kind() != BuiltinTypeKind::Str {
-        //                         let span = self.compiler.exprs[expr_id.id as usize].span;
+        //                         let span = self.compiler.exprs[expr_id ].span;
         //
         //                         preset_errs.push(SemanticError::FuncConstraintMismatch(
         //                             *constraint,
@@ -1404,12 +1404,12 @@ impl<'a> ConstraintResolver<'a> {
         //         }
         //         ArgConstraint::CharacterMappable => {
         //             for expr_id in expr_id_args {
-        //                 let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
-        //                 let ty = &self.compiler.types[type_id.id as usize].ty;
+        //                 let type_id = &self.compiler.exprs[expr_id ].type_id;
+        //                 let ty = &self.compiler.types[type_id ].ty;
         //
         //                 if let Type::BuiltinType(builtin_ty) = ty {
         //                     if !builtin_ty.kind().is_character_mappable() {
-        //                         let span = self.compiler.exprs[expr_id.id as usize].span;
+        //                         let span = self.compiler.exprs[expr_id ].span;
         //
         //                         preset_errs.push(SemanticError::FuncConstraintMismatch(
         //                             *constraint,
@@ -1422,12 +1422,12 @@ impl<'a> ConstraintResolver<'a> {
         //         }
         //         ArgConstraint::Bool => {
         //             for expr_id in expr_id_args {
-        //                 let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
-        //                 let ty = &self.compiler.types[type_id.id as usize].ty;
+        //                 let type_id = &self.compiler.exprs[expr_id ].type_id;
+        //                 let ty = &self.compiler.types[type_id ].ty;
         //
         //                 if let Type::BuiltinType(builtin_ty) = ty {
         //                     if builtin_ty.kind() != BuiltinTypeKind::Bool {
-        //                         let span = self.compiler.exprs[expr_id.id as usize].span;
+        //                         let span = self.compiler.exprs[expr_id ].span;
         //
         //                         preset_errs.push(SemanticError::FuncConstraintMismatch(
         //                             *constraint,
@@ -1441,11 +1441,11 @@ impl<'a> ConstraintResolver<'a> {
         //         ArgConstraint::Variadic | ArgConstraint::DynType => (),
         //         ArgConstraint::Comparable => {
         //             for expr_id in expr_id_args {
-        //                 let type_id = &self.compiler.exprs[expr_id.id as usize].type_id;
-        //                 // let ty = &self.compiler.types[type_id.id as usize].ty;
+        //                 let type_id = &self.compiler.exprs[expr_id ].type_id;
+        //                 // let ty = &self.compiler.types[type_id ].ty;
         //
-        //                 let expr_span = self.compiler.exprs[expr_id.id as usize].span;
-        //                 let cond_span = self.compiler.exprs[cond_expr_id.id as usize].span;
+        //                 let expr_span = self.compiler.exprs[expr_id ].span;
+        //                 let cond_span = self.compiler.exprs[cond_expr_id ].span;
         //
         //                 if let Err(preset_err) = constraints::check_type_constraint(
         //                     self.compiler,
@@ -1463,7 +1463,7 @@ impl<'a> ConstraintResolver<'a> {
         //                 // match ty {
         //                 //     Type::BuiltinType(builtin_ty) => {
         //                 //         if !builtin_ty.kind().is_comparable() {
-        //                 //             let span = self.compiler.exprs[expr_id.id as usize].span;
+        //                 //             let span = self.compiler.exprs[expr_id ].span;
         //                 //
         //                 //             preset_errs.push(SemanticError::FuncConstraintMismatch(
         //                 //                 *constraint,
@@ -1484,16 +1484,16 @@ impl<'a> ConstraintResolver<'a> {
         //         }
         //         // Should be more constrsaint based
         //         ArgConstraint::SameTypeAsSelf => {
-        //             let parent_ty = &self.compiler.types[parent_ty_id.id as usize];
+        //             let parent_ty = &self.compiler.types[parent_ty_id ];
         //             for expr_id in expr_id_args.iter().skip(1) {
-        //                 let other_ty_id = self.compiler.exprs[expr_id.id as usize].type_id;
+        //                 let other_ty_id = self.compiler.exprs[expr_id ].type_id;
         //                 let types = &self.compiler.types;
-        //                 let ty = &types[parent_ty_id.id as usize];
+        //                 let ty = &types[parent_ty_id ];
         //                 dbg!(ty);
         //
         //                 panic!();
         //                 if parent_ty_id != other_ty_id {
-        //                     let other_span = self.compiler.exprs[expr_id.id as usize].span;
+        //                     let other_span = self.compiler.exprs[expr_id ].span;
         //                     let msg = "Must be the same type as `self`".to_string();
         //
         //                     preset_errs

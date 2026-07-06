@@ -22,7 +22,7 @@ use crate::{
 };
 
 // This is kind of just a "concept" though
-use chrn_utils::id_types::{AstId, ConfigId, DirectiveId, InternedId, SymbolId, VariableId};
+use chrn_utils::id_types::{AstId, ConfigRootId, DirectiveId, InternedId, SymbolId, VariableId};
 
 #[derive(Debug)]
 pub struct Table {
@@ -115,7 +115,7 @@ pub enum SymbolKind {
     /// Represents a module symbol
     Module(ModuleId),
     /// Represents a config symbol
-    Config(ConfigId),
+    Config(ConfigRootId),
     Directive(DirectiveId),
     // Section(),
 }
@@ -123,7 +123,7 @@ pub enum SymbolKind {
 impl SymbolKind {
     // This is getting obscure now...
     pub fn to_fmt(compiler: &ScriptCompiler, sym_id: SymbolId) -> Formatted {
-        match &compiler.symbols[sym_id.id as usize].kind {
+        match &compiler.symbols[sym_id ].kind {
             SymbolKind::Type(type_id) => Type::to_fmt(compiler, *type_id),
             SymbolKind::Variable(_) => Formatted::Variable,
             SymbolKind::Module(_) => Formatted::Module,
@@ -178,7 +178,7 @@ impl Type {
         for _ in 0..chrn_utils::MAX_LOOPS {
             // Could be an Option return where if is_none() look_abort! but probably doesn't matter.
             // At all.
-            match &compiler.types[type_id.id as usize].ty {
+            match &compiler.types[type_id ].ty {
                 Type::BuiltinType(builtin_type) => return builtin_type.kind().to_fmt(),
                 Type::Struct(struct_def) => return struct_def.to_fmt(),
                 Type::Enum(enum_def) => return enum_def.to_fmt(),
@@ -248,7 +248,7 @@ pub struct ConfigDefRoot {
     // This is not a `SpannedContainer` because it may become an Option
     pub name_span: SourceSpan,
     /// ConfigId of `self`
-    pub cfg_id: ConfigId,
+    pub cfg_id: ConfigRootId,
     /// During name resolution, we can't actually lookup the symbol since it may or may not be
     /// registered, so it's Option since it actually is `None` at some point, and could remain
     /// `None` if in a later stage it doesn't have it's target symbol found.
@@ -267,7 +267,7 @@ impl ConfigDefRoot {
     pub fn new(
         name_id: InternedId,
         name_span: SourceSpan,
-        cfg_id: ConfigId,
+        cfg_id: ConfigRootId,
         sym_id: Option<SymbolId>,
         lookup_pattern: LookupPattern,
         opt_assignments: Vec<MemberId>,

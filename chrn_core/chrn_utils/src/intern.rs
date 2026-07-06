@@ -100,6 +100,8 @@ pub struct Intern {
     // Um
     id_map: HashMap<String, u32>,
     path_map: HashMap<PathBuf, u32>,
+    // These are already wrapped is there really a point to type enforce these with `Arena`?
+    // Maybe
     stored_strs: Vec<String>,
     stored_paths: Vec<PathBuf>,
     // Maybe not

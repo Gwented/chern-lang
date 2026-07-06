@@ -78,11 +78,11 @@ impl MemberResolver<'_> {
         // This probably will grow to other resolvers eventually since asts are probably not ALWAYS
         // best to be iterated upon.
         let mut all_user_defined: Vec<UserDefinedMetadata> = Vec::new();
-        for (i, ty_info) in self.compiler.types.iter().enumerate() {
+        for (i, ty_info) in self.compiler.types.items.iter().enumerate() {
             let metadata = match &ty_info.ty {
                 Type::Struct(struct_def) => {
                     let sym_id = struct_def.sym_id;
-                    let sym = &self.compiler.symbols[sym_id.id as usize];
+                    let sym = &self.compiler.symbols[sym_id];
                     let kind = sym.kind;
 
                     //WARN: Builtins don't store their type id and may never so the acutal type id has to
@@ -101,11 +101,11 @@ impl MemberResolver<'_> {
                 // Could be combined with the above but not right now
                 Type::Enum(enum_def) => {
                     let sym_id = enum_def.sym_id;
-                    let sym = &self.compiler.symbols[sym_id.id as usize];
+                    let sym = &self.compiler.symbols[sym_id];
                     let kind = sym.kind;
 
                     let type_id = TypeId::new(i as u32);
-                    let sym = &self.compiler.symbols[sym_id.id as usize];
+                    let sym = &self.compiler.symbols[sym_id];
                     let mod_id = ty_info.owner;
 
                     let ast_id = match sym.ast_id {
@@ -127,7 +127,7 @@ impl MemberResolver<'_> {
                 "Previous loop failed to register user metadata OR dense array is misaligned from module startup",
             );
 
-            match self.compiler.types[metadata.type_id.id as usize].ty {
+            match self.compiler.types[metadata.type_id].ty {
                 Type::Struct(_) => self.resolve_struct(metadata, env),
                 Type::Enum(_) => self.resolve_enum(metadata, env),
                 _ => unreachable!("Grug"),

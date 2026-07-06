@@ -3,8 +3,10 @@
 use std::path::Path;
 
 use crate::{
+    arena::Arena,
+    id_types::SourceRegionId,
     intern::Intern,
-    source_map::{source_diagnostic::SourceDiagnostic, source_region::SourceRegionArena},
+    source_map::{source_diagnostic::SourceDiagnostic, source_region::SourceRegion},
 };
 
 /// General error enum for the entirety of the codebase to use. Everything can be converted back
@@ -52,14 +54,14 @@ impl From<std::io::Error> for ConfigLoadError {
 // Should this be here?
 /// Struct for carrying module data if `main` fails to be loaded within `extract_modules`.
 pub struct ModuleInitError {
-    pub region: Option<SourceRegionArena>,
+    pub region: Option<Arena<SourceRegion, SourceRegionId>>,
     pub interner: Intern,
     pub cfg_err: ConfigLoadError,
 }
 
 impl ModuleInitError {
     pub fn new(
-        region: Option<SourceRegionArena>,
+        region: Option<Arena<SourceRegion, SourceRegionId>>,
         interner: Intern,
         cfg_err: ConfigLoadError,
     ) -> ModuleInitError {

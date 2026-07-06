@@ -1,11 +1,13 @@
 @def
 
 let x = 3
-let y = other::core::UnsignedInteger
+let y = e::l::r
 
 nest->
     export struct Person {
         s: i32
         e#2: i32
     }
+    complex->
+        Person {}
 @end

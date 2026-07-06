@@ -177,12 +177,12 @@ pub fn run_lexer(
     compiler_cache: &Option<&mut ScriptCompilerCache>,
     current_mod_id: ModuleId,
 ) -> (Option<Vec<SpannedToken>>, Option<Vec<Trivia>>) {
-    let module = &compiler.mods[current_mod_id.id];
+    let module = &compiler.mods[current_mod_id];
     // Skipping any that aren't `Loaded` because it usually leads to duplicated errors from the
     // config loading stage
     let region = match &module.region_id {
         Some(region_id) if module.state == ModuleState::Loaded => {
-            &compiler_store.region_arena.regions[region_id.id as usize]
+            &compiler_store.region_arena[*region_id]
         }
         _ => {
             // Meaning it's a lib module where None should be found upon any queries
@@ -216,9 +216,9 @@ pub fn run_parser(
     current_mod_id: ModuleId,
     toks: &[SpannedToken],
 ) -> Option<AstInfo> {
-    let module = &compiler.mods[current_mod_id.id];
+    let module = &compiler.mods[current_mod_id];
     let region = match &module.region_id {
-        Some(region_id) => &compiler_store.region_arena.regions[region_id.id as usize],
+        Some(region_id) => &compiler_store.region_arena[*region_id],
         None => {
             // Meaning it's a lib module where None should be found upon any queries
             return None;
@@ -248,10 +248,11 @@ fn create_envs<'a>(
 ) -> Vec<Option<ResolverEnv<'a>>> {
     let mut all_envs = Vec::new();
     for i in 0..compiler.mods.len() {
-        let module = &compiler.mods[i];
+        let mod_id = ModuleId::new(i);
+        let module = &compiler.mods[mod_id];
 
         let current_region = match &module.region_id {
-            Some(region_id) => &compiler_store.region_arena.regions[region_id.id as usize],
+            Some(region_id) => &compiler_store.region_arena[*region_id],
             None => {
                 all_envs.push(None);
                 continue;

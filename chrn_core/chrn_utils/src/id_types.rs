@@ -39,47 +39,71 @@ impl<T: Clone> SpannedContainerRef<'_, T> {
     }
 }
 
-// No, no this will not be named "AgnosticId"
-//// Wrapper structure over an id type to enforce type-safe indexing
-// #[derive(Debug)]
-// pub struct AgnosticId<T, I>
-// where
-//     T: Default + PartialEq + Eq + Clone + Copy + Into<usize> + From<usize> + Copy,
-// {
-//     pub inner: T,
-//     _marker: I,
-// }
-//
-// // NOT MAKING A DERIVE MACRO FOR THIS. PROBABLY.
-// #[derive(Debug)]
-// pub struct InternedId;
-// #[derive(Debug)]
-// pub struct SymbolId;
-// #[derive(Debug)]
-// pub struct SourceRegionId;
-// #[derive(Debug)]
-// pub struct PathId;
-// #[derive(Debug)]
-// pub struct TypeId;
-// #[derive(Debug)]
-// pub struct VariableId;
-// #[derive(Debug)]
-// pub struct ConfigId;
-// #[derive(Debug)]
-// pub struct DirectiveId;
-// #[derive(Debug)]
-// pub struct ModuleId;
-// #[derive(Debug)]
-// pub struct ScopeId;
-// #[derive(Debug)]
-// pub struct AstId;
-// #[derive(Debug)]
-// pub struct MemberId;
-// #[derive(Debug)]
-// pub struct ExprId;
-// #[derive(Debug)]
-// pub struct ValueId;
+pub trait ArenaIndex: Copy + Clone {
+    fn into_usize(self) -> usize;
+    fn from_usize(val: usize) -> Self;
+}
 
+/// Convenience for `u32` containing implementers of `ArenaIndex`
+macro_rules! arena_idx_impl_u32 {
+    ($($t:ty),* $(,)?) => {
+        $(
+            impl ArenaIndex for $t {
+                fn into_usize(self) -> usize {
+                    self.id as usize
+                }
+
+                fn from_usize(val: usize) -> Self {
+                    Self{id: val as u32}
+                }
+            }
+        )*
+    }
+}
+
+/// Convenience for `usize` containing implementers of `ArenaIndex`
+macro_rules! arena_idx_impl_usize {
+    ($($t:ty),* $(,)?) => {
+        $(
+            impl ArenaIndex for $t {
+                fn into_usize(self) -> usize {
+                    self.id
+                }
+
+                fn from_usize(val: usize) -> Self {
+                    Self{id: val}
+                }
+            }
+        )*
+    }
+}
+
+// impl ArenaIndex for InternedId {
+//     fn into_usize(self) -> usize {
+//         self.0 as usize
+//     }
+//
+//     fn from_usize(val: usize) -> Self {
+//         InternedId(val as u32)
+//     }
+// }
+
+arena_idx_impl_u32!(
+    InternedId,
+    SourceRegionId,
+    TypeId,
+    VariableId,
+    ConfigRootId,
+    DirectiveId,
+    AstId,
+    MemberId,
+    SymbolId,
+    ExprId,
+    ValueId,
+);
+arena_idx_impl_usize!(ModuleId, ScopeId);
+
+// All id types
 /// Type-safe wrapper for using an index that contains a valid index into `Intern`
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InternedId {
@@ -150,13 +174,13 @@ impl VariableId {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct ConfigId {
+pub struct ConfigRootId {
     pub id: u32,
 }
 
-impl ConfigId {
-    pub const fn new(id: u32) -> ConfigId {
-        ConfigId { id }
+impl ConfigRootId {
+    pub const fn new(id: u32) -> ConfigRootId {
+        ConfigRootId { id }
     }
 }
 
