@@ -16,7 +16,7 @@ pub enum MemberLookupResult {
     /// A type having members, but not having the field identifier specified
     MemberNotFoundInType(TypeId),
     // Seems like a bit of a jump
-    /// A symbol not having the capability of holding members at the language level
+    /// Unknown type found
     Unknown(TypeId),
 }
 
@@ -47,6 +47,7 @@ pub fn collect_all_members(compiler: &ScriptCompiler, mut type_id: TypeId) -> Ve
 //
 // Not sure about the distinction here yet since member lookup could also mean enum lookup but we'll
 // see
+// TODO: Lookup patterns
 /// Look for the identifier given as a member for the given `TypeId`
 pub fn lookup_member(
     compiler: &ScriptCompiler,

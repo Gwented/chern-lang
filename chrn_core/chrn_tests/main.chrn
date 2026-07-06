@@ -40,35 +40,56 @@ let x = 5*/
 // Collisions.
 @def
 
+/*
 let b = c
 let c = d
 as
 let as = n
+*/
 
 // import "../chrn_core/chrn_tests/def.chrn" as defs
+// Technically imports from anywhere in the file work, but it won't compile even though it does technically
+// load the module
+import "../chrn_core/chrn_tests/def.chrn" as defs
+
 var->
     x: i32
 // Should warn
 // import "../../chrn_core/chrn_tests/core.chrn"
-// import "../../chrn_core/chrn_tests/def.chrn" as defs
     nest->
         struct Forb {
             p: def::Person
-            n: m
+            root_holder: runtime
             // Breaks reporting since cross module spanning is NOT possible right now
             // p: defs::Person
         } #bin
+        struct Holder1 {holder2: i32}
+        struct Holder2 {runtime: Runtime}
 
-    /*complex->
+    complex->
         // I don't know about this
-        var x {
+        //
+        // Maybe recursion should keep track of if an inner of a config was already defined then
+        // error saying that a past recursive definition of this type within this configuration has
+        // already been defined
+        // note: Hi
+        Forb {
+            /*p {
+                fake {}
+            }*/
+            root_holder {
+                runtime {}
+            }
+        }
+        /*var x {
             .default_value = 2
-            /* p {
-                out {
+            p {
+                /*out {
                     // p {}
 
-                }
-            }*/
+                }*/
+            }
+            // o {}
             // .extra = def::e#2
         }*/
 @end

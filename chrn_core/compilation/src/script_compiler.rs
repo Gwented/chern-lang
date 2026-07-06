@@ -21,9 +21,10 @@ use crate::{
     resolvers::resolver_state::ResolverState,
     semantic::hir::{
         hir_concepts::{
-            AliasDef, ConfigDef, ConfigOptionAssignment, EnumDef, FieldRepre, FuncDef, FuncKind,
-            MemberSymbolKind, StructDef, Symbol, SymbolKind, SymbolOrigin, Table, Type, TypeDef,
-            TypeInfo, VarDef, VariableState, VariantRepre,
+            AliasDef, ConfigDefMember, ConfigDefRoot, EnumDef, FieldRepre, FuncDef, FuncKind,
+            MemberSymbolKind, OptionAssignmentMember, OptionAssignmentRoot, StructDef, Symbol,
+            SymbolKind, SymbolOrigin, Table, Type, TypeDef, TypeInfo, VarDef, VariableState,
+            VariantRepre,
         },
         hir_exprs::ResolvedExpr,
     },
@@ -58,7 +59,7 @@ pub struct ScriptCompiler {
     pub variables: Vec<VarDef>,
     /// All user defined configuration. Is considered it's own class instead of a type since it
     /// behaves uniquely
-    pub configs: Vec<ConfigDef>,
+    pub configs: Vec<ConfigDefRoot>,
     /// All directives that were found
     pub directives: Vec<Directive>,
     /// Scope arena
@@ -408,7 +409,7 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_cfg_def(&self, sym_id: SymbolId) -> &ConfigDef {
+    pub(super) fn get_cfg_def_root(&self, sym_id: SymbolId) -> &ConfigDefRoot {
         match &self.symbols[sym_id.id as usize] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Config(cfg_id) => &self.configs[cfg_id.id as usize],
@@ -417,7 +418,7 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_cfg_def_mut(&mut self, sym_id: SymbolId) -> &mut ConfigDef {
+    pub(super) fn get_cfg_def_mut(&mut self, sym_id: SymbolId) -> &mut ConfigDefRoot {
         match &self.symbols[sym_id.id as usize] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Config(cfg_id) => &mut self.configs[cfg_id.id as usize],
@@ -454,8 +455,10 @@ impl ScriptCompiler {
         match &self.members[member_id.id as usize] {
             MemberSymbolKind::Field(field_repre) => field_repre,
             MemberSymbolKind::Variant(_)
-            // | MemberSymbolKind::Param(_)
-            | MemberSymbolKind::OptionAssignment(_) => unreachable!(),
+            | MemberSymbolKind::OptAssignmentRoot(_)
+            | MemberSymbolKind::ConfigDefMember(_)
+            | MemberSymbolKind::Unknown(_)
+            | MemberSymbolKind::OptAssignmentMember(_) => unreachable!(),
         }
     }
 
@@ -483,6 +486,22 @@ impl ScriptCompiler {
         }
     }
 
+    /// Assumes the member symbol given is a field
+    pub(super) fn get_cfg_def_member(&self, member_id: MemberId) -> &ConfigDefMember {
+        match &self.members[member_id.id as usize] {
+            MemberSymbolKind::ConfigDefMember(cfg_def_member) => cfg_def_member,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Assumes the member symbol given is a field
+    pub(super) fn get_cfg_def_member_mut(&mut self, member_id: MemberId) -> &mut ConfigDefMember {
+        match &mut self.members[member_id.id as usize] {
+            MemberSymbolKind::ConfigDefMember(cfg_def_member) => cfg_def_member,
+            _ => unreachable!(),
+        }
+    }
+
     // /// Assumes the member symbol given is a parameter
     // pub(super) fn get_param(&self, member_id: MemberId) -> &Param {
     //     match &self.members[member_id.id as usize] {
@@ -500,20 +519,39 @@ impl ScriptCompiler {
     // }
 
     /// Assumes the member symbol given is a field
-    pub(super) fn get_option_assignment(&self, member_id: MemberId) -> &ConfigOptionAssignment {
+    pub(super) fn get_opt_assignment_root(&self, member_id: MemberId) -> &OptionAssignmentRoot {
         match &self.members[member_id.id as usize] {
-            MemberSymbolKind::OptionAssignment(option_assignment) => option_assignment,
+            MemberSymbolKind::OptAssignmentRoot(opt_root) => opt_root,
             _ => unreachable!(),
         }
     }
 
     /// Assumes the member symbol given is a field
-    pub(super) fn get_option_assignment_mut(
+    pub(super) fn get_opt_assignment_root_mut(
         &mut self,
         member_id: MemberId,
-    ) -> &mut ConfigOptionAssignment {
+    ) -> &mut OptionAssignmentRoot {
         match &mut self.members[member_id.id as usize] {
-            MemberSymbolKind::OptionAssignment(option_assignment) => option_assignment,
+            MemberSymbolKind::OptAssignmentRoot(opt_root) => opt_root,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Assumes the member symbol given is a field
+    pub(super) fn get_opt_assignment_member(&self, member_id: MemberId) -> &OptionAssignmentMember {
+        match &self.members[member_id.id as usize] {
+            MemberSymbolKind::OptAssignmentMember(opt_member) => opt_member,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Assumes the member symbol given is a field
+    pub(super) fn get_opt_assignment_member_mut(
+        &mut self,
+        member_id: MemberId,
+    ) -> &mut OptionAssignmentMember {
+        match &mut self.members[member_id.id as usize] {
+            MemberSymbolKind::OptAssignmentMember(opt_member) => opt_member,
             _ => unreachable!(),
         }
     }
@@ -574,44 +612,53 @@ impl ScriptCompiler {
         loop_abort!();
     }
 
-    /// Attempts to get a `TypeId` out of the given symbol if possible
-    pub(super) fn get_member_type_id(&self, member_id: MemberId) -> Option<TypeId> {
+    /// Attempts to get a `TypeId` out of the given `MemberId` if possible
+    pub(super) fn get_type_id_from_member_id(&self, member_id: MemberId) -> Option<TypeId> {
         match &self.members[member_id.id as usize] {
             MemberSymbolKind::Field(field_repre) => Some(field_repre.type_id),
             MemberSymbolKind::Variant(variant_repre) => variant_repre.type_id,
-            MemberSymbolKind::OptionAssignment(_) => None,
+            MemberSymbolKind::ConfigDefMember(_)
+            | MemberSymbolKind::OptAssignmentRoot(_)
+            | MemberSymbolKind::Unknown(_)
+            | MemberSymbolKind::OptAssignmentMember(_) => None,
         }
     }
 
-    pub(super) fn get_sym_decl_span(&self, sym_id: SymbolId) -> Option<SourceSpan> {
+    pub(super) fn get_span_from_sym_id(&self, sym_id: SymbolId) -> Option<SourceSpan> {
         match &self.symbols[sym_id.id as usize].kind {
-            SymbolKind::Type(type_id) => self.get_decl_span_type(*type_id),
+            SymbolKind::Type(type_id) => self.get_span_from_type_id(*type_id),
             SymbolKind::Variable(var_id) => Some(self.variables[var_id.id as usize].name_span),
             SymbolKind::Config(cfg_id) => Some(self.configs[cfg_id.id as usize].name_span),
             SymbolKind::Module(_) | SymbolKind::Directive(_) => None,
         }
     }
 
-    pub(super) fn get_member_decl_span(&self, member_id: MemberId) -> SourceSpan {
+    pub(super) fn get_span_from_member_id(&self, member_id: MemberId) -> Option<SourceSpan> {
         match &self.members[member_id.id as usize] {
-            MemberSymbolKind::Field(field_repre) => field_repre.name_span,
-            MemberSymbolKind::Variant(variant_repre) => variant_repre.name_span,
-            MemberSymbolKind::OptionAssignment(cfg_opt) => cfg_opt.name_span,
+            MemberSymbolKind::Field(field_repre) => Some(field_repre.name_span),
+            MemberSymbolKind::Variant(variant_repre) => Some(variant_repre.name_span),
+            MemberSymbolKind::OptAssignmentRoot(cfg_opt) => Some(cfg_opt.name_span),
+            MemberSymbolKind::ConfigDefMember(cfg_def_member) => Some(cfg_def_member.name_span),
+            MemberSymbolKind::OptAssignmentMember(opt_assignment_member) => {
+                Some(opt_assignment_member.name_span)
+            }
+            MemberSymbolKind::Unknown(_) => None,
         }
     }
 
-    fn get_decl_span_type(&self, type_id: TypeId) -> Option<SourceSpan> {
+    pub(super) fn get_span_from_type_id(&self, type_id: TypeId) -> Option<SourceSpan> {
         match &self.types[type_id.id as usize].ty {
             Type::BuiltinType(builtin_type) => None,
             Type::Struct(struct_def) => Some(struct_def.name_span),
             Type::Enum(enum_def) => Some(enum_def.name_span),
             // Functions can't be declared
-            Type::Func(func_def) => None,
             Type::Alias(alias_def) => Some(alias_def.name_span),
             Type::TypeDef(type_def) => Some(type_def.name_span),
+            Type::Deferred(inner) => self.get_span_from_type_id(*inner),
+            // Type spanning needs to be reasoned about first
             Type::Constrained(type_constraint_flags) => todo!(),
-            Type::Deferred(inner) => self.get_decl_span_type(*inner),
             Type::Unknown => todo!("Should still be spanned though"),
+            Type::Func(_) => None,
         }
     }
 

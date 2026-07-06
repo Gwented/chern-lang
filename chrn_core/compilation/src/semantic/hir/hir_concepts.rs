@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use chrn_utils::{
     id_types::{ExprId, MemberId, ModuleId, ScopeId, SpannedContainer, TypeId, ValueId},
+    loop_abort,
     source_map::source_span::SourceSpan,
 };
 use lang::{
@@ -22,6 +23,24 @@ use crate::{
 
 // This is kind of just a "concept" though
 use chrn_utils::id_types::{AstId, ConfigId, DirectiveId, InternedId, SymbolId, VariableId};
+
+#[derive(Debug)]
+pub struct Table {
+    // Can still change some to vec maybe
+    pub(crate) ast_to_sym: HashMap<AstId, SymbolId>,
+    //TEST:
+    pub(crate) interned_to_sym: HashMap<InternedId, SymbolId>,
+    // Maybe also to type
+}
+
+impl Table {
+    pub fn new() -> Table {
+        Table {
+            ast_to_sym: HashMap::new(),
+            interned_to_sym: HashMap::new(),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum SymbolOrigin {
@@ -155,21 +174,27 @@ impl Type {
     }
 
     /// The env can't be passed into to_fmt so
-    pub fn to_fmt(compiler: &ScriptCompiler, type_id: TypeId) -> Formatted {
-        match &compiler.types[type_id.id as usize].ty {
-            Type::BuiltinType(builtin_type) => builtin_type.kind().to_fmt(),
-            Type::Struct(struct_def) => struct_def.to_fmt(),
-            Type::Enum(enum_def) => enum_def.to_fmt(),
-            Type::Func(func_def) => func_def.to_fmt(),
-            Type::Alias(alias_def) => alias_def.to_fmt(),
-            Type::TypeDef(type_def) => type_def.to_fmt(),
-            // This is the only issue since it's not a single Formatted.
-            // The next obvious decision should be to do, "Formatted::NumericIntegerRanged", etc.,
-            // where we have 4000 variants which
-            Type::Constrained(flags) => Formatted::Boundaries(*flags),
-            Type::Deferred(inner) => Type::to_fmt(compiler, *inner),
-            Type::Unknown => Formatted::Unknown,
+    pub fn to_fmt(compiler: &ScriptCompiler, mut type_id: TypeId) -> Formatted {
+        for _ in 0..chrn_utils::MAX_LOOPS {
+            // Could be an Option return where if is_none() look_abort! but probably doesn't matter.
+            // At all.
+            match &compiler.types[type_id.id as usize].ty {
+                Type::BuiltinType(builtin_type) => return builtin_type.kind().to_fmt(),
+                Type::Struct(struct_def) => return struct_def.to_fmt(),
+                Type::Enum(enum_def) => return enum_def.to_fmt(),
+                Type::Func(func_def) => return func_def.to_fmt(),
+                Type::Alias(alias_def) => return alias_def.to_fmt(),
+                Type::TypeDef(type_def) => return type_def.to_fmt(),
+                // This is the only issue since it's not a single Formatted.
+                // The next obvious decision should be to do, "Formatted::NumericIntegerRanged", etc.,
+                // where we have 4000 variants which
+                Type::Constrained(flags) => return Formatted::Boundaries(*flags),
+                Type::Unknown => return Formatted::Unknown,
+                Type::Deferred(inner) => type_id = *inner,
+            }
         }
+
+        loop_abort!();
     }
 }
 
@@ -180,7 +205,6 @@ pub struct VarDef {
     pub name_span: SourceSpan,
     // Same job as SymbolKind::ReservedTypeSlot
     pub state: VariableState,
-    // Is option since forging a value id early is a lot of unneeded extra effort
 }
 
 impl VarDef {
@@ -217,7 +241,7 @@ pub enum VariableState {
 // TODO: Readiness for skipping during resolution
 /// Intended to represent a configuration block environment that consumes options for a field.
 #[derive(Debug)]
-pub struct ConfigDef {
+pub struct ConfigDefRoot {
     /// Is a name id instead of symbol id since `NameResolver` merely registers names, with no
     /// knowledge of symbol specifics. A dependency system may be used in the future.
     pub name_id: InternedId,
@@ -231,37 +255,136 @@ pub struct ConfigDef {
     pub sym_id: Option<SymbolId>,
     /// Expects `ConfigOptionAssignment`
     pub opt_assignments: Vec<MemberId>,
+    /// Lookup pattern that needs to be used to properly discern if
+    /// `LookupPattern::Namespace/OnlyVar` should be used to search for the symbol associated with
+    /// thie config
     pub lookup_pattern: LookupPattern,
-    pub inner_field_cfgs: Vec<ConfigId>,
+    /// Expects `ConfigDefMember`
+    pub cfg_def_members: Vec<MemberId>,
 }
 
-impl ConfigDef {
+impl ConfigDefRoot {
     pub fn new(
         name_id: InternedId,
         name_span: SourceSpan,
         cfg_id: ConfigId,
         sym_id: Option<SymbolId>,
         lookup_pattern: LookupPattern,
-        option_assignments: Vec<MemberId>,
-        inner_field_cfg: Vec<ConfigId>,
-    ) -> ConfigDef {
-        ConfigDef {
+        opt_assignments: Vec<MemberId>,
+        cfg_def_members: Vec<MemberId>,
+    ) -> ConfigDefRoot {
+        ConfigDefRoot {
             name_id,
             name_span,
             cfg_id,
             lookup_pattern,
             sym_id,
-            opt_assignments: option_assignments,
-            inner_field_cfgs: inner_field_cfg,
+            opt_assignments,
+            cfg_def_members,
         }
     }
 }
 
-/// Represents options and their values assigned by the user
+/// The member inside of a `ConfigDef` or `ConfigDefMember` which is the same structure,
+/// but with ties to a `MemberSymbol` instead of a `Symbol`
 #[derive(Debug)]
-pub struct ConfigOptionAssignment {
+pub struct ConfigDefMember {
+    /// Is a name id instead of symbol id since `NameResolver` merely registers names, with no
+    /// knowledge of symbol specifics. A dependency system may be used in the future.
+    pub name_id: InternedId,
+    // This is not a `SpannedContainer` because it may become an Option
+    pub name_span: SourceSpan,
+    /// `MemberId` of `self`
+    pub member_id: MemberId,
+    /// `MemberId` of the member symbol this is actually attached to
+    pub member_id_origin: MemberId,
+    /// Expects `ConfigOptionAssignment`
+    pub opt_assignments: Vec<MemberId>,
+    /// Lookup pattern that needs to be used to properly discern if
+    /// `LookupPattern::Namespace/OnlyVar` should be used to search for the member associacted with
+    /// this config member
+    // Is this needed?
+    pub lookup_pattern: LookupPattern,
+    /// Members this member holds
+    pub cfg_def_members: Vec<MemberId>,
+}
+
+impl ConfigDefMember {
+    pub fn new(
+        name_id: InternedId,
+        name_span: SourceSpan,
+        member_id: MemberId,
+        member_id_origin: MemberId,
+        opt_assignments: Vec<MemberId>,
+        lookup_pattern: LookupPattern,
+        cfg_def_members: Vec<MemberId>,
+    ) -> ConfigDefMember {
+        ConfigDefMember {
+            member_id,
+            member_id_origin,
+            name_id,
+            name_span,
+            opt_assignments,
+            lookup_pattern,
+            cfg_def_members,
+        }
+    }
+}
+
+// Would be:
+// Person {
+//      .identifiers = "person" <--- This is a root opt
+//      name {
+//          .default_val = 3 <--- This is a member opt
+//      }
+// }
+/// Represents options and their values assigned by the user at root
+#[derive(Debug)]
+pub struct OptionAssignmentRoot {
+    /// `SymbolId` of the `ConfigDefRoot`
     pub parent_sym_id: SymbolId,
-    // Own member id
+    /// `MemberId` of `self`
+    pub member_id: MemberId,
+    // more like option_name_id
+    pub name_id: InternedId,
+    pub name_span: SourceSpan,
+    /// All values this option is attached to
+    pub array_expr_id: ExprId,
+}
+
+impl OptionAssignmentRoot {
+    pub fn new(
+        parent_sym_id: SymbolId,
+        member_id: MemberId,
+        name_id: InternedId,
+        name_span: SourceSpan,
+        array_expr_id: ExprId,
+    ) -> OptionAssignmentRoot {
+        OptionAssignmentRoot {
+            parent_sym_id,
+            member_id,
+            name_id,
+            name_span,
+            array_expr_id,
+        }
+    }
+}
+
+//TODO: Maybe make this OptionAssignment<SymbolId/MemberId> where parent member id is that
+// Would be:
+// Person {
+//      .identifiers = "person" <--- This is a root opt
+//      name {
+//          .default_val = 3 <--- This is a member opt
+//      }
+// }
+/// Represents options and their values assigned by the user inside of a member from the root, not
+/// the root itself
+#[derive(Debug)]
+pub struct OptionAssignmentMember {
+    /// `SymbolId` of the `ConfigDefMember` it is derivative of
+    pub parent_member_id: MemberId,
+    /// `MemberId` of `self`
     pub member_id: MemberId,
     // more like option_name_id
     pub name_id: InternedId,
@@ -269,16 +392,16 @@ pub struct ConfigOptionAssignment {
     pub array_expr_id: ExprId,
 }
 
-impl ConfigOptionAssignment {
+impl OptionAssignmentMember {
     pub fn new(
-        parent_sym_id: SymbolId,
+        parent_member_id: MemberId,
         member_id: MemberId,
         name_id: InternedId,
         name_span: SourceSpan,
         array_expr_id: ExprId,
-    ) -> ConfigOptionAssignment {
-        ConfigOptionAssignment {
-            parent_sym_id,
+    ) -> OptionAssignmentMember {
+        OptionAssignmentMember {
+            parent_member_id,
             member_id,
             name_id,
             name_span,
@@ -290,52 +413,71 @@ impl ConfigOptionAssignment {
 /// An enum that represents any sort of inner member that could exist within a given parent symbol.
 #[derive(Debug)]
 pub enum MemberSymbolKind {
+    /// Represents `struct` fields
     Field(FieldRepre),
+    /// Represents `enum` fields
     Variant(VariantRepre),
     // FIX:
     // **NOT ACTUALLY A MEMBER YET**
     // Param(Param),
-    OptionAssignment(ConfigOptionAssignment),
+    /// `ConfigDefMember`
+    ConfigDefMember(ConfigDefMember),
+    /// Root specific option assignment
+    OptAssignmentRoot(OptionAssignmentRoot),
+    /// Member specific option assignment
+    OptAssignmentMember(OptionAssignmentMember),
+    /// Member that has reserved a slot but not yet defined
+    Unknown(MemberId),
 }
 
 impl MemberSymbolKind {
+    pub fn name_id(&self) -> Option<InternedId> {
+        match self {
+            MemberSymbolKind::Field(field_repre) => Some(field_repre.name_id),
+            MemberSymbolKind::Variant(variant_repre) => Some(variant_repre.name_id),
+            MemberSymbolKind::OptAssignmentRoot(opt_assignment_root) => {
+                Some(opt_assignment_root.name_id)
+            }
+            MemberSymbolKind::OptAssignmentMember(opt_assignment_member) => {
+                Some(opt_assignment_member.name_id)
+            }
+            MemberSymbolKind::ConfigDefMember(cfg_def_member) => Some(cfg_def_member.name_id),
+            MemberSymbolKind::Unknown(_) => None,
+        }
+    }
+
     pub fn member_id(&self) -> MemberId {
         match self {
+            MemberSymbolKind::Unknown(member_id) => *member_id,
             MemberSymbolKind::Field(field_repre) => field_repre.member_id,
             MemberSymbolKind::Variant(variant_repre) => variant_repre.member_id,
-            MemberSymbolKind::OptionAssignment(option_assignment) => option_assignment.member_id,
-        }
-    }
-
-    pub fn local_parent_sym_id(&self) -> SymbolId {
-        match self {
-            MemberSymbolKind::Field(field_repre) => field_repre.local_parent_sym_id,
-            MemberSymbolKind::Variant(variant_repre) => variant_repre.local_parent_sym_id,
-            MemberSymbolKind::OptionAssignment(option_assignment) => {
-                option_assignment.parent_sym_id
+            MemberSymbolKind::OptAssignmentRoot(opt_assignment_root) => {
+                opt_assignment_root.member_id
             }
+            MemberSymbolKind::OptAssignmentMember(opt_assignment_member) => {
+                opt_assignment_member.member_id
+            }
+            MemberSymbolKind::ConfigDefMember(cfg_def_member) => cfg_def_member.member_id,
+        }
+    }
+
+    // TODO:
+    pub fn local_parent_sym_id(&self) -> Option<SymbolId> {
+        match self {
+            MemberSymbolKind::Field(field_repre) => Some(field_repre.local_parent_sym_id),
+            MemberSymbolKind::Variant(variant_repre) => Some(variant_repre.local_parent_sym_id),
+            MemberSymbolKind::OptAssignmentRoot(option_assignment) => {
+                // I don't think this applies here
+                Some(option_assignment.parent_sym_id)
+            }
+            MemberSymbolKind::ConfigDefMember(_)
+            | MemberSymbolKind::OptAssignmentMember(_)
+            | MemberSymbolKind::Unknown(_) => None,
         }
     }
 }
 
-#[derive(Debug)]
-pub struct Table {
-    // Can still change some to vec maybe
-    pub(crate) ast_to_sym: HashMap<AstId, SymbolId>,
-    //TEST:
-    pub(crate) interned_to_sym: HashMap<InternedId, SymbolId>,
-    // Maybe also to type
-}
-
-impl Table {
-    pub fn new() -> Table {
-        Table {
-            ast_to_sym: HashMap::new(),
-            interned_to_sym: HashMap::new(),
-        }
-    }
-}
-
+/// HIR representation of the language `struct` type
 #[derive(Debug)]
 pub struct StructDef {
     pub sym_id: SymbolId,
@@ -363,6 +505,7 @@ impl Formattable for StructDef {
     }
 }
 
+/// HIR representation of the language `enum` type
 #[derive(Debug)]
 pub struct EnumDef {
     pub sym_id: SymbolId,
@@ -390,7 +533,7 @@ impl Formattable for EnumDef {
     }
 }
 
-/// A HIR of enum variants created by script semantics
+/// HIR representation of the language `variant` type
 #[derive(Debug)]
 pub struct VariantRepre {
     // TODO: Need to maybe bundle this with the Option TypeId since they both mean the same thing in

@@ -16,8 +16,8 @@ use crate::{
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
     script_compiler::ScriptCompiler,
     semantic::hir::hir_concepts::{
-        AliasDef, ConfigDef, EnumDef, StructDef, Symbol, SymbolKind, SymbolOrigin, Type, TypeDef,
-        TypeInfo, VarDef, VariableState,
+        AliasDef, ConfigDefRoot, EnumDef, StructDef, Symbol, SymbolKind, SymbolOrigin, Type,
+        TypeDef, TypeInfo, VarDef, VariableState,
     },
 };
 
@@ -100,7 +100,7 @@ impl NamespaceResolver<'_> {
         let orig_sym_opt = table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
         table.ast_to_sym.insert(ast_id, sym_id);
 
-        let cfg_def = ConfigDef::new(
+        let cfg_def = ConfigDefRoot::new(
             abs_cfg.name_id,
             abs_cfg.name_span,
             cfg_id,

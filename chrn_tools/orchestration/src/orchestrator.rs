@@ -5,6 +5,7 @@ use chrn_utils::{
 };
 use compilation::{
     lexer::{Lexer, token::SpannedToken, trivia::Trivia},
+    modules::ModuleState,
     parser::{self, ast::ast_concepts::AstInfo},
     resolvers::{
         constraint_resolver::ConstraintResolver, member_resolver::MemberResolver,
@@ -43,7 +44,8 @@ pub fn run_all(
     // from elsewhere, which are not known yet.
     for mod_idx in 0..compiler.mods.len() {
         //TEST: The error messages get worse when they are allowed  to be read with a broken region
-        let (mod_id, state) = (ModuleId::new(mod_idx), compiler.mods[mod_idx].state);
+        let mod_id = ModuleId::new(mod_idx);
+
         let (toks_opt, trivia_opt) = run_lexer(compiler, compiler_store, &compiler_cache, mod_id);
 
         let ast_info_opt = if let Some(toks) = &toks_opt {
@@ -176,9 +178,13 @@ pub fn run_lexer(
     current_mod_id: ModuleId,
 ) -> (Option<Vec<SpannedToken>>, Option<Vec<Trivia>>) {
     let module = &compiler.mods[current_mod_id.id];
+    // Skipping any that aren't `Loaded` because it usually leads to duplicated errors from the
+    // config loading stage
     let region = match &module.region_id {
-        Some(region_id) => &compiler_store.region_arena.regions[region_id.id as usize],
-        None => {
+        Some(region_id) if module.state == ModuleState::Loaded => {
+            &compiler_store.region_arena.regions[region_id.id as usize]
+        }
+        _ => {
             // Meaning it's a lib module where None should be found upon any queries
             return (None, None);
         }
@@ -252,7 +258,16 @@ fn create_envs<'a>(
             }
         };
 
-        let current_ast = asts[i].as_ref().expect("Has region already");
+        // Can fail because if a module's ast creation is stopped, due to something like say, it's
+        // state being a broken region. This would panic since the module taht was skipped DOES have
+        // a region id, but it's ast creation was simply ignored.
+        let current_ast = match asts[i].as_ref() {
+            Some(ast) => ast,
+            None => {
+                all_envs.push(None);
+                continue;
+            }
+        };
 
         //NOTE: pre store envs? Part of cache or store?
         let env = ResolverEnv::new(current_ast, current_region, module.mod_id);

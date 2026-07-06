@@ -294,8 +294,6 @@ impl<'a> ParserContext<'a> {
         }
     }
 
-    // TODO: Make a helper reporter so something like can_color doesn't need to be re-entered
-    // everytime
     /// Checks available known branching to where a help message can be sent
     fn try_assistance(
         &self,

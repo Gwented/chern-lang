@@ -407,46 +407,54 @@ impl DocumentState {
                 self.member_errors = Some(member_diags);
             }
 
-            if self.parse_errors.is_none() {
-                let mut main_expr_range = 0..0;
-                for (mod_idx, env) in resolver_envs.iter().enumerate().take(mod_len) {
-                    let env = match env {
-                        Some(e) => e,
-                        None => continue,
-                    };
+            // Type resolution for all modules (skip main module if it has parse errors)
+            // so that imported modules that parsed cleanly still get fully analysed.
+            let mut main_expr_range = 0..0;
+            for (mod_idx, env) in resolver_envs.iter().enumerate().take(mod_len) {
+                let env = match env {
+                    Some(e) => e,
+                    None => continue,
+                };
 
-                    let expr_start = compiler.exprs.len();
-                    let mut type_resolver =
-                        TypeResolver::new(&settings, &self.interner, &mut compiler);
-
-                    if let Err(ty_diags) = type_resolver.resolve(env)
-                        && mod_idx == 0
-                    {
-                        self.ty_errors = Some(ty_diags);
-                    }
-                    let expr_end = compiler.exprs.len();
-                    if mod_idx == 0 {
-                        main_expr_range = expr_start..expr_end;
-                    }
+                if mod_idx == 0 && self.parse_errors.is_some() {
+                    continue;
                 }
 
-                self.main_expr_range = main_expr_range;
+                let expr_start = compiler.exprs.len();
+                let mut type_resolver =
+                    TypeResolver::new(&settings, &self.interner, &mut compiler);
 
-                // Constraint resolution for all modules
-                let mut constraint_resolver =
-                    ConstraintResolver::new(&settings, &self.interner, &mut compiler);
+                if let Err(ty_diags) = type_resolver.resolve(env)
+                    && mod_idx == 0
+                {
+                    self.ty_errors = Some(ty_diags);
+                }
+                let expr_end = compiler.exprs.len();
+                if mod_idx == 0 {
+                    main_expr_range = expr_start..expr_end;
+                }
+            }
 
-                for (mod_idx, env) in resolver_envs.iter().enumerate().take(mod_len) {
-                    let env = match env {
-                        Some(env) => env,
-                        None => continue,
-                    };
+            self.main_expr_range = main_expr_range;
 
-                    if let Err(cn_diags) = constraint_resolver.resolve(env)
-                        && mod_idx == 0
-                    {
-                        self.cn_errors = Some(cn_diags);
-                    }
+            // Constraint resolution for all modules (skip main module if it has parse errors)
+            let mut constraint_resolver =
+                ConstraintResolver::new(&settings, &self.interner, &mut compiler);
+
+            for (mod_idx, env) in resolver_envs.iter().enumerate().take(mod_len) {
+                let env = match env {
+                    Some(env) => env,
+                    None => continue,
+                };
+
+                if mod_idx == 0 && self.parse_errors.is_some() {
+                    continue;
+                }
+
+                if let Err(cn_diags) = constraint_resolver.resolve(env)
+                    && mod_idx == 0
+                {
+                    self.cn_errors = Some(cn_diags);
                 }
             }
         }

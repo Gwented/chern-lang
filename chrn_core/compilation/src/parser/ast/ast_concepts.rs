@@ -8,14 +8,16 @@ use lang::{
 };
 
 use crate::{
-    lookup::scopes::{LookupPattern, ScopeType},
+    lookup::scopes::LookupPattern,
     parser::ast::ast_exprs::{SpannedExpr, TypeExpr},
 };
 
 // Maybe this type of thing should go into an ast_concepts module?
+/// Ast.
 #[derive(Debug)]
 pub struct AstInfo {
     // Maybe eventually just use a 5 sized array since there are max 5 sections
+    /// Array that holds all 5 `chrn` sections.
     pub sections: [Option<Section>; 5],
     pub items: Vec<Item>,
 }
@@ -195,13 +197,12 @@ impl Section {
 }
 
 #[derive(Clone, Copy)]
-#[repr(u32)]
 pub enum SectionKind {
-    Neutral,
-    Var,
-    Nest,
-    Override,
-    Complex,
+    Neutral = 0,
+    Var = 1,
+    Nest = 2,
+    Override = 3,
+    Complex = 4,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -514,7 +515,7 @@ pub struct AbstractConfig {
     /// Can only be from var and nest
     pub lookup_pattern: LookupPattern,
     /// Configuration for inner fields to define recursively
-    pub inner_field_cfg: Vec<AbstractConfig>,
+    pub cfg_members: Vec<AbstractConfig>,
 }
 
 impl AbstractConfig {
@@ -523,14 +524,14 @@ impl AbstractConfig {
         name_span: SourceSpan,
         lookup_pattern: LookupPattern,
         opt_assignments: Vec<AbstractOptionAssignment>,
-        inner_field_cfg: Vec<AbstractConfig>,
+        cfg_members: Vec<AbstractConfig>,
     ) -> AbstractConfig {
         AbstractConfig {
             name_id,
             name_span,
             lookup_pattern,
             opt_assignments,
-            inner_field_cfg,
+            cfg_members,
         }
     }
 }

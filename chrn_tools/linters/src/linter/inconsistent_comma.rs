@@ -1,7 +1,7 @@
 use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
 use compilation::{lexer::token::SpannedToken, parser::ast::ast_concepts::AstInfo};
 
-use crate::linter::Linterable;
+use crate::linter::Lintable;
 
 #[derive(Debug)]
 pub struct InconsistentCommaLinter<'a> {
@@ -15,7 +15,7 @@ impl InconsistentCommaLinter<'_> {
     }
 }
 
-impl Linterable for InconsistentCommaLinter<'_> {
+impl Lintable for InconsistentCommaLinter<'_> {
     fn lint(&self) -> Vec<SourceDiagnostic> {
         for thing in self.ast_info.sections() {
             todo!();

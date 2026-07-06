@@ -5,7 +5,7 @@ mod parse_fmt;
 mod parser_state;
 
 use crate::lexer::token::{SpannedToken, Token, TokenKind};
-use crate::lookup::scopes::{LookupPattern, ScopeType};
+use crate::lookup::scopes::LookupPattern;
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractDirective, AbstractEnum, AbstractMemberAccess,
     AbstractOptionAssignment, AbstractParam, AbstractStruct, AbstractTypeDef, AbstractVar,
@@ -660,7 +660,7 @@ fn parse_cfg_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<Abstract
 
     ctx.expect_verbose(
         TokenKind::OCurlyBracket,
-        "Expected a '{' to define configuration expression, found ",
+        "Expected a '{' block to define configuration expression, found ",
         "",
         Branch::Section(SectionBranch::Complex),
         interner,

@@ -210,17 +210,19 @@ pub(crate) fn create_diag_builder_preset(
                     .add_annotation(sp_fmtted_ty.span, AnnotationKind::Primary, None)
             }
             LookupError::MemberNotFound {
-                sp_parent_ty: ty,
+                sp_parent_ty,
                 member,
             } => {
-                let ty_name = interner.search(ty.inner);
+                let ty_name = interner.search(sp_parent_ty.inner);
                 let member_name = interner.search(member);
-                let core_msg = format!(
-                    "No member with the identifier \"{member_name}\" was found in type `{ty_name}`"
-                );
+                let core_msg = format!("No member `{member_name}` found in type `{ty_name}`");
 
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
-                    .add_annotation(ty.span, AnnotationKind::Primary, None)
+                    .add_annotation(
+                        sp_parent_ty.span,
+                        AnnotationKind::Primary,
+                        format!("Is type `{ty_name}`").into(),
+                    )
             }
             LookupError::InvalidSymbolMemberAccess(sp_sym) => {
                 let core_msg = format!("Symbol `{}` cannot use member access", sp_sym.inner);
@@ -381,7 +383,7 @@ pub fn type_expr_result_to_preset_err(
                     let err_mod_name = interner.search(err_mod.name_id);
 
                     format!(
-                        "No symbol with the identifier `{err_name}` is defined within the module `{err_mod_name}`"
+                        "No type with the identifier `{err_name}` is defined within the module `{err_mod_name}`"
                     )
                 }
                 //NOTE: Not current symbol exists that has it's own scope except modules

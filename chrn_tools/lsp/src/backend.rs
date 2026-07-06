@@ -1041,6 +1041,16 @@ impl LanguageServer for Backend {
             return Ok(Some(CompletionResponse::Array(Vec::new())));
         }
 
+        // Single `:` should not trigger completions; only `::` (static access) should.
+        // Without this guard, typing the first colon of `::` fires the trigger character
+        // and falls through to the normal path, showing irrelevant results.
+        if byte_off > 0
+            && state.text.as_bytes()[byte_off - 1] == b':'
+            && !(byte_off >= 2 && state.text.as_bytes()[byte_off - 2] == b':')
+        {
+            return Ok(Some(CompletionResponse::Array(Vec::new())));
+        }
+
         let is_dot_completion = start_b > 0 && state.text.as_bytes()[start_b - 1] == b'.';
         let mut dot_target_name = None;
         if is_dot_completion {
@@ -1078,6 +1088,7 @@ impl LanguageServer for Backend {
                                 compilation::semantic::hir::hir_concepts::SymbolOrigin::Compiler
                             ))
                             && sym.scope_origin != scopes::ScopeType::Var
+                            && !matches!(sym.kind, compilation::semantic::hir::hir_concepts::SymbolKind::Directive(_))
                         {
                             let sym_name = state.interner.search(sym.name_id);
                             if prefix.is_empty() || sym_name.starts_with(prefix) {

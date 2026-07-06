@@ -8,7 +8,7 @@
 So something like:
 
 ```rust
-use chrn;
+use chrn_json;
 
 struct User {
     id: u32
@@ -20,12 +20,12 @@ fn main() {
     let script_path = "path/to/script/file"
     let user = User { id: 0, age: 0 }
 
-    chrn::serialize(script_path, user)
+    chrn_json::serialize(script_path, user)
 
     // or if serialized data is separate
 
     let serialized_data = "path/to/serialized/data"
-    chrn::serialize(script_path, serialized_data, user)
+    chrn_json::serialize(script_path, serialized_data, user)
 }
 ```
 
