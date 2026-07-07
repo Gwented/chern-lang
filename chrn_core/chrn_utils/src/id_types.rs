@@ -39,7 +39,7 @@ impl<T: Clone> SpannedContainerRef<'_, T> {
     }
 }
 
-pub trait ArenaIndex: Copy + Clone {
+pub trait ArenaIndex: Copy {
     fn into_usize(self) -> usize;
     fn from_usize(val: usize) -> Self;
 }

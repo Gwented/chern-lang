@@ -1,5 +1,4 @@
-// Definitions of all codebase wide errors
-
+//! Definitions of all codebase wide errors
 use std::path::Path;
 
 use crate::{
@@ -9,6 +8,7 @@ use crate::{
     source_map::{source_diagnostic::SourceDiagnostic, source_region::SourceRegion},
 };
 
+// Turn generic? (For reasons)
 /// General error enum for the entirety of the codebase to use. Everything can be converted back
 /// into it so it can be treated just as any `Err()` would be but more valuable in detail.
 pub enum CoreError {
@@ -40,8 +40,8 @@ impl From<SerialError> for CoreError {
 #[derive(Debug)]
 pub enum ConfigLoadError {
     Diagnostic(SourceDiagnostic),
+    // Critical { should_abort: bool },
     //// Contains whether or not the program can continue after critical error
-    // Critical(bool),
     IO(std::io::Error),
 }
 
@@ -100,8 +100,6 @@ impl From<std::io::Error> for SerialError {
         SerialError::IO(err)
     }
 }
-
-pub enum CriticalError {}
 
 // Naming naming naming namingnamingnamign
 /// Preset of error messages to reduce code duplication for file io errors. Returns a `Some` type

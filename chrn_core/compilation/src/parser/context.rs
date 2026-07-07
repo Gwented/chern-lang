@@ -502,11 +502,22 @@ impl<'a> ParserContext<'a> {
                     Token::StaticAccess if expected == TokenKind::OCurlyBracket => {
                         //NOTE: Not sure if this should stick
                         // Also very normal sized message.
-                        let help =
+                        let note =
                             "Static access is not permitted within configuration declarations.\n  If this was a module namespace, declare this in it's module of origin.\n  If this was a type namespace, this must be defined inside the configuration itself using available syntax."
                                 .to_string();
-
-                        builder.add_note(help)
+                        builder.add_note(note)
+                    }
+                    // Catching if the scenario ".option1 = 3 .option = 5" was reached which results
+                    // in a member access related error.
+                    //
+                    // Change to colons?
+                    Token::Assign
+                        if expected == TokenKind::CCurlyBracket
+                            && prev_tok.tok.kind() == TokenKind::Id
+                            && prev_prev_tok.tok == Token::Dot =>
+                    {
+                        let help = "May be missing a comma to separate previous option".to_string();
+                        builder.add_help(help)
                     }
                     _ => builder,
                 },

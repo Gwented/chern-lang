@@ -123,7 +123,7 @@ pub enum SymbolKind {
 impl SymbolKind {
     // This is getting obscure now...
     pub fn to_fmt(compiler: &ScriptCompiler, sym_id: SymbolId) -> Formatted {
-        match &compiler.symbols[sym_id ].kind {
+        match &compiler.symbols[sym_id].kind {
             SymbolKind::Type(type_id) => Type::to_fmt(compiler, *type_id),
             SymbolKind::Variable(_) => Formatted::Variable,
             SymbolKind::Module(_) => Formatted::Module,
@@ -178,7 +178,7 @@ impl Type {
         for _ in 0..chrn_utils::MAX_LOOPS {
             // Could be an Option return where if is_none() look_abort! but probably doesn't matter.
             // At all.
-            match &compiler.types[type_id ].ty {
+            match &compiler.types[type_id].ty {
                 Type::BuiltinType(builtin_type) => return builtin_type.kind().to_fmt(),
                 Type::Struct(struct_def) => return struct_def.to_fmt(),
                 Type::Enum(enum_def) => return enum_def.to_fmt(),
@@ -260,7 +260,7 @@ pub struct ConfigDefRoot {
     /// thie config
     pub lookup_pattern: LookupPattern,
     /// Expects `ConfigDefMember`
-    pub cfg_def_members: Vec<MemberId>,
+    pub cfg_members: Vec<MemberId>,
 }
 
 impl ConfigDefRoot {
@@ -271,7 +271,7 @@ impl ConfigDefRoot {
         sym_id: Option<SymbolId>,
         lookup_pattern: LookupPattern,
         opt_assignments: Vec<MemberId>,
-        cfg_def_members: Vec<MemberId>,
+        cfg_members: Vec<MemberId>,
     ) -> ConfigDefRoot {
         ConfigDefRoot {
             name_id,
@@ -280,7 +280,7 @@ impl ConfigDefRoot {
             lookup_pattern,
             sym_id,
             opt_assignments,
-            cfg_def_members,
+            cfg_members,
         }
     }
 }

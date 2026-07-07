@@ -1,6 +1,3 @@
-// Import privacy leaking behavior and overwriting tendency is highly suspicious
-
-
 // @def invalid toky // hey
 //@end
 //@def
@@ -53,34 +50,51 @@ let as = n
 import "../chrn_core/chrn_tests/def.chrn" as defs
 
 var->
-    x: i32
+    x: State1
 // Should warn
 // import "../../chrn_core/chrn_tests/core.chrn"
     nest->
+        enum Opt {
+                o: i32
+            }
         struct Forb {
             p: def::Person
-            root_holder: runtime
+            root_holder: Runtime
             // Breaks reporting since cross module spanning is NOT possible right now
             // p: defs::Person
         } #bin
-        struct Holder1 {holder2: i32}
-        struct Holder2 {runtime: Runtime}
 
+        enum State1 {stable, state2: State2}
+        enum State2 {Medium, state3: State3}
+        enum State3 {Low, state1: State1}
+        enum StateStable {stable}
+
+    // Nested configs are really hard to read. Maybe some labeling options?
+    //
+    // Can also do state1 { stable {} stable {} .default = 3 .default = 3 } probably should err
     complex->
-        // I don't know about this
-        //
         // Maybe recursion should keep track of if an inner of a config was already defined then
         // error saying that a past recursive definition of this type within this configuration has
         // already been defined
-        // note: Hi
-        Forb {
-            /*p {
-                fake {}
-            }*/
-            root_holder {
-                runtime {}
+
+        // Emergently, if there is no conflicting x struct, x is treated as the root innately
+        // from the actual var section. May or may not leave this to where it requires the `var`
+        // pre-tense or not
+        State1 {
+            // Maybe just use colons
+            stable {}
+            stable {}
+            state2 { // Should allow "state2: State2"?
+                state3 {
+                    state1 {
+                        stable {}
+                        stable {}
+                        stable {}
+                    }
+                }
             }
         }
+
         /*var x {
             .default_value = 2
             p {

@@ -13,7 +13,8 @@ use crate::{
     constraints::ArgConstraint,
     lookup::scopes::ScopeType,
     parser::ast::ast_concepts::{
-        AbstractAlias, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar, Item,
+        AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
+        Item,
     },
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
     script_compiler::ScriptCompiler,
@@ -84,7 +85,9 @@ impl<'a> ConstraintResolver<'a> {
                     // }
                     // todo!("Todol");
                 }
-                Item::Config(abs_cfg) => todo!(),
+                Item::Config(abs_cfg) => {
+                    _ = self.resolve_cfg_root(abs_cfg, ast_id, env);
+                }
             }
         }
 
@@ -128,6 +131,24 @@ impl<'a> ConstraintResolver<'a> {
         Ok(())
     }
 
+    fn resolve_cfg_root(
+        &mut self,
+        abs_cfg_root: &AbstractConfig,
+        ast_id: AstId,
+        env: &ResolverEnv,
+    ) -> Result<(), ()> {
+        let scope_id = self
+            .compiler
+            .extract_scope_id(ScopeType::Complex, env.current_mod);
+        let table = &self.compiler.get_scope(scope_id).scope.table;
+        let sym_id = table.ast_to_sym[&ast_id];
+
+        // let module = &self.compiler.mods[env.current_mod];
+        let cfg_root = self.compiler.get_cfg_def_root(sym_id);
+        dbg!(cfg_root);
+        todo!("cfg")
+    }
+
     fn resolve_typedef(
         &mut self,
         abs_typedef: &AbstractTypeDef,
@@ -140,7 +161,7 @@ impl<'a> ConstraintResolver<'a> {
         let table = &self.compiler.get_scope(scope_id).scope.table;
         let sym_id = table.ast_to_sym[&ast_id];
 
-        let module = &self.compiler.mods[env.current_mod];
+        // let module = &self.compiler.mods[env.current_mod];
         let type_def = self.compiler.get_typedef(sym_id);
         let ty_info = &self.compiler.types[type_def.type_id];
 

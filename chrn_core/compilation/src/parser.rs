@@ -349,17 +349,18 @@ pub fn parse(
                     "a section"
                 };
 
-                let fmsg = match t {
-                    Token::Def => "`@def`".to_string(),
-                    Token::Id(id)
-                    | Token::Str(id)
-                    | Token::Integer(id, _)
-                    | Token::Float(id, _) => {
-                        let name = interner.search(id);
-                        format!("{} \"{}\"", t.kind(), name)
-                    }
-                    t => t.kind().to_string(),
-                };
+                let fmsg = parse_fmt::fmt_tok(t, interner);
+                // let fmsg = match t {
+                //     Token::Def => "`@def`".to_string(),
+                //     Token::Id(id)
+                //     | Token::Str(id)
+                //     | Token::Integer(id, _)
+                //     | Token::Float(id, _) => {
+                //         let name = interner.search(id);
+                //         format!("{} \"{}\"", t.kind(), name)
+                //     }
+                //     t => t.kind().to_string(),
+                // };
 
                 ctx.advance_tok();
                 ctx.report_template(allowed_msg, &fmsg, Branch::Searching, interner);
@@ -413,7 +414,7 @@ fn parse_alias_stmt(
     };
 
     let directives = if ctx.peek_kind() == TokenKind::HashSymbol {
-        handle_args(ctx, interner).unwrap_or_default()
+        handle_directives(ctx, interner).unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -498,7 +499,7 @@ fn parse_typedef(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractT
     };
 
     let directives = if ctx.peek_kind() == TokenKind::HashSymbol {
-        handle_args(ctx, interner).unwrap_or_default()
+        handle_directives(ctx, interner).unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -559,7 +560,7 @@ fn parse_nest_sect(
             };
 
             let args = if ctx.peek_kind() == TokenKind::HashSymbol {
-                handle_args(ctx, interner).unwrap_or_default()
+                handle_directives(ctx, interner).unwrap_or_default()
             } else {
                 Vec::new()
             };
@@ -600,7 +601,7 @@ fn parse_nest_sect(
             };
 
             let glob_directives = if ctx.peek_kind() == TokenKind::HashSymbol {
-                handle_args(ctx, interner).unwrap_or_default()
+                handle_directives(ctx, interner).unwrap_or_default()
             } else {
                 Vec::new()
             };
@@ -735,16 +736,44 @@ fn parse_option_assignment(
         interner,
     )?;
 
-    let sp_array_expr = if ctx.peek_tok() == Token::OBracket {
-        parse_array(ctx, interner)?
+    // Semantics of comma checking:
+    // - If the current option uses short-hand syntax, it only expects a comma after it
+    // IF there is an option after it.
+    //
+    // - Trailing commas are accepted for the array and single element version
+    let (sp_array_expr, check_comma) = if ctx.peek_tok() == Token::OBracket {
+        (parse_array(ctx, interner)?, false)
     } else {
         // Assumes it's a single value assignment if no OBracket is present
         let only_element = parse_expr(ctx, 0, interner)?;
         let span = only_element.span;
         let array_expr = Expr::Array(ArrayExpr::new(vec![only_element]));
 
-        SpannedExpr::new(array_expr, span)
+        // This is so scenarios where the current option is the last option it doesn't require a
+        // trailing comma
+        let check_comma = if ctx.peek_ahead(1).tok == Token::Dot {
+            true
+        } else {
+            false
+        };
+
+        (SpannedExpr::new(array_expr, span), check_comma)
     };
+
+    //TODO: This is not good
+
+    if check_comma {
+        ctx.expect_verbose(
+            TokenKind::Comma,
+            "Expected a common to separate options, found ",
+            "",
+            Branch::Section(SectionBranch::Complex),
+            interner,
+        )?;
+        // If there is a trailing comma it still advances
+    } else if ctx.peek_tok() == Token::Comma {
+        ctx.advance_tok();
+    }
 
     Ok(AbstractOptionAssignment::new(
         name_id,
@@ -1428,7 +1457,7 @@ fn parse_variant(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractV
     };
 
     let args = if ctx.peek_kind() == TokenKind::HashSymbol {
-        handle_args(ctx, interner).unwrap_or_default()
+        handle_directives(ctx, interner).unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -1439,7 +1468,7 @@ fn parse_variant(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractV
 }
 
 // Egregious naming scheme
-fn handle_args(
+fn handle_directives(
     ctx: &mut ParserContext,
     interner: &Intern,
 ) -> Result<Vec<AbstractDirective>, Token> {
@@ -1465,7 +1494,6 @@ fn parse_directive(ctx: &mut ParserContext, interner: &Intern) -> Result<Abstrac
     )?;
 
     let sp_name_id = SpannedContainer::new(name_id, name_span);
-
     let abs_directive = AbstractDirective::new(sp_name_id);
 
     Ok(abs_directive)

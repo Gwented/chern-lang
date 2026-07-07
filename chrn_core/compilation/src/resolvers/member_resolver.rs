@@ -13,6 +13,7 @@ use chrn_utils::{
 
 use crate::{
     lookup::scopes::{AssociatedScopeKind, LookupPattern, ScopeType},
+    parser::ast::ast_concepts::{AbstractTypeDef, AbstractVariant},
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
     script_compiler::{self, ScriptCompiler},
     semantic::{
@@ -145,16 +146,20 @@ impl MemberResolver<'_> {
         let parent_sym_id = metadata.sym_id;
 
         let mut fields: Vec<MemberId> = Vec::new();
+
         // Tracks duplicate field identifiers
-        // (ast field idx, name_id)
-        let mut seen: Vec<(usize, InternedId)> = Vec::new();
+        //
+        // This is not a `HashSet` because it is not anticipated that a field of any kind in the
+        // majority of scenarios will ever be so large to where a hash system is absolutely needed
+        // over a linear scan.
+        let mut seen: Vec<&AbstractTypeDef> = Vec::new();
 
         //TODO: global condition and argument setting.
         //field arg and cond settings.
         //same for enums.
 
         // Checking if there are duplicate name ids within the same struct along with resolution
-        for (i, field_typedef) in abs_struct.fields.iter().enumerate() {
+        for field_typedef in &abs_struct.fields {
             let type_id = match resolve::resolve_type_expr(
                 self.compiler,
                 associated_scope,
@@ -190,36 +195,34 @@ impl MemberResolver<'_> {
                 }
             };
 
-            if let Some(original) = seen.iter().find(|other| field_typedef.name_id == other.1) {
-                let struct_name = self.interner.search(abs_struct.name_id);
-                let dup_name = self.interner.search(field_typedef.name_id);
+            // if let Some(original) = seen.iter().find(|other| field_typedef.name_id == other.1) {
+            //     let struct_name = self.interner.search(abs_struct.name_id);
+            //     let dup_name = self.interner.search(field_typedef.name_id);
+            //
+            //     let orig_span = abs_struct.fields[original.0].name_span;
+            //     let field_span = abs_struct.fields[i].name_span;
+            //
+            //     let core_msg = format!("More than one field has the identifier \"{dup_name}\"");
+            //
+            //     let src_diag =
+            //         SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+            //             .add_annotation(
+            //                 abs_struct.name_span,
+            //                 AnnotationKind::Secondary,
+            //                 "Found inside this struct".to_string().into(),
+            //             )
+            //             .add_annotation(
+            //                 orig_span,
+            //                 AnnotationKind::Secondary,
+            //                 format!("Original usage of identifier `{dup_name}` here").into(),
+            //             )
+            //             .add_annotation(field_span, AnnotationKind::Primary, None)
+            //             .build();
+            //
+            //     self.err_vec.push(src_diag);
+            // }
 
-                let orig_span = abs_struct.fields[original.0].name_span;
-                let field_span = abs_struct.fields[i].name_span;
-
-                let core_msg = format!(
-                    "More than one field has the identifier \"{dup_name}\" within struct `{struct_name}`"
-                );
-
-                let src_diag =
-                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                        .add_annotation(
-                            abs_struct.name_span,
-                            AnnotationKind::Secondary,
-                            "Found inside this struct".to_string().into(),
-                        )
-                        .add_annotation(
-                            orig_span,
-                            AnnotationKind::Secondary,
-                            format!("Original usage of identifier `{dup_name}` here").into(),
-                        )
-                        .add_annotation(field_span, AnnotationKind::Primary, None)
-                        .build();
-
-                self.err_vec.push(src_diag);
-            }
-
-            seen.push((i, field_typedef.name_id));
+            seen.push(&field_typedef);
 
             let member_id = MemberId::new(self.compiler.members.len() as u32);
 
@@ -248,6 +251,70 @@ impl MemberResolver<'_> {
             fields.push(member_id);
         }
 
+        for (i, current_field) in seen.iter().enumerate() {
+            if let Some((_, original_field)) = seen
+                .iter()
+                .enumerate()
+                // If the other index was declared after the current index and they have the same identifier
+                //
+                // Since this iteration specifically checks if the current was declared after the
+                // last and the iteration terminates upon the first match, this correctly points at
+                // the original field for all duplicates.
+                .find(|(other_i, f)| *other_i < i && current_field.name_id == f.name_id)
+            {
+                let dup_name = self.interner.search(current_field.name_id);
+
+                let orig_span = original_field.name_span;
+                let current_field_span = current_field.name_span;
+
+                let core_msg = format!("More than one field has the identifier \"{dup_name}\"");
+
+                let src_diag =
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+                        .add_annotation(
+                            abs_struct.name_span,
+                            AnnotationKind::Secondary,
+                            "Found inside this struct".to_string().into(),
+                        )
+                        .add_annotation(
+                            orig_span,
+                            AnnotationKind::Secondary,
+                            format!("Original usage of identifier `{dup_name}` here").into(),
+                        )
+                        .add_annotation(current_field_span, AnnotationKind::Primary, None)
+                        .build();
+
+                self.err_vec.push(src_diag);
+            }
+        }
+
+        // if let Some(original) = seen.iter().find(|other| field_typedef.name_id == other.1) {
+        //     let struct_name = self.interner.search(abs_struct.name_id);
+        //     let dup_name = self.interner.search(field_typedef.name_id);
+        //
+        //     let orig_span = abs_struct.fields[original.0].name_span;
+        //     let field_span = abs_struct.fields[i].name_span;
+        //
+        //     let core_msg = format!("More than one field has the identifier \"{dup_name}\"");
+        //
+        //     let src_diag =
+        //         SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+        //             .add_annotation(
+        //                 abs_struct.name_span,
+        //                 AnnotationKind::Secondary,
+        //                 "Found inside this struct".to_string().into(),
+        //             )
+        //             .add_annotation(
+        //                 orig_span,
+        //                 AnnotationKind::Secondary,
+        //                 format!("Original usage of identifier `{dup_name}` here").into(),
+        //             )
+        //             .add_annotation(field_span, AnnotationKind::Primary, None)
+        //             .build();
+        //
+        //     self.err_vec.push(src_diag);
+        // }
+
         let struct_def = self.compiler.get_struct_mut(parent_sym_id);
         debug_assert_eq!(struct_def.fields.len(), 0);
         struct_def.fields.append(&mut fields);
@@ -258,45 +325,15 @@ impl MemberResolver<'_> {
         let parent_sym_id = metadata.sym_id;
 
         let mut variants: Vec<MemberId> = Vec::new();
-        // (ast variant idx, name_id)
-        let mut seen: Vec<(usize, InternedId)> = Vec::new();
+
+        // For duplicate variant identifiers
+        let mut seen: Vec<&AbstractVariant> = Vec::new();
 
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
-        //Maybe just compute this once after along with struct fields
-
         // Checking if there are duplicate name ids within the same enum
         for (i, variant) in abs_enum.variants.iter().enumerate() {
-            if let Some(original) = seen.iter().find(|other| variant.name_id == other.1) {
-                let enum_name = self.interner.search(abs_enum.name_id);
-                let dup_name = self.interner.search(variant.name_id);
-
-                let orig_span = abs_enum.variants[original.0].name_span;
-                let variant_span = abs_enum.variants[i].name_span;
-
-                let core_msg = format!(
-                    "More than one variant has the identifier \"{dup_name}\" within enum `{enum_name}`"
-                );
-
-                let src_diag =
-                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                        .add_annotation(
-                            abs_enum.name_span,
-                            AnnotationKind::Secondary,
-                            "Found inside this enum".to_string().into(),
-                        )
-                        .add_annotation(
-                            orig_span,
-                            AnnotationKind::Secondary,
-                            format!("Original usage of identifier `{dup_name}` here").into(),
-                        )
-                        .add_annotation(variant_span, AnnotationKind::Primary, None)
-                        .build();
-
-                self.err_vec.push(src_diag);
-            }
-
-            seen.push((i, variant.name_id));
+            seen.push(&variant);
 
             let member_id = MemberId::new(self.compiler.members.len() as u32);
             let variant_repre = if let Some(spanned_ty_expr) = &variant.sp_ty_expr {
@@ -355,6 +392,44 @@ impl MemberResolver<'_> {
                 .push(MemberSymbolKind::Variant(variant_repre));
 
             variants.push(member_id);
+        }
+
+        for (i, current_variant) in seen.iter().enumerate() {
+            if let Some((_, original_variant)) = seen
+                .iter()
+                .enumerate()
+                // If the other index was declared after the current index and they have the same identifier
+                //
+                // Since this iteration specifically checks if the current was declared after the
+                // last and the iteration terminates upon the first match, this correctly points at
+                // the original field for all duplicates.
+                .find(|(other_i, f)| *other_i < i && current_variant.name_id == f.name_id)
+            {
+                let dup_name = self.interner.search(current_variant.name_id);
+
+                let orig_span = original_variant.name_span;
+                let current_field_span = current_variant.name_span;
+
+                // Preset error?
+                let core_msg = format!("More than one variant has the identifier \"{dup_name}\"");
+
+                let src_diag =
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+                        .add_annotation(
+                            abs_enum.name_span,
+                            AnnotationKind::Secondary,
+                            "Found inside this enum".to_string().into(),
+                        )
+                        .add_annotation(
+                            orig_span,
+                            AnnotationKind::Secondary,
+                            format!("Original usage of identifier `{dup_name}` here").into(),
+                        )
+                        .add_annotation(current_field_span, AnnotationKind::Primary, None)
+                        .build();
+
+                self.err_vec.push(src_diag);
+            }
         }
 
         let enum_def = self.compiler.get_enum_mut(parent_sym_id);

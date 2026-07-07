@@ -131,7 +131,7 @@ pub(crate) fn create_diag_builder_preset(
         }
         PresetErr::FuncConstraintMismatch {
             constraint,
-            fmtted_ty: type_kind,
+            fmtted_ty,
             spans,
         } => {
             todo!();

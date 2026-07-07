@@ -342,7 +342,9 @@ impl AbstractDirective {
 
 #[derive(Debug)]
 pub struct AbstractTypeDef {
+    /// Identifier of `self`
     pub name_id: InternedId,
+    /// Span for identifer of `self`
     pub name_span: SourceSpan,
     pub sp_ty_expr: SpannedContainer<TypeExpr>,
     pub conds: Vec<SpannedExpr>,

@@ -23,18 +23,22 @@ pub enum MemberLookupResult {
 /// Collects all members if possible from a given type id
 ///
 /// Return type is empty if the given type cannot carry members
-pub fn collect_all_members(compiler: &ScriptCompiler, mut type_id: TypeId) -> Vec<MemberId> {
+pub fn collect_all_members(
+    compiler: &ScriptCompiler,
+    mut current_type_id: TypeId,
+) -> Vec<MemberId> {
     for _ in 0..chrn_utils::MAX_LOOPS {
-        match &compiler.types[type_id ].ty {
+        match &compiler.types[current_type_id].ty {
             Type::BuiltinType(builtin_type) => todo!(),
             Type::Struct(struct_def) => return struct_def.fields.clone(),
             Type::Enum(enum_def) => return enum_def.variants.clone(),
             // Count members as params or maybe attach a variant?
             Type::Func(func_def) => todo!(),
             Type::Alias(alias_def) => todo!(),
-            Type::TypeDef(type_def) => return Vec::new(),
+            // Should this?
+            Type::TypeDef(type_def) => current_type_id = type_def.type_id,
             Type::Constrained(type_constraint_flags) => return Vec::new(),
-            Type::Deferred(inner_type_id) => type_id = *inner_type_id,
+            Type::Deferred(inner_type_id) => current_type_id = *inner_type_id,
             Type::Unknown => return Vec::new(),
         }
     }
@@ -57,7 +61,7 @@ pub fn lookup_member(
     // Max loops will strike here.
     // Soon.
     for _ in 0..chrn_utils::MAX_LOOPS {
-        match &compiler.types[current_type_id ].ty {
+        match &compiler.types[current_type_id].ty {
             Type::BuiltinType(_) => {
                 // Members/Methods do not exist for types yet
                 return MemberLookupResult::ImpossibleTypeMemberAccess(current_type_id);
@@ -72,34 +76,29 @@ pub fn lookup_member(
 
                 return MemberLookupResult::MemberNotFoundInType(current_type_id);
             }
+            //TODO: Lookup patterns
             // But enums aren't fields..they're namespaces
             Type::Enum(enum_def) => {
                 for member_id in &enum_def.variants {
-                    let variant = compiler.get_field(*member_id);
+                    let variant = compiler.get_variant(*member_id);
                     if variant.name_id == target_name_id {
                         return MemberLookupResult::Found(variant.member_id);
                     }
                 }
 
-                todo!()
+                return MemberLookupResult::MemberNotFoundInType(current_type_id);
             }
             Type::Alias(alias_def) => todo!(),
             Type::Func(func_def) => todo!(),
-            Type::TypeDef(type_def) => {
-                if type_def.name_id == target_name_id {
-                    todo!();
-                    // Not being considered a member itself is a bit of an issue..
-                    // return MemberLookupResult::Found(type_def.type_id);
-                }
-
-                // This should be the typedef's type id itself
-                return MemberLookupResult::MemberNotFoundInType(current_type_id);
-            }
+            // Since typedefs themselves are just fields, we need to treat this as an entry-point to
+            // get to the inner type. Given x: State, when the `x` is seen seen it ignores it and
+            // skips to the internal type_id field, just like defer does but this is guaranteed to
+            // be one layer.
+            Type::TypeDef(type_def) => current_type_id = type_def.type_id,
             Type::Constrained(type_constraint_flags) => todo!(),
             // WARN: DANGEROUS
-            Type::Deferred(inner_type_id) => {
-                current_type_id = *inner_type_id;
-            }
+            Type::Deferred(inner_type_id) => current_type_id = *inner_type_id,
+
             Type::Unknown => return MemberLookupResult::Unknown(current_type_id),
         }
     }
