@@ -279,7 +279,7 @@ impl MemberResolver<'_> {
                         .add_annotation(
                             orig_span,
                             AnnotationKind::Secondary,
-                            format!("Original usage of identifier `{dup_name}` here").into(),
+                            format!("Original usage of `{dup_name}` here").into(),
                         )
                         .add_annotation(current_field_span, AnnotationKind::Primary, None)
                         .build();

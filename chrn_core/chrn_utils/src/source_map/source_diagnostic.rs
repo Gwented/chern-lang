@@ -53,7 +53,9 @@ impl Reporter {
             }
             BudgetResult::Overage(overage) => {
                 let can_append = amt - overage;
-                for i in diags.drain(..can_append) {
+                dbg!(can_append, self.budget.remaining());
+                panic!("Test me");
+                for i in diags.drain(..self.budget.remaining()) {
                     self.diags.push(i);
                 }
                 // Since the budget doesn't set itself to the limit the user must manually use the

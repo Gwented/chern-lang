@@ -425,10 +425,14 @@ complex->
     }
 ```
 
-An important note is that member access CANNOT be done.
+#### IMPORTANT NOTES
+
+##### Member access
+Member access like:
 ```chrn
     other_namespace::Thing {}
 ```
+**CANNOT** be done.
 
 This is because there does not currently seem to be any intrinsic benefit to doing so other than increasing the possible complexity of code, nor is it clear how this would affect actual property setting.
 
@@ -437,6 +441,56 @@ For example, It could be:
 * Directly mutating the external module that declared Thing so that it uses it's specific config
 * An optional external mutation where you use a directive to determine whether or not it should mutate
 None of these are very concrete to where just enforcing that the current module's defined type must be the root for any config used is currently the only way this is done (This is not final)
+
+##### Recursive types within configs
+Recursive types are not allowed to be defined within configs more than once.
+
+For example:
+```chrn
+nest->
+    struct Orange {
+        orange: Orange
+    }
+complex->
+    Orange {
+        // Would already be applying these options and config member properties to all
+        // recursive versions of itself.
+        .identifiers = ["Urang", "Crust"]
+        orange {
+            // This is an error and should be placed within the original recursive orange identifier list
+            .identifiers = "Recursive Orange"
+        }
+    }
+```
+
+This is not allowed because it contradicts the previous recursive `Orange` by saying, this inner `Orange` of the same type `Orange` has different conditions from the original `Orange` config, which can't work because `Orange` was already given a set of properties. In short, there would be more than one set of properties as to how to treat a specific type that already has it's properties defined.
+
+This does not impact separate configs which happen to have the same type like:
+```chrn
+nest->
+    struct Orange {
+        orange: Orange
+    }
+    struct Apple {
+        orange: Orange
+    }
+
+// Should config be locked to where it only starts from var-> defined variables?
+complex->
+    Orange {
+        .identifiers = ["Urang", "Crust"]
+    }
+
+    Apple {
+        orange {
+            // This is fine since it's setting the properties of what the member of Apple which is of
+            // type orange will have, not re-defining properties that already exist.
+            .identifiers = "memberOrange"
+        }
+    }
+```
+
+This is not allowed that would mean recursive descent count specific properties would have to exist for a type that already has properties defined in an earlier config, which would mean the type itself has a recursive other version of itself, within itself, without another recursive version of itself.
 
 # DOES NOT EXIST YET
 `override`: Most important part of the language which controls things such as possible namespace casing to also look for and setting language type defaults. Language defaults exist but this can change any if needed.

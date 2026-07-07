@@ -774,8 +774,8 @@ impl DocumentState {
                                                 current_ty = None;
                                             }
                                         } else if let Some(type_id) = current_ty {
-                                            if let Some(type_info) = compiler.types.get(type_id) {
-                                                match &type_info.ty {
+                                            if let Some(ty_info) = compiler.types.get(type_id) {
+                                                match &ty_info.ty {
                                                     Type::Struct(sdef) => {
                                                         let field_idx = sdef
                                                             .fields

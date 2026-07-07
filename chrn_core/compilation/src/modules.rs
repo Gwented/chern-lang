@@ -246,12 +246,7 @@ pub fn extract_modules(
 
     let name_id = interner.intern(&file_name);
 
-    // dbg!(str::from_utf8(&main_metadata.src_bytes[..]));
     let main_mod_id = ModuleId::new(0);
-    // For now, just give mod finder the dfs search where, it will search and push the vec where
-    // needed, so during recursive resolution we can just give the module id.
-    //
-    // Or ModuleAst
 
     // This is a Vector relationship stored where, the path id of an import is stored along with a
     // module id. So, we store main, go into main's imports then fill in OR create the module id of

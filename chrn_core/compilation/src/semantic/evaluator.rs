@@ -147,6 +147,7 @@ pub fn apply_binary_op(
     let lhs = sp_lhs.inner;
     let rhs = sp_rhs.inner;
 
+    //TODO: Avoid overflow/underflow
     let res = match op {
         BinaryOp::Add => match lhs {
             Value::I64(lhs_inner) => match rhs {

@@ -509,6 +509,9 @@ impl Formattable for StructDef {
 #[derive(Debug)]
 pub struct EnumDef {
     pub sym_id: SymbolId,
+    // Is not present because the symbol also holds the name id which would be duplicated an id. May
+    // change to where it includes it anyways.
+    // pub name_id: InternedId,
     pub name_span: SourceSpan,
     pub variants: Vec<MemberId>,
     pub glob_directives: Vec<SpannedContainer<DirectiveId>>,
@@ -516,9 +519,15 @@ pub struct EnumDef {
 }
 
 impl EnumDef {
-    pub fn new(sym_id: SymbolId, name_span: SourceSpan, variants: Vec<MemberId>) -> EnumDef {
+    pub fn new(
+        sym_id: SymbolId,
+        // name_id: InternedId,
+        name_span: SourceSpan,
+        variants: Vec<MemberId>,
+    ) -> EnumDef {
         EnumDef {
             sym_id,
+            // name_id,
             name_span,
             variants,
             glob_conds: Vec::new(),

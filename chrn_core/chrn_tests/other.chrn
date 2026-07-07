@@ -4,8 +4,16 @@
 // let overflow = 9223372036854775807 + 1
 // let underflow = -9223372036_854775807 - 2
 
-let x = 3
-let y = e::l::r
+// Reaches unreachable code
+//
+// If an outer variable has the same identifier as an alias it reaches unreachable code.
+//
+// The duplication is reported
+
+// let x = 4
+// let y = 3
+// let y = e::l::r
+// alias x(x: , x: Comparable) =
 
 nest->
     export struct Person {

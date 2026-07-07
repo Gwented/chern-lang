@@ -5,12 +5,13 @@ pub mod type_context;
 
 use chrn_utils::chrn_settings::ChrnSettings;
 use chrn_utils::id_types::{
-    AstId, DirectiveId, ExprId, InternedId, MemberId, ScopeId, SpannedContainer,
-    SpannedContainerRef, SymbolId, TypeId, ValueId, VariableId,
+    AstId, DirectiveId, ExprId, MemberId, ScopeId, SpannedContainer, SpannedContainerRef, SymbolId,
+    TypeId, ValueId, VariableId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{DiagnosticLevel, SourceDiagnostic};
+use chrn_utils::source_map::source_span::SourceSpan;
 use lang::fmter::{Formattable, Formatted};
 use lang::values::{Value, ValueInfo};
 
@@ -21,7 +22,7 @@ use crate::lookup::scopes::{
 };
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractDirective, AbstractEnum, AbstractOptionAssignment,
-    AbstractStruct, AbstractTypeDef, AbstractVar, Item,
+    AbstractParam, AbstractStruct, AbstractTypeDef, AbstractVar, Item,
 };
 use crate::parser::ast::ast_exprs::{Expr, PathSegment, SpannedExpr};
 use crate::resolvers::resolver_env::ResolverEnv;
@@ -71,6 +72,12 @@ impl<'res> TypeResolver<'res> {
             compiler,
         }
     }
+    //FIXME: Given `x` (variable) and `x` (alias) in the same scope, unreachable!() is reached
+    //when the variable is encountered because it was overwritten by the new alias with the
+    //same identifier. This needs to be fixed by either requiring a get() call so that on
+    //`None` lookups assume corruption and leave. Or storing the `SymbolId`s during `NameResolver`
+    //that qualify as resolvable so that all stages know they have to be operating on valid resolvable
+    //symbols by default.
 
     /// Mutates inner `ScriptCompiler` and `TypeContext` given the `env`.
     ///
@@ -80,18 +87,13 @@ impl<'res> TypeResolver<'res> {
     pub fn resolve(&mut self, env: &'res ResolverEnv) -> Result<(), Vec<SourceDiagnostic>> {
         // This is resolving types but not resolving args or conditions.
         // Everything is in order so this cannot fail unless something internally went wrong.
-        for item in &env.ast_info.items.items {
+        for item in env.ast_info.items.iter() {
             match item {
                 Item::TypeDef(abs_typedef) => _ = self.resolve_typedef(abs_typedef, env),
                 Item::Struct(abs_struct) => _ = self.resolve_struct(abs_struct, env),
                 Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum, env),
                 Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias, env),
                 Item::Var(abs_var) => _ = self.resolve_var(abs_var, env),
-                // Why does this sound like grug </3
-                //TODO: Cfgs need to be able to check if any member they have been processed or
-                //not upfront so that they can be skipped and have their ast index saved to be gone
-                //over. Maybe some light polling would be usable here to avoid either REALLY late
-                //checks just because a type have a config, or over-checking.
                 Item::Config(abs_cfg) => _ = self.resolve_cfg_root(abs_cfg, env),
             }
         }
@@ -473,10 +475,34 @@ impl<'res> TypeResolver<'res> {
         // Clearing for cfg members to use for their options
         seen_opt_vec.clear();
 
-        // Releasing after affirming the options were at least valid expressions
+        // Releasing after checking if the options were valid expressions
         let found_sym_id = match found_sym_id_opt {
             Some(sym_id) => sym_id,
             None => return Err(()),
+        };
+
+        // Attempts to get type id out of symbol id which is required for lookup
+        let found_type_id = match self.compiler.get_type_id_from_sym_id(found_sym_id) {
+            Some(id) => id,
+            None => {
+                let kind_fmt = SymbolKind::to_fmt(self.compiler, found_sym_id);
+                let core_msg = format!(
+                    "Cannot use symbol `{}` as the root or inner of a config block",
+                    kind_fmt
+                );
+
+                let src_diag =
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+                        .add_annotation(abs_cfg_root.name_span, AnnotationKind::Primary, None)
+                        // Right...var needs to be usable here..$#$*IjdjalndIPOIPO.
+                        .add_help(
+                            "Config roots must be a struct, enum, or from the scope `var`".into(),
+                        );
+                self.err_vec.push(src_diag.build());
+                // Terminates here because this means that the symbol being looked at can't
+                // actually use config at all
+                return Err(());
+            }
         };
 
         // TEST: Tracks where this current config was positionally so that it can perform an O(1)
@@ -486,36 +512,17 @@ impl<'res> TypeResolver<'res> {
         // Tracking duplicate identifiers for `AbstractConfig`
         let mut seen_cfg_vec: Vec<&AbstractConfig> = Vec::new();
 
+        //NOTE: Maybe should be tracked from SymbolId/MemberId instead
+        //
+        // Tracks invalid recursive usage
+        let mut cfg_dfs: Vec<(TypeId, SourceSpan)> = vec![(found_type_id, abs_cfg_root.name_span)];
+
+        // let name_id = &self.compiler.symbols[SymbolId::new(57)].name_id;
+        // dbg!(self.interner.search(*name_id));
+        // panic!();
         for abs_inner_cfg in &abs_cfg_root.cfg_members {
             seen_cfg_vec.push(abs_inner_cfg);
             seen_cfg_len += 1;
-
-            // Attempts to get type id out of symbol id which is required for lookup
-            let found_type_id = match self.compiler.get_type_id_from_sym_id(found_sym_id) {
-                Some(id) => id,
-                None => {
-                    let kind_fmt = SymbolKind::to_fmt(self.compiler, found_sym_id);
-                    let core_msg = format!(
-                        "Cannot use symbol `{}` as the root or inner of a config block",
-                        kind_fmt
-                    );
-
-                    let src_diag = SourceDiagnostic::builder(
-                        DiagnosticLevel::Error,
-                        core_msg,
-                        env.region.path_id,
-                    )
-                    .add_annotation(abs_cfg_root.name_span, AnnotationKind::Primary, None)
-                    // Right...var needs to be usable here..$#$*IjdjalndIPOIPO.
-                    .add_help(
-                        "Config roots must be a struct, enum, or from the scope `var`".into(),
-                    );
-                    self.err_vec.push(src_diag.build());
-                    // Terminates here because this means that the symbol being looked at can't
-                    // actually use config at all
-                    return Err(());
-                }
-            };
 
             // This member id is the member id that the member information in the specific config
             // being looked at has access to.
@@ -638,6 +645,7 @@ impl<'res> TypeResolver<'res> {
 
             let cfg_member_id = self.resolve_cfg_member(
                 parent_sym_id,
+                &mut cfg_dfs,
                 &mut seen_cfg_vec,
                 &mut seen_opt_vec,
                 member_id,
@@ -647,15 +655,13 @@ impl<'res> TypeResolver<'res> {
 
             cfg_def_members.push(cfg_member_id);
             seen_cfg_vec.truncate(seen_cfg_len);
-            // debug_assert!(inner_field_cfgs[0].id != 0);
         }
 
         //NOTE: Maybe it's worth using function-specific trait-bounded concepts to where it CAN
         // generically examine it's defined name id where it simply reports back the duplicate found
         // and the caller still reports it since spans and messages vary.
         for (i, current_cfg) in seen_cfg_vec.iter().enumerate() {
-            // Since this root cfg's cfg members remains the origin, no skip is needed like the cfg
-            // member
+            // Since this root cfg's made `seen_cfg_vec` it does not need any deeper checks
             if let Some((_, original_cfg)) = seen_cfg_vec
                 .iter()
                 .enumerate()
@@ -679,7 +685,7 @@ impl<'res> TypeResolver<'res> {
                         .add_annotation(
                             abs_cfg_root.name_span,
                             AnnotationKind::Secondary,
-                            "Found inside this config".to_string().into(),
+                            "Found inside this config root".to_string().into(),
                         )
                         .add_annotation(
                             orig_span,
@@ -710,7 +716,7 @@ impl<'res> TypeResolver<'res> {
         Ok(())
     }
 
-    /// Method that recursively resolves `ConfigDefMember`.
+    /// Method that recursively resolves `ConfigDefMember` and `OptionAssignmentMember`
     ///
     /// This has no failure case because unknown fields have a diagnostic given to them then they're
     /// ignored, meaning there is no real discernment. May change if needed.
@@ -718,6 +724,8 @@ impl<'res> TypeResolver<'res> {
         &mut self,
         // For resolve_expr
         root_parent_sym_id: SymbolId,
+        // For tracking invalid recursive usage
+        cfg_dfs: &mut Vec<(TypeId, SourceSpan)>,
         //TEST: For identifier tracking right now. Trying out something questionable.
         seen_cfg_vec: &mut Vec<&'res AbstractConfig>,
         seen_opt_vec: &mut Vec<&'res AbstractOptionAssignment>,
@@ -728,17 +736,17 @@ impl<'res> TypeResolver<'res> {
         // Does this have to be reserved?
         //
         // Reserving spot since this is a recursive function
-        // let current_cfg_member_id = MemberId::new(self.compiler.members.len() as u32);
-        // self.compiler
-        //     .members
-        //     .push(MemberSymbolKind::Unknown(current_cfg_member_id));
+        let current_cfg_member_id = MemberId::new(self.compiler.members.len() as u32);
+        self.compiler
+            .members
+            .push(MemberSymbolKind::Unknown(current_cfg_member_id));
 
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         // Expected to be `OptionAssignmentMember`
         let mut opt_assignments: Vec<MemberId> = Vec::new();
         // Expected to be `ConfigDefMember`
-        let mut cfg_def_members: Vec<MemberId> = Vec::new();
+        let mut cfg_members: Vec<MemberId> = Vec::new();
 
         // Get schema option then lookup against the actual possibilities
         // Maybe do this in constraints
@@ -823,236 +831,237 @@ impl<'res> TypeResolver<'res> {
                 self.err_vec.push(src_diag);
             }
         }
+
         // Clearing for cfg members to use for their options
         seen_opt_vec.clear();
 
-        // Len to start from within `seen_cfg_member` to track and truncate based off of
+        // len() to truncate from `seen_cfg_member`
         let mut seen_cfg_len = seen_cfg_vec.len();
         // So that it knows where to start slicing up to len
         let seen_cfg_start = seen_cfg_len;
 
-        // These members are guaranteed to exist from `MemberResolver` pre-appending variants/fields
+        // Variants with no type, like "enum State {Ready}" will have no type, so we need
+        // to ensure there is actually a type id to look for.
         //
         // Only variants and fields can be config altered members right now.
-        for abs_cfg_member in &parent_abs_cfg.cfg_members {
-            seen_cfg_len += 1;
-            seen_cfg_vec.push(abs_cfg_member);
-
-            // This HAS to be valid (I think) because even fields/variants that fail have to be
-            // given `Type::Unknown` which still means it has a type id.
+        //
+        // WARN: This may allow for some transient issues to exist where the thing SHOULD have a
+        // type, but a bug happened earlier, which would be ignored from this if let silently
+        // because some consumers actually do need this. We'll see.
+        if let Some(parent_type_id) = self.compiler.get_type_id_from_member_id(parent_member_id) {
+            // If recursive then reporting then returning
             //
-            // This should only fail if in the future the control flow from earlier stages for some
-            // reason doesn't fill in fields/variants with at least a blank field/varant hir type
-            //
-            // `MemberResolver` is responsible for this being the case.
-            let parent_type_id = self
-                .compiler
-                .get_type_id_from_member_id(parent_member_id)
-                .expect("Should only be able to lookup valid fields/variants");
+            // May change
+            if let Some((_, original_span)) = cfg_dfs.iter().find(|(id, _)| *id == parent_type_id) {
+                // Can't fail since this being recursive itself means that the member this is
+                // associated with needed to have some sort of inner type to begin with, meaning it
+                // was user-defined
+                let sym_id = self
+                    .compiler
+                    .get_sym_id_from_type_id(parent_type_id)
+                    .expect("Should only be reached from recursion");
+                let sym = &self.compiler.symbols[sym_id];
+                let type_name = self.interner.search(sym.name_id);
 
-            let member_id = match member_lookup::lookup_member(
-                self.compiler,
-                parent_type_id,
-                abs_cfg_member.name_id,
-            ) {
-                // These are split so that the theoretical ok and err paths are able to reduce
-                // boilerplate where needed
-                MemberLookupResult::Found(mem_id) => mem_id,
-                lookup_res => {
-                    // For if something like an impossible member access is attempted, where it
-                    // would duplicate diagnostics if there are more `ConfigDefMember`s associated
-                    // with the current config member.
-                    let mut should_break = false;
+                let core_msg = format!("Recursive config of `{type_name}`");
+                let src_diag = SourceDiagnostic::builder(
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    env.region.path_id,
+                )
+                .add_annotation(
+                    parent_abs_cfg.name_span,
+                    AnnotationKind::Primary,
+                    format!("Recursive `{type_name}` config").into(),
+                )
+                .add_annotation(
+                    *original_span,
+                    AnnotationKind::Secondary,
+                    format!("Original `{type_name}` config").into(),
+                )
+                // Um
+                .add_note(
+                    "There can only be one property defining config if the type is recursive"
+                        .into(),
+                )
+                .add_note(
+                    "The first config of a recursive type applies to all of it's inner recursive versions of itself innately".into(),
+                );
 
-                    let parent_member_fmtted_ty = Type::to_fmt(self.compiler, parent_type_id);
+                self.err_vec.push(src_diag.build());
 
-                    //WARN: COMPLEX SPAN ROUTING FOR ALL OF THESE SO COULD NEED ALTERING
-                    let src_diag = match lookup_res {
-                        MemberLookupResult::ImpossibleTypeMemberAccess(type_id) => {
-                            should_break = true;
-                            //FIX: This has odd phrasing and pointers
-                            // If we get a variable, this is matched, but the error is more so, you
-                            // cannot use a variable in configuration, rather than the member
-                            // access itself
+                return current_cfg_member_id;
+            }
 
-                            //
-                            // Meaning its from a field/variant
-                            // let (found_name_id, span) = if let Some(ty_span) =
-                            //     self.compiler.get_span_from_type_id(parent_type_id)
-                            // {
-                            //     todo!();
-                            //     // (, ty_span)
-                            // } else {
+            cfg_dfs.push((parent_type_id, parent_abs_cfg.name_span));
 
-                            // NOTE: These cannot be defined earlier because not all lookups have
-                            // the same guarantees
-                            //
-                            let parent_member_span = self
-                                .compiler
-                                .get_span_from_member_id(parent_member_id)
-                                .expect("NOT DONE YET");
-                            let found_name_id = self.compiler.members[parent_member_id]
-                                .name_id()
-                                .expect("NOT DONE YET");
-                            // (
-                            //     // Meaning its from something like `Runtime`
-                            //     name_id,
-                            //     member_span,
-                            // )
-                            // };
+            for abs_cfg_member in &parent_abs_cfg.cfg_members {
+                seen_cfg_len += 1;
+                seen_cfg_vec.push(abs_cfg_member);
 
-                            // self.compiler
-                            //     .get_span_from_sym_id(root_parent_sym_id)
-                            //     .unwrap(),
-                            // let found_sym = &self.compiler.symbols[parent_sym_id ];
-                            let found_name = self.interner.search(found_name_id);
+                let member_id = match member_lookup::lookup_member(
+                    self.compiler,
+                    parent_type_id,
+                    abs_cfg_member.name_id,
+                ) {
+                    // These are split so that the theoretical ok and err paths are able to reduce
+                    // boilerplate where needed
+                    MemberLookupResult::Found(mem_id) => mem_id,
+                    lookup_res => {
+                        // For if something like an impossible member access is attempted, where it
+                        // would duplicate diagnostics if there are more `ConfigDefMember`s associated
+                        // with the current config member.
+                        let mut should_break = false;
 
-                            let preset_err = PresetErr::Lookup(
-                                LookupError::ImpossibleTypeMemberAccess(SpannedContainer::new(
-                                    Type::to_fmt(self.compiler, type_id),
-                                    parent_member_span,
-                                )),
-                            );
+                        let parent_member_fmtted_ty = Type::to_fmt(self.compiler, parent_type_id);
 
-                            preset_reporter::create_diag_builder_preset(
-                                preset_err,
-                                env.region,
-                                self.settings,
-                                self.interner,
-                            )
-                            .add_annotation(
-                                parent_abs_cfg.name_span,
-                                AnnotationKind::Secondary,
-                                format!("Is type `{parent_member_fmtted_ty}`").into(),
-                            )
-                            .add_annotation(
-                                abs_cfg_member.name_span,
-                                AnnotationKind::Secondary,
-                                "Impossible member access".to_string().into(),
-                            )
-                            //TODO:
-                            .build()
-                        }
-                        MemberLookupResult::MemberNotFoundInType(type_id) => {
-                            //WARN: I BELIEVE this is fine because for this lookup result to be reached,
-                            // that would mean the type found CAN hold members, but it just didn't
-                            // have the identifier specified, which means it must be a symbol of
-                            // some kind.
+                        //WARN: COMPLEX SPAN ROUTING FOR ALL OF THESE SO COULD NEED ALTERING
+                        let src_diag = match lookup_res {
+                            MemberLookupResult::ImpossibleTypeMemberAccess(type_id) => {
+                                should_break = true;
 
-                            // Start of type declaration info
-                            let ty_sym_id = self
-                                .compiler
-                                .get_sym_id_from_type_id(type_id)
-                                .expect("NOT DONE YET");
+                                // NOTE: These cannot be defined earlier because not all lookups have
+                                // the same guarantees
+                                //
+                                let parent_member_span = self
+                                    .compiler
+                                    .get_span_from_member_id(parent_member_id)
+                                    .expect("NOT DONE YET");
 
-                            // May change depending on if structural types are compiler built-in to
-                            // where they don't have an innate attached span anymore.
-                            let ty_name_id = self.compiler.symbols[ty_sym_id].name_id;
-                            let ty_span = self
-                                .compiler
-                                .get_span_from_type_id(type_id)
-                                .expect("NOT DONE YET");
-                            // End of type declaration info
+                                let preset_err = PresetErr::Lookup(
+                                    LookupError::ImpossibleTypeMemberAccess(SpannedContainer::new(
+                                        Type::to_fmt(self.compiler, type_id),
+                                        parent_member_span,
+                                    )),
+                                );
 
-                            let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
-                                sp_parent_ty: SpannedContainer::new(
-                                    ty_name_id,
+                                preset_reporter::create_diag_builder_preset(
+                                    preset_err,
+                                    env.region,
+                                    self.settings,
+                                    self.interner,
+                                )
+                                .add_annotation(
                                     parent_abs_cfg.name_span,
-                                ),
-                                member: abs_cfg_member.name_id,
-                            });
+                                    AnnotationKind::Secondary,
+                                    format!("Is type `{parent_member_fmtted_ty}`").into(),
+                                )
+                                .add_annotation(
+                                    abs_cfg_member.name_span,
+                                    AnnotationKind::Secondary,
+                                    "Impossible member access".to_string().into(),
+                                )
+                                //TODO:
+                                .build()
+                            }
+                            MemberLookupResult::MemberNotFoundInType(type_id) => {
+                                //WARN: I BELIEVE this is fine because for this lookup result to be reached,
+                                // that would mean the type found CAN hold members, but it just didn't
+                                // have the identifier specified, which means it must be a symbol of
+                                // some kind.
 
-                            //TODO: RECURSIVELY TRACKING ENDS UP HERE FIX SHOULD BE APPLIED HERE IF
-                            //NEEDED
+                                // Start of type declaration info
+                                let ty_sym_id = self
+                                    .compiler
+                                    .get_sym_id_from_type_id(type_id)
+                                    .expect("NOT DONE YET");
 
-                            // List available members?
-                            preset_reporter::create_diag_builder_preset(
-                                preset_err,
-                                env.region,
-                                self.settings,
-                                self.interner,
-                            )
-                            .add_annotation(
-                                //WARN: WAS  parent_ty_span
-                                ty_span,
-                                AnnotationKind::Secondary,
-                                format!("{} defined here", parent_member_fmtted_ty).into(),
-                            )
-                            .add_annotation(
-                                abs_cfg_member.name_span,
-                                AnnotationKind::Secondary,
-                                "Searched for this member".to_string().into(),
-                            )
-                            .build()
+                                // May change depending on if structural types are compiler built-in to
+                                // where they don't have an innate attached span anymore.
+                                let ty_name_id = self.compiler.symbols[ty_sym_id].name_id;
+                                let ty_span = self
+                                    .compiler
+                                    .get_span_from_type_id(type_id)
+                                    .expect("NOT DONE YET");
+                                // End of type declaration info
+
+                                let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
+                                    sp_parent_ty: SpannedContainer::new(
+                                        ty_name_id,
+                                        parent_abs_cfg.name_span,
+                                    ),
+                                    member: abs_cfg_member.name_id,
+                                });
+
+                                //TODO: RECURSIVELY TRACKING ENDS UP HERE FIX SHOULD BE APPLIED HERE IF
+                                //NEEDED
+
+                                // List available members?
+                                preset_reporter::create_diag_builder_preset(
+                                    preset_err,
+                                    env.region,
+                                    self.settings,
+                                    self.interner,
+                                )
+                                .add_annotation(
+                                    //WARN: WAS  parent_ty_span
+                                    ty_span,
+                                    AnnotationKind::Secondary,
+                                    format!("{} defined here", parent_member_fmtted_ty).into(),
+                                )
+                                .add_annotation(
+                                    abs_cfg_member.name_span,
+                                    AnnotationKind::Secondary,
+                                    "Searched for this member".to_string().into(),
+                                )
+                                .build()
+                            }
+                            MemberLookupResult::Unknown(_) => {
+                                // NOTE: This is skipped right now because this will emit
+                                // incomprehensive errors deterministically. If the member parent is
+                                // unknown, and some random config member like "l" was typed, that would
+                                // make this emit `Type is not known` when "l" is just a random identifier.
+                                //
+                                // let core_msg = "Type is not known".to_string();
+                                // SourceDiagnostic::builder(
+                                //     DiagnosticLevel::Error,
+                                //     core_msg,
+                                //     env.region.path_id,
+                                // )
+                                // .add_annotation(abs_cfg_member.name_span, AnnotationKind::Primary, None)
+                                // .build()
+                                continue;
+                            }
+                            MemberLookupResult::Found(_) => unreachable!(),
+                        };
+
+                        self.err_vec.push(src_diag);
+
+                        if should_break {
+                            break;
                         }
-                        // MemberLookupResult::InvalidSymbolMemberAccess => {
-                        //     should_break = true;
-                        //     let preset_err = SemanticError::Lookup(
-                        //         LookupError::InvalidSymbolMemberAccess(SpannedContainer::new(
-                        //             SymbolKind::to_fmt(self.compiler, found_sym_id),
-                        //             abs_cfg.name_span,
-                        //         )),
-                        //     );
-                        //
-                        //     self
-                        //         .reporter
-                        //         .create_diag_builder_preset(preset_err)
-                        //         .add_note("Config blocks expect a valid `nest->` or `var->` defined variable".to_string())
-                        //         .build()
-                        // }
-                        // When is this case reached?
-                        MemberLookupResult::Unknown(_) => {
-                            // NOTE: This is skipped right now because this will emit
-                            // incomprehensive errors deterministically. If the member parent is
-                            // unknown, and some random config member like "l" was typed, that would
-                            // make this emit `Type is not known` when "l" is just a random identifier.
-                            //
-                            // let core_msg = "Type is not known".to_string();
-                            // SourceDiagnostic::builder(
-                            //     DiagnosticLevel::Error,
-                            //     core_msg,
-                            //     env.region.path_id,
-                            // )
-                            // .add_annotation(abs_cfg_member.name_span, AnnotationKind::Primary, None)
-                            // .build()
-                            continue;
-                        }
-                        MemberLookupResult::Found(_) => unreachable!(),
-                    };
 
-                    self.err_vec.push(src_diag);
-
-                    if should_break {
-                        break;
+                        continue;
                     }
+                };
 
-                    continue;
-                }
-            };
+                let cfg_member_id = self.resolve_cfg_member(
+                    root_parent_sym_id,
+                    cfg_dfs,
+                    seen_cfg_vec,
+                    seen_opt_vec,
+                    member_id,
+                    abs_cfg_member,
+                    env,
+                );
 
-            let cfg_member_id = self.resolve_cfg_member(
-                root_parent_sym_id,
-                seen_cfg_vec,
-                seen_opt_vec,
-                member_id,
-                abs_cfg_member,
-                env,
-            );
+                cfg_members.push(cfg_member_id);
 
-            cfg_def_members.push(cfg_member_id);
-            // If any cfg was added during the recursive descent, this truncates so that the vector
-            // can be re-used where it left off.
-            dbg!(&seen_cfg_vec[seen_cfg_start..seen_cfg_len]);
-            seen_cfg_vec.truncate(seen_cfg_len);
-            dbg!(&seen_cfg_vec[seen_cfg_start..seen_cfg_len]);
+                // If any cfg was added during the recursive descent, this truncates so that the vector
+                // can be re-used where it left off.
+                seen_cfg_vec.truncate(seen_cfg_len);
+            }
         }
 
+        // Explicit declaration of slice range for duplicate naming to check for
+        //
         // Start is the only variable that needs to be tracked here since the len being truncated
         // inherently sets end
-        for (i, current_cfg) in seen_cfg_vec.iter().skip(seen_cfg_start).enumerate() {
-            if let Some((_, original_cfg)) = seen_cfg_vec
+        let seen_cfg_slice = &seen_cfg_vec[seen_cfg_start..];
+
+        for (i, current_cfg) in seen_cfg_slice.iter().enumerate() {
+            if let Some((_, original_cfg)) = seen_cfg_slice
                 .iter()
-                .skip(seen_cfg_start)
                 .enumerate()
                 // If the other index was declared after the current index and they have the same identifier
                 //
@@ -1088,9 +1097,10 @@ impl<'res> TypeResolver<'res> {
             }
         }
 
-        let current_cfg_member_id = MemberId::new(self.compiler.members.len() as u32);
+        // Final step of creating the actual config member
+        // let current_cfg_member_id = MemberId::new(self.compiler.members.len() as u32);
 
-        let cfg_def_member = ConfigDefMember::new(
+        let cfg_member = ConfigDefMember::new(
             parent_abs_cfg.name_id,
             parent_abs_cfg.name_span,
             //WARN: Inconsistent naming
@@ -1098,12 +1108,15 @@ impl<'res> TypeResolver<'res> {
             current_cfg_member_id,
             opt_assignments,
             parent_abs_cfg.lookup_pattern,
-            cfg_def_members,
+            cfg_members,
         );
 
-        self.compiler
-            .members
-            .push(MemberSymbolKind::ConfigDefMember(cfg_def_member));
+        self.compiler.members[current_cfg_member_id] =
+            MemberSymbolKind::ConfigDefMember(cfg_member);
+
+        // self.compiler
+        //     .members
+        //     .push(MemberSymbolKind::ConfigDefMember(cfg_member));
 
         // Always returns a `ConfigDefMember` no matter how broken since diagnostics are already pushed
         current_cfg_member_id
@@ -1116,6 +1129,7 @@ impl<'res> TypeResolver<'res> {
         env: &ResolverEnv,
         // Eyes
         // No actually why did this say eyes?
+        // I feel close to why this said eyes. Still thinking.
     ) -> Result<bool, ()> {
         // Tells the caller if the given pending symbol is fully resolved to where it can be
         // removed as a pending symbol
@@ -1188,7 +1202,7 @@ impl<'res> TypeResolver<'res> {
                         inner_val.const_val = const_val_opt;
                     }
                 }
-                // I forgot what this means tbh honest
+                // I remember.
                 // NOTE: Since expressions are initialized as `ReservedTypeSlot`, if there is say,
                 // a cyclic dependency error, the error will exist and emit later, but this
                 // technically still exists and needs to be ignored. Not currently aware of any
@@ -1413,6 +1427,7 @@ impl<'res> TypeResolver<'res> {
                 // + x where we just don't know x yet
                 let const_val_opt: Option<Value> = match (lhs_val_opt, rhs_val_opt) {
                     (Some(lhs_const), Some(rhs_const)) => {
+                        //TODO: Handle BigInt
                         has_const_val = true;
                         let sp_lhs_const = SpannedContainerRef::new(lhs_const, lhs_expr.span);
                         let sp_rhs_const = SpannedContainerRef::new(rhs_const, rhs_expr.span);
@@ -1600,6 +1615,8 @@ impl<'res> TypeResolver<'res> {
         // will by proxy be updated
 
         //WARN: MAKE SURE EXPRESSION RESOLUTION IS NOT BROKEN FROM VAR CHANGES
+        // dbg!(&self.compiler.types[TypeId::new(43)]);
+        // panic!();
         let var = self.compiler.get_var_mut(sym_id);
         var.state = VariableState::Known(val_id);
 
@@ -1931,40 +1948,12 @@ impl<'res> TypeResolver<'res> {
         let local_scope_id = self.compiler.get_alias(alias_sym_id).local_scope_id;
 
         let mut params: Vec<Param> = Vec::new();
-        let mut seen: Vec<(usize, InternedId)> = Vec::new();
+        let mut seen_params: Vec<&AbstractParam> = Vec::new();
 
         // Just a bit crowded in here..
         // WARN: Ok this just looks like an inlined function now
         for (i, abs_param) in abs_alias.params.iter().enumerate() {
-            if let Some(original) = seen.iter().find(|other| abs_param.name_id == other.1) {
-                let alias_name = self.interner.search(abs_alias.name_id);
-                let dup_name = self.interner.search(abs_param.name_id);
-
-                let orig_span = abs_alias.params[original.0].name_span;
-
-                let core_msg = format!(
-                    "More than one variable has the identifier \"{dup_name}\" within alias `{alias_name}`"
-                );
-
-                let src_diag =
-                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                        .add_annotation(
-                            abs_alias.name_span,
-                            AnnotationKind::Secondary,
-                            "Found inside this alias".to_string().into(),
-                        )
-                        .add_annotation(
-                            orig_span,
-                            AnnotationKind::Secondary,
-                            format!("Original usage of identifier `{dup_name}` here").into(),
-                        )
-                        .add_annotation(abs_param.name_span, AnnotationKind::Primary, None)
-                        .build();
-
-                self.err_vec.push(src_diag);
-            }
-
-            seen.push((i, abs_param.name_id));
+            seen_params.push(abs_param);
 
             //TODO: SHOULD THIS BE A VARIABLE?
             let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
@@ -2045,6 +2034,45 @@ impl<'res> TypeResolver<'res> {
             let param = Param::new(param_sym_id, type_id, AstId::new(i as u32));
 
             params.push(param);
+        }
+
+        //TODO: Will do something about this duplication.
+        for (i, current_param) in seen_params.iter().enumerate() {
+            if let Some((_, original_param)) = seen_params
+                .iter()
+                .enumerate()
+                // If the other index was declared after the current index and they have the same identifier
+                //
+                // Since this iteration specifically checks if the current was declared after the
+                // last and the iteration terminates upon the first match, this correctly points at
+                // the original field for all duplicates.
+                .find(|(other_i, f)| *other_i < i && current_param.name_id == f.name_id)
+            {
+                let dup_name = self.interner.search(current_param.name_id);
+
+                let orig_span = original_param.name_span;
+                let current_param_span = current_param.name_span;
+
+                // Preset error?
+                let core_msg = format!("More than one variant has the identifier \"{dup_name}\"");
+
+                let src_diag =
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+                        .add_annotation(
+                            abs_alias.name_span,
+                            AnnotationKind::Secondary,
+                            "Found inside this alias".to_string().into(),
+                        )
+                        .add_annotation(
+                            orig_span,
+                            AnnotationKind::Secondary,
+                            format!("Original usage of `{dup_name}` here").into(),
+                        )
+                        .add_annotation(current_param_span, AnnotationKind::Primary, None)
+                        .build();
+
+                self.err_vec.push(src_diag);
+            }
         }
 
         let mut conds: Vec<ExprId> = Vec::new();

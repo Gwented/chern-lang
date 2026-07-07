@@ -96,6 +96,12 @@ pub fn run_all(
             });
     }
 
+    // if !reporter.diags.is_empty() {
+    //     let mut diags = Vec::new();
+    //     diags.append(&mut reporter.diags);
+    //     return Err(ScriptError::Semantic(diags).into());
+    // }
+
     //NOTE: Up to here would be parallelizable since at most they would need to wait asynchronously
     //for the lexer and ast part, then they can do the same here but the next parts would need
     //efficient locking?

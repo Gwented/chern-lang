@@ -49,6 +49,7 @@ let as = n
 // load the module
 import "../chrn_core/chrn_tests/def.chrn" as defs
 
+// alias x(y: i32, z: Comparable) =
 var->
     x: State1
 // Should warn
@@ -65,13 +66,13 @@ var->
         } #bin
 
         enum State1 {stable, state2: State2}
-        enum State2 {Medium, state3: State3}
+        enum State2 {Medium: i32, state3: State3}
         enum State3 {Low, state1: State1}
         enum StateStable {stable}
 
     // Nested configs are really hard to read. Maybe some labeling options?
     //
-    // Can also do state1 { stable {} stable {} .default = 3 .default = 3 } probably should err
+    // IDE should do the "thing: {Thing}" thing where it has the thing in grey
     complex->
         // Maybe recursion should keep track of if an inner of a config was already defined then
         // error saying that a past recursive definition of this type within this configuration has
@@ -83,17 +84,15 @@ var->
         State1 {
             // Maybe just use colons
             stable {}
-            stable {}
             state2 { // Should allow "state2: State2"?
                 state3 {
                     state1 {
-                        stable {}
-                        stable {}
                         stable {}
                     }
                 }
             }
         }
+        // x {}
 
         /*var x {
             .default_value = 2

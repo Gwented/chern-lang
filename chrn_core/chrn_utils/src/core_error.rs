@@ -103,7 +103,7 @@ impl From<std::io::Error> for SerialError {
 
 // Naming naming naming namingnamingnamign
 /// Preset of error messages to reduce code duplication for file io errors. Returns a `Some` type
-/// with a preset error. Returns `None` if no present is available.
+/// with a preset error. Returns `None` if no preset is available.
 pub fn form_string_from_io_err(err: &std::io::Error, path: &Path) -> Option<String> {
     match err.kind() {
         std::io::ErrorKind::NotFound => {

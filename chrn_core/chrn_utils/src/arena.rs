@@ -11,7 +11,7 @@ use crate::id_types::{ArenaIndex, InternedId};
 //         $(
 //             impl Into<usize> for $t {
 //                 fn into(self) -> usize {
-//                     self 
+//                     self
 //                 }
 //             }
 //         )*
@@ -83,6 +83,33 @@ impl<T, I: ArenaIndex> Arena<T, I> {
     }
 }
 
+impl<T, I: ArenaIndex> IntoIterator for Arena<T, I> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.into_iter()
+    }
+}
+
+impl<'a, T, I: ArenaIndex> IntoIterator for &'a Arena<T, I> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.iter()
+    }
+}
+
+impl<'a, T, I: ArenaIndex> IntoIterator for &'a mut Arena<T, I> {
+    type Item = &'a mut T;
+    type IntoIter = std::slice::IterMut<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.iter_mut()
+    }
+}
+
 impl<T, I: ArenaIndex> Index<I> for Arena<T, I> {
     type Output = T;
 
@@ -105,5 +132,3 @@ impl<T, I: ArenaIndex> From<Vec<T>> for Arena<T, I> {
         }
     }
 }
-
-// impl<T, I: ArenaIndex> Iterator for Arena<T, I> {}

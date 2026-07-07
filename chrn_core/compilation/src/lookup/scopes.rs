@@ -273,6 +273,7 @@ pub fn find_sym_id(
                     //TODO: Make sure this works as intended
                     if let Some(intrinsic_scope_id) = scope_info.scope.intrinsic_scope {
                         let intrinsic_scope = &compiler.scopes[intrinsic_scope_id].scope;
+                        panic!("Did you work?");
 
                         // So if in override, but searching complex, it will not try to look at the
                         // intrinsic scope unless it's looking at it's own scope

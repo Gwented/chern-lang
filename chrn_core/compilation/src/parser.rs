@@ -1513,7 +1513,7 @@ fn parse_alias_decl(
 
                 ctx.expect_verbose(
                     TokenKind::Colon,
-                    "Expected a ':' to define a type or type boundary, found ",
+                    "Expected a ':' to define a type or boundary, found ",
                     "",
                     Branch::Neutral(NeutralBranch::Alias),
                     interner,

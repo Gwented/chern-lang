@@ -186,8 +186,7 @@ impl Default for MemoryBudget {
 pub enum BudgetResult {
     /// This is equivalent to `Ok` meaning no limit was reached and no error was had
     Stable,
-    /// The limit exceeded with an overage. Contains the overage and how much of it's usage would be
-    /// needed
+    /// The limit exceeded with an overage. Contains the overage.
     Overage(usize),
     /// If the usage is added to, and it is equal to the limit, this variant is reached.
     ///
