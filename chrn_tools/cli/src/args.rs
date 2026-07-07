@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use clap::{Parser, error::RichFormatter};
 use clap_derive::{Args, Parser, Subcommand};
 
-use crate::{config::CliConfig, detect, env_vars};
+use crate::{config::CliConfig, detect};
 
 /// Parses argv with clap first; only if clap rejects the input do the
 /// two extension hooks get a chance to recover:
@@ -115,6 +115,16 @@ pub struct CheckCmd {
     pub(crate) path: PathBuf,
     #[arg(short = 'l', long = "lint", default_value_t = false)]
     pub(crate) can_lint: bool,
+    /// Emits diagnostics as a JSON document on stdout
+    #[arg(long = "json", default_value_t = false)]
+    pub(crate) json: bool,
+    /// Emits diagnostics as a YAML document on stdout.
+    /// When combined with `--json`, JSON is emitted.
+    #[arg(long = "yaml", default_value_t = false)]
+    pub(crate) yaml: bool,
+    /// Minifies the JSON or YAML output (no effect without `--json` or `--yaml`).
+    #[arg(short = 'm', long = "minify", default_value_t = false)]
+    pub(crate) minify: bool,
 }
 
 // chrn gen <PATH> --<LANGUAGE> man<TypeName>

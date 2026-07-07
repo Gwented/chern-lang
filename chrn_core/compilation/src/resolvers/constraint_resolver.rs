@@ -1,5 +1,5 @@
 use chrn_utils::{
-    chrn_settings::ChrnSettings,
+    chrn_config::ChrnConfig,
     id_types::{AstId, ExprId, SpannedContainer, SpannedContainerRef, TypeId},
     intern::Intern,
     source_map::{
@@ -22,7 +22,7 @@ use crate::{
 };
 
 pub struct ConstraintResolver<'a> {
-    pub(crate) settings: &'a ChrnSettings,
+    pub(crate) settings: &'a ChrnConfig,
     pub(crate) interner: &'a Intern,
     pub(crate) compiler: &'a mut ScriptCompiler,
     // We reward hack here
@@ -33,7 +33,7 @@ pub struct ConstraintResolver<'a> {
 impl<'a> ConstraintResolver<'a> {
     /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new(
-        settings: &'a ChrnSettings,
+        settings: &'a ChrnConfig,
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,
     ) -> ConstraintResolver<'a> {
@@ -46,6 +46,7 @@ impl<'a> ConstraintResolver<'a> {
         }
     }
 
+    //NOTE: This seemingly has everything from the ast that it would need.
     pub fn resolve(&mut self, env: &ResolverEnv) -> Result<(), Vec<SourceDiagnostic>> {
         // I don't think dependency tracking can be avoided here
         for (id, item) in env.ast_info.items.iter().enumerate() {
@@ -86,7 +87,7 @@ impl<'a> ConstraintResolver<'a> {
                     // todo!("Todol");
                 }
                 Item::Config(abs_cfg) => {
-                    _ = self.resolve_cfg_root(abs_cfg, ast_id, env);
+                    let _ = self.resolve_cfg_root(abs_cfg, ast_id, env);
                 }
             }
         }

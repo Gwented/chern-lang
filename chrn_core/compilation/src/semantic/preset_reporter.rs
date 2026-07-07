@@ -1,4 +1,4 @@
-use chrn_utils::chrn_settings::ChrnSettings;
+use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{
     DiagnosticLevel, Reporter, SourceDiagnosticBuilder,
@@ -26,7 +26,7 @@ pub(crate) fn report_preset(
     diags: &mut Vec<SourceDiagnostic>,
     preset_err: PresetErr,
     region: &SourceRegion,
-    settings: &ChrnSettings,
+    settings: &ChrnConfig,
     interner: &Intern,
 ) {
     let diag_builder = create_diag_builder_preset(preset_err, region, settings, interner);
@@ -44,7 +44,7 @@ pub(crate) fn report_preset_vec(
     diags: &mut Vec<SourceDiagnostic>,
     preset_errs: Vec<PresetErr>,
     region: &SourceRegion,
-    settings: &ChrnSettings,
+    settings: &ChrnConfig,
     interner: &Intern,
 ) {
     for preset in preset_errs {
@@ -57,7 +57,7 @@ pub(crate) fn report_preset_vec(
 pub(crate) fn create_diag_builder_preset(
     preset_err: PresetErr,
     region: &SourceRegion,
-    settings: &ChrnSettings,
+    settings: &ChrnConfig,
     interner: &Intern,
 ) -> SourceDiagnosticBuilder {
     match preset_err {
@@ -88,7 +88,7 @@ pub(crate) fn create_diag_builder_preset(
                 .add_annotation(
                     directive.span,
                     AnnotationKind::Secondary,
-                    "Constraints required by this directive".to_string().into(),
+                    "Required by this directive".to_string().into(),
                 )
                 .add_annotation(sym_span, AnnotationKind::Primary, None)
         }

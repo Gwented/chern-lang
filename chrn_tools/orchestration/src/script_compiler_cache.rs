@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use chrn_utils::{
-    chrn_settings::ChrnSettings,
+    chrn_config::ChrnConfig,
     core_error::{ModuleInitError, ScriptError},
     intern::Intern,
     source_map::source_diagnostic::Reporter,
@@ -30,7 +30,7 @@ pub struct ScriptCompilerCache {
     // Maybe the compiler should own this since it's less so cache and more so an actual database
     // the compiler needs to survive. Yes, survive.
     // Would probably actually have it's own settings
-    // pub(crate) settings: ChrnSettings,
+    // pub(crate) settings: ChrnConfig,
     // pub(crate) spans: Vec<SourceSpan>,
     // Temp. May consider using a single vector that slices indices for each module instead of
     // Vec<Vec>> but not priority right now
@@ -41,7 +41,7 @@ pub struct ScriptCompilerCache {
 pub fn create_compiler_with_cache(
     path: &Path,
     reporter: &mut Reporter,
-    settings: ChrnSettings,
+    settings: ChrnConfig,
     // I'm so scared
 ) -> Result<(ScriptCompiler, ScriptCompilerStore, ScriptCompilerCache), ModuleInitError> {
     let interner = Intern::init();
@@ -62,7 +62,7 @@ pub fn create_compiler_with_cache(
 impl ScriptCompilerCache {
     // pub fn new(
     //     path: &Path,
-    //     settings: ChrnSettings,
+    //     settings: ChrnConfig,
     // ) -> Result<ScriptCompilerCache, ModuleInitError> {
     //     let mut interner = Intern::init();
     //     // let mut spans = SpanArena::new(Vec::new());
@@ -256,7 +256,7 @@ impl ScriptCompilerCache {
 }
 
 // // Maybe this shouldn't take metadata externally
-// pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnSettings) -> Result<(), CoreError> {
+// pub fn interpret_chrn_cfg(path: &Path, settings: &ChrnConfig) -> Result<(), CoreError> {
 //     let mut interner = Intern::init();
 //     // let mut span_arena: Vec<SourceSpan> = Vec::new();
 //

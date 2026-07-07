@@ -1,8 +1,8 @@
-use std::path;
 // Has weird behavior and silent errors when it comes to import keyword usage
+// FIX: When an import is next to something like, "@defimport" it is NOT identified because the i
 use std::{ffi::OsStr, path::PathBuf, str::FromStr};
 
-use chrn_utils::chrn_settings::ChrnSettings;
+use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::{
@@ -16,12 +16,15 @@ use chrn_utils::{
 
 use crate::modules::{Bind, Import, ImportKind};
 
-//being collected from.
+/// Module graph start-up structure that finds imports and assigns them a `ModuleId` from `seen`.
+///
+/// This is not recursive in any way, it's just a mini parser which uses the most minimal syntax
+/// possible to search `src_bytes` and identifiy imports and bind usage where possible.
 pub struct ModuleFinder<'a> {
-    /// Module's stored bytes
+    /// Current module's bytes
     // Maybe turn this into &str
     src_bytes: &'a [u8],
-    settings: &'a ChrnSettings,
+    settings: &'a ChrnConfig,
     seen: &'a mut Vec<(PathId, ModuleId)>,
     diags: Vec<SourceDiagnostic>,
     /// Path origin so that errors can accurately report the path where the import was declared
@@ -34,7 +37,7 @@ pub struct ModuleFinder<'a> {
 impl ModuleFinder<'_> {
     pub fn new<'a>(
         src_bytes: &'a [u8],
-        settings: &'a ChrnSettings,
+        settings: &'a ChrnConfig,
         seen: &'a mut Vec<(PathId, ModuleId)>,
         current_region: &'a SourceRegion,
         script_start: usize,
@@ -279,7 +282,7 @@ impl ModuleFinder<'_> {
             // }
             match str::from_utf8(slice) {
                 // To my knowledge, a valid UTF-8 string cannot fail conversion to a path,
-                // therefore this is infailable as said by the return type, which fits whatever
+                // therefore this is infallable as said by the return type, which fits whatever
                 // type utilized with the From<T> conversion.
                 Ok(s) => return Ok(PathBuf::from_str(&s).expect("Infallable")),
                 Err(_) => {

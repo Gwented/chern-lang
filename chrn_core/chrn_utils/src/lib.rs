@@ -1,12 +1,13 @@
 pub mod arena;
 pub mod budget;
-pub mod chrn_settings;
+pub mod chrn_config;
 pub mod core_error;
 pub mod files;
 pub mod help_model;
 pub mod id_types;
 pub mod intern;
 pub mod macros;
+pub mod pair;
 pub mod source_map;
 
 // IGNORE THIS

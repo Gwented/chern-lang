@@ -9,7 +9,7 @@ pub mod mod_finder;
 
 use chrn_utils::{
     arena::Arena,
-    chrn_settings::ChrnSettings,
+    chrn_config::ChrnConfig,
     core_error::{self, ConfigLoadError, ModuleInitError},
     files::file_ops,
     id_types::{InternedId, ModuleId, PathId, ScopeId, SourceRegionId, SymbolId},
@@ -171,7 +171,7 @@ impl Module {
 //completely loaded. Meaning, this would probably be best returning diagnostics.
 pub fn extract_modules(
     path: &Path,
-    settings: ChrnSettings,
+    settings: ChrnConfig,
     mut interner: Intern,
 ) -> Result<(ScriptCompiler, ScriptCompilerStore, Vec<SourceDiagnostic>), ModuleInitError> {
     // All errors regarding the instantiation of main, aside from it's imports, are terminal, since
@@ -416,7 +416,7 @@ fn resolve_modules(
     prev_mod: &Module,
     region_arena: &mut Arena<SourceRegion, SourceRegionId>,
     diags: &mut Vec<SourceDiagnostic>,
-    settings: &ChrnSettings,
+    settings: &ChrnConfig,
     interner: &mut Intern,
 ) {
     for import in &prev_mod.imports {
@@ -528,11 +528,6 @@ fn resolve_modules(
                         diags.push(diag);
                     }
                     ConfigLoadError::IO(e) => {
-                        // FIX:
-                        // If this case is met, an index out of bounds error occurs inside of the
-                        // cli because this uses the region id of the source itself, which is valid
-                        // because the source does exist, but the region is never pushed, hence it's
-                        // still out of bounds despite being correct.
                         let path = interner.search_path(path_id);
                         let core_msg =
                             core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());

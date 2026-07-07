@@ -64,7 +64,7 @@ use std::sync::Arc;
 use crate::analyser;
 
 use chrn_utils::arena::Arena;
-use chrn_utils::chrn_settings::ChrnSettings;
+use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::id_types::{
     InternedId, ModuleId, PathId, SourceRegionId, SpannedContainer, SymbolId, TypeId,
 };
@@ -204,7 +204,7 @@ impl DocumentState {
             return Vec::new();
         }
 
-        let settings = ChrnSettings::default();
+        let chrn_cfg = ChrnConfig::default();
         let path_buf = path.to_path_buf();
 
         let name = path_buf
@@ -228,7 +228,7 @@ impl DocumentState {
         let (bind, main_imports, finder_diags) =
             compilation::modules::mod_finder::ModuleFinder::new(
                 self.text.as_bytes(),
-                &settings,
+                &chrn_cfg,
                 &mut reserved_mod_ids,
                 &main_region,
                 self.script_start,
@@ -259,7 +259,7 @@ impl DocumentState {
             &mut seen,
             &mut other_mods,
             &main_mod,
-            &settings,
+            &chrn_cfg,
             &mut self.interner,
             doc_cache,
             &mut self.region_arena,
@@ -325,12 +325,12 @@ impl DocumentState {
 
             let parse_result = if mod_idx == 0 {
                 // Reuse pre-computed tokens for main module
-                compilation::parser::parse(&settings, region, &self.tokens, &self.interner)
+                compilation::parser::parse(&chrn_cfg, region, &self.tokens, &self.interner)
             } else {
                 let (toks, _) =
                     Lexer::new(region.region_id, &region.src_bytes, region.script_start)
                         .tokenize(&mut self.interner);
-                compilation::parser::parse(&settings, region, &toks, &self.interner)
+                compilation::parser::parse(&chrn_cfg, region, &toks, &self.interner)
             };
 
             let (ast_info, errs) = parse_result;
@@ -364,7 +364,7 @@ impl DocumentState {
             };
 
             let env = ResolverEnv::new(ast_info, region, ModuleId::new(mod_idx));
-            let mut ns_resolver = NamespaceResolver::new(&settings, &self.interner, &mut compiler);
+            let mut ns_resolver = NamespaceResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
             if let Err(ns_diags) = ns_resolver.resolve(&env)
                 && mod_idx == 0
@@ -410,7 +410,7 @@ impl DocumentState {
 
             // Member resolution (fields/variants) for all modules
             let member_diags =
-                MemberResolver::new(&settings, &resolver_envs, &self.interner, &mut compiler)
+                MemberResolver::new(&chrn_cfg, &resolver_envs, &self.interner, &mut compiler)
                     .resolve();
             if !member_diags.is_empty() {
                 self.member_errors = Some(member_diags);
@@ -430,7 +430,7 @@ impl DocumentState {
                 }
 
                 let expr_start = compiler.exprs.len();
-                let mut type_resolver = TypeResolver::new(&settings, &self.interner, &mut compiler);
+                let mut type_resolver = TypeResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
                 if let Err(ty_diags) = type_resolver.resolve(env)
                     && mod_idx == 0
@@ -447,7 +447,7 @@ impl DocumentState {
 
             // Constraint resolution for all modules (skip main module if it has parse errors)
             let mut constraint_resolver =
-                ConstraintResolver::new(&settings, &self.interner, &mut compiler);
+                ConstraintResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
             for (mod_idx, env) in resolver_envs.iter().enumerate().take(mod_len) {
                 let env = match env {

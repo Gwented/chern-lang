@@ -49,7 +49,7 @@ use tower_lsp::Client;
 use tower_lsp::lsp_types;
 
 use chrn_utils::arena::Arena;
-use chrn_utils::chrn_settings::ChrnSettings;
+use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::id_types::{ModuleId, PathId, SourceRegionId};
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
@@ -243,7 +243,7 @@ pub async fn analyze_and_publish_task(
     pending_versions: Arc<RwLock<HashMap<String, u64>>>,
     version: u64,
 ) {
-    let settings = ChrnSettings::default();
+    let chrn_cfg = ChrnConfig::default();
 
     let path_buf = uri
         .to_file_path()
@@ -256,7 +256,7 @@ pub async fn analyze_and_publish_task(
         SourceRegionId::new(0),
         Cursor::new(text.as_bytes()),
         path_id,
-        &settings,
+        &chrn_cfg,
         &interner,
     )
     .load_config()
@@ -574,7 +574,7 @@ pub(crate) fn resolve_modules_lsp(
     seen: &mut Vec<PathId>,
     modules: &mut Vec<Option<Module>>,
     prev_mod: &Module,
-    settings: &ChrnSettings,
+    settings: &ChrnConfig,
     interner: &mut Intern,
     doc_cache: &DocumentCache,
     region_arena: &mut Arena<SourceRegion, SourceRegionId>,

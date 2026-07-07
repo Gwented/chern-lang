@@ -61,9 +61,14 @@ mod tests {
 
     fn mock_single_module_compiler(
         text: &str,
-    ) -> (Arena<SourceRegion, SourceRegionId>, Intern, ChrnSettings, ScriptCompiler) {
+    ) -> (
+        Arena<SourceRegion, SourceRegionId>,
+        Intern,
+        ChrnConfig,
+        ScriptCompiler,
+    ) {
         let interner = mock_interner(0, 1);
-        let settings = ChrnSettings::default();
+        let settings = ChrnConfig::default();
         let path_id = PathId::new(0);
         let region_id = SourceRegionId::new(0);
 
@@ -83,10 +88,10 @@ mod tests {
         // Should use compiler store now
         let mut arena = Arena::<SourceRegion, SourceRegionId>::new();
         arena.push(source_region);
-    let compiler = ScriptCompiler::init(None, Arena::<Module, ModuleId>::from(vec![module]));
+        let compiler = ScriptCompiler::init(None, Arena::<Module, ModuleId>::from(vec![module]));
 
-    (arena, interner, settings, compiler)
-}
+        (arena, interner, settings, compiler)
+    }
 
     fn mock_import(
         name: &str,
@@ -115,7 +120,7 @@ mod tests {
         text: &str,
         interner: &mut Intern,
     ) -> (Module, SourceRegion) {
-        let settings = ChrnSettings::default();
+        let settings = ChrnConfig::default();
         let path_id = interner.intern_path(Path::new(path_name));
         let region_id = SourceRegionId::new(mod_id as u32);
 
@@ -137,9 +142,14 @@ mod tests {
 
     fn mock_multiple_module_compiler(
         modules_with_regions: Vec<(Module, SourceRegion)>,
-    ) -> (Arena<SourceRegion, SourceRegionId>, Intern, ChrnSettings, ScriptCompiler) {
+    ) -> (
+        Arena<SourceRegion, SourceRegionId>,
+        Intern,
+        ChrnConfig,
+        ScriptCompiler,
+    ) {
         let interner = mock_interner(0, modules_with_regions.len());
-        let settings = ChrnSettings::default();
+        let settings = ChrnConfig::default();
 
         let (modules, regions): (Vec<Module>, Vec<SourceRegion>) =
             modules_with_regions.into_iter().unzip();
@@ -148,10 +158,10 @@ mod tests {
         for region in regions {
             arena.push(region);
         }
-    let compiler = ScriptCompiler::init(None, Arena::<Module, ModuleId>::from(modules));
+        let compiler = ScriptCompiler::init(None, Arena::<Module, ModuleId>::from(modules));
 
-    (arena, interner, settings, compiler)
-}
+        (arena, interner, settings, compiler)
+    }
     /// Builds resolver environments aligned with compiler modules from their ASTs
     fn build_resolver_envs<'a>(
         compiler: &ScriptCompiler,
@@ -176,7 +186,7 @@ mod tests {
 
     /// Runs member resolution, panicking on diagnostics
     fn run_member_resolver(
-        settings: &ChrnSettings,
+        settings: &ChrnConfig,
         envs: &[Option<ResolverEnv>],
         interner: &Intern,
         compiler: &mut ScriptCompiler,
@@ -189,7 +199,7 @@ mod tests {
 
     use chrn_utils::{
         arena::Arena,
-        chrn_settings::ChrnSettings,
+        chrn_config::ChrnConfig,
         core_error::ConfigLoadError,
         id_types::{InternedId, ModuleId, PathId, SourceRegionId, ValueId},
         intern::Intern,
@@ -315,7 +325,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -347,7 +357,7 @@ mod tests {
             region_id,
             correct.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config();
@@ -366,7 +376,7 @@ mod tests {
             region_id,
             wrong.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config();
@@ -384,12 +394,12 @@ mod tests {
         let mut interner = mock_interner(1, 1);
         let path_id = interner.intern_path(Path::new(""));
         let region_id = SourceRegionId::new(0);
-        let settings = ChrnSettings::default();
+        let settings = ChrnConfig::default();
         let region = ConfigLoader::new(
             region_id,
             content.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -425,14 +435,8 @@ mod tests {
         let mut interner = mock_interner(0, 1);
         let path_id = interner.intern_path(Path::new(""));
         let region_id = SourceRegionId::new(0);
-        ConfigLoader::new(
-            region_id,
-            bytes,
-            path_id,
-            &ChrnSettings::default(),
-            &interner,
-        )
-        .load_config()
+        ConfigLoader::new(region_id, bytes, path_id, &ChrnConfig::default(), &interner)
+            .load_config()
     }
 
     /// Helper: runs the config loader on a string and returns the resulting region.
@@ -697,7 +701,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -727,7 +731,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -758,7 +762,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -787,7 +791,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -815,7 +819,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -844,7 +848,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::new(),
+            &ChrnConfig::new(),
             &interner,
         )
         .load_config()
@@ -872,7 +876,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::new(),
+            &ChrnConfig::new(),
             &interner,
         )
         .load_config()
@@ -900,7 +904,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::new(),
+            &ChrnConfig::new(),
             &interner,
         )
         .load_config()
@@ -941,7 +945,7 @@ mod tests {
             region_id,
             correct,
             PathId::default(),
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config();
@@ -950,7 +954,7 @@ mod tests {
             region_id,
             wrong,
             PathId::default(),
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config();
@@ -972,7 +976,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             PathId::default(),
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -996,7 +1000,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -1023,7 +1027,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -1049,7 +1053,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -1075,7 +1079,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -1101,7 +1105,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -1127,7 +1131,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -1153,7 +1157,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -1179,7 +1183,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -1205,7 +1209,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnSettings::default(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -1433,7 +1437,7 @@ mod tests {
     fn module_simple_test() {
         // -- NEUTRAL --
         let mut interner = mock_interner(2, 2);
-        let settings = ChrnSettings::default();
+        let settings = ChrnConfig::default();
 
         let main_txt = "
                 let CONSTANT = 3
@@ -1499,7 +1503,10 @@ mod tests {
         region_arena.push(main_meta);
         region_arena.push(sub_meta);
 
-        let mut compiler = ScriptCompiler::init(None, Arena::<Module, ModuleId>::from(vec![main_mod, sub_mod]));
+        let mut compiler = ScriptCompiler::init(
+            None,
+            Arena::<Module, ModuleId>::from(vec![main_mod, sub_mod]),
+        );
 
         let mut asts: Vec<Option<AstInfo>> = Vec::new();
 

@@ -3,7 +3,7 @@
 //which is stacking infinitely (Infinitely as in the infinite sign here -> 🍔)
 
 use chrn_utils::{
-    chrn_settings::ChrnSettings,
+    chrn_config::ChrnConfig,
     id_types::{AstId, InternedId, MemberId, TypeId},
     intern::Intern,
     source_map::source_diagnostic::{
@@ -33,7 +33,7 @@ use crate::{
 ///
 /// Intended to allow for future stages to assume all inner parts of data have been processed.
 pub struct MemberResolver<'a> {
-    settings: &'a ChrnSettings,
+    settings: &'a ChrnConfig,
     interner: &'a Intern,
     compiler: &'a mut ScriptCompiler,
     envs: &'a [Option<ResolverEnv<'a>>],
@@ -43,7 +43,7 @@ pub struct MemberResolver<'a> {
 impl MemberResolver<'_> {
     /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new<'a>(
-        settings: &'a ChrnSettings,
+        settings: &'a ChrnConfig,
         envs: &'a [Option<ResolverEnv>],
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,

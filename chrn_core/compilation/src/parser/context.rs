@@ -1,6 +1,6 @@
 // Static access help messages
 use chrn_utils::{
-    chrn_settings::ChrnSettings,
+    chrn_config::ChrnConfig,
     id_types::InternedId,
     intern::Intern,
     source_map::{
@@ -56,7 +56,7 @@ const A_BRANCH_FUNC_SET: u64 = A_BASE_EXIT_SET | token::C_BRACKET;
 // p_ctx
 #[derive(Debug)]
 pub(super) struct ParserContext<'a> {
-    settings: &'a ChrnSettings,
+    settings: &'a ChrnConfig,
     pub(super) region: &'a SourceRegion,
     toks: &'a [SpannedToken],
     pos: usize,
@@ -65,7 +65,7 @@ pub(super) struct ParserContext<'a> {
 
 impl<'a> ParserContext<'a> {
     pub(super) fn new(
-        settings: &'a ChrnSettings,
+        settings: &'a ChrnConfig,
         region: &'a SourceRegion,
         toks: &'a [SpannedToken],
     ) -> ParserContext<'a> {

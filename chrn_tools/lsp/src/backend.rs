@@ -58,7 +58,7 @@ use crate::text::apply_text_change;
 
 // Semantic token support (keyword/string/number highlighting)
 use crate::state::SemanticEntity;
-use chrn_utils::chrn_settings::ChrnSettings;
+use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::core_error::ConfigLoadError;
 use chrn_utils::intern::Intern;
 use lang::types::builtins::BuiltinTypeKind as ChBuiltinTypeKind;
@@ -183,7 +183,7 @@ impl Backend {
         }
 
         let path_buf = PathBuf::from(uri.path());
-        let settings = ChrnSettings::default();
+        let chrn_cfg = ChrnConfig::default();
 
         let mut interner = Intern::init();
         let path_id = interner.intern_path(&path_buf);
@@ -191,7 +191,7 @@ impl Backend {
             chrn_utils::id_types::SourceRegionId::new(0),
             Cursor::new(text.as_bytes()),
             path_id,
-            &settings,
+            &chrn_cfg,
             &interner,
         )
         .load_config()
@@ -298,7 +298,7 @@ impl Backend {
 /// Used by the completion handler to assign icons to items shown in the editor UI.
 fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> CompletionItemKind {
     match sym.kind {
-        SymbolKind::Type(type_id) => match &compiler.types[type_id ].ty {
+        SymbolKind::Type(type_id) => match &compiler.types[type_id].ty {
             Type::Struct(_) | Type::Enum(_) | Type::TypeDef(_) | Type::BuiltinType(_) => {
                 CompletionItemKind::STRUCT
             }
@@ -310,12 +310,12 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
             }
         },
         SymbolKind::Variable(var_id) => {
-            let var = &compiler.variables[var_id ];
+            let var = &compiler.variables[var_id];
             let VariableState::Known(val_id) = var.state else {
                 return CompletionItemKind::VARIABLE;
             };
-            let type_id = compiler.values[val_id ].type_id;
-            match &compiler.types[type_id ].ty {
+            let type_id = compiler.values[val_id].type_id;
+            match &compiler.types[type_id].ty {
                 Type::BuiltinType(_) | Type::Struct(_) | Type::TypeDef(_) | Type::Enum(_) => {
                     CompletionItemKind::VARIABLE
                 }
@@ -355,10 +355,10 @@ fn classify_id_token(
             SemanticEntity::Symbol(sym_id) => {
                 // `entity: &SemanticEntity` so `sym_id: &SymbolId` — dereference
                 // before passing to `Arena::get`, which takes the id by value.
-                if let Some(sym) = compiler.symbols.get(*sym_id ) {
+                if let Some(sym) = compiler.symbols.get(*sym_id) {
                     match sym.kind {
                         SymbolKind::Type(tid) => {
-                            let ty = &compiler.types[tid ].ty;
+                            let ty = &compiler.types[tid].ty;
                             match ty {
                                 Type::BuiltinType(_)
                                 | Type::TypeDef(_)
@@ -1094,7 +1094,10 @@ impl LanguageServer for Backend {
                                 compilation::semantic::hir::hir_concepts::SymbolOrigin::Compiler
                             ))
                             && sym.scope_origin != scopes::ScopeType::Var
-                            && !matches!(sym.kind, compilation::semantic::hir::hir_concepts::SymbolKind::Directive(_))
+                            && !matches!(
+                                sym.kind,
+                                compilation::semantic::hir::hir_concepts::SymbolKind::Directive(_)
+                            )
                         {
                             let sym_name = state.interner.search(sym.name_id);
                             if prefix.is_empty() || sym_name.starts_with(prefix) {
@@ -1112,7 +1115,7 @@ impl LanguageServer for Backend {
                     for sym_id in &module.exports {
                         // `sym_id: &SymbolId` (from iterating over `Vec<SymbolId>`),
                         // dereference before calling `Arena::get`.
-                        if let Some(sym) = compiler.symbols.get(*sym_id ) {
+                        if let Some(sym) = compiler.symbols.get(*sym_id) {
                             let sym_name = state.interner.search(sym.name_id);
                             if prefix.is_empty() || sym_name.starts_with(prefix) {
                                 let kind = symbol_completion_kind(compiler, sym);
@@ -1177,7 +1180,7 @@ impl LanguageServer for Backend {
         {
             for sym_id in &core_mod.exports {
                 // `sym_id: &SymbolId` — dereference for the typed `Arena::get` call.
-                if let Some(sym) = compiler.symbols.get(*sym_id ) {
+                if let Some(sym) = compiler.symbols.get(*sym_id) {
                     let name = state.interner.search(sym.name_id);
                     if prefix.is_empty() || name.starts_with(prefix) {
                         let kind = symbol_completion_kind(compiler, sym);

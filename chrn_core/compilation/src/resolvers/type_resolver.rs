@@ -3,7 +3,7 @@
 // Please split this...
 pub mod type_context;
 
-use chrn_utils::chrn_settings::ChrnSettings;
+use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::id_types::{
     AstId, DirectiveId, ExprId, MemberId, ScopeId, SpannedContainer, SpannedContainerRef, SymbolId,
     TypeId, ValueId, VariableId,
@@ -48,7 +48,7 @@ use crate::resolvers::type_resolver::type_context::{
 /// evaluated. Does so by mutating the compiler given, and maintaining context to retain it's last
 /// state.
 pub struct TypeResolver<'a> {
-    settings: &'a ChrnSettings,
+    settings: &'a ChrnConfig,
     interner: &'a Intern,
     compiler: &'a mut ScriptCompiler,
     ty_ctx: TypeContext,
@@ -58,7 +58,7 @@ pub struct TypeResolver<'a> {
 impl<'res> TypeResolver<'res> {
     /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new(
-        settings: &'res ChrnSettings,
+        settings: &'res ChrnConfig,
         interner: &'res Intern,
         compiler: &'res mut ScriptCompiler,
     ) -> TypeResolver<'res> {

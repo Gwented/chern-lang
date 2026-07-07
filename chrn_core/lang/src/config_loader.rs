@@ -5,7 +5,7 @@
 use std::io::{BufRead, BufReader, Read};
 
 use chrn_utils::{
-    chrn_settings::ChrnSettings,
+    chrn_config::ChrnConfig,
     core_error::ConfigLoadError,
     id_types::{PathId, SourceRegionId},
     intern::Intern,
@@ -28,7 +28,7 @@ pub struct ConfigLoader<'a, R: Read> {
     // Configuration file path
     current_path_id: PathId,
     handle: BufReader<R>,
-    settings: &'a ChrnSettings,
+    settings: &'a ChrnConfig,
     // TODO: Remove this?
     interner: &'a Intern,
     pos: usize,
@@ -62,7 +62,7 @@ impl<R: Read> ConfigLoader<'_, R> {
         current_region_id: SourceRegionId,
         handle: R,
         current_path_id: PathId,
-        settings: &'a ChrnSettings,
+        settings: &'a ChrnConfig,
         interner: &'a Intern,
     ) -> ConfigLoader<'a, R> {
         ConfigLoader {

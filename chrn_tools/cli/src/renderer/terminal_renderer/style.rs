@@ -3,7 +3,7 @@ use std::path::Path;
 use chrn_utils::source_map::source_diagnostic::{DiagnosticLevel, annotations::AnnotationKind};
 use common::color::{self, TerminalColorType};
 
-use crate::renderer::render_settings::RenderSettings;
+use crate::renderer::terminal_renderer::render_settings::TerminalRenderConfig;
 
 /// Returns the text that corresponds with a given diagnostic level
 pub(super) fn get_diag_level_text(level: DiagnosticLevel) -> &'static str {
@@ -16,7 +16,10 @@ pub(super) fn get_diag_level_text(level: DiagnosticLevel) -> &'static str {
 }
 
 /// Returns the color code that corresponds to the given diagnostic level
-pub(super) fn get_diag_level_color(level: DiagnosticLevel, settings: &RenderSettings) -> String {
+pub(super) fn get_diag_level_color(
+    level: DiagnosticLevel,
+    settings: &TerminalRenderConfig,
+) -> String {
     match level {
         DiagnosticLevel::Error => {
             let (red, _) = color::get_red(settings.can_color, settings.terminal_type);
@@ -112,7 +115,7 @@ pub(super) fn standardize_note(msg: &str, can_color: bool, terminal: TerminalCol
 }
 
 /// Creates a template header with with given path
-pub(super) fn create_path_header(path: &Path, settings: &RenderSettings) -> String {
+pub(super) fn create_path_header(path: &Path, settings: &TerminalRenderConfig) -> String {
     let (bold, nc) = color::get_bold(settings.can_color);
     format!("{bold}PATH{nc} => \"{}\"", path.display())
 }
@@ -121,7 +124,7 @@ pub(super) fn create_path_header(path: &Path, settings: &RenderSettings) -> Stri
 pub(super) fn create_level_header(
     level: DiagnosticLevel,
     msg: &str,
-    settings: &RenderSettings,
+    settings: &TerminalRenderConfig,
 ) -> String {
     let header_text = get_diag_level_text(level);
 

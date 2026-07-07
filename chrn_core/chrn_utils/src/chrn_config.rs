@@ -3,15 +3,15 @@
 /// Settings given before running a chrn language instance, which allows for external tooling
 /// comptabilities, such as cli args.
 #[derive(Debug)]
-pub struct ChrnSettings {}
+pub struct ChrnConfig {}
 
-impl ChrnSettings {
-    pub fn new() -> ChrnSettings {
-        ChrnSettings {}
+impl ChrnConfig {
+    pub fn new() -> ChrnConfig {
+        ChrnConfig {}
     }
 }
 
-impl Default for ChrnSettings {
+impl Default for ChrnConfig {
     fn default() -> Self {
         Self {}
     }

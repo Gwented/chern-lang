@@ -1,5 +1,5 @@
 use chrn_utils::{
-    arena::Arena, chrn_settings::ChrnSettings, id_types::SourceRegionId, intern::Intern,
+    arena::Arena, chrn_config::ChrnConfig, id_types::SourceRegionId, intern::Intern,
     source_map::source_region::SourceRegion,
 };
 
@@ -16,7 +16,7 @@ use crate::{
 #[derive(Debug)]
 pub struct ScriptCompilerStore {
     /// Settings given to chrn compilation instance
-    pub settings: ChrnSettings,
+    pub settings: ChrnConfig,
     /// Region arena found after building module graph
     pub region_arena: Arena<SourceRegion, SourceRegionId>,
     // Beautiful
@@ -32,7 +32,7 @@ pub struct ScriptCompilerStore {
 
 impl ScriptCompilerStore {
     pub fn new(
-        settings: ChrnSettings,
+        settings: ChrnConfig,
         region_arena: Arena<SourceRegion, SourceRegionId>,
         interner: Intern,
         toks: Vec<Option<Vec<SpannedToken>>>,

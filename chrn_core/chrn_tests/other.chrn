@@ -11,15 +11,14 @@
 // The duplication is reported
 
 // let x = 4
-// let y = 3
-// let y = e::l::r
-// alias x(x: , x: Comparable) =
+let y = 3
+let y = e::l::r
+alias x(x: , x: Comparable) =*/
+
 
 nest->
     export struct Person {
         s: i32
         e#2: i32
     }
-    complex->
-        Person {}
 @end

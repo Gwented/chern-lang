@@ -1,5 +1,5 @@
 use chrn_utils::{
-    chrn_settings::ChrnSettings,
+    chrn_config::ChrnConfig,
     id_types::{AstId, ConfigRootId, ScopeId, SymbolId, TypeId, VariableId},
     intern::Intern,
     source_map::source_diagnostic::{
@@ -22,7 +22,7 @@ use crate::{
 };
 
 pub struct NamespaceResolver<'a> {
-    settings: &'a ChrnSettings,
+    settings: &'a ChrnConfig,
     interner: &'a Intern,
     compiler: &'a mut ScriptCompiler,
     err_vec: Vec<SourceDiagnostic>,
@@ -32,7 +32,7 @@ pub struct NamespaceResolver<'a> {
 impl NamespaceResolver<'_> {
     /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new<'a>(
-        settings: &'a ChrnSettings,
+        settings: &'a ChrnConfig,
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,
     ) -> NamespaceResolver<'a> {

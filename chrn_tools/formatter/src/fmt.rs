@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chrn_utils::chrn_settings::ChrnSettings;
+use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::{core_error::ModuleInitError, intern::Intern};
 use compilation::modules;
 use compilation::script_compiler::script_compiler_store::ScriptCompilerStore;
@@ -13,7 +13,7 @@ use crate::{script_prettifier::ScriptPrettifier, text_builder::TextBuilder};
 // pub fn fmt_script_block(
 //     path: &Path,
 //     compiler_store: ScriptCompilerStore,
-//     settings: &ChrnSettings,
+//     settings: &ChrnConfig,
 // ) -> Result<String, ModuleInitError> {
 //     let mut interner = Intern::init();
 //     // Maybe a way to only load main?

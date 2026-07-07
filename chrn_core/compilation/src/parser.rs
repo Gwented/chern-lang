@@ -18,7 +18,7 @@ use crate::parser::ast::ast_exprs::{
 use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::ParserContext;
 use crate::parser::parser_state::ParserState;
-use chrn_utils::chrn_settings::ChrnSettings;
+use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::id_types::SpannedContainer;
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
@@ -31,7 +31,7 @@ use lang::keywords::Keyword;
 /// Returns a tuple of `AstInfo` and Diagnostics, where `AstInfo` may or may not be unfinished,
 /// depending on if diagnostics > 0
 pub fn parse(
-    settings: &ChrnSettings,
+    settings: &ChrnConfig,
     region: &SourceRegion,
     tokens: &[SpannedToken],
     interner: &Intern,

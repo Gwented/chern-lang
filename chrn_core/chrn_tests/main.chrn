@@ -81,7 +81,7 @@ var->
         // Emergently, if there is no conflicting x struct, x is treated as the root innately
         // from the actual var section. May or may not leave this to where it requires the `var`
         // pre-tense or not
-        State1 {
+        /*State1 {
             // Maybe just use colons
             stable {}
             state2 { // Should allow "state2: State2"?
@@ -91,7 +91,7 @@ var->
                     }
                 }
             }
-        }
+        }*/
         // x {}
 
         /*var x {
