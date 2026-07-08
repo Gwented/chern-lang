@@ -5,8 +5,8 @@ pub mod type_context;
 
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::id_types::{
-    AstId, DirectiveId, ExprId, MemberId, ScopeId, SpannedContainer, SpannedContainerRef, SymbolId,
-    TypeId, ValueId, VariableId,
+    AstId, DirectiveId, ExprId, MemberId, ModuleId, ScopeId, SpannedContainer, SpannedContainerRef,
+    SymbolId, TypeId, ValueId, VariableId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
@@ -251,29 +251,30 @@ impl<'res> TypeResolver<'res> {
         //     _ => todo!(),
         // };
 
-        // if env.current_mod == self.compiler.mods[self.compiler.mods.len() - 2].mod_id {
+        // if env.current_mod == self.compiler.mods[ModuleId::new(self.compiler.mods.len() - 2)].mod_id
+        // {
         //     dbg!(&self.ty_ctx);
         //     for symbol in &self.compiler.symbols {
-        //         if self.interner.search(symbol.name_id) == "C" {
+        //         if self.interner.search(symbol.name_id) == "y" {
         //             let name = self.interner.search(symbol.name_id);
         //             dbg!(name);
         //             match symbol.kind {
         //                 SymbolKind::Variable(var_id) => {
-        //                     let state = &self.compiler.variables[var_id ].state;
+        //                     let state = &self.compiler.variables[var_id].state;
         //                     match state {
         //                         VariableState::ReservedTypeSlot(type_id) => {
         //                             dbg!("Reserved variable but not seen");
         //                         }
         //                         VariableState::Known(val_id) => {
-        //                             let val = &self.compiler.values[val_id ];
-        //                             let expr = &self.compiler.exprs[val.expr_id ];
+        //                             let val = &self.compiler.values[*val_id];
+        //                             let expr = &self.compiler.exprs[val.expr_id];
         //                             // dbg!(expr.val_id, expr);
         //                             dbg!(expr, val);
         //                         }
         //                     }
         //                 }
         //                 SymbolKind::Type(type_id) => {
-        //                     let ty_info = &self.compiler.types[type_id ];
+        //                     let ty_info = &self.compiler.types[type_id];
         //                     match &ty_info.ty {
         //                         Type::BuiltinType(builtin_type) => {
         //                             dbg!(builtin_type);
@@ -283,7 +284,7 @@ impl<'res> TypeResolver<'res> {
         //                         Type::Func(func_def) => todo!(),
         //                         Type::Alias(alias_def) => todo!(),
         //                         Type::TypeDef(type_def) => {
-        //                             let ty = &self.compiler.types[type_def.type_id ];
+        //                             let ty = &self.compiler.types[type_def.type_id];
         //                             dbg!(ty);
         //                         }
         //                         Type::Unknown => todo!(),
@@ -365,7 +366,7 @@ impl<'res> TypeResolver<'res> {
             let name = self.interner.search(abs_cfg_root.name_id);
             let core_msg = format!(
                 //TODO: Need to store scope type or some scope metadata or some conversion
-                "Could not find a symbol with the identifier `{name}` in `{:?}` searchable scopes",
+                "Could not find `{name}` in `{:?}` searchable scopes",
                 abs_cfg_root.lookup_pattern
             );
 
@@ -2363,7 +2364,7 @@ impl<'res> TypeResolver<'res> {
                             // TODO: Should send help, which should be done after re-doing how
                             // errors are rendered
                             let core_msg = format!(
-                                "The symbol `{err_mod_name}` is a module, which cannot be assigned as an expression value"
+                                "`{err_mod_name}` is a module, which cannot be assigned as an expression value"
                             );
 
                             let src_diag = SourceDiagnostic::builder(
@@ -2406,7 +2407,7 @@ impl<'res> TypeResolver<'res> {
                     };
 
                     let core_msg = format!(
-                        "The symbol `{ident}` was not found in the module `{mod_name}` within `{scope_type}`{and_local} searchable scopes"
+                        "`{ident}` was not found in the module `{mod_name}` within `{scope_type}`{and_local} searchable scopes"
                     );
 
                     let src_diag = SourceDiagnostic::builder(
@@ -3067,7 +3068,7 @@ impl<'res> TypeResolver<'res> {
                 // return Ok(PossibleMember::Type(type_id));
             } else {
                 let msg = format!(
-                    "Could not find the symbol `{}` as a module or value",
+                    "Could not find `{}` as a module or value",
                     self.interner.search(name_id)
                 );
 

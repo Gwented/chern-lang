@@ -19,7 +19,7 @@ use lang::{
 
 use crate::{
     lexer::token::{self, SpannedToken, Token, TokenKind},
-    parser::{NeutralBranch, SectionBranch, branch::Branch, parse_fmt},
+    parser::{NeutralBranch, ParserBudget, SectionBranch, branch::Branch, parse_fmt},
 };
 
 // C_ == current. A_ == ahead
@@ -60,6 +60,7 @@ pub(super) struct ParserContext<'a> {
     pub(super) region: &'a SourceRegion,
     toks: &'a [SpannedToken],
     pos: usize,
+    budget: ParserBudget,
     pub(super) err_vec: Vec<SourceDiagnostic>,
 }
 
@@ -68,11 +69,13 @@ impl<'a> ParserContext<'a> {
         settings: &'a ChrnConfig,
         region: &'a SourceRegion,
         toks: &'a [SpannedToken],
+        budget: ParserBudget,
     ) -> ParserContext<'a> {
         ParserContext {
             settings,
             region,
             toks,
+            budget,
             pos: 0,
             err_vec: Vec::new(),
         }
@@ -294,7 +297,7 @@ impl<'a> ParserContext<'a> {
         }
     }
 
-    /// Checks available known branching to where a help message can be sent
+    /// Checks available known branching to where a help message can be pushed
     fn try_assistance(
         &self,
         mut builder: SourceDiagnosticBuilder,

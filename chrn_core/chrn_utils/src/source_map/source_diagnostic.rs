@@ -23,6 +23,7 @@ pub struct Reporter {
     pub diags: Vec<SourceDiagnostic>,
     /// Maximum bytes worth of diagnostics that can be pushed before denying
     pub budget: MemoryBudget,
+    // pub exceeded_max_mods: bool,
 }
 
 impl Reporter {
@@ -30,6 +31,17 @@ impl Reporter {
         Reporter {
             diags: Vec::new(),
             budget,
+        }
+    }
+
+    pub fn push_safe(&mut self, diag: SourceDiagnostic) -> bool {
+        // Need to do something with consume() before using it so this stays checked.
+        match self.budget.checked_consume(1) {
+            BudgetResult::Stable | BudgetResult::LimitReached => {
+                self.diags.push(diag);
+                true
+            }
+            BudgetResult::Overage(_) | BudgetResult::Overflow => false,
         }
     }
 

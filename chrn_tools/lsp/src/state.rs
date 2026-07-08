@@ -366,10 +366,18 @@ impl DocumentState {
             let env = ResolverEnv::new(ast_info, region, ModuleId::new(mod_idx));
             let mut ns_resolver = NamespaceResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
-            if let Err(ns_diags) = ns_resolver.resolve(&env)
-                && mod_idx == 0
-            {
-                self.ns_errors = Some(ns_diags);
+            if let Err(ns_diags) = ns_resolver.resolve(&env) {
+                if mod_idx == 0 {
+                    self.ns_errors = Some(ns_diags);
+                } else if !ns_diags.is_empty() {
+                    // Imported modules: collect their diagnostics so they
+                    // aren't silently swallowed when the main module is
+                    // fine.
+                    match &mut self.ns_errors {
+                        Some(existing) => existing.extend(ns_diags),
+                        None => self.ns_errors = Some(ns_diags),
+                    }
+                }
             }
         }
 
@@ -416,8 +424,12 @@ impl DocumentState {
                 self.member_errors = Some(member_diags);
             }
 
-            // Type resolution for all modules (skip main module if it has parse errors)
-            // so that imported modules that parsed cleanly still get fully analysed.
+            // Type resolution for all modules. We deliberately do NOT skip the
+            // main module when it has parse errors, mirroring the orchestrator's
+            // behaviour: every resolver is run to completion so that the parts of
+            // the file that did parse correctly still get full semantic analysis
+            // (hover, go-to-def, etc.). The resolver itself is tolerant of a
+            // partial AST and accumulates diagnostics per item without aborting.
             let mut main_expr_range = 0..0;
             for (mod_idx, env) in resolver_envs.iter().enumerate().take(mod_len) {
                 let env = match env {
@@ -425,17 +437,20 @@ impl DocumentState {
                     None => continue,
                 };
 
-                if mod_idx == 0 && self.parse_errors.is_some() {
-                    continue;
-                }
-
                 let expr_start = compiler.exprs.len();
                 let mut type_resolver = TypeResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
-                if let Err(ty_diags) = type_resolver.resolve(env)
-                    && mod_idx == 0
-                {
-                    self.ty_errors = Some(ty_diags);
+                if let Err(ty_diags) = type_resolver.resolve(env) {
+                    if mod_idx == 0 {
+                        self.ty_errors = Some(ty_diags);
+                    } else if !ty_diags.is_empty() {
+                        // Imported modules: extend the existing collection so
+                        // their diagnostics still surface in the editor.
+                        match &mut self.ty_errors {
+                            Some(existing) => existing.extend(ty_diags),
+                            None => self.ty_errors = Some(ty_diags),
+                        }
+                    }
                 }
                 let expr_end = compiler.exprs.len();
                 if mod_idx == 0 {
@@ -445,7 +460,10 @@ impl DocumentState {
 
             self.main_expr_range = main_expr_range;
 
-            // Constraint resolution for all modules (skip main module if it has parse errors)
+            // Constraint resolution for all modules. Same rationale as above:
+            // do not abort on parse errors, the resolver will skip past
+            // unparseable items and produce diagnostics only for the parts that
+            // did parse.
             let mut constraint_resolver =
                 ConstraintResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
@@ -455,14 +473,15 @@ impl DocumentState {
                     None => continue,
                 };
 
-                if mod_idx == 0 && self.parse_errors.is_some() {
-                    continue;
-                }
-
-                if let Err(cn_diags) = constraint_resolver.resolve(env)
-                    && mod_idx == 0
-                {
-                    self.cn_errors = Some(cn_diags);
+                if let Err(cn_diags) = constraint_resolver.resolve(env) {
+                    if mod_idx == 0 {
+                        self.cn_errors = Some(cn_diags);
+                    } else if !cn_diags.is_empty() {
+                        match &mut self.cn_errors {
+                            Some(existing) => existing.extend(cn_diags),
+                            None => self.cn_errors = Some(cn_diags),
+                        }
+                    }
                 }
             }
         }

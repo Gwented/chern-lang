@@ -1,7 +1,5 @@
-//TEST: TEST
 use chrn_utils::{
-    budget::mem_cost::MemoryCost, core_error::ScriptError, id_types::ModuleId,
-    source_map::source_diagnostic::Reporter,
+    core_error::ScriptError, id_types::ModuleId, source_map::source_diagnostic::Reporter,
 };
 use compilation::{
     lexer::{Lexer, token::SpannedToken, trivia::Trivia},

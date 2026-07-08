@@ -250,6 +250,14 @@ fn render_text(
         ));
     }
 
+    // Meaning there were no line layouts which skips the loop, but this still needs it's pat
+    // shown so this is done
+    if prev_region_id_opt.is_none() {
+        let path = interner.search_path(diag.path_id);
+        let path_header_sep = style::create_path_header(path, settings);
+        layout_text.push_str(&format!("\n{path_header_sep}"));
+    }
+
     let mut help = String::new();
     if !diag.help.is_empty() {
         help.push('\n');

@@ -397,9 +397,7 @@ pub fn type_expr_result_to_preset_err(
                     let sym_name_id = compiler.symbols[sym_owner].name_id;
                     let sym_name = interner.search(sym_name_id);
 
-                    format!(
-                        "The namspace of `{sym_name}` does not contain any symbol with the the identifier `{err_name}`"
-                    )
+                    format!("The namspace of `{sym_name}` does not contain `{err_name}`")
                 }
             };
 
@@ -491,14 +489,14 @@ pub fn static_access_result_to_preset_err(
             let src_diag = if let Some(prev) = prev_seg {
                 let prev_seg_name = interner.search(prev.inner);
                 let core_msg = format!(
-                    "Could not find the symbol `{}` in the namespace `{}`",
+                    "Could not find `{}` in the namespace `{}`",
                     current_seg_name, prev_seg_name
                 );
 
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
                     .add_annotation(current_seg.span, AnnotationKind::Primary, None)
             } else {
-                let core_msg = format!("Could not find the symbol `{current_seg_name}`");
+                let core_msg = format!("Could not find `{current_seg_name}`");
 
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
                     .add_annotation(current_seg.span, AnnotationKind::Primary, None)

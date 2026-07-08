@@ -43,7 +43,6 @@ fn exec_check(
     glob_args: &GlobalArgs,
     cli_cfg: &CliConfig,
 ) -> Result<String, Option<String>> {
-    // Thank you search and replace.
     let chrn_cfg = ChrnConfig::new();
     let mut reporter = Reporter::new(MemoryBudget::new(MAX_DIAGNOSTICS));
     let path = files::make_canon(&check_cmd.path)?;

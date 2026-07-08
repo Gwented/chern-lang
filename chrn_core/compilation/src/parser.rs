@@ -2,6 +2,7 @@ pub mod ast;
 mod branch;
 mod context;
 mod parse_fmt;
+mod parser_budget;
 mod parser_state;
 
 use crate::lexer::token::{SpannedToken, Token, TokenKind};
@@ -17,6 +18,7 @@ use crate::parser::ast::ast_exprs::{
 };
 use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::ParserContext;
+use crate::parser::parser_budget::ParserBudget;
 use crate::parser::parser_state::ParserState;
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::id_types::SpannedContainer;
@@ -26,6 +28,14 @@ use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
 use lang::fmter::{Formattable, Formatted};
 use lang::keywords::Keyword;
+
+// fn recurse(depth: u32, budget: &ParserBudget) {
+//     let _guard = budget.increase_depth();
+//
+//     if depth != 50 {
+//         recurse(depth + 1, budget);
+//     }
+// }
 
 // The CST.
 /// Returns a tuple of `AstInfo` and Diagnostics, where `AstInfo` may or may not be unfinished,
@@ -39,7 +49,8 @@ pub fn parse(
     let mut ast_info = AstInfo::new();
 
     let mut state = ParserState::new();
-    let mut ctx = ParserContext::new(settings, region, tokens);
+    let mut budget = ParserBudget::new(chrn_utils::MAX_RECURSIVE_DEPTH, chrn_utils::MAX_EXPR_NODES);
+    let mut ctx = ParserContext::new(settings, region, tokens, budget);
 
     // Skipping possible @def first since it is recognized as it's own token
     if ctx.peek_tok() == Token::Def {

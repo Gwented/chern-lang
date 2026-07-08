@@ -2,7 +2,6 @@ use chrn_utils::id_types::{AstId, ModuleId, SymbolId, TypeId};
 
 use crate::semantic::hir::hir_concepts::SymbolKind;
 
-// Store this? This should be moved of course.
 // This name sounds a little misleading
 // TEST:
 /// General structure that holds metadata that proves a symbol is user defined.

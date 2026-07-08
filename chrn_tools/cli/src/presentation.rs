@@ -1,6 +1,7 @@
 //TEST: Not sure if this should exist but needed somewhere better than dispatcher to put footers
 
 use chrn_utils::source_map::source_diagnostic::{Reporter, footers::FooterKind};
+use compilation::script_compiler::script_compiler_summary::ScriptCompilerSummary;
 
 // The idea behind footers is that they are from information found internally, but not made
 // internally like a diagnostic would be.

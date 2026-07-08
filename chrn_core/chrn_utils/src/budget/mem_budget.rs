@@ -9,9 +9,9 @@ pub struct MemoryBudget {
     // u32?
     /// Amount that the usage cannot be greater than
     limit: usize,
-    /// Metric that must be less than `self.limit`
+    /// Usage metric that must be less than `self.limit`
     usage: usize,
-    /// Times limit was exceeded
+    /// Times `limit` was exceeded
     times_exceeded: usize,
     /// If the budget was exceeded at any point, all future usage adds will increment this counter
     amt_exceeded: usize,
@@ -191,6 +191,7 @@ pub enum BudgetResult {
     /// If the usage is added to, and it is equal to the limit, this variant is reached.
     ///
     /// This definitively means that there is nothing more to be added to usage, and there was no overflow.
+    /// This should be treated like `Stable` but it means no other operations should be performed after it.
     LimitReached,
     /// The usage exceeds the limit, but overage can't be returned due to the overage exceeding `usize::MAX`
     Overflow,

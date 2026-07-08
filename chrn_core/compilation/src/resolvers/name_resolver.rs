@@ -1,23 +1,31 @@
 use chrn_utils::{
     chrn_config::ChrnConfig,
-    id_types::{AstId, ConfigRootId, ScopeId, SymbolId, TypeId, VariableId},
+    id_types::{AstId, ConfigRootId, ExprId, ScopeId, SymbolId, TypeId, ValueId, VariableId},
     intern::Intern,
     source_map::source_diagnostic::{
         DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind,
     },
 };
+use lang::values::ValueInfo;
 
 use crate::{
-    lookup::scopes::{LookupPattern, Scope, ScopeInfo, ScopeType},
+    lookup::scopes::{AssociatedScopeKind, LookupPattern, Scope, ScopeInfo, ScopeType},
     parser::ast::ast_concepts::{
-        AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
-        Item,
+        AbstractAlias, AbstractConfig, AbstractEnum, AbstractParam, AbstractStruct,
+        AbstractTypeDef, AbstractVar, Item,
     },
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
-    script_compiler::ScriptCompiler,
-    semantic::hir::hir_concepts::{
-        AliasDef, ConfigDefRoot, EnumDef, StructDef, Symbol, SymbolKind, SymbolOrigin, Type,
-        TypeDef, TypeInfo, VarDef, VariableState,
+    script_compiler::{self, ScriptCompiler},
+    semantic::{
+        hir::{
+            hir_concepts::{
+                AliasDef, ConfigDefRoot, EnumDef, StructDef, Symbol, SymbolKind, SymbolOrigin,
+                Type, TypeDef, TypeInfo, VarDef, VariableState,
+            },
+            hir_exprs::{ExprHir, Param, ResolvedExpr},
+        },
+        preset_reporter,
+        resolve::{self, TypeExprResult},
     },
 };
 
@@ -59,14 +67,14 @@ impl NamespaceResolver<'_> {
             let ast_id = AstId::new(id as u32);
 
             // Maybe opt into section specific processing
-            match item {
+            let sym_id = match item {
                 Item::TypeDef(abs_typedef) => self.register_typedef(abs_typedef, ast_id, env),
                 Item::Struct(abs_struct) => self.register_struct(abs_struct, ast_id, env),
                 Item::Enum(abs_enum) => self.register_enum(abs_enum, ast_id, env),
                 Item::Alias(abs_alias) => self.register_alias(abs_alias, ast_id, env),
                 Item::Var(abs_var) => self.register_var(abs_var, ast_id, env),
-                Item::Config(abs_cfg) => self.register_config(abs_cfg, ast_id, env),
-            }
+                Item::Config(abs_cfg) => self.register_config_root(abs_cfg, ast_id, env),
+            };
         }
 
         if !self.err_vec.is_empty() {
@@ -78,8 +86,15 @@ impl NamespaceResolver<'_> {
 
         Ok(())
     }
+    // These registrations:
+    // - Create a new symbol
+    // - Create a new `var`, `nest`, `complex`, or `override` scope if the scope was not pushed yet.
+    // - If a symbol with the same identifier as another is in the same scope, it overwrites the last symbol
+    // and pushes the diagnostic
+    // . TODO: Should not overwrite by prioritizing the first symbol with that identifier.
+    //   FIX: Need to not iterate asts to skip invalid symbol searching by scope.
 
-    fn register_config(&mut self, abs_cfg: &AbstractConfig, ast_id: AstId, env: &ResolverEnv) {
+    fn register_config_root(&mut self, abs_cfg: &AbstractConfig, ast_id: AstId, env: &ResolverEnv) {
         debug_assert!(
             matches!(
                 abs_cfg.lookup_pattern,
@@ -94,10 +109,21 @@ impl NamespaceResolver<'_> {
             .push_scope(ScopeType::Complex, env.current_mod);
 
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
-        let cfg_id = ConfigRootId::new(self.compiler.configs.len() as u32);
+        let cfg_id = ConfigRootId::new(self.compiler.cfgs.len() as u32);
 
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
-        let orig_sym_opt = table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
+
+        // If an original exists, get the key so that it can be reported, otherwise insert it. This
+        // is to avoid inserting first and overwriting the last symbol since ergonomically, it
+        // probably makes more sense to keep the original for scope searching to fall-back to.
+        let orig_sym_opt = if let Some(original) = table.interned_to_sym.get(&abs_cfg.name_id) {
+            Some(*original)
+        } else {
+            table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
+            None
+        };
+
+        // let orig_sym_opt = table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
         table.ast_to_sym.insert(ast_id, sym_id);
 
         let cfg_def = ConfigDefRoot::new(
@@ -121,7 +147,7 @@ impl NamespaceResolver<'_> {
             SymbolKind::Config(cfg_id),
         );
 
-        self.compiler.configs.push(cfg_def);
+        self.compiler.cfgs.push(cfg_def);
         self.compiler.symbols.push(sym);
 
         if let Some(orig_sym_id) = orig_sym_opt {
@@ -147,7 +173,13 @@ impl NamespaceResolver<'_> {
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
         table.ast_to_sym.insert(ast_id, sym_id);
-        let orig_sym_opt = table.interned_to_sym.insert(abs_typedef.name_id, sym_id);
+
+        let orig_sym_opt = if let Some(original) = table.interned_to_sym.get(&abs_typedef.name_id) {
+            Some(*original)
+        } else {
+            table.interned_to_sym.insert(abs_typedef.name_id, sym_id);
+            None
+        };
 
         // The actual typedefs position to store inside it's symbol
         let type_def_type_id = TypeId::new(self.compiler.types.len() as u32);
@@ -156,7 +188,7 @@ impl NamespaceResolver<'_> {
         // May or may not be able to use the reserved Unknown spot
         let inner_type_id = TypeId::new((self.compiler.types.len() + 1) as u32);
 
-        let type_def_repre = TypeDef::new(
+        let type_def = TypeDef::new(
             sym_id,
             abs_typedef.name_id,
             abs_typedef.name_span,
@@ -176,7 +208,7 @@ impl NamespaceResolver<'_> {
 
         self.compiler.symbols.push(symbol);
 
-        let type_def_info = TypeInfo::new(Type::TypeDef(type_def_repre), env.current_mod);
+        let type_def_info = TypeInfo::new(Type::TypeDef(type_def), env.current_mod);
         self.compiler.types.push(type_def_info);
 
         // Yes, ty and type should probably be consistent in some form name-wise.
@@ -194,7 +226,13 @@ impl NamespaceResolver<'_> {
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
         table.ast_to_sym.insert(ast_id, sym_id);
-        let orig_sym_opt = table.interned_to_sym.insert(abs_struct.name_id, sym_id);
+
+        let orig_sym_opt = if let Some(original) = table.interned_to_sym.get(&abs_struct.name_id) {
+            Some(*original)
+        } else {
+            table.interned_to_sym.insert(abs_struct.name_id, sym_id);
+            None
+        };
 
         if !abs_struct.is_priv {
             let module = &mut self.compiler.mods[env.current_mod];
@@ -233,7 +271,13 @@ impl NamespaceResolver<'_> {
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
         table.ast_to_sym.insert(ast_id, sym_id);
-        let orig_sym_opt = table.interned_to_sym.insert(abs_enum.name_id, sym_id);
+
+        let orig_sym_opt = if let Some(original) = table.interned_to_sym.get(&abs_enum.name_id) {
+            Some(*original)
+        } else {
+            table.interned_to_sym.insert(abs_enum.name_id, sym_id);
+            None
+        };
 
         if !abs_enum.is_priv {
             let module = &mut self.compiler.mods[env.current_mod];
@@ -273,7 +317,12 @@ impl NamespaceResolver<'_> {
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
         table.ast_to_sym.insert(ast_id, sym_id);
-        let orig_sym_opt = table.interned_to_sym.insert(abs_alias.name_id, sym_id);
+        let orig_sym_opt = if let Some(original) = table.interned_to_sym.get(&abs_alias.name_id) {
+            Some(*original)
+        } else {
+            table.interned_to_sym.insert(abs_alias.name_id, sym_id);
+            None
+        };
 
         if !abs_alias.is_priv {
             let module = &mut self.compiler.mods[env.current_mod];
@@ -291,6 +340,137 @@ impl NamespaceResolver<'_> {
 
         let current_mod = &mut self.compiler.mods[env.current_mod];
         current_mod.scopes.push(local_scope_id);
+
+        //NOTE: Thinking about adding this but it would also mean the name resolver someone
+        //participates in expression setup, which could entail things.
+        //
+        // let mut params: Vec<Param> = Vec::new();
+        // let mut seen_params: Vec<&AbstractParam> = Vec::new();
+        //
+        // // Just a bit crowded in here..
+        // // WARN: Ok this just looks like an inlined function now
+        // for (i, abs_param) in abs_alias.params.iter().enumerate() {
+        //     seen_params.push(abs_param);
+        //
+        //     //TODO: SHOULD THIS BE A VARIABLE?
+        //     let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+        //     let val_id = ValueId::new(self.compiler.values.len() as u32);
+        //
+        //     let type_id = match resolve::resolve_type_expr(
+        //         self.compiler,
+        //         AssociatedScopeKind::Module(env.current_mod),
+        //         &abs_param.sp_ty_expr,
+        //         ScopeType::Neutral,
+        //         LookupPattern::NoRestrictions,
+        //         env,
+        //     ) {
+        //         TypeExprResult::Type(type_id) => type_id,
+        //         res => {
+        //             let preset_err = preset_reporter::type_expr_result_to_preset_err(
+        //                 &self.compiler,
+        //                 self.interner,
+        //                 &res,
+        //                 env,
+        //             )
+        //             .expect("Result enforced by `match`");
+        //
+        //             preset_reporter::report_preset(
+        //                 &mut self.err_vec,
+        //                 preset_err,
+        //                 env.region,
+        //                 self.settings,
+        //                 self.interner,
+        //             );
+        //
+        //             TypeId::new(script_compiler::CORE_UNKNOWN)
+        //         }
+        //     };
+        //
+        //     let param_sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+        //     let var_id = VariableId::new(self.compiler.variables.len() as u32);
+        //
+        //     let var = VarDef::new(
+        //         param_sym_id,
+        //         abs_param.name_id,
+        //         abs_param.name_span,
+        //         VariableState::Known(val_id),
+        //     );
+        //
+        //     let param_sym = Symbol::new(
+        //         abs_param.name_id,
+        //         param_sym_id,
+        //         Some(AstId::new(i as u32)),
+        //         SymbolOrigin::Module(env.current_mod),
+        //         true,
+        //         None,
+        //         ScopeType::Local,
+        //         SymbolKind::Variable(var_id),
+        //     );
+        //
+        //     let expr_hir = ExprHir::Var(param_sym_id);
+        //     let resolved_expr =
+        //         ResolvedExpr::new(type_id, expr_hir, val_id, abs_param.name_span, Vec::new());
+        //
+        //     // Can this be possibly const evaluated if if possible if?
+        //     //
+        //     // Not sure about this
+        //
+        //     let val_info = ValueInfo::new(type_id, expr_id, None);
+        //
+        //     self.compiler.symbols.push(param_sym);
+        //     self.compiler.variables.push(var);
+        //     self.compiler.exprs.push(resolved_expr);
+        //     self.compiler.values.push(val_info);
+        //
+        //     let local_scope = &mut self.compiler.get_scope_mut(local_scope_id).scope;
+        //     local_scope
+        //         .table
+        //         .interned_to_sym
+        //         .insert(abs_param.name_id, param_sym_id);
+        //
+        //     let param = Param::new(param_sym_id, type_id, AstId::new(i as u32));
+        //
+        //     params.push(param);
+        // }
+        //
+        // //TODO: Will do something about this duplication.
+        // for (i, current_param) in seen_params.iter().enumerate() {
+        //     if let Some((_, original_param)) = seen_params
+        //         .iter()
+        //         .enumerate()
+        //         // If the other index was declared after the current index and they have the same identifier
+        //         //
+        //         // Since this iteration specifically checks if the current was declared after the
+        //         // last and the iteration terminates upon the first match, this correctly points at
+        //         // the original field for all duplicates.
+        //         .find(|(other_i, f)| *other_i < i && current_param.name_id == f.name_id)
+        //     {
+        //         let dup_name = self.interner.search(current_param.name_id);
+        //
+        //         let orig_span = original_param.name_span;
+        //         let current_param_span = current_param.name_span;
+        //
+        //         // Preset error?
+        //         let core_msg = format!("More than one variant has the identifier \"{dup_name}\"");
+        //
+        //         let src_diag =
+        //             SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+        //                 .add_annotation(
+        //                     abs_alias.name_span,
+        //                     AnnotationKind::Secondary,
+        //                     "Found inside this alias".to_string().into(),
+        //                 )
+        //                 .add_annotation(
+        //                     orig_span,
+        //                     AnnotationKind::Secondary,
+        //                     format!("Original usage of `{dup_name}` here").into(),
+        //                 )
+        //                 .add_annotation(current_param_span, AnnotationKind::Primary, None)
+        //                 .build();
+        //
+        //         self.err_vec.push(src_diag);
+        //     }
+        // }
 
         // Ok ok
         let alias_def = AliasDef::new(
@@ -322,6 +502,9 @@ impl NamespaceResolver<'_> {
         }
     }
 
+    /// Pushes neutral scope if needed, exports variable if public, then stores it with the state
+    /// `ReservedTypeSlot` so that it can reserve a type slot without making an expression this
+    /// early on, which would complicate the process.
     fn register_var(&mut self, abs_var: &AbstractVar, ast_id: AstId, env: &ResolverEnv) {
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
         let scope_id = self
@@ -330,7 +513,12 @@ impl NamespaceResolver<'_> {
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
         table.ast_to_sym.insert(ast_id, sym_id);
-        let orig_sym_opt = table.interned_to_sym.insert(abs_var.name_id, sym_id);
+        let orig_sym_opt = if let Some(original) = table.interned_to_sym.get(&abs_var.name_id) {
+            Some(*original)
+        } else {
+            table.interned_to_sym.insert(abs_var.name_id, sym_id);
+            None
+        };
 
         if !abs_var.is_priv {
             let module = &mut self.compiler.mods[env.current_mod];
@@ -393,7 +581,7 @@ impl NamespaceResolver<'_> {
         let dup_span = env.ast_info.items[dup_ast_id].span();
 
         let core_msg = format!(
-            "Found more than one symbol with identifier \"{dup_name}\" in the section `{}`",
+            "Found more than one symbol with identifier \"{dup_name}\" in section `{}`",
             &scope_type
         );
 

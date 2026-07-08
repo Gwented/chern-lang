@@ -39,7 +39,9 @@
 use compilation::lexer::token::Token as ScriptToken;
 use compilation::lookup::scopes;
 use compilation::script_compiler::ScriptCompiler;
-use compilation::semantic::hir::hir_concepts::{Symbol, SymbolKind, Type, VariableState};
+use compilation::semantic::hir::hir_concepts::{
+    Symbol, SymbolKind, SymbolOrigin, Type, VariableState,
+};
 use lang::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use parking_lot::RwLock;
 use std::time::Duration;
@@ -1088,16 +1090,10 @@ impl LanguageServer for Backend {
                     // `Arena` does not implement `IntoIterator`; iterate over its
                     // inner `items` vector.
                     for sym in &compiler.symbols.items {
-                        if (matches!(sym.sym_origin, compilation::semantic::hir::hir_concepts::SymbolOrigin::Module(mid) if mid.id == 0)
-                            || matches!(
-                                sym.sym_origin,
-                                compilation::semantic::hir::hir_concepts::SymbolOrigin::Compiler
-                            ))
+                        if (matches!(sym.sym_origin, SymbolOrigin::Module(mid) if mid.id == 0)
+                            || matches!(sym.sym_origin, SymbolOrigin::Compiler))
                             && sym.scope_origin != scopes::ScopeType::Var
-                            && !matches!(
-                                sym.kind,
-                                compilation::semantic::hir::hir_concepts::SymbolKind::Directive(_)
-                            )
+                            && !matches!(sym.kind, SymbolKind::Directive(_))
                         {
                             let sym_name = state.interner.search(sym.name_id);
                             if prefix.is_empty() || sym_name.starts_with(prefix) {

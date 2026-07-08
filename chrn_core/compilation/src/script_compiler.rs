@@ -1,5 +1,7 @@
 // TODO: MAYBE eventually change from SipHash
+// What is a hash?
 pub mod script_compiler_store;
+pub mod script_compiler_summary;
 use chrn_utils::{
     arena::Arena,
     budget::mem_cost::MemoryCost,
@@ -64,7 +66,7 @@ pub struct ScriptCompiler {
     pub variables: Arena<VarDef, VariableId>,
     /// All user defined configuration. Is considered it's own class instead of a type since it
     /// behaves uniquely
-    pub configs: Arena<ConfigDefRoot, ConfigRootId>,
+    pub cfgs: Arena<ConfigDefRoot, ConfigRootId>,
     /// All directives that were found
     pub directives: Arena<Directive, DirectiveId>,
     /// Scope arena
@@ -155,7 +157,7 @@ impl ScriptCompiler {
             symbols: Arena::new(),
             variables: Arena::new(),
             members: Arena::new(),
-            configs: Arena::new(),
+            cfgs: Arena::new(),
             scopes: Arena::new(),
             directives: Arena::new(),
             //TEST:
@@ -418,7 +420,7 @@ impl ScriptCompiler {
     pub(super) fn get_cfg_def_root(&self, sym_id: SymbolId) -> &ConfigDefRoot {
         match &self.symbols[sym_id] {
             sym_info => match &sym_info.kind {
-                SymbolKind::Config(cfg_id) => &self.configs[*cfg_id],
+                SymbolKind::Config(cfg_id) => &self.cfgs[*cfg_id],
                 _ => unreachable!(),
             },
         }
@@ -427,7 +429,7 @@ impl ScriptCompiler {
     pub(super) fn get_cfg_def_mut(&mut self, sym_id: SymbolId) -> &mut ConfigDefRoot {
         match &self.symbols[sym_id] {
             sym_info => match &sym_info.kind {
-                SymbolKind::Config(cfg_id) => &mut self.configs[*cfg_id],
+                SymbolKind::Config(cfg_id) => &mut self.cfgs[*cfg_id],
                 _ => unreachable!(),
             },
         }
@@ -634,7 +636,7 @@ impl ScriptCompiler {
         match &self.symbols[sym_id].kind {
             SymbolKind::Type(type_id) => self.get_span_from_type_id(*type_id),
             SymbolKind::Variable(var_id) => Some(self.variables[*var_id].name_span),
-            SymbolKind::Config(cfg_id) => Some(self.configs[*cfg_id].name_span),
+            SymbolKind::Config(cfg_id) => Some(self.cfgs[*cfg_id].name_span),
             SymbolKind::Module(_) | SymbolKind::Directive(_) => None,
         }
     }
@@ -763,6 +765,8 @@ impl ScriptCompiler {
         let core_name_id = InternedId::new(intern::INTERNED_CORE);
         let core_mod_id = ModuleId::new(compiler.mods.len());
         let core_scope_id = ScopeId::new(compiler.scopes.len());
+
+        // Uses module only so that there are no possible borrow checker issues.
         let mut core_mod = Module::new(
             core_name_id,
             ModuleState::Loaded,
@@ -795,6 +799,7 @@ impl ScriptCompiler {
 
         // Injecting core as an import and pushing it's scope so user modules can search it
         for user_mod in &mut compiler.mods.items {
+            //TODO: Not sure about removing this yet
             if user_mod.name_id == core_name_id {
                 continue;
             }

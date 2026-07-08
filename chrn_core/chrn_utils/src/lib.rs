@@ -10,15 +10,26 @@ pub mod macros;
 pub mod pair;
 pub mod source_map;
 
+// -- Heuristic max amounts for `chrn` to abide by for safety purposes --
+
 // IGNORE THIS
 /// Max loops before what would be considered a broken mutation loop.
 /// Arbitrarily high number to help examine recursive bugs better
-pub const MAX_LOOPS: u32 = 10000004;
+pub const MAX_LOOPS: usize = 10000004;
+
+/// Max modules that can be in memory at once
+pub const MAX_MODULES: u8 = 1; // 500
+
+/// Max recursive descent that can be done
+pub const MAX_RECURSIVE_DEPTH: u16 = 1; // 512
+
+/// Max expression nodes that can be consumed in a singule expression tree
+pub const MAX_EXPR_NODES: usize = 1; // 5,000,000
 
 #[cfg(test)]
 pub mod tests {
     use crate::{
-        budget::mem_budget::MemoryBudget,
+        budget::mem_budget::{BudgetResult, MemoryBudget},
         id_types::PathId,
         intern::{self, Intern},
         source_map::source_diagnostic::{DiagnosticLevel, Reporter, SourceDiagnostic},
@@ -391,17 +402,35 @@ pub mod tests {
     }
 
     #[test]
-    fn general_budget_test() {
-        let mut reporter = Reporter::new(MemoryBudget::new(5));
-        let res = reporter.append_safe(&mut make_diagnostics(5));
-        assert_eq!(
-            res, true,
-            "Should only be LimitReached which should not return `false`"
-        );
+    fn checked_consume_budget_tests() {
+        // Overflow check
+        let mut budget = MemoryBudget::default();
+        budget.consume(1);
+        assert!(matches!(
+            budget.checked_consume(usize::MAX),
+            BudgetResult::Overflow
+        ));
 
-        let mut reporter = Reporter::new(MemoryBudget::new(5));
-        let res = reporter.append_safe(&mut make_diagnostics(5));
-        assert_eq!(res, true, "Should be an overflow");
+        // Overage check
+        let mut budget = MemoryBudget::new(10);
+        assert!(matches!(
+            budget.checked_consume(15),
+            BudgetResult::Overage(5)
+        ));
+
+        // Should not have consumed anything since it was an overage
+        assert_eq!(budget.remaining(), 10);
+
+        // Limit Reached
+        let mut budget = MemoryBudget::new(10);
+        assert!(matches!(
+            budget.checked_consume(10),
+            BudgetResult::LimitReached,
+        ));
+
+        // Stable
+        let mut budget = MemoryBudget::new(10);
+        assert!(matches!(budget.checked_consume(9), BudgetResult::Stable,));
     }
 
     #[test]
@@ -412,9 +441,5 @@ pub mod tests {
             res, true,
             "Should only be LimitReached which should not return `false`"
         );
-
-        let mut reporter = Reporter::new(MemoryBudget::new(5));
-        let res = reporter.append_safe(&mut make_diagnostics(5));
-        assert_eq!(res, true, "Should be an overflow");
     }
 }

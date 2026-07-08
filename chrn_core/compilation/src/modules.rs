@@ -15,7 +15,9 @@ use chrn_utils::{
     id_types::{InternedId, ModuleId, PathId, ScopeId, SourceRegionId, SymbolId},
     intern::{self, Intern},
     source_map::{
-        source_diagnostic::{DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind},
+        source_diagnostic::{
+            DiagnosticLevel, Reporter, SourceDiagnostic, annotations::AnnotationKind,
+        },
         source_region::SourceRegion,
         source_span::SourceSpan,
     },
@@ -24,7 +26,10 @@ use lang::config_loader::{ConfigLoader, ConfigLoaderOutput};
 
 use crate::{
     modules::mod_finder::ModuleFinder,
-    script_compiler::{ScriptCompiler, script_compiler_store::ScriptCompilerStore},
+    script_compiler::{
+        ScriptCompiler, script_compiler_store::ScriptCompilerStore,
+        script_compiler_summary::ScriptCompilerSummary,
+    },
 };
 
 pub const RESERVED_INTERNED_MODULE_IDENTS: [u32; 1] = [intern::INTERNED_CORE];
@@ -167,11 +172,10 @@ impl Module {
 ///
 /// Returns `Err` when the entry point path given experiences an unrecoverable error to where no
 /// sort of half state can be processed.
-//TODO: Should return an unfinished module state by default where a module may or may not be
-//completely loaded. Meaning, this would probably be best returning diagnostics.
 pub fn extract_modules(
     path: &Path,
     settings: ChrnConfig,
+    reporter: &mut Reporter,
     mut interner: Intern,
 ) -> Result<(ScriptCompiler, ScriptCompilerStore, Vec<SourceDiagnostic>), ModuleInitError> {
     // All errors regarding the instantiation of main, aside from it's imports, are terminal, since
@@ -188,6 +192,9 @@ pub fn extract_modules(
             return Err(ModuleInitError::new(None, interner, cfg_err));
         }
     };
+
+    // Beep
+    let mut summary = ScriptCompilerSummary::new();
 
     // Maybe the reporter should just be used
     let mut diags = Vec::new();
@@ -290,6 +297,7 @@ pub fn extract_modules(
     let mut other_mods: Vec<Option<Module>> = Vec::with_capacity(main_mod.imports.len());
     let mut seen: Vec<PathId> = vec![main_path_id];
 
+    // Oh ok.
     resolve_modules(
         &mut reserved_mod_ids,
         &mut seen,
@@ -298,6 +306,7 @@ pub fn extract_modules(
         &mut region_arena,
         &mut diags,
         &settings,
+        &mut summary,
         &mut interner,
     );
 
@@ -409,7 +418,6 @@ pub fn extract_modules(
 /// `diags`: Vector to append any found diagnostics to since errors do not signify immediate
 /// failure.
 fn resolve_modules(
-    // Maybe change to vec
     reserved_mod_ids: &mut Vec<(PathId, ModuleId)>,
     seen: &mut Vec<PathId>,
     other_mods: &mut Vec<Option<Module>>,
@@ -417,6 +425,7 @@ fn resolve_modules(
     region_arena: &mut Arena<SourceRegion, SourceRegionId>,
     diags: &mut Vec<SourceDiagnostic>,
     settings: &ChrnConfig,
+    summary: &mut ScriptCompilerSummary,
     interner: &mut Intern,
 ) {
     for import in &prev_mod.imports {
@@ -435,6 +444,10 @@ fn resolve_modules(
 
         // Tracks the id of the current module by tracking however many imports were seen, which
         // all represent one module
+        //
+        // This uses expect() because mod_finder is the only collector imports.
+        // We are iterating through said imports. Meaning for this iteration to happen mod_finder
+        // would have to register the path first.
         let current_mod_id = reserved_mod_ids
             .iter()
             .find(|(p_id, _)| *p_id == path_id)
@@ -585,6 +598,23 @@ fn resolve_modules(
         // Is subtracting 1 because reserved mod includes main.
         let expected_len = reserved_mod_ids.len() - 1;
 
+        //SAFETY
+        // Ensuring before any resizing that the total modules never exceed MAX_MODULES
+        //
+        // Is + 1 because the main module is going to be included inside the actual output so it has
+        // to be accounted for or else a max module count of 100 would be exceeded since 100
+        // accounts for the other modules + 1 main module.
+        if other_mods.len().saturating_add(expected_len + 1) > chrn_utils::MAX_MODULES as usize {
+            let sub_mod_name = interner.search(sub_mod_name_id);
+            let core_msg = format!("Exceeded max module amount `{}`", chrn_utils::MAX_MODULES);
+
+            let src_diag = SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
+                .add_note(format!("Last analyzed module was `{sub_mod_name}`"));
+            diags.push(src_diag.build());
+            summary.exceeded_max_mods = true;
+            return;
+        }
+
         // Checking if modules needs to reserve space for more modules. This check is needed
         // because module id registration is tied to when an import is seen, which COULD be later
         // than the module is found recursively, so extra space needs to be reserved in that case.
@@ -612,6 +642,7 @@ fn resolve_modules(
             region_arena,
             diags,
             settings,
+            summary,
             interner,
         );
 
