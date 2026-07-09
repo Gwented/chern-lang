@@ -12,9 +12,12 @@ pub mod user_defined;
 #[cfg(test)]
 mod tests {
     use crate::{
-        lexer::token::{Notation, SpannedToken, Token, TokenKind},
+        lexer::token::{Notation, Token},
         parser::ast::ast_concepts::AstInfo,
-        resolvers::{constraint_resolver::ConstraintResolver, resolver_env::ResolverEnv},
+        resolvers::{
+            constraint_resolver::ConstraintResolver,
+            resolver_env::{RegistrationEnv, ResolverEnv},
+        },
         script_compiler::ScriptCompiler,
     };
     // -- Helpers --
@@ -162,37 +165,138 @@ mod tests {
 
         (arena, interner, settings, compiler)
     }
-    /// Builds resolver environments aligned with compiler modules from their ASTs
+    /// Builds registration environments aligned with compiler modules from their ASTs.
+    ///
+    /// Mirrors the orchestrator's `create_registration_envs`: a module may have a `region_id`
+    /// (e.g. a `BrokenRegion` module that the config loader still allocated) without an `AstInfo`
+    /// entry ever having been produced for it, because the AST is created *from* the region but
+    /// the orchestrator can skip ast creation when the lexer returns `None`. Such modules must
+    /// produce `None` here, not panic.
+    fn build_registration_envs<'a>(
+        compiler: &ScriptCompiler,
+        arena: &'a Arena<SourceRegion, SourceRegionId>,
+        asts: &'a [Option<AstInfo>],
+    ) -> Vec<Option<RegistrationEnv<'a>>> {
+        let mut all_envs = Vec::new();
+        for i in 0..compiler.mods.len() {
+            let mod_id = ModuleId::new(i);
+            let module = &compiler.mods[mod_id];
+
+            // No region => no env. This is the path for lib-style modules with no source
+            // (e.g. the implicit `core` module injected by `ScriptCompiler::init`).
+            let current_region = match &module.region_id {
+                Some(region_id) => &arena[*region_id],
+                None => {
+                    all_envs.push(None);
+                    continue;
+                }
+            };
+
+            // A module can have a region id without a corresponding AstInfo: the ast is built
+            // from the region, but a broken region (or a `Loaded` module whose lexer step was
+            // skipped) means the slot in `asts` is still `None`. Drop the env rather than
+            // crashing, matching the orchestrator.
+            let current_ast = match asts[i].as_ref() {
+                Some(ast) => ast,
+                None => {
+                    all_envs.push(None);
+                    continue;
+                }
+            };
+
+            let env = RegistrationEnv::new(current_ast, current_region, module.mod_id);
+            all_envs.push(Some(env));
+        }
+        all_envs
+    }
+
+    /// Builds resolver environments aligned with compiler modules from their ASTs.
+    ///
+    /// Mirrors the orchestrator's `create_resolver_envs`: a module must have a region, an
+    /// `AstInfo` entry, and a `compilation_syms` entry to produce a `ResolverEnv`. Any missing
+    /// piece means the env slot is `None`, never a panic. The AST is derived from the region
+    /// but its presence is not implied by the region's presence, and the `compilation_syms` slot
+    /// is independently populated by the namespace resolver pass, so each is checked separately.
     fn build_resolver_envs<'a>(
         compiler: &ScriptCompiler,
         arena: &'a Arena<SourceRegion, SourceRegionId>,
         asts: &'a [Option<AstInfo>],
+        compilation_syms: &'a [Option<Vec<SymbolId>>],
     ) -> Vec<Option<ResolverEnv<'a>>> {
-        compiler
-            .mods
-            .iter()
-            .enumerate()
-            .map(|(i, module)| {
-                module.region_id.map(|region_id| {
-                    let region = &arena[region_id];
-                    let ast = asts[i]
-                        .as_ref()
-                        .expect("Module with region_id should have an AstInfo entry");
-                    ResolverEnv::new(ast, region, module.mod_id)
-                })
-            })
-            .collect()
+        let mut all_envs = Vec::new();
+        for i in 0..compiler.mods.len() {
+            let mod_id = ModuleId::new(i);
+            let module = &compiler.mods[mod_id];
+
+            let current_region = match &module.region_id {
+                Some(region_id) => &arena[*region_id],
+                None => {
+                    all_envs.push(None);
+                    continue;
+                }
+            };
+
+            let current_ast = match asts[i].as_ref() {
+                Some(ast) => ast,
+                None => {
+                    all_envs.push(None);
+                    continue;
+                }
+            };
+
+            // `compilation_syms` is filled in by the namespace resolver pass. If that pass
+            // didn't run for this module (e.g. its `RegistrationEnv` was `None`), this slot is
+            // `None` and we must skip rather than panic.
+            let comp_syms = match compilation_syms[i].as_ref() {
+                Some(syms) => syms,
+                None => {
+                    all_envs.push(None);
+                    continue;
+                }
+            };
+
+            let env = ResolverEnv::new(current_ast, current_region, module.mod_id, comp_syms);
+            all_envs.push(Some(env));
+        }
+        all_envs
     }
 
-    /// Runs member resolution, panicking on diagnostics
+    /// Runs namespace resolution across all registration environments, returning the
+    /// module-aligned compilation symbol lists. Panics if any module produces diagnostics.
+    fn run_namespace_resolver(
+        settings: &ChrnConfig,
+        interner: &Intern,
+        compiler: &mut ScriptCompiler,
+        reg_envs: &[Option<RegistrationEnv>],
+    ) -> Vec<Option<Vec<SymbolId>>> {
+        let mut ns_resolver = NamespaceResolver::new(settings, interner, compiler);
+        let mut mod_symbols = Vec::new();
+        for env in reg_envs.iter() {
+            if let Some(env) = env {
+                let (current_mod_symbols, diags) = ns_resolver.resolve(env);
+                assert!(diags.is_empty(), "Namespace resolution failed: {:?}", diags);
+                mod_symbols.push(Some(current_mod_symbols));
+            } else {
+                mod_symbols.push(None);
+            }
+        }
+        mod_symbols
+    }
+
+    /// Runs member resolution across all resolver environments, panicking on diagnostics
     fn run_member_resolver(
         settings: &ChrnConfig,
         envs: &[Option<ResolverEnv>],
         interner: &Intern,
         compiler: &mut ScriptCompiler,
     ) {
-        let diags = MemberResolver::new(settings, envs, interner, compiler).resolve();
-        assert!(diags.is_empty(), "Member resolution failed: {:?}", diags);
+        let mut member_resolver = MemberResolver::new(settings, interner, compiler);
+        for env in envs.iter() {
+            if let Some(env) = env {
+                let diags = member_resolver.resolve(env);
+                assert!(diags.is_empty(), "Member resolution failed: {:?}", diags);
+            }
+        }
     }
 
     use std::path::Path;
@@ -201,7 +305,7 @@ mod tests {
         arena::Arena,
         chrn_config::ChrnConfig,
         core_error::ConfigLoadError,
-        id_types::{InternedId, ModuleId, PathId, SourceRegionId, ValueId},
+        id_types::{InternedId, ModuleId, PathId, SourceRegionId, SymbolId, ValueId},
         intern::Intern,
         source_map::source_diagnostic::SourceDiagnostic,
         source_map::source_region::SourceRegion,
@@ -232,21 +336,22 @@ mod tests {
     fn compile_and_resolve_single_module(text: &str) -> (ScriptCompiler, Intern) {
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        NamespaceResolver::new(&settings, &interner, &mut compiler)
-            .resolve(&env)
-            .unwrap();
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (comp_syms, _) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
-        let envs = vec![Some(env)];
+        let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
+        let envs = vec![Some(res_env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
 
@@ -290,21 +395,22 @@ mod tests {
     ) -> Result<(ScriptCompiler, Intern), Vec<SourceDiagnostic>> {
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        NamespaceResolver::new(&settings, &interner, &mut compiler)
-            .resolve(&env)
-            .unwrap();
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (comp_syms, _) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
-        let envs = vec![Some(env)];
+        let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
+        let envs = vec![Some(res_env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
 
@@ -1307,18 +1413,20 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        let res = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&env);
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (_, diags) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        assert_eq!(res.is_err(), true);
+        assert!(!diags.is_empty(), "Expected errors from NamespaceResolver");
 
         let correct = "
                     let ORIGINAL = 2 + 2
@@ -1327,18 +1435,24 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        let res = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&env);
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (_, diags) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        assert_eq!(res.is_ok(), true);
+        assert!(
+            diags.is_empty(),
+            "NamespaceResolver should have no errors: {:?}",
+            diags
+        );
 
         // -- VAR --
         let wrong = "
@@ -1351,18 +1465,20 @@ mod tests {
         // syntax error within another module would not be reportable since the parser failed.
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        let res = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&env);
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (_, diags) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        assert_eq!(res.is_err(), true);
+        assert!(!diags.is_empty(), "Expected errors from NamespaceResolver");
 
         let correct = "
                 var->
@@ -1372,18 +1488,24 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        let res = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&env);
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (_, diags) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        assert_eq!(res.is_ok(), true);
+        assert!(
+            diags.is_empty(),
+            "NamespaceResolver should have no errors: {:?}",
+            diags
+        );
 
         // -- NEST --
 
@@ -1395,18 +1517,20 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        let res = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&env);
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (_, diags) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        assert_eq!(res.is_err(), true);
+        assert!(!diags.is_empty(), "Expected errors from NamespaceResolver");
 
         let correct = "
                 nest->
@@ -1416,18 +1540,24 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        let res = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&env);
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (_, diags) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        assert_eq!(res.is_ok(), true);
+        assert!(
+            diags.is_empty(),
+            "NamespaceResolver should have no errors: {:?}",
+            diags
+        );
         //TEST: -- COMPLEX --
 
         //TEST: -- OVERRIDE --
@@ -1526,16 +1656,24 @@ mod tests {
             asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
         }
 
-        let resolver_envs = build_resolver_envs(&compiler, &region_arena, &asts);
+        let reg_envs = build_registration_envs(&compiler, &region_arena, &asts);
 
-        {
+        let compilation_syms: Vec<Option<Vec<SymbolId>>> = {
             let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
-            for env in resolver_envs.iter() {
+            let mut symbols = Vec::new();
+            for env in reg_envs.iter() {
                 if let Some(env) = env {
-                    ns_resolver.resolve(env).unwrap();
+                    let (s, diags) = ns_resolver.resolve(env);
+                    assert!(diags.is_empty(), "Namespace resolution failed: {:?}", diags);
+                    symbols.push(Some(s));
+                } else {
+                    symbols.push(None);
                 }
             }
-        }
+            symbols
+        };
+
+        let resolver_envs = build_resolver_envs(&compiler, &region_arena, &asts, &compilation_syms);
 
         run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
 
@@ -1611,16 +1749,24 @@ mod tests {
             asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
         }
 
-        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts);
+        let reg_envs = build_registration_envs(&compiler, &arena, &asts);
 
-        {
+        let compilation_syms: Vec<Option<Vec<SymbolId>>> = {
             let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
-            for env in resolver_envs.iter() {
+            let mut symbols = Vec::new();
+            for env in reg_envs.iter() {
                 if let Some(env) = env {
-                    ns_resolver.resolve(env).unwrap();
+                    let (s, diags) = ns_resolver.resolve(env);
+                    assert!(diags.is_empty(), "Namespace resolution failed: {:?}", diags);
+                    symbols.push(Some(s));
+                } else {
+                    symbols.push(None);
                 }
             }
-        }
+            symbols
+        };
+
+        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts, &compilation_syms);
 
         run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
 
@@ -1697,16 +1843,24 @@ mod tests {
             asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
         }
 
-        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts);
+        let reg_envs = build_registration_envs(&compiler, &arena, &asts);
 
-        {
+        let compilation_syms: Vec<Option<Vec<SymbolId>>> = {
             let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
-            for env in resolver_envs.iter() {
+            let mut symbols = Vec::new();
+            for env in reg_envs.iter() {
                 if let Some(env) = env {
-                    ns_resolver.resolve(env).unwrap();
+                    let (s, diags) = ns_resolver.resolve(env);
+                    assert!(diags.is_empty(), "Namespace resolution failed: {:?}", diags);
+                    symbols.push(Some(s));
+                } else {
+                    symbols.push(None);
                 }
             }
-        }
+            symbols
+        };
+
+        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts, &compilation_syms);
 
         run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
 
@@ -1785,16 +1939,24 @@ mod tests {
             asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
         }
 
-        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts);
+        let reg_envs = build_registration_envs(&compiler, &arena, &asts);
 
-        {
+        let compilation_syms: Vec<Option<Vec<SymbolId>>> = {
             let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
-            for env in resolver_envs.iter() {
+            let mut symbols = Vec::new();
+            for env in reg_envs.iter() {
                 if let Some(env) = env {
-                    ns_resolver.resolve(env).unwrap();
+                    let (s, diags) = ns_resolver.resolve(env);
+                    assert!(diags.is_empty(), "Namespace resolution failed: {:?}", diags);
+                    symbols.push(Some(s));
+                } else {
+                    symbols.push(None);
                 }
             }
-        }
+            symbols
+        };
+
+        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts, &compilation_syms);
 
         run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
 
@@ -1822,18 +1984,18 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        NamespaceResolver::new(&settings, &interner, &mut compiler)
-            .resolve(&env)
-            .unwrap();
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (_, _) = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
         let module = &compiler.mods[ModuleId::new(0)];
 
@@ -1851,18 +2013,18 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        NamespaceResolver::new(&settings, &interner, &mut compiler)
-            .resolve(&env)
-            .unwrap();
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (_, _) = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
         let module = &compiler.mods[ModuleId::new(0)];
 
@@ -1881,18 +2043,18 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        NamespaceResolver::new(&settings, &interner, &mut compiler)
-            .resolve(&env)
-            .unwrap();
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (_, _) = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
         let module = &compiler.mods[ModuleId::new(0)];
 
@@ -1930,7 +2092,7 @@ mod tests {
         // let ast_info = parser::parse(&settings, &module, &toks, &mut interner).0;
         //
         // // Calls `reporter` internally but the path is fake so this fails
-        // let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        // let env = ResolverEnv::new(&ast_info, region, mod_id);
         // NamespaceResolver::new(
         //     &settings,
         //     &interner,
@@ -1975,7 +2137,7 @@ mod tests {
         // let ast_info = parser::parse(&settings, &module, &toks, &mut interner).0;
         //
         // // Calls `reporter` internally but the path is fake so this fails
-        // let env = ResolverEnv::new(&ast_info, region, module.mod_id);
+        // let env = ResolverEnv::new(&ast_info, region, mod_id);
         // NamespaceResolver::new(
         //     &settings,
         //     &interner,
@@ -2005,18 +2167,18 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        NamespaceResolver::new(&settings, &interner, &mut compiler)
-            .resolve(&env)
-            .unwrap();
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (_, _) = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
         //TODO: Override and Complex
         let module = &compiler.mods[ModuleId::new(0)];
@@ -2045,26 +2207,27 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        NamespaceResolver::new(&settings, &interner, &mut compiler)
-            .resolve(&env)
-            .unwrap();
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (comp_syms, _) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
-        let envs = vec![Some(env)];
+        let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
+        let envs = vec![Some(res_env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
         let res = TypeResolver::new(&settings, &interner, &mut compiler).resolve(env);
 
-        assert_eq!(res.is_err(), true);
+        assert!(res.is_err(), "Expected type resolution to fail");
 
         let correct = "
                 var->
@@ -2076,26 +2239,27 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        NamespaceResolver::new(&settings, &interner, &mut compiler)
-            .resolve(&env)
-            .unwrap();
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (comp_syms, _) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
-        let envs = vec![Some(env)];
+        let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
+        let envs = vec![Some(res_env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
         let res = TypeResolver::new(&settings, &interner, &mut compiler).resolve(env);
 
-        assert_eq!(res.is_ok(), true);
+        assert!(res.is_ok(), "Type resolution should succeed");
     }
 
     #[test]
@@ -2106,21 +2270,22 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        NamespaceResolver::new(&settings, &interner, &mut compiler)
-            .resolve(&env)
-            .unwrap();
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (comp_syms, _) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        let env = ResolverEnv::new(&ast_info, region, Default::default());
-        let envs = vec![Some(env)];
+        let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
+        let envs = vec![Some(res_env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
         TypeResolver::new(&settings, &interner, &mut compiler)
@@ -2139,21 +2304,22 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        NamespaceResolver::new(&settings, &interner, &mut compiler)
-            .resolve(&env)
-            .unwrap();
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (comp_syms, _) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
-        let envs = vec![Some(env)];
+        let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
+        let envs = vec![Some(res_env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
 
@@ -2179,21 +2345,22 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        NamespaceResolver::new(&settings, &interner, &mut compiler)
-            .resolve(&env)
-            .unwrap();
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (comp_syms, _) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
-        let envs = vec![Some(env)];
+        let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
+        let envs = vec![Some(res_env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
 
@@ -2221,21 +2388,22 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        NamespaceResolver::new(&settings, &interner, &mut compiler)
-            .resolve(&env)
-            .unwrap();
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (comp_syms, _) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
-        let envs = vec![Some(env)];
+        let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
+        let envs = vec![Some(res_env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
 
@@ -2261,21 +2429,22 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        NamespaceResolver::new(&settings, &interner, &mut compiler)
-            .resolve(&env)
-            .unwrap();
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (comp_syms, _) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
-        let envs = vec![Some(env)];
+        let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
+        let envs = vec![Some(res_env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
 
@@ -2301,21 +2470,22 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        NamespaceResolver::new(&settings, &interner, &mut compiler)
-            .resolve(&env)
-            .unwrap();
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (comp_syms, _) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
-        let envs = vec![Some(env)];
+        let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
+        let envs = vec![Some(res_env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
 
@@ -2341,21 +2511,22 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        NamespaceResolver::new(&settings, &interner, &mut compiler)
-            .resolve(&env)
-            .unwrap();
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (comp_syms, _) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
-        let envs = vec![Some(env)];
+        let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
+        let envs = vec![Some(res_env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
 
@@ -2388,21 +2559,22 @@ mod tests {
 
         let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
 
-        let module = &compiler.mods[ModuleId::new(0)];
-        let region = get_module_region(&arena, module);
+        let (mod_id, region) = {
+            let module = &compiler.mods[ModuleId::new(0)];
+            (module.mod_id, get_module_region(&arena, module))
+        };
 
         let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
             .tokenize(&mut interner);
 
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
-        let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-        NamespaceResolver::new(&settings, &interner, &mut compiler)
-            .resolve(&env)
-            .unwrap();
+        let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+        let (comp_syms, _) =
+            NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-        let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
-        let envs = vec![Some(env)];
+        let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
+        let envs = vec![Some(res_env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
 
@@ -2447,17 +2619,18 @@ mod tests {
     fn all_operators_test() {
         let eval = |text: &str| -> Value {
             let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
-            let module = &compiler.mods[ModuleId::new(0)];
-            let region = get_module_region(&arena, module);
+            let (mod_id, region) = {
+                let module = &compiler.mods[ModuleId::new(0)];
+                (module.mod_id, get_module_region(&arena, module))
+            };
             let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
                 .tokenize(&mut interner);
             let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-            let env = ResolverEnv::new(&ast_info, region, module.mod_id);
-            NamespaceResolver::new(&settings, &interner, &mut compiler)
-                .resolve(&env)
-                .unwrap();
-            let env = ResolverEnv::new(&ast_info, region, compiler.mods[ModuleId::new(0)].mod_id);
-            let envs = vec![Some(env)];
+            let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
+            let (comp_syms, _) =
+                NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
+            let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
+            let envs = vec![Some(res_env)];
             run_member_resolver(&settings, &envs, &interner, &mut compiler);
             let env = envs[0].as_ref().expect("Env should exist");
             TypeResolver::new(&settings, &interner, &mut compiler)
@@ -2823,14 +2996,24 @@ mod tests {
             asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
         }
 
-        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts);
+        let reg_envs = build_registration_envs(&compiler, &arena, &asts);
 
-        let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
-        for env in resolver_envs.iter() {
-            if let Some(env) = env {
-                ns_resolver.resolve(env).unwrap();
+        let compilation_syms: Vec<Option<Vec<SymbolId>>> = {
+            let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
+            let mut symbols = Vec::new();
+            for env in reg_envs.iter() {
+                if let Some(env) = env {
+                    let (s, diags) = ns_resolver.resolve(env);
+                    assert!(diags.is_empty(), "Namespace resolution failed: {:?}", diags);
+                    symbols.push(Some(s));
+                } else {
+                    symbols.push(None);
+                }
             }
-        }
+            symbols
+        };
+
+        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts, &compilation_syms);
 
         run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
 
@@ -2902,16 +3085,24 @@ mod tests {
             asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
         }
 
-        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts);
+        let reg_envs = build_registration_envs(&compiler, &arena, &asts);
 
-        {
+        let compilation_syms: Vec<Option<Vec<SymbolId>>> = {
             let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
-            for env in resolver_envs.iter() {
+            let mut symbols = Vec::new();
+            for env in reg_envs.iter() {
                 if let Some(env) = env {
-                    ns_resolver.resolve(env).unwrap();
+                    let (s, diags) = ns_resolver.resolve(env);
+                    assert!(diags.is_empty(), "Namespace resolution failed: {:?}", diags);
+                    symbols.push(Some(s));
+                } else {
+                    symbols.push(None);
                 }
             }
-        }
+            symbols
+        };
+
+        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts, &compilation_syms);
 
         run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
 
@@ -3118,14 +3309,24 @@ mod tests {
             asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
         }
 
-        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts);
+        let reg_envs = build_registration_envs(&compiler, &arena, &asts);
 
-        let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
-        for env in resolver_envs.iter() {
-            if let Some(env) = env {
-                ns_resolver.resolve(env).unwrap();
+        let compilation_syms: Vec<Option<Vec<SymbolId>>> = {
+            let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
+            let mut symbols = Vec::new();
+            for env in reg_envs.iter() {
+                if let Some(env) = env {
+                    let (s, diags) = ns_resolver.resolve(env);
+                    assert!(diags.is_empty(), "Namespace resolution failed: {:?}", diags);
+                    symbols.push(Some(s));
+                } else {
+                    symbols.push(None);
+                }
             }
-        }
+            symbols
+        };
+
+        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts, &compilation_syms);
 
         run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
 
@@ -3197,14 +3398,24 @@ mod tests {
             asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
         }
 
-        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts);
+        let reg_envs = build_registration_envs(&compiler, &arena, &asts);
 
-        let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
-        for env in resolver_envs.iter() {
-            if let Some(env) = env {
-                ns_resolver.resolve(env).unwrap();
+        let compilation_syms: Vec<Option<Vec<SymbolId>>> = {
+            let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
+            let mut symbols = Vec::new();
+            for env in reg_envs.iter() {
+                if let Some(env) = env {
+                    let (s, diags) = ns_resolver.resolve(env);
+                    assert!(diags.is_empty(), "Namespace resolution failed: {:?}", diags);
+                    symbols.push(Some(s));
+                } else {
+                    symbols.push(None);
+                }
             }
-        }
+            symbols
+        };
+
+        let resolver_envs = build_resolver_envs(&compiler, &arena, &asts, &compilation_syms);
 
         run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
 

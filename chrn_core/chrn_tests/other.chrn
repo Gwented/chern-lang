@@ -12,13 +12,15 @@
 
 // let x = 4
 let y = 3
-let y = 5
+// let y = 5
 //let $macro = 3
+let x = 3
+alias x() =
 
 nest->
     export struct Person {
         s: i32
-        e#2: i32
+        e#2: o8
     }
     /* complex->
     Assertion failure from this since it expects None sym id before registering but later stages still

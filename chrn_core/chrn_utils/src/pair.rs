@@ -119,8 +119,3 @@ macro_rules! pairs {
         pairs
     }};
 }
-
-fn hi() {
-    let pairs: Pairs<i32, i32> = pairs![Pair::new(0, 3), (2, 34)];
-    let pairs: Pairs<i32, i32> = vec![(2, 5)].into();
-}

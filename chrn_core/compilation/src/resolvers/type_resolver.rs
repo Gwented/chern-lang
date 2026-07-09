@@ -5,8 +5,8 @@ pub mod type_context;
 
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::id_types::{
-    AstId, DirectiveId, ExprId, MemberId, ModuleId, ScopeId, SpannedContainer, SpannedContainerRef,
-    SymbolId, TypeId, ValueId, VariableId,
+    AstId, DirectiveId, ExprId, MemberId, ScopeId, SpannedContainer, SpannedContainerRef, SymbolId,
+    TypeId, ValueId, VariableId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
@@ -21,8 +21,7 @@ use crate::lookup::scopes::{
     self, AssociatedScopeKind, LookupPattern, ScopeType, SymbolLookupOutput,
 };
 use crate::parser::ast::ast_concepts::{
-    AbstractAlias, AbstractConfig, AbstractDirective, AbstractEnum, AbstractOptionAssignment,
-    AbstractParam, AbstractStruct, AbstractTypeDef, AbstractVar, Item,
+    AbstractConfig, AbstractDirective, AbstractOptionAssignment, AbstractParam,
 };
 use crate::parser::ast::ast_exprs::{Expr, PathSegment, SpannedExpr};
 use crate::resolvers::resolver_env::ResolverEnv;
@@ -72,6 +71,7 @@ impl<'res> TypeResolver<'res> {
             compiler,
         }
     }
+
     //FIXME: Given `x` (variable) and `x` (alias) in the same scope, unreachable!() is reached
     //when the variable is encountered because it was overwritten by the new alias with the
     //same identifier. This needs to be fixed by either requiring a get() call so that on
@@ -85,16 +85,33 @@ impl<'res> TypeResolver<'res> {
     /// explicitly allows for `TypeResolver` to maintain it's state throughout resolution while
     /// mutating off of given envs.
     pub fn resolve(&mut self, env: &'res ResolverEnv) -> Result<(), Vec<SourceDiagnostic>> {
-        // This is resolving types but not resolving args or conditions.
-        // Everything is in order so this cannot fail unless something internally went wrong.
-        for item in env.ast_info.items.iter() {
-            match item {
-                Item::TypeDef(abs_typedef) => _ = self.resolve_typedef(abs_typedef, env),
-                Item::Struct(abs_struct) => _ = self.resolve_struct(abs_struct, env),
-                Item::Enum(abs_enum) => _ = self.resolve_enum(abs_enum, env),
-                Item::Alias(abs_alias) => _ = self.resolve_alias(abs_alias, env),
-                Item::Var(abs_var) => _ = self.resolve_var(abs_var, env),
-                Item::Config(abs_cfg) => _ = self.resolve_cfg_root(abs_cfg, env),
+        // Everything skipped is not a factor in this compilation step.
+        for sym_id in env.compilation_syms.iter().cloned() {
+            match self.compiler.symbols[sym_id].kind {
+                // This split is more so, users can define these set of symbols, and users cannot
+                // define the unreacables.
+                SymbolKind::Type(type_id) => match &self.compiler.types[type_id].ty {
+                    Type::Struct(_) => self.resolve_struct(sym_id, env),
+                    Type::Enum(_) => self.resolve_enum(sym_id, env),
+                    Type::Alias(_) => self.resolve_alias(sym_id, env),
+                    Type::TypeDef(_) => self.resolve_typedef(sym_id, env),
+                    // Not sure about this right now
+                    // New functions cannot be declared as symbols, only the compiler creates them.
+                    // None of these can be user-defined, but exist internally.
+                    Type::Deferred(_)
+                    | Type::Func(_)
+                    | Type::Constrained(_)
+                    | Type::Unknown
+                    | Type::BuiltinType(_) => {
+                        unreachable!()
+                    }
+                },
+                // Still uses sym id since their actual ids make it a little more complicated to get
+                // to their ast id
+                SymbolKind::Variable(_) => self.resolve_var(sym_id, env),
+                SymbolKind::Config(_) => self.resolve_cfg_root(sym_id, env),
+                // Users cannot define these but they exist internally.
+                SymbolKind::Module(_) | SymbolKind::Directive(_) => unreachable!(),
             }
         }
 
@@ -324,23 +341,17 @@ impl<'res> TypeResolver<'res> {
     // The lifetime used here is needed so that the vectors that are pushed into during the recursive
     // maintaining of seen identifiers know that their shortest lifetime is more than long enough to
     // where the borrow cheker is satisfied.
-    fn resolve_cfg_root(
-        &mut self,
-        abs_cfg_root: &'res AbstractConfig,
-        env: &'res ResolverEnv,
-    ) -> Result<(), ()> {
+    fn resolve_cfg_root(&mut self, parent_sym_id: SymbolId, env: &'res ResolverEnv) {
         // Expected to be `OptionAssignmentRoot`
         let mut opt_assignment_roots: Vec<MemberId> = Vec::new();
         // Expected to be `ConfigDefMember`
         let mut cfg_def_members: Vec<MemberId> = Vec::new();
 
-        let scope_id = self
-            .compiler
-            .extract_scope_id(ScopeType::Complex, env.current_mod);
-        let table = &self.compiler.get_scope(scope_id).scope.table;
-
-        let parent_sym_id = table.interned_to_sym[&abs_cfg_root.name_id];
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
+        let ast_id = self.compiler.symbols[parent_sym_id]
+            .ast_id
+            .expect("Should be user symbols only");
+        let abs_cfg_root = env.ast_info.get_cfg_root(ast_id);
 
         // Checks if the symbol is a valid config consumer later.
         // Returns an `Option` so that the option assignments can still be checked before
@@ -479,7 +490,7 @@ impl<'res> TypeResolver<'res> {
         // Releasing after checking if the options were valid expressions
         let found_sym_id = match found_sym_id_opt {
             Some(sym_id) => sym_id,
-            None => return Err(()),
+            None => return,
         };
 
         // Attempts to get type id out of symbol id which is required for lookup
@@ -502,7 +513,7 @@ impl<'res> TypeResolver<'res> {
                 self.err_vec.push(src_diag.build());
                 // Terminates here because this means that the symbol being looked at can't
                 // actually use config at all
-                return Err(());
+                return;
             }
         };
 
@@ -702,7 +713,7 @@ impl<'res> TypeResolver<'res> {
 
         let cfg_root = self.compiler.get_cfg_def_mut(parent_sym_id);
 
-        debug_assert_eq!(cfg_root.sym_id, None);
+        debug_assert_eq!(cfg_root.linked_sym_id, None);
         debug_assert_eq!(cfg_root.opt_assignments.len(), 0);
         debug_assert_eq!(cfg_root.cfg_members.len(), 0);
         debug_assert!(matches!(
@@ -710,11 +721,9 @@ impl<'res> TypeResolver<'res> {
             LookupPattern::NamespaceOnly | LookupPattern::OnlyVar
         ));
 
-        cfg_root.sym_id = Some(found_sym_id);
+        cfg_root.linked_sym_id = Some(found_sym_id);
         cfg_root.opt_assignments = opt_assignment_roots;
         cfg_root.cfg_members = cfg_def_members;
-
-        Ok(())
     }
 
     /// Method that recursively resolves `ConfigDefMember` and `OptionAssignmentMember`
@@ -1569,19 +1578,18 @@ impl<'res> TypeResolver<'res> {
         Ok((has_resolved_ty, has_const_val))
     }
 
-    fn resolve_var(&mut self, abs_var: &AbstractVar, env: &ResolverEnv) -> Result<(), ()> {
-        let scope_id = self
-            .compiler
-            .extract_scope_id(ScopeType::Neutral, env.current_mod);
-        let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
+    fn resolve_var(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
+        let ast_id = self.compiler.symbols[parent_sym_id]
+            .ast_id
+            .expect("Should be user symbols only");
+        let abs_var = env.ast_info.get_var(ast_id);
 
-        let sym_id = table.interned_to_sym[&abs_var.name_id];
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         //NOTE: Pipeline where expressions are always returned, just that some may have
         //unresolved parts, which are put into the queue, not the variable itself.
         let expr_id = match self.register_expr(
-            sym_id,
+            parent_sym_id,
             &abs_var.spanned_expr,
             None,
             associated_scope,
@@ -1598,7 +1606,8 @@ impl<'res> TypeResolver<'res> {
                     self.interner,
                 );
 
-                return Err(());
+                //TODO: use Expr::Error
+                return;
             }
         };
 
@@ -1618,32 +1627,25 @@ impl<'res> TypeResolver<'res> {
         //WARN: MAKE SURE EXPRESSION RESOLUTION IS NOT BROKEN FROM VAR CHANGES
         // dbg!(&self.compiler.types[TypeId::new(43)]);
         // panic!();
-        let var = self.compiler.get_var_mut(sym_id);
+        let var = self.compiler.get_var_mut(parent_sym_id);
         var.state = VariableState::Known(val_id);
 
         // If the symbol that was just examined is a pending symbol AND it was actually resolved,
         // then it'll be marked as resolved
-        if let Some(pending_sym) = self.ty_ctx.sym_queue.get_mut(&sym_id) {
+        if let Some(pending_sym) = self.ty_ctx.sym_queue.get_mut(&parent_sym_id) {
             // Three flags for resolver use
             pending_sym.has_resolved_ty = has_resolved_ty;
             pending_sym.has_const_val = has_const_val;
 
             self.ty_ctx.needs_check = true;
         }
-
-        Ok(())
     }
 
-    fn resolve_typedef(
-        &mut self,
-        abs_typedef: &AbstractTypeDef,
-        env: &ResolverEnv,
-    ) -> Result<(), ()> {
-        let scope_id = self
-            .compiler
-            .extract_scope_id(ScopeType::Var, env.current_mod);
-        let table = &self.compiler.get_scope(scope_id).scope.table;
-        let sym_id = table.interned_to_sym[&abs_typedef.name_id];
+    fn resolve_typedef(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
+        let ast_id = self.compiler.symbols[parent_sym_id]
+            .ast_id
+            .expect("Should be user symbols only");
+        let abs_typedef = env.ast_info.get_typedef(ast_id);
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         let type_id = match resolve::resolve_type_expr(
@@ -1680,7 +1682,7 @@ impl<'res> TypeResolver<'res> {
         for spanned_expr in &abs_typedef.conds {
             //FIX: Scope type is a little wrong here since it's a condition
             match self.register_expr(
-                sym_id,
+                parent_sym_id,
                 spanned_expr,
                 None,
                 associated_scope,
@@ -1711,7 +1713,7 @@ impl<'res> TypeResolver<'res> {
             self.interner,
         );
 
-        let type_def = self.compiler.get_typedef_mut(sym_id);
+        let type_def = self.compiler.get_typedef_mut(parent_sym_id);
 
         debug_assert_eq!(type_def.conds.len(), 0);
         debug_assert_eq!(type_def.directives.len(), 0);
@@ -1722,11 +1724,13 @@ impl<'res> TypeResolver<'res> {
         type_def.conds = conds;
         // Maybe directives will stay defined here
         type_def.directives = directives;
-
-        Ok(())
     }
 
-    fn resolve_struct(&mut self, abs_struct: &AbstractStruct, env: &ResolverEnv) -> Result<(), ()> {
+    fn resolve_struct(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
+        let ast_id = self.compiler.symbols[parent_sym_id]
+            .ast_id
+            .expect("Should be user symbols only");
+        let abs_struct = env.ast_info.get_struct(ast_id);
         // Not sure of if this should stay a Field type or just be a TypeDef since their intent
         // somewhat conflicts. For now, typedef is just consumed differently depending on if it's a
         // field declared in var-> or not since var-> fields may be made possible to reference, but
@@ -1825,11 +1829,14 @@ impl<'res> TypeResolver<'res> {
 
         struct_def.glob_conds = glob_conds;
         struct_def.glob_directives = glob_directives;
-
-        Ok(())
     }
 
-    fn resolve_enum(&mut self, abs_enum: &AbstractEnum, env: &ResolverEnv) -> Result<(), ()> {
+    fn resolve_enum(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
+        let ast_id = self.compiler.symbols[parent_sym_id]
+            .ast_id
+            .expect("Should be user symbols only");
+        let abs_enum = env.ast_info.get_enum(ast_id);
+
         let scope_id = self
             .compiler
             .extract_scope_id(ScopeType::Nest, env.current_mod);
@@ -1933,20 +1940,17 @@ impl<'res> TypeResolver<'res> {
         debug_assert_eq!(enum_def.glob_directives.len(), 0);
         enum_def.glob_conds = glob_conds;
         enum_def.glob_directives = glob_directives;
-
-        Ok(())
     }
 
-    fn resolve_alias(&mut self, abs_alias: &AbstractAlias, env: &ResolverEnv) -> Result<(), ()> {
-        let scope_id = self
-            .compiler
-            .extract_scope_id(ScopeType::Neutral, env.current_mod);
-        let table = &self.compiler.get_scope_mut(scope_id).scope.table;
+    fn resolve_alias(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
+        let ast_id = self.compiler.symbols[parent_sym_id]
+            .ast_id
+            .expect("Should be user symbols only");
+        let abs_alias = env.ast_info.get_alias(ast_id);
 
-        let alias_sym_id = table.interned_to_sym[&abs_alias.name_id];
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
-        let local_scope_id = self.compiler.get_alias(alias_sym_id).local_scope_id;
+        let local_scope_id = self.compiler.get_alias(parent_sym_id).local_scope_id;
 
         let mut params: Vec<Param> = Vec::new();
         let mut seen_params: Vec<&AbstractParam> = Vec::new();
@@ -2079,7 +2083,7 @@ impl<'res> TypeResolver<'res> {
         let mut conds: Vec<ExprId> = Vec::new();
         for spanned_expr in &abs_alias.conds {
             let cond_opt = match self.register_expr(
-                alias_sym_id,
+                parent_sym_id,
                 spanned_expr,
                 Some(local_scope_id),
                 //NOTE: Could this change?
@@ -2116,7 +2120,7 @@ impl<'res> TypeResolver<'res> {
 
         //TODO: Arg constraint and option tpe constraint.
         //Could technically happen in constraint resolver since it. Yes.
-        let alias_def = self.compiler.get_alias_mut(alias_sym_id);
+        let alias_def = self.compiler.get_alias_mut(parent_sym_id);
         let param_count = params.len() as u32;
 
         debug_assert_eq!(alias_def.conds.len(), 0);
@@ -2135,8 +2139,6 @@ impl<'res> TypeResolver<'res> {
 
         alias_def.conds = conds;
         alias_def.directives = directives;
-
-        Ok(())
     }
     // These params are getting a little inflated so maybe a ctx struct for this environment could
     // be @()@$_ something

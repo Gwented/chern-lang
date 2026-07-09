@@ -92,10 +92,19 @@ impl AstInfo {
         }
     }
 
-    pub fn get_const(&self, ast_id: AstId) -> &AbstractVar {
+    pub fn get_var(&self, ast_id: AstId) -> &AbstractVar {
         match &self.items[ast_id] {
             item => match item {
                 Item::Var(abs_var) => abs_var,
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    pub fn get_cfg_root(&self, ast_id: AstId) -> &AbstractConfig {
+        match &self.items[ast_id] {
+            item => match item {
+                Item::Config(abs_cfg) => abs_cfg,
                 _ => unreachable!(),
             },
         }

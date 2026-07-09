@@ -26,6 +26,8 @@ impl From<TypeDirective> for Directive {
 }
 
 impl Directive {
+    /// If `self` has any form of restrictions, returns `true`
+    /// Otherwise `false`
     pub fn has_restrictions(self) -> bool {
         match self {
             Directive::Warn | Directive::Ignore => false,

@@ -200,6 +200,7 @@ impl Type {
 
 #[derive(Debug)]
 pub struct VarDef {
+    /// `SymbolId` of `self`
     pub sym_id: SymbolId,
     pub name_id: InternedId,
     pub name_span: SourceSpan,
@@ -242,6 +243,8 @@ pub enum VariableState {
 /// Intended to represent a configuration block environment that consumes options for a field.
 #[derive(Debug)]
 pub struct ConfigDefRoot {
+    /// `SymbolId` of `self`
+    pub parent_sym_id: SymbolId,
     /// Is a name id instead of symbol id since `NameResolver` merely registers names, with no
     /// knowledge of symbol specifics. A dependency system may be used in the future.
     pub name_id: InternedId,
@@ -252,7 +255,7 @@ pub struct ConfigDefRoot {
     /// During name resolution, we can't actually lookup the symbol since it may or may not be
     /// registered, so it's Option since it actually is `None` at some point, and could remain
     /// `None` if in a later stage it doesn't have it's target symbol found.
-    pub sym_id: Option<SymbolId>,
+    pub linked_sym_id: Option<SymbolId>,
     /// Expects `ConfigOptionAssignment`
     pub opt_assignments: Vec<MemberId>,
     /// Lookup pattern that needs to be used to properly discern if
@@ -265,20 +268,22 @@ pub struct ConfigDefRoot {
 
 impl ConfigDefRoot {
     pub fn new(
+        parent_sym_id: SymbolId,
         name_id: InternedId,
         name_span: SourceSpan,
         cfg_id: ConfigRootId,
-        sym_id: Option<SymbolId>,
+        linked_sym_id: Option<SymbolId>,
         lookup_pattern: LookupPattern,
         opt_assignments: Vec<MemberId>,
         cfg_members: Vec<MemberId>,
     ) -> ConfigDefRoot {
         ConfigDefRoot {
+            parent_sym_id,
             name_id,
             name_span,
             cfg_id,
             lookup_pattern,
-            sym_id,
+            linked_sym_id,
             opt_assignments,
             cfg_members,
         }

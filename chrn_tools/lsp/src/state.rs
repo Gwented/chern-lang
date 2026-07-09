@@ -14,7 +14,9 @@
 //!     ├─ analyser::resolve_modules_lsp        — load & recurse into imported files
 //!     ├─ ScriptCompiler::init                 — initialise HIR structures
 //!     ├─ parser::parse (per module)           — build AST
-//!     ├─ NamespaceResolver::resolve           — symbol registration
+//!     ├─ create_registration_envs             — envs pre-symbols
+//!     ├─ NamespaceResolver::resolve           — symbol registration (per module)
+//!     ├─ create_resolver_envs                 — envs that carry compilation_syms
 //!     ├─ MemberResolver::resolve              — field/variant resolution
 //!     ├─ TypeResolver::resolve                — type inference & checking
 //!     ├─ ConstraintResolver::resolve          — constraint checking
@@ -47,7 +49,7 @@ use compilation::parser::ast::ast_exprs::TypeExpr;
 use compilation::resolvers::constraint_resolver::ConstraintResolver;
 use compilation::resolvers::member_resolver::MemberResolver;
 use compilation::resolvers::name_resolver::NamespaceResolver;
-use compilation::resolvers::resolver_env::ResolverEnv;
+use compilation::resolvers::resolver_env::{RegistrationEnv, ResolverEnv};
 use compilation::resolvers::type_resolver::TypeResolver;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::MemberSymbolKind;
@@ -138,6 +140,10 @@ pub struct DocumentState {
     pub compiler: Option<ScriptCompiler>,
     /// ASTs indexed by module ID; entry `0` is the main module.
     pub asts: Vec<Option<compilation::parser::ast::ast_concepts::AstInfo>>,
+    /// Per-module `SymbolId`s produced by the namespace resolver.  Indexed by
+    /// `ModuleId`; `None` means that module was skipped (e.g. failed to parse or
+    /// had no region).  Consumed by the later resolver stages via `ResolverEnv`.
+    pub compilation_syms: Vec<Option<Vec<SymbolId>>>,
     /// Diagnostics from config/import parsing (module discovery phase).
     pub config_errors: Option<Vec<SourceDiagnostic>>,
     /// Diagnostics from the script parser.
@@ -185,6 +191,7 @@ impl DocumentState {
             serial_start,
             compiler: None,
             asts: Vec::new(),
+            compilation_syms: Vec::new(),
             config_errors: None,
             parse_errors: None,
             ns_errors: None,
@@ -347,46 +354,87 @@ impl DocumentState {
             all_asts[mod_idx] = Some(ast_info);
         }
 
-        // Namespace resolution for all modules
-        for (mod_idx, ast_info) in all_asts.iter().enumerate() {
+        // Build the registration environments (pre-symbols) used by the namespace
+        // resolver.  Aligned with `compiler.mods` so the resulting `compilation_syms`
+        // can be indexed by `ModuleId` when we later build the `ResolverEnv`s.
+        let mod_len = compiler.mods.len();
+        let mut registration_envs: Vec<Option<RegistrationEnv>> = Vec::with_capacity(mod_len);
+        for (mod_idx, ast_info) in all_asts.iter().enumerate().take(mod_len) {
             let ast_info = match ast_info {
                 Some(a) => a,
-                None => continue,
+                None => {
+                    registration_envs.push(None);
+                    continue;
+                }
             };
-
             let src_region_id = match compiler.mods[ModuleId::new(mod_idx)].region_id {
                 Some(rid) => rid,
-                None => continue,
+                None => {
+                    registration_envs.push(None);
+                    continue;
+                }
             };
             let region = match self.region_arena.get(src_region_id) {
                 Some(r) => r,
-                None => continue,
+                None => {
+                    registration_envs.push(None);
+                    continue;
+                }
             };
+            registration_envs.push(Some(RegistrationEnv::new(
+                ast_info,
+                region,
+                ModuleId::new(mod_idx),
+            )));
+        }
 
-            let env = ResolverEnv::new(ast_info, region, ModuleId::new(mod_idx));
-            let mut ns_resolver = NamespaceResolver::new(&chrn_cfg, &self.interner, &mut compiler);
+        // Namespace resolution: register every top-level item as a `SymbolId` per
+        // module.  Mirrors the orchestrator: a single `NamespaceResolver` is
+        // constructed and reused across all modules, accumulating diagnostics and
+        // emitting a per-module `Vec<SymbolId>` aligned with `ModuleId`.  This
+        // means the later resolver stages no longer need to walk the AST to find
+        // their targets — they iterate `compilation_syms` instead.
+        let mut compilation_syms: Vec<Option<Vec<SymbolId>>> = Vec::with_capacity(mod_len);
+        {
+            let mut ns_resolver =
+                NamespaceResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
-            if let Err(ns_diags) = ns_resolver.resolve(&env) {
-                if mod_idx == 0 {
-                    self.ns_errors = Some(ns_diags);
-                } else if !ns_diags.is_empty() {
-                    // Imported modules: collect their diagnostics so they
-                    // aren't silently swallowed when the main module is
-                    // fine.
-                    match &mut self.ns_errors {
-                        Some(existing) => existing.extend(ns_diags),
-                        None => self.ns_errors = Some(ns_diags),
+            for (mod_idx, env_opt) in registration_envs.iter().take(mod_len).enumerate() {
+                let env = match env_opt {
+                    Some(e) => e,
+                    None => {
+                        compilation_syms.push(None);
+                        continue;
+                    }
+                };
+
+                let (current_mod_symbols, ns_diags) = ns_resolver.resolve(env);
+
+                if !ns_diags.is_empty() {
+                    if mod_idx == 0 {
+                        self.ns_errors = Some(ns_diags);
+                    } else {
+                        // Imported modules: extend the existing collection so
+                        // their diagnostics still surface in the editor.
+                        match &mut self.ns_errors {
+                            Some(existing) => existing.extend(ns_diags),
+                            None => self.ns_errors = Some(ns_diags),
+                        }
                     }
                 }
+
+                compilation_syms.push(Some(current_mod_symbols));
             }
         }
 
         // Build resolver environments then run member, type, and constraint resolution.
-        // This block ensures resolver_envs (which borrows all_asts) is dropped before
-        // all_asts is moved into self.asts below.
+        // This block ensures `resolver_envs` (which borrows `all_asts`) is dropped before
+        // `all_asts` is moved into `self.asts` below.  Each `ResolverEnv` now carries
+        // the module's `compilation_syms` slice so the resolvers can iterate over
+        // symbols rather than ast nodes.
         {
             let mod_len = compiler.mods.len();
-            let mut resolver_envs = Vec::with_capacity(mod_len);
+            let mut resolver_envs: Vec<Option<ResolverEnv>> = Vec::with_capacity(mod_len);
             for (mod_idx, ast_info) in all_asts.iter().enumerate().take(mod_len) {
                 let ast_info = match ast_info {
                     Some(a) => a,
@@ -409,19 +457,44 @@ impl DocumentState {
                         continue;
                     }
                 };
+                let mod_syms = match compilation_syms[mod_idx].as_ref() {
+                    Some(s) => s,
+                    None => {
+                        resolver_envs.push(None);
+                        continue;
+                    }
+                };
                 resolver_envs.push(Some(ResolverEnv::new(
                     ast_info,
                     region,
                     ModuleId::new(mod_idx),
+                    mod_syms,
                 )));
             }
 
-            // Member resolution (fields/variants) for all modules
-            let member_diags =
-                MemberResolver::new(&chrn_cfg, &resolver_envs, &self.interner, &mut compiler)
-                    .resolve();
-            if !member_diags.is_empty() {
-                self.member_errors = Some(member_diags);
+            // Member resolution (fields/variants) for all modules.  A single
+            // `MemberResolver` is reused across modules and iterates each env's
+            // `compilation_syms` internally rather than walking the AST.
+            let mut member_resolver =
+                MemberResolver::new(&chrn_cfg, &self.interner, &mut compiler);
+
+            for (mod_idx, env) in resolver_envs.iter().take(mod_len).enumerate() {
+                let env = match env {
+                    Some(e) => e,
+                    None => continue,
+                };
+
+                let member_diags = member_resolver.resolve(env);
+                if !member_diags.is_empty() {
+                    if mod_idx == 0 {
+                        self.member_errors = Some(member_diags);
+                    } else {
+                        match &mut self.member_errors {
+                            Some(existing) => existing.extend(member_diags),
+                            None => self.member_errors = Some(member_diags),
+                        }
+                    }
+                }
             }
 
             // Type resolution for all modules. We deliberately do NOT skip the
@@ -430,20 +503,32 @@ impl DocumentState {
             // the file that did parse correctly still get full semantic analysis
             // (hover, go-to-def, etc.). The resolver itself is tolerant of a
             // partial AST and accumulates diagnostics per item without aborting.
+            //
+            // Unlike the orchestrator (which keeps a single `TypeResolver` so
+            // its internal type context spans all modules) the LSP creates a
+            // fresh resolver per module iteration.  This sidesteps the
+            // simultaneous `&mut compiler` borrow that the `TypeResolver` holds
+            // versus the immutable borrow required to read
+            // `compiler.exprs.len()` for `main_expr_range` tracking.  Each
+            // module is self-contained for LSP purposes, so losing the
+            // cross-module type context is acceptable.
             let mut main_expr_range = 0..0;
-            for (mod_idx, env) in resolver_envs.iter().enumerate().take(mod_len) {
+            for (mod_idx, env) in resolver_envs.iter().take(mod_len).enumerate() {
                 let env = match env {
                     Some(e) => e,
                     None => continue,
                 };
 
                 let expr_start = compiler.exprs.len();
-                let mut type_resolver = TypeResolver::new(&chrn_cfg, &self.interner, &mut compiler);
+                let mut type_resolver =
+                    TypeResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
-                if let Err(ty_diags) = type_resolver.resolve(env) {
+                if let Err(ty_diags) = type_resolver.resolve(env)
+                    && !ty_diags.is_empty()
+                {
                     if mod_idx == 0 {
                         self.ty_errors = Some(ty_diags);
-                    } else if !ty_diags.is_empty() {
+                    } else {
                         // Imported modules: extend the existing collection so
                         // their diagnostics still surface in the editor.
                         match &mut self.ty_errors {
@@ -463,20 +548,22 @@ impl DocumentState {
             // Constraint resolution for all modules. Same rationale as above:
             // do not abort on parse errors, the resolver will skip past
             // unparseable items and produce diagnostics only for the parts that
-            // did parse.
+            // did parse.  A single `ConstraintResolver` is reused.
             let mut constraint_resolver =
                 ConstraintResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
-            for (mod_idx, env) in resolver_envs.iter().enumerate().take(mod_len) {
+            for (mod_idx, env) in resolver_envs.iter().take(mod_len).enumerate() {
                 let env = match env {
                     Some(env) => env,
                     None => continue,
                 };
 
-                if let Err(cn_diags) = constraint_resolver.resolve(env) {
+                if let Err(cn_diags) = constraint_resolver.resolve(env)
+                    && !cn_diags.is_empty()
+                {
                     if mod_idx == 0 {
                         self.cn_errors = Some(cn_diags);
-                    } else if !cn_diags.is_empty() {
+                    } else {
                         match &mut self.cn_errors {
                             Some(existing) => existing.extend(cn_diags),
                             None => self.cn_errors = Some(cn_diags),
@@ -487,6 +574,7 @@ impl DocumentState {
         }
 
         self.asts = all_asts;
+        self.compilation_syms = compilation_syms;
         self.compiler = Some(compiler);
 
         self.build_symbol_map();

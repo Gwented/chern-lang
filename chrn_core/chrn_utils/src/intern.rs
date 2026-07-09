@@ -108,7 +108,7 @@ pub struct Intern {
     pos: usize,
 }
 
-pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_JAVA_UPPER + 1) as usize;
+pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_OCTAL + 1) as usize;
 
 impl Intern {
     /// Creates interner that pre-loads itself with all defined interned string literals.

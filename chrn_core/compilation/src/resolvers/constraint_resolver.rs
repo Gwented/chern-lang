@@ -1,6 +1,6 @@
 use chrn_utils::{
     chrn_config::ChrnConfig,
-    id_types::{AstId, ExprId, SpannedContainer, SpannedContainerRef, TypeId},
+    id_types::{AstId, ExprId, SpannedContainer, SpannedContainerRef, SymbolId, TypeId},
     intern::Intern,
     source_map::{
         source_diagnostic::{DiagnosticLevel, SourceDiagnostic},
@@ -18,7 +18,11 @@ use crate::{
     },
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
     script_compiler::ScriptCompiler,
-    semantic::{hir::hir_concepts::Type, preset_err::PresetErr, preset_reporter},
+    semantic::{
+        hir::hir_concepts::{SymbolKind, Type},
+        preset_err::PresetErr,
+        preset_reporter,
+    },
 };
 
 pub struct ConstraintResolver<'a> {
@@ -26,7 +30,6 @@ pub struct ConstraintResolver<'a> {
     pub(crate) interner: &'a Intern,
     pub(crate) compiler: &'a mut ScriptCompiler,
     // We reward hack here
-    /// If module and ast ids are not the same, this will break. (Will change(Right?))
     pub(crate) err_vec: Vec<SourceDiagnostic>,
 }
 
@@ -48,47 +51,33 @@ impl<'a> ConstraintResolver<'a> {
 
     //NOTE: This seemingly has everything from the ast that it would need.
     pub fn resolve(&mut self, env: &ResolverEnv) -> Result<(), Vec<SourceDiagnostic>> {
-        // I don't think dependency tracking can be avoided here
-        for (id, item) in env.ast_info.items.iter().enumerate() {
-            let ast_id = AstId::new(id as u32);
-            // Maybe alias is solved first?
-
-            match item {
-                Item::TypeDef(abs_typedef) => {
-                    _ = self.resolve_typedef(abs_typedef, ast_id, env);
-                    // for err in &self.reporter.err_vec {
-                    //     println!("{}", err.fmtted_diag);
-                    // }
-                }
-                Item::Struct(abs_struct) => {
-                    _ = self.resolve_struct(abs_struct, ast_id, env);
-                    // for err in &self.reporter.err_vec {
-                    //     println!("{}", err.fmtted_diag);
-                    // }
-                }
-                Item::Enum(abs_enum) => {
-                    _ = self.resolve_enum(abs_enum, ast_id, env);
-                    // for err in &self.reporter.err_vec {
-                    //     println!("{}", err.fmtted_diag);
-                    // }
-                }
-                Item::Alias(abs_alias) => {
-                    _ = self.resolve_alias(abs_alias, ast_id, env);
-                    // for err in &self.reporter.err_vec {
-                    //     println!("{}", err.fmtted_diag);
-                    // }
-                    // todo!("Todol");
-                }
-                Item::Var(abs_var) => {
-                    _ = self.resolve_var(abs_var, ast_id, env);
-                    // for err in &self.reporter.err_vec {
-                    //     println!("{}", err.fmtted_diag);
-                    // }
-                    // todo!("Todol");
-                }
-                Item::Config(abs_cfg) => {
-                    let _ = self.resolve_cfg_root(abs_cfg, ast_id, env);
-                }
+        // Everything skipped is not a factor in this compilation step.
+        for sym_id in env.compilation_syms.iter().cloned() {
+            match self.compiler.symbols[sym_id].kind {
+                // This split is more so, users can define these set of symbols, and users cannot
+                // define the unreacables.
+                SymbolKind::Type(type_id) => match &self.compiler.types[type_id].ty {
+                    Type::Struct(_) => self.resolve_struct(sym_id, env),
+                    Type::Enum(_) => self.resolve_enum(sym_id, env),
+                    Type::Alias(_) => self.resolve_alias(sym_id, env),
+                    Type::TypeDef(_) => self.resolve_typedef(sym_id, env),
+                    // Not sure about this right now
+                    // New functions cannot be declared as symbols, only the compiler creates them.
+                    // None of these can be user-defined, but exist internally.
+                    Type::Deferred(_)
+                    | Type::Func(_)
+                    | Type::Constrained(_)
+                    | Type::Unknown
+                    | Type::BuiltinType(_) => {
+                        unreachable!()
+                    }
+                },
+                // Still uses sym id since their actual ids make it a little more complicated to get
+                // to their ast id
+                SymbolKind::Variable(_) => self.resolve_var(sym_id, env),
+                SymbolKind::Config(_) => self.resolve_cfg_root(sym_id, env),
+                // Users cannot define these but they exist internally.
+                SymbolKind::Module(_) | SymbolKind::Directive(_) => unreachable!(),
             }
         }
 
@@ -106,20 +95,12 @@ impl<'a> ConstraintResolver<'a> {
     //
     // Maybe we can privacy check here so semantic information is still present, and the error is
     // also present
-    fn resolve_var(
-        &mut self,
-        abs_var: &AbstractVar,
-        ast_id: AstId,
-        env: &ResolverEnv,
-    ) -> Result<(), ()> {
+    fn resolve_var(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
         // Not sure what this might need checked yet other than privacy
-        let scope_id = self
-            .compiler
-            .extract_scope_id(ScopeType::Neutral, env.current_mod);
-        let table = &self.compiler.get_scope(scope_id).scope.table;
-        let sym_id = table.ast_to_sym[&ast_id];
-
-        let symbol = &self.compiler.symbols[sym_id];
+        let ast_id = self.compiler.symbols[parent_sym_id]
+            .ast_id
+            .expect("Should be user symbols only");
+        let abs_var = env.ast_info.get_var(ast_id);
 
         // let val_info = self.compiler.get_var(sym_id);
         // let ty = &self.compiler.types[val_info.type_id ].ty;
@@ -128,42 +109,27 @@ impl<'a> ConstraintResolver<'a> {
         // if let Type::Unknown = ty {
         //     return Err(());
         // }
-
-        Ok(())
     }
 
-    fn resolve_cfg_root(
-        &mut self,
-        abs_cfg_root: &AbstractConfig,
-        ast_id: AstId,
-        env: &ResolverEnv,
-    ) -> Result<(), ()> {
-        let scope_id = self
-            .compiler
-            .extract_scope_id(ScopeType::Complex, env.current_mod);
-        let table = &self.compiler.get_scope(scope_id).scope.table;
-        let sym_id = table.ast_to_sym[&ast_id];
+    fn resolve_cfg_root(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
+        let ast_id = self.compiler.symbols[parent_sym_id]
+            .ast_id
+            .expect("Should be user symbols only");
+        let abs_cfg_root = env.ast_info.get_cfg_root(ast_id);
 
         // let module = &self.compiler.mods[env.current_mod];
-        let cfg_root = self.compiler.get_cfg_def_root(sym_id);
+        let cfg_root = self.compiler.get_cfg_def_root(parent_sym_id);
         dbg!(cfg_root);
         todo!("cfg")
     }
 
-    fn resolve_typedef(
-        &mut self,
-        abs_typedef: &AbstractTypeDef,
-        ast_id: AstId,
-        env: &ResolverEnv,
-    ) -> Result<(), ()> {
-        let scope_id = self
-            .compiler
-            .extract_scope_id(ScopeType::Var, env.current_mod);
-        let table = &self.compiler.get_scope(scope_id).scope.table;
-        let sym_id = table.ast_to_sym[&ast_id];
+    fn resolve_typedef(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
+        let ast_id = self.compiler.symbols[parent_sym_id]
+            .ast_id
+            .expect("Should be user symbols only");
+        let abs_typedef = env.ast_info.get_typedef(ast_id);
 
-        // let module = &self.compiler.mods[env.current_mod];
-        let type_def = self.compiler.get_typedef(sym_id);
+        let type_def = self.compiler.get_typedef(parent_sym_id);
         let ty_info = &self.compiler.types[type_def.type_id];
 
         // Checking if condition is valid for the given type
@@ -260,8 +226,6 @@ impl<'a> ConstraintResolver<'a> {
                 );
             }
         }
-
-        Ok(())
     }
 
     // Needs:
@@ -279,23 +243,17 @@ impl<'a> ConstraintResolver<'a> {
 
     // Alias should probably be ran first by default
     // Also needs to infer it's own constraints
-    fn resolve_alias(
-        &mut self,
-        abs_alias: &AbstractAlias,
-        ast_id: AstId,
-        env: &ResolverEnv,
-    ) -> Result<(), ()> {
-        let scope_id = self
-            .compiler
-            .extract_scope_id(ScopeType::Neutral, env.current_mod);
-        let table = &self.compiler.get_scope(scope_id).scope.table;
-        let sym_id = table.ast_to_sym[&ast_id];
+    fn resolve_alias(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
+        let ast_id = self.compiler.symbols[parent_sym_id]
+            .ast_id
+            .expect("Should be user symbols only");
+        let abs_alias = env.ast_info.get_typedef(ast_id);
 
         //TODO: Need to typecheck based off of the conditional expressions found
 
         // let alias_type_id = self.compiler.get_type_id(sym_id);
-        let alias_def = self.compiler.get_alias(sym_id);
-        let alias_type_id = self.compiler.extract_type_id(sym_id);
+        let alias_def = self.compiler.get_alias(parent_sym_id);
+        let alias_type_id = self.compiler.extract_type_id(parent_sym_id);
 
         // TODO: This should now just check instead of infer
 
@@ -386,13 +344,13 @@ impl<'a> ConstraintResolver<'a> {
         // constraints, otherwise, keep the same concrete type checks with builtins
 
         // Only the type of functions used matter if they depend on self.
-        let alias_def = self.compiler.get_alias_mut(sym_id);
+        let alias_def = self.compiler.get_alias_mut(parent_sym_id);
         // alias_def.ty_constraints = found_constraints.iter().filter_map(|c| c.is_some());
 
         // Currently assuming that if we see none here it's fine since technically, you could
         // declare a parameter and have it just not be used and never face any type errors.
 
-        let alias_def = self.compiler.get_alias(sym_id);
+        let alias_def = self.compiler.get_alias(parent_sym_id);
         // Need a system where it takes a local variable, looks through each expression, sees if
         // it's used, then if so attempts to assign the constraint to the used argument.
 
@@ -416,9 +374,6 @@ impl<'a> ConstraintResolver<'a> {
                 }
             }
         }
-
-        // todo!("End");
-        Ok(())
     }
 
     // // Not quite sure what to do with this yet since it's only used for alias, if it were used for
@@ -559,25 +514,17 @@ impl<'a> ConstraintResolver<'a> {
 
     // Needs:
     //
-    fn resolve_struct(
-        &mut self,
-        abs_struct: &AbstractStruct,
-        ast_id: AstId,
-        env: &ResolverEnv,
-    ) -> Result<(), ()> {
-        let scope_id = self
-            .compiler
-            .extract_scope_id(ScopeType::Nest, env.current_mod);
-        let table = &self.compiler.get_scope(scope_id).scope.table;
-
+    fn resolve_struct(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
         //TODO: global condition and argument setting.
         //field arg and cond settings.
         //same for enums.
 
-        let sym_id = table.ast_to_sym[&ast_id];
-        let struct_def = self.compiler.get_struct(sym_id);
+        let ast_id = self.compiler.symbols[parent_sym_id]
+            .ast_id
+            .expect("Should be user symbols only");
+        let abs_struct = env.ast_info.get_struct(ast_id);
 
-        let module = &self.compiler.mods[env.current_mod];
+        let struct_def = self.compiler.get_struct(parent_sym_id);
 
         // Glob conds
         for (i, member_id) in struct_def.fields.iter().enumerate() {
@@ -671,25 +618,15 @@ impl<'a> ConstraintResolver<'a> {
                 }
             }
         }
-
-        Ok(())
     }
 
-    fn resolve_enum(
-        &mut self,
-        abs_enum: &AbstractEnum,
-        ast_id: AstId,
-        env: &ResolverEnv,
-    ) -> Result<(), ()> {
-        let scope_id = self
-            .compiler
-            .extract_scope_id(ScopeType::Nest, env.current_mod);
-        let table = &self.compiler.get_scope(scope_id).scope.table;
+    fn resolve_enum(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
+        let ast_id = self.compiler.symbols[parent_sym_id]
+            .ast_id
+            .expect("Should be user symbols only");
+        let abs_enum = env.ast_info.get_enum(ast_id);
 
-        let sym_id = table.ast_to_sym[&ast_id];
-
-        let enum_def = &self.compiler.get_enum(sym_id);
-        let module = &self.compiler.mods[env.current_mod];
+        let enum_def = &self.compiler.get_enum(parent_sym_id);
 
         // Glob conds
         for (i, member_id) in enum_def.variants.iter().enumerate() {
@@ -803,8 +740,6 @@ impl<'a> ConstraintResolver<'a> {
                 }
             }
         }
-
-        Ok(())
     }
 
     // TODO: Type alignment with the used function

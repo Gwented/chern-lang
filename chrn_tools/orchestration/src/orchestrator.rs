@@ -1,13 +1,18 @@
 use chrn_utils::{
-    core_error::ScriptError, id_types::ModuleId, source_map::source_diagnostic::Reporter,
+    core_error::ScriptError,
+    id_types::{ModuleId, SymbolId},
+    source_map::source_diagnostic::Reporter,
 };
 use compilation::{
     lexer::{Lexer, token::SpannedToken, trivia::Trivia},
     modules::ModuleState,
     parser::{self, ast::ast_concepts::AstInfo},
     resolvers::{
-        constraint_resolver::ConstraintResolver, member_resolver::MemberResolver,
-        name_resolver::NamespaceResolver, resolver_env::ResolverEnv, type_resolver::TypeResolver,
+        constraint_resolver::ConstraintResolver,
+        member_resolver::MemberResolver,
+        name_resolver::NamespaceResolver,
+        resolver_env::{RegistrationEnv, ResolverEnv},
+        type_resolver::TypeResolver,
     },
     script_compiler::{ScriptCompiler, script_compiler_store::ScriptCompilerStore},
 };
@@ -68,31 +73,43 @@ pub fn run_all(
         compiler_store.asts.push(ast_info_opt);
     }
 
+    // TEST:
     // This should be stored internally
     //
     // Creates envs so that resolvers can maintain their state, given the current environment of modules
-    let resolver_envs = create_envs(compiler, compiler_store, &compiler_store.asts);
+    let registration_envs =
+        create_registration_envs(compiler, compiler_store, &compiler_store.asts);
 
     // Storing this so that the compiler can be borrowed without conflicts and keep resolution incremental
     let mod_len = compiler.mods.len();
 
     let mut ns_resolver =
-        NamespaceResolver::new(&compiler_store.settings, &compiler_store.interner, compiler);
+        NamespaceResolver::new(&compiler_store.cfg, &compiler_store.interner, compiler);
 
+    // Cannot mutate store while looping so ownership is controlled here
+    let mut mod_symbols: Vec<Option<Vec<SymbolId>>> = Vec::new();
     for i in 0..mod_len {
         // If there is no environment to use then it's not fit for resolution
         // This is a dense array so it works fine
-        let current_env = match &resolver_envs[i] {
+        let current_env = match &registration_envs[i] {
             Some(env) => env,
-            None => continue,
+            None => {
+                mod_symbols.push(None);
+                continue;
+            }
         };
 
-        ns_resolver
-            .resolve(&current_env)
-            .unwrap_or_else(|mut diags| {
-                reporter.diags.append(&mut diags);
-            });
+        let (current_mod_symbols, mut diags) = ns_resolver.resolve(&current_env);
+        reporter.diags.append(&mut diags);
+        mod_symbols.push(Some(current_mod_symbols));
     }
+
+    // Ownership transfer
+    compiler_store.compilation_syms.append(&mut mod_symbols);
+
+    //TEST:
+    // Leaving the registration stage and being able to use the later resolver stage env
+    let resolver_envs = create_resolver_envs(compiler, compiler_store);
 
     // if !reporter.diags.is_empty() {
     //     let mut diags = Vec::new();
@@ -104,20 +121,24 @@ pub fn run_all(
     //for the lexer and ast part, then they can do the same here but the next parts would need
     //efficient locking?
 
-    let mut member_diags = MemberResolver::new(
-        &compiler_store.settings,
-        &resolver_envs,
-        &compiler_store.interner,
-        compiler,
-    )
-    .resolve();
+    let mut member_resolver =
+        MemberResolver::new(&compiler_store.cfg, &compiler_store.interner, compiler);
 
-    reporter.append_safe(&mut member_diags);
+    for i in 0..mod_len {
+        // If there is no environment to use then it's not fit for resolution
+        let current_env = match &resolver_envs[i] {
+            Some(env) => env,
+            None => continue,
+        };
+
+        let mut member_diags = member_resolver.resolve(&current_env);
+        reporter.append_safe(&mut member_diags);
+    }
 
     //TODO: Wrap some of these resolvers into convience functions?
 
     let mut ty_resolver =
-        TypeResolver::new(&compiler_store.settings, &compiler_store.interner, compiler);
+        TypeResolver::new(&compiler_store.cfg, &compiler_store.interner, compiler);
 
     for i in 0..mod_len {
         // If there is no environment to use then it's not fit for resolution
@@ -141,7 +162,7 @@ pub fn run_all(
     }
 
     let mut constraint_resolver =
-        ConstraintResolver::new(&compiler_store.settings, &compiler_store.interner, compiler);
+        ConstraintResolver::new(&compiler_store.cfg, &compiler_store.interner, compiler);
 
     for i in 0..mod_len {
         let current_env = match &resolver_envs[i] {
@@ -230,7 +251,7 @@ pub fn run_parser(
     };
 
     let (ast_info, mut diags) = parser::parse(
-        &compiler_store.settings,
+        &compiler_store.cfg,
         &region,
         &toks,
         &mut compiler_store.interner,
@@ -245,11 +266,11 @@ pub fn run_parser(
 ///
 /// This leaves the `asts` structures connected as a reference on purpose to make
 /// ownership explicit.
-fn create_envs<'a>(
+fn create_registration_envs<'a>(
     compiler: &ScriptCompiler,
     compiler_store: &'a ScriptCompilerStore,
     asts: &'a Vec<Option<AstInfo>>,
-) -> Vec<Option<ResolverEnv<'a>>> {
+) -> Vec<Option<RegistrationEnv<'a>>> {
     let mut all_envs = Vec::new();
     for i in 0..compiler.mods.len() {
         let mod_id = ModuleId::new(i);
@@ -275,7 +296,60 @@ fn create_envs<'a>(
         };
 
         //NOTE: pre store envs? Part of cache or store?
-        let env = ResolverEnv::new(current_ast, current_region, module.mod_id);
+        // Can't !,!.
+        let env = RegistrationEnv::new(current_ast, current_region, module.mod_id);
+        all_envs.push(Some(env));
+    }
+
+    all_envs
+}
+
+/// Creates all environments possible, which is stored aligned with all modules
+///
+/// This leaves the `asts` structures connected as a reference on purpose to make
+/// ownership explicit.
+fn create_resolver_envs<'a>(
+    compiler: &ScriptCompiler,
+    compiler_store: &'a ScriptCompilerStore,
+) -> Vec<Option<ResolverEnv<'a>>> {
+    let mut all_envs = Vec::new();
+    for i in 0..compiler.mods.len() {
+        let mod_id = ModuleId::new(i);
+        let module = &compiler.mods[mod_id];
+
+        let current_region = match &module.region_id {
+            Some(region_id) => &compiler_store.region_arena[*region_id],
+            None => {
+                all_envs.push(None);
+                continue;
+            }
+        };
+
+        // Can fail because if a module's ast creation is stopped, due to something like say, it's
+        // state being a broken region. This would panic since the module taht was skipped DOES have
+        // a region id, but it's ast creation was simply ignored.
+        let current_ast = match compiler_store.asts[i].as_ref() {
+            Some(ast) => ast,
+            None => {
+                all_envs.push(None);
+                continue;
+            }
+        };
+
+        // This is separate because technically these could be individually omitted depending on how
+        // compiler created symbols are done in the future. This can't actually fail at this point
+        // right now.
+        let compilation_syms = match compiler_store.compilation_syms[i].as_ref() {
+            Some(ast) => ast,
+            None => {
+                all_envs.push(None);
+                continue;
+            }
+        };
+
+        //NOTE: pre store envs? Part of cache or store?
+        // Can't !,!.
+        let env = ResolverEnv::new(current_ast, current_region, module.mod_id, compilation_syms);
         all_envs.push(Some(env));
     }
 

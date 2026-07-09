@@ -397,6 +397,7 @@ pub fn extract_modules(
         Vec::new(),
         Vec::new(),
         Vec::new(),
+        Vec::new(),
     );
 
     let compiler = ScriptCompiler::init(bind, all_mods);

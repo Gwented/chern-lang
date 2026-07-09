@@ -14,7 +14,7 @@ use crate::{
         AbstractAlias, AbstractConfig, AbstractEnum, AbstractParam, AbstractStruct,
         AbstractTypeDef, AbstractVar, Item,
     },
-    resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
+    resolvers::{resolver_env::RegistrationEnv, resolver_state::ResolverState},
     script_compiler::{self, ScriptCompiler},
     semantic::{
         hir::{
@@ -61,7 +61,16 @@ impl NamespaceResolver<'_> {
         }
     }
 
-    pub fn resolve(&mut self, env: &ResolverEnv) -> Result<(), Vec<SourceDiagnostic>> {
+    // Needs the reporter though
+    /// Returns the symbols created from the ast nodes within the given module `env` to allow for
+    /// module by module compilation at the symbol level.
+    ///
+    /// Any diagnostics being returned means an error occurred.
+    pub fn resolve(&mut self, env: &RegistrationEnv) -> (Vec<SymbolId>, Vec<SourceDiagnostic>) {
+        // Storing all symbols created associated with the current module so that compilation
+        // doens't have to depend on the ast to keep a coherent understanding of
+        let mut mod_symbols: Vec<SymbolId> = Vec::new();
+
         // Registering namespaces
         for (id, item) in env.ast_info.items.iter().enumerate() {
             let ast_id = AstId::new(id as u32);
@@ -75,16 +84,14 @@ impl NamespaceResolver<'_> {
                 Item::Var(abs_var) => self.register_var(abs_var, ast_id, env),
                 Item::Config(abs_cfg) => self.register_config_root(abs_cfg, ast_id, env),
             };
+
+            mod_symbols.push(sym_id);
         }
 
-        if !self.err_vec.is_empty() {
-            let mut diags = Vec::new();
-            diags.append(&mut self.err_vec);
+        let mut diags = Vec::new();
+        diags.append(&mut self.err_vec);
 
-            return Err(diags);
-        }
-
-        Ok(())
+        (mod_symbols, diags)
     }
     // These registrations:
     // - Create a new symbol
@@ -94,7 +101,12 @@ impl NamespaceResolver<'_> {
     // . TODO: Should not overwrite by prioritizing the first symbol with that identifier.
     //   FIX: Need to not iterate asts to skip invalid symbol searching by scope.
 
-    fn register_config_root(&mut self, abs_cfg: &AbstractConfig, ast_id: AstId, env: &ResolverEnv) {
+    fn register_config_root(
+        &mut self,
+        abs_cfg: &AbstractConfig,
+        ast_id: AstId,
+        env: &RegistrationEnv,
+    ) -> SymbolId {
         debug_assert!(
             matches!(
                 abs_cfg.lookup_pattern,
@@ -127,6 +139,7 @@ impl NamespaceResolver<'_> {
         table.ast_to_sym.insert(ast_id, sym_id);
 
         let cfg_def = ConfigDefRoot::new(
+            sym_id,
             abs_cfg.name_id,
             abs_cfg.name_span,
             cfg_id,
@@ -153,6 +166,8 @@ impl NamespaceResolver<'_> {
         if let Some(orig_sym_id) = orig_sym_opt {
             self.report_duplicate(orig_sym_id, sym_id, env);
         }
+
+        sym_id
     }
 
     /// Attaches ast_id to the name_id of it's ast structure.
@@ -164,8 +179,8 @@ impl NamespaceResolver<'_> {
         &mut self,
         abs_typedef: &AbstractTypeDef,
         ast_id: AstId,
-        env: &ResolverEnv,
-    ) {
+        env: &RegistrationEnv,
+    ) -> SymbolId {
         // This will all likely fail eventually
         let scope_id = self.compiler.push_scope(ScopeType::Var, env.current_mod);
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
@@ -218,9 +233,15 @@ impl NamespaceResolver<'_> {
         if let Some(orig_sym_id) = orig_sym_opt {
             self.report_duplicate(orig_sym_id, sym_id, env);
         }
+        sym_id
     }
 
-    fn register_struct(&mut self, abs_struct: &AbstractStruct, ast_id: AstId, env: &ResolverEnv) {
+    fn register_struct(
+        &mut self,
+        abs_struct: &AbstractStruct,
+        ast_id: AstId,
+        env: &RegistrationEnv,
+    ) -> SymbolId {
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
         let scope_id = self.compiler.push_scope(ScopeType::Nest, env.current_mod);
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
@@ -261,9 +282,15 @@ impl NamespaceResolver<'_> {
         if let Some(orig_sym_id) = orig_sym_opt {
             self.report_duplicate(orig_sym_id, sym_id, env);
         }
+        sym_id
     }
 
-    fn register_enum(&mut self, abs_enum: &AbstractEnum, ast_id: AstId, env: &ResolverEnv) {
+    fn register_enum(
+        &mut self,
+        abs_enum: &AbstractEnum,
+        ast_id: AstId,
+        env: &RegistrationEnv,
+    ) -> SymbolId {
         let scope_id = self.compiler.push_scope(ScopeType::Nest, env.current_mod);
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
         let type_id = TypeId::new(self.compiler.types.len() as u32);
@@ -305,9 +332,15 @@ impl NamespaceResolver<'_> {
         if let Some(orig_sym_id) = orig_sym_opt {
             self.report_duplicate(orig_sym_id, sym_id, env);
         }
+        sym_id
     }
 
-    fn register_alias(&mut self, abs_alias: &AbstractAlias, ast_id: AstId, env: &ResolverEnv) {
+    fn register_alias(
+        &mut self,
+        abs_alias: &AbstractAlias,
+        ast_id: AstId,
+        env: &RegistrationEnv,
+    ) -> SymbolId {
         let scope_id = self
             .compiler
             .push_scope(ScopeType::Neutral, env.current_mod);
@@ -500,12 +533,18 @@ impl NamespaceResolver<'_> {
         if let Some(orig_sym_id) = orig_sym_opt {
             self.report_duplicate(orig_sym_id, sym_id, env);
         }
+        sym_id
     }
 
     /// Pushes neutral scope if needed, exports variable if public, then stores it with the state
     /// `ReservedTypeSlot` so that it can reserve a type slot without making an expression this
     /// early on, which would complicate the process.
-    fn register_var(&mut self, abs_var: &AbstractVar, ast_id: AstId, env: &ResolverEnv) {
+    fn register_var(
+        &mut self,
+        abs_var: &AbstractVar,
+        ast_id: AstId,
+        env: &RegistrationEnv,
+    ) -> SymbolId {
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
         let scope_id = self
             .compiler
@@ -559,13 +598,19 @@ impl NamespaceResolver<'_> {
         if let Some(orig_sym_id) = orig_sym_opt {
             self.report_duplicate(orig_sym_id, sym_id, env);
         }
+        sym_id
     }
 
     // Cannot check for this since the type is not known
     /// Forms and stores diagnostic, given an original symbol which has the same identifier as an
     /// existing one
     //FIX: CHANGE TO NAME ID
-    fn report_duplicate(&mut self, orig_sym_id: SymbolId, dup_sym_id: SymbolId, env: &ResolverEnv) {
+    fn report_duplicate(
+        &mut self,
+        orig_sym_id: SymbolId,
+        dup_sym_id: SymbolId,
+        env: &RegistrationEnv,
+    ) {
         //NOTE: Suspicious
         let orig_sym = &self.compiler.symbols[orig_sym_id];
         let orig_ast_id = orig_sym.ast_id.expect("Core should not be resolved");

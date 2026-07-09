@@ -4,7 +4,7 @@
 
 use chrn_utils::{
     chrn_config::ChrnConfig,
-    id_types::{AstId, InternedId, MemberId, TypeId},
+    id_types::{AstId, InternedId, MemberId, SymbolId, TypeId},
     intern::Intern,
     source_map::source_diagnostic::{
         DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind,
@@ -21,7 +21,7 @@ use crate::{
         preset_reporter,
         resolve::{self, TypeExprResult},
     },
-    user_defined::UserDefinedMetadata,
+    user_defined::{TaggedSymbolId, UserDefinedMetadata},
 };
 
 // This doesn't account for general things it could do like directives since that would make it
@@ -36,7 +36,6 @@ pub struct MemberResolver<'a> {
     settings: &'a ChrnConfig,
     interner: &'a Intern,
     compiler: &'a mut ScriptCompiler,
-    envs: &'a [Option<ResolverEnv<'a>>],
     err_vec: Vec<SourceDiagnostic>,
 }
 
@@ -44,7 +43,6 @@ impl MemberResolver<'_> {
     /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new<'a>(
         settings: &'a ChrnConfig,
-        envs: &'a [Option<ResolverEnv>],
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,
     ) -> MemberResolver<'a> {
@@ -52,7 +50,6 @@ impl MemberResolver<'_> {
         compiler.resolver_state.advance();
         MemberResolver {
             settings,
-            envs,
             interner,
             compiler,
             err_vec: Vec::new(),
@@ -70,68 +67,17 @@ impl MemberResolver<'_> {
     ///
     /// If diagnostics > 0 then an error occured
     // Would options be ok here?
-    pub fn resolve(&mut self) -> Vec<SourceDiagnostic> {
-        // A loop intended to move the required checks to see if a field can actually be resolved at
-        // this stage outside the call site and turned into general metadata expected by the call sites.
-        // This needs to be done in comparison to other resolvers because the ast implicitly proves
-        // a user defined piece of data is being resolved.
-        //
-        // This probably will grow to other resolvers eventually since asts are probably not ALWAYS
-        // best to be iterated upon.
-        let mut all_user_defined: Vec<UserDefinedMetadata> = Vec::new();
-        for (i, ty_info) in self.compiler.types.items.iter().enumerate() {
-            let metadata = match &ty_info.ty {
-                Type::Struct(struct_def) => {
-                    let sym_id = struct_def.sym_id;
-                    let sym = &self.compiler.symbols[sym_id];
-                    let kind = sym.kind;
-
-                    //WARN: Builtins don't store their type id and may never so the acutal type id has to
-                    // be gotten based off the index, which is the type id anyways so this doesn't
-                    // change anything except an extra operation to create the type id again.
-                    let type_id = TypeId::new(i as u32);
-                    let mod_id = ty_info.owner;
-
-                    let ast_id = match sym.ast_id {
-                        Some(ast_id) => ast_id,
-                        None => continue,
-                    };
-
-                    UserDefinedMetadata::new(sym_id, type_id, ast_id, mod_id, kind)
-                }
-                // Could be combined with the above but not right now
-                Type::Enum(enum_def) => {
-                    let sym_id = enum_def.sym_id;
-                    let sym = &self.compiler.symbols[sym_id];
-                    let kind = sym.kind;
-
-                    let type_id = TypeId::new(i as u32);
-                    let sym = &self.compiler.symbols[sym_id];
-                    let mod_id = ty_info.owner;
-
-                    let ast_id = match sym.ast_id {
-                        Some(ast_id) => ast_id,
-                        None => continue,
-                    };
-
-                    UserDefinedMetadata::new(sym_id, type_id, ast_id, mod_id, kind)
-                }
-                _ => continue,
-            };
-
-            all_user_defined.push(metadata);
-        }
-
-        for metadata in all_user_defined {
-            // Modules and AstInfo are dense arrays so this is valid
-            let env = self.envs[metadata.mod_id.id].as_ref().expect(
-                "Previous loop failed to register user metadata OR dense array is misaligned from module startup",
-            );
-
-            match self.compiler.types[metadata.type_id].ty {
-                Type::Struct(_) => self.resolve_struct(metadata, env),
-                Type::Enum(_) => self.resolve_enum(metadata, env),
-                _ => unreachable!("Grug"),
+    pub fn resolve(&mut self, env: &ResolverEnv) -> Vec<SourceDiagnostic> {
+        // Goes through all symbols the current module has and only picks structs and enums to
+        // append to.
+        for sym_id in env.compilation_syms {
+            match self.compiler.symbols[*sym_id].kind {
+                SymbolKind::Type(type_id) => match self.compiler.types[type_id].ty {
+                    Type::Struct(_) => self.resolve_struct(*sym_id, env),
+                    Type::Enum(_) => self.resolve_enum(*sym_id, env),
+                    _ => (),
+                },
+                _ => (),
             }
         }
 
@@ -140,10 +86,12 @@ impl MemberResolver<'_> {
         diags
     }
 
-    fn resolve_struct(&mut self, metadata: UserDefinedMetadata, env: &ResolverEnv) {
-        let abs_struct = env.ast_info.get_struct(metadata.ast_id);
+    fn resolve_struct(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
+        let ast_id = self.compiler.symbols[parent_sym_id]
+            .ast_id
+            .expect("Should be user symbols only");
+        let abs_struct = env.ast_info.get_struct(ast_id);
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
-        let parent_sym_id = metadata.sym_id;
 
         let mut fields: Vec<MemberId> = Vec::new();
 
@@ -194,33 +142,6 @@ impl MemberResolver<'_> {
                     TypeId::new(script_compiler::CORE_UNKNOWN)
                 }
             };
-
-            // if let Some(original) = seen.iter().find(|other| field_typedef.name_id == other.1) {
-            //     let struct_name = self.interner.search(abs_struct.name_id);
-            //     let dup_name = self.interner.search(field_typedef.name_id);
-            //
-            //     let orig_span = abs_struct.fields[original.0].name_span;
-            //     let field_span = abs_struct.fields[i].name_span;
-            //
-            //     let core_msg = format!("More than one field has the identifier \"{dup_name}\"");
-            //
-            //     let src_diag =
-            //         SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-            //             .add_annotation(
-            //                 abs_struct.name_span,
-            //                 AnnotationKind::Secondary,
-            //                 "Found inside this struct".to_string().into(),
-            //             )
-            //             .add_annotation(
-            //                 orig_span,
-            //                 AnnotationKind::Secondary,
-            //                 format!("Original usage of identifier `{dup_name}` here").into(),
-            //             )
-            //             .add_annotation(field_span, AnnotationKind::Primary, None)
-            //             .build();
-            //
-            //     self.err_vec.push(src_diag);
-            // }
 
             seen.push(&field_typedef);
 
@@ -288,41 +209,16 @@ impl MemberResolver<'_> {
             }
         }
 
-        // if let Some(original) = seen.iter().find(|other| field_typedef.name_id == other.1) {
-        //     let struct_name = self.interner.search(abs_struct.name_id);
-        //     let dup_name = self.interner.search(field_typedef.name_id);
-        //
-        //     let orig_span = abs_struct.fields[original.0].name_span;
-        //     let field_span = abs_struct.fields[i].name_span;
-        //
-        //     let core_msg = format!("More than one field has the identifier \"{dup_name}\"");
-        //
-        //     let src_diag =
-        //         SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-        //             .add_annotation(
-        //                 abs_struct.name_span,
-        //                 AnnotationKind::Secondary,
-        //                 "Found inside this struct".to_string().into(),
-        //             )
-        //             .add_annotation(
-        //                 orig_span,
-        //                 AnnotationKind::Secondary,
-        //                 format!("Original usage of identifier `{dup_name}` here").into(),
-        //             )
-        //             .add_annotation(field_span, AnnotationKind::Primary, None)
-        //             .build();
-        //
-        //     self.err_vec.push(src_diag);
-        // }
-
         let struct_def = self.compiler.get_struct_mut(parent_sym_id);
         debug_assert_eq!(struct_def.fields.len(), 0);
         struct_def.fields.append(&mut fields);
     }
 
-    fn resolve_enum(&mut self, metadata: UserDefinedMetadata, env: &ResolverEnv) {
-        let abs_enum = env.ast_info.get_enum(metadata.ast_id);
-        let parent_sym_id = metadata.sym_id;
+    fn resolve_enum(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
+        let ast_id = self.compiler.symbols[parent_sym_id]
+            .ast_id
+            .expect("Should be user symbols only");
+        let abs_enum = env.ast_info.get_enum(ast_id);
 
         let mut variants: Vec<MemberId> = Vec::new();
 
