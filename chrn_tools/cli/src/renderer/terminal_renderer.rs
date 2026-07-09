@@ -89,10 +89,12 @@ pub(crate) fn render_terminal_diags(
 
         all_src_strs.push(src_str);
     }
+    dbg!(&region_arena[SourceRegionId::new(0)].src_bytes.len());
 
     // Final step of rendering and returning the text
     let mut rendered_diags: Vec<String> = Vec::with_capacity(diags.len());
     for diag in diags {
+        dbg!(diag);
         let rendered_diag = form_diag(
             diag,
             &all_src_strs,

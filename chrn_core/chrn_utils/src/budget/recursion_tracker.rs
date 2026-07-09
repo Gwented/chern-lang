@@ -14,6 +14,14 @@ impl RecursionTracker {
         }
     }
 
+    pub fn depth(&self) -> u16 {
+        self.depth.get()
+    }
+
+    pub fn limit(&self) -> u16 {
+        self.limit
+    }
+
     /// Creates recursive-depth tracking guard
     ///
     /// Returns `Ok` guard if the limit has not been reached.

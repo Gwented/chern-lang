@@ -13,7 +13,7 @@ pub(super) enum Branch {
     Type,
     FuncArgs,
     /// #warn, #scient, etc
-    TypeArgs,
+    Directive,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -61,7 +61,7 @@ impl Display for Branch {
             Branch::Type => write!(f, "[type]"),
             Branch::Cond => write!(f, "[conditions]"),
             Branch::FuncArgs => write!(f, "[args]"),
-            Branch::TypeArgs => write!(f, "[type args]"),
+            Branch::Directive => write!(f, "[type args]"),
         }
     }
 }

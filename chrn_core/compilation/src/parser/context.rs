@@ -56,26 +56,26 @@ const A_BRANCH_FUNC_SET: u64 = A_BASE_EXIT_SET | token::C_BRACKET;
 // p_ctx
 #[derive(Debug)]
 pub(super) struct ParserContext<'a> {
-    settings: &'a ChrnConfig,
+    cfg: &'a ChrnConfig,
     pub(super) region: &'a SourceRegion,
     toks: &'a [SpannedToken],
     pos: usize,
-    budget: ParserBudget,
+    // pub(super) budget: ParserBudget,
     pub(super) err_vec: Vec<SourceDiagnostic>,
 }
 
 impl<'a> ParserContext<'a> {
     pub(super) fn new(
-        settings: &'a ChrnConfig,
+        cfg: &'a ChrnConfig,
         region: &'a SourceRegion,
         toks: &'a [SpannedToken],
-        budget: ParserBudget,
+        // budget: ParserBudget,
     ) -> ParserContext<'a> {
         ParserContext {
-            settings,
+            cfg,
             region,
             toks,
-            budget,
+            // budget,
             pos: 0,
             err_vec: Vec::new(),
         }
@@ -293,7 +293,7 @@ impl<'a> ParserContext<'a> {
             Branch::Cond => (C_BRANCH_COND_SET, A_BRANCH_COND_SET),
             Branch::Type => (C_BRANCH_TYPE_SET, A_BRANCH_TYPE_SET),
             Branch::FuncArgs => (C_BRANCH_FUNC_SET, A_BRANCH_FUNC_SET),
-            Branch::TypeArgs => (C_BRANCH_TYPE_ARGS_SET, A_BRANCH_TYPE_ARGS_SET),
+            Branch::Directive => (C_BRANCH_TYPE_ARGS_SET, A_BRANCH_TYPE_ARGS_SET),
         }
     }
 
@@ -576,7 +576,7 @@ impl<'a> ParserContext<'a> {
                 _ => builder,
             },
             // Branch::FuncArgs => todo!(),
-            Branch::TypeArgs => match found.tok {
+            Branch::Directive => match found.tok {
                 Token::Id(name_id) => {
                     let found_bytes = interner.search(name_id).as_bytes();
                     let similar_vec = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Directive);
@@ -621,6 +621,10 @@ impl<'a> ParserContext<'a> {
         }
     }
 
+    pub(super) fn peek(&mut self) -> SpannedToken {
+        self.toks[self.pos].clone()
+    }
+
     pub(super) fn peek_tok(&mut self) -> Token {
         self.toks.get(self.pos).map(|t| t.tok).unwrap_or(Token::EOF)
     }
@@ -643,8 +647,11 @@ impl<'a> ParserContext<'a> {
     }
 
     //FIX: I don't like these defaults
+    //
     pub(super) fn peek_behind(&self, dest: usize) -> SpannedToken {
         self.toks
+            // This subtraction is always from a controlled area so it can't fail unless external
+            // usage is harmful.
             .get(self.pos - dest)
             .map(|st| st.clone())
             .unwrap_or(self.toks[self.toks.len() - 1].clone())

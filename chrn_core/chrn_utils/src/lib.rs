@@ -14,26 +14,22 @@ pub mod source_map;
 
 // IGNORE THIS
 /// Max loops before what would be considered a broken mutation loop.
-/// Arbitrarily high number to help examine recursive bugs better
+/// Arbitrarily high number to help examine recursive bugs better and for stopping infinite loops in
+/// general.
 pub const MAX_LOOPS: usize = 10000004;
 
 /// Max modules that can be in memory at once
-pub const MAX_MODULES: u16 = 1; // 500
+pub const MAX_MODULES: u16 = 500; // 4MB at most since max script file/block size is 8KB
 
 /// Max recursive descent that can be done
-pub const MAX_RECURSIVE_DEPTH: u16 = 1; // 512
+pub const MAX_RECURSIVE_DEPTH: u16 = 1024; // 512
 
 /// Max expression nodes that can be consumed in a singule expression tree
 pub const MAX_EXPR_NODES: usize = 1; // 5,000,000
 
 #[cfg(test)]
 pub mod tests {
-    use crate::{
-        budget::mem_budget::{BudgetResult, MemoryBudget},
-        id_types::PathId,
-        intern::{self, Intern},
-        source_map::source_diagnostic::{DiagnosticLevel, SourceDiagnostic},
-    };
+    use crate::intern::{self, Intern};
 
     #[test]
     fn keyword_intern_alignment() {

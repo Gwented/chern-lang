@@ -256,10 +256,14 @@ impl<R: Read> ConfigLoader<'_, R> {
                             false
                         };
 
+                    // OLD BEHAVIOR THAT MAY BE RE-APPLIED
                     // If `@def` was seen, there is enough space to check, and `@end` aligns with
                     // the bytes seen, set the serial start to the position 1 after `@end`
-                    if requires_end
-                        && can_check
+                    // OLD BEHAVIOR THAT MAY BE RE-APPLIED
+                    //
+                    // This no longer requires @def first for now, so files can end with @end
+                    // without any start syntax.
+                    if can_check
                         && &self.handle.buffer()[self.pos..self.pos + ANNOTATION_CLAUSE_SIZE]
                             == b"@end"
                     {
@@ -332,6 +336,8 @@ impl<R: Read> ConfigLoader<'_, R> {
         // TODO: Assert this...
 
         let region = self.create_region(script_start, None);
+        dbg!(str::from_utf8(&region.src_bytes));
+        panic!();
 
         // Case of no @def and no @end which requires a '\0' return since the entire file should be
         // read. This does not mean it is correct, it only means the read limit wasn't reached.
@@ -353,11 +359,11 @@ impl<R: Read> ConfigLoader<'_, R> {
             //
             //  If we have "text\0", it advances "t" stopping at "\0", which naturally fits
             //  exclusive
-            // TODO: Change everything to exclusive.
-            //WARN: - 1 REMOVED FOR EXCLUSIVE SPANNING
             let eof_pos = self.pos as u32;
 
-            let eof_span = SourceSpan::new(self.current_region_id, eof_pos, eof_pos);
+            // Need to - 1 so that the spanning doesn't have a len of 0.
+            // Cannot do + 1 to the end of the span or it extends one past len
+            let eof_span = SourceSpan::new(self.current_region_id, eof_pos - 1, eof_pos);
 
             let src_diag =
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.current_path_id)

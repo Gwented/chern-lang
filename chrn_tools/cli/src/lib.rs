@@ -8,6 +8,10 @@ mod macros;
 mod presentation;
 mod renderer;
 
+// Argument to nullify this should exist
+/// Max diagnostics that can be held by the reporter
+const MAX_DIAGNOSTICS: usize = 80;
+
 #[cfg(test)]
 mod tests {
     use crate::detect;

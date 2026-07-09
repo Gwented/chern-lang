@@ -24,10 +24,6 @@ use crate::{
     s_ifier,
 };
 
-// Argument to nullify this should exist
-/// Max diagnostics that can be held by the reporter
-const MAX_DIAGNOSTICS: usize = 1;
-
 pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, Option<String>> {
     match &cli.command {
         Commands::Check(check_cmd) => exec_check(&check_cmd, &cli.glob_args, &cli_cfg),
@@ -44,7 +40,7 @@ fn exec_check(
     cli_cfg: &CliConfig,
 ) -> Result<String, Option<String>> {
     let chrn_cfg = ChrnConfig::new();
-    let mut reporter = Reporter::new(MAX_DIAGNOSTICS);
+    let mut reporter = Reporter::new(crate::MAX_DIAGNOSTICS);
     let path = files::make_canon(&check_cmd.path)?;
     let render_kind = RenderKind::from_check_cmd(check_cmd);
 
@@ -160,7 +156,7 @@ fn exec_check(
                         let s_suffix = s_ifier!(diags.len());
                         print_diags!(&rendered_diags);
 
-                        // Should this be converted to a footer? Are we all feet?
+                        // Should this be converted to a footer?
                         format!("Reported {} error{s_suffix}", diags.len()).into()
                     }
                 };

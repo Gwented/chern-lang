@@ -41,16 +41,17 @@ use lang::keywords::Keyword;
 /// Returns a tuple of `AstInfo` and Diagnostics, where `AstInfo` may or may not be unfinished,
 /// depending on if diagnostics > 0
 pub fn parse(
-    settings: &ChrnConfig,
+    cfg: &ChrnConfig,
     region: &SourceRegion,
     tokens: &[SpannedToken],
     interner: &Intern,
 ) -> (AstInfo, Vec<SourceDiagnostic>) {
+    // Output it's own summary? Does AstInfo hold a summary?
     let mut ast_info = AstInfo::new();
 
     let mut state = ParserState::new();
     let mut budget = ParserBudget::new(chrn_utils::MAX_RECURSIVE_DEPTH, chrn_utils::MAX_EXPR_NODES);
-    let mut ctx = ParserContext::new(settings, region, tokens, budget);
+    let mut ctx = ParserContext::new(cfg, region, tokens);
 
     // Skipping possible @def first since it is recognized as it's own token
     if ctx.peek_tok() == Token::Def {
@@ -103,7 +104,7 @@ pub fn parse(
                         state.flip_alias();
                     }
 
-                    if let Ok(abs_alias) = parse_alias_stmt(&mut ctx, is_priv, interner) {
+                    if let Ok(abs_alias) = parse_alias_stmt(&mut ctx, is_priv, &budget, interner) {
                         let item = Item::Alias(abs_alias);
                         ast_info.push_item(SectionKind::Neutral, item);
                     };
@@ -111,7 +112,7 @@ pub fn parse(
                 Keyword::Let => {
                     ctx.advance_tok();
 
-                    if let Ok(abs_var) = parse_let(&mut ctx, is_priv, interner) {
+                    if let Ok(abs_var) = parse_let(&mut ctx, is_priv, &budget, interner) {
                         let item = Item::Var(abs_var);
                         ast_info.push_item(SectionKind::Neutral, item);
                     }
@@ -174,7 +175,7 @@ pub fn parse(
                             break;
                         }
 
-                        if let Ok(type_def) = parse_typedef(&mut ctx, interner) {
+                        if let Ok(type_def) = parse_typedef(&mut ctx, &budget, interner) {
                             let item = Item::TypeDef(type_def);
                             ast_info.push_item(SectionKind::Var, item);
                         }
@@ -224,7 +225,7 @@ pub fn parse(
                             Err(_) => continue,
                         };
 
-                        if let Ok(item) = parse_nest_sect(&mut ctx, is_priv, interner) {
+                        if let Ok(item) = parse_nest_sect(&mut ctx, is_priv, &budget, interner) {
                             ast_info.push_item(SectionKind::Nest, item);
                         }
                     }
@@ -268,7 +269,7 @@ pub fn parse(
                             break;
                         }
 
-                        if let Ok(abs_cfg) = parse_cfg_expr(&mut ctx, interner) {
+                        if let Ok(abs_cfg) = parse_cfg_expr(&mut ctx, &budget, interner) {
                             ast_info.push_item(SectionKind::Complex, Item::Config(abs_cfg));
                         }
                     }
@@ -388,6 +389,7 @@ pub fn parse(
 fn parse_alias_stmt(
     ctx: &mut ParserContext,
     is_priv: bool,
+    budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<AbstractAlias, Token> {
     let name_span = ctx.peek_span();
@@ -408,7 +410,7 @@ fn parse_alias_stmt(
         interner,
     )?;
 
-    let params = parse_alias_decl(ctx, interner)?;
+    let params = parse_alias_decl(ctx, budget, interner)?;
 
     ctx.expect_verbose(
         TokenKind::Assign,
@@ -419,7 +421,7 @@ fn parse_alias_stmt(
     )?;
 
     let conds = if ctx.peek_kind() == TokenKind::OBracket {
-        handle_conds(ctx, interner).unwrap_or_default()
+        handle_conds(ctx, budget, interner).unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -477,7 +479,11 @@ fn check_import(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token>
     Ok(())
 }
 
-fn parse_typedef(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractTypeDef, Token> {
+fn parse_typedef(
+    ctx: &mut ParserContext,
+    budget: &ParserBudget,
+    interner: &Intern,
+) -> Result<AbstractTypeDef, Token> {
     let name_span = ctx.peek_span();
 
     let name_id = ctx.expect_id_verbose(
@@ -500,11 +506,11 @@ fn parse_typedef(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractT
         interner,
     )?;
 
-    let ty = parse_type_expr(ctx, interner)?;
+    let ty = parse_type_expr(ctx, budget, interner)?;
 
     // WARN: DO NOT PROPOGATE
     let conds = if ctx.peek_kind() == TokenKind::OBracket {
-        handle_conds(ctx, interner).unwrap_or_default()
+        handle_conds(ctx, budget, interner).unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -527,6 +533,7 @@ fn parse_typedef(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractT
 fn parse_nest_sect(
     ctx: &mut ParserContext,
     is_priv: bool,
+    budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<Item, Token> {
     // Wait what is this error?
@@ -560,12 +567,13 @@ fn parse_nest_sect(
                 interner,
             )?;
 
-            let fields = handle_struct_fields(ctx, struct_name, interner).unwrap_or_default();
+            let fields =
+                handle_struct_fields(ctx, struct_name, budget, interner).unwrap_or_default();
 
             let conds = if ctx.peek_kind() == TokenKind::OBracket {
                 // Uses unwrap_or_default() in many places so that the rest can be parsed if present for
                 // better errors
-                handle_conds(ctx, interner).unwrap_or_default()
+                handle_conds(ctx, budget, interner).unwrap_or_default()
             } else {
                 Vec::new()
             };
@@ -603,10 +611,10 @@ fn parse_nest_sect(
                 interner,
             )?;
 
-            let variants = handle_enum_variants(ctx, enum_name, interner)?;
+            let variants = handle_enum_variants(ctx, enum_name, budget, interner)?;
 
             let glob_conds = if ctx.peek_kind() == TokenKind::OBracket {
-                handle_conds(ctx, interner).unwrap_or_default()
+                handle_conds(ctx, budget, interner).unwrap_or_default()
             } else {
                 Vec::new()
             };
@@ -648,7 +656,11 @@ fn parse_nest_sect(
 //TODO: Better complex branching tracking so that help messages can be made
 //
 //No other branches exist right now so it just parses expecting uh, stuff.
-fn parse_cfg_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractConfig, Token> {
+fn parse_cfg_expr(
+    ctx: &mut ParserContext,
+    budget: &ParserBudget,
+    interner: &Intern,
+) -> Result<AbstractConfig, Token> {
     // If the prefix is something like "var x {}" then it for this special case allows for another
     // section to lookup var
     let lookup_pattern = if ctx.peek_tok() == Token::Keyword(Keyword::Var) {
@@ -684,12 +696,12 @@ fn parse_cfg_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<Abstract
     loop {
         // for ".cases = [snake_case]"
         if ctx.peek_tok() == Token::Dot {
-            let option_assignment = parse_option_assignment(ctx, interner)?;
+            let option_assignment = parse_option_assignment(ctx, budget, interner)?;
             option_assignments.push(option_assignment);
         // for "inner {/*assignments*/}"
         } else if ctx.peek_kind() == TokenKind::Id || ctx.peek_tok() == Token::Keyword(Keyword::In)
         {
-            let abs_cfg = parse_cfg_expr(ctx, interner)?;
+            let abs_cfg = parse_cfg_expr(ctx, budget, interner)?;
             inner_field_cfg.push(abs_cfg);
         } else {
             // If no consumable token for this branch is seen
@@ -719,6 +731,7 @@ fn parse_cfg_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<Abstract
 // and appending vecs just because a field assignment was after a nested config.
 fn parse_option_assignment(
     ctx: &mut ParserContext,
+    budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<AbstractOptionAssignment, Token> {
     ctx.expect_verbose(
@@ -753,10 +766,10 @@ fn parse_option_assignment(
     //
     // - Trailing commas are accepted for the array and single element version
     let (sp_array_expr, check_comma) = if ctx.peek_tok() == Token::OBracket {
-        (parse_array(ctx, interner)?, false)
+        (parse_array(ctx, budget, interner)?, false)
     } else {
         // Assumes it's a single value assignment if no OBracket is present
-        let only_element = parse_expr(ctx, 0, interner)?;
+        let only_element = parse_expr(ctx, 0, budget, interner)?;
         let span = only_element.span;
         let array_expr = Expr::Array(ArrayExpr::new(vec![only_element]));
 
@@ -795,7 +808,11 @@ fn parse_option_assignment(
 
 // Should this just return elements similar to how call_args does?
 //NOTE: May add parse_array to parse_expr eventually
-fn parse_array(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedExpr, Token> {
+fn parse_array(
+    ctx: &mut ParserContext,
+    budget: &ParserBudget,
+    interner: &Intern,
+) -> Result<SpannedExpr, Token> {
     ctx.expect_verbose(
         TokenKind::OBracket,
         "Expected a '[' to declare array, found ",
@@ -809,7 +826,7 @@ fn parse_array(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedExpr
     let start = ctx.peek_span().start;
 
     while !ctx.peek_tok().kind().is_terminator() && ctx.peek_tok() != Token::CBracket {
-        let sp_expr = parse_expr(ctx, 0, interner)?;
+        let sp_expr = parse_expr(ctx, 0, budget, interner)?;
         elements.push(sp_expr);
 
         if ctx.peek_tok() == Token::CBracket {
@@ -849,6 +866,7 @@ fn parse_override_sect(ctx: &mut ParserContext, interner: &Intern) -> Result<(),
 fn parse_let(
     ctx: &mut ParserContext,
     is_priv: bool,
+    budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<AbstractVar, Token> {
     let name_span = ctx.peek_span();
@@ -869,7 +887,7 @@ fn parse_let(
         interner,
     )?;
 
-    let spanned_expr = parse_expr(ctx, 0, interner)?;
+    let spanned_expr = parse_expr(ctx, 0, budget, interner)?;
 
     let abs_var = AbstractVar::new(name_id, name_span, spanned_expr, is_priv);
 
@@ -880,9 +898,20 @@ fn parse_let(
 fn parse_expr(
     ctx: &mut ParserContext,
     min_bp: u8,
+    budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<SpannedExpr, Token> {
-    let mut lhs = parse_unary(ctx, interner)?;
+    let _guard = budget.increase_depth().map_err(|_| {
+        let msg = format!(
+            "Reached max recursive depth of {}",
+            budget.recursion_tracker.limit()
+        );
+
+        ctx.report_verbose(&msg, Branch::Type, interner);
+        Token::Poison
+    })?;
+
+    let mut lhs = parse_unary(ctx, budget, interner)?;
 
     // I REFUSE TO BREAK APART TOKENS
     loop {
@@ -908,7 +937,7 @@ fn parse_expr(
                 BinaryOp::BitRightShift
             };
 
-            let rhs = parse_expr(ctx, bp + 1, interner)?;
+            let rhs = parse_expr(ctx, bp + 1, budget, interner)?;
 
             let end = rhs.span.end;
             let span = SourceSpan::new(ctx.region.region_id, start, end);
@@ -928,7 +957,7 @@ fn parse_expr(
 
             ctx.advance_tok();
 
-            let rhs = parse_expr(ctx, bp + 1, interner)?;
+            let rhs = parse_expr(ctx, bp + 1, budget, interner)?;
 
             let span = SourceSpan::new(ctx.region.region_id, lhs.span.start, rhs.span.end);
             lhs = SpannedExpr::new(
@@ -948,7 +977,7 @@ fn parse_expr(
 
             ctx.advance_tok();
 
-            let args = parse_call_args(ctx, interner)?;
+            let args = parse_call_args(ctx, budget, interner)?;
             let span = SourceSpan::new(
                 ctx.region.region_id,
                 lhs.span.start,
@@ -965,7 +994,7 @@ fn parse_expr(
             let call_start = ctx.advance_span();
             ctx.advance_tok();
 
-            let args = parse_call_args(ctx, interner)?;
+            let args = parse_call_args(ctx, budget, interner)?;
             let span = SourceSpan::new(
                 ctx.region.region_id,
                 call_start.start,
@@ -1010,11 +1039,25 @@ fn parse_expr(
 }
 
 // For single values, likley lhs
-fn parse_primary(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedExpr, Token> {
+fn parse_primary(
+    ctx: &mut ParserContext,
+    budget: &ParserBudget,
+    interner: &Intern,
+) -> Result<SpannedExpr, Token> {
+    //TEST:
+    let _guard = budget.increase_depth().map_err(|_| {
+        let msg = format!(
+            "Reached max recursive depth of {}",
+            budget.recursion_tracker.limit()
+        );
+
+        ctx.report_verbose(&msg, Branch::Type, interner);
+        Token::Poison
+    })?;
     match ctx.peek_tok() {
         Token::OParen => {
             ctx.advance_tok();
-            let expr = parse_expr(ctx, 0, interner)?;
+            let expr = parse_expr(ctx, 0, budget, interner)?;
 
             ctx.expect_verbose(
                 TokenKind::CParen,
@@ -1033,7 +1076,7 @@ fn parse_primary(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedEx
 
             ctx.advance_tok();
 
-            let expr = parse_expr(ctx, 0, interner)?;
+            let expr = parse_expr(ctx, 0, budget, interner)?;
 
             let span = SourceSpan::new(
                 ctx.region.region_id,
@@ -1047,7 +1090,7 @@ fn parse_primary(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedEx
         }
         Token::Id(_) if ctx.peek_ahead(1).tok == Token::StaticAccess => {
             let start = ctx.peek_span().start;
-            let access_path = parse_static_path(ctx, interner)?;
+            let access_path = parse_static_path(ctx, budget, interner)?;
             let end = ctx.peek_behind(1).span.end;
 
             let static_span = SourceSpan::new(ctx.region.region_id, start, end);
@@ -1115,7 +1158,11 @@ fn parse_primary(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedEx
     }
 }
 
-fn parse_call_args(ctx: &mut ParserContext, interner: &Intern) -> Result<Vec<SpannedExpr>, Token> {
+fn parse_call_args(
+    ctx: &mut ParserContext,
+    budget: &ParserBudget,
+    interner: &Intern,
+) -> Result<Vec<SpannedExpr>, Token> {
     let mut args: Vec<SpannedExpr> = Vec::new();
 
     if ctx.peek_kind() == TokenKind::CParen {
@@ -1124,7 +1171,7 @@ fn parse_call_args(ctx: &mut ParserContext, interner: &Intern) -> Result<Vec<Spa
     }
 
     loop {
-        let arg = parse_expr(ctx, 0, interner)?;
+        let arg = parse_expr(ctx, 0, budget, interner)?;
         args.push(arg);
 
         if ctx.peek_tok() == Token::CParen {
@@ -1150,12 +1197,25 @@ fn parse_call_args(ctx: &mut ParserContext, interner: &Intern) -> Result<Vec<Spa
     Ok(args)
 }
 
-fn parse_unary(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedExpr, Token> {
+fn parse_unary(
+    ctx: &mut ParserContext,
+    budget: &ParserBudget,
+    interner: &Intern,
+) -> Result<SpannedExpr, Token> {
+    let _guard = budget.increase_depth().map_err(|_| {
+        let msg = format!(
+            "Reached max recursive depth of {}",
+            budget.recursion_tracker.limit()
+        );
+
+        ctx.report_verbose(&msg, Branch::Type, interner);
+        Token::Poison
+    })?;
     match ctx.peek_tok() {
         //BUG: Unary does not properly apply self to member access
         Token::Hyphen => {
             let start = ctx.advance_span().start;
-            let expr = parse_unary(ctx, interner)?;
+            let expr = parse_unary(ctx, budget, interner)?;
 
             let span = SourceSpan::new(ctx.region.region_id, start, expr.span.end);
             let unary = Unary::new(UnaryOp::Negate, Box::new(expr));
@@ -1165,7 +1225,7 @@ fn parse_unary(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedExpr
         Token::ExclamationPoint => {
             let start = ctx.advance_span().start;
 
-            let expr = parse_unary(ctx, interner)?;
+            let expr = parse_unary(ctx, budget, interner)?;
             let span = SourceSpan::new(ctx.region.region_id, start, expr.span.end);
 
             let unary = Unary::new(UnaryOp::Not, Box::new(expr));
@@ -1175,14 +1235,14 @@ fn parse_unary(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedExpr
         Token::Tilde => {
             let start = ctx.advance_span().start;
 
-            let expr = parse_unary(ctx, interner)?;
+            let expr = parse_unary(ctx, budget, interner)?;
             let span = SourceSpan::new(ctx.region.region_id, start, expr.span.end);
 
             let unary = Unary::new(UnaryOp::BitNot, Box::new(expr));
 
             Ok(SpannedExpr::new(Expr::Unary(unary), span))
         }
-        _ => parse_primary(ctx, interner),
+        _ => parse_primary(ctx, budget, interner),
     }
 }
 
@@ -1190,13 +1250,25 @@ fn parse_unary(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedExpr
 /// Recursive function for parsing all type expressions
 fn parse_type_expr(
     ctx: &mut ParserContext,
+    budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<SpannedContainer<TypeExpr>, Token> {
+    // SAFETY:
+    let _guard = budget.increase_depth().map_err(|_| {
+        let msg = format!(
+            "Reached max recursive depth of {}",
+            budget.recursion_tracker.limit()
+        );
+
+        ctx.report_verbose(&msg, Branch::Type, interner);
+        Token::Poison
+    })?;
+
     match ctx.peek_tok() {
         Token::Id(name_id) if ctx.peek_ahead(1).tok.kind() == TokenKind::OAngleBracket => {
             let start = ctx.advance_span().start;
 
-            let args = parse_generic(ctx, interner)?;
+            let args = parse_generic(ctx, budget, interner)?;
             let generic = Generic::new(name_id, args);
 
             let end = ctx.peek_behind(1).span.end;
@@ -1207,7 +1279,7 @@ fn parse_type_expr(
 
                 let mut ty_path =
                     vec![SpannedPathSegment::new(PathSegment::Generic(generic), span)];
-                let mut rest = parse_static_path(ctx, interner)?;
+                let mut rest = parse_static_path(ctx, budget, interner)?;
 
                 ty_path.append(&mut rest);
 
@@ -1224,7 +1296,7 @@ fn parse_type_expr(
         }
         Token::Id(_) if ctx.peek_ahead(1).tok.kind() == TokenKind::StaticAccess => {
             let start = ctx.peek_span().start;
-            let ty_path = parse_static_path(ctx, interner)?;
+            let ty_path = parse_static_path(ctx, budget, interner)?;
             let end = ctx.peek_behind(1).span.end;
 
             let span = SourceSpan::new(ctx.region.region_id, start, end);
@@ -1272,6 +1344,7 @@ fn parse_type_expr(
 /// and type-expression contexts.
 fn parse_static_path(
     ctx: &mut ParserContext,
+    budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<Vec<SpannedPathSegment>, Token> {
     let mut static_path: Vec<SpannedPathSegment> = Vec::new();
@@ -1290,7 +1363,7 @@ fn parse_static_path(
                 interner,
             )?;
 
-            let args = parse_generic(ctx, interner)?;
+            let args = parse_generic(ctx, budget, interner)?;
             let end = ctx.peek_behind(1).span.end;
 
             let generic = Generic::new(base_id, args);
@@ -1347,8 +1420,10 @@ fn parse_static_path(
 /// to be handled
 fn parse_generic(
     ctx: &mut ParserContext,
+    budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<Vec<SpannedContainer<TypeExpr>>, Token> {
+    let _guard = budget.increase_depth();
     ctx.expect_verbose(
         TokenKind::OAngleBracket,
         "Expected a '<' to declare generic, found ",
@@ -1359,7 +1434,7 @@ fn parse_generic(
 
     let mut inputs: Vec<SpannedContainer<TypeExpr>> = Vec::new();
 
-    let input = parse_type_expr(ctx, interner)?;
+    let input = parse_type_expr(ctx, budget, interner)?;
     inputs.push(input);
 
     // Doesn't need terminator check since the loop would need to be continued on purpose through
@@ -1367,7 +1442,7 @@ fn parse_generic(
     while ctx.peek_kind() == TokenKind::Comma {
         ctx.advance_tok();
 
-        let other_input = parse_type_expr(ctx, interner)?;
+        let other_input = parse_type_expr(ctx, budget, interner)?;
         inputs.push(other_input);
     }
 
@@ -1385,12 +1460,13 @@ fn parse_generic(
 fn handle_struct_fields(
     ctx: &mut ParserContext,
     struct_name: &str,
+    budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<Vec<AbstractTypeDef>, Token> {
     let mut fields: Vec<AbstractTypeDef> = Vec::new();
 
     while !ctx.peek_tok().kind().is_terminator() && ctx.peek_tok() != Token::CCurlyBracket {
-        let ty = parse_typedef(ctx, interner)?;
+        let ty = parse_typedef(ctx, budget, interner)?;
         fields.push(ty);
 
         if ctx.peek_tok() == Token::CCurlyBracket {
@@ -1413,13 +1489,14 @@ fn handle_struct_fields(
 fn handle_enum_variants(
     ctx: &mut ParserContext,
     enum_name: &str,
+    budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<Vec<AbstractVariant>, Token> {
     let mut variants: Vec<AbstractVariant> = Vec::new();
 
     //NOTE: ALSO SUSPICIOUS
     while !ctx.peek_tok().kind().is_terminator() && ctx.peek_tok() != Token::CCurlyBracket {
-        let variant = parse_variant(ctx, interner)?;
+        let variant = parse_variant(ctx, budget, interner)?;
         variants.push(variant);
 
         if ctx.peek_tok() == Token::CCurlyBracket {
@@ -1443,7 +1520,11 @@ fn handle_enum_variants(
 }
 
 /// Variant-specific parser that account for if there is a type declared with the variant or not
-fn parse_variant(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractVariant, Token> {
+fn parse_variant(
+    ctx: &mut ParserContext,
+    budget: &ParserBudget,
+    interner: &Intern,
+) -> Result<AbstractVariant, Token> {
     let name_span = ctx.peek_span();
 
     let name_id = ctx.expect_id_verbose(
@@ -1456,14 +1537,14 @@ fn parse_variant(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractV
 
     let ty_opt: Option<SpannedContainer<TypeExpr>> = if ctx.peek_kind() == TokenKind::Colon {
         ctx.advance_tok();
-        let ty = parse_type_expr(ctx, interner)?;
+        let ty = parse_type_expr(ctx, budget, interner)?;
         Some(ty)
     } else {
         None
     };
 
     let conds = if ctx.peek_kind() == TokenKind::OBracket {
-        handle_conds(ctx, interner).unwrap_or_default()
+        handle_conds(ctx, budget, interner).unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -1502,7 +1583,7 @@ fn parse_directive(ctx: &mut ParserContext, interner: &Intern) -> Result<Abstrac
         TokenKind::Id,
         "",
         " is not a valid directive.",
-        Branch::TypeArgs,
+        Branch::Directive,
         interner,
     )?;
 
@@ -1515,10 +1596,13 @@ fn parse_directive(ctx: &mut ParserContext, interner: &Intern) -> Result<Abstrac
 // Alias is this only one that uses this so_+@$_$@
 fn parse_alias_decl(
     ctx: &mut ParserContext,
+    budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<Vec<AbstractParam>, Token> {
     let mut params: Vec<AbstractParam> = Vec::new();
 
+    // I guess this could get a loop count at least?
+    //
     // Doesn't need terminator check since the loop would need to be continued on purpose through
     // user-intent for this to not just error
     while ctx.peek_kind() != TokenKind::CParen {
@@ -1534,7 +1618,7 @@ fn parse_alias_decl(
                     interner,
                 )?;
 
-                let ty_expr = parse_type_expr(ctx, interner)?;
+                let ty_expr = parse_type_expr(ctx, budget, interner)?;
 
                 AbstractParam::new(name_id, span, ty_expr)
             }
@@ -1574,7 +1658,11 @@ fn parse_alias_decl(
     Ok(params)
 }
 
-fn handle_conds(ctx: &mut ParserContext, interner: &Intern) -> Result<Vec<SpannedExpr>, Token> {
+fn handle_conds(
+    ctx: &mut ParserContext,
+    budget: &ParserBudget,
+    interner: &Intern,
+) -> Result<Vec<SpannedExpr>, Token> {
     let mut conds: Vec<SpannedExpr> = Vec::new();
     // This count cannot end the definition since it would prevent arguments from being viewed
     ctx.expect_verbose(
@@ -1593,7 +1681,7 @@ fn handle_conds(ctx: &mut ParserContext, interner: &Intern) -> Result<Vec<Spanne
     // Doesn't need terminator check since the loop would need to be continued on purpose through
     // user-intent for this to not just error (I think)
     while ctx.peek_tok() != Token::CBracket {
-        let cond = parse_expr(ctx, 0, interner)?;
+        let cond = parse_expr(ctx, 0, budget, interner)?;
         conds.push(cond);
 
         if ctx.peek_tok() == Token::CBracket {
