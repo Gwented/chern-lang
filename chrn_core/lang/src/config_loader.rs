@@ -1,7 +1,7 @@
-// TEST SHOULD COVER THESE DIAGNOSTICS NOT DESTROYING THINGS
-/// This module represents the stage of `chrn` processing where there it may read an entire file, or
-/// it may read between `@def` and `@end`. This exists so that if there is serial data within the
-/// file, the entire file isn't forced to be loaded into memory, which would be a net negative.
+//FIX: This should probably be in compilation
+///! This module represents the stage of `chrn` processing where there it may read an entire file, or
+///! it may read between `@def` and `@end`. This exists so that if there is serial data within the
+///! file, the entire file isn't forced to be loaded into memory, which would be a net negative.
 use std::io::{BufRead, BufReader, Read};
 
 use chrn_utils::{
@@ -28,7 +28,7 @@ pub struct ConfigLoader<'a, R: Read> {
     // Configuration file path
     current_path_id: PathId,
     handle: BufReader<R>,
-    settings: &'a ChrnConfig,
+    cfg: &'a ChrnConfig,
     // TODO: Remove this?
     interner: &'a Intern,
     pos: usize,
@@ -62,12 +62,12 @@ impl<R: Read> ConfigLoader<'_, R> {
         current_region_id: SourceRegionId,
         handle: R,
         current_path_id: PathId,
-        settings: &'a ChrnConfig,
+        cfg: &'a ChrnConfig,
         interner: &'a Intern,
     ) -> ConfigLoader<'a, R> {
         ConfigLoader {
             current_region_id,
-            settings,
+            cfg,
             interner,
             current_path_id,
             handle: BufReader::new(handle),
@@ -376,6 +376,7 @@ impl<R: Read> ConfigLoader<'_, R> {
             ConfigLoaderOutput::Broken(region, ConfigLoadError::Diagnostic(src_diag))
         }
     }
+    //FIX: These other paths do not account for if read limit has been passesd
 
     /// Returns a result instead of an option because if there are unclosed quotes and this method
     /// fails, it would need return a Some value which DOESN'T represent a failure, making it

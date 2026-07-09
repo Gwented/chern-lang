@@ -16,7 +16,7 @@ use lang::{
 
 use crate::{
     constraints::ArgConstraint,
-    lookup::scopes::{AssociatedScopeKind, LookupPattern, ScopeType},
+    lookup::scopes::{AssociatedScopeKind, ScopeLookupPattern, ScopeType},
     script_compiler::ScriptCompiler,
     semantic::hir::hir_exprs::Param,
 };
@@ -259,9 +259,9 @@ pub struct ConfigDefRoot {
     /// Expects `ConfigOptionAssignment`
     pub opt_assignments: Vec<MemberId>,
     /// Lookup pattern that needs to be used to properly discern if
-    /// `LookupPattern::Namespace/OnlyVar` should be used to search for the symbol associated with
+    /// `ScopeLookupPattern::Namespace/OnlyVar` should be used to search for the symbol associated with
     /// thie config
-    pub lookup_pattern: LookupPattern,
+    pub lookup_pattern: ScopeLookupPattern,
     /// Expects `ConfigDefMember`
     pub cfg_members: Vec<MemberId>,
 }
@@ -273,7 +273,7 @@ impl ConfigDefRoot {
         name_span: SourceSpan,
         cfg_id: ConfigRootId,
         linked_sym_id: Option<SymbolId>,
-        lookup_pattern: LookupPattern,
+        lookup_pattern: ScopeLookupPattern,
         opt_assignments: Vec<MemberId>,
         cfg_members: Vec<MemberId>,
     ) -> ConfigDefRoot {
@@ -306,10 +306,10 @@ pub struct ConfigDefMember {
     /// Expects `ConfigOptionAssignment`
     pub opt_assignments: Vec<MemberId>,
     /// Lookup pattern that needs to be used to properly discern if
-    /// `LookupPattern::Namespace/OnlyVar` should be used to search for the member associacted with
+    /// `ScopeLookupPattern::Namespace/OnlyVar` should be used to search for the member associacted with
     /// this config member
     // Is this needed?
-    pub lookup_pattern: LookupPattern,
+    pub lookup_pattern: ScopeLookupPattern,
     /// Members this member holds
     pub cfg_def_members: Vec<MemberId>,
 }
@@ -321,7 +321,7 @@ impl ConfigDefMember {
         member_id: MemberId,
         member_id_origin: MemberId,
         opt_assignments: Vec<MemberId>,
-        lookup_pattern: LookupPattern,
+        lookup_pattern: ScopeLookupPattern,
         cfg_def_members: Vec<MemberId>,
     ) -> ConfigDefMember {
         ConfigDefMember {

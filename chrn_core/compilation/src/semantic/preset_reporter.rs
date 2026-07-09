@@ -1,8 +1,6 @@
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
-use chrn_utils::source_map::source_diagnostic::{
-    DiagnosticLevel, Reporter, SourceDiagnosticBuilder,
-};
+use chrn_utils::source_map::source_diagnostic::{DiagnosticLevel, SourceDiagnosticBuilder};
 use chrn_utils::{
     intern::Intern,
     source_map::{source_diagnostic::SourceDiagnostic, source_region::SourceRegion},
@@ -397,7 +395,7 @@ pub fn type_expr_result_to_preset_err(
                     let sym_name_id = compiler.symbols[sym_owner].name_id;
                     let sym_name = interner.search(sym_name_id);
 
-                    format!("The namspace of `{sym_name}` does not contain `{err_name}`")
+                    format!("Namspace `{sym_name}` does not contain `{err_name}`")
                 }
             };
 
@@ -424,13 +422,13 @@ pub fn type_expr_result_to_preset_err(
             let sym_name = interner.search(sym.name_id);
 
             let core_msg =
-                format!("The type `{sym_name}` is private within the module `{current_mod_name}`");
+                format!("Type `{sym_name}` is private within the module `{current_mod_name}`");
 
             let src_diag =
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
                     .add_annotation(*ty_expr_span, AnnotationKind::Primary, None)
                     // Redundant?
-                    .add_note(format!(
+                    .add_help(format!(
                         "Consider using `export` on `{sym_name}` if that was intended"
                     ));
 

@@ -13,7 +13,8 @@ pub struct MemoryBudget {
     usage: usize,
     /// Times `limit` was exceeded
     times_exceeded: usize,
-    /// If the budget was exceeded at any point, all future usage adds will increment this counter
+    // Should this set amt exceeded to 0 if `LimitReached` is reached?
+    /// If the budget was exceeded at any point, this adds the overage to itself
     amt_exceeded: usize,
     // /// If `None`, it means no overflow has ocurred yet
     // /// If `Some`, the counter inside reflects how many times `amt_exceeded` reached an overflown value
@@ -37,9 +38,15 @@ impl MemoryBudget {
     ///
     /// Returns `BudgetResult` which represents all possible cases of this method's result
     ///
-    /// * Notable behavior:
     /// If the limit was exceeded, `self.usage` remains the same, but the overage is returned.
-    pub fn checked_consume(&mut self, to_apply: usize) -> BudgetResult {
+    ///
+    /// So, if `self.limit` is 10, `self.usage` is 5 and `to_apply` is 10, the usage will NOT be
+    /// touched and `BudgetResult::Overage(10)` will be returned.
+    ///
+    /// This behavior is useful for when the caller would like the budget to not automatically
+    /// exhibit any behavior upon an overage, and perhaps use a method like `set_to_limit` after
+    /// external usage of the data connected to this budget.
+    pub const fn checked_consume(&mut self, to_apply: usize) -> BudgetResult {
         //SAFETY
         if let Some(proposed_sum) = self.usage.checked_add(to_apply) {
             if self.would_exceed(proposed_sum) {
@@ -66,11 +73,85 @@ impl MemoryBudget {
         }
     }
 
-    /// Assumes the consumption operation won't overflow and avoids doing checked operations.
-    /// This cannot return `BudgetResult::Overflow`
+    /// - to_apply: Size to apply to usage
     ///
-    /// This will panic on any overflow
-    pub fn consume(&mut self, to_apply: usize) -> BudgetResult {
+    /// If there is an overage, the usage will be set to the limit, and the remaining overage will
+    /// be returned.
+    ///
+    /// So, if `self.limit` is 10, `self.usage` is 5 and `to_apply` is 10, the usage will be set to
+    /// 10 and 5 will be returned since that's the remaining overage.
+    ///
+    /// Returns `BudgetResult` which represents all possible cases of this method's result
+    pub const fn checked_consume_up_to(&mut self, to_apply: usize) -> BudgetResult {
+        //SAFETY
+        if let Some(proposed_sum) = self.usage.checked_add(to_apply) {
+            if self.would_exceed(proposed_sum) {
+                let overage = proposed_sum - self.limit;
+                let can_add = to_apply - overage;
+                self.usage;
+                panic!("Hi");
+                self.times_exceeded += 1;
+                self.amt_exceeded = self.amt_exceeded.saturating_add(overage);
+
+                BudgetResult::Overage(overage)
+            } else {
+                self.usage = proposed_sum;
+
+                if self.usage == self.limit {
+                    return BudgetResult::LimitReached;
+                }
+
+                BudgetResult::Stable
+            }
+        } else {
+            self.times_exceeded += 1;
+            // Should this be done?
+            self.amt_exceeded = usize::MAX;
+            // Denoting that it was an overflow
+            BudgetResult::Overflow
+        }
+    }
+
+    /// - to_apply: Size to apply to usage
+    ///
+    /// Returns `BudgetResult` which represents all possible cases of this method's result
+    ///
+    /// * Notable behavior:
+    /// If the limit was exceeded, `self.usage` remains the same, but the overage is returned.
+    pub const fn consume_up_to(&mut self, to_apply: usize) -> BudgetResult {
+        let proposed_sum = self.usage + to_apply;
+        if self.would_exceed(proposed_sum) {
+            let overage = proposed_sum - self.limit;
+            self.times_exceeded += 1;
+            self.amt_exceeded = self.amt_exceeded.saturating_add(overage);
+
+            BudgetResult::Overage(overage)
+        } else {
+            self.usage = proposed_sum;
+
+            if self.usage == self.limit {
+                return BudgetResult::LimitReached;
+            }
+
+            BudgetResult::Stable
+        }
+    }
+
+    // Return bool or new enum to avoid invariant from leaking?
+    /// - to_apply: Size to apply to usage
+    ///
+    /// This is unchecked so if `to_apply` overflows the usage it will panic. This means that
+    /// `BudgetResult::Overflow` is not possible.
+    ///
+    /// If the limit was exceeded, `self.usage` remains the same, but the overage is returned.
+    ///
+    /// So, if `self.limit` is 10, `self.usage` is 5 and `to_apply` is 10, the usage will NOT be
+    /// touched and `BudgetResult::Overage(10)` will be returned.
+    ///
+    /// This behavior is useful for when the caller would like the budget to not automatically
+    /// exhibit any behavior upon an overage, and perhaps use a method like `set_to_limit` after
+    /// external usage of the data connected to this budget.
+    pub const fn consume(&mut self, to_apply: usize) -> BudgetResult {
         let proposed_sum = self.usage + to_apply;
         if self.would_exceed(proposed_sum) {
             let overage = proposed_sum - self.limit;
@@ -100,7 +181,7 @@ impl MemoryBudget {
     /// `Err` means an underflow occurred. Contains the amount underflown.
     ///
     /// On `Err` `self.usage` is set to 0 by default
-    pub fn checked_remove(&mut self, to_apply: usize) -> Result<(), usize> {
+    pub const fn checked_remove(&mut self, to_apply: usize) -> Result<(), usize> {
         if let Some(difference) = self.usage.checked_sub(to_apply) {
             self.usage = difference;
             return Ok(());
@@ -141,22 +222,22 @@ impl MemoryBudget {
 
     // TEST:
     /// Amount that the usage cannot be greater than
-    pub fn limit(&self) -> usize {
+    pub const fn limit(&self) -> usize {
         self.limit
     }
 
     /// Metric that must be less than `self.limit`
-    pub fn usage(&self) -> usize {
+    pub const fn usage(&self) -> usize {
         self.usage
     }
 
     /// Times limit was exceeded
-    pub fn times_exceeded(&self) -> usize {
+    pub const fn times_exceeded(&self) -> usize {
         self.times_exceeded
     }
 
     /// If the budget was exceeded at any point, all future usage adds will increment this counter
-    pub fn amt_exceeded(&self) -> usize {
+    pub const fn amt_exceeded(&self) -> usize {
         self.amt_exceeded
     }
 }

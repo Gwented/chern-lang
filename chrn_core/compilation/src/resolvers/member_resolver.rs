@@ -12,7 +12,7 @@ use chrn_utils::{
 };
 
 use crate::{
-    lookup::scopes::{AssociatedScopeKind, LookupPattern, ScopeType},
+    lookup::scopes::{AssociatedScopeKind, ScopeLookupPattern, ScopeType},
     parser::ast::ast_concepts::{AbstractTypeDef, AbstractVariant},
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
     script_compiler::{self, ScriptCompiler},
@@ -113,7 +113,7 @@ impl MemberResolver<'_> {
                 associated_scope,
                 &field_typedef.sp_ty_expr,
                 ScopeType::Nest,
-                LookupPattern::NoRestrictions,
+                ScopeLookupPattern::NoRestrictions,
                 env,
             ) {
                 TypeExprResult::Type(type_id) => type_id,
@@ -238,7 +238,7 @@ impl MemberResolver<'_> {
                     associated_scope,
                     &spanned_ty_expr,
                     ScopeType::Nest,
-                    LookupPattern::NoRestrictions,
+                    ScopeLookupPattern::NoRestrictions,
                     env,
                 ) {
                     TypeExprResult::Type(type_id) => type_id,

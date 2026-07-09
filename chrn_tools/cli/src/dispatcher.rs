@@ -2,8 +2,8 @@ use chrn_utils::{
     budget::mem_budget::MemoryBudget,
     chrn_config::ChrnConfig,
     core_error::{ConfigLoadError, ScriptError},
-    source_map::source_diagnostic::Reporter,
 };
+use compilation::script_compiler::reporter::Reporter;
 use orchestration::{
     orchestrator,
     script_compiler_cache::{self},
@@ -26,7 +26,7 @@ use crate::{
 
 // Argument to nullify this should exist
 /// Max diagnostics that can be held by the reporter
-const MAX_DIAGNOSTICS: usize = 80;
+const MAX_DIAGNOSTICS: usize = 1;
 
 pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, Option<String>> {
     match &cli.command {
@@ -44,7 +44,7 @@ fn exec_check(
     cli_cfg: &CliConfig,
 ) -> Result<String, Option<String>> {
     let chrn_cfg = ChrnConfig::new();
-    let mut reporter = Reporter::new(MemoryBudget::new(MAX_DIAGNOSTICS));
+    let mut reporter = Reporter::new(MAX_DIAGNOSTICS);
     let path = files::make_canon(&check_cmd.path)?;
     let render_kind = RenderKind::from_check_cmd(check_cmd);
 
@@ -160,6 +160,7 @@ fn exec_check(
                         let s_suffix = s_ifier!(diags.len());
                         print_diags!(&rendered_diags);
 
+                        // Should this be converted to a footer? Are we all feet?
                         format!("Reported {} error{s_suffix}", diags.len()).into()
                     }
                 };

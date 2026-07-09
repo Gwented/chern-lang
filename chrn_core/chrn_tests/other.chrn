@@ -11,17 +11,20 @@
 // The duplication is reported
 
 // let x = 4
+ import "../chrn_core/chrn_tests/def.chrn"
 let y = 3
-// let y = 5
-//let $macro = 3
-let x = 3
-alias x() =
+let y = 5
+let $macro = 3
+let x = $9
+// alias x() =
+
+let i = '\u{1F985}'
 
 nest->
     export struct Person {
         s: i32
-        e#2: o8
-    }
+        e#2: u32
+    } #warn
     /* complex->
     Assertion failure from this since it expects None sym id before registering but later stages still
     use scope searching from ast

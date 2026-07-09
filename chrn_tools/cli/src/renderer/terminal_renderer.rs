@@ -181,7 +181,7 @@ fn render_text(
     ln_layouts: &[RenderLineLayout],
     src_strs: &[&str],
     ln_views: &[LineView],
-    settings: &TerminalRenderConfig,
+    render_cfg: &TerminalRenderConfig,
     ln_num_width: usize,
     region_arena: &Arena<SourceRegion, SourceRegionId>,
     interner: &Intern,
@@ -192,7 +192,8 @@ fn render_text(
     // Spacing intented to align right where the bars would be for the given line context
     let bar_spaces = " ".repeat(ln_num_width + 1);
 
-    let mut layout_text = String::new();
+    // Ignore this
+    let mut layout_text = String::with_capacity(32 + (ln_layouts.len() * 60));
 
     // Is Option since there could be something going through render_text that does not actually have
     // any line layouts and only has a header and basic error message
@@ -219,7 +220,7 @@ fn render_text(
         if !placed_path {
             let new_region = &region_arena[current_region_id];
             let path = interner.search_path(new_region.path_id);
-            let path_header_sep = style::create_path_header(path, settings);
+            let path_header_sep = style::create_path_header(path, render_cfg);
 
             // Since this boolean controls the first path placed and any intermediate paths placed,
             // this condition is so that it doesn't push dashes for the first
@@ -245,7 +246,7 @@ fn render_text(
         layout_text.push_str(&render_line_layout_text(
             layout,
             src_strs[current_ln_view_idx],
-            settings,
+            render_cfg,
             ln_num_width,
         ));
     }
@@ -254,7 +255,7 @@ fn render_text(
     // shown so this is done
     if prev_region_id_opt.is_none() {
         let path = interner.search_path(diag.path_id);
-        let path_header_sep = style::create_path_header(path, settings);
+        let path_header_sep = style::create_path_header(path, render_cfg);
         layout_text.push_str(&format!("\n{path_header_sep}"));
     }
 
@@ -263,7 +264,7 @@ fn render_text(
         help.push('\n');
         for (i, inner_help) in diag.help.iter().enumerate() {
             let fmtted_help =
-                style::standardize_help(inner_help, settings.can_color, settings.terminal_type);
+                style::standardize_help(inner_help, render_cfg.can_color, render_cfg.terminal_type);
             help.push_str(&fmtted_help);
 
             if i + 1 != diag.help.len() {
@@ -277,7 +278,7 @@ fn render_text(
         notes.push('\n');
         for (i, inner_note) in diag.notes.iter().enumerate() {
             let fmtted_note =
-                style::standardize_note(inner_note, settings.can_color, settings.terminal_type);
+                style::standardize_note(inner_note, render_cfg.can_color, render_cfg.terminal_type);
             notes.push_str(&fmtted_note);
 
             if i + 1 != diag.notes.len() {
@@ -286,12 +287,11 @@ fn render_text(
         }
     }
 
-    let level_header = style::create_level_header(diag.level, &diag.core_msg, settings);
+    let level_header = style::create_level_header(diag.level, &diag.core_msg, render_cfg);
 
     format!("{level_header} {layout_text}{help}{notes}\n{DEFAULT_VISUAL_SEPARATORS}")
 }
 
-//FIX: Eof byte handling might DESTROY this. Also cross-module.
 /// Renders the annotated source line and all its pointer rows according to the layer
 /// assignments from [`assign_layers_in_layout`].
 fn render_line_layout_text(
@@ -302,7 +302,7 @@ fn render_line_layout_text(
 ) -> String {
     let ln = ln_layout.ln;
     let ln_span = ln.ln_span.range_exclusive_usize();
-    let mut all_ptr_rows: Vec<String> = Vec::new();
+    let mut all_ptr_rows: Vec<String> = Vec::with_capacity(ln_layout.render_info.len());
 
     let nc = color::get_nc(settings.can_color);
 
@@ -442,13 +442,16 @@ fn render_line_layout_text(
 }
 
 /// Renders given footer into a string
-fn render_footer(footer: &FooterKind, settings: &TerminalRenderConfig) -> String {
-    let footer = match footer {
+fn render_footer(footer: &FooterKind, render_cfg: &TerminalRenderConfig) -> String {
+    match footer {
         FooterKind::DiagnosticsExceeded(amt_exceeded) => {
             let s_suffix = s_ifier!(*amt_exceeded);
-            format!("{amt_exceeded} diagnostic{s_suffix} suppressed")
+            let msg = format!("Suppressed {amt_exceeded} diagnostic{s_suffix}");
+            style::standardize_warn(&msg, render_cfg.can_color, render_cfg.terminal_type)
         }
-    };
-
-    style::standardize_warn(&footer, settings.can_color, settings.terminal_type)
+        FooterKind::MaxModulesExceeded(max_mods) => {
+            let msg = format!("Exceeded max module amount of {max_mods} (Stopped compilation)");
+            style::standardize_error(&msg, render_cfg.can_color, render_cfg.terminal_type)
+        }
+    }
 }

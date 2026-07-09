@@ -6,7 +6,7 @@ mod parser_budget;
 mod parser_state;
 
 use crate::lexer::token::{SpannedToken, Token, TokenKind};
-use crate::lookup::scopes::LookupPattern;
+use crate::lookup::scopes::ScopeLookupPattern;
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractDirective, AbstractEnum, AbstractMemberAccess,
     AbstractOptionAssignment, AbstractParam, AbstractStruct, AbstractTypeDef, AbstractVar,
@@ -531,7 +531,7 @@ fn parse_nest_sect(
 ) -> Result<Item, Token> {
     // Wait what is this error?
     let kw = ctx.expect_kw_verbose(
-        "Expected the keyword `enum` or `struct`, found ",
+        "Expected an `enum` or `struct` declaration, found ",
         "",
         Branch::Section(SectionBranch::Nest),
         interner,
@@ -653,11 +653,11 @@ fn parse_cfg_expr(ctx: &mut ParserContext, interner: &Intern) -> Result<Abstract
     // section to lookup var
     let lookup_pattern = if ctx.peek_tok() == Token::Keyword(Keyword::Var) {
         ctx.advance_tok();
-        LookupPattern::OnlyVar
+        ScopeLookupPattern::OnlyVar
     } else {
         // By default
         // Is this an ok pattern to use for this config context?
-        LookupPattern::NamespaceOnly
+        ScopeLookupPattern::NamespaceOnly
     };
 
     let name_span = ctx.peek_span();
@@ -808,7 +808,7 @@ fn parse_array(ctx: &mut ParserContext, interner: &Intern) -> Result<SpannedExpr
 
     let start = ctx.peek_span().start;
 
-    while ctx.peek_tok() != Token::CBracket {
+    while !ctx.peek_tok().kind().is_terminator() && ctx.peek_tok() != Token::CBracket {
         let sp_expr = parse_expr(ctx, 0, interner)?;
         elements.push(sp_expr);
 
@@ -1362,6 +1362,8 @@ fn parse_generic(
     let input = parse_type_expr(ctx, interner)?;
     inputs.push(input);
 
+    // Doesn't need terminator check since the loop would need to be continued on purpose through
+    // user-intent for this to not just error
     while ctx.peek_kind() == TokenKind::Comma {
         ctx.advance_tok();
 
@@ -1387,8 +1389,7 @@ fn handle_struct_fields(
 ) -> Result<Vec<AbstractTypeDef>, Token> {
     let mut fields: Vec<AbstractTypeDef> = Vec::new();
 
-    //WARN: Suspicious loop
-    while ctx.peek_tok() != Token::CCurlyBracket {
+    while !ctx.peek_tok().kind().is_terminator() && ctx.peek_tok() != Token::CCurlyBracket {
         let ty = parse_typedef(ctx, interner)?;
         fields.push(ty);
 
@@ -1417,7 +1418,7 @@ fn handle_enum_variants(
     let mut variants: Vec<AbstractVariant> = Vec::new();
 
     //NOTE: ALSO SUSPICIOUS
-    while ctx.peek_tok() != Token::CCurlyBracket {
+    while !ctx.peek_tok().kind().is_terminator() && ctx.peek_tok() != Token::CCurlyBracket {
         let variant = parse_variant(ctx, interner)?;
         variants.push(variant);
 
@@ -1485,6 +1486,8 @@ fn handle_directives(
 ) -> Result<Vec<AbstractDirective>, Token> {
     let mut args: Vec<AbstractDirective> = Vec::new();
 
+    // Doesn't need terminator check since the loop would need to be continued on purpose through
+    // user-intent for this to not just error
     while ctx.peek_kind() == TokenKind::HashSymbol {
         ctx.advance_tok();
         args.push(parse_directive(ctx, interner)?);
@@ -1495,11 +1498,10 @@ fn handle_directives(
 
 fn parse_directive(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractDirective, Token> {
     let name_span = ctx.peek_span();
-
     let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
         "",
-        " is not a valid argument.",
+        " is not a valid directive.",
         Branch::TypeArgs,
         interner,
     )?;
@@ -1517,6 +1519,8 @@ fn parse_alias_decl(
 ) -> Result<Vec<AbstractParam>, Token> {
     let mut params: Vec<AbstractParam> = Vec::new();
 
+    // Doesn't need terminator check since the loop would need to be continued on purpose through
+    // user-intent for this to not just error
     while ctx.peek_kind() != TokenKind::CParen {
         let param = match ctx.peek_tok() {
             Token::Id(name_id) => {
@@ -1586,6 +1590,8 @@ fn handle_conds(ctx: &mut ParserContext, interner: &Intern) -> Result<Vec<Spanne
         return Ok(conds);
     }
 
+    // Doesn't need terminator check since the loop would need to be continued on purpose through
+    // user-intent for this to not just error (I think)
     while ctx.peek_tok() != Token::CBracket {
         let cond = parse_expr(ctx, 0, interner)?;
         conds.push(cond);

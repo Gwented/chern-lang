@@ -503,8 +503,11 @@ fn write_footers_list(
             return;
         }
         out.push('\n');
-        for footer in footers {
+        for (i, footer) in footers.iter().enumerate() {
             write_footer(out, footer, level + 1, config);
+            if i + 1 < footers.len() {
+                out.push('\n');
+            }
         }
     }
 }
@@ -527,6 +530,15 @@ fn write_footer(out: &mut String, footer: &FooterKind, level: usize, config: &Ya
                 out.push_str(": ");
                 out.push_str(&count.to_string());
             }
+            FooterKind::MaxModulesExceeded(max) => {
+                push_yaml_str(out, "kind");
+                out.push_str(": ");
+                push_yaml_str(out, "max_modules_exceeded");
+                out.push_str(", ");
+                push_yaml_str(out, "max");
+                out.push_str(": ");
+                out.push_str(&max.to_string());
+            }
         }
         out.push('}');
     } else {
@@ -545,6 +557,17 @@ fn write_footer(out: &mut String, footer: &FooterKind, level: usize, config: &Ya
                 push_yaml_str(out, "count");
                 out.push_str(": ");
                 out.push_str(&count.to_string());
+            }
+            FooterKind::MaxModulesExceeded(max) => {
+                push_yaml_str(out, "kind");
+                out.push_str(": ");
+                push_yaml_str(out, "max_modules_exceeded");
+                out.push('\n');
+
+                write_indent(out, key_level, config);
+                push_yaml_str(out, "max");
+                out.push_str(": ");
+                out.push_str(&max.to_string());
             }
         }
     }
@@ -711,6 +734,40 @@ mod tests {
         assert_eq!(
             out,
             r#"{diagnostics: [], footers: [{kind: diagnostics_exceeded, count: 7}]}"#
+        );
+    }
+
+    #[test]
+    fn max_modules_exceeded_footer_is_emitted() {
+        let interner = Intern::init();
+        let out = render_yaml_diags(
+            &[],
+            &[FooterKind::MaxModulesExceeded(256)],
+            None,
+            &interner,
+            &YamlRenderConfig::new(false),
+        );
+        assert!(
+            out.contains("- kind: max_modules_exceeded\n"),
+            "got:\n{out}"
+        );
+        assert!(out.contains("    max: 256"), "got:\n{out}");
+        assert!(!out.ends_with('\n'));
+    }
+
+    #[test]
+    fn minified_max_modules_exceeded_footer_is_emitted_in_flow_style() {
+        let interner = Intern::init();
+        let out = render_yaml_diags(
+            &[],
+            &[FooterKind::MaxModulesExceeded(256)],
+            None,
+            &interner,
+            &YamlRenderConfig::new(true),
+        );
+        assert_eq!(
+            out,
+            r#"{diagnostics: [], footers: [{kind: max_modules_exceeded, max: 256}]}"#
         );
     }
 }

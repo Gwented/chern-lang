@@ -158,8 +158,6 @@ nest->
 
 A `Boundary` is a set of constraints given to a type, same as a trait, interface, concept, etc.
 
-The `Encapsulates` column shows how each boundary is built from other boundaries, with `+` meaning "or". A blank cell means the boundary is atomic — its concrete types are listed in the `Description` column.
-
 | Boundaries | Bounds | Description |
 |---|---|---|
 | `SignedInteger` | `SignedInteger` | Signed integer types (`i8`, `i16`, `i32`, `i64`, `i128`) |
@@ -176,7 +174,7 @@ The `Encapsulates` column shows how each boundary is built from other boundaries
 | `Integer` | `SignedInteger + UnsignedInteger` | Any integer type |
 | `Numeric` | `Integer + Float` | Any numeric type |
 | `Ranged` | `Numeric + Collection + CharacterMappable` | Types that support range checks |
-| `Collection` | `List + Set + Map + Tuple` | Collection types (`List`, `Set`, `Map`, `Tuple`) |
+| `Collection` | `List + Set + Map + Tuple` | Collection types |
 | `Ordered` | `Numeric` | Types with a total ordering |
 
 An example of this would be if a parameter expects `Numeric`, it accepts any signed integer, unsigned integer, or float type. If it expects `HasLen`, it accepts strings, characters, and collections.
@@ -220,12 +218,12 @@ More often than not this will not actually matter for normal usage since the rul
 Syntax for accessing through a module symbol uses [`::`](#pathing) with "module::Type" just like Rust, C++, etc.
 
 ### Innate module behavior
-Modules in their most basic form are an implicitly found graph with no need for anything but an import call. So, if A imports B, if B imports A, A technically knows C, and so on. This is more likely than not the most common way to use `chrn`.
+Modules in their most basic form are an implicitly found graph with no need for anything but an import call. So, if A imports B, if B imports A, A technically knows C, and so on. This is how `chrn` is intended to be used.
 
 ### Workspace :) (NON-EXISTENTENT)
-A trade-off of this design is that since there's no manifest if compilation fails at an import, everything linked to that import is entirely ignored since the import itself is broken.
+N/A
 
-
+// Not a keyword, not an operator (maybe), not a function (!), not a predicate
 `e#`: Name bypass for treating a keyword as an identifier.
 
 Example:
@@ -537,10 +535,13 @@ Important examples:
 var->
     // This is fine because #bin expects numeric
     num: i32 #bin
+
     // Although all of Point satisfies numeric, this is an error because it's not clear what this should
     // apply to. Should this apply to Point, but only for this specific field instance? (Wait should it?)
-    // Adding this now :(
+    // Adding this maybe
+
     point: Point #bin
+
     // This is fine because neither of these have type boundaries
     other_point: Point #warn #ignore
 nest->
@@ -605,8 +606,6 @@ var->
 
 
 
-
-## FORGOT ABOUT UNICODE
 
 ## POSSIBLE FEATURES
 

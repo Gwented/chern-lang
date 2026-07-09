@@ -105,7 +105,7 @@ impl TextBuilder<'_> {
     fn fmt_sect_neutral(&mut self, neutral_ast_ids: &Vec<AstId>, all_text_hirs: &mut Vec<TextHir>) {
         for ast_id in neutral_ast_ids {
             let item = &self.ast_info.items[*ast_id];
-            let abs_span = self.ast_info.get_sym_span(*ast_id);
+            let abs_span = self.ast_info.get_name_span(*ast_id);
             self.append_invalid(abs_span, all_text_hirs);
 
             match item {

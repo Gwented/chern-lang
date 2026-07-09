@@ -18,7 +18,7 @@ mod tests {
             constraint_resolver::ConstraintResolver,
             resolver_env::{RegistrationEnv, ResolverEnv},
         },
-        script_compiler::ScriptCompiler,
+        script_compiler::{ScriptCompiler, reporter::Reporter},
     };
     // -- Helpers --
     /// Creates fake strings for the amounts given
@@ -303,12 +303,15 @@ mod tests {
 
     use chrn_utils::{
         arena::Arena,
+        budget::mem_budget::{BudgetResult, MemoryBudget},
         chrn_config::ChrnConfig,
         core_error::ConfigLoadError,
         id_types::{InternedId, ModuleId, PathId, SourceRegionId, SymbolId, ValueId},
         intern::Intern,
-        source_map::source_diagnostic::SourceDiagnostic,
-        source_map::source_region::SourceRegion,
+        source_map::{
+            source_diagnostic::{DiagnosticLevel, SourceDiagnostic},
+            source_region::SourceRegion,
+        },
     };
     use lang::{
         config_loader::{ConfigLoader, ConfigLoaderOutput},
@@ -3431,6 +3434,65 @@ mod tests {
             results.iter().any(|r| r.is_err()),
             "Cross-module direct cycle should be rejected: {:?}",
             results
+        );
+    }
+
+    // -- BUDGET --
+    /// Makes diagnostics with as many `Default` values as possible of level `Error`
+    fn make_diagnostics(amt: usize) -> Vec<SourceDiagnostic> {
+        let mut diags = Vec::new();
+        for i in 0..amt {
+            diags.push(SourceDiagnostic::new(
+                DiagnosticLevel::Error,
+                Default::default(),
+                PathId::new(i as u32),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+            ));
+        }
+        diags
+    }
+
+    #[test]
+    fn checked_consume_budget_tests() {
+        // Overflow check
+        let mut budget = MemoryBudget::default();
+        budget.consume(1);
+        assert!(matches!(
+            budget.checked_consume(usize::MAX),
+            BudgetResult::Overflow
+        ));
+
+        // Overage check
+        let mut budget = MemoryBudget::new(10);
+        assert!(matches!(
+            budget.checked_consume(15),
+            BudgetResult::Overage(5)
+        ));
+
+        // Should not have consumed anything since it was an overage
+        assert_eq!(budget.remaining(), 10);
+
+        // Limit Reached
+        let mut budget = MemoryBudget::new(10);
+        assert!(matches!(
+            budget.checked_consume(10),
+            BudgetResult::LimitReached,
+        ));
+
+        // Stable
+        let mut budget = MemoryBudget::new(10);
+        assert!(matches!(budget.checked_consume(9), BudgetResult::Stable,));
+    }
+
+    #[test]
+    fn reporter_budget_test() {
+        let mut reporter = Reporter::new(5);
+        let res = reporter.append_safe(&mut make_diagnostics(5));
+        assert_eq!(
+            res, true,
+            "Should only be LimitReached which should not return `false`"
         );
     }
 }

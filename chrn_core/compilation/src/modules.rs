@@ -15,9 +15,7 @@ use chrn_utils::{
     id_types::{InternedId, ModuleId, PathId, ScopeId, SourceRegionId, SymbolId},
     intern::{self, Intern},
     source_map::{
-        source_diagnostic::{
-            DiagnosticLevel, Reporter, SourceDiagnostic, annotations::AnnotationKind,
-        },
+        source_diagnostic::{DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind},
         source_region::SourceRegion,
         source_span::SourceSpan,
     },
@@ -27,7 +25,7 @@ use lang::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use crate::{
     modules::mod_finder::ModuleFinder,
     script_compiler::{
-        ScriptCompiler, script_compiler_store::ScriptCompilerStore,
+        ScriptCompiler, reporter::Reporter, script_compiler_store::ScriptCompilerStore,
         script_compiler_summary::ScriptCompilerSummary,
     },
 };
@@ -193,9 +191,6 @@ pub fn extract_modules(
         }
     };
 
-    // Beep
-    let mut summary = ScriptCompilerSummary::new();
-
     // Maybe the reporter should just be used
     let mut diags = Vec::new();
 
@@ -306,7 +301,7 @@ pub fn extract_modules(
         &mut region_arena,
         &mut diags,
         &settings,
-        &mut summary,
+        reporter,
         &mut interner,
     );
 
@@ -426,7 +421,7 @@ fn resolve_modules(
     region_arena: &mut Arena<SourceRegion, SourceRegionId>,
     diags: &mut Vec<SourceDiagnostic>,
     settings: &ChrnConfig,
-    summary: &mut ScriptCompilerSummary,
+    reporter: &mut Reporter,
     interner: &mut Intern,
 ) {
     for import in &prev_mod.imports {
@@ -607,12 +602,12 @@ fn resolve_modules(
         // accounts for the other modules + 1 main module.
         if other_mods.len().saturating_add(expected_len + 1) > chrn_utils::MAX_MODULES as usize {
             let sub_mod_name = interner.search(sub_mod_name_id);
-            let core_msg = format!("Exceeded max module amount `{}`", chrn_utils::MAX_MODULES);
+            let core_msg = format!("Exceeded max module amount of {}", chrn_utils::MAX_MODULES);
 
             let src_diag = SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
                 .add_note(format!("Last analyzed module was `{sub_mod_name}`"));
             diags.push(src_diag.build());
-            summary.exceeded_max_mods = true;
+            reporter.summary.exceeded_max_mods = Some(chrn_utils::MAX_MODULES);
             return;
         }
 
@@ -643,7 +638,7 @@ fn resolve_modules(
             region_arena,
             diags,
             settings,
-            summary,
+            reporter,
             interner,
         );
 

@@ -7,7 +7,9 @@ use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
 use lang::{directives::Directive, fmter::Formatted};
 
 use crate::{
-    lookup::scopes::{self, AssociatedScopeKind, LookupPattern, ScopeType, SymbolLookupOutput},
+    lookup::scopes::{
+        self, AssociatedScopeKind, ScopeLookupPattern, ScopeType, SymbolLookupOutput,
+    },
     parser::ast::{
         ast_concepts::AbstractDirective,
         ast_exprs::{PathSegment, SpannedPathSegment, TypeExpr},
@@ -111,7 +113,7 @@ pub fn resolve_type_expr(
     associated_scope: AssociatedScopeKind,
     sp_ty_expr: &SpannedContainer<TypeExpr>,
     scope_type: ScopeType,
-    lookup_pattern: LookupPattern,
+    lookup_pattern: ScopeLookupPattern,
     env: &ResolverEnv,
 ) -> TypeExprResult {
     match &sp_ty_expr.inner {
@@ -125,13 +127,10 @@ pub fn resolve_type_expr(
                 scope_type,
                 lookup_pattern,
             ) {
-                Some(SymbolLookupOutput {
-                    found_sym_id: sym_id,
-                    ..
-                }) => {
-                    match compiler.symbols[sym_id].kind {
+                Some(SymbolLookupOutput { found_sym_id, .. }) => {
+                    match compiler.symbols[found_sym_id].kind {
                         SymbolKind::Type(type_id) => {
-                            let sym = &compiler.symbols[sym_id];
+                            let sym = &compiler.symbols[found_sym_id];
 
                             // If the symbol being looked up is private and the owner isn't the current
                             // module then failed
@@ -141,7 +140,7 @@ pub fn resolve_type_expr(
                                 if sym.is_priv && mod_origin_id != env.current_mod {
                                     return TypeExprResult::PrivateTypeAccess {
                                         found_type_id: type_id,
-                                        found_sym_id: sym_id,
+                                        found_sym_id,
                                         current_mod: env.current_mod,
                                         ty_expr_span: sp_ty_expr.span,
                                     };
@@ -152,7 +151,7 @@ pub fn resolve_type_expr(
                         }
                         SymbolKind::Module(_) => {
                             return TypeExprResult::NotAType {
-                                found_sym_id: sym_id,
+                                found_sym_id,
                                 sp_name_id: sp_name,
                                 kind: Formatted::Module,
                                 scope_found_in: associated_scope,
@@ -160,7 +159,7 @@ pub fn resolve_type_expr(
                         }
                         SymbolKind::Variable(_) => {
                             return TypeExprResult::NotAType {
-                                found_sym_id: sym_id,
+                                found_sym_id,
                                 sp_name_id: sp_name,
                                 kind: Formatted::Variable,
                                 scope_found_in: associated_scope,
@@ -168,7 +167,7 @@ pub fn resolve_type_expr(
                         }
                         SymbolKind::Directive(_) => {
                             return TypeExprResult::NotAType {
-                                found_sym_id: sym_id,
+                                found_sym_id,
                                 sp_name_id: sp_name,
                                 kind: Formatted::Directive,
                                 scope_found_in: associated_scope,
@@ -201,7 +200,7 @@ pub fn resolve_type_expr(
                             associated_scope,
                             &generic.inputs[0],
                             scope_type,
-                            LookupPattern::NoRestrictions,
+                            ScopeLookupPattern::NoRestrictions,
                             env,
                         ) {
                             TypeExprResult::Type(tid) => tid,
@@ -229,7 +228,7 @@ pub fn resolve_type_expr(
                                 associated_scope,
                                 input,
                                 scope_type,
-                                LookupPattern::NoRestrictions,
+                                ScopeLookupPattern::NoRestrictions,
                                 env,
                             ) {
                                 TypeExprResult::Type(tid) => elements.push(tid),
@@ -258,7 +257,7 @@ pub fn resolve_type_expr(
                             AssociatedScopeKind::Module(env.current_mod),
                             &generic.inputs[0],
                             scope_type,
-                            LookupPattern::NoRestrictions,
+                            ScopeLookupPattern::NoRestrictions,
                             env,
                         ) {
                             TypeExprResult::Type(tid) => tid,
@@ -270,7 +269,7 @@ pub fn resolve_type_expr(
                             AssociatedScopeKind::Module(env.current_mod),
                             &generic.inputs[1],
                             scope_type,
-                            LookupPattern::NoRestrictions,
+                            ScopeLookupPattern::NoRestrictions,
                             env,
                         ) {
                             TypeExprResult::Type(tid) => tid,
@@ -353,7 +352,7 @@ pub fn resolve_static_access(
                     current_scope,
                     *interned_id,
                     scope_type,
-                    LookupPattern::NamespaceOnly,
+                    ScopeLookupPattern::NamespaceOnly,
                 ) {
                     let sym = &compiler.symbols[found_sym_id];
                     match sym.associated_scope {

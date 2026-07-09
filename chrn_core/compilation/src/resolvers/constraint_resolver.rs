@@ -360,7 +360,7 @@ impl<'a> ConstraintResolver<'a> {
 
         // NOTE: Small issue here is that when we check an alias, and it has an error, it's
         // emitted. But then if we have something that USES the alias, it also gets that error.
-        let sym_span = env.ast_info.get_sym_span(ast_id);
+        let sym_span = env.ast_info.get_name_span(ast_id);
         for cond_expr_id in &alias_def.conds {
             if let Err(preset_errs) = self.check_cond(alias_type_id, sym_span, *cond_expr_id) {
                 for err in preset_errs {

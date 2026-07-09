@@ -16,9 +16,9 @@ use lang::fmter::{Formattable, Formatted};
 use lang::values::{Value, ValueInfo};
 
 use crate::constraints::ArgConstraint;
-use crate::lookup::member_lookup::{self, MemberLookupResult};
+use crate::lookup::member_lookup::{self, MemberLookupResult, MemberScopeLookupPattern};
 use crate::lookup::scopes::{
-    self, AssociatedScopeKind, LookupPattern, ScopeType, SymbolLookupOutput,
+    self, AssociatedScopeKind, ScopeLookupPattern, ScopeType, SymbolLookupOutput,
 };
 use crate::parser::ast::ast_concepts::{
     AbstractConfig, AbstractDirective, AbstractOptionAssignment, AbstractParam,
@@ -71,13 +71,6 @@ impl<'res> TypeResolver<'res> {
             compiler,
         }
     }
-
-    //FIXME: Given `x` (variable) and `x` (alias) in the same scope, unreachable!() is reached
-    //when the variable is encountered because it was overwritten by the new alias with the
-    //same identifier. This needs to be fixed by either requiring a get() call so that on
-    //`None` lookups assume corruption and leave. Or storing the `SymbolId`s during `NameResolver`
-    //that qualify as resolvable so that all stages know they have to be operating on valid resolvable
-    //symbols by default.
 
     /// Mutates inner `ScriptCompiler` and `TypeContext` given the `env`.
     ///
@@ -545,6 +538,7 @@ impl<'res> TypeResolver<'res> {
                 self.compiler,
                 found_type_id,
                 abs_inner_cfg.name_id,
+                MemberScopeLookupPattern::NoRestrictions,
             ) {
                 // These are split so that the theoretical ok and err paths are able to reduce
                 // boilerplate where needed
@@ -718,7 +712,7 @@ impl<'res> TypeResolver<'res> {
         debug_assert_eq!(cfg_root.cfg_members.len(), 0);
         debug_assert!(matches!(
             cfg_root.lookup_pattern,
-            LookupPattern::NamespaceOnly | LookupPattern::OnlyVar
+            ScopeLookupPattern::NamespaceOnly | ScopeLookupPattern::OnlyVar
         ));
 
         cfg_root.linked_sym_id = Some(found_sym_id);
@@ -913,6 +907,7 @@ impl<'res> TypeResolver<'res> {
                     self.compiler,
                     parent_type_id,
                     abs_cfg_member.name_id,
+                    MemberScopeLookupPattern::NoRestrictions,
                 ) {
                     // These are split so that the theoretical ok and err paths are able to reduce
                     // boilerplate where needed
@@ -1653,7 +1648,7 @@ impl<'res> TypeResolver<'res> {
             AssociatedScopeKind::Module(env.current_mod),
             &abs_typedef.sp_ty_expr,
             ScopeType::Var,
-            LookupPattern::NoRestrictions,
+            ScopeLookupPattern::NoRestrictions,
             env,
         ) {
             TypeExprResult::Type(type_id) => type_id,
@@ -1969,7 +1964,7 @@ impl<'res> TypeResolver<'res> {
                 AssociatedScopeKind::Module(env.current_mod),
                 &abs_param.sp_ty_expr,
                 ScopeType::Neutral,
-                LookupPattern::NoRestrictions,
+                ScopeLookupPattern::NoRestrictions,
                 env,
             ) {
                 TypeExprResult::Type(type_id) => type_id,
@@ -2211,7 +2206,7 @@ impl<'res> TypeResolver<'res> {
                     *name_id,
                     scope_type,
                     // Should this be no restrictions?
-                    LookupPattern::NoRestrictions,
+                    ScopeLookupPattern::NoRestrictions,
                 ) {
                     //WARN: Constant iteration upon seeing any symbol instead of a single check
                     //elsewhere
@@ -2236,7 +2231,7 @@ impl<'res> TypeResolver<'res> {
                             .ast_id
                             .expect("Parent must be a valid symbol to get to this point");
 
-                        let parent_span = env.ast_info.get_sym_span(parent_ast_id);
+                        let parent_span = env.ast_info.get_name_span(parent_ast_id);
 
                         let src_diag = SourceDiagnostic::builder(
                             DiagnosticLevel::Error,
@@ -3063,7 +3058,7 @@ impl<'res> TypeResolver<'res> {
                 todo!(),
                 name_id,
                 scope_type,
-                LookupPattern::NoRestrictions,
+                ScopeLookupPattern::NoRestrictions,
             ) {
                 todo!();
                 // let type_id = self.compiler.symbols[sym_id ];
@@ -3108,8 +3103,8 @@ impl<'res> TypeResolver<'res> {
                 let cycled_ast_id = cycled_sym.ast_id.expect("core should not be resolved");
                 let cycled_name = self.interner.search(cycled_sym.name_id);
 
-                let cycled_span = env.ast_info.get_sym_span(cycled_ast_id);
-                let current_span = env.ast_info.get_sym_span(current_ast_id);
+                let cycled_span = env.ast_info.get_name_span(cycled_ast_id);
+                let current_span = env.ast_info.get_name_span(current_ast_id);
 
                 let core_msg = format!(
                     "`{}` depends on itself through `{}`",

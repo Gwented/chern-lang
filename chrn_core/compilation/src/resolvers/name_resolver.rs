@@ -9,7 +9,7 @@ use chrn_utils::{
 use lang::values::ValueInfo;
 
 use crate::{
-    lookup::scopes::{AssociatedScopeKind, LookupPattern, Scope, ScopeInfo, ScopeType},
+    lookup::scopes::{AssociatedScopeKind, Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
     parser::ast::ast_concepts::{
         AbstractAlias, AbstractConfig, AbstractEnum, AbstractParam, AbstractStruct,
         AbstractTypeDef, AbstractVar, Item,
@@ -110,9 +110,9 @@ impl NamespaceResolver<'_> {
         debug_assert!(
             matches!(
                 abs_cfg.lookup_pattern,
-                LookupPattern::NamespaceOnly | LookupPattern::OnlyVar
+                ScopeLookupPattern::NamespaceOnly | ScopeLookupPattern::OnlyVar
             ),
-            "Either configuration of `abs_cfg` was done wrong or a core language change did not update this assertion.\nExpected `LookupPattern::NoRestrictions/OnlyVar`, found {:?}",
+            "Either configuration of `abs_cfg` was done wrong or a core language change did not update this assertion.\nExpected `ScopeLookupPattern::NoRestrictions/OnlyVar`, found {:?}",
             abs_cfg.lookup_pattern
         );
 
@@ -394,7 +394,7 @@ impl NamespaceResolver<'_> {
         //         AssociatedScopeKind::Module(env.current_mod),
         //         &abs_param.sp_ty_expr,
         //         ScopeType::Neutral,
-        //         LookupPattern::NoRestrictions,
+        //         ScopeLookupPattern::NoRestrictions,
         //         env,
         //     ) {
         //         TypeExprResult::Type(type_id) => type_id,

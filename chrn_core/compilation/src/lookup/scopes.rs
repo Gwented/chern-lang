@@ -163,19 +163,19 @@ pub fn find_type_id(
     owner_id: ModuleId,
     target_name_id: InternedId,
     scope_type: ScopeType,
-    lookup_pattern: LookupPattern,
+    lookup_pattern: ScopeLookupPattern,
 ) -> Option<TypeId> {
     let current_mod = &compiler.mods[owner_id];
     //WARN: Core is always the last scope so this is kept so an owned vec isn't created
     //May change
     let accessible_scopes = scope_type.accessible_scopes();
     let accessible_scopes = match lookup_pattern {
-        LookupPattern::NamespaceOnly if current_mod.region_id.is_some() => {
+        ScopeLookupPattern::NamespaceOnly if current_mod.region_id.is_some() => {
             &accessible_scopes[..accessible_scopes.len() - 1]
         }
         // If it's core then it'll only have access to core anyways so this is fine
-        LookupPattern::NoRestrictions | LookupPattern::NamespaceOnly => accessible_scopes,
-        LookupPattern::OnlyVar => &VAR_ONLY_ACCESSIBLE,
+        ScopeLookupPattern::NoRestrictions | ScopeLookupPattern::NamespaceOnly => accessible_scopes,
+        ScopeLookupPattern::OnlyVar => &VAR_ONLY_ACCESSIBLE,
     };
     // I don't think this can fail. Should maybe expect for clarity.
     //     let scope = &compiler.scopes[scope_id.id].scope;
@@ -242,7 +242,7 @@ pub fn find_sym_id(
     associated_scope: AssociatedScopeKind,
     target_name_id: InternedId,
     scope_type: ScopeType,
-    lookup_pattern: LookupPattern,
+    lookup_pattern: ScopeLookupPattern,
     // Named struct maybe
 ) -> Option<SymbolLookupOutput> {
     // Avoiding vector allocations right now so it can just use a pointer offset instead based off
@@ -254,12 +254,14 @@ pub fn find_sym_id(
 
             let accessible_scopes = scope_type.accessible_scopes();
             let accessible_scopes = match lookup_pattern {
-                LookupPattern::NamespaceOnly if current_mod.region_id.is_some() => {
+                ScopeLookupPattern::NamespaceOnly if current_mod.region_id.is_some() => {
                     &accessible_scopes[..accessible_scopes.len() - 1]
                 }
                 // If it's core then it'll only have access to core anyways so this is fine
-                LookupPattern::NoRestrictions | LookupPattern::NamespaceOnly => accessible_scopes,
-                LookupPattern::OnlyVar => &VAR_ONLY_ACCESSIBLE,
+                ScopeLookupPattern::NoRestrictions | ScopeLookupPattern::NamespaceOnly => {
+                    accessible_scopes
+                }
+                ScopeLookupPattern::OnlyVar => &VAR_ONLY_ACCESSIBLE,
             };
 
             for allowed_scope_type in accessible_scopes.iter() {
@@ -539,7 +541,7 @@ impl ScopeType {
 /// innately allow for main.i32 to be interpreted the same as if just i32 was written, which is
 /// wrong since the namespace "main" owns no such thing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LookupPattern {
+pub enum ScopeLookupPattern {
     /// Applies no restriction to lookups. Meaning, core is automatically searched since it's
     /// intrinsic, any scope's accessible scopes can be searched with no restriction.
     NoRestrictions,

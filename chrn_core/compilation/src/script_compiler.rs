@@ -1,5 +1,6 @@
 // TODO: MAYBE eventually change from SipHash
 // What is a hash?
+pub mod reporter;
 pub mod script_compiler_store;
 pub mod script_compiler_summary;
 use chrn_utils::{

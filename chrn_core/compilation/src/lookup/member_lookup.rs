@@ -5,6 +5,12 @@ use chrn_utils::{
 
 use crate::{script_compiler::ScriptCompiler, semantic::hir::hir_concepts::Type};
 
+pub enum MemberScopeLookupPattern {
+    DotMember,
+    StaticMember,
+    NoRestrictions,
+}
+
 /// Result type for member lookups. This exists due to the fact that there is no `Ok` or `Err`
 /// inherit concept behind whether or not something was found.
 #[derive(Debug)]
@@ -15,6 +21,7 @@ pub enum MemberLookupResult {
     ImpossibleTypeMemberAccess(TypeId),
     /// A type having members, but not having the field identifier specified
     MemberNotFoundInType(TypeId),
+    // IncompatibleLookup(TypeId),
     // Seems like a bit of a jump
     /// Unknown type found
     Unknown(TypeId),
@@ -57,9 +64,9 @@ pub fn lookup_member(
     compiler: &ScriptCompiler,
     mut current_type_id: TypeId,
     target_name_id: InternedId,
+    lookup_pattern: MemberScopeLookupPattern,
 ) -> MemberLookupResult {
-    // Max loops will strike here.
-    // Soon.
+    // Should probably have own `IncompatibleMemberLookup` result
     for _ in 0..chrn_utils::MAX_LOOPS {
         match &compiler.types[current_type_id].ty {
             Type::BuiltinType(_) => {
@@ -76,8 +83,6 @@ pub fn lookup_member(
 
                 return MemberLookupResult::MemberNotFoundInType(current_type_id);
             }
-            //TODO: Lookup patterns
-            // But enums aren't fields..they're namespaces
             Type::Enum(enum_def) => {
                 for member_id in &enum_def.variants {
                     let variant = compiler.get_variant(*member_id);
@@ -104,22 +109,4 @@ pub fn lookup_member(
     }
 
     loop_abort!()
-}
-
-// DO THE HYPERLINKS CHANGE WITH RENAME? No :(
-// Maybe this should be removed it seems weirdly specific now
-/// Convenience function for handling member lookups from the symbol level, calls [`lookup_member`]
-pub fn lookup_member_from_sym_id(
-    compiler: &ScriptCompiler,
-    sym_id: SymbolId,
-    target_name_id: InternedId,
-) -> Option<MemberLookupResult> {
-    // Max loops will strike here.
-    // Soon.
-    let type_id = match compiler.get_type_id_from_sym_id(sym_id) {
-        Some(id) => id,
-        None => return None,
-    };
-
-    Some(lookup_member(compiler, type_id, target_name_id))
 }

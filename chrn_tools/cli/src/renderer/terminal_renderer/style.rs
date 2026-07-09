@@ -103,6 +103,13 @@ pub(super) fn standardize_help(msg: &str, can_color: bool, terminal: TerminalCol
     format!("{orange}help{nc}: {msg}")
 }
 
+/// Formats error message with heuristic styling (Intended for footer errors)
+pub(super) fn standardize_error(msg: &str, can_color: bool, terminal: TerminalColorType) -> String {
+    let (red, nc) = color::get_red(can_color, terminal);
+    format!("{red}error{nc}: {msg}")
+}
+
+/// Formats warn message with heuristic styling
 pub(super) fn standardize_warn(msg: &str, can_color: bool, terminal: TerminalColorType) -> String {
     let (orange, nc) = color::get_orange(can_color, terminal);
     format!("{orange}warn{nc}: {msg}")

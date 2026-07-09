@@ -9,7 +9,7 @@ use lang::{
 };
 
 use crate::{
-    lookup::scopes::LookupPattern,
+    lookup::scopes::ScopeLookupPattern,
     parser::ast::ast_exprs::{SpannedExpr, TypeExpr},
 };
 
@@ -17,7 +17,6 @@ use crate::{
 /// Ast.
 #[derive(Debug)]
 pub struct AstInfo {
-    // Maybe eventually just use a 5 sized array since there are max 5 sections
     /// Array that holds all 5 `chrn` sections.
     pub sections: [Option<Section>; 5],
     pub items: Arena<Item, AstId>,
@@ -137,7 +136,7 @@ impl AstInfo {
         }
     }
 
-    pub fn get_sym_span(&self, ast_id: AstId) -> SourceSpan {
+    pub fn get_name_span(&self, ast_id: AstId) -> SourceSpan {
         match &self.items[ast_id] {
             Item::TypeDef(abs_typedef) => abs_typedef.name_span,
             Item::Struct(abs_struct) => abs_struct.name_span,
@@ -151,7 +150,6 @@ impl AstInfo {
 
 #[derive(Debug)]
 pub enum Item {
-    //                                                 name: str [!IsEmpty, Range(0,5)]
     // Should these have spans? Do we REALLY want      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     // No, we do not.
     TypeDef(AbstractTypeDef),
@@ -526,7 +524,7 @@ pub struct AbstractConfig {
     pub opt_assignments: Vec<AbstractOptionAssignment>,
     /// `ScopeType` that should be looked within for the given identifier
     /// Can only be from var and nest
-    pub lookup_pattern: LookupPattern,
+    pub lookup_pattern: ScopeLookupPattern,
     /// Configuration for inner fields to define recursively
     pub cfg_members: Vec<AbstractConfig>,
 }
@@ -535,7 +533,7 @@ impl AbstractConfig {
     pub fn new(
         name_id: InternedId,
         name_span: SourceSpan,
-        lookup_pattern: LookupPattern,
+        lookup_pattern: ScopeLookupPattern,
         opt_assignments: Vec<AbstractOptionAssignment>,
         cfg_members: Vec<AbstractConfig>,
     ) -> AbstractConfig {

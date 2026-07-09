@@ -375,6 +375,19 @@ fn write_footer(out: &mut String, footer: &FooterKind, depth: usize) {
             out.push_str(": ");
             out.push_str(&count.to_string());
         }
+        FooterKind::MaxModulesExceeded(max) => {
+            write_indent(out, depth + 1);
+            push_json_str(out, "kind");
+            out.push_str(": ");
+            push_json_str(out, "max_modules_exceeded");
+            out.push(',');
+            out.push('\n');
+
+            write_indent(out, depth + 1);
+            push_json_str(out, "max");
+            out.push_str(": ");
+            out.push_str(&max.to_string());
+        }
     }
 
     out.push('\n');
@@ -525,6 +538,20 @@ mod tests {
             out.contains(r#""message":"two  spaces  here""#),
             "internal whitespace in string was mangled: {out}"
         );
+    }
+
+    #[test]
+    fn max_modules_exceeded_footer_is_emitted() {
+        let interner = Intern::init();
+        let out = render_json_diags(
+            &[],
+            &[FooterKind::MaxModulesExceeded(256)],
+            None,
+            &interner,
+            &JsonRenderConfig::new(false),
+        );
+        assert!(out.contains("\"kind\": \"max_modules_exceeded\""));
+        assert!(out.contains("\"max\": 256"));
     }
 
     #[test]

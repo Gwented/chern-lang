@@ -1,7 +1,6 @@
 use chrn_utils::{
     core_error::ScriptError,
     id_types::{ModuleId, SymbolId},
-    source_map::source_diagnostic::Reporter,
 };
 use compilation::{
     lexer::{Lexer, token::SpannedToken, trivia::Trivia},
@@ -14,7 +13,9 @@ use compilation::{
         resolver_env::{RegistrationEnv, ResolverEnv},
         type_resolver::TypeResolver,
     },
-    script_compiler::{ScriptCompiler, script_compiler_store::ScriptCompilerStore},
+    script_compiler::{
+        ScriptCompiler, reporter::Reporter, script_compiler_store::ScriptCompilerStore,
+    },
 };
 
 use crate::script_compiler_cache::ScriptCompilerCache;
@@ -100,7 +101,7 @@ pub fn run_all(
         };
 
         let (current_mod_symbols, mut diags) = ns_resolver.resolve(&current_env);
-        reporter.diags.append(&mut diags);
+        reporter.append_safe(&mut diags);
         mod_symbols.push(Some(current_mod_symbols));
     }
 
@@ -139,7 +140,6 @@ pub fn run_all(
 
     let mut ty_resolver =
         TypeResolver::new(&compiler_store.cfg, &compiler_store.interner, compiler);
-
     for i in 0..mod_len {
         // If there is no environment to use then it's not fit for resolution
         let current_env = match &resolver_envs[i] {

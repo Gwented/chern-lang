@@ -4,11 +4,12 @@ use chrn_utils::{
     chrn_config::ChrnConfig,
     core_error::{ModuleInitError, ScriptError},
     intern::Intern,
-    source_map::source_diagnostic::Reporter,
 };
 use compilation::{
     modules,
-    script_compiler::{ScriptCompiler, script_compiler_store::ScriptCompilerStore},
+    script_compiler::{
+        ScriptCompiler, reporter::Reporter, script_compiler_store::ScriptCompilerStore,
+    },
 };
 
 //ScriptContext? CompilerContext? AbstractCompilerManager?

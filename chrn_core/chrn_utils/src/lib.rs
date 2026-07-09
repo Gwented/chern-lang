@@ -18,7 +18,7 @@ pub mod source_map;
 pub const MAX_LOOPS: usize = 10000004;
 
 /// Max modules that can be in memory at once
-pub const MAX_MODULES: u8 = 1; // 500
+pub const MAX_MODULES: u16 = 1; // 500
 
 /// Max recursive descent that can be done
 pub const MAX_RECURSIVE_DEPTH: u16 = 1; // 512
@@ -32,7 +32,7 @@ pub mod tests {
         budget::mem_budget::{BudgetResult, MemoryBudget},
         id_types::PathId,
         intern::{self, Intern},
-        source_map::source_diagnostic::{DiagnosticLevel, Reporter, SourceDiagnostic},
+        source_map::source_diagnostic::{DiagnosticLevel, SourceDiagnostic},
     };
 
     #[test]
@@ -383,64 +383,6 @@ pub mod tests {
             intern::INTERNED_CORE + 1,
             51,
             "INTERNER_PRELOAD_SIZE should match number of preloaded interned strings"
-        );
-    }
-    // -- BUDGET --
-    /// Makes diagnostics with as many `Default` values as possible of level `Error`
-    fn make_diagnostics(amt: usize) -> Vec<SourceDiagnostic> {
-        let mut diags = Vec::new();
-        for i in 0..amt {
-            diags.push(SourceDiagnostic::new(
-                DiagnosticLevel::Error,
-                Default::default(),
-                PathId::new(i as u32),
-                Default::default(),
-                Default::default(),
-                Default::default(),
-            ));
-        }
-        diags
-    }
-
-    #[test]
-    fn checked_consume_budget_tests() {
-        // Overflow check
-        let mut budget = MemoryBudget::default();
-        budget.consume(1);
-        assert!(matches!(
-            budget.checked_consume(usize::MAX),
-            BudgetResult::Overflow
-        ));
-
-        // Overage check
-        let mut budget = MemoryBudget::new(10);
-        assert!(matches!(
-            budget.checked_consume(15),
-            BudgetResult::Overage(5)
-        ));
-
-        // Should not have consumed anything since it was an overage
-        assert_eq!(budget.remaining(), 10);
-
-        // Limit Reached
-        let mut budget = MemoryBudget::new(10);
-        assert!(matches!(
-            budget.checked_consume(10),
-            BudgetResult::LimitReached,
-        ));
-
-        // Stable
-        let mut budget = MemoryBudget::new(10);
-        assert!(matches!(budget.checked_consume(9), BudgetResult::Stable,));
-    }
-
-    #[test]
-    fn reporter_budget_test() {
-        let mut reporter = Reporter::new(MemoryBudget::new(5));
-        let res = reporter.append_safe(&mut make_diagnostics(5));
-        assert_eq!(
-            res, true,
-            "Should only be LimitReached which should not return `false`"
         );
     }
 }

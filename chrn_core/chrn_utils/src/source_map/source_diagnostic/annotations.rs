@@ -25,10 +25,8 @@ impl MemoryCost for Annotation {
         let label_cost = if let Some(label) = &self.label {
             mem_cost::string_cost(label)
         } else {
-            // Shouldn't this just be metadata size since it's a union?
             size_of::<Option<String>>()
         };
-        dbg!(span_cost, kind_cost, label_cost);
 
         // Should this be checked?
         span_cost + kind_cost + label_cost

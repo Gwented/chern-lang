@@ -41,7 +41,7 @@ use compilation::lexer::token::Token as ScriptToken;
 use compilation::lexer::trivia::Trivia;
 use compilation::lookup::scopes;
 use compilation::lookup::scopes::AssociatedScopeKind;
-use compilation::lookup::scopes::LookupPattern;
+use compilation::lookup::scopes::ScopeLookupPattern;
 use compilation::lookup::scopes::ScopeType;
 use compilation::modules::Module;
 use compilation::parser::ast::ast_exprs::PathSegment;
@@ -396,8 +396,7 @@ impl DocumentState {
         // their targets — they iterate `compilation_syms` instead.
         let mut compilation_syms: Vec<Option<Vec<SymbolId>>> = Vec::with_capacity(mod_len);
         {
-            let mut ns_resolver =
-                NamespaceResolver::new(&chrn_cfg, &self.interner, &mut compiler);
+            let mut ns_resolver = NamespaceResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
             for (mod_idx, env_opt) in registration_envs.iter().take(mod_len).enumerate() {
                 let env = match env_opt {
@@ -475,8 +474,7 @@ impl DocumentState {
             // Member resolution (fields/variants) for all modules.  A single
             // `MemberResolver` is reused across modules and iterates each env's
             // `compilation_syms` internally rather than walking the AST.
-            let mut member_resolver =
-                MemberResolver::new(&chrn_cfg, &self.interner, &mut compiler);
+            let mut member_resolver = MemberResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
             for (mod_idx, env) in resolver_envs.iter().take(mod_len).enumerate() {
                 let env = match env {
@@ -520,8 +518,7 @@ impl DocumentState {
                 };
 
                 let expr_start = compiler.exprs.len();
-                let mut type_resolver =
-                    TypeResolver::new(&chrn_cfg, &self.interner, &mut compiler);
+                let mut type_resolver = TypeResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
                 if let Err(ty_diags) = type_resolver.resolve(env)
                     && !ty_diags.is_empty()
@@ -607,7 +604,7 @@ impl DocumentState {
                         AssociatedScopeKind::Module(ModuleId::new(0)),
                         interned,
                         ScopeType::Var,
-                        LookupPattern::NoRestrictions,
+                        ScopeLookupPattern::NoRestrictions,
                     ) {
                         map.push((type_expr.span, SemanticEntity::Symbol(sym_id)));
                     } else if let Some(scopes::SymbolLookupOutput {
@@ -618,7 +615,7 @@ impl DocumentState {
                         AssociatedScopeKind::Module(ModuleId::new(0)),
                         interned,
                         ScopeType::Neutral,
-                        LookupPattern::NoRestrictions,
+                        ScopeLookupPattern::NoRestrictions,
                     ) {
                         map.push((type_expr.span, SemanticEntity::Symbol(sym_id)));
                     }
@@ -644,7 +641,7 @@ impl DocumentState {
                                     AssociatedScopeKind::Module(found_mod.mod_id),
                                     sym_name_id,
                                     ScopeType::Neutral,
-                                    LookupPattern::NamespaceOnly,
+                                    ScopeLookupPattern::NamespaceOnly,
                                 )
                                 .or_else(|| {
                                     scopes::find_sym_id(
@@ -652,7 +649,7 @@ impl DocumentState {
                                         AssociatedScopeKind::Module(found_mod.mod_id),
                                         sym_name_id,
                                         ScopeType::Var,
-                                        LookupPattern::NamespaceOnly,
+                                        ScopeLookupPattern::NamespaceOnly,
                                     )
                                 })
                             {
@@ -725,7 +722,7 @@ impl DocumentState {
                             AssociatedScopeKind::Module(found_mod.mod_id),
                             acc.field,
                             ScopeType::Var,
-                            LookupPattern::NamespaceOnly,
+                            ScopeLookupPattern::NamespaceOnly,
                         )
                         .or_else(|| {
                             scopes::find_sym_id(
@@ -733,7 +730,7 @@ impl DocumentState {
                                 AssociatedScopeKind::Module(found_mod.mod_id),
                                 acc.field,
                                 ScopeType::Neutral,
-                                LookupPattern::NamespaceOnly,
+                                ScopeLookupPattern::NamespaceOnly,
                             )
                         }) {
                             map.push((field_span, SemanticEntity::Symbol(sym_id)));
@@ -764,7 +761,7 @@ impl DocumentState {
                             AssociatedScopeKind::Module(ModuleId::new(0)),
                             name_id,
                             ScopeType::Neutral,
-                            LookupPattern::NoRestrictions,
+                            ScopeLookupPattern::NoRestrictions,
                         )
                         .or_else(|| {
                             scopes::find_sym_id(
@@ -772,7 +769,7 @@ impl DocumentState {
                                 AssociatedScopeKind::Module(ModuleId::new(0)),
                                 name_id,
                                 ScopeType::Var,
-                                LookupPattern::NoRestrictions,
+                                ScopeLookupPattern::NoRestrictions,
                             )
                         });
 
@@ -819,7 +816,7 @@ impl DocumentState {
                                                 AssociatedScopeKind::Module(mod_id),
                                                 seg_name_id,
                                                 ScopeType::Var,
-                                                LookupPattern::NamespaceOnly,
+                                                ScopeLookupPattern::NamespaceOnly,
                                             )
                                             .or_else(|| {
                                                 scopes::find_sym_id(
@@ -827,7 +824,7 @@ impl DocumentState {
                                                     AssociatedScopeKind::Module(mod_id),
                                                     seg_name_id,
                                                     ScopeType::Neutral,
-                                                    LookupPattern::NamespaceOnly,
+                                                    ScopeLookupPattern::NamespaceOnly,
                                                 )
                                             }) {
                                                 if let Some(sym) = compiler.symbols.get(sym_id) {
@@ -988,7 +985,7 @@ impl DocumentState {
                 if let Some(ast_id) = sym.ast_id
                     && let Some(Some(ast)) = self.asts.first()
                 {
-                    let span = ast.get_sym_span(ast_id);
+                    let span = ast.get_name_span(ast_id);
                     map.push((span, SemanticEntity::Symbol(sym_id)));
                 }
             }
@@ -1319,7 +1316,7 @@ impl DocumentState {
                     SymbolOrigin::Compiler => 0,
                 };
                 let ast = self.asts.get(owner_id)?.as_ref()?;
-                let span = ast.get_sym_span(ast_id);
+                let span = ast.get_name_span(ast_id);
                 let module = compiler.mods.get(ModuleId::new(owner_id))?;
                 let region = self.region_arena.get(module.region_id?)?;
                 let path = self.interner.search_path(region.path_id);
