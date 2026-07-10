@@ -1,10 +1,28 @@
+@def
 
 // Need bigint/float
 // let overflow = 9223372036854775807 + 1
 // let underflow = -9223372036_854775807 - 2
 
-let x = 2
+// let x = 4
+import "../../chrn_core/"
+let y = 3
+// let y = 5
+//let $macro = 3
+let x = 9
+// alias x() =
+
+let i = '\u{1F985}'
+
+nest->
+    export struct Person {
+        s: i32
+        e#2: u32
+    } #warn
+    /* complex->
+    Assertion failure from this since it expects None sym id before registering but later stages still
+    use scope searching from ast
+        Person {}
+        Person {}
+    */
 @end
-
-
-

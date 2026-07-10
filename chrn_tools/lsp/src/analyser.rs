@@ -770,6 +770,6 @@ pub(crate) fn resolve_modules_lsp(
             diags,
         );
 
-        modules[current_mod_id.id - 1] = Some(sub_mod);
+        modules[(current_mod_id.id - 1) as usize] = Some(sub_mod);
     }
 }

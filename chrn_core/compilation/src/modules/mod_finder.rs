@@ -254,7 +254,7 @@ impl ModuleFinder<'_> {
             } else {
             // First time seeing this path, so a new key = PathId, Value = ModuleId relationship is
             // made
-                let new_mod_id = ModuleId::new(self.seen.len());
+                let new_mod_id = ModuleId::new(self.seen.len() as u32);
                 self.seen.push((path_id, new_mod_id));
                 new_mod_id
             };

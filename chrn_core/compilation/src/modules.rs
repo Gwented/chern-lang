@@ -644,6 +644,6 @@ fn resolve_modules(
 
         // Needs - 1 so that it fits inside the temporary Vec, but still uses it's actual module
         // id.
-        other_mods[current_mod_id.id - 1] = Some(sub_mod);
+        other_mods[(current_mod_id.id - 1) as usize] = Some(sub_mod);
     }
 }

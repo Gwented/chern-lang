@@ -19,7 +19,7 @@ use chrn_utils::{
 use crate::keywords::ANNOTATION_CLAUSE_SIZE;
 
 /// 8KB read limit before aborting looking for @end in script file
-const READ_LIMIT: usize = 8192;
+const READ_LIMIT: usize = 8192; // 6144 6KB may be chosen
 
 pub struct ConfigLoader<'a, R: Read> {
     // Since region ids are not used by the loader for diagnostics, this is safe. Only the path id
@@ -31,6 +31,8 @@ pub struct ConfigLoader<'a, R: Read> {
     cfg: &'a ChrnConfig,
     // TODO: Remove this?
     interner: &'a Intern,
+    // Absolute pos
+    abs_pos: usize,
     pos: usize,
 }
 
@@ -71,6 +73,7 @@ impl<R: Read> ConfigLoader<'_, R> {
             interner,
             current_path_id,
             handle: BufReader::new(handle),
+            abs_pos: 0,
             pos: 0,
         }
     }
@@ -104,12 +107,11 @@ impl<R: Read> ConfigLoader<'_, R> {
         };
 
         while let Some(b) = self.peek() {
-            //TODO: New error enum would need to exist which specifically needs to say whether
-            //or not the program should keep going.
-            // Yes, I am Mythos for partaking in a form of security detection, that is the condition.
-            //
+            // dbg!(b as char);
+            // dbg!(self.pos);
+
             // This should also not be terminal
-            if self.pos > READ_LIMIT {
+            if self.pos >= READ_LIMIT {
                 let script_type = if requires_end { "block" } else { "file" };
 
                 panic!(
@@ -336,8 +338,6 @@ impl<R: Read> ConfigLoader<'_, R> {
         // TODO: Assert this...
 
         let region = self.create_region(script_start, None);
-        dbg!(str::from_utf8(&region.src_bytes));
-        panic!();
 
         // Case of no @def and no @end which requires a '\0' return since the entire file should be
         // read. This does not mean it is correct, it only means the read limit wasn't reached.
@@ -496,12 +496,18 @@ impl<R: Read> ConfigLoader<'_, R> {
         Ok(())
     }
 
+    // This skip operation has only be used safely in this context. It's only used in scenarios like
+    // multi-comments where look-ahead was already done to know that 2 bytes at most exist.
     fn skip(&mut self, dest: usize) {
+        self.abs_pos += dest;
         self.pos += dest;
     }
 
     fn advance(&mut self) -> Option<u8> {
+        //TODO: Emit footer and return an err instead of `None` to notify caller
+        // Since this just returns none it's more like an abrupt end of file at the user level.
         let b = self.peek();
+        self.abs_pos += 1;
         self.pos += 1;
         b
     }

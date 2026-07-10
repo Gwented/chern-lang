@@ -364,9 +364,9 @@ impl<'res> TypeResolver<'res> {
             ) {
             Some(found_sym_id)
         } else {
-            // Is terminal because this means nothing inside the symbol itself can actually be examined
-            // NOTE: But maybe it shouldn't be since the options can be checked for validity even
-            // with no root
+            // Options are checked for validity after this so returning `None` here is fine. But
+            // this still does terminate eventually since a config's member's cannot be sarched
+            // without an actual member holding symbol.
             let name = self.interner.search(abs_cfg_root.name_id);
             let core_msg = format!(
                 //TODO: Need to store scope type or some scope metadata or some conversion
@@ -376,10 +376,9 @@ impl<'res> TypeResolver<'res> {
 
             let src_diag =
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                    .add_annotation(abs_cfg_root.name_span, AnnotationKind::Primary, None)
-                    .build();
+                    .add_annotation(abs_cfg_root.name_span, AnnotationKind::Primary, None);
 
-            self.err_vec.push(src_diag);
+            self.err_vec.push(src_diag.build());
             None
         };
 
@@ -598,6 +597,17 @@ impl<'res> TypeResolver<'res> {
                                 .get_span_from_sym_id(found_sym_id)
                                 .expect("Should have a span since it has members and was searched");
                             let fmtted_ty = Type::to_fmt(self.compiler, type_id);
+
+                            // Needs to be done otherwise typedefs, given "x: State" will emit the
+                            // type as `x` rather than `State`
+                            let name_id = if abs_cfg_root.lookup_pattern
+                                == ScopeLookupPattern::NamespaceOnly
+                            {
+                                abs_cfg_root.name_id
+                            } else {
+                                // TODO: Needs change
+                                abs_cfg_root.name_id
+                            };
 
                             let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
                                 sp_parent_ty: SpannedContainer::new(
@@ -889,7 +899,7 @@ impl<'res> TypeResolver<'res> {
                         .into(),
                 )
                 .add_note(
-                    "The first config of a recursive type applies to all of it's inner recursive versions of itself innately".into(),
+                    "The first config of a recursive type applies to all of it's inner recursive versions of innately".into(),
                 );
 
                 self.err_vec.push(src_diag.build());
@@ -3147,6 +3157,8 @@ impl<'res> TypeResolver<'res> {
 
     /// Unknown or invalid directives produce a `PresetErr` which is returned alongside any
     /// successfully resolved directive ids.
+    ///
+    /// This is a helper.
     fn handle_directives(
         &self,
         abs_directives: &[AbstractDirective],

@@ -2,6 +2,7 @@
 chrn_core/target/
 chrn_core/Cargo.lock
 chrn_core/chrn_tests/gwop
+/chrn_core/chrn_tests/blob.chrn
 
 # chrn_tools
 chrn_tools/target/

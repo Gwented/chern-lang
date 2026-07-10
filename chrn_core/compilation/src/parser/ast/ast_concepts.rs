@@ -523,7 +523,7 @@ pub struct AbstractConfig {
     /// Configuration options for the current parent to apply
     pub opt_assignments: Vec<AbstractOptionAssignment>,
     /// `ScopeType` that should be looked within for the given identifier
-    /// Can only be from var and nest
+    /// Can only be `ScopeLookupPattern::OnlyVar/NamespaceOnly`
     pub lookup_pattern: ScopeLookupPattern,
     /// Configuration for inner fields to define recursively
     pub cfg_members: Vec<AbstractConfig>,

@@ -29,14 +29,6 @@ use chrn_utils::source_map::source_span::SourceSpan;
 use lang::fmter::{Formattable, Formatted};
 use lang::keywords::Keyword;
 
-// fn recurse(depth: u32, budget: &ParserBudget) {
-//     let _guard = budget.increase_depth();
-//
-//     if depth != 50 {
-//         recurse(depth + 1, budget);
-//     }
-// }
-
 // The CST.
 /// Returns a tuple of `AstInfo` and Diagnostics, where `AstInfo` may or may not be unfinished,
 /// depending on if diagnostics > 0
@@ -50,7 +42,7 @@ pub fn parse(
     let mut ast_info = AstInfo::new();
 
     let mut state = ParserState::new();
-    let mut budget = ParserBudget::new(chrn_utils::MAX_RECURSIVE_DEPTH, chrn_utils::MAX_EXPR_NODES);
+    let budget = ParserBudget::new(chrn_utils::MAX_RECURSIVE_DEPTH, chrn_utils::MAX_EXPR_NODES);
     let mut ctx = ParserContext::new(cfg, region, tokens);
 
     // Skipping possible @def first since it is recognized as it's own token
@@ -162,7 +154,7 @@ pub fn parse(
 
                     _ = ctx.expect_verbose(
                         TokenKind::SlimArrow,
-                        "Expected a '->' after section `var`, found ",
+                        "Expected '->' after section `var`, found ",
                         "",
                         Branch::Section(SectionBranch::Searching),
                         interner,
@@ -207,7 +199,7 @@ pub fn parse(
 
                     _ = ctx.expect_verbose(
                         TokenKind::SlimArrow,
-                        "Expected a '->' after section `nest`, found ",
+                        "Expected '->' after section `nest`, found ",
                         "",
                         Branch::Section(SectionBranch::Searching),
                         interner,
@@ -251,7 +243,7 @@ pub fn parse(
 
                     _ = ctx.expect_verbose(
                         TokenKind::SlimArrow,
-                        "Expected a '->' after section `complex`, found ",
+                        "Expected '->' after section `complex`, found ",
                         "",
                         Branch::Section(SectionBranch::Searching),
                         interner,
@@ -302,7 +294,7 @@ pub fn parse(
 
                     _ = ctx.expect_verbose(
                         TokenKind::SlimArrow,
-                        "Expected a '->' after section `override`, found ",
+                        "Expected '->' after section `override`, found ",
                         "",
                         Branch::Section(SectionBranch::Searching),
                         interner,
@@ -344,9 +336,7 @@ pub fn parse(
             },
             Token::Invalid(id) => {
                 ctx.advance_tok();
-
                 let err_str = interner.search(id);
-
                 let msg = format!("Found invalid token {err_str}");
 
                 ctx.report_verbose(&msg, Branch::Broken, interner);
@@ -454,6 +444,7 @@ fn check_bind(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token> {
     Ok(())
 }
 
+/// Since `modules.rs` handles modules with it's own mini-parser, this is just a parser check.
 fn check_import(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token> {
     ctx.expect_id_verbose(
         TokenKind::Str,
@@ -508,7 +499,6 @@ fn parse_typedef(
 
     let ty = parse_type_expr(ctx, budget, interner)?;
 
-    // WARN: DO NOT PROPOGATE
     let conds = if ctx.peek_kind() == TokenKind::OBracket {
         handle_conds(ctx, budget, interner).unwrap_or_default()
     } else {
@@ -561,7 +551,7 @@ fn parse_nest_sect(
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
-                &format!("Expected a '{{' to define struct `{struct_name}`, found "),
+                &format!("Expected '{{' to define struct, found "),
                 "",
                 Branch::Section(SectionBranch::Nest),
                 interner,
@@ -605,7 +595,7 @@ fn parse_nest_sect(
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
-                &format!("Expected a '{{' block to define enum `{enum_name}`, found"),
+                &format!("Expected '{{' block to define enum, found"),
                 "",
                 Branch::Section(SectionBranch::Nest),
                 interner,
@@ -1485,7 +1475,7 @@ fn handle_struct_fields(
     Ok(fields)
 }
 
-/// Assumes the leading '{' was skipped
+/// Assumes the '{' was advanced
 fn handle_enum_variants(
     ctx: &mut ParserContext,
     enum_name: &str,

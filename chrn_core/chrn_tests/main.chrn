@@ -56,14 +56,14 @@ var->
 // import "../../chrn_core/chrn_tests/core.chrn"
     nest->
         enum Opt {
-                o: i32
+                o: i32 [] #ignore
             }
         struct Forb {
             p: def::Person
             root_holder: Runtime
             // Breaks reporting since cross module spanning is NOT possible right now
             // p: defs::Person
-        } #bin
+        }
 
         enum State1 {stable, state2: State2}
         enum State2 {Medium: i32, state3: State3}
@@ -83,7 +83,7 @@ var->
         // pre-tense or not
         /*State1 {
             // Maybe just use colons
-            stable {}
+            .identifiers = [2, 3]
             state2 { // Should allow "state2: State2"?
                 state3 {
                     state1 {
@@ -94,7 +94,7 @@ var->
         }*/
         // x {}
 
-        /*var x {
+        State1 {
             .default_value = 2
             p {
                 /*out {
@@ -104,7 +104,7 @@ var->
             }
             // o {}
             // .extra = def::e#2
-        }*/
+        }
 @end
 
 /*let a = b

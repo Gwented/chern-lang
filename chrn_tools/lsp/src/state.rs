@@ -367,7 +367,7 @@ impl DocumentState {
                     continue;
                 }
             };
-            let src_region_id = match compiler.mods[ModuleId::new(mod_idx)].region_id {
+            let src_region_id = match compiler.mods[ModuleId::new(mod_idx as u32)].region_id {
                 Some(rid) => rid,
                 None => {
                     registration_envs.push(None);
@@ -384,7 +384,7 @@ impl DocumentState {
             registration_envs.push(Some(RegistrationEnv::new(
                 ast_info,
                 region,
-                ModuleId::new(mod_idx),
+                ModuleId::new(mod_idx as u32),
             )));
         }
 
@@ -442,7 +442,7 @@ impl DocumentState {
                         continue;
                     }
                 };
-                let src_region_id = match compiler.mods[ModuleId::new(mod_idx)].region_id {
+                let src_region_id = match compiler.mods[ModuleId::new(mod_idx as u32)].region_id {
                     Some(rid) => rid,
                     None => {
                         resolver_envs.push(None);
@@ -466,7 +466,7 @@ impl DocumentState {
                 resolver_envs.push(Some(ResolverEnv::new(
                     ast_info,
                     region,
-                    ModuleId::new(mod_idx),
+                    ModuleId::new(mod_idx as u32),
                     mod_syms,
                 )));
             }
@@ -1312,12 +1312,12 @@ impl DocumentState {
                 // built-in names without a user-visible definition site.
                 let ast_id = sym.ast_id?;
                 let owner_id = match sym.sym_origin {
-                    SymbolOrigin::Module(mid) => mid.id,
+                    SymbolOrigin::Module(mid) => mid.id as usize,
                     SymbolOrigin::Compiler => 0,
                 };
                 let ast = self.asts.get(owner_id)?.as_ref()?;
                 let span = ast.get_name_span(ast_id);
-                let module = compiler.mods.get(ModuleId::new(owner_id))?;
+                let module = compiler.mods.get(ModuleId::new(owner_id as u32))?;
                 let region = self.region_arena.get(module.region_id?)?;
                 let path = self.interner.search_path(region.path_id);
                 Some((path.to_string_lossy().to_string(), span, None))
@@ -1329,13 +1329,13 @@ impl DocumentState {
                 let sym = compiler.symbols.get(*owner_sym_id)?;
                 let ast_id = sym.ast_id?;
                 let owner_id = match sym.sym_origin {
-                    SymbolOrigin::Module(mid) => mid.id,
+                    SymbolOrigin::Module(mid) => mid.id as usize,
                     SymbolOrigin::Compiler => 0,
                 };
                 let ast = self.asts.get(owner_id)?.as_ref()?;
                 let abs_struct = ast.get_struct(ast_id);
                 let field = abs_struct.fields.get(*field_idx)?;
-                let module = compiler.mods.get(ModuleId::new(owner_id))?;
+                let module = compiler.mods.get(ModuleId::new(owner_id as u32))?;
                 let region = self.region_arena.get(module.region_id?)?;
                 let path = self.interner.search_path(region.path_id);
                 Some((
@@ -1351,13 +1351,13 @@ impl DocumentState {
                 let sym = compiler.symbols.get(*owner_sym_id)?;
                 let ast_id = sym.ast_id?;
                 let owner_id = match sym.sym_origin {
-                    SymbolOrigin::Module(mid) => mid.id,
+                    SymbolOrigin::Module(mid) => mid.id as usize,
                     SymbolOrigin::Compiler => 0,
                 };
                 let ast = self.asts.get(owner_id)?.as_ref()?;
                 let abs_enum = ast.get_enum(ast_id);
                 let variant = abs_enum.variants.get(*variant_idx)?;
-                let module = compiler.mods.get(ModuleId::new(owner_id))?;
+                let module = compiler.mods.get(ModuleId::new(owner_id as u32))?;
                 let region = self.region_arena.get(module.region_id?)?;
                 let path = self.interner.search_path(region.path_id);
                 Some((

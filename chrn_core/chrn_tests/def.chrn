@@ -3,7 +3,7 @@ export let WRITE = 0b1
 
 // import "../chrn_core/chrn_tests/core.chrn"
 
-let x = 2 != 3
+let x = 3 == 3
 
 let z = 2
 
@@ -13,7 +13,7 @@ nest->
         p: Person
         // name: str
         // age: u8
-    } //#bin
+    }
 
     export enum State {
         Ready: str [] #warn

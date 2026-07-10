@@ -103,10 +103,7 @@ pub fn compute_hover(
         }
         ScriptToken::Keyword(kw) => {
             let doc = Document::keyword_docs(kw);
-            (
-                doc.compose(),
-                Some((span_start, span_end)),
-            )
+            (doc.compose(), Some((span_start, span_end)))
         }
         ScriptToken::Id(id) => {
             let mut hover_text = String::new();
@@ -125,15 +122,14 @@ pub fn compute_hover(
                     SemanticEntity::Symbol(sym_id) => {
                         // `entity: &SemanticEntity`, so `sym_id: &SymbolId`.  The
                         // Arena's `get` takes the index by value, so dereference.
-                        if let Some(sym) = compiler.symbols.get(*sym_id ) {
+                        if let Some(sym) = compiler.symbols.get(*sym_id) {
                             match sym.kind {
                                 SymbolKind::Type(type_id) => {
-                                    let ty_info = &compiler.types[type_id ];
+                                    let ty_info = &compiler.types[type_id];
                                     let t = format_type(&ty_info.ty, compiler, interner, false);
                                     match &ty_info.ty {
                                         hir_concepts::Type::TypeDef(type_def) => {
-                                            let inner =
-                                                &compiler.types[type_def.type_id ].ty;
+                                            let inner = &compiler.types[type_def.type_id].ty;
                                             let shallow_t = strip_struct_enum_prefix(&format_type(
                                                 inner, compiler, interner, true,
                                             ));
@@ -197,12 +193,11 @@ pub fn compute_hover(
                                     }
                                 }
                                 SymbolKind::Variable(var_id) => {
-                                    let var = &compiler.variables[var_id ];
+                                    let var = &compiler.variables[var_id];
                                     match var.state {
                                         VariableState::Known(val_id) => {
-                                            let val_info = &compiler.values[val_id ];
-                                            let ty_info =
-                                                &compiler.types[val_info.type_id ];
+                                            let val_info = &compiler.values[val_id];
+                                            let ty_info = &compiler.types[val_info.type_id];
 
                                             let var_name = interner.search(sym.name_id);
                                             let type_str = strip_struct_enum_prefix(&format_type(
@@ -255,11 +250,11 @@ pub fn compute_hover(
                         owner_sym_id,
                         field_idx,
                     } => {
-                        if let Some(sym) = compiler.symbols.get(*owner_sym_id )
+                        if let Some(sym) = compiler.symbols.get(*owner_sym_id)
                             && let Some(ast_id) = sym.ast_id
                         {
                             let owner_id = match sym.sym_origin {
-                                hir_concepts::SymbolOrigin::Module(mid) => mid.id,
+                                hir_concepts::SymbolOrigin::Module(mid) => mid.id as usize,
                                 hir_concepts::SymbolOrigin::Compiler => 0,
                             };
                             if let Some(Some(ast)) = state.asts.get(owner_id) {
@@ -293,11 +288,11 @@ pub fn compute_hover(
                         owner_sym_id,
                         variant_idx,
                     } => {
-                        if let Some(sym) = compiler.symbols.get(*owner_sym_id )
+                        if let Some(sym) = compiler.symbols.get(*owner_sym_id)
                             && let Some(ast_id) = sym.ast_id
                         {
                             let owner_id = match sym.sym_origin {
-                                hir_concepts::SymbolOrigin::Module(mid) => mid.id,
+                                hir_concepts::SymbolOrigin::Module(mid) => mid.id as usize,
                                 hir_concepts::SymbolOrigin::Compiler => 0,
                             };
                             if let Some(Some(ast)) = state.asts.get(owner_id) {
@@ -433,10 +428,9 @@ pub fn compute_hover(
                 Some((span_start, span_end)),
             )
         }
-        ScriptToken::BoolLiteral(b) => (
-            format!("bool literal: {}", b),
-            Some((span_start, span_end)),
-        ),
+        ScriptToken::BoolLiteral(b) => {
+            (format!("bool literal: {}", b), Some((span_start, span_end)))
+        }
         ScriptToken::Char(c) => (
             format!("char literal: '{}'", c),
             Some((span_start, span_end)),
@@ -453,10 +447,7 @@ pub fn compute_hover(
             "**->** — Section declaration operator".into(),
             Some((span_start, span_end)),
         ),
-        _ => (
-            String::new(),
-            Some((span_start, span_end)),
-        ),
+        _ => (String::new(), Some((span_start, span_end))),
     };
 
     if hover_text.is_empty() {
@@ -539,7 +530,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
         Type::Struct(struct_def) => {
             let name = compiler
                 .symbols
-                .get(struct_def.sym_id )
+                .get(struct_def.sym_id)
                 .map(|sym| interner.search(sym.name_id))
                 .unwrap_or("<struct>");
 
@@ -553,21 +544,19 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                 let fields: Vec<String> = struct_def
                     .fields
                     .iter()
-                    .filter_map(
-                        |member_id| match compiler.members.get(*member_id)? {
-                            compilation::semantic::hir::hir_concepts::MemberSymbolKind::Field(
-                                field,
-                            ) => {
-                                let field_name = interner.search(field.name_id);
-                                let field_ty = &compiler.types[field.type_id].ty;
-                                let field_ty_str = strip_struct_enum_prefix(&format_type(
-                                    field_ty, compiler, interner, true,
-                                ));
-                                Some(format!("\t{}: {}", field_name, field_ty_str))
-                            }
-                            _ => None,
-                        },
-                    )
+                    .filter_map(|member_id| match compiler.members.get(*member_id)? {
+                        compilation::semantic::hir::hir_concepts::MemberSymbolKind::Field(
+                            field,
+                        ) => {
+                            let field_name = interner.search(field.name_id);
+                            let field_ty = &compiler.types[field.type_id].ty;
+                            let field_ty_str = strip_struct_enum_prefix(&format_type(
+                                field_ty, compiler, interner, true,
+                            ));
+                            Some(format!("\t{}: {}", field_name, field_ty_str))
+                        }
+                        _ => None,
+                    })
                     .collect();
                 format!("struct {} {{\n{}\n}}", name, fields.join("\n"))
             }
@@ -589,26 +578,22 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                 let variants: Vec<String> = enum_def
                     .variants
                     .iter()
-                    .filter_map(
-                        |member_id| match compiler.members.get(*member_id)? {
-                            compilation::semantic::hir::hir_concepts::MemberSymbolKind::Variant(
-                                v,
-                            ) => {
-                                let variant_name = interner.search(v.name_id);
+                    .filter_map(|member_id| match compiler.members.get(*member_id)? {
+                        compilation::semantic::hir::hir_concepts::MemberSymbolKind::Variant(v) => {
+                            let variant_name = interner.search(v.name_id);
 
-                                if let Some(type_id) = v.type_id {
-                                    let variant_ty = &compiler.types[type_id].ty;
-                                    let variant_ty_str = strip_struct_enum_prefix(&format_type(
-                                        variant_ty, compiler, interner, true,
-                                    ));
-                                    Some(format!("\t{}: {}", variant_name, variant_ty_str))
-                                } else {
-                                    Some(format!("\t{}", variant_name))
-                                }
+                            if let Some(type_id) = v.type_id {
+                                let variant_ty = &compiler.types[type_id].ty;
+                                let variant_ty_str = strip_struct_enum_prefix(&format_type(
+                                    variant_ty, compiler, interner, true,
+                                ));
+                                Some(format!("\t{}: {}", variant_name, variant_ty_str))
+                            } else {
+                                Some(format!("\t{}", variant_name))
                             }
-                            _ => None,
-                        },
-                    )
+                        }
+                        _ => None,
+                    })
                     .collect();
                 format!("enum {} {{\n{}\n}}", name, variants.join("\n"))
             }
@@ -617,7 +602,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
         Type::Alias(alias_def) => {
             let name = compiler
                 .symbols
-                .get(alias_def.sym_id )
+                .get(alias_def.sym_id)
                 .map(|sym| interner.search(sym.name_id))
                 .unwrap_or("<alias>");
 
@@ -631,7 +616,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                 .map(|p| {
                     let p_name = compiler
                         .symbols
-                        .get(p.sym_id )
+                        .get(p.sym_id)
                         .map(|sym| interner.search(sym.name_id))
                         .unwrap_or("<param>");
                     let p_constraint = alias_def
@@ -648,7 +633,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
             format!("alias {}({})", name, params.join(", "))
         }
         Type::TypeDef(type_def) => {
-            let inner = &compiler.types[type_def.type_id ].ty;
+            let inner = &compiler.types[type_def.type_id].ty;
             format_type(inner, compiler, interner, shallow)
         }
         Type::Constrained(flags) => flags

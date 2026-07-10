@@ -119,7 +119,7 @@ mod tests {
         name: &str,
         path_name: &str,
         imports: Vec<Import>,
-        mod_id: usize,
+        mod_id: u32,
         text: &str,
         interner: &mut Intern,
     ) -> (Module, SourceRegion) {
@@ -179,7 +179,7 @@ mod tests {
     ) -> Vec<Option<RegistrationEnv<'a>>> {
         let mut all_envs = Vec::new();
         for i in 0..compiler.mods.len() {
-            let mod_id = ModuleId::new(i);
+            let mod_id = ModuleId::new(i as u32);
             let module = &compiler.mods[mod_id];
 
             // No region => no env. This is the path for lib-style modules with no source
@@ -225,7 +225,7 @@ mod tests {
     ) -> Vec<Option<ResolverEnv<'a>>> {
         let mut all_envs = Vec::new();
         for i in 0..compiler.mods.len() {
-            let mod_id = ModuleId::new(i);
+            let mod_id = ModuleId::new(i as u32);
             let module = &compiler.mods[mod_id];
 
             let current_region = match &module.region_id {
@@ -577,13 +577,20 @@ mod tests {
         assert!(matches!(res, ConfigLoaderOutput::Broken(_, _)));
     }
 
+    /// -- OLD BEHAVIOR --
     /// `@end` (4 bytes) appearing with no preceding `@def` must NOT terminate a script
     /// block. The whole file is the script, and `@end` should be reported as plain text.
+    /// -- NEW BEHAVIOR --
+    /// `@end` is allowed is allowed to be used without `@def` so it is not treated as plain text.
+    /// Serial start is some since the conceptual idea of a serial start is just that a script block
+    /// in a file exists, with no actual guarantee of if there is actually serial data, which is
+    /// impossible to know from the loader's point of view.
     #[test]
     fn cfg_at_end_without_at_def_is_plain_text_test() {
         let res = load_cfg("@end").expect_success();
         assert_eq!(res.src_bytes, b"@end");
-        assert!(res.serial_start.is_none());
+        // Is some since
+        assert!(res.serial_start.is_some());
         assert_eq!(res.script_start, 0);
     }
 
@@ -1644,7 +1651,7 @@ mod tests {
         let mut asts: Vec<Option<AstInfo>> = Vec::new();
 
         for mod_idx in 0..compiler.mods.len() {
-            let module = &compiler.mods[ModuleId::new(mod_idx)];
+            let module = &compiler.mods[ModuleId::new(mod_idx as u32)];
             let region = match module.region_id {
                 Some(id) => &region_arena[id],
                 None => {
@@ -1738,7 +1745,7 @@ mod tests {
         let mut asts: Vec<Option<AstInfo>> = Vec::new();
 
         for mod_idx in 0..compiler.mods.len() {
-            let module = &compiler.mods[ModuleId::new(mod_idx)];
+            let module = &compiler.mods[ModuleId::new(mod_idx as u32)];
             let region = match module.region_id {
                 Some(region_id) => &arena[region_id],
                 None => {
@@ -1832,7 +1839,7 @@ mod tests {
         let mut asts: Vec<Option<AstInfo>> = Vec::new();
 
         for mod_idx in 0..compiler.mods.len() {
-            let module = &compiler.mods[ModuleId::new(mod_idx)];
+            let module = &compiler.mods[ModuleId::new(mod_idx as u32)];
             let region = match module.region_id {
                 Some(region_id) => &arena[region_id],
                 None => {
@@ -1928,7 +1935,7 @@ mod tests {
         let mut asts: Vec<Option<AstInfo>> = Vec::new();
 
         for mod_idx in 0..compiler.mods.len() {
-            let module = &compiler.mods[ModuleId::new(mod_idx)];
+            let module = &compiler.mods[ModuleId::new(mod_idx as u32)];
             let region = match module.region_id {
                 Some(region_id) => &arena[region_id],
                 None => {
@@ -2986,7 +2993,7 @@ mod tests {
 
         let mut asts: Vec<Option<AstInfo>> = Vec::new();
         for mod_idx in 0..compiler.mods.len() {
-            let module = &compiler.mods[ModuleId::new(mod_idx)];
+            let module = &compiler.mods[ModuleId::new(mod_idx as u32)];
             let region = match module.region_id {
                 Some(region_id) => &arena[region_id],
                 None => {
@@ -3075,7 +3082,7 @@ mod tests {
 
         let mut asts: Vec<Option<AstInfo>> = Vec::new();
         for mod_idx in 0..compiler.mods.len() {
-            let module = &compiler.mods[ModuleId::new(mod_idx)];
+            let module = &compiler.mods[ModuleId::new(mod_idx as u32)];
             let region = match module.region_id {
                 Some(region_id) => &arena[region_id],
                 None => {
@@ -3299,7 +3306,7 @@ mod tests {
 
         let mut asts: Vec<Option<AstInfo>> = Vec::new();
         for mod_idx in 0..compiler.mods.len() {
-            let module = &compiler.mods[ModuleId::new(mod_idx)];
+            let module = &compiler.mods[ModuleId::new(mod_idx as u32)];
             let region = match module.region_id {
                 Some(region_id) => &arena[region_id],
                 None => {
@@ -3388,7 +3395,7 @@ mod tests {
 
         let mut asts: Vec<Option<AstInfo>> = Vec::new();
         for mod_idx in 0..compiler.mods.len() {
-            let module = &compiler.mods[ModuleId::new(mod_idx)];
+            let module = &compiler.mods[ModuleId::new(mod_idx as u32)];
             let region = match module.region_id {
                 Some(region_id) => &arena[region_id],
                 None => {

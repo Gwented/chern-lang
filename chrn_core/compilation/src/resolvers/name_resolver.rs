@@ -364,7 +364,7 @@ impl NamespaceResolver<'_> {
 
         // Making local scopes in this way because sections do not emergently allow for
         // parent hierarchies.
-        let local_scope_id = ScopeId::new(self.compiler.scopes.len());
+        let local_scope_id = ScopeId::new(self.compiler.scopes.len() as u16);
         let local_scope = Scope::new(local_scope_id, ScopeType::Local, false, None);
 
         self.compiler

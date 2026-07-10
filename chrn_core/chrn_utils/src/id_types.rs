@@ -62,16 +62,16 @@ macro_rules! arena_idx_impl_u32 {
 }
 
 /// Convenience for `usize` containing implementers of `ArenaIndex`
-macro_rules! arena_idx_impl_usize {
+macro_rules! arena_idx_impl_u16 {
     ($($t:ty),* $(,)?) => {
         $(
             impl ArenaIndex for $t {
                 fn into_usize(self) -> usize {
-                    self.id
+                    self.id as usize
                 }
 
-                fn from_usize(val: usize) -> Self {
-                    Self{id: val}
+                fn from_usize(val:usize) -> Self {
+                    Self{id:val as u16}
                 }
             }
         )*
@@ -99,9 +99,10 @@ arena_idx_impl_u32!(
     MemberId,
     SymbolId,
     ExprId,
+    ModuleId,
     ValueId,
 );
-arena_idx_impl_usize!(ModuleId, ScopeId);
+arena_idx_impl_u16!(ScopeId);
 
 // All id types
 /// Type-safe wrapper for using an index that contains a valid index into `Intern`
@@ -208,22 +209,22 @@ impl DirectiveId {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ModuleId {
-    pub id: usize,
+    pub id: u32,
 }
 
 impl ModuleId {
-    pub const fn new(id: usize) -> ModuleId {
+    pub const fn new(id: u32) -> ModuleId {
         ModuleId { id }
     }
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct ScopeId {
-    pub id: usize,
+    pub id: u16,
 }
 
 impl ScopeId {
-    pub const fn new(id: usize) -> ScopeId {
+    pub const fn new(id: u16) -> ScopeId {
         ScopeId { id }
     }
 }

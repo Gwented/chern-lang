@@ -46,9 +46,9 @@ pub fn run_all(
     // Need to separate namespace resolution and type resolver because if the modules namespaces
     // aren't resolved first, then type resolution isn't possible since it could be using types
     // from elsewhere, which are not known yet.
-    for mod_idx in 0..compiler.mods.len() {
+    for i in 0..compiler.mods.len() {
         //TEST: The error messages get worse when they are allowed  to be read with a broken region
-        let mod_id = ModuleId::new(mod_idx);
+        let mod_id = ModuleId::new(i as u32);
 
         let (toks_opt, trivia_opt) = run_lexer(compiler, compiler_store, &compiler_cache, mod_id);
 
@@ -273,7 +273,7 @@ fn create_registration_envs<'a>(
 ) -> Vec<Option<RegistrationEnv<'a>>> {
     let mut all_envs = Vec::new();
     for i in 0..compiler.mods.len() {
-        let mod_id = ModuleId::new(i);
+        let mod_id = ModuleId::new(i as u32);
         let module = &compiler.mods[mod_id];
 
         let current_region = match &module.region_id {
@@ -314,7 +314,7 @@ fn create_resolver_envs<'a>(
 ) -> Vec<Option<ResolverEnv<'a>>> {
     let mut all_envs = Vec::new();
     for i in 0..compiler.mods.len() {
-        let mod_id = ModuleId::new(i);
+        let mod_id = ModuleId::new(i as u32);
         let module = &compiler.mods[mod_id];
 
         let current_region = match &module.region_id {

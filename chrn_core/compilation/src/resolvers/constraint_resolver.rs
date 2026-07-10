@@ -1,3 +1,6 @@
+//TODO: Schema validation
+//TODO: Condition validation
+//TODO: Proper directive validation
 use chrn_utils::{
     chrn_config::ChrnConfig,
     id_types::{AstId, ExprId, SpannedContainer, SpannedContainerRef, SymbolId, TypeId},
@@ -117,7 +120,7 @@ impl<'a> ConstraintResolver<'a> {
             .expect("Should be user symbols only");
         let abs_cfg_root = env.ast_info.get_cfg_root(ast_id);
 
-        // let module = &self.compiler.mods[env.current_mod];
+        // leconstraint_reot module = &self.compiler.mods[env.current_mod];
         let cfg_root = self.compiler.get_cfg_def_root(parent_sym_id);
         dbg!(cfg_root);
         todo!("cfg")

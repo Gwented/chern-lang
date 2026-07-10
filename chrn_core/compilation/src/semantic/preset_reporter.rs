@@ -494,7 +494,7 @@ pub fn static_access_result_to_preset_err(
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
                     .add_annotation(current_seg.span, AnnotationKind::Primary, None)
             } else {
-                let core_msg = format!("Could not find `{current_seg_name}`");
+                let core_msg = format!("Could not find namespace `{current_seg_name}`");
 
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
                     .add_annotation(current_seg.span, AnnotationKind::Primary, None)

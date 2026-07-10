@@ -146,7 +146,7 @@ impl ScriptCompiler {
     /// Loads core library and builds script specific compiler with parameters given
     pub fn init(bind: Option<Bind>, mods: Arena<Module, ModuleId>) -> ScriptCompiler {
         //TEST:
-        let core_mod_id = ModuleId::new(mods.len());
+        let core_mod_id = ModuleId::new(mods.len() as u32);
         let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None, None);
 
         let mut compiler = ScriptCompiler {
@@ -189,7 +189,7 @@ impl ScriptCompiler {
         // If there is an alias, that is also ensured to be pushed as a symbol connected to the
         // module "other"
         for i in 0..compiler.mods.len() {
-            let current_mod_id = ModuleId::new(i);
+            let current_mod_id = ModuleId::new(i as u32);
             let module = &compiler.mods[current_mod_id];
 
             // Avoiding borrow issues by just storing the ids earlier
@@ -715,7 +715,7 @@ impl ScriptCompiler {
             return scope_info.scope.scope_id;
         }
 
-        let scope_id = ScopeId::new(self.scopes.len());
+        let scope_id = ScopeId::new(self.scopes.len() as u16);
         // Beep
         let intrinsic_scope_opt: Option<ScopeId> = match scope_type {
             // Maybe this stages an internal language construct at compile time
@@ -764,8 +764,8 @@ impl ScriptCompiler {
 
         //TODO: If namespace core exists as a module then should error earlier
         let core_name_id = InternedId::new(intern::INTERNED_CORE);
-        let core_mod_id = ModuleId::new(compiler.mods.len());
-        let core_scope_id = ScopeId::new(compiler.scopes.len());
+        let core_mod_id = ModuleId::new(compiler.mods.len() as u32);
+        let core_scope_id = ScopeId::new(compiler.scopes.len() as u16);
 
         // Uses module only so that there are no possible borrow checker issues.
         let mut core_mod = Module::new(
@@ -787,7 +787,7 @@ impl ScriptCompiler {
         }
 
         // Done adding all of core
-        let scope_id = ScopeId::new(compiler.scopes.len());
+        let scope_id = ScopeId::new(compiler.scopes.len() as u16);
         let scope = Scope::with_table(scope_id, ScopeType::Core, None, true, table);
         let scope_info = ScopeInfo::new(scope, None, core_mod_id);
 
@@ -1038,7 +1038,7 @@ impl ScriptCompiler {
         // IS it from core? The semantics are getting a little lost
         let core_mod_id = self.intrinsic_registry.core_mod_id;
         let scope_type = ScopeType::Override;
-        let override_scope_id = ScopeId::new(self.scopes.len());
+        let override_scope_id = ScopeId::new(self.scopes.len() as u16);
 
         let mut table = Table::new();
         self.load_override_java_symbols(&mut table, override_scope_id, core_mod_id);
