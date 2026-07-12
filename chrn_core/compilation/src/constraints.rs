@@ -18,7 +18,8 @@ pub(super) fn check_type_constraint(
     visited: &mut Vec<TypeId>,
     given_constraints: TypeBoundaryFlags,
 ) -> Result<(), PresetErr> {
-    let ty = &compiler.types[type_id ].ty;
+    let ty = &compiler.types[type_id].ty;
+    // And here
     match ty {
         Type::Struct(struct_def) => {
             // let symbol = &script_compiler.symbols[struct_def.sym_id ];
@@ -95,7 +96,7 @@ pub(super) fn check_type_constraint(
         // Not quite sure about this
         Type::Alias(alias_def) => {
             // Misleading error message
-            if given_constraints.contains(alias_def.ty_constraints) {
+            if given_constraints.overlaps(alias_def.ty_constraints) {
                 return Err(PresetErr::TypeBoundaryBoundConflict {
                     inferred: given_constraints,
                     conflicting: alias_def.ty_constraints,
@@ -111,7 +112,7 @@ pub(super) fn check_type_constraint(
 
             let constraints = builtin_ty.kind().type_constraints();
 
-            if !given_constraints.contains(constraints) {
+            if !given_constraints.overlaps(constraints) {
                 return Err(PresetErr::TypeBoundaryMismatch {
                     given_constraints,
                     found_ty: builtin_ty.kind().to_fmt(),
@@ -121,8 +122,8 @@ pub(super) fn check_type_constraint(
 
             Ok(())
         }
-        Type::Constrained(constraints) => {
-            if !given_constraints.contains(*constraints) {
+        Type::Boundaries(constraints) => {
+            if !given_constraints.overlaps(*constraints) {
                 return Err(PresetErr::TypeBoundaryBoundConflict {
                     inferred: given_constraints,
                     conflicting: *constraints,
@@ -144,7 +145,8 @@ pub fn get_type_constraints(
     ty_span: SourceSpan,
     is_rec: bool,
 ) -> Option<TypeBoundaryFlags> {
-    let ty = &compiler.types[type_id ].ty;
+    // Strike here
+    let ty = &compiler.types[type_id].ty;
     match ty {
         Type::BuiltinType(builtin_ty) => Some(builtin_ty.kind().type_constraints()),
         // Is it?
@@ -154,7 +156,7 @@ pub fn get_type_constraints(
         Type::Enum(enum_def) => todo!(),
         Type::Func(func_def) => Some(func_def.type_constraints),
         Type::Alias(alias_def) => todo!(),
-        Type::Constrained(ty_constraint_flags) => Some(*ty_constraint_flags),
+        Type::Boundaries(ty_constraint_flags) => Some(*ty_constraint_flags),
         // Wait should this?
         Type::TypeDef(type_def) => {
             get_type_constraints(compiler, type_def.type_id, ty_span, is_rec)

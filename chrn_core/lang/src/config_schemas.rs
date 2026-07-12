@@ -6,33 +6,43 @@ use crate::types::boundaries::TypeBoundaryFlags;
 #[derive(Debug)]
 pub struct ConfigSchema {
     pub kind: ConfigSchemaKind,
-    pub option_schema: &'static [OptionSchema],
+    pub opt_schema: &'static [OptionSchema],
 }
 
 impl ConfigSchema {
-    pub const fn new(
-        kind: ConfigSchemaKind,
-        option_schema: &'static [OptionSchema],
-    ) -> ConfigSchema {
-        ConfigSchema {
-            kind,
-            option_schema,
-        }
+    pub const fn new(kind: ConfigSchemaKind, opt_schema: &'static [OptionSchema]) -> ConfigSchema {
+        ConfigSchema { kind, opt_schema }
+    }
+
+    /// Attempts to find option from the given identifier, then return it's `OptionSchema`
+    pub fn get_opt(&self, target_name_id: InternedId) -> Option<&OptionSchema> {
+        self.opt_schema
+            .iter()
+            .find(|opt| opt.name_id == target_name_id)
+    }
+
+    /// Attempts to find option from the given identifier
+    ///
+    /// Returns `true` if present, `false` if not
+    pub fn has_opt(&self, target_name_id: InternedId) -> bool {
+        self.opt_schema
+            .iter()
+            .any(|opt| opt.name_id == target_name_id)
     }
 }
 
 /// Represents a configurations options, that are preloaded by the compiler as schemas to follow
 #[derive(Debug)]
 pub struct OptionSchema {
-    name_id: InternedId,
-    constraints: Option<TypeBoundaryFlags>,
+    pub name_id: InternedId,
+    pub boundaries: Option<TypeBoundaryFlags>,
 }
 
 impl OptionSchema {
-    pub const fn new(name_id: InternedId, constraints: Option<TypeBoundaryFlags>) -> OptionSchema {
+    pub const fn new(name_id: InternedId, boundaries: Option<TypeBoundaryFlags>) -> OptionSchema {
         OptionSchema {
             name_id,
-            constraints,
+            boundaries,
         }
     }
 }
@@ -45,13 +55,21 @@ pub enum ConfigSchemaKind {
 }
 
 /// All known preset schemas and the kinds associated with it
-pub static PRESET_CONFIG_SCHEMAS: [ConfigSchema; 1] = [ConfigSchema::new(
-    ConfigSchemaKind::Field,
-    &[DEFAULT_VAL_OPTION],
-)];
+pub static PRESET_CONFIG_SCHEMAS: [ConfigSchema; 3] = [
+    // ONLY 3 VALID SCHEMAS RIGHT NOW
+    ConfigSchema::new(ConfigSchemaKind::Struct, &[OPTION_CASES, OPTION_IDENTS]),
+    ConfigSchema::new(ConfigSchemaKind::Enum, &[OPTION_CASES, OPTION_IDENTS]),
+    ConfigSchema::new(
+        ConfigSchemaKind::Field,
+        &[OPTION_CASES, OPTION_IDENTS, OPTION_DEFAULT_VAL],
+    ),
+];
 
-const DEFAULT_VAL_OPTION: OptionSchema =
-    OptionSchema::new(InternedId::new(intern::INTERNED_DEFAULT_VALUE), None);
+const OPTION_DEFAULT_VAL: OptionSchema =
+    OptionSchema::new(InternedId::new(intern::INTERNED_DEFAULT_VAL), None);
+const OPTION_IDENTS: OptionSchema =
+    OptionSchema::new(InternedId::new(intern::INTERNED_IDENTS), None);
+const OPTION_CASES: OptionSchema = OptionSchema::new(InternedId::new(intern::INTERNED_CASES), None);
 
 // pub const fn load_schemas() -> &'static [ConfigSchema; 1] {
 // Default value
@@ -69,8 +87,8 @@ const DEFAULT_VAL_OPTION: OptionSchema =
 
 pub const fn get_cfg_schema(kind: ConfigSchemaKind) -> &'static ConfigSchema {
     match kind {
-        ConfigSchemaKind::Field => &PRESET_CONFIG_SCHEMAS[0],
-        ConfigSchemaKind::Struct => todo!(),
-        ConfigSchemaKind::Enum => todo!(),
+        ConfigSchemaKind::Struct => &PRESET_CONFIG_SCHEMAS[0],
+        ConfigSchemaKind::Enum => &PRESET_CONFIG_SCHEMAS[1],
+        ConfigSchemaKind::Field => &PRESET_CONFIG_SCHEMAS[2],
     }
 }

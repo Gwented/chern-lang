@@ -233,18 +233,13 @@ impl Display for Formatted {
             Formatted::Section => write!(f, "section"),
             Formatted::Stmt => write!(f, "statement"),
             Formatted::Boundaries(flags) => {
-                let mut out = String::new();
-                let constraints_vec = flags.to_type_constraint_vec();
+                let parts: Vec<String> = flags
+                    .to_fmt()
+                    .iter()
+                    .map(|fmtted| fmtted.to_string())
+                    .collect();
 
-                for (i, constraint) in constraints_vec.iter().enumerate() {
-                    out.push_str(&constraint.to_fmt().to_string());
-
-                    if i + 1 != constraints_vec.len() {
-                        out.push_str(" + ");
-                    }
-                }
-
-                write!(f, "{out}")
+                write!(f, "{}", parts.join(" + "))
             }
         }
     }

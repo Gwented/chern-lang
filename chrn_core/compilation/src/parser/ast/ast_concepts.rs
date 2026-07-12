@@ -5,7 +5,7 @@ use chrn_utils::{
 };
 use lang::{
     fmter::{Formattable, Formatted},
-    types::boundaries::{self, TypeBoundaryFlags},
+    types::boundaries::TypeBoundaryFlags,
 };
 
 use crate::{
@@ -707,14 +707,12 @@ pub enum UnaryOp {
 }
 
 impl UnaryOp {
-    pub fn type_constraints(&self) -> TypeBoundaryFlags {
-        let flags = match self {
-            UnaryOp::Not => boundaries::BOOL,
-            UnaryOp::Negate => boundaries::NUMERIC,
-            UnaryOp::BitNot => boundaries::INTEGER,
-        };
-
-        TypeBoundaryFlags::new(flags)
+    pub fn boundaries(&self) -> TypeBoundaryFlags {
+        match self {
+            UnaryOp::Not => TypeBoundaryFlags::BOOL,
+            UnaryOp::Negate => TypeBoundaryFlags::NUMERIC,
+            UnaryOp::BitNot => TypeBoundaryFlags::INTEGER,
+        }
     }
 }
 

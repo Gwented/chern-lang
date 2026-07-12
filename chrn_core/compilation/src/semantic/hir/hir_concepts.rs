@@ -11,7 +11,11 @@ use chrn_utils::{
 };
 use lang::{
     fmter::{Formattable, Formatted},
-    types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
+    types::{
+        boundaries::TypeBoundaryFlags,
+        builtins::{BuiltinType, BuiltinTypeKind},
+    },
+    values::Value,
 };
 
 use crate::{
@@ -148,7 +152,7 @@ impl TypeInfo {
 // Types are not given spans directly since it would over-complicate storing and add a net 12 byte
 // increase to all spans. Also, type spanning is entity symbol dependent anyways so it's likely the
 // better choice.
-//NOTE: Should be in chrn_utils?
+//NOTE: Should be in lang?
 #[derive(Debug)]
 pub enum Type {
     BuiltinType(BuiltinType),
@@ -157,7 +161,7 @@ pub enum Type {
     Func(FuncDef),
     Alias(AliasDef),
     TypeDef(TypeDef),
-    Constrained(TypeBoundaryFlags),
+    Boundaries(TypeBoundaryFlags),
     /// Preserved stable handle so that anything defined before a type was defined can still point
     /// to the correct type which prevents duplicating different definitions.
     Deferred(TypeId),
@@ -165,12 +169,25 @@ pub enum Type {
 }
 
 impl Type {
-    //TEST:
-    pub fn try_as_struct(&self) -> Option<&StructDef> {
-        match self {
-            Type::Struct(struct_def) => Some(struct_def),
-            _ => None,
+    //TEST: Usually uses associated functions
+    pub fn kind(compiler: &ScriptCompiler, mut type_id: TypeId) -> TypeKind {
+        for _ in 0..chrn_utils::MAX_LOOPS {
+            match &compiler.types[type_id].ty {
+                Type::BuiltinType(builtin_ty) => return TypeKind::BuiltinType(builtin_ty.kind()),
+                Type::Struct(_) => return TypeKind::Struct,
+                Type::Enum(_) => return TypeKind::Enum,
+                Type::Func(_) => return TypeKind::Func,
+                Type::Alias(_) => return TypeKind::Alias,
+                Type::TypeDef(_) => return TypeKind::TypeDef,
+                // This is the only issue since it's not a single Formatted.
+                // The next obvious decision should be to do, "Formatted::NumericIntegerRanged", etc.,
+                // where we have 4000 variants which
+                Type::Boundaries(_) => return TypeKind::Boundaries,
+                Type::Unknown => return TypeKind::Unknown,
+                Type::Deferred(inner) => type_id = *inner,
+            }
         }
+        loop_abort!();
     }
 
     /// The env can't be passed into to_fmt so
@@ -188,14 +205,26 @@ impl Type {
                 // This is the only issue since it's not a single Formatted.
                 // The next obvious decision should be to do, "Formatted::NumericIntegerRanged", etc.,
                 // where we have 4000 variants which
-                Type::Constrained(flags) => return Formatted::Boundaries(*flags),
+                Type::Boundaries(flags) => return Formatted::Boundaries(*flags),
                 Type::Unknown => return Formatted::Unknown,
                 Type::Deferred(inner) => type_id = *inner,
             }
         }
-
         loop_abort!();
     }
+}
+
+// WE LOST
+/// Flat variation of `Type`
+pub enum TypeKind {
+    BuiltinType(BuiltinTypeKind),
+    Struct,
+    TypeDef,
+    Boundaries,
+    Enum,
+    Func,
+    Alias,
+    Unknown,
 }
 
 #[derive(Debug)]
@@ -251,12 +280,12 @@ pub struct ConfigDefRoot {
     // This is not a `SpannedContainer` because it may become an Option
     pub name_span: SourceSpan,
     /// ConfigId of `self`
-    pub cfg_id: ConfigRootId,
+    pub cfg_root_id: ConfigRootId,
     /// During name resolution, we can't actually lookup the symbol since it may or may not be
     /// registered, so it's Option since it actually is `None` at some point, and could remain
     /// `None` if in a later stage it doesn't have it's target symbol found.
     pub linked_sym_id: Option<SymbolId>,
-    /// Expects `ConfigOptionAssignment`
+    /// Expects `OptionAssignmentRoot`
     pub opt_assignments: Vec<MemberId>,
     /// Lookup pattern that needs to be used to properly discern if
     /// `ScopeLookupPattern::Namespace/OnlyVar` should be used to search for the symbol associated with
@@ -271,7 +300,7 @@ impl ConfigDefRoot {
         parent_sym_id: SymbolId,
         name_id: InternedId,
         name_span: SourceSpan,
-        cfg_id: ConfigRootId,
+        cfg_root_id: ConfigRootId,
         linked_sym_id: Option<SymbolId>,
         lookup_pattern: ScopeLookupPattern,
         opt_assignments: Vec<MemberId>,
@@ -281,7 +310,7 @@ impl ConfigDefRoot {
             parent_sym_id,
             name_id,
             name_span,
-            cfg_id,
+            cfg_root_id,
             lookup_pattern,
             linked_sym_id,
             opt_assignments,
@@ -302,8 +331,8 @@ pub struct ConfigDefMember {
     /// `MemberId` of `self`
     pub member_id: MemberId,
     /// `MemberId` of the member symbol this is actually attached to
-    pub member_id_origin: MemberId,
-    /// Expects `ConfigOptionAssignment`
+    pub linked_member_id: MemberId,
+    /// Expects `OptionAssignmentMember`
     pub opt_assignments: Vec<MemberId>,
     /// Lookup pattern that needs to be used to properly discern if
     /// `ScopeLookupPattern::Namespace/OnlyVar` should be used to search for the member associacted with
@@ -319,14 +348,14 @@ impl ConfigDefMember {
         name_id: InternedId,
         name_span: SourceSpan,
         member_id: MemberId,
-        member_id_origin: MemberId,
+        linked_member_id: MemberId,
         opt_assignments: Vec<MemberId>,
         lookup_pattern: ScopeLookupPattern,
         cfg_def_members: Vec<MemberId>,
     ) -> ConfigDefMember {
         ConfigDefMember {
             member_id,
-            member_id_origin,
+            linked_member_id,
             name_id,
             name_span,
             opt_assignments,

@@ -10,10 +10,12 @@ let z = 2
 nest->
     export struct Person {
         // state: State
-        p: Person
+        // p: str #scient The error emitted by this should be able to place the directive pointers
+                          // directly under #scient. Too greedy. Feed them less.
+        // p: str #scient The 
         // name: str
         // age: u8
-    }
+    } #scient
 
     export enum State {
         Ready: str [] #warn

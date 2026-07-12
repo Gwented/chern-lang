@@ -70,13 +70,15 @@ pub const INTERNED_FLOAT: u32 = 60;
 pub const INTERNED_ORDERED: u32 = 61;
 pub const INTERNED_COMPARABLE: u32 = 62;
 pub const INTERNED_JAVA_UPPER: u32 = 63;
-pub const INTERNED_DEFAULT_VALUE: u32 = 64;
+pub const INTERNED_DEFAULT_VAL: u32 = 64;
 pub const INTERNED_WARN: u32 = 65;
 pub const INTERNED_IGNORE: u32 = 66;
 pub const INTERNED_SCIENT: u32 = 67;
 pub const INTERNED_HEX: u32 = 68;
 pub const INTERNED_BIN: u32 = 69;
 pub const INTERNED_OCTAL: u32 = 70;
+pub const INTERNED_IDENTS: u32 = 71;
+pub const INTERNED_CASES: u32 = 72;
 
 // Collection,
 // CharacterMappable,
@@ -100,15 +102,14 @@ pub struct Intern {
     // Um
     id_map: HashMap<String, u32>,
     path_map: HashMap<PathBuf, u32>,
-    // These are already wrapped is there really a point to type enforce these with `Arena`?
-    // Maybe
-    stored_strs: Vec<String>,
+    // Is super solely for lib.rs tests
+    pub(super) stored_strs: Vec<String>,
     stored_paths: Vec<PathBuf>,
     // Maybe not
     pos: usize,
 }
 
-pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_OCTAL + 1) as usize;
+pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_CASES + 1) as usize;
 
 impl Intern {
     /// Creates interner that pre-loads itself with all defined interned string literals.
@@ -306,8 +307,8 @@ impl Intern {
         interner.stored_strs.push("JAVA".to_string());
         interner
             .id_map
-            .insert("default_value".to_string(), INTERNED_DEFAULT_VALUE);
-        interner.stored_strs.push("default_value".to_string());
+            .insert("default_val".to_string(), INTERNED_DEFAULT_VAL);
+        interner.stored_strs.push("default_val".to_string());
         interner.id_map.insert("warn".to_string(), INTERNED_WARN);
         interner.stored_strs.push("warn".to_string());
         interner
@@ -324,6 +325,12 @@ impl Intern {
         interner.stored_strs.push("bin".to_string());
         interner.id_map.insert("octal".to_string(), INTERNED_OCTAL);
         interner.stored_strs.push("octal".to_string());
+        interner
+            .id_map
+            .insert("idents".to_string(), INTERNED_IDENTS);
+        interner.stored_strs.push("idents".to_string());
+        interner.id_map.insert("cases".to_string(), INTERNED_CASES);
+        interner.stored_strs.push("cases".to_string());
 
         interner.pos = interner.stored_strs.len();
 

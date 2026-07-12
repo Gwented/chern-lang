@@ -5,7 +5,7 @@ pub mod script_compiler_store;
 pub mod script_compiler_summary;
 use chrn_utils::{
     arena::Arena,
-    budget::mem_cost::MemoryCost,
+    budget::mem_cost::{self, MemoryCost},
     id_types::{
         ConfigRootId, DirectiveId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SymbolId,
         TypeId, ValueId, VariableId,
@@ -15,10 +15,7 @@ use chrn_utils::{
 };
 use lang::{
     directives::{Directive, TypeDirective},
-    types::{
-        boundaries::{TypeBoundary, TypeBoundaryFlags},
-        builtins::BuiltinType,
-    },
+    types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
     values::ValueInfo,
 };
 
@@ -612,7 +609,7 @@ impl ScriptCompiler {
                     type_id = *inner;
                     continue;
                 }
-                Type::Constrained(_) | Type::Unknown | Type::BuiltinType(_) => {
+                Type::Boundaries(_) | Type::Unknown | Type::BuiltinType(_) => {
                     return None;
                 }
             };
@@ -665,7 +662,7 @@ impl ScriptCompiler {
             Type::TypeDef(type_def) => Some(type_def.name_span),
             Type::Deferred(inner) => self.get_span_from_type_id(*inner),
             // Type spanning needs to be reasoned about first
-            Type::Constrained(type_constraint_flags) => todo!(),
+            Type::Boundaries(boundary_flags) => todo!(),
             Type::Unknown => todo!("Should still be spanned though"),
             Type::Func(_) => None,
         }
@@ -1076,7 +1073,7 @@ impl ScriptCompiler {
 
         // IsEmpty
         let type_id = TypeId::new(compiler.types.len() as u32);
-        let is_empty_flags = TypeBoundaryFlags::new(TypeBoundary::Collection.to_u64());
+        let is_empty_flags = TypeBoundaryFlags::COLLECTION;
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
@@ -1110,7 +1107,7 @@ impl ScriptCompiler {
 
         // IsWhitespace | CharacterMappable
         let type_id = TypeId::new(compiler.types.len() as u32);
-        let ws_flags = TypeBoundaryFlags::new(TypeBoundary::CharacterMappable.to_u64());
+        let ws_flags = TypeBoundaryFlags::CHARACTER_MAPPABLE;
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
@@ -1144,7 +1141,7 @@ impl ScriptCompiler {
 
         // Contains(String | char) CharacterMappable
         let type_id = TypeId::new(compiler.types.len() as u32);
-        let contains_flags = TypeBoundaryFlags::new(TypeBoundary::CharacterMappable.to_u64());
+        let contains_flags = TypeBoundaryFlags::CHARACTER_MAPPABLE;
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
@@ -1178,7 +1175,7 @@ impl ScriptCompiler {
 
         // StartsW(Value) | CharacterMappable
         let type_id = TypeId::new(compiler.types.len() as u32);
-        let startsw_flags = TypeBoundaryFlags::new(TypeBoundary::CharacterMappable.to_u64());
+        let startsw_flags = TypeBoundaryFlags::CHARACTER_MAPPABLE;
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
@@ -1213,7 +1210,7 @@ impl ScriptCompiler {
         // EndsW(Value) | CharacterMappable
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let type_id = TypeId::new(compiler.types.len() as u32);
-        let endsw_flags = TypeBoundaryFlags::new(TypeBoundary::CharacterMappable.to_u64());
+        let endsw_flags = TypeBoundaryFlags::CHARACTER_MAPPABLE;
 
         let func_def = FuncDef::new(
             sym_id,
@@ -1248,7 +1245,7 @@ impl ScriptCompiler {
 
         // Range(inclusive, exclusive) | Numeric | Ordering
         let type_id = TypeId::new(compiler.types.len() as u32);
-        let range_flags = TypeBoundaryFlags::new(TypeBoundary::Ranged.to_u64());
+        let range_flags = TypeBoundaryFlags::RANGED;
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
@@ -1287,7 +1284,7 @@ impl ScriptCompiler {
 
         // Equals(Comparable)
         let type_id = TypeId::new(compiler.types.len() as u32);
-        let eq_flags = TypeBoundaryFlags::new(TypeBoundary::Comparable.to_u64());
+        let eq_flags = TypeBoundaryFlags::COMPARABLE;
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
@@ -1824,7 +1821,7 @@ impl ScriptCompiler {
         // -- Type constraints --
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::Ranged.to_u64())),
+            Type::Boundaries(TypeBoundaryFlags::RANGED),
             core_mod_id,
         ));
 
@@ -1846,9 +1843,7 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeBoundaryFlags::new(
-                TypeBoundary::CharacterMappable.to_u64(),
-            )),
+            Type::Boundaries(TypeBoundaryFlags::CHARACTER_MAPPABLE),
             core_mod_id,
         ));
 
@@ -1870,7 +1865,7 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::Collection.to_u64())),
+            Type::Boundaries(TypeBoundaryFlags::COLLECTION),
             core_mod_id,
         ));
 
@@ -1892,7 +1887,7 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::HasLen.to_u64())),
+            Type::Boundaries(TypeBoundaryFlags::HAS_LEN),
             core_mod_id,
         ));
 
@@ -1914,7 +1909,7 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::Integer.to_u64())),
+            Type::Boundaries(TypeBoundaryFlags::INTEGER),
             core_mod_id,
         ));
 
@@ -1937,7 +1932,7 @@ impl ScriptCompiler {
         // Numeric
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::Numeric.to_u64())),
+            Type::Boundaries(TypeBoundaryFlags::NUMERIC),
             core_mod_id,
         ));
 
@@ -1959,7 +1954,7 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::SignedInteger.to_u64())),
+            Type::Boundaries(TypeBoundaryFlags::SIGNED_INTEGER),
             core_mod_id,
         ));
 
@@ -1981,9 +1976,7 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeBoundaryFlags::new(
-                TypeBoundary::UnsignedInteger.to_u64(),
-            )),
+            Type::Boundaries(TypeBoundaryFlags::UNSIGNED_INTEGER),
             core_mod_id,
         ));
 
@@ -2005,7 +1998,7 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::Float.to_u64())),
+            Type::Boundaries(TypeBoundaryFlags::FLOAT),
             core_mod_id,
         ));
 
@@ -2027,7 +2020,7 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::Ordered.to_u64())),
+            Type::Boundaries(TypeBoundaryFlags::ORDERED),
             core_mod_id,
         ));
 
@@ -2049,7 +2042,7 @@ impl ScriptCompiler {
 
         let type_id = TypeId::new(compiler.types.len() as u32);
         compiler.types.push(TypeInfo::new(
-            Type::Constrained(TypeBoundaryFlags::new(TypeBoundary::Comparable.to_u64())),
+            Type::Boundaries(TypeBoundaryFlags::COMPARABLE),
             core_mod_id,
         ));
 
@@ -2074,8 +2067,8 @@ impl ScriptCompiler {
 impl MemoryCost for ScriptCompiler {
     fn cost(&self) -> usize {
         let bind_cost = size_of::<Bind>();
-        let mod_metadata_cost = size_of::<Vec<Module>>();
-        dbg!(mod_metadata_cost);
+        let mod_metadata_cost = todo!();
+        // dbg!(mod_metadata_cost);
         usize::MAX;
         todo!()
     }

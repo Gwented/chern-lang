@@ -1643,10 +1643,7 @@ mod tests {
         region_arena.push(main_meta);
         region_arena.push(sub_meta);
 
-        let mut compiler = ScriptCompiler::init(
-            None,
-            Arena::<Module, ModuleId>::from(vec![main_mod, sub_mod]),
-        );
+        let mut compiler = ScriptCompiler::init(None, vec![main_mod, sub_mod].into());
 
         let mut asts: Vec<Option<AstInfo>> = Vec::new();
 

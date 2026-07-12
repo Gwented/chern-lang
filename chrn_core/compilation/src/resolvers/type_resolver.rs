@@ -93,7 +93,7 @@ impl<'res> TypeResolver<'res> {
                     // None of these can be user-defined, but exist internally.
                     Type::Deferred(_)
                     | Type::Func(_)
-                    | Type::Constrained(_)
+                    | Type::Boundaries(_)
                     | Type::Unknown
                     | Type::BuiltinType(_) => {
                         unreachable!()
@@ -725,6 +725,7 @@ impl<'res> TypeResolver<'res> {
             ScopeLookupPattern::NamespaceOnly | ScopeLookupPattern::OnlyVar
         ));
 
+        // #!/user/bin/bash
         cfg_root.linked_sym_id = Some(found_sym_id);
         cfg_root.opt_assignments = opt_assignment_roots;
         cfg_root.cfg_members = cfg_def_members;
@@ -2307,7 +2308,7 @@ impl<'res> TypeResolver<'res> {
 
                                     return Err(PresetErr::General(src_diag));
                                 }
-                                Type::Constrained(ty_constraint) => todo!(),
+                                Type::Boundaries(ty_constraint) => todo!(),
                                 Type::Deferred(type_id) => todo!("Is this possible?"),
                             }
                         }
@@ -3107,10 +3108,10 @@ impl<'res> TypeResolver<'res> {
             if current == parent_sym_id {
                 let current_sym = &self.compiler.symbols[parent_sym_id];
                 let current_name = self.interner.search(current_sym.name_id);
-                let current_ast_id = current_sym.ast_id.expect("core should not be resolved");
+                let current_ast_id = current_sym.ast_id.expect("Should be user symbols only");
 
                 let cycled_sym = &self.compiler.symbols[found_sym_id];
-                let cycled_ast_id = cycled_sym.ast_id.expect("core should not be resolved");
+                let cycled_ast_id = cycled_sym.ast_id.expect("Should be user symbols only");
                 let cycled_name = self.interner.search(cycled_sym.name_id);
 
                 let cycled_span = env.ast_info.get_name_span(cycled_ast_id);

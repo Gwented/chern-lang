@@ -44,7 +44,7 @@ pub fn collect_all_members(
             Type::Alias(alias_def) => todo!(),
             // Should this?
             Type::TypeDef(type_def) => current_type_id = type_def.type_id,
-            Type::Constrained(type_constraint_flags) => return Vec::new(),
+            Type::Boundaries(type_constraint_flags) => return Vec::new(),
             Type::Deferred(inner_type_id) => current_type_id = *inner_type_id,
             Type::Unknown => return Vec::new(),
         }
@@ -100,7 +100,7 @@ pub fn lookup_member(
             // skips to the internal type_id field, just like defer does but this is guaranteed to
             // be one layer.
             Type::TypeDef(type_def) => current_type_id = type_def.type_id,
-            Type::Constrained(type_constraint_flags) => todo!(),
+            Type::Boundaries(type_constraint_flags) => todo!(),
             // WARN: DANGEROUS
             Type::Deferred(inner_type_id) => current_type_id = *inner_type_id,
 

@@ -64,21 +64,21 @@ pub(crate) fn create_diag_builder_preset(
             sp_directive: directive,
             sym_span,
         } => {
-            let directive_constraints = directive.inner.type_constraints().to_type_constraint_vec();
+            let directive_boundaries = directive.inner.type_constraints().to_fmt();
 
-            let mut constraints_str = String::new();
+            let mut boundaries_str = String::new();
 
-            for (i, constraint) in directive_constraints.iter().enumerate() {
-                constraints_str.push_str(&format!("`{}`", constraint.to_fmt()));
+            for (i, constraint) in directive_boundaries.iter().enumerate() {
+                boundaries_str.push_str(&format!("`{}`", constraint));
 
-                if i + 1 < directive_constraints.len() {
-                    constraints_str.push_str(", ");
+                if i + 1 < directive_boundaries.len() {
+                    boundaries_str.push_str(", ");
                 }
             }
 
             let core_msg = format!(
                 "Only types that satisfy {} can use the directive `#{}`",
-                constraints_str,
+                boundaries_str,
                 directive.inner.to_fmt()
             );
 
@@ -266,11 +266,11 @@ pub(crate) fn create_diag_builder_preset(
             found_ty,
             spans: _,
         } => {
-            let given_vec = given_constraints.to_type_constraint_vec();
+            let given_vec = given_constraints.to_fmt();
             let mut given_str = String::new();
 
             for (i, constraint) in given_vec.iter().enumerate() {
-                given_str.push_str(&format!("`{}`", constraint.to_fmt()));
+                given_str.push_str(&format!("`{}`", constraint));
 
                 if i + 1 < given_vec.len() {
                     given_str.push_str(", ");
@@ -299,8 +299,8 @@ pub(crate) fn create_diag_builder_preset(
             spans: _,
         } => {
             //FIXME: Fear inducing message.
-            let current_bounds = current_inferred.to_type_constraint_vec();
-            let conflicting_bounds = conflicting_inferred.to_type_constraint_vec();
+            let current_bounds = current_inferred.to_fmt();
+            let conflicting_bounds = conflicting_inferred.to_fmt();
 
             let mut current_msg = String::new();
 
@@ -311,7 +311,7 @@ pub(crate) fn create_diag_builder_preset(
             }
 
             for (i, bound) in current_bounds.iter().enumerate() {
-                current_msg.push_str(&format!("`{}`", bound.to_fmt()));
+                current_msg.push_str(&format!("`{}`", bound));
                 if i + 1 < current_bounds.len() {
                     current_msg.push_str(" + ");
                 }
@@ -319,7 +319,7 @@ pub(crate) fn create_diag_builder_preset(
 
             let mut conflicting_msg = String::new();
             for (i, bound) in conflicting_bounds.iter().enumerate() {
-                conflicting_msg.push_str(&format!("`{}`", bound.to_fmt()));
+                conflicting_msg.push_str(&format!("`{}`", bound));
                 if i + 1 < conflicting_bounds.len() {
                     conflicting_msg.push_str(" + ");
                 }

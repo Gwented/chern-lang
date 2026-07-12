@@ -2,10 +2,7 @@ use chrn_utils::{id_types::InternedId, intern};
 
 use crate::{
     fmter::{Formattable, Formatted},
-    types::{
-        boundaries::{self, TypeBoundaryFlags},
-        builtins::BuiltinType,
-    },
+    types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
 };
 
 /// If a new directive is added ensure this is updated
@@ -42,12 +39,10 @@ impl Directive {
     }
 
     pub fn type_constraints(self) -> TypeBoundaryFlags {
-        let flags = match self {
-            Directive::Warn | Directive::Ignore => TypeBoundaryFlags::new(boundaries::ALL_DOMAINS),
-            Directive::Type(type_directive) => type_directive.type_constraints(),
-        };
-
-        flags
+        match self {
+            Directive::Warn | Directive::Ignore => TypeBoundaryFlags::all(),
+            Directive::Type(type_directive) => type_directive.boundaries(),
+        }
     }
 
     pub fn try_from_interned_str(interned_id: InternedId) -> Option<Directive> {
@@ -164,15 +159,13 @@ impl TypeDirective {
     // }
     // }
 
-    pub fn type_constraints(self) -> TypeBoundaryFlags {
-        let flags = match self {
+    pub fn boundaries(self) -> TypeBoundaryFlags {
+        match self {
             TypeDirective::Scient
             | TypeDirective::Hex
             | TypeDirective::Bin
-            | TypeDirective::Octal => boundaries::NUMERIC,
-        };
-
-        TypeBoundaryFlags::new(flags)
+            | TypeDirective::Octal => TypeBoundaryFlags::NUMERIC,
+        }
     }
 
     pub fn try_from_interned_str(interned_id: InternedId) -> Option<TypeDirective> {

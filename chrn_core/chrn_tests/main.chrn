@@ -56,7 +56,7 @@ var->
 // import "../../chrn_core/chrn_tests/core.chrn"
     nest->
         enum Opt {
-                o: i32 [] #ignore
+                o: i32 #ignore
             }
         struct Forb {
             p: def::Person
@@ -65,7 +65,7 @@ var->
             // p: defs::Person
         }
 
-        enum State1 {stable, state2: State2}
+        enum State1 {stable: i16, state2: State2}
         enum State2 {Medium: i32, state3: State3}
         enum State3 {Low, state1: State1}
         enum StateStable {stable}
@@ -95,8 +95,8 @@ var->
         // x {}
 
         State1 {
-            .default_value = 2
-            p {
+            .cases = "snake_case"
+            stable {
                 /*out {
                     // p {}
 

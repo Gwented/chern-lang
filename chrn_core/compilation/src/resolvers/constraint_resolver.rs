@@ -10,11 +10,17 @@ use chrn_utils::{
         source_span::SourceSpan,
     },
 };
-use lang::{directives::Directive, fmter::Formatted, types::builtins::BuiltinType};
+use lang::{
+    config_schemas::{self, ConfigSchema, ConfigSchemaKind},
+    directives::Directive,
+    fmter::Formatted,
+    types::builtins::BuiltinType,
+    values::Value,
+};
 
 use crate::{
     constraints::ArgConstraint,
-    lookup::scopes::ScopeType,
+    lookup::{schema_lookup, scopes::ScopeType},
     parser::ast::ast_concepts::{
         AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
         Item,
@@ -22,7 +28,10 @@ use crate::{
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
     script_compiler::ScriptCompiler,
     semantic::{
-        hir::hir_concepts::{SymbolKind, Type},
+        hir::{
+            hir_concepts::{OptionAssignmentRoot, SymbolKind, Type},
+            hir_exprs::ExprHir,
+        },
         preset_err::PresetErr,
         preset_reporter,
     },
@@ -69,7 +78,7 @@ impl<'a> ConstraintResolver<'a> {
                     // None of these can be user-defined, but exist internally.
                     Type::Deferred(_)
                     | Type::Func(_)
-                    | Type::Constrained(_)
+                    | Type::Boundaries(_)
                     | Type::Unknown
                     | Type::BuiltinType(_) => {
                         unreachable!()
@@ -122,8 +131,76 @@ impl<'a> ConstraintResolver<'a> {
 
         // leconstraint_reot module = &self.compiler.mods[env.current_mod];
         let cfg_root = self.compiler.get_cfg_def_root(parent_sym_id);
+
+        let Some(linked_sym_id) = cfg_root.linked_sym_id else {
+            return;
+        };
+
+        // We may need an invalid and valid marker for cached checks regarding if it was a type id
+        // or not.
+        // let cfg_sym = &self.compiler.symbols[linked_sym_id];
+
+        // If the bar is ever moved to where the linking is possible even with an invalid config
+        // this will be false.
+        //
+        // This should probably never change because the odds of linking a symbol id to such a
+        // broken config being useful error message wise seems unlikely
+        let linked_type_id = self
+            .compiler
+            .get_type_id_from_sym_id(linked_sym_id)
+            .expect("`TypeResolver` should only give linked sym ids to valid configs");
+
+        for opt_member_id in cfg_root.opt_assignments.iter().copied() {
+            let opt_root = self.compiler.get_opt_assignment_root(opt_member_id);
+            let schema = schema_lookup::get_schema_from_type_id(self.compiler, linked_type_id)
+                .expect("`TypeResolver` should only give linked sym ids to valid configs");
+            self.check_opt_root(opt_root, schema);
+            todo!("Hey")
+        }
+
         dbg!(cfg_root);
         todo!("cfg")
+    }
+
+    fn check_opt_root(
+        &self,
+        opt_root: &OptionAssignmentRoot,
+        schema: &'a ConfigSchema,
+    ) -> Result<(), PresetErr> {
+        // Beep
+        let val_id = self.compiler.exprs[opt_root.array_expr_id].val_id;
+        // This seems like something that should be an error earlier since an array with unfinished
+        // values after full type resolution is just plainly broken as of right now. Need some layer
+        // before this that can serve this as a guarantee
+        let const_array = self.compiler.values[val_id]
+            .const_val
+            .as_ref()
+            .expect("NOT DONE YET");
+
+        // Maybe just add expects for expressions :(
+        let Value::Array(array) = const_array else {
+            panic!("NOT DONE");
+        };
+        dbg!(array);
+
+        // 1. Match kind
+        // 2. Check for the identifier of the option to ensure it aligns with something in the schema
+        // 3. Check boundaries
+        // 4. unwrap()
+        match schema.kind {
+            ConfigSchemaKind::Enum => {
+                let res =
+                    schema_lookup::validate_opt(self.compiler, schema, opt_root.name_id, array);
+                dbg!(res);
+                panic!();
+                for val in array {
+                    panic!();
+                }
+            }
+            ConfigSchemaKind::Struct => {}
+            ConfigSchemaKind::Field => {}
+        }
+        todo!()
     }
 
     fn resolve_typedef(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
@@ -303,7 +380,7 @@ impl<'a> ConstraintResolver<'a> {
         //                             &module
         //                                 .src_metadata
         //                                 .as_ref()
-        //                                 .expect("core should not be resolved"),
+        //                                 .expect("Should be user symbols only"),
         //                         );
         //                     }
         //                     // There is no previous so it is initialized
@@ -337,7 +414,7 @@ impl<'a> ConstraintResolver<'a> {
         //                 &module
         //                     .src_metadata
         //                     .as_ref()
-        //                     .expect("core should not be resolved"),
+        //                     .expect("Should be user symbols only"),
         //             );
         //         }
         //     }
@@ -1151,7 +1228,7 @@ impl<'a> ConstraintResolver<'a> {
                         let constraints = builtin_ty.kind().type_constraints();
                         let arg_constraints = spanned_directive.inner.type_constraints();
 
-                        if !arg_constraints.contains(constraints) {
+                        if !arg_constraints.overlaps(constraints) {
                             return Err(Some(PresetErr::UnsupportedDirective {
                                 sp_directive: spanned_directive.into_owned(),
                                 sym_span: active_span,
@@ -1166,7 +1243,7 @@ impl<'a> ConstraintResolver<'a> {
                 let alias_constraints = alias_def.ty_constraints;
                 let arg_constraints = spanned_directive.inner.type_constraints();
 
-                if !arg_constraints.contains(alias_constraints) {
+                if !arg_constraints.overlaps(alias_constraints) {
                     return Err(Some(PresetErr::TypeBoundaryBoundConflict {
                         inferred: alias_constraints,
                         conflicting: arg_constraints,
@@ -1201,10 +1278,10 @@ impl<'a> ConstraintResolver<'a> {
                 visited,
                 env,
             ),
-            Type::Constrained(current_constraints) => {
+            Type::Boundaries(current_constraints) => {
                 let arg_constraints = spanned_directive.inner.type_constraints();
 
-                if !arg_constraints.contains(*current_constraints) {
+                if !arg_constraints.overlaps(*current_constraints) {
                     return Err(Some(PresetErr::TypeBoundaryBoundConflict {
                         inferred: *current_constraints,
                         conflicting: arg_constraints,

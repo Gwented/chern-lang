@@ -42,7 +42,6 @@ use compilation::lexer::token::Token as ScriptToken;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::{self, SymbolKind, Type, VariableState};
 use lang::fmter::Formattable;
-use lang::types::boundaries::TypeBoundary;
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
 use lang::values::Value;
 use tower_lsp::lsp_types;
@@ -621,9 +620,9 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                         .unwrap_or("<param>");
                     let p_constraint = alias_def
                         .ty_constraints
-                        .to_type_constraint_vec()
+                        .to_fmt()
                         .iter()
-                        .map(|c: &TypeBoundary| c.to_fmt().to_string())
+                        .map(|f| f.to_string())
                         .collect::<Vec<_>>()
                         .join(" | ");
                     format!("{}: {}", p_name, p_constraint)
@@ -636,10 +635,10 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
             let inner = &compiler.types[type_def.type_id].ty;
             format_type(inner, compiler, interner, shallow)
         }
-        Type::Constrained(flags) => flags
-            .to_type_constraint_vec()
+        Type::Boundaries(flags) => flags
+            .to_fmt()
             .iter()
-            .map(|c: &TypeBoundary| c.to_fmt().to_string())
+            .map(|f| f.to_string())
             .collect::<Vec<_>>()
             .join(" | "),
         Type::Deferred(type_id) => {

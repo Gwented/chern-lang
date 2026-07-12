@@ -469,7 +469,7 @@ fn collect_inner_symbols<'a>(
         // Function isn't possible as an inner
         Type::Func(_)
         | Type::TypeDef(_)
-        | Type::Constrained(_)
+        | Type::Boundaries(_)
         | Type::BuiltinType(_)
         | Type::Unknown => (),
     }

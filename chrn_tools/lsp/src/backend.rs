@@ -307,7 +307,7 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
             Type::Alias(_) => CompletionItemKind::FUNCTION,
             Type::Func(func_def) if func_def.is_callable => CompletionItemKind::FUNCTION,
             Type::Func(_) => CompletionItemKind::CONSTANT,
-            Type::Unknown | Type::Constrained(_) | Type::Deferred(_) => {
+            Type::Unknown | Type::Boundaries(_) | Type::Deferred(_) => {
                 CompletionItemKind::VARIABLE
             }
         },
@@ -324,7 +324,7 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
                 Type::Alias(_) => CompletionItemKind::FUNCTION,
                 Type::Func(func_def) if func_def.is_callable => CompletionItemKind::FUNCTION,
                 Type::Func(_) => CompletionItemKind::CONSTANT,
-                Type::Unknown | Type::Constrained(_) | Type::Deferred(_) => {
+                Type::Unknown | Type::Boundaries(_) | Type::Deferred(_) => {
                     CompletionItemKind::VARIABLE
                 }
             }
@@ -377,7 +377,7 @@ fn classify_id_token(
                                 Type::Func(_) => {
                                     return Some(SemanticTokenType::String.as_u32());
                                 }
-                                Type::Unknown | Type::Constrained(_) | Type::Deferred(_) => {
+                                Type::Unknown | Type::Boundaries(_) | Type::Deferred(_) => {
                                     return Some(SemanticTokenType::Type.as_u32());
                                 }
                             }
