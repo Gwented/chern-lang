@@ -43,7 +43,9 @@ let c = d
 as
 let as = n
 */
+let x = IsEmpty
 
+let i =3
 // import "../chrn_core/chrn_tests/def.chrn" as defs
 // Technically imports from anywhere in the file work, but it won't compile even though it does technically
 // load the module
@@ -95,8 +97,9 @@ var->
         // x {}
 
         State1 {
-            .cases = "snake_case"
+            .cases = ["9", "2"]
             stable {
+                .default_val = 2.0
                 /*out {
                     // p {}
 

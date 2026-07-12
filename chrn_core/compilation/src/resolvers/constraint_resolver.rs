@@ -3,10 +3,12 @@
 //TODO: Proper directive validation
 use chrn_utils::{
     chrn_config::ChrnConfig,
-    id_types::{AstId, ExprId, SpannedContainer, SpannedContainerRef, SymbolId, TypeId},
+    id_types::{
+        AstId, ExprId, InternedId, SpannedContainer, SpannedContainerRef, SymbolId, TypeId,
+    },
     intern::Intern,
     source_map::{
-        source_diagnostic::{DiagnosticLevel, SourceDiagnostic},
+        source_diagnostic::{DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind},
         source_span::SourceSpan,
     },
 };
@@ -14,13 +16,16 @@ use lang::{
     config_schemas::{self, ConfigSchema, ConfigSchemaKind},
     directives::Directive,
     fmter::Formatted,
-    types::builtins::BuiltinType,
+    types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
     values::Value,
 };
 
 use crate::{
     constraints::ArgConstraint,
-    lookup::{schema_lookup, scopes::ScopeType},
+    lookup::{
+        schema_lookup::{self, SchemaResult},
+        scopes::ScopeType,
+    },
     parser::ast::ast_concepts::{
         AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
         Item,
@@ -29,7 +34,7 @@ use crate::{
     script_compiler::ScriptCompiler,
     semantic::{
         hir::{
-            hir_concepts::{OptionAssignmentRoot, SymbolKind, Type},
+            hir_concepts::{MemberSymbolKind, OptionAssignmentRoot, SymbolKind, Type},
             hir_exprs::ExprHir,
         },
         preset_err::PresetErr,
@@ -38,7 +43,7 @@ use crate::{
 };
 
 pub struct ConstraintResolver<'a> {
-    pub(crate) settings: &'a ChrnConfig,
+    pub(crate) cfg: &'a ChrnConfig,
     pub(crate) interner: &'a Intern,
     pub(crate) compiler: &'a mut ScriptCompiler,
     // We reward hack here
@@ -48,13 +53,13 @@ pub struct ConstraintResolver<'a> {
 impl<'a> ConstraintResolver<'a> {
     /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new(
-        settings: &'a ChrnConfig,
+        cfg: &'a ChrnConfig,
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,
     ) -> ConstraintResolver<'a> {
         debug_assert_eq!(ResolverState::CONSTRAINT, compiler.resolver_state);
         ConstraintResolver {
-            settings,
+            cfg,
             interner,
             compiler,
             err_vec: Vec::new(),
@@ -150,25 +155,98 @@ impl<'a> ConstraintResolver<'a> {
             .get_type_id_from_sym_id(linked_sym_id)
             .expect("`TypeResolver` should only give linked sym ids to valid configs");
 
-        for opt_member_id in cfg_root.opt_assignments.iter().copied() {
-            let opt_root = self.compiler.get_opt_assignment_root(opt_member_id);
+        for opt_root_id in cfg_root.opt_assignments.iter().copied() {
+            let opt_root = self.compiler.get_opt_assignment_root(opt_root_id);
             let schema = schema_lookup::get_schema_from_type_id(self.compiler, linked_type_id)
                 .expect("`TypeResolver` should only give linked sym ids to valid configs");
-            self.check_opt_root(opt_root, schema);
-            todo!("Hey")
+
+            let sp_opt_name_id = SpannedContainer::new(opt_root.name_id, opt_root.name_span);
+            let boundaries = Type::boundaries(self.compiler, linked_type_id);
+
+            // let ty_name_id = self.compiler.get_span_from_type_id(linked_type_id).unwrap();
+            if let Err(preset_err) = self.check_opt(
+                schema,
+                cfg_root.name_span,
+                boundaries,
+                &sp_opt_name_id,
+                opt_root.array_expr_id,
+                env,
+            ) {
+                // Maybe return ONE more present? Just 2? A small slice?
+                // A SLICE?
+                // Yeah sure
+                preset_reporter::report_preset(
+                    &mut self.err_vec,
+                    preset_err,
+                    env.region,
+                    self.cfg,
+                    self.interner,
+                );
+            };
         }
 
-        dbg!(cfg_root);
-        todo!("cfg")
+        for cfg_member_id in cfg_root.cfg_members.iter().copied() {
+            let cfg_member = self.compiler.get_cfg_def_member(cfg_member_id);
+            //NOTE: The somewhat dangerous part of this staying `Option` is that it IS a real
+            //reflection of the fact that for something like a variant, there COULD be no boundary
+            //set, but it could also hide silent bugs, just like in the recursive resolution of
+            //option members.
+            let boundaries =
+                MemberSymbolKind::boundaries(self.compiler, cfg_member.linked_member_id);
+
+            for opt_member_id in cfg_member.opt_assignments.iter().copied() {
+                // Variant and field specific schemas?
+                let opt_member = self.compiler.get_opt_assignment_member(opt_member_id);
+                let schema = config_schemas::get_cfg_schema(ConfigSchemaKind::Field);
+                // let schema = schema_lookup::get_schema_from_type_id(self.compiler, linked_type_id)
+                //     .expect("`TypeResolver` should only give linked sym ids to valid configs");
+                let sp_name_id = SpannedContainer::new(opt_member.name_id, opt_member.name_span);
+                if let Err(preset_err) = self.check_opt(
+                    schema,
+                    cfg_member.name_span,
+                    boundaries,
+                    &sp_name_id,
+                    opt_member.array_expr_id,
+                    env,
+                ) {
+                    // Maybe return ONE more present? Just 2? A small slice?
+                    preset_reporter::report_preset(
+                        &mut self.err_vec,
+                        preset_err,
+                        env.region,
+                        self.cfg,
+                        self.interner,
+                    );
+                };
+            }
+        }
+
+        // dbg!(cfg_root);
+        // todo!("cfg")
     }
 
-    fn check_opt_root(
+    // Coupled so it's not member option or root option specific
+    //
+    // For certain errors like the same type as user one, it needs to point at the member or symbol
+    // it's attached to
+    /// Convenience method that takes the required pieces of any option and forms `PresetErr` given
+    /// any errors.
+    fn check_opt(
+        // We need the config details associated with the given option, but in pieces.
         &self,
-        opt_root: &OptionAssignmentRoot,
-        schema: &'a ConfigSchema,
+        schema: &ConfigSchema,
+        // cfg_ty_name_id: InternedId,
+        cfg_name_span: SourceSpan,
+        // Is option since if the root option is typedef, it has user boundaries to account for. If
+        // the root option is a struct, there are none.
+        user_boundaries: Option<TypeBoundaryFlags>,
+        sp_opt_name_id: &SpannedContainer<InternedId>,
+        array_expr_id: ExprId,
+        env: &ResolverEnv,
     ) -> Result<(), PresetErr> {
         // Beep
-        let val_id = self.compiler.exprs[opt_root.array_expr_id].val_id;
+        let array_expr = &self.compiler.exprs[array_expr_id];
+        let val_id = array_expr.val_id;
         // This seems like something that should be an error earlier since an array with unfinished
         // values after full type resolution is just plainly broken as of right now. Need some layer
         // before this that can serve this as a guarantee
@@ -178,29 +256,157 @@ impl<'a> ConstraintResolver<'a> {
             .expect("NOT DONE YET");
 
         // Maybe just add expects for expressions :(
-        let Value::Array(array) = const_array else {
+        let Value::Array(values) = const_array else {
             panic!("NOT DONE");
         };
-        dbg!(array);
 
         // 1. Match kind
         // 2. Check for the identifier of the option to ensure it aligns with something in the schema
         // 3. Check boundaries
         // 4. unwrap()
-        match schema.kind {
-            ConfigSchemaKind::Enum => {
-                let res =
-                    schema_lookup::validate_opt(self.compiler, schema, opt_root.name_id, array);
-                dbg!(res);
-                panic!();
-                for val in array {
-                    panic!();
-                }
+        match schema_lookup::validate_opt(
+            self.compiler,
+            schema,
+            user_boundaries,
+            sp_opt_name_id.inner,
+            values,
+        ) {
+            // DO NOT. USE. THE UNREACHABLE. DO NOT DO IT.
+            SchemaResult::Valid => Ok(()),
+            res => {
+                let opt_name = self.interner.search(sp_opt_name_id.inner);
+                let src_diag = match res {
+                    SchemaResult::BoundaryMismatch {
+                        err_idx,
+                        required_boundaries,
+                        err_boundaries: _,
+                    } => {
+                        // Value pos aligns with expr input pos
+
+                        // They're values and not named so..!
+                        let core_msg = format!(
+                            "Index `{err_idx}` does not satisfy `{required_boundaries}` which is required by option `{opt_name}`",
+                        );
+
+                        let err_expr_id = array_expr.inputs[err_idx];
+                        let err_span = self.compiler.exprs[err_expr_id].span;
+                        SourceDiagnostic::builder(
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            env.region.path_id,
+                        )
+                        .add_annotation(
+                            err_span,
+                            AnnotationKind::Primary,
+                            format!("Does not satisfy `{required_boundaries}`").into(),
+                        )
+                        .add_annotation(
+                            sp_opt_name_id.span,
+                            AnnotationKind::Secondary,
+                            "Required by this option".to_string().into(),
+                        )
+                    }
+                    // Ok.
+                    SchemaResult::NoBoundariesInValue {
+                        err_idx,
+                        required_boundaries,
+                    } => {
+                        let core_msg = format!(
+                            "Index `{err_idx}` does not satisfy `{required_boundaries}` which is required by option `{opt_name}`",
+                        );
+
+                        let err_expr_id = array_expr.inputs[err_idx];
+                        let err_span = self.compiler.exprs[err_expr_id].span;
+                        SourceDiagnostic::builder(
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            env.region.path_id,
+                        )
+                        .add_annotation(
+                            err_span,
+                            AnnotationKind::Primary,
+                            format!("Does not satisfy `{required_boundaries}`").into(),
+                        )
+                        .add_annotation(
+                            sp_opt_name_id.span,
+                            AnnotationKind::Secondary,
+                            "Required by this option".to_string().into(),
+                        )
+                    }
+                    // The current option's constraint requires that the type linked to the actual
+                    // config the currnet option is attached to must align with all the values
+                    // given.
+                    SchemaResult::SameTypeAsUserMismatch {
+                        err_idx,
+                        err_boundaries: _,
+                        user_boundaries_opt,
+                    } => {
+                        let (core_msg, user_str_opt) = if let Some(user_boundaries) =
+                            user_boundaries_opt
+                        {
+                            let user_str = user_boundaries.to_string();
+                            let core_msg = format!(
+                                "Index `{err_idx}` does not have the same type as it's config which is required by option `{opt_name}`",
+                            );
+                            (core_msg, Some(user_str))
+                        } else {
+                            let core_msg = format!(
+                                "Index `{err_idx}` does not have the same type as it's config which is required by option `{opt_name}`",
+                            );
+                            (core_msg, None)
+                        };
+
+                        let err_expr_id = array_expr.inputs[err_idx];
+                        let err_span = self.compiler.exprs[err_expr_id].span;
+                        let builder = SourceDiagnostic::builder(
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            env.region.path_id,
+                        )
+                        // .add_annotation(
+                        //     cfg_name_span,
+                        //     AnnotationKind::Secondary,
+                        //     format!("Is type `{}`").into(),
+                        // )
+                        .add_annotation(
+                            sp_opt_name_id.span,
+                            AnnotationKind::Secondary,
+                            "Required by this option".to_string().into(),
+                        );
+
+                        if let Some(user_str) = user_str_opt {
+                            builder.add_annotation(
+                                err_span,
+                                AnnotationKind::Primary,
+                                format!("Does not satisfy `{user_str}`").into(),
+                            )
+                        } else {
+                            todo!()
+                        }
+                    }
+                    SchemaResult::UnknownOptionName => {
+                        let opt_name = self.interner.search(sp_opt_name_id.inner);
+                        let core_msg = format!(
+                            "Option `{opt_name}` does not exist for schema `{}`",
+                            schema.kind
+                        );
+                        SourceDiagnostic::builder(
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            env.region.path_id,
+                        )
+                        .add_annotation(
+                            sp_opt_name_id.span,
+                            AnnotationKind::Primary,
+                            None,
+                        )
+                    }
+                    SchemaResult::Valid => unreachable!(),
+                };
+
+                Err(PresetErr::General(src_diag))
             }
-            ConfigSchemaKind::Struct => {}
-            ConfigSchemaKind::Field => {}
         }
-        todo!()
     }
 
     fn resolve_typedef(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
@@ -258,7 +464,7 @@ impl<'a> ConstraintResolver<'a> {
                         &mut self.err_vec,
                         err,
                         env.region,
-                        self.settings,
+                        self.cfg,
                         self.interner,
                     );
                 }
@@ -279,7 +485,7 @@ impl<'a> ConstraintResolver<'a> {
                             &mut self.err_vec,
                             preset_err,
                             env.region,
-                            self.settings,
+                            self.cfg,
                             self.interner,
                         );
 
@@ -301,7 +507,7 @@ impl<'a> ConstraintResolver<'a> {
                     &mut self.err_vec,
                     preset_err,
                     env.region,
-                    self.settings,
+                    self.cfg,
                     self.interner,
                 );
             }
@@ -448,7 +654,7 @@ impl<'a> ConstraintResolver<'a> {
                         &mut self.err_vec,
                         err,
                         env.region,
-                        self.settings,
+                        self.cfg,
                         self.interner,
                     );
                 }
@@ -618,7 +824,7 @@ impl<'a> ConstraintResolver<'a> {
                             &mut self.err_vec,
                             err,
                             env.region,
-                            self.settings,
+                            self.cfg,
                             self.interner,
                         );
                     }
@@ -638,7 +844,7 @@ impl<'a> ConstraintResolver<'a> {
                             &mut self.err_vec,
                             err,
                             env.region,
-                            self.settings,
+                            self.cfg,
                             self.interner,
                         );
                     }
@@ -665,7 +871,7 @@ impl<'a> ConstraintResolver<'a> {
                         &mut self.err_vec,
                         preset_err,
                         env.region,
-                        self.settings,
+                        self.cfg,
                         self.interner,
                     );
                 }
@@ -692,7 +898,7 @@ impl<'a> ConstraintResolver<'a> {
                         &mut self.err_vec,
                         preset_err,
                         env.region,
-                        self.settings,
+                        self.cfg,
                         self.interner,
                     );
                 }
@@ -725,7 +931,7 @@ impl<'a> ConstraintResolver<'a> {
                                 &mut self.err_vec,
                                 err,
                                 env.region,
-                                self.settings,
+                                self.cfg,
                                 self.interner,
                             );
                         }
@@ -751,7 +957,7 @@ impl<'a> ConstraintResolver<'a> {
                                 &mut self.err_vec,
                                 err,
                                 env.region,
-                                self.settings,
+                                self.cfg,
                                 self.interner,
                             );
                         }
@@ -784,7 +990,7 @@ impl<'a> ConstraintResolver<'a> {
                             &mut self.err_vec,
                             preset_err,
                             env.region,
-                            self.settings,
+                            self.cfg,
                             self.interner,
                         );
                     }
@@ -813,7 +1019,7 @@ impl<'a> ConstraintResolver<'a> {
                             &mut self.err_vec,
                             preset_err,
                             env.region,
-                            self.settings,
+                            self.cfg,
                             self.interner,
                         );
                     }
@@ -1225,7 +1431,7 @@ impl<'a> ConstraintResolver<'a> {
                     // Need a function where it obtains type constraints given the recursive types
                     // since shallow checks accept more than proven
                     builtin_ty => {
-                        let constraints = builtin_ty.kind().type_constraints();
+                        let constraints = builtin_ty.kind().boundaries();
                         let arg_constraints = spanned_directive.inner.type_constraints();
 
                         if !arg_constraints.overlaps(constraints) {

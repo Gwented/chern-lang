@@ -653,6 +653,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_span_from_type_id(&self, type_id: TypeId) -> Option<SourceSpan> {
+        // TODO: Ok
         match &self.types[type_id].ty {
             Type::BuiltinType(builtin_type) => None,
             Type::Struct(struct_def) => Some(struct_def.name_span),
@@ -667,6 +668,26 @@ impl ScriptCompiler {
             Type::Func(_) => None,
         }
     }
+
+    // TODO: Fix type metadata
+    // pub(super) fn get_name_id_from_type_id(&self, mut type_id: TypeId) -> InternedId {
+    //     for _ in 0..chrn_utils::MAX_LOOPS {
+    //         match &self.types[type_id].ty {
+    //             Type::BuiltinType(builtin_type) => return builtin_type.kind().,
+    //             Type::Struct(struct_def) => Some(struct_def.name_span),
+    //             Type::Enum(enum_def) => Some(enum_def.name_span),
+    //             // Functions can't be declared
+    //             Type::Alias(alias_def) => Some(alias_def.name_span),
+    //             Type::TypeDef(type_def) => Some(type_def.name_span),
+    //             Type::Deferred(inner) => type_id = *inner,
+    //             // Type spanning needs to be reasoned about first
+    //             Type::Boundaries(boundary_flags) => todo!(),
+    //             Type::Unknown => todo!("Should still be spanned though"),
+    //             Type::Func(_) => None,
+    //         }
+    //     }
+    //     loop_abort!()
+    // }
 
     pub(super) fn get_owner(&self, sym_id: SymbolId) -> ModuleId {
         match self.symbols[sym_id].sym_origin {

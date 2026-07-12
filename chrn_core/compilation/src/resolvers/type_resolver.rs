@@ -1,6 +1,7 @@
 //TODO: Lessen allocations overall for any stage that would need it for the concept of "seen"
 //TODO:
 // Please split this...
+// No
 pub mod type_context;
 
 use chrn_utils::chrn_config::ChrnConfig;
@@ -1119,9 +1120,8 @@ impl<'res> TypeResolver<'res> {
         let cfg_member = ConfigDefMember::new(
             parent_abs_cfg.name_id,
             parent_abs_cfg.name_span,
-            //WARN: Inconsistent naming
-            parent_member_id,
             current_cfg_member_id,
+            parent_member_id,
             opt_assignments,
             parent_abs_cfg.lookup_pattern,
             cfg_members,

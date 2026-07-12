@@ -110,7 +110,7 @@ pub(super) fn check_type_constraint(
         Type::BuiltinType(builtin_ty) => {
             //TODO: Allow optionally to choose if a condition should be shallow or not
 
-            let constraints = builtin_ty.kind().type_constraints();
+            let constraints = builtin_ty.kind().boundaries();
 
             if !given_constraints.overlaps(constraints) {
                 return Err(PresetErr::TypeBoundaryMismatch {
@@ -148,7 +148,7 @@ pub fn get_type_constraints(
     // Strike here
     let ty = &compiler.types[type_id].ty;
     match ty {
-        Type::BuiltinType(builtin_ty) => Some(builtin_ty.kind().type_constraints()),
+        Type::BuiltinType(builtin_ty) => Some(builtin_ty.kind().boundaries()),
         // Is it?
         Type::Struct(_) | Type::Enum(_) if !is_rec => None,
         // Have to check if every field in a given struct or enum is aligned under a constraint

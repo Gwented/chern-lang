@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use chrn_utils::{id_types::InternedId, intern};
 
 use crate::types::boundaries::TypeBoundaryFlags;
@@ -13,6 +15,7 @@ impl ConfigSchema {
     pub const fn new(kind: ConfigSchemaKind, opt_schema: &'static [OptionSchema]) -> ConfigSchema {
         ConfigSchema { kind, opt_schema }
     }
+    //TODO: Change to O(1) with interned id -> idx mapppppppppppppppppppppppppppppping
 
     /// Attempts to find option from the given identifier, then return it's `OptionSchema`
     pub fn get_opt(&self, target_name_id: InternedId) -> Option<&OptionSchema> {
@@ -35,11 +38,14 @@ impl ConfigSchema {
 #[derive(Debug)]
 pub struct OptionSchema {
     pub name_id: InternedId,
-    pub boundaries: Option<TypeBoundaryFlags>,
+    pub boundaries: Option<OptionSchemaConstraint>,
 }
 
 impl OptionSchema {
-    pub const fn new(name_id: InternedId, boundaries: Option<TypeBoundaryFlags>) -> OptionSchema {
+    pub const fn new(
+        name_id: InternedId,
+        boundaries: Option<OptionSchemaConstraint>,
+    ) -> OptionSchema {
         OptionSchema {
             name_id,
             boundaries,
@@ -54,7 +60,18 @@ pub enum ConfigSchemaKind {
     Field,
 }
 
-/// All known preset schemas and the kinds associated with it
+impl Display for ConfigSchemaKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let out = match self {
+            ConfigSchemaKind::Struct => "struct",
+            ConfigSchemaKind::Enum => "enum",
+            ConfigSchemaKind::Field => "field",
+        };
+        write!(f, "{out}")
+    }
+}
+
+/// All known preset schemas and the options associated with them
 pub static PRESET_CONFIG_SCHEMAS: [ConfigSchema; 3] = [
     // ONLY 3 VALID SCHEMAS RIGHT NOW
     ConfigSchema::new(ConfigSchemaKind::Struct, &[OPTION_CASES, OPTION_IDENTS]),
@@ -65,11 +82,25 @@ pub static PRESET_CONFIG_SCHEMAS: [ConfigSchema; 3] = [
     ),
 ];
 
-const OPTION_DEFAULT_VAL: OptionSchema =
-    OptionSchema::new(InternedId::new(intern::INTERNED_DEFAULT_VAL), None);
-const OPTION_IDENTS: OptionSchema =
-    OptionSchema::new(InternedId::new(intern::INTERNED_IDENTS), None);
-const OPTION_CASES: OptionSchema = OptionSchema::new(InternedId::new(intern::INTERNED_CASES), None);
+#[derive(Debug, Clone)]
+pub enum OptionSchemaConstraint {
+    Boundaries(TypeBoundaryFlags),
+    SameTypeAsUser,
+    // None,
+}
+
+const OPTION_DEFAULT_VAL: OptionSchema = OptionSchema::new(
+    InternedId::new(intern::INTERNED_DEFAULT_VAL),
+    Some(OptionSchemaConstraint::SameTypeAsUser),
+);
+const OPTION_IDENTS: OptionSchema = OptionSchema::new(
+    InternedId::new(intern::INTERNED_IDENTS),
+    Some(OptionSchemaConstraint::Boundaries(TypeBoundaryFlags::STR)),
+);
+const OPTION_CASES: OptionSchema = OptionSchema::new(
+    InternedId::new(intern::INTERNED_CASES),
+    Some(OptionSchemaConstraint::Boundaries(TypeBoundaryFlags::STR)),
+);
 
 // pub const fn load_schemas() -> &'static [ConfigSchema; 1] {
 // Default value

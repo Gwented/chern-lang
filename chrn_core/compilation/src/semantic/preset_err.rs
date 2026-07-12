@@ -88,7 +88,16 @@ pub enum PresetErr {
     //TODO: Maybe option name id?
     UndefinedMember(SourceSpan),
     Math(MathError),
+    // Schema(*const u8),
 }
+
+// #[derive(Debug)]
+// pub enum SchemaError {
+//     BoundaryMismatch {
+//         sp_err_boundaries: SpannedContainer<TypeBoundaryFlags>,
+//         required_boundaries: TypeBoundaryFlags,
+//     },
+// }
 
 #[derive(Debug)]
 pub enum MathError {

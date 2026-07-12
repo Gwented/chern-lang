@@ -640,7 +640,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
             .iter()
             .map(|f| f.to_string())
             .collect::<Vec<_>>()
-            .join(" | "),
+            .join(" + "),
         Type::Deferred(type_id) => {
             // `Type::Deferred(type_id)` here matches through `&Type`, so `type_id: &TypeId`.
             let inner = &compiler.types[*type_id].ty;

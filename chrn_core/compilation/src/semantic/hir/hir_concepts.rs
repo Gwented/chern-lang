@@ -190,6 +190,26 @@ impl Type {
         loop_abort!();
     }
 
+    pub fn boundaries(compiler: &ScriptCompiler, mut type_id: TypeId) -> Option<TypeBoundaryFlags> {
+        for _ in 0..chrn_utils::MAX_LOOPS {
+            match &compiler.types[type_id].ty {
+                Type::BuiltinType(builtin_ty) => return Some(builtin_ty.kind().boundaries()),
+                // This is the only issue since it's not a single Formatted.
+                // The next obvious decision should be to do, "Formatted::NumericIntegerRanged", etc.,
+                Type::Struct(_)
+                | Type::Enum(_)
+                | Type::Func(_)
+                | Type::Alias(_)
+                | Type::Unknown => return None,
+                // where we have 4000 variants which
+                Type::Boundaries(boundaries) => return Some(*boundaries),
+                Type::TypeDef(type_def) => type_id = type_def.type_id,
+                Type::Deferred(inner) => type_id = *inner,
+            }
+        }
+        loop_abort!();
+    }
+
     /// The env can't be passed into to_fmt so
     pub fn to_fmt(compiler: &ScriptCompiler, mut type_id: TypeId) -> Formatted {
         for _ in 0..chrn_utils::MAX_LOOPS {
@@ -330,7 +350,7 @@ pub struct ConfigDefMember {
     pub name_span: SourceSpan,
     /// `MemberId` of `self`
     pub member_id: MemberId,
-    /// `MemberId` of the member symbol this is actually attached to
+    /// `MemberId` of the member symbol this is attached to
     pub linked_member_id: MemberId,
     /// Expects `OptionAssignmentMember`
     pub opt_assignments: Vec<MemberId>,
@@ -416,7 +436,7 @@ impl OptionAssignmentRoot {
 /// the root itself
 #[derive(Debug)]
 pub struct OptionAssignmentMember {
-    /// `SymbolId` of the `ConfigDefMember` it is derivative of
+    /// `MemberId` of the `ConfigDefMember` it is derivative of
     pub parent_member_id: MemberId,
     /// `MemberId` of `self`
     pub member_id: MemberId,
@@ -465,6 +485,27 @@ pub enum MemberSymbolKind {
 }
 
 impl MemberSymbolKind {
+    /// Attempts to get boundaries out of member.
+    ///
+    /// Only field and variant members are considered to have underlying types.
+    // Should that be the case though?
+    pub fn boundaries(compiler: &ScriptCompiler, member_id: MemberId) -> Option<TypeBoundaryFlags> {
+        let type_id_opt = match &compiler.members[member_id] {
+            MemberSymbolKind::Field(field_repre) => Some(field_repre.type_id),
+            MemberSymbolKind::Variant(variant_repre) => variant_repre.type_id,
+            MemberSymbolKind::ConfigDefMember(_)
+            | MemberSymbolKind::OptAssignmentRoot(_)
+            | MemberSymbolKind::OptAssignmentMember(_)
+            | MemberSymbolKind::Unknown(_) => None,
+        };
+
+        if let Some(type_id) = type_id_opt {
+            Type::boundaries(compiler, type_id)
+        } else {
+            None
+        }
+    }
+
     pub fn name_id(&self) -> Option<InternedId> {
         match self {
             MemberSymbolKind::Field(field_repre) => Some(field_repre.name_id),
@@ -496,15 +537,15 @@ impl MemberSymbolKind {
     }
 
     // TODO:
+    /// A local parent is the parent this member symbol was declared in, rather than it's actual
+    /// parent symbol. For example, if we have "Person { state: State }" The local parent of `state`
+    /// is `Person`, but the actual parent would be considered the declaration of `State` itself.
     pub fn local_parent_sym_id(&self) -> Option<SymbolId> {
         match self {
             MemberSymbolKind::Field(field_repre) => Some(field_repre.local_parent_sym_id),
             MemberSymbolKind::Variant(variant_repre) => Some(variant_repre.local_parent_sym_id),
-            MemberSymbolKind::OptAssignmentRoot(option_assignment) => {
-                // I don't think this applies here
-                Some(option_assignment.parent_sym_id)
-            }
             MemberSymbolKind::ConfigDefMember(_)
+            | MemberSymbolKind::OptAssignmentRoot(_)
             | MemberSymbolKind::OptAssignmentMember(_)
             | MemberSymbolKind::Unknown(_) => None,
         }

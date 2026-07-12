@@ -3,7 +3,8 @@ use chrn_utils::{
     loop_abort,
 };
 use lang::{
-    config_schemas::{self, ConfigSchema, ConfigSchemaKind},
+    config_schemas::{self, ConfigSchema, ConfigSchemaKind, OptionSchemaConstraint},
+    types::boundaries::TypeBoundaryFlags,
     values::Value,
 };
 
@@ -11,11 +12,36 @@ use crate::{script_compiler::ScriptCompiler, semantic::hir::hir_concepts::Type};
 
 /// Result type for schema lookups. This exists due to the fact that there is no `Ok` or `Err`
 /// inherit concept behind whether or not something was found.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum SchemaResult {
     /// The schema was...valid
     Valid,
-    UnknownSchemaName,
+    // How about "bounds"?
+    /// Contains the index of the value that failed from the slice of values given
+    BoundaryMismatch {
+        err_idx: usize,
+        required_boundaries: TypeBoundaryFlags,
+        err_boundaries: TypeBoundaryFlags,
+    },
+    // Do functions have boundaries based off return type?
+    /// Option has boundaries but the value being checked is invalid in regards to having boundaries
+    /// in the first place.
+    ///
+    /// Contains the index of the value that failed from the slice of values given
+    NoBoundariesInValue {
+        err_idx: usize,
+        required_boundaries: TypeBoundaryFlags,
+    },
+    // A little too specific right now. Likely need to collapse this just like the arg constraints
+    // were where they have their to_string so that all of these cases are RO#$I@#O
+    /// k
+    SameTypeAsUserMismatch {
+        err_idx: usize,
+        err_boundaries: Option<TypeBoundaryFlags>,
+        user_boundaries_opt: Option<TypeBoundaryFlags>,
+    },
+    /// Option given doesn't exist for particular schema kind
+    UnknownOptionName,
 }
 
 //TEST: This language construct is still confusing to find the best version of.
@@ -45,45 +71,104 @@ pub fn get_schema_from_type_id(
     loop_abort!();
 }
 
-// Will move
+/// GIVE ME THE RIGHT SCHEMA question_mark
 pub fn validate_opt(
     compiler: &ScriptCompiler,
     schema: &ConfigSchema,
+    user_boundaries_opt: Option<TypeBoundaryFlags>,
+    // Given like this so it doesn't matter if it's a root or member option
     opt_name_id: InternedId,
     opt_values: &[Value],
 ) -> SchemaResult {
-    match schema.kind {
-        ConfigSchemaKind::Struct => todo!(),
-        ConfigSchemaKind::Enum => {
-            if let Some(schema_opt) = schema.get_opt(opt_name_id) {
-                match schema_opt.boundaries {
-                    Some(boundaries) => {
-                        for val in opt_values {
-                            match val {
-                                Value::I64(_) => todo!(),
-                                Value::F64(_) => todo!(),
-                                Value::Bool(_) => todo!(),
-                                Value::Char(_) => todo!(),
-                                Value::Func(_) => todo!(),
-                                Value::Tuple(_) => todo!(),
-                                Value::Array(_) => todo!(),
-                                Value::InternedStr(interned_id) => todo!(),
-                                Value::RuntimeStr(_) => todo!(),
-                                Value::Unknown => todo!(),
-                            }
-                        }
-                        todo!()
-                    }
-                    // Nothing to actually check against value-wise since there are no boundaries
-                    None => return SchemaResult::Valid,
-                }
-            } else {
-                // get_opt failed
-                SchemaResult::UnknownSchemaName
-            }
-        }
-        ConfigSchemaKind::Field => todo!(),
-    }
-}
+    // This messes with past conventions of opt meaning Option<T> not option option Options..
+    let Some(schema_opt) = schema.get_opt(opt_name_id) else {
+        return SchemaResult::UnknownOptionName;
+    };
 
-pub fn has_identifier() {}
+    // Specific checks like, if this is a field, can this use this option, are answered by the
+    // schema itself, assuming the schema given is right.
+    match &schema_opt.boundaries {
+        Some(required_opt_constraints) => {
+            match required_opt_constraints {
+                // [1]
+                OptionSchemaConstraint::Boundaries(required_boundaries) => {
+                    let required_boundaries = *required_boundaries;
+                    // Ok
+                    for (i, val) in opt_values.iter().enumerate() {
+                        // Since valid or not is not descriptive, we should probably have this
+                        // as spanned as the other non-assuming result types
+                        let Some(current_boundaries) = val.kind().boundaries() else {
+                            return SchemaResult::NoBoundariesInValue {
+                                err_idx: i,
+                                required_boundaries,
+                            };
+                        };
+
+                        if !current_boundaries.overlaps(required_boundaries) {
+                            return SchemaResult::BoundaryMismatch {
+                                err_idx: i,
+                                required_boundaries,
+                                err_boundaries: current_boundaries,
+                            };
+                        }
+                    }
+                }
+                // [2]
+                OptionSchemaConstraint::SameTypeAsUser => {
+                    for (i, val) in opt_values.iter().enumerate() {
+                        // dbg!(val.kind().boundaries(), user_boundaries_opt);
+
+                        // Is matching all cases because this will have more cases, eventually.
+                        let current_boundaries_opt = val.kind().boundaries();
+                        match (current_boundaries_opt, user_boundaries_opt) {
+                            (Some(current), Some(user)) => {
+                                if !current.overlaps(user) {
+                                    return SchemaResult::SameTypeAsUserMismatch {
+                                        err_idx: i,
+                                        err_boundaries: current_boundaries_opt,
+                                        user_boundaries_opt,
+                                    };
+                                }
+                            }
+                            (Some(_), None) => todo!(),
+                            (None, Some(_)) => todo!(),
+                            // This isn't BAD it's just not something that exists right now since
+                            // the schema constraint itself wouldn't exist if it didn't have boundaries
+                            (None, None) => unreachable!(),
+                        }
+                    }
+                }
+            }
+
+            SchemaResult::Valid
+        }
+        // Nothing to actually check against value-wise since there are no boundaries
+        None => SchemaResult::Valid,
+    }
+
+    // match schema.kind {
+    //     ConfigSchemaKind::Struct => todo!(),
+    //     ConfigSchemaKind::Enum => {
+    //         match schema_opt.boundaries {
+    //             Some(required_boundaries) => {
+    //                 for val in opt_values {
+    //                     // Since valid or not is not descriptive, we should probably have this
+    //                     // as spanned as the other non-assuming result types
+    //                     let Some(current_boundaries) = val.kind().boundaries() else {
+    //                         return SchemaResult::Invalid;
+    //                     };
+    //
+    //                     if !current_boundaries.overlaps(required_boundaries) {
+    //                         return SchemaResult::Invalid;
+    //                     }
+    //                 }
+    //
+    //                 SchemaResult::Valid
+    //             }
+    //             // Nothing to actually check against value-wise since there are no boundaries
+    //             None => SchemaResult::Valid,
+    //         }
+    //     }
+    //     ConfigSchemaKind::Field => todo!(),
+    // }
+}

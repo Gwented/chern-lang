@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 //TODO: Adjust behavior as needed for the type system since some oddities from the original
 //hallucinated idea are still in place since.
 use bitflags::bitflags;
@@ -199,7 +201,7 @@ impl TypeBoundaryFlags {
                 TypeBoundaryFlags::COLLECTION => Formatted::Collection,
                 TypeBoundaryFlags::ORDERED => Formatted::Ordered,
                 TypeBoundaryFlags::NIL => Formatted::Nil,
-                _ => Formatted::Unknown,
+                _ => unreachable!("`i_am_a_bug`"),
             })
             .collect()
     }
@@ -222,8 +224,19 @@ impl TypeBoundaryFlags {
             TypeBoundaryFlags::COLLECTION => TypeDomainFlags::COLLECTION_DOMAIN,
             TypeBoundaryFlags::ORDERED => TypeDomainFlags::ORDERED_DOMAIN,
             TypeBoundaryFlags::NIL => TypeDomainFlags::NIL,
-            _ => TypeDomainFlags::empty(),
+            _ => unreachable!("`not_a_bug`"),
         }
+    }
+}
+
+impl Display for TypeBoundaryFlags {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let parts = self
+            .to_fmt()
+            .iter()
+            .map(|fmtted| fmtted.to_string())
+            .collect::<Vec<String>>();
+        write!(f, "{}", parts.join(" + "))
     }
 }
 

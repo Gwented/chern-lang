@@ -24,10 +24,10 @@ pub(crate) fn report_preset(
     diags: &mut Vec<SourceDiagnostic>,
     preset_err: PresetErr,
     region: &SourceRegion,
-    settings: &ChrnConfig,
+    cfg: &ChrnConfig,
     interner: &Intern,
 ) {
-    let diag_builder = create_diag_builder_preset(preset_err, region, settings, interner);
+    let diag_builder = create_diag_builder_preset(preset_err, region, cfg, interner);
     diags.push(diag_builder.build());
 }
 
@@ -42,11 +42,11 @@ pub(crate) fn report_preset_vec(
     diags: &mut Vec<SourceDiagnostic>,
     preset_errs: Vec<PresetErr>,
     region: &SourceRegion,
-    settings: &ChrnConfig,
+    cfg: &ChrnConfig,
     interner: &Intern,
 ) {
     for preset in preset_errs {
-        let diag_builder = create_diag_builder_preset(preset, region, settings, interner);
+        let diag_builder = create_diag_builder_preset(preset, region, cfg, interner);
         diags.push(diag_builder.build());
     }
 }
@@ -55,7 +55,7 @@ pub(crate) fn report_preset_vec(
 pub(crate) fn create_diag_builder_preset(
     preset_err: PresetErr,
     region: &SourceRegion,
-    settings: &ChrnConfig,
+    cfg: &ChrnConfig,
     interner: &Intern,
 ) -> SourceDiagnosticBuilder {
     match preset_err {

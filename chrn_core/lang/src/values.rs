@@ -3,8 +3,12 @@
 
 use chrn_utils::id_types::{ExprId, InternedId, SymbolId, TypeId};
 
-use crate::fmter::{Formattable, Formatted};
+use crate::{
+    fmter::{Formattable, Formatted},
+    types::boundaries::TypeBoundaryFlags,
+};
 // TODO: Should probably be in compilation
+// Was about to say this again..
 
 // This is supposed to represent something like, let x = 4, where 4 may or may not have a constant
 // value, 4 is the expression, and it's type is whatever is inferred
@@ -79,6 +83,29 @@ pub enum ValueKind {
     RuntimeStr,
     Array,
     Unknown,
+}
+
+impl ValueKind {
+    /// Returns valid boundary on `Some`
+    /// On `None`, it means that the value has no actual boundary associated with it.
+    ///
+    /// NOTE: Since language concepts like tuples and arrays themselves actually have boundaries,
+    /// those will be given, no recursive resolution related to the value is done so that should be
+    /// handled accordingly externally.
+    pub fn boundaries(self) -> Option<TypeBoundaryFlags> {
+        match self {
+            ValueKind::I64 => Some(TypeBoundaryFlags::SIGNED_INTEGER),
+            ValueKind::F64 => Some(TypeBoundaryFlags::FLOAT),
+            ValueKind::Char => Some(TypeBoundaryFlags::CHAR),
+            // Not sure if values themselves are a good interface for getting the boundary of a flag
+            // Maybe this should stay an Option
+            ValueKind::Bool => Some(TypeBoundaryFlags::BOOL),
+            ValueKind::InternedStr | ValueKind::RuntimeStr => Some(TypeBoundaryFlags::STR),
+            ValueKind::Array | ValueKind::Tuple => Some(TypeBoundaryFlags::COLLECTION),
+            // Should an `Unknown` boundary exist? That seems like it would complicate things
+            ValueKind::Func | ValueKind::Unknown => None,
+        }
+    }
 }
 
 impl Formattable for ValueKind {

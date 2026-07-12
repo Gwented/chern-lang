@@ -211,7 +211,7 @@ impl BuiltinTypeKind {
     //NOTE: UPDATE WHEN NEW CONSTRAINT IS MADE
     //No
     /// Retrieves non-recursive constraints associated with type
-    pub fn type_constraints(self) -> TypeBoundaryFlags {
+    pub fn boundaries(self) -> TypeBoundaryFlags {
         match self {
             BuiltinTypeKind::I8
             | BuiltinTypeKind::I16
