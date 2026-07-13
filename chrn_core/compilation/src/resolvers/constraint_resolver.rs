@@ -128,6 +128,8 @@ impl<'a> ConstraintResolver<'a> {
         // }
     }
 
+    // The code below is far far worse than all prior because the concept of what a config is and
+    // enforces is not 100% done, but the end-behavior exists so the specifics will be sorted later.
     fn resolve_cfg_root(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
         let ast_id = self.compiler.symbols[parent_sym_id]
             .ast_id
@@ -162,10 +164,12 @@ impl<'a> ConstraintResolver<'a> {
 
             let sp_opt_name_id = SpannedContainer::new(opt_root.name_id, opt_root.name_span);
             let boundaries = Type::boundaries(self.compiler, linked_type_id);
+            let type_name_id = self.compiler.get_name_id_from_type_id(linked_type_id);
 
             // let ty_name_id = self.compiler.get_span_from_type_id(linked_type_id).unwrap();
             if let Err(preset_err) = self.check_opt(
                 schema,
+                type_name_id,
                 cfg_root.name_span,
                 boundaries,
                 &sp_opt_name_id,
@@ -197,19 +201,29 @@ impl<'a> ConstraintResolver<'a> {
             for opt_member_id in cfg_member.opt_assignments.iter().copied() {
                 // Variant and field specific schemas?
                 let opt_member = self.compiler.get_opt_assignment_member(opt_member_id);
-                let schema = config_schemas::get_cfg_schema(ConfigSchemaKind::Field);
+                let schema = config_schemas::get_cfg_schema(ConfigSchemaKind::Member);
                 // let schema = schema_lookup::get_schema_from_type_id(self.compiler, linked_type_id)
                 //     .expect("`TypeResolver` should only give linked sym ids to valid configs");
-                let sp_name_id = SpannedContainer::new(opt_member.name_id, opt_member.name_span);
+                let sp_opt_name_id =
+                    SpannedContainer::new(opt_member.name_id, opt_member.name_span);
+                //FIX:
+                let member_ty_name_id_opt = self
+                    .compiler
+                    .get_type_id_from_member_id(cfg_member.linked_member_id)
+                    .map(|id| self.compiler.get_name_id_from_type_id(id))
+                    .flatten();
+
                 if let Err(preset_err) = self.check_opt(
                     schema,
+                    member_ty_name_id_opt,
                     cfg_member.name_span,
                     boundaries,
-                    &sp_name_id,
+                    &sp_opt_name_id,
                     opt_member.array_expr_id,
                     env,
                 ) {
                     // Maybe return ONE more present? Just 2? A small slice?
+                    // No
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
@@ -235,11 +249,11 @@ impl<'a> ConstraintResolver<'a> {
         // We need the config details associated with the given option, but in pieces.
         &self,
         schema: &ConfigSchema,
-        // cfg_ty_name_id: InternedId,
+        cfg_ty_name_id: Option<InternedId>,
         cfg_name_span: SourceSpan,
         // Is option since if the root option is typedef, it has user boundaries to account for. If
         // the root option is a struct, there are none.
-        user_boundaries: Option<TypeBoundaryFlags>,
+        user_boundaries_opt: Option<TypeBoundaryFlags>,
         sp_opt_name_id: &SpannedContainer<InternedId>,
         array_expr_id: ExprId,
         env: &ResolverEnv,
@@ -267,7 +281,7 @@ impl<'a> ConstraintResolver<'a> {
         match schema_lookup::validate_opt(
             self.compiler,
             schema,
-            user_boundaries,
+            user_boundaries_opt,
             sp_opt_name_id.inner,
             values,
         ) {
@@ -341,48 +355,43 @@ impl<'a> ConstraintResolver<'a> {
                         err_boundaries: _,
                         user_boundaries_opt,
                     } => {
-                        let (core_msg, user_str_opt) = if let Some(user_boundaries) =
-                            user_boundaries_opt
-                        {
-                            let user_str = user_boundaries.to_string();
-                            let core_msg = format!(
-                                "Index `{err_idx}` does not have the same type as it's config which is required by option `{opt_name}`",
-                            );
-                            (core_msg, Some(user_str))
-                        } else {
-                            let core_msg = format!(
-                                "Index `{err_idx}` does not have the same type as it's config which is required by option `{opt_name}`",
-                            );
-                            (core_msg, None)
-                        };
+                        let core_msg =
+                            format!("Index `{err_idx}` does not have the same type as it's config");
 
                         let err_expr_id = array_expr.inputs[err_idx];
                         let err_span = self.compiler.exprs[err_expr_id].span;
-                        let builder = SourceDiagnostic::builder(
+                        let mut builder = SourceDiagnostic::builder(
                             DiagnosticLevel::Error,
                             core_msg,
                             env.region.path_id,
                         )
-                        // .add_annotation(
-                        //     cfg_name_span,
-                        //     AnnotationKind::Secondary,
-                        //     format!("Is type `{}`").into(),
-                        // )
                         .add_annotation(
                             sp_opt_name_id.span,
                             AnnotationKind::Secondary,
                             "Required by this option".to_string().into(),
                         );
 
-                        if let Some(user_str) = user_str_opt {
+                        if let Some(ty_name_id) = cfg_ty_name_id {
+                            let ty_name = self.interner.search(ty_name_id);
+                            builder = builder.add_annotation(
+                                cfg_name_span,
+                                AnnotationKind::Secondary,
+                                format!("Is type `{ty_name}`").into(),
+                            )
+                        };
+
+                        builder = if let Some(user_boundaries) = user_boundaries_opt {
+                            let lowest_bound = user_boundaries.to_fmt_lowest();
                             builder.add_annotation(
                                 err_span,
                                 AnnotationKind::Primary,
-                                format!("Does not satisfy `{user_str}`").into(),
+                                format!("Does not satisfy `{lowest_bound}`").into(),
                             )
                         } else {
-                            todo!()
-                        }
+                            builder.add_annotation(err_span, AnnotationKind::Primary, None)
+                        };
+
+                        builder
                     }
                     SchemaResult::UnknownOptionName => {
                         let opt_name = self.interner.search(sp_opt_name_id.inner);

@@ -64,7 +64,7 @@ pub(crate) fn create_diag_builder_preset(
             sp_directive: directive,
             sym_span,
         } => {
-            let directive_boundaries = directive.inner.type_constraints().to_fmt();
+            let directive_boundaries = directive.inner.type_constraints().to_fmt_vec();
 
             let mut boundaries_str = String::new();
 
@@ -266,7 +266,7 @@ pub(crate) fn create_diag_builder_preset(
             found_ty,
             spans: _,
         } => {
-            let given_vec = given_constraints.to_fmt();
+            let given_vec = given_constraints.to_fmt_vec();
             let mut given_str = String::new();
 
             for (i, constraint) in given_vec.iter().enumerate() {
@@ -299,8 +299,8 @@ pub(crate) fn create_diag_builder_preset(
             spans: _,
         } => {
             //FIXME: Fear inducing message.
-            let current_bounds = current_inferred.to_fmt();
-            let conflicting_bounds = conflicting_inferred.to_fmt();
+            let current_bounds = current_inferred.to_fmt_vec();
+            let conflicting_bounds = conflicting_inferred.to_fmt_vec();
 
             let mut current_msg = String::new();
 

@@ -97,7 +97,7 @@ var->
         // x {}
 
         State1 {
-            .cases = ["9", "2"]
+            .cases = ["9", "4"]
             stable {
                 .default_val = 2.0
                 /*out {

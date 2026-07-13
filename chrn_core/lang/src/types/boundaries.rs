@@ -102,6 +102,29 @@ impl TypeDomainFlags {
             | TypeDomainFlags::COLLECTION_DOMAIN.bits()
             | TypeDomainFlags::CHARACTER_MAPPABLE_DOMAIN.bits(),
     );
+
+    pub fn to_fmt(self) -> Formatted {
+        match self {
+            TypeDomainFlags::SIGNED_INTEGER => Formatted::SignedInteger,
+            TypeDomainFlags::UNSIGNED_INTEGER => Formatted::UnsignedInteger,
+            TypeDomainFlags::FLOAT => Formatted::Float,
+            TypeDomainFlags::BOOL => Formatted::Bool,
+            TypeDomainFlags::STR => Formatted::Str,
+            TypeDomainFlags::CHAR => Formatted::Char,
+            TypeDomainFlags::RUNTIME => Formatted::Runtime,
+            TypeDomainFlags::COMPARABLE => Formatted::Comparable,
+            TypeDomainFlags::CHARACTER_MAPPABLE => Formatted::CharacterMappable,
+            TypeDomainFlags::HAS_LEN => Formatted::HasLen,
+            TypeDomainFlags::INTEGER => Formatted::Integer,
+            TypeDomainFlags::NUMERIC => Formatted::Numeric,
+            TypeDomainFlags::RANGED => Formatted::Ranged,
+            TypeDomainFlags::COLLECTION => Formatted::Collection,
+            TypeDomainFlags::ORDERED => Formatted::Ordered,
+            TypeDomainFlags::NIL => Formatted::Nil,
+            // This is a bug
+            _ => unreachable!("`not_a_bug`"),
+        }
+    }
 }
 
 impl TypeBoundaryFlags {
@@ -181,8 +204,74 @@ impl TypeBoundaryFlags {
         None
     }
 
+    // TypeDomainFlags::COMPARABLE.bits()
+    //     | TypeDomainFlags::NUMERIC_DOMAIN.bits()
+    //     | TypeDomainFlags::CHARACTER_MAPPABLE_DOMAIN.bits()
+    //     | TypeDomainFlags::BOOL.bits(),
+    /// Greedily picks the bit with the lowest amount of domains encoded inside of it.
+    ///
+    /// Using `Comparable` for example, it's domain is Numeric + CharacterMappable + Bool.
+    /// `Numeric` has 5 encoded, `CharacterMappable` has 2 encoded, `Bool` has 1 encoded, meaning `Bool`
+    /// would be chosen.
+    pub fn to_fmt_lowest(self) -> Formatted {
+        self.iter()
+            .map(|flag| (flag, flag.single_domain().bits().count_ones()))
+            .min_by_key(|(_, count)| *count)
+            .map(|(flag, _)| match flag {
+                TypeBoundaryFlags::SIGNED_INTEGER => Formatted::SignedInteger,
+                TypeBoundaryFlags::UNSIGNED_INTEGER => Formatted::UnsignedInteger,
+                TypeBoundaryFlags::FLOAT => Formatted::Float,
+                TypeBoundaryFlags::BOOL => Formatted::Bool,
+                TypeBoundaryFlags::STR => Formatted::Str,
+                TypeBoundaryFlags::CHAR => Formatted::Char,
+                TypeBoundaryFlags::RUNTIME => Formatted::Runtime,
+                TypeBoundaryFlags::COMPARABLE => Formatted::Comparable,
+                TypeBoundaryFlags::CHARACTER_MAPPABLE => Formatted::CharacterMappable,
+                TypeBoundaryFlags::HAS_LEN => Formatted::HasLen,
+                TypeBoundaryFlags::INTEGER => Formatted::Integer,
+                TypeBoundaryFlags::NUMERIC => Formatted::Numeric,
+                TypeBoundaryFlags::RANGED => Formatted::Ranged,
+                TypeBoundaryFlags::COLLECTION => Formatted::Collection,
+                TypeBoundaryFlags::ORDERED => Formatted::Ordered,
+                TypeBoundaryFlags::NIL => Formatted::Nil,
+                _ => unreachable!("`i_am_a_bug`"),
+            })
+            .expect("`i_am_a_bug`")
+    }
+
+    /// Greedily picks the bit with the highest amount of domains encoded inside of it.
+    ///
+    /// Using `Comparable` for example, it's domain is Numeric + CharacterMappable + Bool.
+    /// `Numeric` has 5 encoded, `CharacterMappable` has 2 encoded, bool has 1 encoded, meaning
+    /// `Numeric` would be chosen.
+    pub fn to_fmt_highest(self) -> Formatted {
+        self.iter()
+            .map(|flag| (flag, flag.single_domain().bits().count_ones()))
+            .max_by_key(|(_, count)| *count)
+            .map(|(flag, _)| match flag {
+                TypeBoundaryFlags::SIGNED_INTEGER => Formatted::SignedInteger,
+                TypeBoundaryFlags::UNSIGNED_INTEGER => Formatted::UnsignedInteger,
+                TypeBoundaryFlags::FLOAT => Formatted::Float,
+                TypeBoundaryFlags::BOOL => Formatted::Bool,
+                TypeBoundaryFlags::STR => Formatted::Str,
+                TypeBoundaryFlags::CHAR => Formatted::Char,
+                TypeBoundaryFlags::RUNTIME => Formatted::Runtime,
+                TypeBoundaryFlags::COMPARABLE => Formatted::Comparable,
+                TypeBoundaryFlags::CHARACTER_MAPPABLE => Formatted::CharacterMappable,
+                TypeBoundaryFlags::HAS_LEN => Formatted::HasLen,
+                TypeBoundaryFlags::INTEGER => Formatted::Integer,
+                TypeBoundaryFlags::NUMERIC => Formatted::Numeric,
+                TypeBoundaryFlags::RANGED => Formatted::Ranged,
+                TypeBoundaryFlags::COLLECTION => Formatted::Collection,
+                TypeBoundaryFlags::ORDERED => Formatted::Ordered,
+                TypeBoundaryFlags::NIL => Formatted::Nil,
+                _ => unreachable!("`i_am_a_bug`"),
+            })
+            .expect("`i_am_a_bug`")
+    }
+
     /// Convert each set flag into `Formatted`
-    pub fn to_fmt(self) -> Vec<Formatted> {
+    pub fn to_fmt_vec(self) -> Vec<Formatted> {
         self.iter()
             .map(|flag| match flag {
                 TypeBoundaryFlags::SIGNED_INTEGER => Formatted::SignedInteger,
@@ -206,7 +295,7 @@ impl TypeBoundaryFlags {
             .collect()
     }
 
-    fn single_domain(self) -> TypeDomainFlags {
+    const fn single_domain(self) -> TypeDomainFlags {
         match self {
             TypeBoundaryFlags::SIGNED_INTEGER => TypeDomainFlags::SIGNED_INTEGER,
             TypeBoundaryFlags::UNSIGNED_INTEGER => TypeDomainFlags::UNSIGNED_INTEGER,
@@ -224,7 +313,7 @@ impl TypeBoundaryFlags {
             TypeBoundaryFlags::COLLECTION => TypeDomainFlags::COLLECTION_DOMAIN,
             TypeBoundaryFlags::ORDERED => TypeDomainFlags::ORDERED_DOMAIN,
             TypeBoundaryFlags::NIL => TypeDomainFlags::NIL,
-            _ => unreachable!("`not_a_bug`"),
+            _ => unreachable!(),
         }
     }
 }
@@ -232,7 +321,7 @@ impl TypeBoundaryFlags {
 impl Display for TypeBoundaryFlags {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let parts = self
-            .to_fmt()
+            .to_fmt_vec()
             .iter()
             .map(|fmtted| fmtted.to_string())
             .collect::<Vec<String>>();
@@ -397,15 +486,44 @@ mod tests {
     }
 
     #[test]
+    fn to_fmt_greedy_lowest_picks_most_specific() {
+        let combo = TypeBoundaryFlags::SIGNED_INTEGER
+            | TypeBoundaryFlags::NUMERIC
+            | TypeBoundaryFlags::RANGED;
+        assert_eq!(combo.to_fmt_lowest(), Formatted::SignedInteger);
+
+        let numeric_only = TypeBoundaryFlags::NUMERIC | TypeBoundaryFlags::RANGED;
+        assert_eq!(numeric_only.to_fmt_lowest(), Formatted::Numeric);
+
+        let single = TypeBoundaryFlags::RANGED;
+        assert_eq!(single.to_fmt_lowest(), Formatted::Ranged);
+    }
+
+    // Greedy crab.
+    #[test]
+    fn to_fmt_greedy_highest_picks_most_general() {
+        let combo = TypeBoundaryFlags::SIGNED_INTEGER
+            | TypeBoundaryFlags::NUMERIC
+            | TypeBoundaryFlags::RANGED;
+        assert_eq!(combo.to_fmt_highest(), Formatted::Ranged);
+
+        let numeric_only = TypeBoundaryFlags::NUMERIC | TypeBoundaryFlags::RANGED;
+        assert_eq!(numeric_only.to_fmt_highest(), Formatted::Ranged);
+
+        let single = TypeBoundaryFlags::SIGNED_INTEGER;
+        assert_eq!(single.to_fmt_highest(), Formatted::SignedInteger);
+    }
+
+    #[test]
     fn to_formatted_order_and_contents() {
         let flags = TypeBoundaryFlags::INTEGER | TypeBoundaryFlags::SIGNED_INTEGER;
         assert_eq!(
-            flags.to_fmt(),
+            flags.to_fmt_vec(),
             vec![Formatted::SignedInteger, Formatted::Integer]
         );
 
         assert_eq!(
-            TypeBoundaryFlags::NUMERIC.to_fmt(),
+            TypeBoundaryFlags::NUMERIC.to_fmt_vec(),
             vec![Formatted::Numeric]
         );
     }

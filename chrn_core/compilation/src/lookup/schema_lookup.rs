@@ -114,7 +114,7 @@ pub fn validate_opt(
                     }
                 }
                 // [2]
-                OptionSchemaConstraint::SameTypeAsUser => {
+                OptionSchemaConstraint::SameTypeAsConfig => {
                     for (i, val) in opt_values.iter().enumerate() {
                         // dbg!(val.kind().boundaries(), user_boundaries_opt);
 

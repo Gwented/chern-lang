@@ -57,7 +57,7 @@ impl OptionSchema {
 pub enum ConfigSchemaKind {
     Struct,
     Enum,
-    Field,
+    Member,
 }
 
 impl Display for ConfigSchemaKind {
@@ -65,7 +65,7 @@ impl Display for ConfigSchemaKind {
         let out = match self {
             ConfigSchemaKind::Struct => "struct",
             ConfigSchemaKind::Enum => "enum",
-            ConfigSchemaKind::Field => "field",
+            ConfigSchemaKind::Member => "member",
         };
         write!(f, "{out}")
     }
@@ -77,7 +77,7 @@ pub static PRESET_CONFIG_SCHEMAS: [ConfigSchema; 3] = [
     ConfigSchema::new(ConfigSchemaKind::Struct, &[OPTION_CASES, OPTION_IDENTS]),
     ConfigSchema::new(ConfigSchemaKind::Enum, &[OPTION_CASES, OPTION_IDENTS]),
     ConfigSchema::new(
-        ConfigSchemaKind::Field,
+        ConfigSchemaKind::Member,
         &[OPTION_CASES, OPTION_IDENTS, OPTION_DEFAULT_VAL],
     ),
 ];
@@ -85,13 +85,13 @@ pub static PRESET_CONFIG_SCHEMAS: [ConfigSchema; 3] = [
 #[derive(Debug, Clone)]
 pub enum OptionSchemaConstraint {
     Boundaries(TypeBoundaryFlags),
-    SameTypeAsUser,
+    SameTypeAsConfig,
     // None,
 }
 
 const OPTION_DEFAULT_VAL: OptionSchema = OptionSchema::new(
     InternedId::new(intern::INTERNED_DEFAULT_VAL),
-    Some(OptionSchemaConstraint::SameTypeAsUser),
+    Some(OptionSchemaConstraint::SameTypeAsConfig),
 );
 const OPTION_IDENTS: OptionSchema = OptionSchema::new(
     InternedId::new(intern::INTERNED_IDENTS),
@@ -120,6 +120,6 @@ pub const fn get_cfg_schema(kind: ConfigSchemaKind) -> &'static ConfigSchema {
     match kind {
         ConfigSchemaKind::Struct => &PRESET_CONFIG_SCHEMAS[0],
         ConfigSchemaKind::Enum => &PRESET_CONFIG_SCHEMAS[1],
-        ConfigSchemaKind::Field => &PRESET_CONFIG_SCHEMAS[2],
+        ConfigSchemaKind::Member => &PRESET_CONFIG_SCHEMAS[2],
     }
 }

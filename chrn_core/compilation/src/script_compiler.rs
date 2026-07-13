@@ -670,28 +670,37 @@ impl ScriptCompiler {
     }
 
     // TODO: Fix type metadata
-    // pub(super) fn get_name_id_from_type_id(&self, mut type_id: TypeId) -> InternedId {
-    //     for _ in 0..chrn_utils::MAX_LOOPS {
-    //         match &self.types[type_id].ty {
-    //             Type::BuiltinType(builtin_type) => return builtin_type.kind().,
-    //             Type::Struct(struct_def) => Some(struct_def.name_span),
-    //             Type::Enum(enum_def) => Some(enum_def.name_span),
-    //             // Functions can't be declared
-    //             Type::Alias(alias_def) => Some(alias_def.name_span),
-    //             Type::TypeDef(type_def) => Some(type_def.name_span),
-    //             Type::Deferred(inner) => type_id = *inner,
-    //             // Type spanning needs to be reasoned about first
-    //             Type::Boundaries(boundary_flags) => todo!(),
-    //             Type::Unknown => todo!("Should still be spanned though"),
-    //             Type::Func(_) => None,
-    //         }
-    //     }
-    //     loop_abort!()
-    // }
+    /// Returns `None` if type is `Unknown`, otherwise returns `Some`
+    pub(super) fn get_name_id_from_type_id(&self, mut type_id: TypeId) -> Option<InternedId> {
+        for _ in 0..chrn_utils::MAX_LOOPS {
+            match &self.types[type_id].ty {
+                Type::BuiltinType(builtin_type) => return Some(builtin_type.kind().name_id()),
+                Type::Struct(struct_def) => return Some(self.symbols[struct_def.sym_id].name_id),
+                Type::Enum(enum_def) => return Some(self.symbols[enum_def.sym_id].name_id),
+                // Functions can't be declared
+                Type::Alias(alias_def) => return Some(self.symbols[alias_def.sym_id].name_id),
+                // WARN: Inconsistency
+                Type::TypeDef(type_def) => return Some(type_def.name_id),
+                Type::Func(func) => return Some(func.name_id),
+                Type::Deferred(inner) => type_id = *inner,
+                // Should the return type be String then?
+                // This absolutely can't return a type id
+                Type::Boundaries(boundary_flags) => return None,
+                // Not classifying unknown as a known identifier since it may lead to mis-usage of
+                // the identifier as though it really is the identifier of an actual declared type,
+                // rather than rephrasing for the fact that the type itself is unknown.
+                //
+                // Phrases like "The type `Unknown`" sound wrong because it's not a type it's a state
+                Type::Unknown => return None,
+            }
+        }
+        loop_abort!()
+    }
 
     pub(super) fn get_owner(&self, sym_id: SymbolId) -> ModuleId {
         match self.symbols[sym_id].sym_origin {
             SymbolOrigin::Module(mod_id) => mod_id,
+            //FIX: This isn't exactly true
             SymbolOrigin::Compiler => self.intrinsic_registry.core_mod_id,
         }
     }
@@ -1095,10 +1104,12 @@ impl ScriptCompiler {
         // IsEmpty
         let type_id = TypeId::new(compiler.types.len() as u32);
         let is_empty_flags = TypeBoundaryFlags::COLLECTION;
+        let interned_id = InternedId::new(intern::INTERNED_IS_EMPTY);
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
             sym_id,
+            interned_id,
             FuncKind::IsEmpty,
             false,
             is_empty_flags,
@@ -1111,7 +1122,6 @@ impl ScriptCompiler {
             .types
             .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
 
-        let interned_id = InternedId::new(intern::INTERNED_IS_EMPTY);
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1129,10 +1139,12 @@ impl ScriptCompiler {
         // IsWhitespace | CharacterMappable
         let type_id = TypeId::new(compiler.types.len() as u32);
         let ws_flags = TypeBoundaryFlags::CHARACTER_MAPPABLE;
+        let interned_id = InternedId::new(intern::INTERNED_IS_WHITESPACE);
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
             sym_id,
+            interned_id,
             FuncKind::IsWhitespace,
             false,
             ws_flags,
@@ -1145,7 +1157,6 @@ impl ScriptCompiler {
             .types
             .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
 
-        let interned_id = InternedId::new(intern::INTERNED_IS_WHITESPACE);
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1163,10 +1174,12 @@ impl ScriptCompiler {
         // Contains(String | char) CharacterMappable
         let type_id = TypeId::new(compiler.types.len() as u32);
         let contains_flags = TypeBoundaryFlags::CHARACTER_MAPPABLE;
+        let interned_id = InternedId::new(intern::INTERNED_CONTAINS);
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
             sym_id,
+            interned_id,
             FuncKind::Contains,
             true,
             contains_flags,
@@ -1179,7 +1192,6 @@ impl ScriptCompiler {
             .types
             .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
 
-        let interned_id = InternedId::new(intern::INTERNED_CONTAINS);
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1197,10 +1209,12 @@ impl ScriptCompiler {
         // StartsW(Value) | CharacterMappable
         let type_id = TypeId::new(compiler.types.len() as u32);
         let startsw_flags = TypeBoundaryFlags::CHARACTER_MAPPABLE;
+        let interned_id = InternedId::new(intern::INTERNED_STARTSW);
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
             sym_id,
+            interned_id,
             FuncKind::StartsW,
             true,
             startsw_flags,
@@ -1213,7 +1227,6 @@ impl ScriptCompiler {
             .types
             .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
 
-        let interned_id = InternedId::new(intern::INTERNED_STARTSW);
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1232,9 +1245,11 @@ impl ScriptCompiler {
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let type_id = TypeId::new(compiler.types.len() as u32);
         let endsw_flags = TypeBoundaryFlags::CHARACTER_MAPPABLE;
+        let interned_id = InternedId::new(intern::INTERNED_ENDSW);
 
         let func_def = FuncDef::new(
             sym_id,
+            interned_id,
             FuncKind::EndsW,
             true,
             // What about CharacterMappable? Do we really want to be judgemental here?
@@ -1249,7 +1264,6 @@ impl ScriptCompiler {
             .types
             .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
 
-        let interned_id = InternedId::new(intern::INTERNED_ENDSW);
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1267,10 +1281,12 @@ impl ScriptCompiler {
         // Range(inclusive, exclusive) | Numeric | Ordering
         let type_id = TypeId::new(compiler.types.len() as u32);
         let range_flags = TypeBoundaryFlags::RANGED;
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_RANGE);
+
         let func_def = FuncDef::new(
             sym_id,
+            interned_id,
             FuncKind::Range,
             true,
             range_flags,
@@ -1288,7 +1304,6 @@ impl ScriptCompiler {
             .types
             .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
 
-        let interned_id = InternedId::new(intern::INTERNED_RANGE);
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1306,10 +1321,12 @@ impl ScriptCompiler {
         // Equals(Comparable)
         let type_id = TypeId::new(compiler.types.len() as u32);
         let eq_flags = TypeBoundaryFlags::COMPARABLE;
+        let interned_id = InternedId::new(intern::INTERNED_EQUALS);
 
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let func_def = FuncDef::new(
             sym_id,
+            interned_id,
             FuncKind::Equals,
             true,
             eq_flags,
@@ -1326,7 +1343,6 @@ impl ScriptCompiler {
             .types
             .push(TypeInfo::new(Type::Func(func_def), core_mod_id));
 
-        let interned_id = InternedId::new(intern::INTERNED_EQUALS);
         let symbol = Symbol::new(
             interned_id,
             sym_id,

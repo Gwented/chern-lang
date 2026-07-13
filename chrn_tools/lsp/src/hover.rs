@@ -620,7 +620,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                         .unwrap_or("<param>");
                     let p_constraint = alias_def
                         .ty_constraints
-                        .to_fmt()
+                        .to_fmt_vec()
                         .iter()
                         .map(|f| f.to_string())
                         .collect::<Vec<_>>()
@@ -636,7 +636,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
             format_type(inner, compiler, interner, shallow)
         }
         Type::Boundaries(flags) => flags
-            .to_fmt()
+            .to_fmt_vec()
             .iter()
             .map(|f| f.to_string())
             .collect::<Vec<_>>()

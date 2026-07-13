@@ -1,4 +1,7 @@
-use chrn_utils::{id_types::TypeId, intern};
+use chrn_utils::{
+    id_types::{InternedId, TypeId},
+    intern,
+};
 
 use crate::{
     fmter::{Formattable, Formatted},
@@ -176,6 +179,39 @@ impl Formattable for BuiltinTypeKind {
 }
 
 impl BuiltinTypeKind {
+    pub fn name_id(self) -> InternedId {
+        let id = match self {
+            BuiltinTypeKind::I8 => intern::INTERNED_I8,
+            BuiltinTypeKind::U8 => intern::INTERNED_U8,
+            BuiltinTypeKind::I16 => intern::INTERNED_I16,
+            BuiltinTypeKind::U16 => intern::INTERNED_U16,
+            BuiltinTypeKind::F16 => intern::INTERNED_F16,
+            BuiltinTypeKind::I32 => intern::INTERNED_I32,
+            BuiltinTypeKind::U32 => intern::INTERNED_U32,
+            BuiltinTypeKind::F32 => intern::INTERNED_F32,
+            BuiltinTypeKind::I64 => intern::INTERNED_I64,
+            BuiltinTypeKind::U64 => intern::INTERNED_U64,
+            BuiltinTypeKind::F64 => intern::INTERNED_F64,
+            BuiltinTypeKind::I128 => intern::INTERNED_I128,
+            BuiltinTypeKind::U128 => intern::INTERNED_U128,
+            BuiltinTypeKind::F128 => intern::INTERNED_F128,
+            BuiltinTypeKind::Sized => intern::INTERNED_SIZED,
+            BuiltinTypeKind::Unsized => intern::INTERNED_UNSIZED,
+            BuiltinTypeKind::Str => intern::INTERNED_STR,
+            BuiltinTypeKind::Char => intern::INTERNED_CHAR,
+            BuiltinTypeKind::Nil => intern::INTERNED_NIL,
+            BuiltinTypeKind::Bool => intern::INTERNED_BOOL,
+            BuiltinTypeKind::BigInt => intern::INTERNED_BIGINT,
+            BuiltinTypeKind::BigFloat => intern::INTERNED_BIGFLOAT,
+            BuiltinTypeKind::List => intern::INTERNED_LIST,
+            BuiltinTypeKind::Set => intern::INTERNED_SET,
+            BuiltinTypeKind::Map => intern::INTERNED_MAP,
+            BuiltinTypeKind::Tuple => intern::INTERNED_TUPLE,
+            BuiltinTypeKind::Runtime => intern::INTERNED_RUNTIME,
+        };
+        InternedId::new(id)
+    }
+
     pub fn try_from_interned_id(id: u32) -> Option<BuiltinTypeKind> {
         match id {
             intern::INTERNED_I8 => Some(BuiltinTypeKind::I8),

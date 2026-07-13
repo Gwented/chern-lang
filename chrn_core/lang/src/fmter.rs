@@ -234,7 +234,7 @@ impl Display for Formatted {
             Formatted::Stmt => write!(f, "statement"),
             Formatted::Boundaries(flags) => {
                 let parts: Vec<String> = flags
-                    .to_fmt()
+                    .to_fmt_vec()
                     .iter()
                     .map(|fmtted| fmtted.to_string())
                     .collect();

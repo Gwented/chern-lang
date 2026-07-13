@@ -712,6 +712,7 @@ impl Formattable for TypeDef {
 
 #[derive(Debug)]
 pub struct FuncDef {
+    pub name_id: InternedId,
     pub sym_id: SymbolId,
     pub kind: FuncKind,
     // May be separate structure
@@ -732,6 +733,7 @@ pub struct FuncDef {
 impl FuncDef {
     pub fn new(
         sym_id: SymbolId,
+        name_id: InternedId,
         kind: FuncKind,
         is_callable: bool,
         type_constraints: TypeBoundaryFlags,
@@ -741,6 +743,7 @@ impl FuncDef {
     ) -> FuncDef {
         FuncDef {
             sym_id,
+            name_id,
             kind,
             is_callable,
             affects_type_constraint,
