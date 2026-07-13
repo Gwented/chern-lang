@@ -37,6 +37,8 @@
 
 use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
+use compilation::lexer::Lexer;
+use compilation::modules::Bind;
 use compilation::modules::ImportKind;
 use compilation::modules::Module;
 use lang::config_loader::{ConfigLoader, ConfigLoaderOutput};
@@ -59,6 +61,7 @@ use std::io::Cursor;
 use tower_lsp::lsp_types::Url;
 
 use crate::state::DocumentCache;
+use crate::state::DocumentState;
 
 const MAX_DIAGS_CACHE_SIZE: usize = 100;
 
@@ -208,6 +211,162 @@ pub(crate) fn config_load_error_to_diagnostics(
     }
 }
 
+/// Module-resolution results gathered outside the [`DocumentState`] write lock.
+///
+/// Keeping this work out of `ensure_analyzed` breaks the lock-order inversion that
+/// caused deadlocks: `ensure_analyzed` used to hold the per-document write lock while
+/// calling back into `DocumentCache::get_text`.
+pub(crate) struct ModuleResolution {
+    /// `bind` declaration from the config header, if any.
+    pub bind: Option<Bind>,
+    /// Main module region (id 0).
+    pub main_region: SourceRegion,
+    /// Main module descriptor.
+    pub main_mod: Module,
+    /// Imported module descriptors; indexed by `ModuleId::id - 1`.
+    pub sub_mods: Vec<Option<Module>>,
+    /// Imported module regions; ids are `1..=sub_mods.len()`.
+    pub sub_regions: Vec<SourceRegion>,
+    /// Config/import diagnostics collected during resolution.
+    pub config_errors: Option<Vec<SourceDiagnostic>>,
+    /// URI strings of every imported module, for dependency registration.
+    pub imported_uris: Vec<String>,
+}
+
+/// A document whose lexical data and imported modules have been resolved, but whose
+/// compiler pipeline has not yet run.
+pub(crate) struct PreparedDocument {
+    pub state: DocumentState,
+    pub resolution: ModuleResolution,
+}
+
+/// Resolves all imported modules for `text` and builds a pre-analysis [`DocumentState`].
+///
+/// This function performs all work that needs to touch [`DocumentCache`] (for in-memory
+/// copies of imported files) or disk.  It is intentionally synchronous and does NOT
+/// acquire any `DocumentState` lock, so it can safely call `DocumentCache::get_text`
+/// without risking the deadlock described in [`ModuleResolution`].
+pub(crate) fn resolve_document_modules(
+    uri: &Url,
+    text: Arc<String>,
+    script_start: usize,
+    serial_start: Option<usize>,
+    chrn_cfg: &ChrnConfig,
+    doc_cache: &DocumentCache,
+    version: u64,
+) -> PreparedDocument {
+    let mut interner = Intern::init();
+
+    let path_buf = uri
+        .to_file_path()
+        .unwrap_or_else(|_| PathBuf::from(uri.path()));
+    let path_id = interner.intern_path(&path_buf);
+
+    let (tokens, trivia) =
+        Lexer::new(SourceRegionId::new(0), text.as_bytes(), script_start)
+            .tokenize(&mut interner);
+
+    let name = path_buf
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("<unnamed>")
+        .to_string();
+    let name_id = interner.intern(&name);
+
+    let main_region = SourceRegion::new(
+        text.as_bytes().to_vec(),
+        SourceRegionId::new(0),
+        path_id,
+        script_start,
+        serial_start,
+    );
+
+    let mut reserved_mod_ids: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
+
+    let (bind, main_imports, finder_diags) = ModuleFinder::new(
+        text.as_bytes(),
+        chrn_cfg,
+        &mut reserved_mod_ids,
+        &main_region,
+        script_start,
+        serial_start,
+    )
+    .collect_imports(&mut interner);
+
+    let mut config_errors = if finder_diags.is_empty() {
+        None
+    } else {
+        Some(finder_diags)
+    };
+
+    use compilation::modules::ModuleState;
+    let main_mod = Module::new(
+        name_id,
+        ModuleState::Loading,
+        ModuleId::new(0),
+        main_imports,
+        Some(SourceRegionId::new(0)),
+    );
+
+    let mut seen: Vec<PathId> = vec![path_id];
+    let mut sub_mods = Vec::with_capacity(main_mod.imports.len());
+    let mut sub_regions: Vec<SourceRegion> = Vec::new();
+    let mut sub_diags = Vec::new();
+
+    resolve_modules_lsp(
+        &mut reserved_mod_ids,
+        &mut seen,
+        &mut sub_mods,
+        &mut sub_regions,
+        &main_mod,
+        chrn_cfg,
+        &mut interner,
+        doc_cache,
+        &mut sub_diags,
+    );
+
+    if !sub_diags.is_empty() {
+        match &mut config_errors {
+            Some(existing) => existing.append(&mut sub_diags),
+            None => config_errors = Some(sub_diags),
+        }
+    }
+
+    let imported_uris: Vec<String> = sub_mods
+        .iter()
+        .filter_map(|mod_opt| {
+            let m = mod_opt.as_ref()?;
+            let region_id = m.region_id?;
+            let region = sub_regions.get(region_id.id as usize - 1)?;
+            let p = interner.search_path(region.path_id);
+            Url::from_file_path(p).ok().map(|u| u.to_string())
+        })
+        .collect();
+
+    let state = DocumentState::new(
+        Arc::clone(&text),
+        tokens,
+        trivia,
+        interner,
+        script_start,
+        serial_start,
+        version,
+    );
+
+    PreparedDocument {
+        state,
+        resolution: ModuleResolution {
+            bind,
+            main_region,
+            main_mod,
+            sub_mods,
+            sub_regions,
+            config_errors,
+            imported_uris: imported_uris.clone(),
+        },
+    }
+}
+
 /// Async task that analyses a document and publishes diagnostics to the LSP client.
 ///
 /// This is the primary entry point for the analysis pipeline.  It is spawned as a
@@ -228,11 +387,13 @@ pub(crate) fn config_load_error_to_diagnostics(
 /// # Analysis steps
 /// 1. Runs `ChrnConfigLoader` to identify script boundaries.  If this fails, the
 ///    config errors are published immediately and the task returns early.
-/// 2. Calls `DocumentCache::get_or_create` to tokenise (or reuse a cached tokenisation).
-/// 3. Calls `DocumentState::ensure_analyzed` to perform module resolution, parsing,
-///    namespace resolution, and type-checking.
-/// 4. Registers cross-module dependency edges in the cache.
-/// 5. Publishes diagnostics via `publish_if_current`, which checks that the version
+/// 2. Resolves imported modules and tokenises the document **outside** any
+///    `DocumentState` lock, using `DocumentCache` and disk as needed.
+/// 3. Inserts the prepared document into `DocumentCache`.
+/// 4. Calls `DocumentState::ensure_analyzed` to run parsing, name resolution,
+///    type-checking, and symbol-map construction.
+/// 5. Registers cross-module dependency edges in the cache.
+/// 6. Publishes diagnostics via `publish_if_current`, which checks that the version
 ///    still matches before sending.
 pub async fn analyze_and_publish_task(
     client: Client,
@@ -249,9 +410,9 @@ pub async fn analyze_and_publish_task(
         .to_file_path()
         .unwrap_or_else(|_| PathBuf::from(uri.path()));
 
+    // 1. Initial config load to find boundaries
     let mut interner = Intern::init();
     let path_id = interner.intern_path(&path_buf);
-    // 1. Initial config load to find boundaries
     let region = match ConfigLoader::new(
         SourceRegionId::new(0),
         Cursor::new(text.as_bytes()),
@@ -290,25 +451,40 @@ pub async fn analyze_and_publish_task(
         }
     };
 
-    // 2. Use DocumentCache for heavy lifting
-    let state_arc = doc_cache.get_or_create(
-        uri.as_ref(),
-        text,
+    // 2. Resolve imported modules and build a pre-analysis state **without**
+    //    holding any DocumentState lock.  This breaks the previous deadlock cycle
+    //    where ensure_analyzed held the per-document write lock while calling
+    //    DocumentCache::get_text.
+    let prepared = resolve_document_modules(
+        &uri,
+        Arc::clone(&text),
         region.script_start,
         region.serial_start,
+        &chrn_cfg,
+        &doc_cache,
         version,
     );
+    let imported_uris = prepared.resolution.imported_uris.clone();
 
-    let imported_uris = {
+    // 3. Insert the prepared state into the cache.  If the same text is already
+    //    cached, the existing state is reused.
+    let state_arc = doc_cache.insert_or_get(
+        uri.as_ref(),
+        Arc::clone(&text),
+        prepared.state,
+    );
+
+    // 4. Run the compiler pipeline while holding only the per-document lock.
+    {
         let mut state = state_arc.write();
-        state.ensure_analyzed(&doc_cache, &path_buf)
-    };
+            state.ensure_analyzed(prepared.resolution);
+    }
 
     if !imported_uris.is_empty() {
         doc_cache.register_dependencies(uri.as_ref(), &imported_uris);
     }
 
-    // 3. Get diagnostics and publish if still current
+    // 5. Get diagnostics and publish if still current
     let lsp_diags = state_arc.read().get_lsp_diagnostics();
     publish_if_current(
         &client,
@@ -555,13 +731,14 @@ pub(crate) fn push_diagnostics(
 /// * `seen`             — Guard set of already-visited path IDs to break import cycles.
 /// * `modules`          — Output slot array indexed by `ModuleId - 1`; entries are
 ///   `None` until a module is successfully loaded.
+/// * `sub_regions`      — Output vector of imported module source regions.  Region
+///   ids are `1 + index` because id `0` is reserved for the main document region.
 /// * `prev_mod`         — The module whose imports are to be resolved in this call.
 /// * `settings`         — Global compiler settings forwarded to `ChrnConfigLoader` and
 ///   `ModuleFinder`.
 /// * `interner`         — Shared string/path interner for all modules being resolved.
 /// * `doc_cache`        — Cache queried for in-memory document text before falling
 ///   back to disk I/O.
-/// * `region_arena`     — Arena where the source region for each loaded file is stored.
 /// * `diags`            — Accumulator for any import-related diagnostics (path errors,
 ///   IO errors, parse errors in imported files).
 ///
@@ -573,11 +750,11 @@ pub(crate) fn resolve_modules_lsp(
     reserved_mod_ids: &mut Vec<(PathId, ModuleId)>,
     seen: &mut Vec<PathId>,
     modules: &mut Vec<Option<Module>>,
+    sub_regions: &mut Vec<SourceRegion>,
     prev_mod: &Module,
     settings: &ChrnConfig,
     interner: &mut Intern,
     doc_cache: &DocumentCache,
-    region_arena: &mut Arena<SourceRegion, SourceRegionId>,
     diags: &mut Vec<SourceDiagnostic>,
 ) {
     use chrn_utils::core_error::{self, ConfigLoadError};
@@ -656,9 +833,10 @@ pub(crate) fn resolve_modules_lsp(
             }
         };
 
-        // `ConfigLoader::new` requires the region's id up front.  The arena assigns
-        // ids in `push` order, so the next id is the current length of the arena.
-        let sub_region_id = SourceRegionId::new(region_arena.len() as u32);
+        // `ConfigLoader::new` requires the region's id up front.  Sub-regions are
+        // stored in `sub_regions` with ids `1 + index` because id 0 is the main
+        // document region.
+        let sub_region_id = SourceRegionId::new((sub_regions.len() + 1) as u32);
 
         let sub_region = match ConfigLoader::new(sub_region_id, src, path_id, settings, interner)
             .load_config()
@@ -744,10 +922,11 @@ pub(crate) fn resolve_modules_lsp(
             modules.resize(expected_len, None);
         }
 
-        let assigned_id = region_arena.push(sub_region);
+        sub_regions.push(sub_region);
         debug_assert_eq!(
-            assigned_id, sub_region_id,
-            "Sub-region id assigned by arena must match the pre-computed id"
+            SourceRegionId::new(sub_regions.len() as u32),
+            sub_region_id,
+            "Sub-region id must match the pre-computed id"
         );
 
         let sub_mod = Module::new(
@@ -762,11 +941,11 @@ pub(crate) fn resolve_modules_lsp(
             reserved_mod_ids,
             seen,
             modules,
+            sub_regions,
             &sub_mod,
             settings,
             interner,
             doc_cache,
-            region_arena,
             diags,
         );
 

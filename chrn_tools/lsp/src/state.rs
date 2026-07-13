@@ -11,7 +11,7 @@
 //! ```text
 //! DocumentState::ensure_analyzed
 //!     ├─ ModuleFinder::collect_imports        — discover @import statements
-//!     ├─ analyser::resolve_modules_lsp        — load & recurse into imported files
+//!     ├─ (module resolution runs outside this lock)
 //!     ├─ ScriptCompiler::init                 — initialise HIR structures
 //!     ├─ parser::parse (per module)           — build AST
 //!     ├─ create_registration_envs             — envs pre-symbols
@@ -35,6 +35,7 @@
 //! string.  It also maintains a forward (`imports`) and reverse (`dependents`) index
 //! of cross-module dependency edges so that editing a shared import file correctly
 //! invalidates all documents that import it.
+use chrn_utils::id_types::MemberId;
 use compilation::lexer::Lexer;
 use compilation::lexer::token::SpannedToken;
 use compilation::lexer::token::Token as ScriptToken;
@@ -43,7 +44,7 @@ use compilation::lookup::scopes;
 use compilation::lookup::scopes::AssociatedScopeKind;
 use compilation::lookup::scopes::ScopeLookupPattern;
 use compilation::lookup::scopes::ScopeType;
-use compilation::modules::Module;
+
 use compilation::parser::ast::ast_exprs::PathSegment;
 use compilation::parser::ast::ast_exprs::TypeExpr;
 use compilation::resolvers::constraint_resolver::ConstraintResolver;
@@ -60,7 +61,6 @@ use compilation::semantic::hir::hir_concepts::VariableState;
 use compilation::semantic::hir::hir_exprs::ExprHir;
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::Path;
 use std::sync::Arc;
 
 use crate::analyser;
@@ -68,7 +68,7 @@ use crate::analyser;
 use chrn_utils::arena::Arena;
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::id_types::{
-    InternedId, ModuleId, PathId, SourceRegionId, SpannedContainer, SymbolId, TypeId,
+    InternedId, ModuleId, SourceRegionId, SpannedContainer, SymbolId, TypeId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
@@ -103,6 +103,21 @@ pub enum SemanticEntity {
         decl_span: SourceSpan,
         /// The symbol that owns this local scope, if any (e.g. the alias symbol).
         owner_sym_id: Option<SymbolId>,
+    },
+    /// A nested config member block (`.fieldName { }`) inside a `complex->` block.
+    /// Resolves to a `ConfigDefMember` whose `linked_member_id` points to the actual field.
+    ConfigMember {
+        /// `SymbolId` of the `ConfigDefRoot` this member belongs to.
+        cfg_root_sym_id: SymbolId,
+        /// `MemberId` of the `ConfigDefMember` itself.
+        member_id: MemberId,
+    },
+    /// An option-assignment key (e.g. `.casing = [...]`) inside a root or member config block.
+    ConfigOption {
+        /// `SymbolId` of the enclosing `ConfigDefRoot`.
+        cfg_root_sym_id: SymbolId,
+        /// `MemberId` of the `OptionAssignmentRoot` or `OptionAssignmentMember`.
+        member_id: MemberId,
     },
 }
 
@@ -204,100 +219,47 @@ impl DocumentState {
         }
     }
 
-    /// Analyze this document, resolving modules and building the compiler.
+    /// Analyze this document and build the compiler.
+    ///
+    /// Module resolution must already have been performed by
+    /// [`crate::analyser::resolve_document_modules`]; this method only runs the
+    /// parsing, name-resolution, type-checking, and symbol-map construction phases.
+    /// Keeping module resolution outside the write lock eliminates the deadlock that
+    /// occurred when the old `ensure_analyzed` held the lock while calling
+    /// `DocumentCache::get_text`.
+    ///
     /// Returns the list of imported module URI strings (empty if already analyzed).
-    pub fn ensure_analyzed(&mut self, doc_cache: &DocumentCache, path: &Path) -> Vec<String> {
+    pub(crate) fn ensure_analyzed(
+        &mut self,
+        resolution: analyser::ModuleResolution,
+    ) -> Vec<String> {
         if self.compiler.is_some() {
             return Vec::new();
         }
 
         let chrn_cfg = ChrnConfig::default();
-        let path_buf = path.to_path_buf();
+        let analyser::ModuleResolution {
+            bind,
+            main_region,
+            main_mod,
+            sub_mods,
+            sub_regions,
+            config_errors,
+            imported_uris,
+        } = resolution;
 
-        let name = path_buf
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("<unnamed>")
-            .to_string();
-        let name_id = self.interner.intern(&name);
-        let path_id = self.interner.intern_path(&path_buf);
+        self.config_errors = config_errors;
 
-        let main_region = SourceRegion::new(
-            self.text.as_bytes().to_vec(),
-            SourceRegionId::new(0),
-            path_id,
-            self.script_start,
-            self.serial_start,
-        );
-
-        let mut reserved_mod_ids: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
-
-        let (bind, main_imports, finder_diags) =
-            compilation::modules::mod_finder::ModuleFinder::new(
-                self.text.as_bytes(),
-                &chrn_cfg,
-                &mut reserved_mod_ids,
-                &main_region,
-                self.script_start,
-                self.serial_start,
-            )
-            .collect_imports(&mut self.interner);
-
-        if !finder_diags.is_empty() {
-            self.config_errors = Some(finder_diags);
+        // Main region has id 0; sub-regions were assigned ids 1..=N during resolution.
+        let _main_region_id = self.region_arena.push(main_region);
+        for sub_region in sub_regions {
+            self.region_arena.push(sub_region);
         }
 
-        let main_region_id = self.region_arena.push(main_region);
-
-        let main_mod = Module::new(
-            name_id,
-            compilation::modules::ModuleState::Loading,
-            ModuleId::new(0),
-            main_imports,
-            Some(main_region_id),
-        );
-
-        let mut seen: Vec<PathId> = vec![path_id];
-
-        let mut other_mods = Vec::with_capacity(main_mod.imports.len());
-        let mut sub_diags = Vec::new();
-        analyser::resolve_modules_lsp(
-            &mut reserved_mod_ids,
-            &mut seen,
-            &mut other_mods,
-            &main_mod,
-            &chrn_cfg,
-            &mut self.interner,
-            doc_cache,
-            &mut self.region_arena,
-            &mut sub_diags,
-        );
-        if !sub_diags.is_empty() {
-            if let Some(existing) = &mut self.config_errors {
-                existing.append(&mut sub_diags);
-            } else {
-                self.config_errors = Some(sub_diags);
-            }
-        }
-
-        // Collect imported module URIs for dependency tracking
-        let imported_uris: Vec<String> = other_mods
-            .iter()
-            .filter_map(|mod_opt| {
-                let m = mod_opt.as_ref()?;
-                let region_id = m.region_id?;
-                let region = self.region_arena.get(region_id)?;
-                let p = self.interner.search_path(region.path_id);
-                tower_lsp::lsp_types::Url::from_file_path(p)
-                    .ok()
-                    .map(|u| u.to_string())
-            })
-            .collect();
-
-        let mut all_mods = Vec::with_capacity(other_mods.len() + 1);
+        let mut all_mods = Vec::with_capacity(sub_mods.len() + 1);
         all_mods.push(main_mod);
         let mut next_id = 1;
-        for mod_opt in other_mods.drain(..) {
+        for mod_opt in sub_mods {
             if let Some(mut inner) = mod_opt {
                 if inner.mod_id.id != next_id {
                     inner.mod_id.id = next_id;
@@ -976,6 +938,21 @@ impl DocumentState {
             }
         }
 
+        fn collect_cfg_refs(
+            compiler: &ScriptCompiler,
+            cfg: &compilation::parser::ast::ast_concepts::AbstractConfig,
+            map: &mut Vec<(SourceSpan, SemanticEntity)>,
+            text: &str,
+            interner: &Intern,
+        ) {
+            for opt in &cfg.opt_assignments {
+                collect_expr_refs(compiler, &opt.array_expr, map, text, interner);
+            }
+            for child in &cfg.cfg_members {
+                collect_cfg_refs(compiler, child, map, text, interner);
+            }
+        }
+
         // 1. Symbol Definitions
         for (i, sym) in compiler.symbols.iter().enumerate() {
             if matches!(sym.sym_origin, SymbolOrigin::Module(mid) if mid.id == 0)
@@ -1065,6 +1042,81 @@ impl DocumentState {
             }
         }
 
+        // 3.5. Configuration Definitions
+        for sym in compiler.symbols.iter() {
+            if let SymbolKind::Config(cfg_id) = sym.kind {
+                if !matches!(sym.sym_origin, SymbolOrigin::Module(mid) if mid.id == 0) {
+                    continue;
+                }
+                let sym_id = sym.sym_id;
+                let cfg_root = &compiler.cfgs[cfg_id];
+
+                let mut queue = Vec::new();
+
+                // Root options
+                for &member_id in &cfg_root.opt_assignments {
+                    if let MemberSymbolKind::OptAssignmentRoot(opt) = &compiler.members[member_id] {
+                        map.push((
+                            opt.name_span,
+                            SemanticEntity::ConfigOption {
+                                cfg_root_sym_id: sym_id,
+                                member_id,
+                            },
+                        ));
+                    }
+                }
+
+                // Root members
+                for &member_id in &cfg_root.cfg_members {
+                    if let MemberSymbolKind::ConfigDefMember(mem) = &compiler.members[member_id] {
+                        map.push((
+                            mem.name_span,
+                            SemanticEntity::ConfigMember {
+                                cfg_root_sym_id: sym_id,
+                                member_id,
+                            },
+                        ));
+                        queue.push(member_id);
+                    }
+                }
+
+                // Traverse nested members
+                while let Some(current_member_id) = queue.pop() {
+                    if let MemberSymbolKind::ConfigDefMember(mem) =
+                        &compiler.members[current_member_id]
+                    {
+                        for &opt_id in &mem.opt_assignments {
+                            if let MemberSymbolKind::OptAssignmentMember(opt) =
+                                &compiler.members[opt_id]
+                            {
+                                map.push((
+                                    opt.name_span,
+                                    SemanticEntity::ConfigOption {
+                                        cfg_root_sym_id: sym_id,
+                                        member_id: opt_id,
+                                    },
+                                ));
+                            }
+                        }
+                        for &child_member_id in &mem.cfg_def_members {
+                            if let MemberSymbolKind::ConfigDefMember(child_mem) =
+                                &compiler.members[child_member_id]
+                            {
+                                map.push((
+                                    child_mem.name_span,
+                                    SemanticEntity::ConfigMember {
+                                        cfg_root_sym_id: sym_id,
+                                        member_id: child_member_id,
+                                    },
+                                ));
+                                queue.push(child_member_id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // 4. Type and Expr References in AST
         if let Some(Some(ast)) = self.asts.first() {
             for item in ast.items() {
@@ -1126,7 +1178,9 @@ impl DocumentState {
                             collect_expr_refs(compiler, cond, &mut map, &self.text, &self.interner);
                         }
                     }
-                    Item::Config(_) => {}
+                    Item::Config(cfg) => {
+                        collect_cfg_refs(compiler, cfg, &mut map, &self.text, &self.interner);
+                    }
                 }
             }
         }
@@ -1395,6 +1449,31 @@ impl DocumentState {
                     None,
                 ))
             }
+            SemanticEntity::ConfigMember {
+                cfg_root_sym_id,
+                member_id,
+            } => {
+                // A config member is its own construct; reference it by its own
+                // member id rather than by the field/variant it configures.
+                let cfg_member = compiler.get_cfg_def_member(*member_id);
+                let sym = compiler.symbols.get(*cfg_root_sym_id)?;
+                let owner_id = match sym.sym_origin {
+                    SymbolOrigin::Module(mid) => mid.id as usize,
+                    SymbolOrigin::Compiler => 0,
+                };
+                let module = compiler.mods.get(ModuleId::new(owner_id as u32))?;
+                let region = self.region_arena.get(module.region_id?)?;
+                let path = self.interner.search_path(region.path_id);
+                Some((
+                    path.to_string_lossy().to_string(),
+                    cfg_member.name_span,
+                    Some(*cfg_root_sym_id),
+                ))
+            }
+            SemanticEntity::ConfigOption { .. } => {
+                // Schema-defined names have no source declaration to jump to.
+                None
+            }
         }
     }
 
@@ -1414,8 +1493,18 @@ impl DocumentState {
         def_span: SourceSpan,
         def_owner_sym_id: Option<SymbolId>,
     ) -> Vec<(String, Arc<String>, u32, u32)> {
-        let mut results = Vec::new();
+        // Collect state Arcs while holding the cache lock, then release it before
+        // acquiring any DocumentState locks.  This prevents the lock-order inversion
+        // that contributed to the deadlock: a reader holding DocumentCache while
+        // waiting for DocumentState, while analysis holds DocumentState and waits for
+        // DocumentCache.
+        let mut states: Vec<(String, Arc<RwLock<DocumentState>>)> = Vec::new();
         doc_cache.for_each_state(|state_uri, state_arc| {
+            states.push((state_uri.to_string(), Arc::clone(&state_arc)));
+        });
+
+        let mut results = Vec::new();
+        for (state_uri, state_arc) in states {
             let state = state_arc.read();
             for (span, ent) in &state.symbol_map {
                 if let Some((other_def_path, other_def_span, other_def_owner_sym_id)) =
@@ -1425,14 +1514,14 @@ impl DocumentState {
                     && other_def_owner_sym_id == def_owner_sym_id
                 {
                     results.push((
-                        state_uri.to_string(),
+                        state_uri.clone(),
                         Arc::clone(&state.text),
                         span.start,
                         span.end,
                     ));
                 }
             }
-        });
+        }
         results
     }
 
@@ -1579,6 +1668,91 @@ impl DocumentCache {
             return Arc::clone(existing);
         }
 
+        self.evict_if_needed(&mut cache);
+
+        let state = Arc::new(RwLock::new(DocumentState::new(
+            Arc::clone(&text),
+            tokens,
+            trivia,
+            interner,
+            script_start,
+            serial_start,
+            version,
+        )));
+
+        cache.docs.insert(
+            uri.to_string(),
+            (
+                text,
+                Arc::clone(&state),
+                Arc::new(std::sync::atomic::AtomicU64::new(
+                    self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                )),
+            ),
+        );
+        state
+    }
+
+    /// Inserts a pre-built [`DocumentState`] for `uri`, or returns the existing
+    /// cached state if the source text matches.
+    ///
+    /// This is used by the analysis pipeline after module resolution has been
+    /// performed outside of any `DocumentState` lock.  The cache hit check is
+    /// identical to [`get_or_create`](Self::get_or_create).
+    pub fn insert_or_get(
+        &self,
+        uri: &str,
+        text: Arc<String>,
+        state: DocumentState,
+    ) -> Arc<RwLock<DocumentState>> {
+        // 1. Fast path: exact text already cached
+        {
+            let cache = self.inner.read();
+            if let Some((cached_text, existing, access_tick)) = cache.docs.get(uri)
+                && (Arc::ptr_eq(cached_text, &text) || **cached_text == *text)
+            {
+                access_tick.store(
+                    self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
+                return Arc::clone(existing);
+            }
+        }
+
+        // 2. Insert under write lock
+        let mut cache = self.inner.write();
+
+        // Double-check after acquiring write lock
+        if let Some((cached_text, existing, access_tick)) = cache.docs.get(uri)
+            && (Arc::ptr_eq(cached_text, &text) || **cached_text == *text)
+        {
+            access_tick.store(
+                self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+            return Arc::clone(existing);
+        }
+
+        self.evict_if_needed(&mut cache);
+
+        let state_arc = Arc::new(RwLock::new(state));
+
+        cache.docs.insert(
+            uri.to_string(),
+            (
+                text,
+                Arc::clone(&state_arc),
+                Arc::new(std::sync::atomic::AtomicU64::new(
+                    self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                )),
+            ),
+        );
+
+        state_arc
+    }
+
+    /// Evicts the least-recently-used entries when the cache is at capacity.
+    fn evict_if_needed(&self, cache: &mut CacheInner) {
         if cache.docs.len() >= self.max_size {
             let to_remove = cache.docs.len() - self.max_size + 1;
             let mut entries: Vec<_> = cache
@@ -1609,28 +1783,6 @@ impl DocumentCache {
                 cache.dependents.remove(key);
             }
         }
-
-        let state = Arc::new(RwLock::new(DocumentState::new(
-            Arc::clone(&text),
-            tokens,
-            trivia,
-            interner,
-            script_start,
-            serial_start,
-            version,
-        )));
-
-        cache.docs.insert(
-            uri.to_string(),
-            (
-                text,
-                Arc::clone(&state),
-                Arc::new(std::sync::atomic::AtomicU64::new(
-                    self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-                )),
-            ),
-        );
-        state
     }
 
     /// Register the set of module URIs that `uri` imports.

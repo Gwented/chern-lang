@@ -63,6 +63,8 @@ This can be applied to [`struct`](#structural-types), [`enum`](#structural-types
 
 `enum`: Declares [enumeration type](#structural-types).
 
+`var`, `nest`, `complex`, `override`: Section keywords (more later)
+
 // Maybe putting this first isn't the best idea..
 ```chrn
 // Can apply a condition and directive to itself (More later)
@@ -94,7 +96,7 @@ var->
 
 
 ## Types
-// Would pointer types make sense?
+// Would pointer and function types make sense?
 
 ### Basic types
 
@@ -309,7 +311,7 @@ override->
 
 `var` allows for:
 - Defining serialized data
-- Expressing [type boundaries](#predicate-keywords) ([[IsWhitespace, Regex("a-zA-Z")]])
+- Using [conditions](#predicate-keywords) ([[IsWhitespace, Regex("a-zA-Z")]])
 - Using [directives](#directives) (#warn/#octal)
 
 Searchable scopes: `neutral` and `nest`
@@ -331,7 +333,6 @@ var->
 
 `nest` allows for:
 - Defining nested data
-Expressing boundaries 💀💀💀💀💀💀💀
 - Expressing [type boundaries](#predicate-keywords) ([[IsWhitespace, Equals("Hi")]])
 - Using [directives](#directives) (#warn/#octal)
 
@@ -355,9 +356,9 @@ nest->
 ```
 
 // Maybe rename to attributes or properties
-`complex`: Define complex rules associated with an already defined type. This is where settings attributes like what casing to look for or default values to assign would be set. 
+`complex`: Define complex rules associated with an already defined type. This is where settings attributes like what casing to look for or default values to assign would be set.
 
-Searchable scopes: `neutral` and `nest`
+Searchable scopes: `neutral`, `nest` and special case `var`
 
 To avoid redundancy the examples will use the following structs:
 
@@ -407,13 +408,13 @@ complex->
 ```chrn
 complex->
     Cat {
-        casing = ["snake_case", "UpperSnakeCase"]
+        cases = ["snake_case", "UpperSnakeCase"]
 
         // Looks for member with identifier "stressLevel"
-        .stressLevel {
+        stressLevel {
             // Looks for member "HIGH" within the type of stressLevel which is the most recent parent
-            .HIGH {
-                identifiers = "High"
+            HIGH {
+                idents = "High"
             }
         }
 
@@ -422,6 +423,10 @@ complex->
         .mortgage {/*code*/}
     }
 ```
+
+### Searching var scopes
+
+The section keyword `var` can be used before 
 
 #### IMPORTANT NOTES
 
@@ -453,10 +458,10 @@ complex->
     Orange {
         // Would already be applying these options and config member properties to all
         // recursive versions of itself.
-        .identifiers = ["Urang", "Crust"]
+        idents = ["Urang", "Crust"]
         orange {
             // This is an error and should be placed within the original recursive orange identifier list
-            .identifiers = "Recursive Orange"
+            idents = "Recursive Orange"
         }
     }
 ```
@@ -476,7 +481,7 @@ nest->
 // Should config be locked to where it only starts from var-> defined variables?
 complex->
     Orange {
-        .identifiers = ["Urang", "Crust"]
+        idents = ["Urang", "Crust"],
     }
 
     Apple {

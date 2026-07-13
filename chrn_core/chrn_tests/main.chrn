@@ -43,7 +43,6 @@ let c = d
 as
 let as = n
 */
-let x = IsEmpty
 
 let i =3
 // import "../chrn_core/chrn_tests/def.chrn" as defs
@@ -97,15 +96,15 @@ var->
         // x {}
 
         State1 {
-            .cases = ["9", "4"]
             stable {
-                .default_val = 2.0
+            cases = ["9", "4"],
+            idents = ["snake_case"]
+            default_va = 2,
                 /*out {
                     // p {}
 
                 }*/
             }
-            // o {}
             // .extra = def::e#2
         }
 @end

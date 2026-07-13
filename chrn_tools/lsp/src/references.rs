@@ -38,27 +38,27 @@ fn collect_local_occurrences(
             owner_sym_id,
             ..
         } = ent
-            && *decl_span == *def_span && *owner_sym_id == def_owner_sym_id
+            && *decl_span == *def_span
+            && *owner_sym_id == def_owner_sym_id
         {
-                results.push(Location {
-                    uri: uri.clone(),
-                    range: Range {
-                        start: offset_to_position(&state.text, span.start as usize),
-                        end: offset_to_position(&state.text, span.end as usize),
-                    },
-                });
+            results.push(Location {
+                uri: uri.clone(),
+                range: Range {
+                    start: offset_to_position(&state.text, span.start as usize),
+                    end: offset_to_position(&state.text, span.end as usize),
+                },
+            });
         }
     }
     results
 }
 
 /// Converts raw matching-entity tuples into deduplicated [`Location`] values.
-fn matching_entities_to_locations(
-    entities: Vec<(String, Arc<String>, u32, u32)>,
-) -> Vec<Location> {
+fn matching_entities_to_locations(entities: Vec<(String, Arc<String>, u32, u32)>) -> Vec<Location> {
     let mut results = Vec::new();
     // Group by URI to deduplicate per file
-    let mut by_uri: std::collections::HashMap<String, Vec<Range>> = std::collections::HashMap::new();
+    let mut by_uri: std::collections::HashMap<String, Vec<Range>> =
+        std::collections::HashMap::new();
     for (state_uri, text, start, end) in entities {
         let range = Range {
             start: offset_to_position(&text, start as usize),
@@ -118,7 +118,8 @@ pub fn compute_references(
     let locations = if is_local {
         collect_local_occurrences(&state, &def_span, def_owner_sym_id, uri)
     } else {
-        let entities = DocumentState::find_matching_entities(doc_cache, &def_path, def_span, def_owner_sym_id);
+        let entities =
+            DocumentState::find_matching_entities(doc_cache, &def_path, def_span, def_owner_sym_id);
         matching_entities_to_locations(entities)
     };
 

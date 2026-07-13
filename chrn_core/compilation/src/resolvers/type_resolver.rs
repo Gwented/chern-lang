@@ -520,11 +520,12 @@ impl<'res> TypeResolver<'res> {
         //NOTE: Maybe should be tracked from SymbolId/MemberId instead
         //
         // Tracks invalid recursive usage
+        //
+        // If we have Parent {p: parent} and the config is "Parent { p {} }" this is a recursive
+        // error because the outer parent already defined what the Parent type should have as set
+        // properties, making it a recursive definition of something that was already defined
         let mut cfg_dfs: Vec<(TypeId, SourceSpan)> = vec![(found_type_id, abs_cfg_root.name_span)];
 
-        // let name_id = &self.compiler.symbols[SymbolId::new(57)].name_id;
-        // dbg!(self.interner.search(*name_id));
-        // panic!();
         for abs_inner_cfg in &abs_cfg_root.cfg_members {
             seen_cfg_vec.push(abs_inner_cfg);
             seen_cfg_len += 1;
@@ -612,7 +613,7 @@ impl<'res> TypeResolver<'res> {
 
                             let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
                                 sp_parent_ty: SpannedContainer::new(
-                                    abs_cfg_root.name_id,
+                                    name_id,
                                     abs_cfg_root.name_span,
                                 ),
                                 member: abs_inner_cfg.name_id,
@@ -905,7 +906,7 @@ impl<'res> TypeResolver<'res> {
                 );
 
                 self.err_vec.push(src_diag.build());
-
+                // Returning the `MemberSymbolKind::Unknown` reserved
                 return current_cfg_member_id;
             }
 

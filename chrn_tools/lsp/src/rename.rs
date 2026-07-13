@@ -39,15 +39,16 @@ fn collect_local_edits(
             owner_sym_id,
             ..
         } = ent
-            && *decl_span == *def_span && *owner_sym_id == def_owner_sym_id
+            && *decl_span == *def_span
+            && *owner_sym_id == def_owner_sym_id
         {
-                edits.push(TextEdit {
-                    range: Range {
-                        start: offset_to_position(&state.text, span.start as usize),
-                        end: offset_to_position(&state.text, span.end as usize),
-                    },
-                    new_text: new_name.to_string(),
-                });
+            edits.push(TextEdit {
+                range: Range {
+                    start: offset_to_position(&state.text, span.start as usize),
+                    end: offset_to_position(&state.text, span.end as usize),
+                },
+                new_text: new_name.to_string(),
+            });
         }
     }
     edits
@@ -66,7 +67,9 @@ fn matching_entities_to_edits(
             end: offset_to_position(text, *end as usize),
         };
         by_uri.entry(state_uri.clone()).or_default().push(range);
-        text_map.entry(state_uri.clone()).or_insert_with(|| Arc::clone(text));
+        text_map
+            .entry(state_uri.clone())
+            .or_insert_with(|| Arc::clone(text));
     }
 
     let mut changes = HashMap::new();
@@ -124,14 +127,15 @@ pub fn compute_rename(
     let is_local = matches!(entity, SemanticEntity::Local { .. });
 
     let changes = if is_local {
-            let edits = collect_local_edits(&state, &def_span, def_owner_sym_id, &new_name);
+        let edits = collect_local_edits(&state, &def_span, def_owner_sym_id, &new_name);
         if edits.is_empty() {
             HashMap::new()
         } else {
             [(uri.clone(), edits)].into_iter().collect()
         }
     } else {
-        let entities = DocumentState::find_matching_entities(doc_cache, &def_path, def_span, def_owner_sym_id);
+        let entities =
+            DocumentState::find_matching_entities(doc_cache, &def_path, def_span, def_owner_sym_id);
         matching_entities_to_edits(entities, &new_name)
     };
 

@@ -684,12 +684,12 @@ fn parse_cfg_expr(
     let mut inner_field_cfg: Vec<AbstractConfig> = Vec::new();
 
     loop {
-        // for ".cases = [snake_case]"
-        if ctx.peek_tok() == Token::Dot {
+        // for "cases = [snake_case]"
+        if ctx.peek_ahead(1).tok == Token::Assign {
             let option_assignment = parse_option_assignment(ctx, budget, interner)?;
             option_assignments.push(option_assignment);
         // for "inner {/*assignments*/}"
-        } else if ctx.peek_kind() == TokenKind::Id || ctx.peek_tok() == Token::Keyword(Keyword::In)
+        } else if ctx.peek_kind() == TokenKind::Id || ctx.peek_tok() == Token::Keyword(Keyword::Var)
         {
             let abs_cfg = parse_cfg_expr(ctx, budget, interner)?;
             inner_field_cfg.push(abs_cfg);
@@ -724,14 +724,6 @@ fn parse_option_assignment(
     budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<AbstractOptionAssignment, Token> {
-    ctx.expect_verbose(
-        TokenKind::Dot,
-        "Expected a '.' to select available configuration, found ",
-        "",
-        Branch::Section(SectionBranch::Complex),
-        interner,
-    )?;
-
     let name_span = ctx.peek_span();
 
     let name_id = ctx.expect_id_verbose(
@@ -750,42 +742,19 @@ fn parse_option_assignment(
         interner,
     )?;
 
-    // Semantics of comma checking:
-    // - If the current option uses short-hand syntax, it only expects a comma after it
-    // IF there is an option after it.
-    //
-    // - Trailing commas are accepted for the array and single element version
-    let (sp_array_expr, check_comma) = if ctx.peek_tok() == Token::OBracket {
-        (parse_array(ctx, budget, interner)?, false)
+    let sp_array_expr = if ctx.peek_tok() == Token::OBracket {
+        parse_array(ctx, budget, interner)?
     } else {
         // Assumes it's a single value assignment if no OBracket is present
         let only_element = parse_expr(ctx, 0, budget, interner)?;
         let span = only_element.span;
         let array_expr = Expr::Array(ArrayExpr::new(vec![only_element]));
 
-        // This is so scenarios where the current option is the last option it doesn't require a
-        // trailing comma
-        let check_comma = if ctx.peek_ahead(1).tok == Token::Dot {
-            true
-        } else {
-            false
-        };
-
-        (SpannedExpr::new(array_expr, span), check_comma)
+        SpannedExpr::new(array_expr, span)
     };
 
-    //TODO: This is not good
-
-    if check_comma {
-        ctx.expect_verbose(
-            TokenKind::Comma,
-            "Expected a common to separate options, found ",
-            "",
-            Branch::Section(SectionBranch::Complex),
-            interner,
-        )?;
-        // If there is a trailing comma it still advances
-    } else if ctx.peek_tok() == Token::Comma {
+    // Allows for trailing comma
+    if ctx.peek_tok() == Token::Comma {
         ctx.advance_tok();
     }
 

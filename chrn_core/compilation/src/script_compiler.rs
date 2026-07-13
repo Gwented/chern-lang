@@ -493,7 +493,7 @@ impl ScriptCompiler {
     }
 
     /// Assumes the member symbol given is a field
-    pub(super) fn get_cfg_def_member(&self, member_id: MemberId) -> &ConfigDefMember {
+    pub fn get_cfg_def_member(&self, member_id: MemberId) -> &ConfigDefMember {
         match &self.members[member_id] {
             MemberSymbolKind::ConfigDefMember(cfg_def_member) => cfg_def_member,
             _ => unreachable!(),
@@ -614,8 +614,7 @@ impl ScriptCompiler {
                 }
             };
         }
-
-        loop_abort!();
+        loop_abort!()
     }
 
     /// Attempts to get a `TypeId` out of the given `MemberId` if possible
@@ -652,21 +651,25 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_span_from_type_id(&self, type_id: TypeId) -> Option<SourceSpan> {
+    //TODO: Not
+    pub(super) fn get_span_from_type_id(&self, mut type_id: TypeId) -> Option<SourceSpan> {
         // TODO: Ok
-        match &self.types[type_id].ty {
-            Type::BuiltinType(builtin_type) => None,
-            Type::Struct(struct_def) => Some(struct_def.name_span),
-            Type::Enum(enum_def) => Some(enum_def.name_span),
-            // Functions can't be declared
-            Type::Alias(alias_def) => Some(alias_def.name_span),
-            Type::TypeDef(type_def) => Some(type_def.name_span),
-            Type::Deferred(inner) => self.get_span_from_type_id(*inner),
-            // Type spanning needs to be reasoned about first
-            Type::Boundaries(boundary_flags) => todo!(),
-            Type::Unknown => todo!("Should still be spanned though"),
-            Type::Func(_) => None,
+        for _ in 0..chrn_utils::MAX_LOOPS {
+            match &self.types[type_id].ty {
+                Type::BuiltinType(builtin_type) => return None,
+                Type::Struct(struct_def) => return Some(struct_def.name_span),
+                Type::Enum(enum_def) => return Some(enum_def.name_span),
+                // Functions can't be declared
+                Type::Alias(alias_def) => return Some(alias_def.name_span),
+                Type::TypeDef(type_def) => return Some(type_def.name_span),
+                Type::Deferred(inner) => type_id = *inner,
+                // Type spanning needs to be reasoned about first
+                Type::Boundaries(boundary_flags) => todo!(),
+                Type::Unknown => todo!("Should still be spanned though"),
+                Type::Func(_) => return None,
+            }
         }
+        loop_abort!()
     }
 
     // TODO: Fix type metadata

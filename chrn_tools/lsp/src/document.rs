@@ -2,7 +2,7 @@
 //!
 //! Provides static documentation tables and the [`Document`] type for hover content.
 //!
-//! Three tables are exposed as `pub static` slices:
+//! Four tables are exposed as `pub static` slices:
 //!
 //! | Constant              | Indexed by                  | Length |
 //! |-----------------------|-----------------------------|--------|
@@ -10,13 +10,14 @@
 //! | [`BUILTIN_TYPE_DOCS`] | `BuiltinTypeKind as usize`  | 27     |
 //! | [`FUNC_DOCS`]         | `FuncKind as usize`         | 7      |
 //! | [`DIRECTIVE_DOCS`]    | key name (`&str`)           | 6      |
+//! | [`CONFIG_OPTION_DOCS`]| key name (`&str`)           | 3      |
 //!
 //! ## Alignment invariant
 //!
-//! **The entries in each table MUST remain aligned with the discriminant values of
-//! their respective enum.**  Adding a new keyword, builtin type, or intrinsic function
-//! requires inserting the corresponding [`Document`] entry at the correct index and
-//! updating the length in this comment.
+//! **The entries in each enum-indexed table MUST remain aligned with the discriminant
+//! values of their respective enum.**  Adding a new keyword, builtin type, or intrinsic
+//! function requires inserting the corresponding [`Document`] entry at the correct index
+//! and updating the length in this comment.
 //!
 //! Accessor methods on [`Document`] (`keyword_docs`, `builtin_type_docs`, `func_docs`)
 //! index directly into these arrays; an out-of-bounds index will panic at runtime.
@@ -72,6 +73,11 @@ impl Document {
     pub fn directive_docs(name: &str) -> Option<&'static Document> {
         DIRECTIVE_DOCS.iter().find(|d| d.key == name)
     }
+
+    /// Returns the document for a config option by name, or `None` if unknown.
+    pub fn config_option_docs(name: &str) -> Option<&'static Document> {
+        CONFIG_OPTION_DOCS.iter().find(|d| d.key == name)
+    }
 }
 
 //  Keywords
@@ -123,7 +129,7 @@ pub static KEYWORD_DOCS: [Document; 14] = [
     },
     Document {
         key: "let",
-        description: "Declares reusable values",
+        description: "Declares a reusable value; the type is inferred by default",
         example: Some(
             "```chrn\n@def\n\tlet count = 10\n\tlet name = \"chrning\"\n\tlet result = VALUE * 2\n// Can be used as values within type Boundaries or conditions\nvar->\n\tx: i32 [Equals(result)]\n@end\n```",
         ),
@@ -142,22 +148,24 @@ pub static KEYWORD_DOCS: [Document; 14] = [
     },
     Document {
         key: "var->",
-        description: "Defines serializable fields section that can apply type Boundaries and directives",
+        description: "Front-facing section that defines the data to be serialized or deserialized; fields may use type boundaries and directives",
         example: Some(
             "```chrn\nvar->\n\tname: str\n\tage: u8 #warn\n\tscore: f64 [Range(0.0, 100.0)]\n```",
         ),
     },
     Document {
         key: "nest->",
-        description: "Defines structs and enums section that can apply type Boundaries and directives",
+        description: "Defines structs and enums; types here may use type boundaries and directives",
         example: Some(
-            "```chrn\nnest->\n\tstruct Address {\n\t\tcity: str\n\t\tzip: u32\n\t}\n\tenum Color {Red Blue Green}\n\n```",
+            "```chrn\nnest->\n\tstruct Address {\n\t\tcity: str\n\t\tzip: u32\n\t}\n\tenum Color {Red Blue Green}\n```",
         ),
     },
     Document {
         key: "complex->",
-        description: "Unimplemented",
-        example: Some("```chrn\n// Not yet implemented\n```"),
+        description: "Defines serialization properties for types declared",
+        example: Some(
+            "```chrn\nnest->\n\tstruct Cat {\n\t\tname: str\n\t\tstressLevel: StressLevel\n\t}\n\tenum StressLevel { HIGH LOW }\ncomplex->\n\tCat {\n\t\tcases = [\"snake_case\", \"UpperCamelCase\"]\n\t\tstressLevel {\n\t\t\tidents = [\"mood\"]\n\t\t\tHIGH { idents = [\"stressed\"] }\n\t\t}\n\t}\n```",
+        ),
     },
     Document {
         key: "override->",
@@ -167,7 +175,9 @@ pub static KEYWORD_DOCS: [Document; 14] = [
     Document {
         key: "in",
         description: "Binds a value to a name within a scoped expression (let ... in)",
-        example: Some("```chrn\n@def\n\tlet result = let x = 10 in x * 2\n\t// result = 20\n@end\n```"),
+        example: Some(
+            "```chrn\n@def\n\tlet result = let x = 10 in x * 2\n\t// result = 20\n@end\n```",
+        ),
     },
 ];
 
@@ -261,17 +271,17 @@ pub static BUILTIN_TYPE_DOCS: [Document; 27] = [
     },
     Document {
         key: "str",
-        description: "String type",
+        description: "UTF-8 encoded string",
         example: None,
     },
     Document {
         key: "char",
-        description: "Unicode character",
+        description: "A single Unicode character",
         example: None,
     },
     Document {
         key: "nil",
-        description: "Representation of a null/nil within a given language if possible",
+        description: "Generic nil/null value that adapts to the target language when possible",
         example: None,
     },
     Document {
@@ -281,12 +291,12 @@ pub static BUILTIN_TYPE_DOCS: [Document; 27] = [
     },
     Document {
         key: "BigInt",
-        description: "Arbitrary precision integer",
+        description: "Integer represented as an unbounded string",
         example: None,
     },
     Document {
         key: "BigFloat",
-        description: "Arbitrary precision float",
+        description: "Floating point type represented as an unbounded string",
         example: None,
     },
     Document {
@@ -403,22 +413,62 @@ pub static DIRECTIVE_DOCS: [Document; 6] = [
     },
 ];
 
+// ── Config Options ────────────────────────────────────────────────────────────
+//
+// Looked up by key name via [`Document::config_option_docs`].
+/// Hover documentation for schema configuration options used in `complex->`.
+///
+/// Indexed by key name via [`Document::config_option_docs`].
+pub static CONFIG_OPTION_DOCS: [Document; 3] = [
+    Document {
+        key: "cases",
+        description: "Case conventions accepted when matching serialized names",
+        example: Some(
+            "```chrn\ncomplex->\n\tCat {\n\t\tcases = [\"snake_case\", \"UpperSnakeCase\"]\n\t}\n```",
+        ),
+    },
+    Document {
+        key: "idents",
+        description: "Alternate identifiers the serialized value may be matched to",
+        example: Some(
+            "```chrn\ncomplex->\n\tCat {\n\t\tstressLevel {\n\t\t\tHIGH { idents = [\"Stressed\"] }\n\t\t}\n\t}\n```",
+        ),
+    },
+    Document {
+        key: "default_val",
+        description: "Default value used when data is absent",
+        example: Some("```chrn\ncomplex->\n\tCat {\n\t\tage { default_val = 0 }\n\t}\n```"),
+    },
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_keyword_docs_len() {
-        assert_eq!(KEYWORD_DOCS.len(), 14, "KEYWORD_DOCS must have one entry per Keyword variant");
+        assert_eq!(
+            KEYWORD_DOCS.len(),
+            14,
+            "KEYWORD_DOCS must have one entry per Keyword variant"
+        );
     }
 
     #[test]
     fn test_builtin_type_docs_len() {
-        assert_eq!(BUILTIN_TYPE_DOCS.len(), 27, "BUILTIN_TYPE_DOCS must have one entry per BuiltinTypeKind variant");
+        assert_eq!(
+            BUILTIN_TYPE_DOCS.len(),
+            27,
+            "BUILTIN_TYPE_DOCS must have one entry per BuiltinTypeKind variant"
+        );
     }
 
     #[test]
     fn test_func_docs_len() {
-        assert_eq!(FUNC_DOCS.len(), 7, "FUNC_DOCS must have one entry per FuncKind variant");
+        assert_eq!(
+            FUNC_DOCS.len(),
+            7,
+            "FUNC_DOCS must have one entry per FuncKind variant"
+        );
     }
 }

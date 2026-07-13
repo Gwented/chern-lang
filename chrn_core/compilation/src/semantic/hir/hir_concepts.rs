@@ -15,7 +15,6 @@ use lang::{
         boundaries::TypeBoundaryFlags,
         builtins::{BuiltinType, BuiltinTypeKind},
     },
-    values::Value,
 };
 
 use crate::{
@@ -28,13 +27,11 @@ use crate::{
 // This is kind of just a "concept" though
 use chrn_utils::id_types::{AstId, ConfigRootId, DirectiveId, InternedId, SymbolId, VariableId};
 
+// Who is this?
 #[derive(Debug)]
 pub struct Table {
-    // Can still change some to vec maybe
     pub(crate) ast_to_sym: HashMap<AstId, SymbolId>,
-    //TEST:
     pub(crate) interned_to_sym: HashMap<InternedId, SymbolId>,
-    // Maybe also to type
 }
 
 impl Table {
@@ -50,15 +47,6 @@ impl Table {
 pub enum SymbolOrigin {
     Module(ModuleId),
     Compiler,
-}
-
-impl SymbolOrigin {
-    pub fn try_as_module(&self) -> Option<ModuleId> {
-        match self {
-            SymbolOrigin::Module(mod_id) => Some(*mod_id),
-            SymbolOrigin::Compiler => None,
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -207,7 +195,7 @@ impl Type {
                 Type::Deferred(inner) => type_id = *inner,
             }
         }
-        loop_abort!();
+        loop_abort!()
     }
 
     /// The env can't be passed into to_fmt so
@@ -230,7 +218,7 @@ impl Type {
                 Type::Deferred(inner) => type_id = *inner,
             }
         }
-        loop_abort!();
+        loop_abort!()
     }
 }
 

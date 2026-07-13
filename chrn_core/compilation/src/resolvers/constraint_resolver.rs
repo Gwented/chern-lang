@@ -42,11 +42,12 @@ use crate::{
     },
 };
 
+/// This resolver is focused on ensuring correctness in the semantic information collected from
+/// previous stages.
 pub struct ConstraintResolver<'a> {
     pub(crate) cfg: &'a ChrnConfig,
     pub(crate) interner: &'a Intern,
     pub(crate) compiler: &'a mut ScriptCompiler,
-    // We reward hack here
     pub(crate) err_vec: Vec<SourceDiagnostic>,
 }
 
@@ -58,6 +59,7 @@ impl<'a> ConstraintResolver<'a> {
         compiler: &'a mut ScriptCompiler,
     ) -> ConstraintResolver<'a> {
         debug_assert_eq!(ResolverState::CONSTRAINT, compiler.resolver_state);
+        compiler.resolver_state.advance();
         ConstraintResolver {
             cfg,
             interner,
@@ -66,7 +68,6 @@ impl<'a> ConstraintResolver<'a> {
         }
     }
 
-    //NOTE: This seemingly has everything from the ast that it would need.
     pub fn resolve(&mut self, env: &ResolverEnv) -> Result<(), Vec<SourceDiagnostic>> {
         // Everything skipped is not a factor in this compilation step.
         for sym_id in env.compilation_syms.iter().cloned() {
@@ -352,7 +353,7 @@ impl<'a> ConstraintResolver<'a> {
                     // given.
                     SchemaResult::SameTypeAsUserMismatch {
                         err_idx,
-                        err_boundaries: _,
+                        err_boundaries_opt: _,
                         user_boundaries_opt,
                     } => {
                         let core_msg =
@@ -379,17 +380,20 @@ impl<'a> ConstraintResolver<'a> {
                                 format!("Is type `{ty_name}`").into(),
                             )
                         };
-
-                        builder = if let Some(user_boundaries) = user_boundaries_opt {
-                            let lowest_bound = user_boundaries.to_fmt_lowest();
-                            builder.add_annotation(
-                                err_span,
-                                AnnotationKind::Primary,
-                                format!("Does not satisfy `{lowest_bound}`").into(),
-                            )
-                        } else {
-                            builder.add_annotation(err_span, AnnotationKind::Primary, None)
-                        };
+                        // This is a little odd since it directly points out a boundary, but the
+                        // type name of the config points out a concrete type.
+                        //
+                        // builder = if let Some(user_boundaries) = user_boundaries_opt {
+                        //     let lowest_bound = user_boundaries.to_fmt_lowest();
+                        //     builder.add_annotation(
+                        //         err_span,
+                        //         AnnotationKind::Primary,
+                        //         format!("Does not satisfy `{lowest_bound}`").into(),
+                        //     )
+                        // } else {
+                        //     builder.add_annotation(err_span, AnnotationKind::Primary, None)
+                        // };
+                        builder = builder.add_annotation(err_span, AnnotationKind::Primary, None);
 
                         builder
                     }
@@ -404,10 +408,11 @@ impl<'a> ConstraintResolver<'a> {
                             core_msg,
                             env.region.path_id,
                         )
+                        .add_annotation(sp_opt_name_id.span, AnnotationKind::Primary, None)
                         .add_annotation(
-                            sp_opt_name_id.span,
-                            AnnotationKind::Primary,
-                            None,
+                            cfg_name_span,
+                            AnnotationKind::Secondary,
+                            format!("Uses schema `{}`", schema.kind).into(),
                         )
                     }
                     SchemaResult::Valid => unreachable!(),

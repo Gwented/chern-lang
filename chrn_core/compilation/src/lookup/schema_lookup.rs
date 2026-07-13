@@ -37,7 +37,7 @@ pub enum SchemaResult {
     /// k
     SameTypeAsUserMismatch {
         err_idx: usize,
-        err_boundaries: Option<TypeBoundaryFlags>,
+        err_boundaries_opt: Option<TypeBoundaryFlags>,
         user_boundaries_opt: Option<TypeBoundaryFlags>,
     },
     /// Option given doesn't exist for particular schema kind
@@ -67,8 +67,7 @@ pub fn get_schema_from_type_id(
             | Type::Unknown => return None,
         }
     }
-
-    loop_abort!();
+    loop_abort!()
 }
 
 /// GIVE ME THE RIGHT SCHEMA question_mark
@@ -125,7 +124,7 @@ pub fn validate_opt(
                                 if !current.overlaps(user) {
                                     return SchemaResult::SameTypeAsUserMismatch {
                                         err_idx: i,
-                                        err_boundaries: current_boundaries_opt,
+                                        err_boundaries_opt: current_boundaries_opt,
                                         user_boundaries_opt,
                                     };
                                 }
@@ -145,30 +144,4 @@ pub fn validate_opt(
         // Nothing to actually check against value-wise since there are no boundaries
         None => SchemaResult::Valid,
     }
-
-    // match schema.kind {
-    //     ConfigSchemaKind::Struct => todo!(),
-    //     ConfigSchemaKind::Enum => {
-    //         match schema_opt.boundaries {
-    //             Some(required_boundaries) => {
-    //                 for val in opt_values {
-    //                     // Since valid or not is not descriptive, we should probably have this
-    //                     // as spanned as the other non-assuming result types
-    //                     let Some(current_boundaries) = val.kind().boundaries() else {
-    //                         return SchemaResult::Invalid;
-    //                     };
-    //
-    //                     if !current_boundaries.overlaps(required_boundaries) {
-    //                         return SchemaResult::Invalid;
-    //                     }
-    //                 }
-    //
-    //                 SchemaResult::Valid
-    //             }
-    //             // Nothing to actually check against value-wise since there are no boundaries
-    //             None => SchemaResult::Valid,
-    //         }
-    //     }
-    //     ConfigSchemaKind::Field => todo!(),
-    // }
 }

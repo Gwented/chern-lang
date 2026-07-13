@@ -26,9 +26,10 @@
 //! ```text
 //! did_open / did_change
 //!     └─ analyser::analyze_and_publish_task (async, debounced on change)
-//!         ├─ ConfigLoader::load_config   — lex config header, find @def/@end
-//!         ├─ DocumentCache::get_or_create    — tokenise script section
-//!         ├─ DocumentState::ensure_analyzed  — resolve modules, parse, name-resolve, type-check
+//!         ├─ ConfigLoader::load_config       — lex config header, find @def/@end
+//!         ├─ analyser::resolve_document_modules — tokenise and resolve imports outside locks
+//!         ├─ DocumentCache::insert_or_get    — cache the prepared lexical state
+//!         ├─ DocumentState::ensure_analyzed  — parse, name-resolve, type-check
 //!         └─ publish_if_current              — send diagnostics only when not superseded
 //! ```
 //!
@@ -319,7 +320,8 @@ mod tests {
             range_length: None,
             text: "chrn".to_string(),
         };
-        let result = apply_text_change(existing, &change).expect("incremental replace must succeed");
+        let result =
+            apply_text_change(existing, &change).expect("incremental replace must succeed");
         assert_eq!(result, "hello chrn");
     }
 
@@ -464,7 +466,10 @@ mod tests {
         ];
         let kept = deduplicate_range_indices(&ranges);
         // r0 is redundant because r1 is strictly contained inside it.
-        assert!(!kept.contains(&0), "outer range should be deduplicated away");
+        assert!(
+            !kept.contains(&0),
+            "outer range should be deduplicated away"
+        );
         assert!(kept.contains(&1), "inner range should be kept");
     }
 
@@ -511,7 +516,9 @@ mod tests {
 
         cache.get_or_create(uri, Arc::clone(&text), 0, None, 1);
 
-        let retrieved = cache.get_text(uri).expect("get_text must return text for cached URI");
+        let retrieved = cache
+            .get_text(uri)
+            .expect("get_text must return text for cached URI");
         assert_eq!(*retrieved, *text);
         assert!(cache.get_text("file:///missing.chrn").is_none());
     }

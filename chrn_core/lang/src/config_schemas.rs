@@ -16,8 +16,9 @@ impl ConfigSchema {
         ConfigSchema { kind, opt_schema }
     }
     //TODO: Change to O(1) with interned id -> idx mapppppppppppppppppppppppppppppping
+    //Huh
 
-    /// Attempts to find option from the given identifier, then return it's `OptionSchema`
+    /// Attempts to find option from the given identifier and returns it's `OptionSchema`
     pub fn get_opt(&self, target_name_id: InternedId) -> Option<&OptionSchema> {
         self.opt_schema
             .iter()

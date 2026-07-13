@@ -197,7 +197,8 @@ pub fn deduplicate_range_indices(ranges: &[Range]) -> Vec<usize> {
             let ends_before_or_at = r2.end.line < r1.end.line
                 || (r2.end.line == r1.end.line && r2.end.character <= r1.end.character);
 
-            if starts_after_or_at && ends_before_or_at
+            if starts_after_or_at
+                && ends_before_or_at
                 && (r1.start != r2.start || r1.end != r2.end || j < i)
             {
                 is_redundant = true;

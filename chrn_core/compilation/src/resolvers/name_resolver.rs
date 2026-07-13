@@ -1,36 +1,33 @@
 use chrn_utils::{
     chrn_config::ChrnConfig,
-    id_types::{AstId, ConfigRootId, ExprId, ScopeId, SymbolId, TypeId, ValueId, VariableId},
+    id_types::{AstId, ConfigRootId, ScopeId, SymbolId, TypeId, VariableId},
     intern::Intern,
     source_map::source_diagnostic::{
         DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind,
     },
 };
-use lang::values::ValueInfo;
 
 use crate::{
-    lookup::scopes::{AssociatedScopeKind, Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
+    lookup::scopes::{Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
     parser::ast::ast_concepts::{
-        AbstractAlias, AbstractConfig, AbstractEnum, AbstractParam, AbstractStruct,
-        AbstractTypeDef, AbstractVar, Item,
+        AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
+        Item,
     },
     resolvers::{resolver_env::RegistrationEnv, resolver_state::ResolverState},
-    script_compiler::{self, ScriptCompiler},
-    semantic::{
-        hir::{
-            hir_concepts::{
-                AliasDef, ConfigDefRoot, EnumDef, StructDef, Symbol, SymbolKind, SymbolOrigin,
-                Type, TypeDef, TypeInfo, VarDef, VariableState,
-            },
-            hir_exprs::{ExprHir, Param, ResolvedExpr},
-        },
-        preset_reporter,
-        resolve::{self, TypeExprResult},
+    script_compiler::ScriptCompiler,
+    semantic::hir::hir_concepts::{
+        AliasDef, ConfigDefRoot, EnumDef, StructDef, Symbol, SymbolKind, SymbolOrigin, Type,
+        TypeDef, TypeInfo, VarDef, VariableState,
     },
 };
 
+/// Registers symbols for every front-facing ast item. Members are not accounted for and should
+/// be handled by `MemberResolver`.
+///
+/// This resolver at most reports symbols with the same identifiers in the same scope, but still
+/// registers them.
 pub struct NamespaceResolver<'a> {
-    settings: &'a ChrnConfig,
+    cfg: &'a ChrnConfig,
     interner: &'a Intern,
     compiler: &'a mut ScriptCompiler,
     err_vec: Vec<SourceDiagnostic>,
@@ -40,7 +37,7 @@ pub struct NamespaceResolver<'a> {
 impl NamespaceResolver<'_> {
     /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new<'a>(
-        settings: &'a ChrnConfig,
+        cfg: &'a ChrnConfig,
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,
     ) -> NamespaceResolver<'a> {
@@ -53,7 +50,7 @@ impl NamespaceResolver<'_> {
         compiler.resolver_state.advance();
 
         NamespaceResolver {
-            settings,
+            cfg,
             interner,
             compiler,
             err_vec: Vec::new(),

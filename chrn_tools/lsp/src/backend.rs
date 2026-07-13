@@ -54,6 +54,7 @@ use tower_lsp::{Client, LanguageServer, jsonrpc};
 use chrn_utils::id_types::ModuleId;
 
 use crate::analyser::analyze_and_publish_task;
+use crate::analyser::resolve_document_modules;
 use crate::state::DocumentCache;
 use crate::state::DocumentState;
 use crate::text::apply_text_change;
@@ -217,18 +218,32 @@ impl Backend {
         // diagnostics "stop working" after the first synchronous request
         // (hover, goto, etc.) on a file.
         let my_version = self.bump_version(&uri_str);
-        let state_arc = self.doc_cache.get_or_create(
-            &uri_str,
+
+        // Resolve imported modules outside the DocumentState write lock.  This is
+        // the same pre-analysis step used by the async analysis task and prevents
+        // the deadlock where `ensure_analyzed` held the per-document lock while
+        // calling `DocumentCache::get_text`.
+        let prepared = resolve_document_modules(
+            uri,
             Arc::clone(&text),
             region.script_start,
             region.serial_start,
+            &chrn_cfg,
+            &self.doc_cache,
             my_version,
         );
+        let imported_uris = prepared.resolution.imported_uris.clone();
 
-        let imported_uris = {
+        let state_arc = self.doc_cache.insert_or_get(
+            &uri_str,
+            Arc::clone(&text),
+            prepared.state,
+        );
+
+        {
             let mut state = state_arc.write();
-            state.ensure_analyzed(&self.doc_cache, &path_buf)
-        };
+            state.ensure_analyzed(prepared.resolution);
+        }
 
         if !imported_uris.is_empty() {
             self.doc_cache
@@ -307,9 +322,7 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
             Type::Alias(_) => CompletionItemKind::FUNCTION,
             Type::Func(func_def) if func_def.is_callable => CompletionItemKind::FUNCTION,
             Type::Func(_) => CompletionItemKind::CONSTANT,
-            Type::Unknown | Type::Boundaries(_) | Type::Deferred(_) => {
-                CompletionItemKind::VARIABLE
-            }
+            Type::Unknown | Type::Boundaries(_) | Type::Deferred(_) => CompletionItemKind::VARIABLE,
         },
         SymbolKind::Variable(var_id) => {
             let var = &compiler.variables[var_id];
@@ -330,7 +343,7 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
             }
         }
         SymbolKind::Module(_) => CompletionItemKind::MODULE,
-        SymbolKind::Config(_config_id) => todo!(),
+        SymbolKind::Config(_) => CompletionItemKind::CLASS,
         SymbolKind::Directive(_) => CompletionItemKind::KEYWORD,
     }
 }
@@ -391,14 +404,19 @@ fn classify_id_token(
                         SymbolKind::Module(_) => {
                             return Some(SemanticTokenType::Variable.as_u32());
                         }
-                        SymbolKind::Config(_cfg_id) => todo!(),
+                        SymbolKind::Config(_) => {
+                            return Some(SemanticTokenType::Class.as_u32());
+                        }
                         SymbolKind::Directive(_) => {
                             return Some(SemanticTokenType::Regexp.as_u32());
                         }
                     }
                 }
             }
-            SemanticEntity::Field { .. } | SemanticEntity::Variant { .. } => {
+            SemanticEntity::Field { .. }
+            | SemanticEntity::Variant { .. }
+            | SemanticEntity::ConfigMember { .. }
+            | SemanticEntity::ConfigOption { .. } => {
                 return Some(SemanticTokenType::Property.as_u32());
             }
             SemanticEntity::Module(_) => return Some(SemanticTokenType::Keyword.as_u32()),
