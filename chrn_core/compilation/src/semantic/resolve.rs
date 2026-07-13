@@ -1,6 +1,7 @@
 /// Module intended for storing free functions that perform general resolution tasks
 use chrn_utils::{
     id_types::{InternedId, ModuleId, SpannedContainer, SymbolId, TypeId},
+    intern,
     source_map::source_span::SourceSpan,
 };
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
@@ -16,7 +17,9 @@ use crate::{
     },
     resolvers::resolver_env::ResolverEnv,
     script_compiler::ScriptCompiler,
-    semantic::hir::hir_concepts::{SymbolKind, SymbolOrigin, Type, TypeInfo},
+    semantic::hir::hir_concepts::{
+        BuiltinTypeInfo, Symbol, SymbolKind, SymbolOrigin, Type, TypeInfo,
+    },
 };
 
 //TODO: As of right now this is basically entirely hinging off of being usable for reporting, which
@@ -206,19 +209,45 @@ pub fn resolve_type_expr(
                             TypeExprResult::Type(tid) => tid,
                             other => return other,
                         };
+                        //TEST:
 
-                        let ty = if kind == BuiltinTypeKind::List {
-                            Type::BuiltinType(BuiltinType::List(inner))
+                        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+                        let type_id = TypeId::new(compiler.types.len() as u32);
+
+                        let (interned_id, ty) = if kind == BuiltinTypeKind::List {
+                            let ty = Type::BuiltinTypeInfo(BuiltinTypeInfo::new(
+                                sym_id,
+                                BuiltinType::List(inner),
+                            ));
+                            (InternedId::new(intern::INTERNED_LIST), ty)
                         } else {
-                            Type::BuiltinType(BuiltinType::Set(inner))
+                            let ty = Type::BuiltinTypeInfo(BuiltinTypeInfo::new(
+                                sym_id,
+                                BuiltinType::Set(inner),
+                            ));
+                            (InternedId::new(intern::INTERNED_SET), ty)
                         };
 
-                        let type_id = TypeId::new(compiler.types.len() as u32);
+                        //WARN: Definitely not sure about this setup
+                        let sym = Symbol::new(
+                            interned_id,
+                            sym_id,
+                            None,
+                            SymbolOrigin::Module(env.current_mod),
+                            true,
+                            None,
+                            ScopeType::Compiler,
+                            SymbolKind::Type(type_id),
+                        );
+
+                        //WARN: Still not sure about this
                         let ty_info = TypeInfo::new(ty, compiler.intrinsic_registry.core_mod_id);
                         compiler.types.push(ty_info);
+                        compiler.symbols.push(sym);
 
                         return TypeExprResult::Type(type_id);
                     }
+                    //TEST: TEST:
                     BuiltinTypeKind::Tuple => {
                         let mut elements: Vec<TypeId> = Vec::new();
 
@@ -236,10 +265,29 @@ pub fn resolve_type_expr(
                             }
                         }
 
+                        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
                         let type_id = TypeId::new(compiler.types.len() as u32);
-                        let tuple = Type::BuiltinType(BuiltinType::Tuple(elements));
+
+                        //WARN: Definitely not sure about this setup
+                        let sym = Symbol::new(
+                            InternedId::new(intern::INTERNED_TUPLE),
+                            sym_id,
+                            None,
+                            SymbolOrigin::Module(env.current_mod),
+                            true,
+                            None,
+                            ScopeType::Compiler,
+                            SymbolKind::Type(type_id),
+                        );
+
+                        let tuple = Type::BuiltinTypeInfo(BuiltinTypeInfo::new(
+                            sym_id,
+                            BuiltinType::Tuple(elements),
+                        ));
+
                         let ty_info = TypeInfo::new(tuple, compiler.intrinsic_registry.core_mod_id);
                         compiler.types.push(ty_info);
+                        compiler.symbols.push(sym);
 
                         return TypeExprResult::Type(type_id);
                     }
@@ -276,12 +324,31 @@ pub fn resolve_type_expr(
                             other => return other,
                         };
 
-                        let map = Type::BuiltinType(BuiltinType::Map(key, val));
-                        let map_id = TypeId::new(compiler.types.len() as u32);
+                        //TEST: TEST:
+                        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+                        let type_id = TypeId::new(compiler.types.len() as u32);
+
+                        let sym = Symbol::new(
+                            InternedId::new(intern::INTERNED_MAP),
+                            sym_id,
+                            None,
+                            SymbolOrigin::Module(env.current_mod),
+                            true,
+                            None,
+                            ScopeType::Compiler,
+                            SymbolKind::Type(type_id),
+                        );
+
+                        let map = Type::BuiltinTypeInfo(BuiltinTypeInfo::new(
+                            sym_id,
+                            BuiltinType::Map(key, val),
+                        ));
+
                         let ty_info = TypeInfo::new(map, compiler.intrinsic_registry.core_mod_id);
                         compiler.types.push(ty_info);
+                        compiler.symbols.push(sym);
 
-                        return TypeExprResult::Type(map_id);
+                        return TypeExprResult::Type(type_id);
                     }
                     _ => (),
                 },

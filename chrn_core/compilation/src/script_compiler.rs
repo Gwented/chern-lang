@@ -5,7 +5,7 @@ pub mod script_compiler_store;
 pub mod script_compiler_summary;
 use chrn_utils::{
     arena::Arena,
-    budget::mem_cost::{self, MemoryCost},
+    budget::mem_cost::MemoryCost,
     id_types::{
         ConfigRootId, DirectiveId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SymbolId,
         TypeId, ValueId, VariableId,
@@ -26,10 +26,10 @@ use crate::{
     resolvers::resolver_state::ResolverState,
     semantic::hir::{
         hir_concepts::{
-            AliasDef, ConfigDefMember, ConfigDefRoot, EnumDef, FieldRepre, FuncDef, FuncKind,
-            MemberSymbolKind, OptionAssignmentMember, OptionAssignmentRoot, StructDef, Symbol,
-            SymbolKind, SymbolOrigin, Table, Type, TypeDef, TypeInfo, VarDef, VariableState,
-            VariantRepre,
+            AliasDef, BuiltinTypeInfo, ConfigDefMember, ConfigDefRoot, EnumDef, FieldRepre,
+            FuncDef, FuncKind, MemberSymbolKind, OptionAssignmentMember, OptionAssignmentRoot,
+            StructDef, Symbol, SymbolKind, SymbolOrigin, Table, Type, TypeDef, TypeInfo, VarDef,
+            VariableState, VariantRepre,
         },
         hir_exprs::ResolvedExpr,
     },
@@ -604,15 +604,16 @@ impl ScriptCompiler {
                 Type::Enum(enum_def) => return Some(enum_def.sym_id),
                 Type::Func(func_def) => return Some(func_def.sym_id),
                 Type::Alias(alias_def) => return Some(alias_def.sym_id),
-                Type::TypeDef(type_def) => Some(type_def.sym_id),
+                Type::TypeDef(type_def) => return Some(type_def.sym_id),
                 Type::Deferred(inner) => {
                     type_id = *inner;
                     continue;
                 }
-                Type::Boundaries(_) | Type::Unknown | Type::BuiltinType(_) => {
+                Type::BuiltinTypeInfo(info) => return Some(info.sym_id),
+                Type::Boundaries(_) | Type::Unknown => {
                     return None;
                 }
-            };
+            }
         }
         loop_abort!()
     }
@@ -656,7 +657,7 @@ impl ScriptCompiler {
         // TODO: Ok
         for _ in 0..chrn_utils::MAX_LOOPS {
             match &self.types[type_id].ty {
-                Type::BuiltinType(builtin_type) => return None,
+                Type::BuiltinTypeInfo(builtin_type) => return None,
                 Type::Struct(struct_def) => return Some(struct_def.name_span),
                 Type::Enum(enum_def) => return Some(enum_def.name_span),
                 // Functions can't be declared
@@ -672,12 +673,33 @@ impl ScriptCompiler {
         loop_abort!()
     }
 
+    /// If the given `TypeId` is a `BuiltinType` returns `true`, `false` otherwise
+    pub(super) fn check_builtin(&self, mut type_id: TypeId) -> bool {
+        for _ in 0..chrn_utils::MAX_LOOPS {
+            match &self.types[type_id].ty {
+                Type::BuiltinTypeInfo(_) => return true,
+                Type::Struct(_)
+                | Type::Enum(_)
+                | Type::Func(_)
+                | Type::Alias(_)
+                | Type::TypeDef(_)
+                | Type::Boundaries(_)
+                | Type::Unknown => return false,
+                // Can builtins be deferred to?
+                Type::Deferred(inner) => type_id = *inner,
+            }
+        }
+        loop_abort!()
+    }
+
     // TODO: Fix type metadata
     /// Returns `None` if type is `Unknown`, otherwise returns `Some`
     pub(super) fn get_name_id_from_type_id(&self, mut type_id: TypeId) -> Option<InternedId> {
         for _ in 0..chrn_utils::MAX_LOOPS {
             match &self.types[type_id].ty {
-                Type::BuiltinType(builtin_type) => return Some(builtin_type.kind().name_id()),
+                Type::BuiltinTypeInfo(builtin_type) => {
+                    return Some(builtin_type.ty.kind().name_id());
+                }
                 Type::Struct(struct_def) => return Some(self.symbols[struct_def.sym_id].name_id),
                 Type::Enum(enum_def) => return Some(self.symbols[enum_def.sym_id].name_id),
                 // Functions can't be declared
@@ -1369,13 +1391,12 @@ impl ScriptCompiler {
         // -- Concrete types --
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::I8),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_I8);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::I8)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1391,13 +1412,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::U8),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_U8);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::U8)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1413,13 +1433,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::I16),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_I16);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::I16)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1434,13 +1453,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::U16),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_U16);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::U16)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1455,13 +1473,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::F16),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_F16);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::F16)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1476,13 +1493,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::I32),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_I32);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::I32)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1497,13 +1513,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::U32),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_U32);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::U32)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1518,13 +1533,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::F32),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_F32);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::F32)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1539,13 +1553,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::I64),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_I64);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::I64)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1560,13 +1573,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::U64),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_U64);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::U64)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1581,13 +1593,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::F64),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_F64);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::F64)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1602,13 +1613,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::I128),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_I128);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::I128)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1623,13 +1633,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::U128),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_U128);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::U128)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1644,13 +1653,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::F128),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_F128);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::F128)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1665,13 +1673,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::Sized),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_SIZED);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::Sized)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1686,13 +1693,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::Unsized),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_UNSIZED);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::Unsized)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1707,13 +1713,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::Str),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_STR);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::Str)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1728,13 +1733,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::Char),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_CHAR);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::Char)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1749,13 +1753,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::Nil),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_NIL);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::Nil)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1770,13 +1773,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::Bool),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_BOOL);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::Bool)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1791,13 +1793,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::BigInt),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_BIGINT);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::BigInt)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1812,13 +1813,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::BigFloat),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_BIGFLOAT);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::BigFloat)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,
@@ -1833,13 +1833,12 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
 
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinType(BuiltinType::Runtime),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_RUNTIME);
+        compiler.types.push(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::Runtime)),
+            core_mod_id,
+        ));
         let symbol = Symbol::new(
             interned_id,
             sym_id,

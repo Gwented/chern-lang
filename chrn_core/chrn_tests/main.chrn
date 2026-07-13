@@ -66,7 +66,7 @@ var->
             // p: defs::Person
         }
 
-        enum State1 {stable: i16, state2: State2}
+        enum State1 {stable: List<i32>, state2: State2}
         enum State2 {Medium: i32, state3: State3}
         enum State3 {Low, state1: State1}
         enum StateStable {stable}
@@ -84,7 +84,7 @@ var->
         // pre-tense or not
         /*State1 {
             // Maybe just use colons
-            .identifiers = [2, 3]
+            identifiers = [2, 3]
             state2 { // Should allow "state2: State2"?
                 state3 {
                     state1 {
@@ -96,16 +96,19 @@ var->
         // x {}
 
         State1 {
+            // Reaches an expect `type_resolver.rs` ln 876 due to likely type spanning issues
+            // which requires fixing the fact that builtins do not store spanning with them, slash
+            // something else!
             stable {
             cases = ["9", "4"],
             idents = ["snake_case"]
-            default_va = 2,
+            default_val = 2,
                 /*out {
                     // p {}
 
                 }*/
             }
-            // .extra = def::e#2
+            // extra = def::e#2
         }
 @end
 

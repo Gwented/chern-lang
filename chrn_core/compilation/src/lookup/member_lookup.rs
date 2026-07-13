@@ -36,7 +36,7 @@ pub fn collect_all_members(
 ) -> Vec<MemberId> {
     for _ in 0..chrn_utils::MAX_LOOPS {
         match &compiler.types[current_type_id].ty {
-            Type::BuiltinType(builtin_type) => todo!(),
+            Type::BuiltinTypeInfo(builtin_type) => todo!(),
             Type::Struct(struct_def) => return struct_def.fields.clone(),
             Type::Enum(enum_def) => return enum_def.variants.clone(),
             // Count members as params or maybe attach a variant?
@@ -69,7 +69,7 @@ pub fn lookup_member(
     // Should probably have own `IncompatibleMemberLookup` result
     for _ in 0..chrn_utils::MAX_LOOPS {
         match &compiler.types[current_type_id].ty {
-            Type::BuiltinType(_) => {
+            Type::BuiltinTypeInfo(_) => {
                 // Members/Methods do not exist for types yet
                 return MemberLookupResult::ImpossibleTypeMemberAccess(current_type_id);
             }

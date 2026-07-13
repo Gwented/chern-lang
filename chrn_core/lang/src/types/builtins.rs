@@ -14,7 +14,6 @@ pub static BUILTIN_TYPE_ARRAY: [&str; 27] = [
     "Set", "Tuple", "Runtime",
 ];
 
-//TEST: Serial and script interact with this directly so
 #[derive(Debug)]
 pub enum BuiltinType {
     I8,

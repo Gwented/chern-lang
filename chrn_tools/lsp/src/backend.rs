@@ -234,11 +234,9 @@ impl Backend {
         );
         let imported_uris = prepared.resolution.imported_uris.clone();
 
-        let state_arc = self.doc_cache.insert_or_get(
-            &uri_str,
-            Arc::clone(&text),
-            prepared.state,
-        );
+        let state_arc = self
+            .doc_cache
+            .insert_or_get(&uri_str, Arc::clone(&text), prepared.state);
 
         {
             let mut state = state_arc.write();
@@ -316,7 +314,7 @@ impl Backend {
 fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> CompletionItemKind {
     match sym.kind {
         SymbolKind::Type(type_id) => match &compiler.types[type_id].ty {
-            Type::Struct(_) | Type::Enum(_) | Type::TypeDef(_) | Type::BuiltinType(_) => {
+            Type::Struct(_) | Type::Enum(_) | Type::TypeDef(_) | Type::BuiltinTypeInfo(_) => {
                 CompletionItemKind::STRUCT
             }
             Type::Alias(_) => CompletionItemKind::FUNCTION,
@@ -331,7 +329,7 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
             };
             let type_id = compiler.values[val_id].type_id;
             match &compiler.types[type_id].ty {
-                Type::BuiltinType(_) | Type::Struct(_) | Type::TypeDef(_) | Type::Enum(_) => {
+                Type::BuiltinTypeInfo(_) | Type::Struct(_) | Type::TypeDef(_) | Type::Enum(_) => {
                     CompletionItemKind::VARIABLE
                 }
                 Type::Alias(_) => CompletionItemKind::FUNCTION,
@@ -375,7 +373,7 @@ fn classify_id_token(
                         SymbolKind::Type(tid) => {
                             let ty = &compiler.types[tid].ty;
                             match ty {
-                                Type::BuiltinType(_)
+                                Type::BuiltinTypeInfo(_)
                                 | Type::TypeDef(_)
                                 | Type::Struct(_)
                                 | Type::Enum(_) => {
@@ -861,7 +859,6 @@ impl LanguageServer for Backend {
 
                 let token_type: u32 = match st.tok {
                     ScriptToken::Def | ScriptToken::End => SemanticTokenType::Macro.as_u32(),
-                    ScriptToken::Keyword(kw) if kw.is_sect() => SemanticTokenType::Class.as_u32(),
                     ScriptToken::Keyword(_) => SemanticTokenType::Keyword.as_u32(),
                     ScriptToken::Str(_) | ScriptToken::Char(_) => {
                         SemanticTokenType::String.as_u32()

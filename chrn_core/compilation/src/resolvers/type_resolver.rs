@@ -96,7 +96,7 @@ impl<'res> TypeResolver<'res> {
                     | Type::Func(_)
                     | Type::Boundaries(_)
                     | Type::Unknown
-                    | Type::BuiltinType(_) => {
+                    | Type::BuiltinTypeInfo(_) => {
                         unreachable!()
                     }
                 },
@@ -910,7 +910,12 @@ impl<'res> TypeResolver<'res> {
                 return current_cfg_member_id;
             }
 
-            cfg_dfs.push((parent_type_id, parent_abs_cfg.name_span));
+            // Only pushing types that are not built-in
+            //
+            // This is the only time this Vec is mutated
+            if !self.compiler.check_builtin(parent_type_id) {
+                cfg_dfs.push((parent_type_id, parent_abs_cfg.name_span));
+            }
 
             for abs_cfg_member in &parent_abs_cfg.cfg_members {
                 seen_cfg_len += 1;
@@ -2288,7 +2293,7 @@ impl<'res> TypeResolver<'res> {
                                         Vec::new(),
                                     )
                                 }
-                                Type::BuiltinType(_)
+                                Type::BuiltinTypeInfo(_)
                                 | Type::Struct(_)
                                 | Type::Enum(_)
                                 | Type::TypeDef(_)

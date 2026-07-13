@@ -32,15 +32,21 @@ pub enum SchemaResult {
         err_idx: usize,
         required_boundaries: TypeBoundaryFlags,
     },
+    /// An example of this is an option like `default_val` being used for something like an
+    /// enum variant "State { state }" where state doesn't actually have a type attached.
+    /// This would mean that `state` fundamentally has no boundaries so any option that may
+    /// require the config it's apart of to fulfill some form of boundary would be impossible,
+    /// since `state` cannot support boundaries.
+    CannotSupportBoundaries,
     // A little too specific right now. Likely need to collapse this just like the arg constraints
     // were where they have their to_string so that all of these cases are RO#$I@#O
-    /// k
+    /// Expected each value to be of the same as the config having it's properties defined.
     SameTypeAsUserMismatch {
         err_idx: usize,
         err_boundaries_opt: Option<TypeBoundaryFlags>,
-        user_boundaries_opt: Option<TypeBoundaryFlags>,
+        user_boundaries: TypeBoundaryFlags,
     },
-    /// Option given doesn't exist for particular schema kind
+    /// Identifier given doesn't exist for particular schema kind.
     UnknownOptionName,
 }
 
@@ -61,7 +67,7 @@ pub fn get_schema_from_type_id(
             Type::Deferred(type_id) => current_type_id = *type_id,
             Type::Alias(_)
             | Type::Boundaries(_)
-            | Type::BuiltinType(_)
+            | Type::BuiltinTypeInfo(_)
             | Type::TypeDef(_)
             | Type::Func(_)
             | Type::Unknown => return None,
@@ -72,8 +78,10 @@ pub fn get_schema_from_type_id(
 
 /// GIVE ME THE RIGHT SCHEMA question_mark
 pub fn validate_opt(
-    compiler: &ScriptCompiler,
     schema: &ConfigSchema,
+    // User as in the config member/root's boundaries not an actual user
+    //
+    // This is more like, cfg_ty_boundaries
     user_boundaries_opt: Option<TypeBoundaryFlags>,
     // Given like this so it doesn't matter if it's a root or member option
     opt_name_id: InternedId,
@@ -125,12 +133,27 @@ pub fn validate_opt(
                                     return SchemaResult::SameTypeAsUserMismatch {
                                         err_idx: i,
                                         err_boundaries_opt: current_boundaries_opt,
-                                        user_boundaries_opt,
+                                        user_boundaries: user,
                                     };
                                 }
                             }
-                            (Some(_), None) => todo!(),
-                            (None, Some(_)) => todo!(),
+                            // None from user boundaries could mean something like an enum with no
+                            // type attached was used, where the user boundaries now reflect a None
+                            // boundary and is trying to be matched against say, numbers. Should
+                            // this get it's own variant since it's more so, this thing CANNOT
+                            // fulfill any boundaries and you gave it a value with boundaries.
+                            (Some(_), None) => {
+                                return SchemaResult::CannotSupportBoundaries;
+                            }
+                            // None from current means it blatantly isn't capable of fulfilling any
+                            // user boundaries, I believe.
+                            (None, Some(user)) => {
+                                return SchemaResult::SameTypeAsUserMismatch {
+                                    err_idx: i,
+                                    err_boundaries_opt: current_boundaries_opt,
+                                    user_boundaries: user,
+                                };
+                            }
                             // This isn't BAD it's just not something that exists right now since
                             // the schema constraint itself wouldn't exist if it didn't have boundaries
                             (None, None) => unreachable!(),

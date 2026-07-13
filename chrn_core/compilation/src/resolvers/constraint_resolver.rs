@@ -86,7 +86,7 @@ impl<'a> ConstraintResolver<'a> {
                     | Type::Func(_)
                     | Type::Boundaries(_)
                     | Type::Unknown
-                    | Type::BuiltinType(_) => {
+                    | Type::BuiltinTypeInfo(_) => {
                         unreachable!()
                     }
                 },
@@ -279,13 +279,8 @@ impl<'a> ConstraintResolver<'a> {
         // 2. Check for the identifier of the option to ensure it aligns with something in the schema
         // 3. Check boundaries
         // 4. unwrap()
-        match schema_lookup::validate_opt(
-            self.compiler,
-            schema,
-            user_boundaries_opt,
-            sp_opt_name_id.inner,
-            values,
-        ) {
+        match schema_lookup::validate_opt(schema, user_boundaries_opt, sp_opt_name_id.inner, values)
+        {
             // DO NOT. USE. THE UNREACHABLE. DO NOT DO IT.
             SchemaResult::Valid => Ok(()),
             res => {
@@ -351,25 +346,39 @@ impl<'a> ConstraintResolver<'a> {
                     // The current option's constraint requires that the type linked to the actual
                     // config the currnet option is attached to must align with all the values
                     // given.
+
+                    // This is encoding two different error routes, should probably do the internal
+                    // split with Some, None return eaoifjeiofjoiaj
+                    // This thing above
+                    // TODO: Return type too?
                     SchemaResult::SameTypeAsUserMismatch {
                         err_idx,
-                        err_boundaries_opt: _,
-                        user_boundaries_opt,
+                        err_boundaries_opt,
+                        user_boundaries,
                     } => {
                         let core_msg =
                             format!("Index `{err_idx}` does not have the same type as it's config");
 
                         let err_expr_id = array_expr.inputs[err_idx];
                         let err_span = self.compiler.exprs[err_expr_id].span;
+                        let lowest_bound = user_boundaries.to_fmt_lowest();
+
+                        let next_ann_msg = if let Some(inner) = err_boundaries_opt {
+                            let lowest_bound = inner.to_fmt_lowest();
+                            format!("Is `{lowest_bound}`")
+                        } else {
+                            "Has no boundaries".to_string()
+                        };
+
                         let mut builder = SourceDiagnostic::builder(
                             DiagnosticLevel::Error,
                             core_msg,
                             env.region.path_id,
                         )
                         .add_annotation(
-                            sp_opt_name_id.span,
-                            AnnotationKind::Secondary,
-                            "Required by this option".to_string().into(),
+                            err_span,
+                            AnnotationKind::Primary,
+                            next_ann_msg.into(),
                         );
 
                         if let Some(ty_name_id) = cfg_ty_name_id {
@@ -380,22 +389,41 @@ impl<'a> ConstraintResolver<'a> {
                                 format!("Is type `{ty_name}`").into(),
                             )
                         };
+                        builder
+
                         // This is a little odd since it directly points out a boundary, but the
                         // type name of the config points out a concrete type.
                         //
-                        // builder = if let Some(user_boundaries) = user_boundaries_opt {
-                        //     let lowest_bound = user_boundaries.to_fmt_lowest();
-                        //     builder.add_annotation(
-                        //         err_span,
-                        //         AnnotationKind::Primary,
-                        //         format!("Does not satisfy `{lowest_bound}`").into(),
-                        //     )
-                        // } else {
-                        //     builder.add_annotation(err_span, AnnotationKind::Primary, None)
-                        // };
-                        builder = builder.add_annotation(err_span, AnnotationKind::Primary, None);
+                        // builder = builder.add_annotation(err_span, AnnotationKind::Primary, None);
+                    }
+                    SchemaResult::CannotSupportBoundaries => {
+                        let opt_name = self.interner.search(sp_opt_name_id.inner);
+                        let core_msg = format!(
+                            "Option `{opt_name}` requires that the config it is attached to has boundaries"
+                        );
 
-                        builder
+                        // let err_expr_id = array_expr.inputs[err_idx];
+                        // let err_span = self.compiler.exprs[err_expr_id].span;
+                        SourceDiagnostic::builder(
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            env.region.path_id,
+                        )
+                        .add_annotation(
+                            cfg_name_span,
+                            AnnotationKind::Primary,
+                            "Has no type so cannot hold boundaries".to_string().into(),
+                        )
+                        .add_annotation(
+                            sp_opt_name_id.span,
+                            AnnotationKind::Secondary,
+                            "Required by this option".to_string().into(),
+                        )
+                        // .add_annotation(
+                        //     err_span,
+                        //     AnnotationKind::Secondary,
+                        //     format!("Enforces `{}`").into(),
+                        // )
                     }
                     SchemaResult::UnknownOptionName => {
                         let opt_name = self.interner.search(sp_opt_name_id.inner);
@@ -1319,7 +1347,7 @@ impl<'a> ConstraintResolver<'a> {
 
                     let ty = &self.compiler.types[field.type_id].ty;
                     match ty {
-                        Type::BuiltinType(_) => (),
+                        Type::BuiltinTypeInfo(_) => (),
                         _ => visited.push(field.type_id),
                     }
 
@@ -1362,7 +1390,7 @@ impl<'a> ConstraintResolver<'a> {
 
                         let ty = &self.compiler.types[inner].ty;
                         match ty {
-                            Type::BuiltinType(_) => (),
+                            Type::BuiltinTypeInfo(_) => (),
                             _ => visited.push(inner),
                         }
 
@@ -1379,8 +1407,8 @@ impl<'a> ConstraintResolver<'a> {
 
                 Ok(())
             }
-            Type::BuiltinType(builtin_type) => {
-                match builtin_type {
+            Type::BuiltinTypeInfo(builtin_info) => {
+                match &builtin_info.ty {
                     BuiltinType::List(type_id) | BuiltinType::Set(type_id) => self.check_directive(
                         *type_id,
                         parent_span,
@@ -1426,7 +1454,7 @@ impl<'a> ConstraintResolver<'a> {
 
                             let ty = &self.compiler.types[*element].ty;
                             match ty {
-                                Type::BuiltinType(_) => (),
+                                Type::BuiltinTypeInfo(_) => (),
                                 _ => visited.push(*element),
                             }
 

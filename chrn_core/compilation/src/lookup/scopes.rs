@@ -470,7 +470,7 @@ fn collect_inner_symbols<'a>(
         Type::Func(_)
         | Type::TypeDef(_)
         | Type::Boundaries(_)
-        | Type::BuiltinType(_)
+        | Type::BuiltinTypeInfo(_)
         | Type::Unknown => (),
     }
 

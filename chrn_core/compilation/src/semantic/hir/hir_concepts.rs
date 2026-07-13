@@ -143,7 +143,7 @@ impl TypeInfo {
 //NOTE: Should be in lang?
 #[derive(Debug)]
 pub enum Type {
-    BuiltinType(BuiltinType),
+    BuiltinTypeInfo(BuiltinTypeInfo),
     Struct(StructDef),
     Enum(EnumDef),
     Func(FuncDef),
@@ -156,12 +156,27 @@ pub enum Type {
     Unknown,
 }
 
+/// Required metadata for compiler built-in types
+#[derive(Debug)]
+pub struct BuiltinTypeInfo {
+    pub sym_id: SymbolId,
+    pub ty: BuiltinType,
+}
+
+impl BuiltinTypeInfo {
+    pub fn new(sym_id: SymbolId, ty: BuiltinType) -> BuiltinTypeInfo {
+        BuiltinTypeInfo { sym_id, ty }
+    }
+}
+
 impl Type {
     //TEST: Usually uses associated functions
     pub fn kind(compiler: &ScriptCompiler, mut type_id: TypeId) -> TypeKind {
         for _ in 0..chrn_utils::MAX_LOOPS {
             match &compiler.types[type_id].ty {
-                Type::BuiltinType(builtin_ty) => return TypeKind::BuiltinType(builtin_ty.kind()),
+                Type::BuiltinTypeInfo(builtin_ty) => {
+                    return TypeKind::BuiltinType(builtin_ty.ty.kind());
+                }
                 Type::Struct(_) => return TypeKind::Struct,
                 Type::Enum(_) => return TypeKind::Enum,
                 Type::Func(_) => return TypeKind::Func,
@@ -181,7 +196,9 @@ impl Type {
     pub fn boundaries(compiler: &ScriptCompiler, mut type_id: TypeId) -> Option<TypeBoundaryFlags> {
         for _ in 0..chrn_utils::MAX_LOOPS {
             match &compiler.types[type_id].ty {
-                Type::BuiltinType(builtin_ty) => return Some(builtin_ty.kind().boundaries()),
+                Type::BuiltinTypeInfo(builtin_ty) => {
+                    return Some(builtin_ty.ty.kind().boundaries());
+                }
                 // This is the only issue since it's not a single Formatted.
                 // The next obvious decision should be to do, "Formatted::NumericIntegerRanged", etc.,
                 Type::Struct(_)
@@ -204,7 +221,7 @@ impl Type {
             // Could be an Option return where if is_none() look_abort! but probably doesn't matter.
             // At all.
             match &compiler.types[type_id].ty {
-                Type::BuiltinType(builtin_type) => return builtin_type.kind().to_fmt(),
+                Type::BuiltinTypeInfo(builtin_type) => return builtin_type.ty.kind().to_fmt(),
                 Type::Struct(struct_def) => return struct_def.to_fmt(),
                 Type::Enum(enum_def) => return enum_def.to_fmt(),
                 Type::Func(func_def) => return func_def.to_fmt(),

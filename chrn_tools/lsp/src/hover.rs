@@ -137,12 +137,12 @@ pub fn compute_hover(
                                             hover_text = format!("**typedef**: {}", shallow_t);
                                         }
                                         _ => {
-                                            if let compilation::semantic::hir::hir_concepts::Type::BuiltinType(
-                                                builtin,
+                                            if let compilation::semantic::hir::hir_concepts::Type::BuiltinTypeInfo(
+                                                builtin_info,
                                             ) = &ty_info.ty
                                             {
                                                 hover_text =
-                                                    Document::builtin_type_docs(builtin.kind())
+                                                    Document::builtin_type_docs(builtin_info.ty.kind())
                                                         .compose();
                                             } else if let compilation::semantic::hir::hir_concepts::Type::Func(
                                                 func_def,
@@ -561,10 +561,11 @@ pub fn compute_hover(
 /// wrappers call this function recursively with `shallow = true` for inner types.
 fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow: bool) -> String {
     match ty {
-        // The inner `Type::BuiltinType(builtin_ty)` match binds `builtin_ty: &BuiltinType`
-        // because `ty: &Type`, so the destructured `TypeId`s are `&TypeId` references.
+        // The inner `Type::BuiltinTypeInfo(builtin_info)` match binds `builtin_info: &BuiltinTypeInfo`.
+        // Access the inner `BuiltinType` via `builtin_info.ty`.
+        // The destructured `TypeId`s are `&TypeId` references.
         // The `Arena` index takes `TypeId` by value, so each binding must be dereferenced.
-        Type::BuiltinType(builtin_ty) => match builtin_ty {
+        Type::BuiltinTypeInfo(builtin_info) => match &builtin_info.ty {
             BuiltinType::List(type_id) => {
                 let inner = &compiler.types[*type_id].ty;
                 format!(
