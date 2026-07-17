@@ -70,13 +70,18 @@ use std::path::PathBuf;
 
 /// Publishes config-load diagnostics without awaiting, used in synchronous helpers
 /// that cannot be `async`.
+///
+/// `script_start` is added to the relative diagnostic spans produced by the
+/// config loader so that the LSP client receives positions in the absolute
+/// file coordinate system it expects.
 fn publish_config_load_error(
     client: Client,
     uri: tower_lsp::lsp_types::Url,
     text: &str,
     err: ConfigLoadError,
+    script_start: usize,
 ) {
-    let diags = crate::analyser::config_load_error_to_diagnostics(err, text);
+    let diags = crate::analyser::config_load_error_to_diagnostics(err, text, script_start);
     tokio::spawn(async move {
         client.publish_diagnostics(uri, diags, None).await;
     });
@@ -201,11 +206,20 @@ impl Backend {
         {
             ConfigLoaderOutput::Success(region) => region,
             ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
-                publish_config_load_error(self.client.clone(), uri.clone(), &text, cfg_err);
+                publish_config_load_error(
+                    self.client.clone(),
+                    uri.clone(),
+                    &text,
+                    cfg_err,
+                    broken_region.script_start,
+                );
                 broken_region
             }
             ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
-                publish_config_load_error(self.client.clone(), uri.clone(), &text, cfg_err);
+                // No region data is recoverable; the loader produced no
+                // `script_start` so the default 0 keeps the relative span
+                // shift a no-op (the file is treated as if it had no `@def`).
+                publish_config_load_error(self.client.clone(), uri.clone(), &text, cfg_err, 0);
                 return None;
             }
         };
@@ -226,8 +240,7 @@ impl Backend {
         let prepared = resolve_document_modules(
             uri,
             Arc::clone(&text),
-            region.script_start,
-            region.serial_start,
+            region,
             &chrn_cfg,
             &self.doc_cache,
             my_version,
@@ -823,6 +836,12 @@ impl LanguageServer for Backend {
         // pass using two index pointers.  At each step we pick whichever span
         // comes first in the source, skipping non-comment trivia (whitespace,
         // newlines, tabs) which carry no semantic meaning.
+        //
+        // Both token and trivia spans are relative to the region's `src_bytes`;
+        // the comparison below therefore operates in that relative space.  When
+        // emitting LSP positions, we add `script_start` to shift the offsets
+        // back into the absolute file coordinate system the client expects.
+        let script_start = state.script_start;
         let mut tok_idx = 0;
         let mut triv_idx = 0;
 
@@ -837,8 +856,9 @@ impl LanguageServer for Backend {
                 if !triv.kind.is_comment() {
                     continue;
                 }
-                let start_pos =
-                    crate::text::offset_to_position(&state.text, triv.span.start as usize);
+                let abs_start = crate::text::rel_to_abs_offset(triv.span.start, script_start)
+                    as usize;
+                let start_pos = crate::text::offset_to_position(&state.text, abs_start);
                 let length = triv.span.end.saturating_sub(triv.span.start);
 
                 push_semantic_token(
@@ -854,7 +874,9 @@ impl LanguageServer for Backend {
                 let st = &toks_vec[tok_idx];
                 tok_idx += 1;
                 let span = st.span;
-                let start_pos = crate::text::offset_to_position(&state.text, span.start as usize);
+                let abs_start =
+                    crate::text::rel_to_abs_offset(span.start, script_start) as usize;
+                let start_pos = crate::text::offset_to_position(&state.text, abs_start);
                 let length = span.end.saturating_sub(span.start);
 
                 let token_type: u32 = match st.tok {
@@ -870,7 +892,9 @@ impl LanguageServer for Backend {
                     ScriptToken::Id(id) => {
                         let next_is_paren = tok_idx < toks_vec.len()
                             && matches!(toks_vec[tok_idx].tok, ScriptToken::OParen);
-                        let entity = state.get_entity_at_offset(span.start as usize);
+                        let abs_span_start =
+                            crate::text::rel_to_abs_offset(span.start, script_start) as usize;
+                        let entity = state.get_entity_at_offset(abs_span_start);
                         if let Some(ty) = classify_id_token(compiler, entity, id.id, next_is_paren)
                         {
                             ty
@@ -956,27 +980,38 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let def_path_str = {
+        // `(def_path, def_span, def_script_start)` — the script start of the
+        // target region is needed to convert the relative `def_span` (which
+        // is relative to the target region's `src_bytes`) into an absolute
+        // file byte offset usable as an LSP `Position`.
+        let def_target = {
             let state = state_arc.read();
             let byte_offset = crate::text::position_to_offset(&state.text, pos);
             if state.offset_in_comment(byte_offset) {
                 None
             } else {
-                state.get_entity_at_offset(byte_offset).and_then(|entity| {
-                    state
-                        .get_definition_location(entity)
-                        .map(|(dp, ds, _)| (dp, ds))
-                })
+                state
+                    .get_entity_at_offset(byte_offset)
+                    .and_then(|entity| {
+                        let (def_path, def_span, _) =
+                            state.get_definition_location(entity)?;
+                        let def_script_start = state
+                            .region_arena
+                            .get(def_span.region_id)
+                            .map(|r| r.script_start)
+                            .unwrap_or(0);
+                        Some((def_path, def_span, def_script_start))
+                    })
             }
         };
 
-        if def_path_str.is_none() {
+        if def_target.is_none() {
             return Ok(None);
         }
 
         let mut links: Vec<LocationLink> = Vec::new();
 
-        if let Some((def_path, def_span)) = def_path_str {
+        if let Some((def_path, def_span, def_script_start)) = def_target {
             let target_uri = match Url::from_file_path(&def_path) {
                 Ok(u) => u,
                 Err(_) => uri.clone(),
@@ -1002,8 +1037,15 @@ impl LanguageServer for Backend {
             };
 
             if let Some(t_text) = target_text {
-                let start_pos = crate::text::offset_to_position(&t_text, def_span.start as usize);
-                let end_pos = crate::text::offset_to_position(&t_text, def_span.end as usize);
+                // `def_span` is relative to the target region's `src_bytes`; add
+                // the target region's `script_start` to put it in absolute file
+                // coordinates before converting to an LSP `Position`.
+                let abs_start =
+                    crate::text::rel_to_abs_offset(def_span.start, def_script_start) as usize;
+                let abs_end =
+                    crate::text::rel_to_abs_offset(def_span.end, def_script_start) as usize;
+                let start_pos = crate::text::offset_to_position(&t_text, abs_start);
+                let end_pos = crate::text::offset_to_position(&t_text, abs_end);
 
                 links.push(LocationLink {
                     origin_selection_range: Some(Range {
@@ -1256,9 +1298,12 @@ impl LanguageServer for Backend {
         // Reuse pre-computed tokens from the analyzed state instead of re-lexing.
         let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
         for st in &state.tokens {
-            // Only include identifiers that are within the script section (before serial_start)
-            let tok_end = st.span.end;
-            if (tok_end as usize) > serial_start {
+            // Only include identifiers that are within the script section (before
+            // `serial_start`).  `st.span.end` is relative to the region's
+            // `src_bytes`, so add `script_start` to compare against the absolute
+            // `serial_start`.
+            let tok_end_abs = crate::text::rel_to_abs_offset(st.span.end, script_start);
+            if (tok_end_abs as usize) > serial_start {
                 continue;
             }
 

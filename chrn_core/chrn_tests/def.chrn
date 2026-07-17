@@ -7,6 +7,13 @@ let x = 3 == 3
 
 let z = 2
 
+// if this was something that wanted to be added, that would then mean the compiler store needs to be 
+// mutable, but the environments USE the compiler store, which makes it hard to concat and intern
+// these in-line. Making the envs not use direct references is something that is very much so, NOT
+// preferred, but this would need to be a runtime string otherwise, which would be odd since it
+// KNOWS both strings are const, there's no reason to make it runtime.
+// let string = "4" + "8"
+
 nest->
     export struct Person {
         // state: State

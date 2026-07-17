@@ -19,10 +19,10 @@ pub mod source_map;
 pub const MAX_LOOPS: u32 = 10000004;
 
 /// Max modules that can be in memory at once
-pub const MAX_MODULES: u16 = 500; // 4MB at most since max script file/block size is 8KB
+pub const MAX_MODULES: u16 = 200; // 16 GB max is a bit much...
 
 /// Max recursive descent that can be done
-pub const MAX_RECURSIVE_DEPTH: u16 = 1024; // 512
+pub const MAX_RECURSIVE_DEPTH: u16 = 1024;
 
 /// Max expression nodes that can be consumed in a singule expression tree
 pub const MAX_EXPR_NODES: u32 = 1; // 5,000,000

@@ -98,9 +98,17 @@ fn evict_cache_if_needed(cache: &mut HashMap<String, String>) {
 ///   per secondary annotation, note, and help message.
 /// * A `ConfigLoadError::IO` error is reported at position `(0, 0)` because no span
 ///   information is available.
+///
+/// # Spanning
+///
+/// The diagnostic spans are produced by `ConfigLoader` and are **relative** to
+/// the region's `src_bytes`; `script_start` is added to each one to convert
+/// them to absolute file positions before being passed to
+/// [`crate::text::offset_to_position`].
 pub(crate) fn config_load_error_to_diagnostics(
     err: chrn_utils::core_error::ConfigLoadError,
     text: &str,
+    script_start: usize,
 ) -> Vec<tower_lsp::lsp_types::Diagnostic> {
     let source = "chrn-config";
     let start = lsp_types::Position {
@@ -123,8 +131,12 @@ pub(crate) fn config_load_error_to_diagnostics(
                 .find(|a| matches!(a.kind, AnnotationKind::Primary))
                 .or_else(|| diag.annotations.first())
             {
-                let s_pos = crate::text::offset_to_position(text, annotation.span.start as usize);
-                let e_pos = crate::text::offset_to_position(text, annotation.span.end as usize);
+                let abs_s = crate::text::rel_to_abs_offset(annotation.span.start, script_start)
+                    as usize;
+                let abs_e = crate::text::rel_to_abs_offset(annotation.span.end, script_start)
+                    as usize;
+                let s_pos = crate::text::offset_to_position(text, abs_s);
+                let e_pos = crate::text::offset_to_position(text, abs_e);
                 (s_pos, e_pos)
             } else {
                 (start, start)
@@ -152,9 +164,12 @@ pub(crate) fn config_load_error_to_diagnostics(
                     },
                 };
 
-                let ann_start =
-                    crate::text::offset_to_position(text, annotation.span.start as usize);
-                let ann_end = crate::text::offset_to_position(text, annotation.span.end as usize);
+                let abs_ann_start =
+                    crate::text::rel_to_abs_offset(annotation.span.start, script_start) as usize;
+                let abs_ann_end =
+                    crate::text::rel_to_abs_offset(annotation.span.end, script_start) as usize;
+                let ann_start = crate::text::offset_to_position(text, abs_ann_start);
+                let ann_end = crate::text::offset_to_position(text, abs_ann_end);
                 let ann_sev = match annotation.kind {
                     AnnotationKind::Primary => severity,
                     AnnotationKind::Secondary => lsp_types::DiagnosticSeverity::WARNING,
@@ -249,8 +264,7 @@ pub(crate) struct PreparedDocument {
 pub(crate) fn resolve_document_modules(
     uri: &Url,
     text: Arc<String>,
-    script_start: usize,
-    serial_start: Option<usize>,
+    main_region: SourceRegion,
     chrn_cfg: &ChrnConfig,
     doc_cache: &DocumentCache,
     version: u64,
@@ -262,9 +276,18 @@ pub(crate) fn resolve_document_modules(
         .unwrap_or_else(|_| PathBuf::from(uri.path()));
     let path_id = interner.intern_path(&path_buf);
 
-    let (tokens, trivia) =
-        Lexer::new(SourceRegionId::new(0), text.as_bytes(), script_start)
-            .tokenize(&mut interner);
+    // The lexer is given the *relative* `src_bytes` (the script section only) and
+    // the *absolute* `script_start` (the byte position in the file where the
+    // script section starts). Token spans are produced relative to `src_bytes`,
+    // which is what the parser/compiler expect. The LSP later converts these
+    // relative spans to absolute file positions using `script_start` whenever it
+    // needs to surface them as LSP `Position`s.
+    let (tokens, trivia) = Lexer::new(
+        SourceRegionId::new(0),
+        &main_region.src_bytes,
+        main_region.script_start,
+    )
+    .tokenize(&mut interner);
 
     let name = path_buf
         .file_stem()
@@ -273,23 +296,15 @@ pub(crate) fn resolve_document_modules(
         .to_string();
     let name_id = interner.intern(&name);
 
-    let main_region = SourceRegion::new(
-        text.as_bytes().to_vec(),
-        SourceRegionId::new(0),
-        path_id,
-        script_start,
-        serial_start,
-    );
-
     let mut reserved_mod_ids: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
 
     let (bind, main_imports, finder_diags) = ModuleFinder::new(
-        text.as_bytes(),
+        &main_region.src_bytes,
         chrn_cfg,
         &mut reserved_mod_ids,
         &main_region,
-        script_start,
-        serial_start,
+        main_region.script_start,
+        main_region.serial_start,
     )
     .collect_imports(&mut interner);
 
@@ -348,8 +363,8 @@ pub(crate) fn resolve_document_modules(
         tokens,
         trivia,
         interner,
-        script_start,
-        serial_start,
+        main_region.script_start,
+        main_region.serial_start,
         version,
     );
 
@@ -424,7 +439,11 @@ pub async fn analyze_and_publish_task(
     {
         ConfigLoaderOutput::Success(region) => region,
         ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
-            let diags = config_load_error_to_diagnostics(cfg_err, &text);
+            // The broken region still carries the `script_start` discovered so
+            // far (may be 0 if no `@def` was found), which is the offset the
+            // diagnostic spans need to be shifted by to land in absolute file
+            // coordinates.
+            let diags = config_load_error_to_diagnostics(cfg_err, &text, broken_region.script_start);
             publish_if_current(
                 &client,
                 &uri,
@@ -437,7 +456,11 @@ pub async fn analyze_and_publish_task(
             broken_region
         }
         ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
-            let diags = config_load_error_to_diagnostics(cfg_err, &text);
+            // The loader was unable to recover any region data, so the script
+            // start defaults to 0.  Diagnostic spans produced up to that point
+            // (e.g. unclosed multi-line comments) are still relative to the
+            // start of the file, so this noop shift is the right default.
+            let diags = config_load_error_to_diagnostics(cfg_err, &text, 0);
             publish_if_current(
                 &client,
                 &uri,
@@ -458,8 +481,7 @@ pub async fn analyze_and_publish_task(
     let prepared = resolve_document_modules(
         &uri,
         Arc::clone(&text),
-        region.script_start,
-        region.serial_start,
+        region,
         &chrn_cfg,
         &doc_cache,
         version,
@@ -554,15 +576,18 @@ async fn publish_if_current(
     }
 }
 
-/// Resolves the source text for a [`SourceDiagnostic`] by looking up the
-/// [`SourceRegion`](chrn_utils::source_map::source_region::SourceRegion) whose
-/// `path_id` matches the diagnostic's `path_id`.
+/// Resolves the source text and `script_start` for a [`SourceDiagnostic`] by
+/// looking up the [`SourceRegion`](chrn_utils::source_map::source_region::SourceRegion)
+/// whose `path_id` matches the diagnostic's `path_id`.
 ///
-/// Returns `(text, doc_len)` where:
+/// Returns `(text, doc_len, script_start)` where:
 /// * `text` is the raw source bytes of the matching region, decoded as UTF-8.
 /// * `doc_len` is `text.len()`.
+/// * `script_start` is the absolute file byte position of the region's start,
+///   which is added to relative diagnostic spans to put them in absolute
+///   file coordinates before being surfaced to the LSP client.
 ///
-/// Falls back to `fallback_text` / `fallback_doc_len` if no matching region is
+/// Falls back to `(fallback_text, fallback_doc_len, 0)` if no matching region is
 /// found. This is the case for diagnostics emitted by the compiler intrinsics
 /// (which never correspond to a user file) or for diagnostics whose region has
 /// been evicted from the arena.
@@ -571,15 +596,15 @@ fn resolve_diag_text<'a>(
     diag: &SourceDiagnostic,
     fallback_text: &'a str,
     fallback_doc_len: usize,
-) -> (&'a str, usize) {
+) -> (&'a str, usize, usize) {
     // SAFETY: The arena is built from the same `Intern` instance that produced
     // the diagnostic's `path_id` (see `DocumentState::ensure_analyzed`).
     // Therefore `region.path_id == diag.path_id` is a correct comparison.
     if let Some(region) = arena.items.iter().find(|r| r.path_id == diag.path_id) {
         let text = std::str::from_utf8(&region.src_bytes).unwrap_or(fallback_text);
-        return (text, region.src_bytes.len());
+        return (text, region.src_bytes.len(), region.script_start);
     }
-    (fallback_text, fallback_doc_len)
+    (fallback_text, fallback_doc_len, 0)
 }
 
 /// Converts a slice of core [`SourceDiagnostic`] values and appends the resulting LSP
@@ -622,7 +647,22 @@ pub(crate) fn push_diagnostics(
         // Resolve the correct source text for THIS diagnostic. A diagnostic
         // originating in an imported module has spans in that module's bytes,
         // not the main document's, so we must look up the matching region.
-        let (text, doc_len) = resolve_diag_text(arena, core_diag, fallback_text, fallback_doc_len);
+        //
+        // The returned `script_start` is added to the (relative) diagnostic
+        // spans to put them in absolute file coordinates.  After that shift,
+        // `fallback_text` (the whole document) can be used to convert byte
+        // offsets into LSP `Position`s that line up with what the editor shows.
+        let (rel_text, doc_len, script_start) =
+            resolve_diag_text(arena, core_diag, fallback_text, fallback_doc_len);
+
+        // Whether the resolved region is the main document (where
+        // `fallback_text` matches the region's bytes) or a sub-module, the
+        // resulting LSP positions must be in the absolute file coordinate
+        // system.  We always use `fallback_text` for the final `Position`
+        // conversion so the line/column reflects the whole document the
+        // editor is showing, with `script_start` shifting the byte offset.
+        let text = fallback_text;
+        let effective_doc_len = fallback_doc_len;
 
         let severity = match core_diag.level {
             DiagnosticLevel::Error => lsp_types::DiagnosticSeverity::ERROR,
@@ -637,8 +677,12 @@ pub(crate) fn push_diagnostics(
             .find(|a| matches!(a.kind, AnnotationKind::Primary))
             .or_else(|| core_diag.annotations.first())
         {
-            let s = (annotation.span.start as usize).min(doc_len);
-            let e = (annotation.span.end as usize).min(doc_len);
+            // `annotation.span` is relative to the region's `src_bytes`; shift
+            // to absolute file coordinates and clamp to the document length.
+            let s = (crate::text::rel_to_abs_offset(annotation.span.start, script_start) as usize)
+                .min(effective_doc_len);
+            let e = (crate::text::rel_to_abs_offset(annotation.span.end, script_start) as usize)
+                .min(effective_doc_len);
             (s, e)
         } else {
             (0, 0)
@@ -669,8 +713,20 @@ pub(crate) fn push_diagnostics(
                 },
             };
 
-            let ann_start = (annotation.span.start as usize).min(doc_len);
-            let ann_end = (annotation.span.end as usize).min(doc_len);
+            // The annotation span is relative to the region's `src_bytes`;
+            // shift to absolute file coordinates (using the resolved
+            // `script_start`) and clamp to the document length.
+            //
+            // When the region is the main document, `script_start` may be 0
+            // (no `@def`) or the position of `@` (with `@def`); in both
+            // cases the shift lands the byte offset in absolute coordinates
+            // against the full `fallback_text`.
+            let ann_start = (crate::text::rel_to_abs_offset(annotation.span.start, script_start)
+                as usize)
+                .min(effective_doc_len);
+            let ann_end = (crate::text::rel_to_abs_offset(annotation.span.end, script_start)
+                as usize)
+                .min(effective_doc_len);
             let ann_sev = match annotation.kind {
                 AnnotationKind::Primary => severity,
                 AnnotationKind::Secondary | AnnotationKind::Help => {
@@ -678,6 +734,10 @@ pub(crate) fn push_diagnostics(
                 }
                 AnnotationKind::Note => lsp_types::DiagnosticSeverity::INFORMATION,
             };
+            // `rel_text` and `doc_len` are still part of this scope in case
+            // future variants of the diagnostic pipeline need to look up
+            // other text-shaped fields by relative offset.
+            let _ = (rel_text, doc_len);
             lsp_diags.push(tower_lsp::lsp_types::Diagnostic {
                 range: lsp_types::Range {
                     start: crate::text::offset_to_position(text, ann_start),

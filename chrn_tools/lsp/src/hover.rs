@@ -80,7 +80,14 @@ pub fn compute_hover(
         None => {
             // Check for non-identifier tokens
             match state.get_token_at_offset(offset) {
-                Some(st) => (st.tok, st.span.start as usize, st.span.end as usize),
+                // The token's span is relative to the region's `src_bytes`; shift
+                // it to absolute file coordinates so the returned hover range
+                // is usable as an LSP `Range` directly.
+                Some(st) => (
+                    st.tok,
+                    crate::text::rel_to_abs_offset(st.span.start, state.script_start) as usize,
+                    crate::text::rel_to_abs_offset(st.span.end, state.script_start) as usize,
+                ),
                 None => return None,
             }
         }

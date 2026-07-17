@@ -643,6 +643,7 @@ impl DocumentState {
             map: &mut Vec<(SourceSpan, SemanticEntity)>,
             text: &str,
             interner: &Intern,
+            script_start: usize,
         ) {
             use compilation::parser::ast::ast_exprs::Expr;
             match &expr.expr {
@@ -654,25 +655,35 @@ impl DocumentState {
 
                         // Try to find a precise span for the field name by searching after the dot
                         let full_span = expr.span;
-                        let base_end = acc.base.span.end as usize;
+                        // The AST's `span` values are relative to the region's
+                        // `src_bytes`.  `text` is the whole document, so add
+                        // `script_start` to shift the offsets into the
+                        // coordinate system the string slice below operates in.
+                        let base_end = (acc.base.span.end as usize) + script_start;
+                        let full_end = (full_span.end as usize) + script_start;
                         let field_name = interner.search(acc.field);
 
                         // Look for the field name in the source text between dot and end of expr
                         let mut field_span = SourceSpan {
                             region_id: SourceRegionId::new(0),
-                            start: base_end.saturating_add(1) as u32,
+                            start: (base_end.saturating_add(1) - script_start) as u32,
                             end: full_span.end,
                         };
 
-                        let search_area = &text[base_end..(full_span.end as usize).min(text.len())];
+                        let search_end = full_end.min(text.len());
+                        let search_area = &text[base_end..search_end];
                         if let Some(dot_idx) = search_area.find('.')
                             && let Some(name_idx) = search_area[dot_idx + 1..].find(field_name)
                         {
+                            // The search produced a position in absolute
+                            // coordinates, so subtract `script_start` to keep
+                            // the stored span relative (consistent with the
+                            // rest of `symbol_map`).
                             let start = base_end + dot_idx + 1 + name_idx;
                             field_span = SourceSpan {
                                 region_id: SourceRegionId::new(0),
-                                start: start as u32,
-                                end: (start + field_name.len()) as u32,
+                                start: (start - script_start) as u32,
+                                end: (start + field_name.len() - script_start) as u32,
                             };
                         }
 
@@ -698,21 +709,23 @@ impl DocumentState {
                             map.push((field_span, SemanticEntity::Symbol(sym_id)));
                         }
                     }
-                    collect_expr_refs(compiler, &acc.base, map, text, interner);
+                    collect_expr_refs(compiler, &acc.base, map, text, interner, script_start);
                 }
                 Expr::Default(_, def_expr) => {
-                    collect_expr_refs(compiler, def_expr, map, text, interner)
+                    collect_expr_refs(compiler, def_expr, map, text, interner, script_start)
                 }
                 Expr::Call(caller, args) => {
-                    collect_expr_refs(compiler, caller, map, text, interner);
+                    collect_expr_refs(compiler, caller, map, text, interner, script_start);
                     for arg in args {
-                        collect_expr_refs(compiler, arg, map, text, interner);
+                        collect_expr_refs(compiler, arg, map, text, interner, script_start);
                     }
                 }
-                Expr::Unary(u) => collect_expr_refs(compiler, &u.spanned_expr, map, text, interner),
+                Expr::Unary(u) => {
+                    collect_expr_refs(compiler, &u.spanned_expr, map, text, interner, script_start)
+                }
                 Expr::BinaryExpr { lhs, rhs, .. } => {
-                    collect_expr_refs(compiler, lhs, map, text, interner);
-                    collect_expr_refs(compiler, rhs, map, text, interner);
+                    collect_expr_refs(compiler, lhs, map, text, interner, script_start);
+                    collect_expr_refs(compiler, rhs, map, text, interner, script_start);
                 }
                 Expr::StaticAccess(segments) => {
                     if segments.len() >= 2
@@ -944,12 +957,20 @@ impl DocumentState {
             map: &mut Vec<(SourceSpan, SemanticEntity)>,
             text: &str,
             interner: &Intern,
+            script_start: usize,
         ) {
             for opt in &cfg.opt_assignments {
-                collect_expr_refs(compiler, &opt.array_expr, map, text, interner);
+                collect_expr_refs(compiler, &opt.array_expr, map, text, interner, script_start);
             }
             for child in &cfg.cfg_members {
-                collect_cfg_refs(compiler, child, map, text, interner);
+                collect_cfg_refs(
+                    compiler,
+                    child,
+                    map,
+                    text,
+                    interner,
+                    script_start,
+                );
             }
         }
 
@@ -1129,17 +1150,32 @@ impl DocumentState {
                             &mut map,
                             &self.text,
                             &self.interner,
+                            self.script_start,
                         );
                     }
                     Item::TypeDef(def) => {
                         collect_type_refs(compiler, &def.sp_ty_expr, &mut map);
                         for cond in &def.conds {
-                            collect_expr_refs(compiler, cond, &mut map, &self.text, &self.interner);
+                            collect_expr_refs(
+                                compiler,
+                                cond,
+                                &mut map,
+                                &self.text,
+                                &self.interner,
+                                self.script_start,
+                            );
                         }
                     }
                     Item::Struct(s) => {
                         for cond in &s.glob_conds {
-                            collect_expr_refs(compiler, cond, &mut map, &self.text, &self.interner);
+                            collect_expr_refs(
+                                compiler,
+                                cond,
+                                &mut map,
+                                &self.text,
+                                &self.interner,
+                                self.script_start,
+                            );
                         }
                         for field in &s.fields {
                             collect_type_refs(compiler, &field.sp_ty_expr, &mut map);
@@ -1150,13 +1186,21 @@ impl DocumentState {
                                     &mut map,
                                     &self.text,
                                     &self.interner,
+                                    self.script_start,
                                 );
                             }
                         }
                     }
                     Item::Enum(e) => {
                         for cond in &e.glob_conds {
-                            collect_expr_refs(compiler, cond, &mut map, &self.text, &self.interner);
+                            collect_expr_refs(
+                                compiler,
+                                cond,
+                                &mut map,
+                                &self.text,
+                                &self.interner,
+                                self.script_start,
+                            );
                         }
                         for variant in &e.variants {
                             if let Some(ty) = &variant.sp_ty_expr {
@@ -1169,17 +1213,32 @@ impl DocumentState {
                                     &mut map,
                                     &self.text,
                                     &self.interner,
+                                    self.script_start,
                                 );
                             }
                         }
                     }
                     Item::Alias(a) => {
                         for cond in &a.conds {
-                            collect_expr_refs(compiler, cond, &mut map, &self.text, &self.interner);
+                            collect_expr_refs(
+                                compiler,
+                                cond,
+                                &mut map,
+                                &self.text,
+                                &self.interner,
+                                self.script_start,
+                            );
                         }
                     }
                     Item::Config(cfg) => {
-                        collect_cfg_refs(compiler, cfg, &mut map, &self.text, &self.interner);
+                        collect_cfg_refs(
+                            compiler,
+                            cfg,
+                            &mut map,
+                            &self.text,
+                            &self.interner,
+                            self.script_start,
+                        );
                     }
                 }
             }
@@ -1218,13 +1277,20 @@ impl DocumentState {
     /// prevents a broader expression span (e.g. a qualified path `mod::Field`) from
     /// shadowing the individual component (e.g. the module name or the field name)
     /// when the cursor is on that component.
+    ///
+    /// `offset` is an **absolute** byte offset in the document (e.g. derived from
+    /// an LSP `Position`). The method internally subtracts `script_start` to convert
+    /// it to a relative offset that matches the spans stored in `symbol_map`.
     pub fn get_entity_at_offset(&self, offset: usize) -> Option<&SemanticEntity> {
+        let rel_offset = offset.saturating_sub(self.script_start);
         // Find the smallest span that contains the offset, as it's the most specific.
         // This prevents broader expressions (like qualified names) from shadowing
         // their more specific components (like the module or field name).
         self.symbol_map
             .iter()
-            .filter(|(span, _)| offset >= span.start as usize && offset < span.end as usize)
+            .filter(|(span, _)| {
+                rel_offset >= span.start as usize && rel_offset < span.end as usize
+            })
             .min_by_key(|(span, _)| span.end.saturating_sub(span.start))
             .map(|(_, entity)| entity)
     }
@@ -1312,10 +1378,20 @@ impl DocumentState {
 
     /// Returns the interned ID, start byte, and end byte of the identifier token
     /// that covers `byte_offset`, or `None` if no identifier token is at that offset.
+    ///
+    /// `byte_offset` is an **absolute** byte offset in the document. The returned
+    /// `start` and `end` byte positions are also **absolute** in the document, so
+    /// callers can pass them directly to [`crate::text::offset_to_position`].
+    /// This is what LSP feature handlers want: absolute positions are immediately
+    /// usable as LSP `Position`s.
     pub fn get_symbol_at_offset(&self, byte_offset: usize) -> Option<(InternedId, usize, usize)> {
         self.get_token_at_offset(byte_offset).and_then(|st| {
             if let ScriptToken::Id(id) = st.tok {
-                Some((id, st.span.start as usize, st.span.end as usize))
+                Some((
+                    id,
+                    crate::text::rel_to_abs_offset(st.span.start, self.script_start) as usize,
+                    crate::text::rel_to_abs_offset(st.span.end, self.script_start) as usize,
+                ))
             } else {
                 None
             }
@@ -1323,13 +1399,18 @@ impl DocumentState {
     }
 
     /// Returns the token that covers `byte_offset`, or `None` if no token is at that offset.
+    ///
+    /// `byte_offset` is an **absolute** byte offset in the document. The method
+    /// internally subtracts `script_start` to convert it to the relative offset
+    /// against which the token spans are stored.
     pub fn get_token_at_offset(&self, byte_offset: usize) -> Option<&SpannedToken> {
+        let rel_offset = byte_offset.saturating_sub(self.script_start);
         let idx = self
             .tokens
-            .partition_point(|t| (t.span.end as usize) <= byte_offset);
+            .partition_point(|t| (t.span.end as usize) <= rel_offset);
         if idx < self.tokens.len() {
             let t = &self.tokens[idx];
-            if byte_offset >= t.span.start as usize && byte_offset < t.span.end as usize {
+            if rel_offset >= t.span.start as usize && rel_offset < t.span.end as usize {
                 return Some(t);
             }
         }
@@ -1485,14 +1566,17 @@ impl DocumentState {
     /// and rename to implement cross-module search without duplicating the iteration
     /// logic.
     ///
-    /// Returns `(state_uri, text_arc, span_start, span_end)` tuples so callers can
-    /// convert byte offsets to LSP positions without re‑acquiring the document state.
+    /// Returns `(state_uri, text_arc, span_start, span_end, script_start)` tuples
+    /// so callers can convert byte offsets to LSP positions without re‑acquiring
+    /// the document state.  `script_start` is included because the spans returned
+    /// by the symbol map are **relative** to the region's `src_bytes`; callers
+    /// add `script_start` to obtain absolute file coordinates.
     pub fn find_matching_entities(
         doc_cache: &DocumentCache,
         def_path: &str,
         def_span: SourceSpan,
         def_owner_sym_id: Option<SymbolId>,
-    ) -> Vec<(String, Arc<String>, u32, u32)> {
+    ) -> Vec<(String, Arc<String>, u32, u32, usize)> {
         // Collect state Arcs while holding the cache lock, then release it before
         // acquiring any DocumentState locks.  This prevents the lock-order inversion
         // that contributed to the deadlock: a reader holding DocumentCache while
@@ -1518,6 +1602,7 @@ impl DocumentState {
                         Arc::clone(&state.text),
                         span.start,
                         span.end,
+                        state.script_start,
                     ));
                 }
             }
@@ -1526,12 +1611,16 @@ impl DocumentState {
     }
 
     pub fn offset_in_comment(&self, byte_offset: usize) -> bool {
+        // Trivia spans are relative to the region's `src_bytes`, so convert the
+        // absolute byte offset to a relative one before comparing.
+        let rel_offset = byte_offset.saturating_sub(self.script_start);
+
         let idx = self
             .trivia
-            .partition_point(|t| t.span.start as usize <= byte_offset);
+            .partition_point(|t| t.span.start as usize <= rel_offset);
         if idx > 0 {
             let t = &self.trivia[idx - 1];
-            if byte_offset < t.span.end as usize && t.kind.is_comment() {
+            if rel_offset < t.span.end as usize && t.kind.is_comment() {
                 return true;
             }
         }
@@ -1541,6 +1630,8 @@ impl DocumentState {
             return false;
         }
 
+        // The `//` line-comment check operates on the absolute document text so
+        // the same line is examined regardless of where the script section starts.
         let line_start = text[..byte_offset]
             .iter()
             .rposition(|&b| b == b'\n')
@@ -1649,9 +1740,20 @@ impl DocumentCache {
             }
         }
 
-        // 2. Perform expensive tokenization OUTSIDE any cache lock
+        // 2. Perform expensive tokenization OUTSIDE any cache lock.
+        //
+        // The lexer is given the *relative* script section bytes (sliced out
+        // of the full document by `[script_start..]`) and the *absolute*
+        // `script_start`.  Token and trivia spans come back relative to the
+        // script section, which is the same contract `resolve_document_modules`
+        // uses on the production path.  Without this slice the lexer would
+        // see the full text and emit spans in the document's absolute
+        // coordinate system, which every downstream consumer
+        // (`get_token_at_offset`, `offset_in_comment`, `find_matching_entities`,
+        // `hover`, `references`, `rename`) treats as relative.
         let mut interner = Intern::init();
-        let (tokens, trivia) = Lexer::new(SourceRegionId::new(0), text.as_bytes(), script_start)
+        let script_src = &text.as_bytes()[script_start..];
+        let (tokens, trivia) = Lexer::new(SourceRegionId::new(0), script_src, script_start)
             .tokenize(&mut interner);
 
         // 3. Re-acquire write lock to insert

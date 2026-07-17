@@ -41,11 +41,16 @@ fn collect_local_occurrences(
             && *decl_span == *def_span
             && *owner_sym_id == def_owner_sym_id
         {
+            // `span` is relative to the region's `src_bytes`; shift to absolute
+            // coordinates by adding `script_start` before converting to an LSP
+            // `Position`.
+            let abs_start = crate::text::rel_to_abs_offset(span.start, state.script_start) as usize;
+            let abs_end = crate::text::rel_to_abs_offset(span.end, state.script_start) as usize;
             results.push(Location {
                 uri: uri.clone(),
                 range: Range {
-                    start: offset_to_position(&state.text, span.start as usize),
-                    end: offset_to_position(&state.text, span.end as usize),
+                    start: offset_to_position(&state.text, abs_start),
+                    end: offset_to_position(&state.text, abs_end),
                 },
             });
         }
@@ -54,15 +59,24 @@ fn collect_local_occurrences(
 }
 
 /// Converts raw matching-entity tuples into deduplicated [`Location`] values.
-fn matching_entities_to_locations(entities: Vec<(String, Arc<String>, u32, u32)>) -> Vec<Location> {
+///
+/// Each entity tuple is `(uri, text, span_start, span_end, script_start)`,
+/// where the span endpoints are **relative** to the region's `src_bytes`.
+/// The `script_start` of the region is included so the conversion to LSP
+/// positions can be performed in absolute file coordinates.
+fn matching_entities_to_locations(
+    entities: Vec<(String, Arc<String>, u32, u32, usize)>,
+) -> Vec<Location> {
     let mut results = Vec::new();
     // Group by URI to deduplicate per file
     let mut by_uri: std::collections::HashMap<String, Vec<Range>> =
         std::collections::HashMap::new();
-    for (state_uri, text, start, end) in entities {
+    for (state_uri, text, start, end, script_start) in entities {
+        let abs_start = crate::text::rel_to_abs_offset(start, script_start) as usize;
+        let abs_end = crate::text::rel_to_abs_offset(end, script_start) as usize;
         let range = Range {
-            start: offset_to_position(&text, start as usize),
-            end: offset_to_position(&text, end as usize),
+            start: offset_to_position(&text, abs_start),
+            end: offset_to_position(&text, abs_end),
         };
         by_uri.entry(state_uri).or_default().push(range);
     }
@@ -118,8 +132,12 @@ pub fn compute_references(
     let locations = if is_local {
         collect_local_occurrences(&state, &def_span, def_owner_sym_id, uri)
     } else {
-        let entities =
-            DocumentState::find_matching_entities(doc_cache, &def_path, def_span, def_owner_sym_id);
+        let entities = DocumentState::find_matching_entities(
+            doc_cache,
+            &def_path,
+            def_span,
+            def_owner_sym_id,
+        );
         matching_entities_to_locations(entities)
     };
 

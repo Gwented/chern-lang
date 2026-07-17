@@ -138,7 +138,11 @@ fn form_diag(
 
         // Adjusting for absolute file position
         //
-        // - 1 because !
+        // This needs a - 1 because line numbers start at 1.
+        // The issue is, the line mapper has a line number 1 start, which is correct. And the config
+        // loader has a line start at 1, which is also correct. But, that means there are two
+        // systems using 1 as the base, so it's now a + 2 in total, which makes line numbers be one
+        // extra its actual count. The - 1 is removing an assumed + 1.
         highest_ln_num = highest_ln_num.max(max_ln_num + abs_ln_num - 1);
         annotation_and_lines.push((annotation, spanned_lines));
     }
@@ -311,9 +315,7 @@ fn render_line_layout_text(
     let ln = ln_layout.ln;
     let ln_span = ln.ln_span.range_exclusive_usize();
     let mut all_ptr_rows: Vec<String> = Vec::with_capacity(ln_layout.render_info.len());
-    // Regions are relative so this needs to be made absolute
-    dbg!(region_abs_ln_num);
-    // I think the - 1 is the right solution? Seems ok.
+    // The - 1 is removing an assumed + 1.
     //
     // Doing this so the line number isn't based off the relative distance of the region itself, and
     // instead uses the stored data inside regions which tracks what line a region starts on,

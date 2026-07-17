@@ -302,6 +302,9 @@ impl<R: Read> ConfigLoader<'_, R> {
                     //
                     // This no longer requires @def first for now, so files can end with @end
                     // without any start syntax.
+                    //
+                    // Probably should not be allowed since the behavior from this is fairly
+                    // non-deterministic unless someone is actively counting bytes
                     if can_check
                         && &self.handle.buffer()[self.cursor..self.cursor + ANNOTATION_CLAUSE_SIZE]
                             == b"@end"
@@ -618,6 +621,17 @@ impl<R: Read> ConfigLoader<'_, R> {
 
         self.handle.buffer().get(self.cursor).copied()
     }
+
+    //NOTE: WHAT IF: Say we have @ | def where the left and right are different buffer refills. If
+    //we have a slice method, it needs to be able to take the @, and slice to
+    //ANNOTATION_CLAUSE_SIZE, while not only keeping the previous byte span, but also ensuring the
+    //byte span before that is kept because the @ could just be a random @.
+    //So, what if there was either a working buffer, or local buffer for the slice method, where it
+    //takes the @, keeps the previous previous buffer content in a sort of middle buffer, then
+    //consume the rest of the slice's length, it returns a signal as to if it had enough to
+    //slice/encountered an IO error, then we work with that buffer to have a more seamless slice
+    //check past buffer len. Maybe we need to just keep 3 buffers by default since this check could
+    //possibly be destructive since it could entail so many shifts to where it's a tiny API.
 
     //NOTE: This is going to be the general concept used eventually where, 2 16KB slices are rotated.
     //So, left gets 16 kb filled, moved to right, left gets filled, moved to right, if @def is

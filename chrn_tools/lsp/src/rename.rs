@@ -42,10 +42,14 @@ fn collect_local_edits(
             && *decl_span == *def_span
             && *owner_sym_id == def_owner_sym_id
         {
+            // `span` is relative; shift to absolute coordinates before converting
+            // to an LSP `Position`.
+            let abs_start = crate::text::rel_to_abs_offset(span.start, state.script_start) as usize;
+            let abs_end = crate::text::rel_to_abs_offset(span.end, state.script_start) as usize;
             edits.push(TextEdit {
                 range: Range {
-                    start: offset_to_position(&state.text, span.start as usize),
-                    end: offset_to_position(&state.text, span.end as usize),
+                    start: offset_to_position(&state.text, abs_start),
+                    end: offset_to_position(&state.text, abs_end),
                 },
                 new_text: new_name.to_string(),
             });
@@ -55,16 +59,23 @@ fn collect_local_edits(
 }
 
 /// Converts raw matching-entity tuples into a per-URI map of deduplicated text edits.
+///
+/// Each entity tuple is `(uri, text, span_start, span_end, script_start)`, where
+/// the span endpoints are **relative** to the region's `src_bytes`. The
+/// `script_start` is required to convert the relative spans to absolute LSP
+/// `Position`s.
 fn matching_entities_to_edits(
-    entities: Vec<(String, Arc<String>, u32, u32)>,
+    entities: Vec<(String, Arc<String>, u32, u32, usize)>,
     new_name: &str,
 ) -> HashMap<Url, Vec<TextEdit>> {
     let mut by_uri: HashMap<String, Vec<Range>> = HashMap::new();
     let mut text_map: HashMap<String, Arc<String>> = HashMap::new();
-    for (state_uri, text, start, end) in &entities {
+    for (state_uri, text, start, end, script_start) in &entities {
+        let abs_start = crate::text::rel_to_abs_offset(*start, *script_start) as usize;
+        let abs_end = crate::text::rel_to_abs_offset(*end, *script_start) as usize;
         let range = Range {
-            start: offset_to_position(text, *start as usize),
-            end: offset_to_position(text, *end as usize),
+            start: offset_to_position(text, abs_start),
+            end: offset_to_position(text, abs_end),
         };
         by_uri.entry(state_uri.clone()).or_default().push(range);
         text_map

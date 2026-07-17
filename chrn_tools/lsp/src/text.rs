@@ -19,6 +19,7 @@
 //! in addition to alphanumeric characters.  This matches how the Chern lexer
 //! tokenises identifiers and directives such as `@def`, `#warn`, and `var->`.
 
+use chrn_utils::source_map::source_span::SourceSpan;
 use tower_lsp::lsp_types::Position;
 use tower_lsp::lsp_types::Range;
 use tower_lsp::lsp_types::TextDocumentContentChangeEvent;
@@ -210,4 +211,66 @@ pub fn deduplicate_range_indices(ranges: &[Range]) -> Vec<usize> {
         }
     }
     result
+}
+
+/// Converts a relative byte offset (within a region's `src_bytes`) to the
+/// absolute byte offset in the whole file by adding `script_start`.
+///
+/// `script_start` is the absolute file byte position where the region's
+/// `src_bytes` begins. When the region covers the whole file (no `@def`),
+/// `script_start` is 0 and the relative and absolute offsets are equal.
+///
+/// # Parameters
+/// * `rel_offset`  — The byte offset within the region's `src_bytes`.
+/// * `script_start` — The absolute file byte offset of the region's start.
+///
+/// # Returns
+/// The absolute byte offset in the whole file.
+pub fn rel_to_abs_offset(rel_offset: u32, script_start: usize) -> u32 {
+    rel_offset.saturating_add(script_start as u32)
+}
+
+/// Converts an absolute byte offset in the whole file to a relative byte
+/// offset within the region's `src_bytes` by subtracting `script_start`.
+///
+/// The result is saturated to 0 when the input is below `script_start` so
+/// callers do not need to bounds-check before calling.
+///
+/// # Parameters
+/// * `abs_offset`   — The byte offset in the whole file.
+/// * `script_start` — The absolute file byte offset of the region's start.
+///
+/// # Returns
+/// The relative byte offset within the region's `src_bytes`.
+pub fn abs_to_rel_offset(abs_offset: u32, script_start: usize) -> u32 {
+    abs_offset.saturating_sub(script_start as u32)
+}
+
+/// Shifts a [`SourceSpan`] from relative coordinates (within a region's
+/// `src_bytes`) to absolute file coordinates by adding `script_start` to both
+/// endpoints. The `region_id` is preserved.
+///
+/// Used everywhere the LSP needs to surface a span that was produced by the
+/// compiler/parser/lexer — those are always relative — as an LSP `Position`.
+pub fn rel_to_abs_span(span: SourceSpan, script_start: usize) -> SourceSpan {
+    SourceSpan::new(
+        span.region_id,
+        rel_to_abs_offset(span.start, script_start),
+        rel_to_abs_offset(span.end, script_start),
+    )
+}
+
+/// Shifts a [`SourceSpan`] from absolute file coordinates to relative
+/// coordinates (within a region's `src_bytes`) by subtracting `script_start`
+/// from both endpoints. The `region_id` is preserved.
+///
+/// Used when the LSP receives a cursor position and needs to look up an
+/// entity or token by its byte offset; the byte offset the LSP derives from
+/// an LSP `Position` is always absolute in the file.
+pub fn abs_to_rel_span(span: SourceSpan, script_start: usize) -> SourceSpan {
+    SourceSpan::new(
+        span.region_id,
+        abs_to_rel_offset(span.start, script_start),
+        abs_to_rel_offset(span.end, script_start),
+    )
 }

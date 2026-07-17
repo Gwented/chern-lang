@@ -14,7 +14,7 @@ use chrn_utils::{
 
 use crate::renderer::{
     json_renderer::{escape::push_json_str, json_config::JsonRenderConfig},
-    output_helpers::{annotation_kind_str, level_str, resolve_region_path},
+    output_helpers::{annotation_kind_str, level_str, project_absolute_span, resolve_region_path},
 };
 
 /// Renders a slice of source diagnostics as a single pretty-printed JSON document.
@@ -293,18 +293,23 @@ fn write_span(
     out.push(',');
     out.push('\n');
 
-    // "start" / "end" (last fields, no trailing comma)
+    // "start" / "end" (last fields, no trailing comma). The pipeline emits
+    // relative offsets into the owning region, so the renderer projects
+    // them to absolute file positions using the region's `script_start`
+    // before emitting them. External tooling receives absolute offsets
+    // and does not need the region metadata to interpret them.
+    let (abs_start, abs_end) = project_absolute_span(region_arena_opt, span);
     write_indent(out, depth + 1);
     push_json_str(out, "start");
     out.push_str(": ");
-    out.push_str(&span.start.to_string());
+    out.push_str(&abs_start.to_string());
     out.push(',');
     out.push('\n');
 
     write_indent(out, depth + 1);
     push_json_str(out, "end");
     out.push_str(": ");
-    out.push_str(&span.end.to_string());
+    out.push_str(&abs_end.to_string());
 
     out.push('\n');
     write_indent(out, depth);
@@ -399,6 +404,7 @@ fn write_footer(out: &mut String, footer: &FooterKind, depth: usize) {
 mod tests {
     use super::*;
     use chrn_utils::{
+        arena::Arena,
         id_types::{PathId, SourceRegionId},
         intern::Intern,
         source_map::{
@@ -406,6 +412,7 @@ mod tests {
                 DiagnosticLevel, SourceDiagnostic,
                 annotations::{Annotation, AnnotationKind},
             },
+            source_region::SourceRegion,
             source_span::SourceSpan,
         },
     };
@@ -568,5 +575,135 @@ mod tests {
         let pretty = r#"{"a":"he said \"hi\"","b":1}"#;
         let minified = minify_json(pretty);
         assert_eq!(minified, r#"{"a":"he said \"hi\"","b":1}"#);
+    }
+
+    #[test]
+    fn span_offsets_are_projected_to_absolute_when_region_is_known() {
+        // A region that begins at absolute byte 128 within the file. The
+        // loader strips everything before `@def` from `src_bytes`, so
+        // spans emitted by the pipeline are relative to byte 0 of the
+        // region. The renderer must add the region's `script_start` to
+        // those relative offsets so external tooling sees an absolute
+        // file position.
+        let mut interner = Intern::init();
+        let path_id = interner.intern_path(std::path::Path::new("/tmp/a.chrn"));
+        let region_id = SourceRegionId::new(0);
+
+        let region = SourceRegion::new(
+            1,
+            1,
+            b"@def\nhello\n@end\n".to_vec(),
+            region_id,
+            path_id,
+            128,
+            Some(140),
+        );
+        let arena: Arena<SourceRegion, SourceRegionId> = Arena::from(vec![region]);
+
+        let span = SourceSpan::new(region_id, 4, 9);
+        let ann = Annotation::new(span, AnnotationKind::Primary, Some("here".to_string()));
+        let diag = SourceDiagnostic::new(
+            DiagnosticLevel::Error,
+            "boom".to_string(),
+            path_id,
+            vec![ann],
+            Vec::new(),
+            Vec::new(),
+        );
+
+        let out = render_json_diags(
+            &[diag],
+            &[],
+            Some(&arena),
+            &interner,
+            &JsonRenderConfig::new(false),
+        );
+        assert!(out.contains("\"region_path\": \"/tmp/a.chrn\""), "got: {out}");
+        // 4 + 128 == 132, 9 + 128 == 137
+        assert!(out.contains("\"start\": 132"), "got: {out}");
+        assert!(out.contains("\"end\": 137"), "got: {out}");
+    }
+
+    #[test]
+    fn span_offsets_are_projected_to_absolute_in_minified_output() {
+        // Same projection must hold for the minify path so flow-style
+        // consumers also receive absolute byte offsets.
+        let mut interner = Intern::init();
+        let path_id = interner.intern_path(std::path::Path::new("/tmp/a.chrn"));
+        let region_id = SourceRegionId::new(0);
+
+        let region = SourceRegion::new(
+            1,
+            1,
+            b"@def\nhello\n@end\n".to_vec(),
+            region_id,
+            path_id,
+            200,
+            Some(212),
+        );
+        let arena: Arena<SourceRegion, SourceRegionId> = Arena::from(vec![region]);
+
+        let span = SourceSpan::new(region_id, 4, 9);
+        let ann = Annotation::new(span, AnnotationKind::Primary, Some("here".to_string()));
+        let diag = SourceDiagnostic::new(
+            DiagnosticLevel::Error,
+            "boom".to_string(),
+            path_id,
+            vec![ann],
+            Vec::new(),
+            Vec::new(),
+        );
+
+        let out = render_json_diags(
+            &[diag],
+            &[],
+            Some(&arena),
+            &interner,
+            &JsonRenderConfig::new(true),
+        );
+        // 4 + 200 == 204, 9 + 200 == 209
+        assert!(
+            out.contains(r#""start":204"#),
+            "expected absolute start in minified output, got: {out}"
+        );
+        assert!(
+            out.contains(r#""end":209"#),
+            "expected absolute end in minified output, got: {out}"
+        );
+    }
+
+    #[test]
+    fn span_offsets_pass_through_when_region_is_missing_from_arena() {
+        // If the region arena is provided but the span's region is not
+        // in it, the renderer cannot recover an absolute position. It
+        // must still emit a well-formed document with the raw relative
+        // values, rather than crashing or silently shifting the offset
+        // by an unknown amount.
+        let mut interner = Intern::init();
+        let path_id = interner.intern_path(std::path::Path::new("/tmp/a.chrn"));
+
+        let arena: Arena<SourceRegion, SourceRegionId> = Arena::new();
+
+        let span = SourceSpan::new(SourceRegionId::new(0), 4, 9);
+        let ann = Annotation::new(span, AnnotationKind::Primary, Some("here".to_string()));
+        let diag = SourceDiagnostic::new(
+            DiagnosticLevel::Error,
+            "boom".to_string(),
+            path_id,
+            vec![ann],
+            Vec::new(),
+            Vec::new(),
+        );
+
+        let out = render_json_diags(
+            &[diag],
+            &[],
+            Some(&arena),
+            &interner,
+            &JsonRenderConfig::new(false),
+        );
+        assert!(out.contains("\"region_path\": null"), "got: {out}");
+        assert!(out.contains("\"start\": 4"), "got: {out}");
+        assert!(out.contains("\"end\": 9"), "got: {out}");
     }
 }

@@ -56,7 +56,10 @@ pub mod text;
 mod tests {
     use crate::{
         state::DocumentCache,
-        text::{extract_word_at, offset_to_position, position_to_offset},
+        text::{
+            abs_to_rel_offset, abs_to_rel_span, extract_word_at, offset_to_position,
+            position_to_offset, rel_to_abs_offset, rel_to_abs_span,
+        },
     };
     use std::sync::Arc;
     use tower_lsp::lsp_types::Position;
@@ -710,5 +713,543 @@ mod tests {
             4,
             "character past end of line should clamp to end of line"
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // rel_to_abs_offset / abs_to_rel_offset
+    // -------------------------------------------------------------------------
+
+    /// `script_start = 0` makes the relative and absolute coordinate systems
+    /// identical.  Both helpers must therefore be the identity.
+    #[test]
+    fn test_rel_abs_offset_zero_script_start() {
+        for &off in &[0u32, 1, 17, 1024, u32::MAX] {
+            assert_eq!(rel_to_abs_offset(off, 0), off);
+            assert_eq!(abs_to_rel_offset(off, 0), off);
+        }
+    }
+
+    /// Adding a non-zero `script_start` should produce the same value as a
+    /// `+= script_start` would in plain Rust, modulo `u32` overflow which
+    /// must saturate rather than wrap.
+    #[test]
+    fn test_rel_to_abs_offset_basic() {
+        assert_eq!(rel_to_abs_offset(0, 5), 5);
+        assert_eq!(rel_to_abs_offset(3, 5), 8);
+        assert_eq!(rel_to_abs_offset(100, 200), 300);
+    }
+
+    /// Subtracting `script_start` from an absolute offset yields the
+    /// corresponding relative offset.  Saturating subtraction is required
+    /// because LSP handlers can receive a cursor position that lands in the
+    /// config header (above `script_start`).
+    #[test]
+    fn test_abs_to_rel_offset_basic() {
+        assert_eq!(abs_to_rel_offset(5, 0), 5);
+        assert_eq!(abs_to_rel_offset(8, 5), 3);
+        assert_eq!(abs_to_rel_offset(300, 200), 100);
+        // Saturating: result must clamp to 0 when below script_start.
+        assert_eq!(abs_to_rel_offset(2, 5), 0);
+    }
+
+    /// A roundtrip rel → abs → rel must return the original relative offset.
+    #[test]
+    fn test_rel_abs_offset_roundtrip() {
+        for &(rel, script) in &[(0, 5), (1, 0), (17, 200), (999, 1000)] {
+            let abs = rel_to_abs_offset(rel, script);
+            assert_eq!(
+                abs_to_rel_offset(abs, script),
+                rel,
+                "roundtrip failed for rel={rel} script={script}"
+            );
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // rel_to_abs_span / abs_to_rel_span
+    // -------------------------------------------------------------------------
+
+    use chrn_utils::id_types::SourceRegionId;
+    use chrn_utils::source_map::source_span::SourceSpan;
+
+    /// Both endpoints of the span must be shifted by `script_start` while the
+    /// `region_id` is preserved.
+    #[test]
+    fn test_rel_to_abs_span() {
+        let span = SourceSpan::new(SourceRegionId::new(0), 3, 7);
+        let abs = rel_to_abs_span(span, 5);
+        assert_eq!(abs.start, 8);
+        assert_eq!(abs.end, 12);
+        // region_id must be preserved so cross-region resolution still works.
+        assert_eq!(abs.region_id, SourceRegionId::new(0));
+    }
+
+    /// Mirror of `rel_to_abs_span` for the opposite direction.
+    #[test]
+    fn test_abs_to_rel_span() {
+        let span = SourceSpan::new(SourceRegionId::new(0), 8, 12);
+        let rel = abs_to_rel_span(span, 5);
+        assert_eq!(rel.start, 3);
+        assert_eq!(rel.end, 7);
+        assert_eq!(rel.region_id, SourceRegionId::new(0));
+    }
+
+    // -------------------------------------------------------------------------
+    // Regression tests: `config_loader` now emits spans relative to
+    // `src_bytes`.  Every LSP surface that turns a compiler/loader span into
+    // an LSP `Position` (or a `Range` consumed by the editor) must shift the
+    // span by `script_start` so it lands in absolute file coordinates.  These
+    // tests pin that contract so a future refactor cannot silently regress
+    // diagnostic position reporting.
+    // -------------------------------------------------------------------------
+
+    /// `get_token_at_offset` accepts an **absolute** byte offset.  It must
+    /// internally subtract `script_start` to look up tokens whose spans are
+    /// stored relative to the script section.
+    ///
+    /// Document layout: a 6-byte config header ("@def\n") followed by the
+    /// script section ("let foo = 123;").  `script_start` is 5 (the byte
+    /// position of `@`); the script section starts at byte 5.
+    #[test]
+    fn test_get_token_at_offset_with_script_start() {
+        let cache = DocumentCache::new(10);
+        let uri = "file:///def_test.chrn";
+        //  0         1         2
+        //  0123456789012345678901234
+        //  @def\nlet foo = 123;
+        let text = Arc::new("@def\nlet foo = 123;".to_string());
+        let state = cache.get_or_create(uri, text, 5, None, 1);
+        let read_state = state.read();
+
+        // Absolute offset 10 is 'f' in "foo" — relative offset 5.
+        // The lexer stored the "foo" token with span [4, 7) relative to
+        // src_bytes, so the absolute lookup at 10 must return it.
+        let token = read_state
+            .get_token_at_offset(10)
+            .expect("Should find 'foo' via absolute offset");
+        assert_eq!(token.span.start, 4);
+        assert_eq!(token.span.end, 7);
+
+        // Absolute offset 15 is '1' in "123" — relative offset 10.
+        let token2 = read_state
+            .get_token_at_offset(15)
+            .expect("Should find '123' via absolute offset");
+        assert_eq!(token2.span.start, 10);
+        assert_eq!(token2.span.end, 13);
+
+        // Absolute offset 9 is 'l' of "let" — relative offset 4.  The
+        // returned span is relative (start=4, end=7), proving the lookup
+        // subtracted script_start.
+        let let_token = read_state
+            .get_token_at_offset(9)
+            .expect("Should find 'let' via absolute offset");
+        assert_eq!(let_token.span.start, 4);
+        assert_eq!(let_token.span.end, 7);
+
+        // Absolute offset 8 (the space between "let" and "foo") is not a
+        // token — must return None.
+        assert!(
+            read_state.get_token_at_offset(8).is_none(),
+            "space should not be a token"
+        );
+    }
+
+    /// Trivia spans in `DocumentState` are stored relative to the script
+    /// section's `src_bytes`.  `offset_in_comment` takes an **absolute**
+    /// byte offset and must subtract `script_start` before comparing
+    /// against the relative trivia spans.  Otherwise comment detection in
+    /// config files (with a non-zero `script_start`) would either miss
+    /// real comments or report false positives.
+    #[test]
+    fn test_offset_in_comment_with_script_start_relative_trivia() {
+        let cache = DocumentCache::new(10);
+        let uri = "file:///def_comment_test.chrn";
+        // "@def\n" is 5 bytes; the script section is "let x // inside script\n".
+        //  0         1         2         3
+        //  0123456789012345678901234567890
+        //  @def\nlet x // inside script\n
+        let text = Arc::new("@def\nlet x // inside script\n".to_string());
+        let state_arc = cache.get_or_create(uri, text, 5, None, 1);
+        let state = state_arc.read();
+
+        // Absolute offset 13 (the '/' of "//") is a comment.  After
+        // subtracting script_start=5 we get relative offset 8 — which
+        // must still be detected because the trivia spans are relative.
+        assert!(
+            state.offset_in_comment(13),
+            "absolute offset 13 ('//' start) must be detected as comment"
+        );
+        // Absolute offset 21 (the 'i' in "inside") is inside the comment.
+        assert!(
+            state.offset_in_comment(21),
+            "absolute offset 21 (inside comment) must be detected as comment"
+        );
+        // Absolute offset 9 (the 'l' in "let") is not a comment.
+        assert!(
+            !state.offset_in_comment(9),
+            "absolute offset 9 (start of 'let') must not be a comment"
+        );
+    }
+
+    /// `config_load_error_to_diagnostics` shifts the loader's relative
+    /// spans by `script_start` so the resulting LSP `Range`s land in
+    /// absolute file coordinates.  This test pins that behaviour: a
+    /// primary annotation at relative span [2, 6) with `script_start=10`
+    /// must produce a diagnostic whose range starts at line 1 (not line 0).
+    #[test]
+    fn test_config_load_error_to_diagnostics_uses_absolute_positions() {
+        use crate::analyser::config_load_error_to_diagnostics;
+        use chrn_utils::core_error::ConfigLoadError;
+        use chrn_utils::id_types::PathId;
+        use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
+        use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
+
+        // Document text: "@def\n" (5 bytes) + "let x = 1\n" (10 bytes).
+        // script_start = 5 (the byte position of '@' in the file).
+        let text = "@def\nlet x = 1\n";
+
+        // A primary annotation at relative span [2, 6) — this corresponds
+        // to absolute byte offsets [7, 11), i.e. the substring "let x" on
+        // line 1 (line 0 is "@def\n").
+        let primary_span = SourceSpan::new(SourceRegionId::new(0), 2, 6);
+        let diag = chrn_utils::source_map::source_diagnostic::SourceDiagnostic::builder(
+            DiagnosticLevel::Error,
+            "test error".to_string(),
+            PathId::new(0),
+        )
+        .add_annotation(primary_span, AnnotationKind::Primary, None)
+        .build();
+
+        let cfg_err = ConfigLoadError::Diagnostic(diag);
+        let lsp_diags = config_load_error_to_diagnostics(cfg_err, text, 5);
+
+        // The first diagnostic is the primary one.
+        let primary = lsp_diags
+            .first()
+            .expect("at least one diagnostic should be produced");
+
+        // The primary annotation is at absolute bytes [7, 11), which on
+        // line 1 of the document is characters [2, 6).  If the relative
+        // span had not been shifted, the range would land on line 0.
+        assert_eq!(
+            primary.range.start,
+            Position::new(1, 2),
+            "primary diagnostic must start at the absolute line/col (script_start shift applied)"
+        );
+        assert_eq!(
+            primary.range.end,
+            Position::new(1, 6),
+            "primary diagnostic must end at the absolute line/col (script_start shift applied)"
+        );
+    }
+
+    /// When `script_start = 0` (no `@def` — the entire file is the script),
+    /// relative and absolute coordinates coincide, so the diagnostic range
+    /// must map directly to the byte positions in the text.
+    #[test]
+    fn test_config_load_error_to_diagnostics_no_script_start_is_identity() {
+        use crate::analyser::config_load_error_to_diagnostics;
+        use chrn_utils::core_error::ConfigLoadError;
+        use chrn_utils::id_types::PathId;
+        use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
+        use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
+
+        let text = "let x = 1\n";
+        let primary_span = SourceSpan::new(SourceRegionId::new(0), 4, 5);
+        let diag = chrn_utils::source_map::source_diagnostic::SourceDiagnostic::builder(
+            DiagnosticLevel::Error,
+            "identity test".to_string(),
+            PathId::new(0),
+        )
+        .add_annotation(primary_span, AnnotationKind::Primary, None)
+        .build();
+
+        let cfg_err = ConfigLoadError::Diagnostic(diag);
+        let lsp_diags = config_load_error_to_diagnostics(cfg_err, text, 0);
+
+        let primary = lsp_diags.first().expect("diagnostic should be produced");
+        assert_eq!(primary.range.start, Position::new(0, 4));
+        assert_eq!(primary.range.end, Position::new(0, 5));
+    }
+
+    /// Every secondary annotation is also shifted by `script_start`.  A
+    /// secondary annotation at relative span [0, 4) (the "@def" itself)
+    /// with `script_start=0` must land on line 0; with `script_start=5`
+    /// it must still land on line 0 because "@def" is the first 4 bytes
+    /// of the file.  This test pins the behaviour for a non-trivial
+    /// shift: a secondary annotation on a different line.
+    #[test]
+    fn test_config_load_error_to_diagnostics_secondary_annotation_shifted() {
+        use crate::analyser::config_load_error_to_diagnostics;
+        use chrn_utils::core_error::ConfigLoadError;
+        use chrn_utils::id_types::PathId;
+        use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
+        use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
+
+        // Two-line document: line 0 is the config header, line 1 holds
+        // the script section.  The primary annotation is on line 1 at
+        // relative col 0-1; the secondary annotation is on line 1 at
+        // relative col 4-5 (i.e. the '=' character).
+        let text = "@def\nlet x = 1\n";
+        let primary_span = SourceSpan::new(SourceRegionId::new(0), 0, 1);
+        let secondary_span = SourceSpan::new(SourceRegionId::new(0), 4, 5);
+        let diag = chrn_utils::source_map::source_diagnostic::SourceDiagnostic::builder(
+            DiagnosticLevel::Error,
+            "secondary test".to_string(),
+            PathId::new(0),
+        )
+        .add_annotation(primary_span, AnnotationKind::Primary, None)
+        .add_annotation(
+            secondary_span,
+            AnnotationKind::Secondary,
+            Some("equals sign".to_string()),
+        )
+        .build();
+
+        let cfg_err = ConfigLoadError::Diagnostic(diag);
+        let lsp_diags = config_load_error_to_diagnostics(cfg_err, text, 5);
+
+        // Expect 2 diagnostics: primary, then secondary.
+        assert!(
+            lsp_diags.len() >= 2,
+            "primary + secondary must each produce a diagnostic"
+        );
+
+        // Primary: relative [0, 1) on line 1 of script → absolute [5, 6)
+        // on line 1 of the document → Position(1, 0)..Position(1, 1).
+        let primary = &lsp_diags[0];
+        assert_eq!(primary.range.start, Position::new(1, 0));
+        assert_eq!(primary.range.end, Position::new(1, 1));
+
+        // Secondary: relative [4, 5) on line 1 of script → absolute
+        // [9, 10) on line 1 of the document → Position(1, 4)..Position(1, 5).
+        let secondary = lsp_diags
+            .iter()
+            .find(|d| {
+                d.message == "equals sign"
+                    || d.message.contains("related to this")
+            })
+            .expect("secondary diagnostic must be emitted");
+        assert_eq!(
+            secondary.range.start,
+            Position::new(1, 4),
+            "secondary diagnostic must use the script_start-shifted range"
+        );
+        assert_eq!(secondary.range.end, Position::new(1, 5));
+    }
+
+    /// `push_diagnostics` shifts relative diagnostic spans by the
+    /// region's `script_start` and converts the resulting absolute byte
+    /// offset against the whole-document `fallback_text`.  This is the
+    /// primary path used by `analyze_and_publish_task` for parser /
+    /// name-resolution / type-check errors.
+    #[test]
+    fn test_push_diagnostics_relative_to_absolute_via_region() {
+        use crate::analyser::push_diagnostics;
+        use chrn_utils::arena::Arena;
+        use chrn_utils::id_types::{PathId, SourceRegionId};
+        use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
+        use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
+        use chrn_utils::source_map::source_region::SourceRegion;
+
+        // The whole document is "@def\nlet x = 1\n".  The main region's
+        // `src_bytes` are the script section only ("let x = 1\n"), with
+        // script_start=5 pointing at the '@' in the file.
+        let full_text = "@def\nlet x = 1\n";
+        let main_region = SourceRegion::new(
+            1,
+            1,
+            b"let x = 1\n".to_vec(),
+            SourceRegionId::new(0),
+            PathId::new(0),
+            5,
+            None,
+        );
+
+        let mut arena: Arena<SourceRegion, SourceRegionId> = Arena::new();
+        arena.push(main_region);
+
+        // Diagnostic at relative span [0, 1) — the "l" of "let" — with
+        // the same path_id as the main region, so it is resolved to the
+        // main region (script_start=5).  The expected absolute range is
+        // [5, 6) on line 1.
+        let diag = chrn_utils::source_map::source_diagnostic::SourceDiagnostic::builder(
+            DiagnosticLevel::Error,
+            "type check failed".to_string(),
+            PathId::new(0),
+        )
+        .add_annotation(
+            SourceSpan::new(SourceRegionId::new(0), 0, 1),
+            AnnotationKind::Primary,
+            None,
+        )
+        .build();
+
+        let mut lsp_diags: Vec<tower_lsp::lsp_types::Diagnostic> = Vec::new();
+        push_diagnostics(
+            &mut lsp_diags,
+            std::slice::from_ref(&diag),
+            &arena,
+            full_text,
+            full_text.len(),
+            "chrn-typecheck",
+        );
+
+        assert_eq!(lsp_diags.len(), 1, "one diagnostic expected");
+        let d = &lsp_diags[0];
+        assert_eq!(
+            d.range.start,
+            Position::new(1, 0),
+            "push_diagnostics must shift the relative span by script_start"
+        );
+        assert_eq!(d.range.end, Position::new(1, 1));
+        assert_eq!(d.message, "type check failed");
+        assert_eq!(d.source.as_deref(), Some("chrn-typecheck"));
+    }
+
+    /// When the diagnostic's `path_id` matches no region in the arena
+    /// (e.g. compiler-intrinsic diagnostics, or for regions that have
+    /// been evicted), `push_diagnostics` must fall back to the supplied
+    /// `fallback_text` with `script_start = 0` so the resulting range
+    /// lines up with the byte positions in `fallback_text`.
+    #[test]
+    fn test_push_diagnostics_no_matching_region_uses_fallback() {
+        use crate::analyser::push_diagnostics;
+        use chrn_utils::arena::Arena;
+        use chrn_utils::id_types::{PathId, SourceRegionId};
+        use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
+        use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
+        use chrn_utils::source_map::source_region::SourceRegion;
+
+        let full_text = "let x = 1\n";
+        // Region uses path_id=1; the diagnostic uses path_id=0.  The
+        // lookup must fall back to `fallback_text` (no shift).
+        let main_region = SourceRegion::new(
+            1,
+            1,
+            b"let x = 1\n".to_vec(),
+            SourceRegionId::new(0),
+            PathId::new(1),
+            0,
+            None,
+        );
+
+        let mut arena: Arena<SourceRegion, SourceRegionId> = Arena::new();
+        arena.push(main_region);
+
+        let diag = chrn_utils::source_map::source_diagnostic::SourceDiagnostic::builder(
+            DiagnosticLevel::Warn,
+            "fallback test".to_string(),
+            PathId::new(0), // Does NOT match the region's path_id.
+        )
+        .add_annotation(
+            SourceSpan::new(SourceRegionId::new(0), 4, 5),
+            AnnotationKind::Primary,
+            None,
+        )
+        .build();
+
+        let mut lsp_diags: Vec<tower_lsp::lsp_types::Diagnostic> = Vec::new();
+        push_diagnostics(
+            &mut lsp_diags,
+            std::slice::from_ref(&diag),
+            &arena,
+            full_text,
+            full_text.len(),
+            "chrn-parser",
+        );
+
+        assert_eq!(lsp_diags.len(), 1);
+        let d = &lsp_diags[0];
+        // The diagnostic's span is treated as already-absolute in the
+        // fallback text.  The byte range [4, 5) is the 'x' on line 0.
+        assert_eq!(d.range.start, Position::new(0, 4));
+        assert_eq!(d.range.end, Position::new(0, 5));
+    }
+
+    /// `find_matching_entities` returns the document's `script_start` as
+    /// the last element of each tuple so that callers in `references` /
+    /// `rename` can shift relative spans to absolute file positions.
+    /// This test pins that the `script_start` is read from the state and
+    /// propagated to the caller — a regression here would silently break
+    /// cross-module references and rename for any file with a non-zero
+    /// `script_start`.
+    #[test]
+    fn test_find_matching_entities_propagates_script_start() {
+        use crate::state::{DocumentCache, DocumentState};
+
+        let cache = Arc::new(DocumentCache::new(10));
+
+        // Build two cached documents with different `script_start` values
+        // so we can verify the function reads the per-state value rather
+        // than any global.  The lexer is given only the relative script
+        // section bytes via `get_or_create`, so the cache is self-
+        // consistent with the production path.
+        let uri_a = "file:///a.chrn";
+        let text_a = Arc::new("@def\nlet a = 1".to_string());
+        let state_a = cache.get_or_create(uri_a, text_a, 5, None, 1);
+
+        let uri_b = "file:///b.chrn";
+        let text_b = Arc::new("let b = 1".to_string());
+        let state_b = cache.get_or_create(uri_b, text_b, 0, None, 1);
+
+        // Read script_start directly from each DocumentState.  This is
+        // the value `find_matching_entities` is supposed to return per
+        // entry; we check it matches what was passed to `get_or_create`.
+        assert_eq!(state_a.read().script_start, 5);
+        assert_eq!(state_b.read().script_start, 0);
+
+        // Even with no matching entities (the compiler is `None`, so
+        // `get_definition_location` returns `None` for every entry and
+        // the result vector is empty), the function must not panic and
+        // must return a `Vec` whose element type is the documented
+        // 5-tuple `(String, Arc<String>, u32, u32, usize)`.  The
+        // compile-time type check is the regression guard: a future
+        // refactor that drops `script_start` from the return type fails
+        // to build.
+        let results: Vec<(String, Arc<String>, u32, u32, usize)> =
+            DocumentState::find_matching_entities(
+                &cache,
+                "<no-match>",
+                chrn_utils::source_map::source_span::SourceSpan::new(
+                    chrn_utils::id_types::SourceRegionId::new(0),
+                    0,
+                    1,
+                ),
+                None,
+            );
+        // No compiler has been built, so no entries can be matched.
+        // The result must be empty, not panic.
+        assert!(
+            results.is_empty(),
+            "no compiler → no matches; empty result is the expected outcome"
+        );
+    }
+
+    /// `rel_to_abs_offset` is used by every LSP surface that converts a
+    /// relative byte offset into an absolute file position.  Pinning
+    /// specific values (especially the boundary cases) protects against
+    /// off-by-one regressions when the loader layout changes.
+    #[test]
+    fn test_rel_to_abs_offset_boundary_values() {
+        // script_start = usize::MAX / 2 is the largest script_start that
+        // does not overflow for any in-range relative offset.
+        let script = (u32::MAX / 2) as usize;
+        assert_eq!(rel_to_abs_offset(0, script), script as u32);
+        assert_eq!(rel_to_abs_offset(1, script), (script as u32) + 1);
+        assert_eq!(
+            rel_to_abs_offset(u32::MAX, script),
+            (script as u32).saturating_add(u32::MAX),
+            "must saturate on overflow rather than wrap"
+        );
+
+        // script_start = 0 with a large relative offset must not overflow
+        // because the input itself is bounded by u32::MAX.
+        assert_eq!(rel_to_abs_offset(u32::MAX, 0), u32::MAX);
+
+        // `abs_to_rel_offset` is the inverse and must be lossless when
+        // the input is in the absolute coordinate system.
+        let abs = rel_to_abs_offset(123, 456);
+        assert_eq!(abs_to_rel_offset(abs, 456), 123);
     }
 }

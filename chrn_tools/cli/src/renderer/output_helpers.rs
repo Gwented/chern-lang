@@ -15,6 +15,7 @@ use chrn_utils::{
     source_map::{
         source_diagnostic::{DiagnosticLevel, annotations::AnnotationKind},
         source_region::SourceRegion,
+        source_span::SourceSpan,
     },
 };
 
@@ -57,4 +58,36 @@ pub(super) fn resolve_region_path(
     let arena = region_arena_opt?;
     let region = arena.get(region_id)?;
     Some(interner.search_path(region.path_id).display().to_string())
+}
+
+/// Projects a span's `start`/`end` from region-relative offsets to
+/// absolute file offsets using the owning region's `script_start`.
+///
+/// The rest of the pipeline (lexing, parsing, semantic analysis) emits
+/// `SourceSpan` values whose `start`/`end` are byte offsets into the
+/// owning `SourceRegion::src_bytes`, not the underlying file. This is
+/// deliberate: the loader only retains the script portion of the file
+/// in `src_bytes`, so a relative position is the only thing that is
+/// stable across the pipeline. External tooling, however, has no way
+/// to recover the `script_start` it needs to translate those relative
+/// positions back into the file the user actually edited.
+///
+/// The structured (JSON, YAML) renderers run at the end of the pipeline
+/// where the region arena is available, so they take on that projection
+/// themselves: they add the region's `script_start` to the relative
+/// `start`/`end` and emit absolute byte offsets that a tool can map
+/// directly onto the source file.
+///
+/// When the region arena is missing or the region id is not present in
+/// it, the raw relative values are returned unchanged. The structured
+/// renderers still emit a usable, well-formed document in that case —
+/// they just cannot guarantee the offsets are absolute.
+pub(super) fn project_absolute_span(
+    region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
+    span: &SourceSpan,
+) -> (u32, u32) {
+    let script_start = region_arena_opt
+        .and_then(|arena| arena.get(span.region_id))
+        .map_or(0, |region| region.script_start as u32);
+    (span.start + script_start, span.end + script_start)
 }
