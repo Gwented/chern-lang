@@ -1,11 +1,14 @@
 use crate::id_types::{PathId, SourceRegionId};
 
 // Should these have identifiers?
-/// Byte region structure
+/// Structure depicting what the `chrn` language considers a region.
+///
+/// As of right now, a region is as big as `MAX_REGION_SIZE`
 #[derive(Debug)]
 pub struct SourceRegion {
     /// Absolute starting line number of this region.
     pub abs_ln_num_start: u32,
+    /// Absolute starting column start of this region.
     pub abs_col_start: u32,
     /// Index of `self`
     pub region_id: SourceRegionId,

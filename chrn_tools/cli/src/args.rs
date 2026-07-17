@@ -113,8 +113,12 @@ pub enum Commands {
 pub struct CheckCmd {
     /// Path of `.chrn` config file to check
     pub(crate) path: PathBuf,
+    /// Allows for lint warns to be applied, which aren't by default
     #[arg(short = 'l', long = "lint", default_value_t = false)]
     pub(crate) can_lint: bool,
+    /// Emits developer debug info during check
+    #[arg(long = "dbg", default_value_t = false)]
+    pub(crate) has_dbg_mode: bool,
     /// Emits diagnostics as a JSON document on stdout
     #[arg(long = "json", default_value_t = false)]
     pub(crate) json: bool,
@@ -122,7 +126,7 @@ pub struct CheckCmd {
     /// When combined with `--json`, JSON is emitted.
     #[arg(long = "yaml", default_value_t = false)]
     pub(crate) yaml: bool,
-    /// Minifies the JSON or YAML output (no effect without `--json` or `--yaml`).
+    /// Minifies output iff JSON or YAML output is chosen
     #[arg(short = 'm', long = "minify", default_value_t = false)]
     pub(crate) minify: bool,
 }

@@ -125,7 +125,7 @@ impl<R: Read> ConfigLoader<'_, R> {
 
         let mut def_span: Option<SourceSpan> = None;
 
-        // AJIDOWJOA inittital
+        // ONLY FILL AS OF RIGHT NOW
         match self.handle.fill_buf() {
             Ok(_) => (),
             Err(err) => {
@@ -189,7 +189,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                         )
                         .add_annotation(
                             q_span,
-                            AnnotationKind::Secondary,
+                            AnnotationKind::Primary,
                             "Possible start of unclosed quote".to_string().into(),
                         );
 
@@ -235,7 +235,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                         )
                         .add_annotation(
                             q_span,
-                            AnnotationKind::Secondary,
+                            AnnotationKind::Primary,
                             "Possible start of unclosed quote".to_string().into(),
                         );
 
@@ -859,11 +859,9 @@ impl<R: Read> ConfigLoader<'_, R> {
 }
 
 // Should probably put this in some sort of utils/utils file with obscure structures?
-const FREEZE_FLAG: u32 = 0x8000_0000;
-const VAL_MASK: u32 = 0x7FFF_FFFF;
-
-/// Tracker that stores a "freeze" flag which takes a bit in it's 32 bits, which allows it to stay 4
-/// bytes instead of memory padding from `bool`.
+// Or maybe just a local config loader owned thing
+/// Tracker that stores a "freeze" flag which takes the last bit in it's 32 bits, which allows it to stay 4
+/// bytes instead of memory padding from a `bool`.
 #[derive(Debug, Default)]
 struct NumberTracker {
     inner: u32,
@@ -871,15 +869,19 @@ struct NumberTracker {
 
 // Not necessary. But it would be 8 bytes which would cause the entire program to otherwise combust.
 impl NumberTracker {
+    const FREEZE_FLAG: u32 = 0x8000_0000;
+    const VAL_MASK: u32 = 0x7FFF_FFFF;
+
     fn new(inner: u32) -> NumberTracker {
         NumberTracker { inner }
     }
 
     fn val(&self) -> u32 {
-        self.inner & VAL_MASK
+        self.inner & Self::VAL_MASK
     }
 
     fn increment(&mut self) {
+        // If inner takes over val radius we instantly combust.
         if !self.is_frozen() {
             self.inner += 1;
         }
@@ -898,11 +900,11 @@ impl NumberTracker {
     }
 
     fn freeze(&mut self) {
-        self.inner |= FREEZE_FLAG;
+        self.inner |= Self::FREEZE_FLAG;
     }
 
     fn is_frozen(&self) -> bool {
-        (self.inner & FREEZE_FLAG) != 0
+        (self.inner & Self::FREEZE_FLAG) != 0
     }
 }
 

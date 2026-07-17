@@ -3,7 +3,7 @@ use std::path::Path;
 use chrn_utils::source_map::source_diagnostic::{DiagnosticLevel, annotations::AnnotationKind};
 use common::color::{self, TerminalColorType};
 
-use crate::renderer::terminal_renderer::render_settings::TerminalRenderConfig;
+use crate::renderer::terminal_renderer::terminal_config::TerminalRenderConfig;
 
 /// Returns the text that corresponds with a given diagnostic level
 pub(super) fn get_diag_level_text(level: DiagnosticLevel) -> &'static str {

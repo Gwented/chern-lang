@@ -967,7 +967,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnConfig::new(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -995,7 +995,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnConfig::new(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()
@@ -1023,7 +1023,7 @@ mod tests {
             region_id,
             text.as_bytes(),
             path_id,
-            &ChrnConfig::new(),
+            &ChrnConfig::default(),
             &interner,
         )
         .load_config()

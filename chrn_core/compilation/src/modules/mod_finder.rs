@@ -24,7 +24,7 @@ pub struct ModuleFinder<'a> {
     /// Current module's bytes
     // Maybe turn this into &str
     src_bytes: &'a [u8],
-    settings: &'a ChrnConfig,
+    cfg: &'a ChrnConfig,
     seen: &'a mut Vec<(PathId, ModuleId)>,
     diags: Vec<SourceDiagnostic>,
     /// Path origin so that errors can accurately report the path where the import was declared
@@ -38,7 +38,7 @@ pub struct ModuleFinder<'a> {
 impl ModuleFinder<'_> {
     pub fn new<'a>(
         src_bytes: &'a [u8],
-        settings: &'a ChrnConfig,
+        cfg: &'a ChrnConfig,
         seen: &'a mut Vec<(PathId, ModuleId)>,
         current_region: &'a SourceRegion,
         script_start: usize,
@@ -46,7 +46,7 @@ impl ModuleFinder<'_> {
     ) -> ModuleFinder<'a> {
         ModuleFinder {
             src_bytes,
-            settings,
+            cfg,
             current_region,
             diags: Vec::new(),
             seen,
@@ -263,8 +263,18 @@ impl ModuleFinder<'_> {
                 self.seen.push((path_id, new_mod_id));
                 new_mod_id
             };
+        let import = Import::new(name_id, mod_id, import_kind, alias_id);
 
-        Ok(Import::new(name_id, mod_id, import_kind, alias_id))
+        self.cfg.logger().log_dbg(|| {
+            let import_name = interner.search(name_id);
+            let region_path = interner.search_path(self.current_region.path_id);
+            format!(
+                "Created import `{import_name}` for region \"{}\"",
+                region_path.display()
+            )
+        });
+
+        Ok(import)
     }
 
     //WARN: Will be placed in different module
@@ -392,8 +402,19 @@ impl ModuleFinder<'_> {
         };
 
         let bind_path_id = interner.intern_path(&bind_path);
+        let bind = Bind::new(bind_path_id, path_span);
 
-        Ok(Bind::new(bind_path_id, path_span))
+        self.cfg.logger().log_dbg(|| {
+            let bind_path = interner.search_path(bind_path_id);
+            let region_path = interner.search_path(self.current_region.path_id);
+            format!(
+                "Created bind which points to `{}` for region \"{}\"",
+                bind_path.display(),
+                region_path.display()
+            )
+        });
+
+        Ok(bind)
     }
 
     fn read_id(&mut self, interner: &mut Intern) -> InternedId {

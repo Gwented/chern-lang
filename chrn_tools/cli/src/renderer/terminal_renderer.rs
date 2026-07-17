@@ -1,7 +1,7 @@
 //TODO: CLEAN ME
 pub(super) mod layout;
-pub(crate) mod render_settings;
 pub(super) mod style;
+pub(crate) mod terminal_config;
 
 use chrn_utils::{
     arena::Arena,
@@ -19,7 +19,7 @@ use common::color;
 use crate::{
     renderer::terminal_renderer::{
         layout::{RenderInfo, RenderLineLayout},
-        render_settings::TerminalRenderConfig,
+        terminal_config::TerminalRenderConfig,
     },
     s_ifier,
 };

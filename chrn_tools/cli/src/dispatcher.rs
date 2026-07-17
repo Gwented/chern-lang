@@ -17,7 +17,7 @@ use crate::{
         json_renderer,
         json_renderer::json_config::JsonRenderConfig,
         render_kind::RenderKind,
-        terminal_renderer::{self, render_settings::TerminalRenderConfig},
+        terminal_renderer::{self, terminal_config::TerminalRenderConfig},
         yaml_renderer,
         yaml_renderer::yaml_config::YamlRenderConfig,
     },
@@ -39,7 +39,13 @@ fn exec_check(
     glob_args: &GlobalArgs,
     cli_cfg: &CliConfig,
 ) -> Result<String, Option<String>> {
-    let chrn_cfg = ChrnConfig::new();
+    // Centralized cmd to config construction for all known cmds?
+    let mut builder = ChrnConfig::builder();
+    if check_cmd.has_dbg_mode {
+        builder = builder.with_logger();
+    }
+    let chrn_cfg = builder.build();
+
     let mut reporter = Reporter::new(crate::MAX_DIAGNOSTICS);
     let path = files::make_canon(&check_cmd.path)?;
     let render_kind = RenderKind::from_check_cmd(check_cmd);
@@ -217,7 +223,7 @@ fn exec_check(
 
 fn exec_fmt(fmt_cmd: &FmtCmd, cli_cfg: &CliConfig) -> Result<String, Option<String>> {
     todo!("gofmt");
-    // let chrn_cfg = ChrnConfig::new();
+    // let chrn_cfg = ChrnConfig::default();
     // match formatter::fmt::fmt_script_block(&fmt_cmd.path, &settings) {
     //     Ok(_) => todo!("ok"),
     //     Err(_) => todo!("err"),
@@ -226,7 +232,7 @@ fn exec_fmt(fmt_cmd: &FmtCmd, cli_cfg: &CliConfig) -> Result<String, Option<Stri
 
 // Object!
 fn exec_query(query_cmd: &QueryCmd, cli_cfg: &CliConfig) -> Result<String, Option<String>> {
-    let chrn_cfg = ChrnConfig::new();
+    let chrn_cfg = ChrnConfig::default();
     let path = files::make_canon(&query_cmd.path)?;
 
     todo!();
