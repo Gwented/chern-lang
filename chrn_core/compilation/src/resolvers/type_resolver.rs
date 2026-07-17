@@ -126,7 +126,6 @@ impl<'res> TypeResolver<'res> {
 
         // These variables are the sole determining factors as to how long the expression context
         // is looped, given any new information.
-
         let mut last_resolved_count: u32 = 0;
         let mut current_resolved_count: u32 = 0;
         while self.ty_ctx.needs_check {
@@ -382,6 +381,8 @@ impl<'res> TypeResolver<'res> {
             self.err_vec.push(src_diag.build());
             None
         };
+        // dbg!(self.compiler.symbols[found_sym_id_opt.unwrap()].kind);
+        // panic!("release me");
 
         // Get schema option then lookup against the actual possibilities
         // Maybe do this in constraints
@@ -1660,6 +1661,7 @@ impl<'res> TypeResolver<'res> {
         let abs_typedef = env.ast_info.get_typedef(ast_id);
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
+        //TODO: typecheck here?
         let type_id = match resolve::resolve_type_expr(
             &mut self.compiler,
             AssociatedScopeKind::Module(env.current_mod),
@@ -2415,14 +2417,13 @@ impl<'res> TypeResolver<'res> {
                     let mod_name = self.interner.search(module.name_id);
 
                     let and_local = if local_scope_id.is_some() {
-                        " and local"
+                        " and local scopes"
                     } else {
                         ""
                     };
 
-                    let core_msg = format!(
-                        "`{ident}` was not found in the module `{mod_name}` within `{scope_type}`{and_local} searchable scopes"
-                    );
+                    let core_msg =
+                        format!("`{ident}` was not found in module `{mod_name}`{and_local}");
 
                     let src_diag = SourceDiagnostic::builder(
                         DiagnosticLevel::Error,
@@ -2527,6 +2528,9 @@ impl<'res> TypeResolver<'res> {
                 // place. So, if it's not a comptaible binary, that could either mean 2 + "hi" or 2
                 // + x where we just don't know x yet
                 let const_val_opt: Option<Value> = match (lhs_val_opt, rhs_val_opt) {
+                    //TODO: Should this try to catch invalid types being used here like functions?
+                    //It ignores them right now since they don't have a const val, which just means
+                    //the output is `None` rather than an error
                     (Some(lhs_const), Some(rhs_const)) => {
                         let sp_lhs_const = SpannedContainerRef::new(lhs_const, lhs_expr.span);
                         let sp_rhs_const = SpannedContainerRef::new(rhs_const, rhs_expr.span);

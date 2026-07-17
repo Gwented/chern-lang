@@ -4,7 +4,7 @@
 
 use chrn_utils::{
     chrn_config::ChrnConfig,
-    id_types::{AstId, InternedId, MemberId, SymbolId, TypeId},
+    id_types::{AstId, MemberId, SymbolId, TypeId},
     intern::Intern,
     source_map::source_diagnostic::{
         DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind,
@@ -21,7 +21,6 @@ use crate::{
         preset_reporter,
         resolve::{self, TypeExprResult},
     },
-    user_defined::{TaggedSymbolId, UserDefinedMetadata},
 };
 
 // This doesn't account for general things it could do like directives since that would make it

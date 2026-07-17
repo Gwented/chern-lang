@@ -1,9 +1,9 @@
 //TEST: Not sure if this should exist but needed somewhere better than dispatcher to put footers
 
 use chrn_utils::source_map::source_diagnostic::footers::FooterKind;
-use compilation::script_compiler::{
-    reporter::Reporter, script_compiler_summary::ScriptCompilerSummary,
-};
+use compilation::script_compiler::reporter::Reporter;
+
+// The ordering of each footer insertion is on purpose
 
 // The idea behind footers is that they are from information found internally, but not made
 // internally like a diagnostic would be.
@@ -13,7 +13,7 @@ pub fn make_footers(reporter: &Reporter) -> Vec<FooterKind> {
     let mut footers: Vec<FooterKind> = Vec::new();
     let summary = reporter.summary();
 
-    if reporter.suppressed_diagnostics() > 1 {
+    if reporter.suppressed_diagnostics() > 0 {
         footers.push(FooterKind::DiagnosticsExceeded(
             reporter.suppressed_diagnostics() as u16,
         ));
@@ -21,6 +21,14 @@ pub fn make_footers(reporter: &Reporter) -> Vec<FooterKind> {
 
     if let Some(max) = summary.exceeded_max_mods {
         footers.push(FooterKind::MaxModulesExceeded(max));
+    }
+
+    if reporter.diags.len() > 0 {
+        //WARN: Needs warns emitted too, and some sort of filtering internally so that this is
+        //tracked. Right now no warns are emitted at the top level but this will be needed when said
+        //time comes.
+        footers.push(FooterKind::ErrorsEmitted(reporter.diags.len() as u16));
+        // panic!();
     }
 
     footers

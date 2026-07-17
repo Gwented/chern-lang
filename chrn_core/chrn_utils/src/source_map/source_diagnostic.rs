@@ -211,6 +211,7 @@ impl SourceDiagnosticBuilder {
 pub enum DiagnosticLevel {
     Error,
     Warn,
+    // May remove since these are not meant for top level
     Note,
     Help,
 }

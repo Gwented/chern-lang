@@ -132,12 +132,8 @@ pub fn compute_references(
     let locations = if is_local {
         collect_local_occurrences(&state, &def_span, def_owner_sym_id, uri)
     } else {
-        let entities = DocumentState::find_matching_entities(
-            doc_cache,
-            &def_path,
-            def_span,
-            def_owner_sym_id,
-        );
+        let entities =
+            DocumentState::find_matching_entities(doc_cache, &def_path, def_span, def_owner_sym_id);
         matching_entities_to_locations(entities)
     };
 

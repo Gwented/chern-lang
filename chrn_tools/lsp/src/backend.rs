@@ -856,8 +856,8 @@ impl LanguageServer for Backend {
                 if !triv.kind.is_comment() {
                     continue;
                 }
-                let abs_start = crate::text::rel_to_abs_offset(triv.span.start, script_start)
-                    as usize;
+                let abs_start =
+                    crate::text::rel_to_abs_offset(triv.span.start, script_start) as usize;
                 let start_pos = crate::text::offset_to_position(&state.text, abs_start);
                 let length = triv.span.end.saturating_sub(triv.span.start);
 
@@ -874,8 +874,7 @@ impl LanguageServer for Backend {
                 let st = &toks_vec[tok_idx];
                 tok_idx += 1;
                 let span = st.span;
-                let abs_start =
-                    crate::text::rel_to_abs_offset(span.start, script_start) as usize;
+                let abs_start = crate::text::rel_to_abs_offset(span.start, script_start) as usize;
                 let start_pos = crate::text::offset_to_position(&state.text, abs_start);
                 let length = span.end.saturating_sub(span.start);
 
@@ -990,18 +989,15 @@ impl LanguageServer for Backend {
             if state.offset_in_comment(byte_offset) {
                 None
             } else {
-                state
-                    .get_entity_at_offset(byte_offset)
-                    .and_then(|entity| {
-                        let (def_path, def_span, _) =
-                            state.get_definition_location(entity)?;
-                        let def_script_start = state
-                            .region_arena
-                            .get(def_span.region_id)
-                            .map(|r| r.script_start)
-                            .unwrap_or(0);
-                        Some((def_path, def_span, def_script_start))
-                    })
+                state.get_entity_at_offset(byte_offset).and_then(|entity| {
+                    let (def_path, def_span, _) = state.get_definition_location(entity)?;
+                    let def_script_start = state
+                        .region_arena
+                        .get(def_span.region_id)
+                        .map(|r| r.script_start)
+                        .unwrap_or(0);
+                    Some((def_path, def_span, def_script_start))
+                })
             }
         };
 

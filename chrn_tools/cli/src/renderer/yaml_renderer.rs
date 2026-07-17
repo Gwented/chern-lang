@@ -551,6 +551,24 @@ fn write_footer(out: &mut String, footer: &FooterKind, level: usize, config: &Ya
                 out.push_str(": ");
                 out.push_str(&max.to_string());
             }
+            FooterKind::ErrorsEmitted(count) => {
+                push_yaml_str(out, "kind");
+                out.push_str(": ");
+                push_yaml_str(out, "errors_emitted");
+                out.push_str(", ");
+                push_yaml_str(out, "count");
+                out.push_str(": ");
+                out.push_str(&count.to_string());
+            }
+            FooterKind::WarnsEmitted(count) => {
+                push_yaml_str(out, "kind");
+                out.push_str(": ");
+                push_yaml_str(out, "warns_emitted");
+                out.push_str(", ");
+                push_yaml_str(out, "count");
+                out.push_str(": ");
+                out.push_str(&count.to_string());
+            }
         }
         out.push('}');
     } else {
@@ -580,6 +598,26 @@ fn write_footer(out: &mut String, footer: &FooterKind, level: usize, config: &Ya
                 push_yaml_str(out, "max");
                 out.push_str(": ");
                 out.push_str(&max.to_string());
+            }
+            FooterKind::ErrorsEmitted(count) => {
+                push_yaml_str(out, "kind");
+                out.push_str(": ");
+                push_yaml_str(out, "errors_emitted");
+                out.push('\n');
+
+                write_indent(out, key_level, config);
+                push_yaml_str(out, "count");
+                out.push_str(": ");
+                out.push_str(&count.to_string());
+            }
+            FooterKind::WarnsEmitted(count) => {
+                push_yaml_str(out, "kind");
+                out.push_str(": ");
+                push_yaml_str(out, "warns_emitted");
+                out.push_str(", ");
+                push_yaml_str(out, "count");
+                out.push_str(": ");
+                out.push_str(&count.to_string());
             }
         }
     }
@@ -914,13 +952,7 @@ mod tests {
             &interner,
             &YamlRenderConfig::new(false),
         );
-        assert!(
-            out.contains("          start: 4\n"),
-            "got:\n{out}"
-        );
-        assert!(
-            out.contains("          end: 9\n"),
-            "got:\n{out}"
-        );
+        assert!(out.contains("          start: 4\n"), "got:\n{out}");
+        assert!(out.contains("          end: 9\n"), "got:\n{out}");
     }
 }

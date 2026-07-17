@@ -251,7 +251,7 @@ impl DocumentState {
         self.config_errors = config_errors;
 
         // Main region has id 0; sub-regions were assigned ids 1..=N during resolution.
-        let _main_region_id = self.region_arena.push(main_region);
+        self.region_arena.push(main_region);
         for sub_region in sub_regions {
             self.region_arena.push(sub_region);
         }
@@ -963,14 +963,7 @@ impl DocumentState {
                 collect_expr_refs(compiler, &opt.array_expr, map, text, interner, script_start);
             }
             for child in &cfg.cfg_members {
-                collect_cfg_refs(
-                    compiler,
-                    child,
-                    map,
-                    text,
-                    interner,
-                    script_start,
-                );
+                collect_cfg_refs(compiler, child, map, text, interner, script_start);
             }
         }
 
@@ -1288,9 +1281,7 @@ impl DocumentState {
         // their more specific components (like the module or field name).
         self.symbol_map
             .iter()
-            .filter(|(span, _)| {
-                rel_offset >= span.start as usize && rel_offset < span.end as usize
-            })
+            .filter(|(span, _)| rel_offset >= span.start as usize && rel_offset < span.end as usize)
             .min_by_key(|(span, _)| span.end.saturating_sub(span.start))
             .map(|(_, entity)| entity)
     }
@@ -1594,7 +1585,8 @@ impl DocumentState {
                 if let Some((other_def_path, other_def_span, other_def_owner_sym_id)) =
                     state.get_definition_location(ent)
                     && other_def_path == def_path
-                    && other_def_span == def_span
+                    && other_def_span.start == def_span.start
+                    && other_def_span.end == def_span.end
                     && other_def_owner_sym_id == def_owner_sym_id
                 {
                     results.push((
@@ -1753,8 +1745,8 @@ impl DocumentCache {
         // `hover`, `references`, `rename`) treats as relative.
         let mut interner = Intern::init();
         let script_src = &text.as_bytes()[script_start..];
-        let (tokens, trivia) = Lexer::new(SourceRegionId::new(0), script_src, script_start)
-            .tokenize(&mut interner);
+        let (tokens, trivia) =
+            Lexer::new(SourceRegionId::new(0), script_src, script_start).tokenize(&mut interner);
 
         // 3. Re-acquire write lock to insert
         let mut cache = self.inner.write();

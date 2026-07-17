@@ -1025,10 +1025,7 @@ mod tests {
         // [9, 10) on line 1 of the document → Position(1, 4)..Position(1, 5).
         let secondary = lsp_diags
             .iter()
-            .find(|d| {
-                d.message == "equals sign"
-                    || d.message.contains("related to this")
-            })
+            .find(|d| d.message == "equals sign" || d.message.contains("related to this"))
             .expect("secondary diagnostic must be emitted");
         assert_eq!(
             secondary.range.start,
@@ -1105,6 +1102,90 @@ mod tests {
         assert_eq!(d.range.end, Position::new(1, 1));
         assert_eq!(d.message, "type check failed");
         assert_eq!(d.source.as_deref(), Some("chrn-typecheck"));
+    }
+
+    /// Import errors (file-not-found, is-a-directory, IO, etc.) must be
+    /// reported on the `import` statement in the importing module.  That
+    /// means the diagnostic's `path_id` must resolve to the importing
+    /// module's region so `push_diagnostics` shifts the span by the
+    /// importing module's `script_start`.  If the diagnostic incorrectly
+    /// used the imported module's `path_id`, the span would be shifted by
+    /// the wrong `script_start` and land in the wrong file position.
+    #[test]
+    fn test_push_diagnostics_import_error_uses_importing_module_region() {
+        use crate::analyser::push_diagnostics;
+        use chrn_utils::arena::Arena;
+        use chrn_utils::id_types::{PathId, SourceRegionId};
+        use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
+        use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
+        use chrn_utils::source_map::source_region::SourceRegion;
+
+        // Main file: config header "@def\n" (5 bytes) then script section
+        // "import \"missing\"\n".  The import path "missing" is at script
+        // section bytes [8, 15).
+        let full_text = "@def\nimport \"missing\"\n";
+        let main_region = SourceRegion::new(
+            1,
+            1,
+            b"import \"missing\"\n".to_vec(),
+            SourceRegionId::new(0),
+            PathId::new(0),
+            5,
+            None,
+        );
+        // Imported file region (would exist if the file were loadable).
+        // Its `script_start` is 0, so a diagnostic tied to this region
+        // would not be shifted.
+        let imported_region = SourceRegion::new(
+            1,
+            1,
+            b"let unused = 0\n".to_vec(),
+            SourceRegionId::new(1),
+            PathId::new(1),
+            0,
+            None,
+        );
+
+        let mut arena: Arena<SourceRegion, SourceRegionId> = Arena::new();
+        arena.push(main_region);
+        arena.push(imported_region);
+
+        // Import error diagnostic uses the IMPORTING module's path_id (0)
+        // because the span points at the import statement in the main file.
+        let diag = chrn_utils::source_map::source_diagnostic::SourceDiagnostic::builder(
+            DiagnosticLevel::Error,
+            "import not found".to_string(),
+            PathId::new(0),
+        )
+        .add_annotation(
+            SourceSpan::new(SourceRegionId::new(0), 8, 15),
+            AnnotationKind::Primary,
+            None,
+        )
+        .build();
+
+        let mut lsp_diags: Vec<tower_lsp::lsp_types::Diagnostic> = Vec::new();
+        push_diagnostics(
+            &mut lsp_diags,
+            std::slice::from_ref(&diag),
+            &arena,
+            full_text,
+            full_text.len(),
+            "chrn-config",
+        );
+
+        assert_eq!(lsp_diags.len(), 1, "one diagnostic expected");
+        let d = &lsp_diags[0];
+        // Relative span [8, 15) shifted by script_start=5 gives absolute
+        // bytes [13, 20), which is the "missing" string on line 1.
+        assert_eq!(
+            d.range.start,
+            Position::new(1, 8),
+            "import error must be shifted by the importing module's script_start"
+        );
+        assert_eq!(d.range.end, Position::new(1, 15));
+        assert_eq!(d.message, "import not found");
+        assert_eq!(d.source.as_deref(), Some("chrn-config"));
     }
 
     /// When the diagnostic's `path_id` matches no region in the arena

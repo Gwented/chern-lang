@@ -75,8 +75,8 @@ impl ModuleInitError {
 
 #[derive(Debug)]
 pub enum ScriptError {
-    Parser(Vec<SourceDiagnostic>),
-    Semantic(Vec<SourceDiagnostic>),
+    Parser,
+    Semantic,
     IO(std::io::Error),
 }
 

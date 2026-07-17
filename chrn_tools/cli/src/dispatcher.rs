@@ -1,5 +1,4 @@
 use chrn_utils::{
-    budget::mem_budget::MemoryBudget,
     chrn_config::ChrnConfig,
     core_error::{ConfigLoadError, ScriptError},
 };
@@ -120,12 +119,12 @@ fn exec_check(
             Ok(msg)
         }
         Err(script_err) => match script_err {
-            ScriptError::Parser(diags) | ScriptError::Semantic(diags) => {
+            ScriptError::Parser | ScriptError::Semantic => {
                 let footers = presentation::make_footers(&reporter);
                 let msg_opt = match render_kind {
                     RenderKind::Json => {
                         let rendered = json_renderer::render_json_diags(
-                            &diags,
+                            &reporter.diags,
                             &footers,
                             Some(&compiler_store.region_arena),
                             &compiler_store.interner,
@@ -136,7 +135,7 @@ fn exec_check(
                     }
                     RenderKind::Yaml => {
                         let rendered = yaml_renderer::render_yaml_diags(
-                            &diags,
+                            &reporter.diags,
                             &footers,
                             Some(&compiler_store.region_arena),
                             &compiler_store.interner,
@@ -151,7 +150,7 @@ fn exec_check(
                             cli_cfg.terminal_color_type,
                         );
                         let rendered_diags = terminal_renderer::render_terminal_diags(
-                            &diags,
+                            &reporter.diags,
                             &footers,
                             &render_cfg,
                             Some(&compiler_store.region_arena),
@@ -159,11 +158,10 @@ fn exec_check(
                         );
 
                         //TODO: Internally cut error message strings in the parser
-                        let s_suffix = s_ifier!(diags.len());
                         print_diags!(&rendered_diags);
-
-                        // Should this be converted to a footer?
-                        format!("Reported {} error{s_suffix}", diags.len()).into()
+                        // Seems redundant to have this msg
+                        // "Failed to parse configuration file".to_string().into()
+                        None
                     }
                 };
 

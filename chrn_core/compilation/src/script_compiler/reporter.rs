@@ -38,7 +38,7 @@ impl Reporter {
 
     // I think this count is WRONG because there is no consumption from budget that assumes the
     // caller is going to consume the rest.
-    /// How many diagnostics were attempted to be pushed but failed
+    /// How many diagnostics were attempted to be pushed but failed due to it exceeding the budget
     pub const fn suppressed_diagnostics(&self) -> usize {
         self.diag_budget.amt_exceeded()
     }

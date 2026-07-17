@@ -575,7 +575,7 @@ impl<'a> ConstraintResolver<'a> {
         let ast_id = self.compiler.symbols[parent_sym_id]
             .ast_id
             .expect("Should be user symbols only");
-        let abs_alias = env.ast_info.get_typedef(ast_id);
+        let abs_alias = env.ast_info.get_alias(ast_id);
 
         //TODO: Need to typecheck based off of the conditional expressions found
 
@@ -894,7 +894,7 @@ impl<'a> ConstraintResolver<'a> {
             }
         }
 
-        // Glob args
+        // Glob directives
         for (i, member_id) in struct_def.fields.iter().enumerate() {
             let field = self.compiler.get_field(*member_id);
             let ty_span = abs_struct.fields[i].sp_ty_expr.span;
@@ -920,7 +920,7 @@ impl<'a> ConstraintResolver<'a> {
             }
         }
 
-        // Field args
+        // Field directives
         for (i, member_id) in struct_def.fields.iter().enumerate() {
             let field = self.compiler.get_field(*member_id);
             //WARN: Type spanning is not done yet
@@ -1346,9 +1346,8 @@ impl<'a> ConstraintResolver<'a> {
                     }
 
                     let ty = &self.compiler.types[field.type_id].ty;
-                    match ty {
-                        Type::BuiltinTypeInfo(_) => (),
-                        _ => visited.push(field.type_id),
+                    if !matches!(ty, Type::BuiltinTypeInfo(_)) {
+                        visited.push(field.type_id);
                     }
 
                     //TODO: Needs to separate path and errors depending on fjailfjialfn path
@@ -1389,9 +1388,8 @@ impl<'a> ConstraintResolver<'a> {
                         }
 
                         let ty = &self.compiler.types[inner].ty;
-                        match ty {
-                            Type::BuiltinTypeInfo(_) => (),
-                            _ => visited.push(inner),
+                        if !matches!(ty, Type::BuiltinTypeInfo(_)) {
+                            visited.push(inner);
                         }
 
                         self.check_directive(
@@ -1473,10 +1471,10 @@ impl<'a> ConstraintResolver<'a> {
                     // Need a function where it obtains type constraints given the recursive types
                     // since shallow checks accept more than proven
                     builtin_ty => {
-                        let constraints = builtin_ty.kind().boundaries();
-                        let arg_constraints = spanned_directive.inner.type_constraints();
+                        let ty_boundaries = builtin_ty.kind().boundaries();
+                        let directive_boundaries = spanned_directive.inner.boundaries();
 
-                        if !arg_constraints.overlaps(constraints) {
+                        if !directive_boundaries.overlaps(ty_boundaries) {
                             return Err(Some(PresetErr::UnsupportedDirective {
                                 sp_directive: spanned_directive.into_owned(),
                                 sym_span: active_span,
@@ -1489,7 +1487,7 @@ impl<'a> ConstraintResolver<'a> {
             }
             Type::Alias(alias_def) => {
                 let alias_constraints = alias_def.ty_constraints;
-                let arg_constraints = spanned_directive.inner.type_constraints();
+                let arg_constraints = spanned_directive.inner.boundaries();
 
                 if !arg_constraints.overlaps(alias_constraints) {
                     return Err(Some(PresetErr::TypeBoundaryBoundConflict {
@@ -1504,7 +1502,7 @@ impl<'a> ConstraintResolver<'a> {
             // I kinda would rather it just did nothing rather than report
             Type::Unknown => Err(None),
             Type::Func(_) => {
-                let core_msg = "Functions can only be placed within type constraints".to_string();
+                let core_msg = "Functions can only be placed within condition blocks".to_string();
 
                 let src_diag = SourceDiagnostic::basic_builder(
                     DiagnosticLevel::Error,
@@ -1526,13 +1524,13 @@ impl<'a> ConstraintResolver<'a> {
                 visited,
                 env,
             ),
-            Type::Boundaries(current_constraints) => {
-                let arg_constraints = spanned_directive.inner.type_constraints();
+            Type::Boundaries(current_boundaries) => {
+                let directive_boundaries = spanned_directive.inner.boundaries();
 
-                if !arg_constraints.overlaps(*current_constraints) {
+                if !directive_boundaries.overlaps(*current_boundaries) {
                     return Err(Some(PresetErr::TypeBoundaryBoundConflict {
-                        inferred: *current_constraints,
-                        conflicting: arg_constraints,
+                        inferred: *current_boundaries,
+                        conflicting: directive_boundaries,
                         spans: vec![spanned_directive.span, active_span],
                     }));
                 }

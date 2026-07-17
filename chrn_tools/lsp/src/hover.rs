@@ -251,16 +251,7 @@ pub fn compute_hover(
                                             "Unknown".to_string()
                                         };
 
-                                    // Avoid showing the same name twice when the config block
-                                    // is named after the type it configures.
-                                    hover_text = if name == linked_type {
-                                        format!("**Config** `{}`", name)
-                                    } else {
-                                        format!(
-                                            "**Config** `{}`\n\nConfigures type `{}`",
-                                            name, linked_type
-                                        )
-                                    };
+                                    hover_text = format!("**Config** `{}`", name);
                                 }
                                 SymbolKind::Directive(_) => {
                                     let name = interner.search(sym.name_id);
@@ -678,7 +669,16 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                 format!("enum {} {{\n{}\n}}", name, variants.join("\n"))
             }
         }
-        Type::Func(_) => "function type".into(),
+        Type::Func(func) => {
+            let name = interner.search(func.name_id);
+            let prefix = if func.is_callable {
+                "function"
+            } else {
+                "predicate"
+            };
+
+            format!("{prefix} {name}")
+        }
         Type::Alias(alias_def) => {
             let name = compiler
                 .symbols

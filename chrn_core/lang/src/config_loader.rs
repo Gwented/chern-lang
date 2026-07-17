@@ -23,7 +23,9 @@ use crate::keywords::ANNOTATION_CLAUSE_SIZE;
 const MAX_SEARCH_READ: usize = 1024 * 32;
 
 /// Size of the buffered reader used here of 64KB
-const BUFFER_SIZE: usize = 1024 * 64;
+// TEST: Allows for checking if the file exceeded 64KB is the context where it matters without
+// refilling the buffer
+const BUFFER_SIZE: usize = (1024 * 64) + 1;
 
 // Can read at most 32 KB before an @def, can read at most 32 KB after an @def
 
@@ -156,11 +158,6 @@ impl<R: Read> ConfigLoader<'_, R> {
             //     );
             // }
 
-            // This probably won't exist anymore
-            // if b == b'\0' {
-            //     break;
-            // }
-
             let span_start = self.cursor;
 
             match b {
@@ -178,9 +175,9 @@ impl<R: Read> ConfigLoader<'_, R> {
                     if self.read_quotes(quote_type).is_err() {
                         let core_msg = "Found unclosed quotes which reached <eof>".to_string();
 
-                        let quote_start = quote_start as u32;
+                        let abs_q_start = (quote_start - script_start) as u32;
                         let q_span =
-                            SourceSpan::new(self.current_region_id, quote_start, quote_start + 1);
+                            SourceSpan::new(self.current_region_id, abs_q_start, abs_q_start + 1);
 
                         let mut diag_builder = SourceDiagnostic::builder(
                             DiagnosticLevel::Error,
@@ -222,11 +219,9 @@ impl<R: Read> ConfigLoader<'_, R> {
                     if self.read_quotes(quote_type).is_err() {
                         let core_msg = format!("Found unclosed quotes which reached <eof>");
 
-                        let q_span = SourceSpan::new(
-                            self.current_region_id,
-                            quote_start as u32,
-                            quote_start as u32 + 1,
-                        );
+                        let abs_q_start = (quote_start - script_start) as u32;
+                        let q_span =
+                            SourceSpan::new(self.current_region_id, abs_q_start, abs_q_start + 1);
 
                         let mut diag_builder = SourceDiagnostic::builder(
                             DiagnosticLevel::Error,
@@ -409,14 +404,25 @@ impl<R: Read> ConfigLoader<'_, R> {
                 }
             }
         }
-        dbg!(self.cursor);
         // TODO: Assert this...
 
         let region = self.create_region(script_start, None);
         // dbg!(str::from_utf8(&region.src_bytes));
 
-        // Case of no @def and no @end which requires a '\0' return since the entire file should be
-        // read. This does not mean it is correct, it only means the read limit wasn't reached.
+        // If the loop was broken because the limit was reached, and there is a byte after the
+        // limit, that means it stopped because it reached the max read bytes not because of a valid
+        // script file with no @def used
+        //
+        // Does not conflict with @end since @end has it's own return environment.
+        //
+        // NOTE: Needs direct indexing because peek already reached it's limit
+        // if self.handle.buffer().get(self.cursor).is_some() {
+        //     panic!();
+        // }
+
+        // Case of no @def and no @end which requires a 'None' return from the main loop.
+        // This does not mean it is correct, it only means the read limit wasn't reached before the
+        // file ended.
         if !requires_end {
             ConfigLoaderOutput::Success(region)
         } else {
@@ -433,8 +439,8 @@ impl<R: Read> ConfigLoader<'_, R> {
 
             // (inclusive, exclusive) end
             //
-            //  If we have "text\0", it advances "t" stopping at "\0", which naturally fits
-            //  exclusive
+            //  If we have "text<eof>", it advances "t" stopping at "<eof>", which naturally fits
+            //  exclusive since eof is just a byte position that will never be touched
             let eof_pos = self.cursor as u32;
 
             // Need to - 1 so that the spanning doesn't have a len of 0.
@@ -458,7 +464,6 @@ impl<R: Read> ConfigLoader<'_, R> {
             ConfigLoaderOutput::Broken(region, ConfigLoadError::Diagnostic(src_diag))
         }
     }
-    //FIX: These other paths do not account for if read limit has been passesd
 
     /// Returns a result instead of an option because if there are unclosed quotes and this method
     /// fails, it would need return a Some value which DOESN'T represent a failure, making it

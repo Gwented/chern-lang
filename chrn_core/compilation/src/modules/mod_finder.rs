@@ -171,14 +171,12 @@ impl ModuleFinder<'_> {
         // back 1 to properly sit at the end quote
         let end_cursor = self.pos - 1;
 
-        let abs_start = (start_cursor + self.script_start) as u32;
-
         let path_span = SourceSpan::new(
             self.current_region.region_id,
             // To include start quote
-            abs_start - 1 as u32,
+            start_cursor as u32,
             // To include end quote
-            self.absolute_pos() as u32,
+            end_cursor as u32,
         );
 
         if saw_backslash {
@@ -666,12 +664,6 @@ impl ModuleFinder<'_> {
         let b = self.peek();
         self.pos += 1;
         b
-    }
-
-    /// Produces the absolute position that `self.pos` would be in src, based off of where the
-    /// current region starts.
-    fn absolute_pos(&self) -> usize {
-        self.pos + self.script_start
     }
 
     fn skip_until_important(&mut self) {

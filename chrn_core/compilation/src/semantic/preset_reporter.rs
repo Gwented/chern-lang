@@ -64,7 +64,7 @@ pub(crate) fn create_diag_builder_preset(
             sp_directive: directive,
             sym_span,
         } => {
-            let directive_boundaries = directive.inner.type_constraints().to_fmt_vec();
+            let directive_boundaries = directive.inner.boundaries().to_fmt_vec();
 
             let mut boundaries_str = String::new();
 

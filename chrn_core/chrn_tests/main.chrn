@@ -37,6 +37,8 @@ let x = 5*/
 // Collisions.
 @def
 
+let x= (1 << 2)
+
 /*
 let b = c
 let c = d
@@ -44,7 +46,9 @@ as
 let as = n
 */
 
-let i =3
+// Should be a @#*($) an error
+// let i = 3 + IsEmpty
+
 // import "../chrn_core/chrn_tests/def.chrn" as defs
 // Technically imports from anywhere in the file work, but it won't compile even though it does technically
 // load the module
@@ -57,8 +61,8 @@ var->
 // import "../../chrn_core/chrn_tests/core.chrn"
     nest->
         enum Opt {
-                o: i32 #ignore
-            }
+                o: Equals
+            } #bin
         struct Forb {
             p: def::Person
             root_holder: Runtime
@@ -95,14 +99,11 @@ var->
         }*/
         // x {}
 
-        State1 {
-            // Reaches an expect `type_resolver.rs` ln 876 due to likely type spanning issues
-            // which requires fixing the fact that builtins do not store spanning with them, slash
-            // something else!
+        x {
             stable {
-            cases = ["9", "4"],
-            idents = ["snake_case"]
-            default_val = 2,
+            cases = "9"
+            idents = "snake_case"
+            default_val = [w,k]
                 /*out {
                     // p {}
 

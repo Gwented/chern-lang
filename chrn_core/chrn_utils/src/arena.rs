@@ -4,28 +4,14 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use crate::id_types::{ArenaIndex, InternedId};
-
-// macro_rules! from_usize_impl {
-//     ($($t:ty),* $(,)?) => {
-//         $(
-//             impl Into<usize> for $t {
-//                 fn into(self) -> usize {
-//                     self
-//                 }
-//             }
-//         )*
-//     }
-// }
-//
-// from_usize_impl!(InternedId);
+use crate::id_types::ArenaIndex;
 
 // TEST:
 /// Generic `Arena` which holds `items` of type `T` and an index of `I`.
 ///
 /// This is to reduce the duplication of basic arena types that just want to enforce type-safe
 /// indexing operations.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Arena<T, I: ArenaIndex> {
     pub items: Vec<T>,
     /// Stored type to index with using `I`
@@ -33,7 +19,7 @@ pub struct Arena<T, I: ArenaIndex> {
 }
 
 impl<T, I: ArenaIndex> Arena<T, I> {
-    pub fn new() -> Arena<T, I> {
+    pub const fn new() -> Arena<T, I> {
         Arena {
             items: Vec::new(),
             _marker: PhantomData,

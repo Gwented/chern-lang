@@ -7,7 +7,6 @@ pub mod parser;
 pub mod resolvers;
 pub mod script_compiler;
 pub mod semantic;
-pub mod user_defined;
 
 #[cfg(test)]
 mod tests {

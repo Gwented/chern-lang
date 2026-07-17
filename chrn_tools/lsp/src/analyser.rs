@@ -131,10 +131,10 @@ pub(crate) fn config_load_error_to_diagnostics(
                 .find(|a| matches!(a.kind, AnnotationKind::Primary))
                 .or_else(|| diag.annotations.first())
             {
-                let abs_s = crate::text::rel_to_abs_offset(annotation.span.start, script_start)
-                    as usize;
-                let abs_e = crate::text::rel_to_abs_offset(annotation.span.end, script_start)
-                    as usize;
+                let abs_s =
+                    crate::text::rel_to_abs_offset(annotation.span.start, script_start) as usize;
+                let abs_e =
+                    crate::text::rel_to_abs_offset(annotation.span.end, script_start) as usize;
                 let s_pos = crate::text::offset_to_position(text, abs_s);
                 let e_pos = crate::text::offset_to_position(text, abs_e);
                 (s_pos, e_pos)
@@ -338,6 +338,7 @@ pub(crate) fn resolve_document_modules(
         &mut interner,
         doc_cache,
         &mut sub_diags,
+        path_id,
     );
 
     if !sub_diags.is_empty() {
@@ -443,7 +444,8 @@ pub async fn analyze_and_publish_task(
             // far (may be 0 if no `@def` was found), which is the offset the
             // diagnostic spans need to be shifted by to land in absolute file
             // coordinates.
-            let diags = config_load_error_to_diagnostics(cfg_err, &text, broken_region.script_start);
+            let diags =
+                config_load_error_to_diagnostics(cfg_err, &text, broken_region.script_start);
             publish_if_current(
                 &client,
                 &uri,
@@ -490,16 +492,12 @@ pub async fn analyze_and_publish_task(
 
     // 3. Insert the prepared state into the cache.  If the same text is already
     //    cached, the existing state is reused.
-    let state_arc = doc_cache.insert_or_get(
-        uri.as_ref(),
-        Arc::clone(&text),
-        prepared.state,
-    );
+    let state_arc = doc_cache.insert_or_get(uri.as_ref(), Arc::clone(&text), prepared.state);
 
     // 4. Run the compiler pipeline while holding only the per-document lock.
     {
         let mut state = state_arc.write();
-            state.ensure_analyzed(prepared.resolution);
+        state.ensure_analyzed(prepared.resolution);
     }
 
     if !imported_uris.is_empty() {
@@ -801,6 +799,10 @@ pub(crate) fn push_diagnostics(
 ///   back to disk I/O.
 /// * `diags`            — Accumulator for any import-related diagnostics (path errors,
 ///   IO errors, parse errors in imported files).
+/// * `current_path_id`  — The [`PathId`] of `prev_mod` (the module containing the
+///   `import` statement).  Import errors that point at the import path span must use
+///   this `path_id` so their spans are resolved against the correct region when they
+///   are later surfaced through [`push_diagnostics`].
 ///
 /// # Errors
 /// All errors are appended to `diags` rather than returned.  The function always
@@ -816,6 +818,7 @@ pub(crate) fn resolve_modules_lsp(
     interner: &mut Intern,
     doc_cache: &DocumentCache,
     diags: &mut Vec<SourceDiagnostic>,
+    current_path_id: PathId,
 ) {
     use chrn_utils::core_error::{self, ConfigLoadError};
     use compilation::modules::ModuleState;
@@ -850,28 +853,34 @@ pub(crate) fn resolve_modules_lsp(
                 match std::fs::File::open(path) {
                     Ok(_) if path.is_dir() => {
                         let core_msg = format!("The path \"{}\" is a directory", path.display());
-                        let src_diag =
-                            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
-                                .add_annotation(
-                                    path_span,
-                                    AnnotationKind::Primary,
-                                    "Caused by this import".to_string().into(),
-                                )
-                                .build();
+                        let src_diag = SourceDiagnostic::builder(
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            current_path_id,
+                        )
+                        .add_annotation(
+                            path_span,
+                            AnnotationKind::Primary,
+                            "Caused by this import".to_string().into(),
+                        )
+                        .build();
                         Err(ConfigLoadError::Diagnostic(src_diag))
                     }
                     Ok(f) => Ok(Box::new(f) as Box<dyn std::io::Read + Send>),
                     Err(e) => {
                         let core_msg =
                             core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
-                        let src_diag =
-                            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
-                                .add_annotation(
-                                    path_span,
-                                    AnnotationKind::Primary,
-                                    "Caused by this import".to_string().into(),
-                                )
-                                .build();
+                        let src_diag = SourceDiagnostic::builder(
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            current_path_id,
+                        )
+                        .add_annotation(
+                            path_span,
+                            AnnotationKind::Primary,
+                            "Caused by this import".to_string().into(),
+                        )
+                        .build();
                         Err(ConfigLoadError::Diagnostic(src_diag))
                     }
                 }
@@ -885,9 +894,10 @@ pub(crate) fn resolve_modules_lsp(
             }
             Err(ConfigLoadError::IO(e)) => {
                 let core_msg = format!("IO error: {}", e);
-                let src_diag = SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
-                    .add_annotation(path_span, AnnotationKind::Primary, None)
-                    .build();
+                let src_diag =
+                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, current_path_id)
+                        .add_annotation(path_span, AnnotationKind::Primary, None)
+                        .build();
                 diags.push(src_diag);
                 continue;
             }
@@ -911,10 +921,13 @@ pub(crate) fn resolve_modules_lsp(
                         let path = interner.search_path(path_id);
                         let core_msg =
                             core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
-                        let src_diag =
-                            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
-                                .add_annotation(path_span, AnnotationKind::Primary, None)
-                                .build();
+                        let src_diag = SourceDiagnostic::builder(
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            current_path_id,
+                        )
+                        .add_annotation(path_span, AnnotationKind::Primary, None)
+                        .build();
                         diags.push(src_diag);
                     }
                 }
@@ -929,10 +942,13 @@ pub(crate) fn resolve_modules_lsp(
                         let path = interner.search_path(path_id);
                         let core_msg =
                             core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
-                        let src_diag =
-                            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
-                                .add_annotation(path_span, AnnotationKind::Primary, None)
-                                .build();
+                        let src_diag = SourceDiagnostic::builder(
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            current_path_id,
+                        )
+                        .add_annotation(path_span, AnnotationKind::Primary, None)
+                        .build();
                         diags.push(src_diag);
                     }
                 }
@@ -953,7 +969,12 @@ pub(crate) fn resolve_modules_lsp(
                     let src_diag = SourceDiagnostic::builder(
                         DiagnosticLevel::Error,
                         core_msg.clone(),
-                        path_id,
+                        current_path_id,
+                    )
+                    .add_annotation(
+                        path_span,
+                        AnnotationKind::Primary,
+                        "Caused by this import".to_string().into(),
                     )
                     .build();
                     diags.push(src_diag);
@@ -1007,6 +1028,7 @@ pub(crate) fn resolve_modules_lsp(
             interner,
             doc_cache,
             diags,
+            path_id,
         );
 
         modules[(current_mod_id.id - 1) as usize] = Some(sub_mod);

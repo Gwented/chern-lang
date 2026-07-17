@@ -1,3 +1,4 @@
+:fish
 ## NOTICE
 This LSP is majorly upkept by agents.
 

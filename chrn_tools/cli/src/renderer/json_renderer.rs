@@ -393,6 +393,32 @@ fn write_footer(out: &mut String, footer: &FooterKind, depth: usize) {
             out.push_str(": ");
             out.push_str(&max.to_string());
         }
+        FooterKind::ErrorsEmitted(count) => {
+            write_indent(out, depth + 1);
+            push_json_str(out, "kind");
+            out.push_str(": ");
+            push_json_str(out, "errors_emitted");
+            out.push(',');
+            out.push('\n');
+
+            write_indent(out, depth + 1);
+            push_json_str(out, "count");
+            out.push_str(": ");
+            out.push_str(&count.to_string());
+        }
+        FooterKind::WarnsEmitted(count) => {
+            write_indent(out, depth + 1);
+            push_json_str(out, "kind");
+            out.push_str(": ");
+            push_json_str(out, "warns_emitted");
+            out.push(',');
+            out.push('\n');
+
+            write_indent(out, depth + 1);
+            push_json_str(out, "count");
+            out.push_str(": ");
+            out.push_str(&count.to_string());
+        }
     }
 
     out.push('\n');
@@ -618,7 +644,10 @@ mod tests {
             &interner,
             &JsonRenderConfig::new(false),
         );
-        assert!(out.contains("\"region_path\": \"/tmp/a.chrn\""), "got: {out}");
+        assert!(
+            out.contains("\"region_path\": \"/tmp/a.chrn\""),
+            "got: {out}"
+        );
         // 4 + 128 == 132, 9 + 128 == 137
         assert!(out.contains("\"start\": 132"), "got: {out}");
         assert!(out.contains("\"end\": 137"), "got: {out}");

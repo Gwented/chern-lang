@@ -38,7 +38,7 @@ impl Directive {
         }
     }
 
-    pub fn type_constraints(self) -> TypeBoundaryFlags {
+    pub fn boundaries(self) -> TypeBoundaryFlags {
         match self {
             Directive::Warn | Directive::Ignore => TypeBoundaryFlags::all(),
             Directive::Type(type_directive) => type_directive.boundaries(),
