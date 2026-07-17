@@ -156,6 +156,11 @@ pub fn form_ln_view(src_bytes: &[u8], span: &SourceSpan) -> LineView {
     let span_start = span.start as usize;
     let span_end = span.end as usize;
 
+    // dbg!(span_start, span_end);
+    // panic!();
+
+    // dbg!(str::from_utf8(src_bytes), span);
+    // panic!();
     let actual_span_start = get_ln_start_byte(src_bytes, span_start);
 
     let full_span = SourceSpan::new(span.region_id, actual_span_start as u32, span.end);

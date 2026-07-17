@@ -247,10 +247,10 @@ pub fn compute_hover(
                                     // Avoid showing the same name twice when the config block
                                     // is named after the type it configures.
                                     hover_text = if name == linked_type {
-                                        format!("**config** `{}`", name)
+                                        format!("**Config** `{}`", name)
                                     } else {
                                         format!(
-                                            "**config** `{}`\n\nConfigures type `{}`",
+                                            "**Config** `{}`\n\nConfigures type `{}`",
                                             name, linked_type
                                         )
                                     };

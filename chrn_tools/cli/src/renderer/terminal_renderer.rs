@@ -1,3 +1,4 @@
+//TODO: CLEAN ME
 pub(super) mod layout;
 pub(crate) mod render_settings;
 pub(super) mod style;
@@ -133,7 +134,12 @@ fn form_diag(
     // Pairs annotation with it's lines then stores it
     for annotation in &diag.annotations {
         let (spanned_lines, max_ln_num) = layout::find_annotation_lines(annotation, ln_views);
-        highest_ln_num = highest_ln_num.max(max_ln_num);
+        let abs_ln_num = &region_arena[annotation.span.region_id].abs_ln_num_start;
+
+        // Adjusting for absolute file position
+        //
+        // - 1 because !
+        highest_ln_num = highest_ln_num.max(max_ln_num + abs_ln_num - 1);
         annotation_and_lines.push((annotation, spanned_lines));
     }
 
@@ -246,6 +252,7 @@ fn render_text(
         layout_text.push_str(&render_line_layout_text(
             layout,
             src_strs[current_ln_view_idx],
+            region_arena[current_region_id].abs_ln_num_start,
             render_cfg,
             ln_num_width,
         ));
@@ -297,12 +304,21 @@ fn render_text(
 fn render_line_layout_text(
     ln_layout: &RenderLineLayout,
     src_str: &str,
+    region_abs_ln_num: u32,
     settings: &TerminalRenderConfig,
     ln_num_width: usize,
 ) -> String {
     let ln = ln_layout.ln;
     let ln_span = ln.ln_span.range_exclusive_usize();
     let mut all_ptr_rows: Vec<String> = Vec::with_capacity(ln_layout.render_info.len());
+    // Regions are relative so this needs to be made absolute
+    dbg!(region_abs_ln_num);
+    // I think the - 1 is the right solution? Seems ok.
+    //
+    // Doing this so the line number isn't based off the relative distance of the region itself, and
+    // instead uses the stored data inside regions which tracks what line a region starts on,
+    // allowing it to give the absolute line number rather than relative.
+    let abs_ln_num = ln.ln_num + region_abs_ln_num - 1;
 
     let nc = color::get_nc(settings.can_color);
 
@@ -419,10 +435,10 @@ fn render_line_layout_text(
     // -- FOURTH --
     // Padding using the max line number width as well as the current line number so that the
     // vertical bars are aligned even with line numbers
-    let current_ln_num_size = line_mapping::get_num_width(ln_layout.ln.ln_num as usize);
+    let current_ln_num_size = line_mapping::get_num_width(abs_ln_num as usize);
     let num_alignment = " ".repeat(ln_num_width - current_ln_num_size + 1);
 
-    let fmtted_ln_num = format!("{}{num_alignment}", ln.ln_num);
+    let fmtted_ln_num = format!("{}{num_alignment}", abs_ln_num);
     let bar_spaces = " ".repeat(ln_num_width + 1);
 
     // Joining all pointers which requires consistent bar allignment for all annotations to be

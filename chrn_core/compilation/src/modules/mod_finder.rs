@@ -30,8 +30,9 @@ pub struct ModuleFinder<'a> {
     /// Path origin so that errors can accurately report the path where the import was declared
     current_region: &'a SourceRegion,
     pos: usize,
-    start: usize,
-    end: usize,
+    script_start: usize,
+    // NOT NEEDED BUT STAYING IN CASE
+    serial_start: usize,
 }
 
 impl ModuleFinder<'_> {
@@ -49,9 +50,11 @@ impl ModuleFinder<'_> {
             current_region,
             diags: Vec::new(),
             seen,
-            pos: script_start,
-            start: script_start,
-            end: serial_start.unwrap_or(src_bytes.len()),
+            pos: 0,
+            script_start,
+            // If there is no serial start then it's a script file not a script block with @def ->
+            // @end
+            serial_start: serial_start.unwrap_or(src_bytes.len()),
         }
     }
 
@@ -68,7 +71,7 @@ impl ModuleFinder<'_> {
         loop {
             self.skip_until_important();
 
-            if self.pos >= self.end && self.peek() == b'\0' {
+            if self.pos >= self.src_bytes.len() && self.peek() == b'\0' {
                 break;
             }
 
@@ -143,7 +146,7 @@ impl ModuleFinder<'_> {
     /// Assumes the starting point is at the start quote
     fn parse_import(&mut self, interner: &mut Intern) -> Result<Import, SourceDiagnostic> {
         self.advance();
-        let start = self.pos;
+        let start_cursor = self.pos;
         // Boolean to track if a "\" was seen since only "/" can be used to separate
         let mut saw_backslash = false;
 
@@ -166,14 +169,16 @@ impl ModuleFinder<'_> {
         // - 1 for same reason as in lexer. Before breaking the last quote is skipped, and since
         // span ends are exclusive, the end pos would be one after the end quote, so we need to go
         // back 1 to properly sit at the end quote
-        let end = self.pos - 1;
+        let end_cursor = self.pos - 1;
+
+        let abs_start = (start_cursor + self.script_start) as u32;
 
         let path_span = SourceSpan::new(
             self.current_region.region_id,
             // To include start quote
-            (start - 1) as u32,
+            abs_start - 1 as u32,
             // To include end quote
-            self.pos as u32,
+            self.absolute_pos() as u32,
         );
 
         if saw_backslash {
@@ -192,7 +197,7 @@ impl ModuleFinder<'_> {
             return Err(src_diag);
         }
 
-        let path_buf = self.create_pathbuf(&self.src_bytes[start..end])?;
+        let path_buf = self.create_pathbuf(&self.src_bytes[start_cursor..end_cursor])?;
 
         let import_path = match path_buf.canonicalize() {
             Ok(p) => p,
@@ -318,7 +323,7 @@ impl ModuleFinder<'_> {
     fn parse_bind(&mut self, interner: &mut Intern) -> Result<Bind, SourceDiagnostic> {
         // skipping "
         self.advance();
-        let start = self.pos;
+        let start_cursor = self.pos;
 
         let mut saw_backslash = false;
 
@@ -338,11 +343,15 @@ impl ModuleFinder<'_> {
             }
         }
 
-        let end = self.pos - 1;
+        let end_cursor = self.pos - 1;
+
+        let abs_start = (start_cursor + self.script_start) as u32;
+        let abs_end = (end_cursor + self.script_start) as u32;
+
         let path_span = SourceSpan::new(
             self.current_region.region_id,
-            (start - 1) as u32,
-            (end + 1) as u32,
+            abs_start - 1 as u32,
+            abs_end + 1 as u32,
         );
 
         if saw_backslash {
@@ -360,7 +369,7 @@ impl ModuleFinder<'_> {
         }
 
         // WHY WAS THIS UNWRAP FOR SO LONG
-        let path_buf = self.create_pathbuf(&self.src_bytes[start..end])?;
+        let path_buf = self.create_pathbuf(&self.src_bytes[start_cursor..end_cursor])?;
 
         //WARN: WRONG PATH NAME
         // Please..
@@ -409,7 +418,7 @@ impl ModuleFinder<'_> {
     fn peek_behind_char(&mut self, dest: usize) -> char {
         // Inclusive since otherwise it would skip the current character and there would need to be
         // a saturating sub to make up for it
-        let chunk = &self.src_bytes[self.start..=self.pos];
+        let chunk = &self.src_bytes[0..=self.pos];
 
         std::str::from_utf8(chunk)
             .ok()
@@ -567,7 +576,7 @@ impl ModuleFinder<'_> {
     }
 
     fn handle_comment(&mut self) {
-        while self.peek() != b'\n' {
+        while self.pos < self.src_bytes.len() && self.peek() != b'\n' {
             self.advance();
         }
     }
@@ -638,9 +647,15 @@ impl ModuleFinder<'_> {
         b
     }
 
+    /// Produces the absolute position that `self.pos` would be in src, based off of where the
+    /// current region starts.
+    fn absolute_pos(&self) -> usize {
+        self.pos + self.script_start
+    }
+
     fn skip_until_important(&mut self) {
         // Stopping at parts that may cause wrongful import reads
-        while self.pos <= self.end
+        while self.pos <= self.src_bytes.len()
             && self.peek() != b'i'
             && self.peek() != b'b'
             && self.peek() != b'"'

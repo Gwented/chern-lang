@@ -32,7 +32,9 @@ const NOTATION_OCTAL: u8 = 1 << 3;
 
 pub struct Lexer<'a> {
     // Should be &str
+    // absolute_pos: usize,
     src_bytes: &'a [u8],
+    script_start: usize,
     pos: usize,
     current_region_id: SourceRegionId,
     trivia: Vec<Trivia>,
@@ -49,8 +51,9 @@ impl Lexer<'_> {
         Lexer {
             current_region_id,
             src_bytes: src,
+            script_start,
             // Not even going to acknowledge what was here before
-            pos: script_start,
+            pos: 0,
             trivia: Vec::new(),
             trivia_start_idx: 0,
             trivia_end_idx: 0,

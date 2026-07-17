@@ -42,7 +42,10 @@ pub fn parse(
     let mut ast_info = AstInfo::new();
 
     let mut state = ParserState::new();
-    let budget = ParserBudget::new(chrn_utils::MAX_RECURSIVE_DEPTH, chrn_utils::MAX_EXPR_NODES);
+    let budget = ParserBudget::new(
+        chrn_utils::MAX_RECURSIVE_DEPTH,
+        chrn_utils::MAX_EXPR_NODES as usize,
+    );
     let mut ctx = ParserContext::new(cfg, region, tokens);
 
     // Skipping possible @def first since it is recognized as it's own token
@@ -1213,6 +1216,7 @@ fn parse_type_expr(
     interner: &Intern,
 ) -> Result<SpannedContainer<TypeExpr>, Token> {
     // SAFETY:
+    //TODO: Foot
     let _guard = budget.increase_depth().map_err(|_| {
         let msg = format!(
             "Reached max recursive depth of {}",

@@ -2,12 +2,16 @@
 chrn_core/target/
 chrn_core/Cargo.lock
 chrn_core/chrn_tests/gwop
-/chrn_core/chrn_tests/blob.chrn
+chrn_core/chrn_tests/blob.chrn
+chrn_core/chrn_tests/temp.chrn
 
 # chrn_tools
 chrn_tools/target/
-chrn_tools/Cargo.lock
+# chrn_tools/Cargo.lock
 
 # misc
+
+# Directory where case specific errors are checked internally
 error/
+# Test runner
 ates.yml
