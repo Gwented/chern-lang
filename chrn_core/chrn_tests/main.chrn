@@ -99,11 +99,11 @@ var->
         }*/
         // x {}
 
-        x {
+        var x {
             stable {
             cases = "9"
             idents = "snake_case"
-            default_val = [w,k]
+            default_val = 2
                 /*out {
                     // p {}
 
@@ -112,6 +112,44 @@ var->
             // extra = def::e#2
         }
 @end
+
+#OVERRIDE
+
+// Should be able to use overrides from other modules
+override->
+
+JAVA {
+    types {
+        i8 = self::byte
+        i16, i32 = java::int
+        i32 = long
+    }
+}
+
+CPP {
+    // Ok but what if I want a SPECIFIC u64 to be an unsinged long long but I want the others, or
+    // the rest, to be uint64_t? Maybe allow for language override for all configs?
+    // lang namespace?
+    // Maybe just allow referencing like, "u64 = uint64_t for {Type}" which is treated differently.
+    // (Or "for {Type}, u64 = stuff")
+    // Maybe also allow "{Type}, {Type},..." for said type specifics. Need to somehow fit this in complex
+    // definitions. Maybe that can just be some sort of special config all config types have access to,
+    // but it also has to not occupy a known namespace. Maybe expose a "chrn" module for that.
+    //
+    //(This one seems the least convoluted)
+    // !What if it was just, "override {}" where override is actually accessible locally from the already
+    // present section keyword? Like an embedded section mapping, where now the "override->" is just
+    // a globally applied, if not overriden, set of instructions.
+    //
+    // At this point maybe a syntactic sugar like "java->types {}" where it loses the "java{types{}}" 
+    // nesting would make more sense since this would look VERY verbose even for simple cases. Maybe not
+    // the arrow though since that's SUPPOSED to be section specific. Maybe "=>".
+アロー
+    u64 = unsinged_long_long_int
+    u64 = uint64_t
+}
+
+#OVERRIDE
 
 /*let a = b
 let b = c

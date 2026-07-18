@@ -45,6 +45,8 @@ use compilation::lookup::scopes::AssociatedScopeKind;
 use compilation::lookup::scopes::ScopeLookupPattern;
 use compilation::lookup::scopes::ScopeType;
 
+use compilation::parser::ast::ast_concepts::Item;
+use compilation::parser::ast::ast_exprs::Expr;
 use compilation::parser::ast::ast_exprs::PathSegment;
 use compilation::parser::ast::ast_exprs::TypeExpr;
 use compilation::resolvers::constraint_resolver::ConstraintResolver;
@@ -173,8 +175,6 @@ pub struct DocumentState {
     pub cn_errors: Option<Vec<SourceDiagnostic>>,
     /// Sorted list of `(span, entity)` pairs built after analysis; queried by offset.
     pub symbol_map: Vec<(SourceSpan, SemanticEntity)>,
-    /// The sub-slice of `compiler.exprs` that belongs to the main module.
-    pub main_expr_range: std::ops::Range<usize>,
     /// LSP document version counter (used to detect stale analysis results).
     pub version: u64,
 }
@@ -214,7 +214,6 @@ impl DocumentState {
             ty_errors: None,
             cn_errors: None,
             symbol_map: Vec::new(),
-            main_expr_range: 0..0,
             version,
         }
     }
@@ -464,23 +463,29 @@ impl DocumentState {
             // (hover, go-to-def, etc.). The resolver itself is tolerant of a
             // partial AST and accumulates diagnostics per item without aborting.
             //
-            // Unlike the orchestrator (which keeps a single `TypeResolver` so
-            // its internal type context spans all modules) the LSP creates a
-            // fresh resolver per module iteration.  This sidesteps the
-            // simultaneous `&mut compiler` borrow that the `TypeResolver` holds
-            // versus the immutable borrow required to read
-            // `compiler.exprs.len()` for `main_expr_range` tracking.  Each
-            // module is self-contained for LSP purposes, so losing the
-            // cross-module type context is acceptable.
-            let mut main_expr_range = 0..0;
+            // A single `TypeResolver` is created for all modules, exactly like
+            // the orchestrator's `run_all`.  This matters for three reasons:
+            //
+            // 1. `TypeResolver::new` debug-asserts `compiler.resolver_state ==
+            //    ResolverState::TYPE` and then *advances* the state machine.
+            //    Creating one per module used to panic in debug builds on the
+            //    second module (state had already advanced to `CONSTRAINT`) and
+            //    silently corrupted the state in release builds.
+            // 2. The resolver's internal `TypeContext` (pending cross-module
+            //    expressions) now spans all modules instead of being discarded
+            //    and re-allocated per module.
+            // 3. One resolver allocation per analysis instead of one per module.
+            //
+            // The previous per-module construction existed only so that
+            // `compiler.exprs.len()` could be read between iterations to track
+            // `main_expr_range`; `build_symbol_map` now filters expressions by
+            // the main module's region id instead, which needs no such borrow.
+            let mut type_resolver = TypeResolver::new(&chrn_cfg, &self.interner, &mut compiler);
             for (mod_idx, env) in resolver_envs.iter().take(mod_len).enumerate() {
                 let env = match env {
                     Some(e) => e,
                     None => continue,
                 };
-
-                let expr_start = compiler.exprs.len();
-                let mut type_resolver = TypeResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
                 if let Err(ty_diags) = type_resolver.resolve(env)
                     && !ty_diags.is_empty()
@@ -496,13 +501,7 @@ impl DocumentState {
                         }
                     }
                 }
-                let expr_end = compiler.exprs.len();
-                if mod_idx == 0 {
-                    main_expr_range = expr_start..expr_end;
-                }
             }
-
-            self.main_expr_range = main_expr_range;
 
             // Constraint resolution for all modules. Same rationale as above:
             // do not abort on parse errors, the resolver will skip past
@@ -645,7 +644,6 @@ impl DocumentState {
             interner: &Intern,
             script_start: usize,
         ) {
-            use compilation::parser::ast::ast_exprs::Expr;
             match &expr.expr {
                 Expr::MemberAccess(acc) => {
                     if let Expr::Var(base_id) = acc.base.expr
@@ -983,9 +981,16 @@ impl DocumentState {
         }
 
         // 2. Variable Usages
-        // `Arena` only implements `Index<I>` and `Index<usize>`, not `Index<Range<usize>>`,
-        // so we slice into `compiler.exprs.items` directly.
-        for expr in &compiler.exprs.items[self.main_expr_range.clone()] {
+        // Only expressions produced from the main module's region are indexed.
+        // Filtering by `span.region_id` replaces the old `main_expr_range` slice,
+        // which required reading `compiler.exprs.len()` between per-module
+        // resolver iterations — the borrow that forced a fresh `TypeResolver`
+        // per module (and the resolver-state corruption that came with it).
+        let main_region_id = compiler.mods[ModuleId::new(0)].region_id;
+        for expr in &compiler.exprs.items {
+            if Some(expr.span.region_id) != main_region_id {
+                continue;
+            }
             if let ExprHir::Var(sym_id) = expr.expr_hir {
                 map.push((expr.span, SemanticEntity::Symbol(sym_id)));
             }
@@ -1134,7 +1139,6 @@ impl DocumentState {
         // 4. Type and Expr References in AST
         if let Some(Some(ast)) = self.asts.first() {
             for item in ast.items() {
-                use compilation::parser::ast::ast_concepts::Item;
                 match item {
                     Item::Var(v) => {
                         collect_expr_refs(

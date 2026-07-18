@@ -44,13 +44,15 @@ pub const SCOPE_COMPILER: u8 = 1 << 7;
 
 // Bitwise into array of scopes that filters each time a lookup is done?
 pub static SCOPE_CORE_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Core];
-pub static SCOPE_NEUTRAL_ACCESSIBLE: [ScopeType; 2] = [ScopeType::Neutral, ScopeType::Core];
 
-pub static SCOPE_COMPLEX_ACCESSIBLE: [ScopeType; 5] = [
-    ScopeType::Neutral,
+/// Elements ordered to fit the needs of scope `neutral`
+pub static SCOPE_NEUTRAL_ENCODED_SCOPES: [ScopeType; 2] = [ScopeType::Neutral, ScopeType::Core];
+
+/// Elements ordered to fit the needs of scope `complex`
+pub static SCOPE_COMPLEX_ENCODED_SCOPES: [ScopeType; 4] = [
     ScopeType::Var,
     ScopeType::Nest,
-    ScopeType::Override,
+    ScopeType::Neutral,
     ScopeType::Core,
 ];
 
@@ -58,11 +60,10 @@ pub static SCOPE_COMPLEX_ACCESSIBLE: [ScopeType; 5] = [
 pub static SCOPE_LOCAL_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Local];
 pub static VAR_ONLY_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Var];
 
-pub static SCOPE_REST_ACCESSIBLE: [ScopeType; 5] = [
+pub static SCOPE_REST_ACCESSIBLE: [ScopeType; 4] = [
     ScopeType::Neutral,
     ScopeType::Nest,
     ScopeType::Complex,
-    ScopeType::Override,
     ScopeType::Core,
 ];
 
@@ -166,10 +167,10 @@ pub fn find_type_id(
     lookup_pattern: ScopeLookupPattern,
 ) -> Option<TypeId> {
     let current_mod = &compiler.mods[owner_id];
-    //WARN: Core is always the last scope so this is kept so an owned vec isn't created
-    //May change
     let accessible_scopes = scope_type.accessible_scopes();
     let accessible_scopes = match lookup_pattern {
+        //WARN: Core is always the last scope so this is kept so an owned vec isn't created
+        //May change
         ScopeLookupPattern::NamespaceOnly if current_mod.region_id.is_some() => {
             &accessible_scopes[..accessible_scopes.len() - 1]
         }
@@ -214,13 +215,13 @@ pub fn find_type_id(
 /// and returns `Some` if it's found, `None` otherwise.
 pub fn find_scope(
     compiler: &ScriptCompiler,
-    scope_type: ScopeType,
+    target: ScopeType,
     owner_id: ModuleId,
 ) -> Option<&ScopeInfo> {
     let mod_owner = &compiler.mods[owner_id];
     for scope_id in &mod_owner.scopes {
         let scope_info = &compiler.scopes[*scope_id];
-        if scope_info.scope.scope_type == scope_type {
+        if scope_info.scope.scope_type == target {
             return Some(scope_info);
         }
     }
@@ -228,7 +229,6 @@ pub fn find_scope(
     None
 }
 
-// TEST:
 /// - compiler: The environment to seaerch in
 /// - associated_scope: The type of scope to search which could differ depending on if the scope
 /// belongs to a module, symbol, etc.
@@ -499,9 +499,9 @@ impl ScopeType {
             // Mainly for internal usage, not an actual program recognizable scope
             // Neutral can only access neutral because this section is purely for declaring and
             // using in other sections
-            ScopeType::Neutral => &SCOPE_NEUTRAL_ACCESSIBLE,
+            ScopeType::Neutral => &SCOPE_NEUTRAL_ENCODED_SCOPES,
             ScopeType::Var | ScopeType::Nest | ScopeType::Override => &SCOPE_REST_ACCESSIBLE,
-            ScopeType::Complex => &SCOPE_COMPLEX_ACCESSIBLE,
+            ScopeType::Complex => &SCOPE_COMPLEX_ENCODED_SCOPES,
             ScopeType::Local => &SCOPE_LOCAL_ACCESSIBLE,
             // Should be a recognized builtin at this point
             ScopeType::Compiler => &[],

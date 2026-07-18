@@ -55,14 +55,24 @@ pub mod text;
 #[cfg(test)]
 mod tests {
     use crate::{
-        state::DocumentCache,
+        analyser::{config_load_error_to_diagnostics, push_diagnostics},
+        backend::SemanticTokenType,
+        state::{DocumentCache, DocumentState},
         text::{
-            abs_to_rel_offset, abs_to_rel_span, extract_word_at, offset_to_position,
-            position_to_offset, rel_to_abs_offset, rel_to_abs_span,
+            abs_to_rel_offset, abs_to_rel_span, apply_text_change, deduplicate_range_indices,
+            extract_word_at, find_word_bounds, offset_to_position, position_to_offset,
+            rel_to_abs_offset, rel_to_abs_span,
         },
     };
+    use chrn_utils::core_error::ConfigLoadError;
+    use chrn_utils::id_types::{PathId, SourceRegionId};
+    use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
+    use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
+    use chrn_utils::source_map::source_region::SourceRegion;
+    use chrn_utils::{arena::Arena, source_map::source_span::SourceSpan};
+    use std::collections::HashSet;
     use std::sync::Arc;
-    use tower_lsp::lsp_types::Position;
+    use tower_lsp::lsp_types::{Position, Range, TextDocumentContentChangeEvent};
 
     #[test]
     fn test_position_to_offset() {
@@ -238,8 +248,6 @@ mod tests {
     /// that shifts values is caught immediately.
     #[test]
     fn test_semantic_token_type_indices_match_legend() {
-        use crate::backend::SemanticTokenType;
-
         // These must stay in the exact same order as the `token_types` vec
         // passed to the client inside `Backend::initialize`.
         assert_eq!(SemanticTokenType::Keyword.as_u32(), 0, "Keyword");
@@ -261,9 +269,6 @@ mod tests {
     /// Duplicate indices would silently make two token kinds look the same.
     #[test]
     fn test_semantic_token_type_indices_are_unique() {
-        use crate::backend::SemanticTokenType;
-        use std::collections::HashSet;
-
         let variants = [
             SemanticTokenType::Keyword,
             SemanticTokenType::String,
@@ -294,9 +299,6 @@ mod tests {
     /// Full replacement (no range) must substitute the entire document text.
     #[test]
     fn test_apply_text_change_full_replace() {
-        use crate::text::apply_text_change;
-        use tower_lsp::lsp_types::TextDocumentContentChangeEvent;
-
         let existing = "hello world";
         let change = TextDocumentContentChangeEvent {
             range: None,
@@ -310,9 +312,6 @@ mod tests {
     /// Ranged replacement must splice only the designated bytes.
     #[test]
     fn test_apply_text_change_incremental() {
-        use crate::text::apply_text_change;
-        use tower_lsp::lsp_types::{Range, TextDocumentContentChangeEvent};
-
         // "hello world" → replace "world" (chars 6-10 on line 0) with "chrn"
         let existing = "hello world";
         let change = TextDocumentContentChangeEvent {
@@ -331,9 +330,6 @@ mod tests {
     /// Replacing with an empty string at a valid range effectively deletes those bytes.
     #[test]
     fn test_apply_text_change_deletion() {
-        use crate::text::apply_text_change;
-        use tower_lsp::lsp_types::{Range, TextDocumentContentChangeEvent};
-
         let existing = "let x = 1;\nlet y = 2;";
         // Delete the second line entirely.
         let change = TextDocumentContentChangeEvent {
@@ -351,9 +347,6 @@ mod tests {
     /// An out-of-bounds range must return an Err rather than panic.
     #[test]
     fn test_apply_text_change_out_of_bounds_returns_err() {
-        use crate::text::apply_text_change;
-        use tower_lsp::lsp_types::{Range, TextDocumentContentChangeEvent};
-
         let existing = "hi";
         let change = TextDocumentContentChangeEvent {
             range: Some(Range {
@@ -376,8 +369,6 @@ mod tests {
 
     #[test]
     fn test_find_word_bounds_basic() {
-        use crate::text::find_word_bounds;
-
         let text = "let foo = 123";
         // Cursor inside "foo" (offset 5)
         assert_eq!(find_word_bounds(text, 5), (4, 7));
@@ -395,8 +386,6 @@ mod tests {
     /// the space is not a word character.
     #[test]
     fn test_find_word_bounds_on_space() {
-        use crate::text::find_word_bounds;
-
         let text = "a b";
         // Offset 1 is the space. Start walks back to 0 ('a' is a word char).
         // End stays at 1 (space is not a word char).
@@ -409,8 +398,6 @@ mod tests {
     /// Extended word chars (`@`, `#`, `-`, `<`, `>`) must be included.
     #[test]
     fn test_find_word_bounds_extended_chars() {
-        use crate::text::find_word_bounds;
-
         let text = "@def foo";
         // Cursor at offset 0 inside "@def"
         let (start, end) = find_word_bounds(text, 0);
@@ -420,7 +407,6 @@ mod tests {
     /// Empty text must not panic.
     #[test]
     fn test_find_word_bounds_empty_text() {
-        use crate::text::find_word_bounds;
         assert_eq!(find_word_bounds("", 0), (0, 0));
     }
 
@@ -430,9 +416,6 @@ mod tests {
 
     #[test]
     fn test_deduplicate_range_indices_no_overlap() {
-        use crate::text::deduplicate_range_indices;
-        use tower_lsp::lsp_types::Range;
-
         let ranges = vec![
             Range {
                 start: Position::new(0, 0),
@@ -452,9 +435,6 @@ mod tests {
     /// the contained (smaller) range is more specific.
     #[test]
     fn test_deduplicate_range_indices_removes_outer() {
-        use crate::text::deduplicate_range_indices;
-        use tower_lsp::lsp_types::Range;
-
         // r0 = [0,0 .. 0,10]  (outer)
         // r1 = [0,2 .. 0,5]   (inner, more specific)
         let ranges = vec![
@@ -478,9 +458,6 @@ mod tests {
 
     #[test]
     fn test_deduplicate_range_indices_identical_keeps_first() {
-        use crate::text::deduplicate_range_indices;
-        use tower_lsp::lsp_types::Range;
-
         let r = Range {
             start: Position::new(1, 0),
             end: Position::new(1, 5),
@@ -769,9 +746,6 @@ mod tests {
     // rel_to_abs_span / abs_to_rel_span
     // -------------------------------------------------------------------------
 
-    use chrn_utils::id_types::SourceRegionId;
-    use chrn_utils::source_map::source_span::SourceSpan;
-
     /// Both endpoints of the span must be shifted by `script_start` while the
     /// `region_id` is preserved.
     #[test]
@@ -898,12 +872,6 @@ mod tests {
     /// must produce a diagnostic whose range starts at line 1 (not line 0).
     #[test]
     fn test_config_load_error_to_diagnostics_uses_absolute_positions() {
-        use crate::analyser::config_load_error_to_diagnostics;
-        use chrn_utils::core_error::ConfigLoadError;
-        use chrn_utils::id_types::PathId;
-        use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
-        use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
-
         // Document text: "@def\n" (5 bytes) + "let x = 1\n" (10 bytes).
         // script_start = 5 (the byte position of '@' in the file).
         let text = "@def\nlet x = 1\n";
@@ -948,12 +916,6 @@ mod tests {
     /// must map directly to the byte positions in the text.
     #[test]
     fn test_config_load_error_to_diagnostics_no_script_start_is_identity() {
-        use crate::analyser::config_load_error_to_diagnostics;
-        use chrn_utils::core_error::ConfigLoadError;
-        use chrn_utils::id_types::PathId;
-        use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
-        use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
-
         let text = "let x = 1\n";
         let primary_span = SourceSpan::new(SourceRegionId::new(0), 4, 5);
         let diag = chrn_utils::source_map::source_diagnostic::SourceDiagnostic::builder(
@@ -980,12 +942,6 @@ mod tests {
     /// shift: a secondary annotation on a different line.
     #[test]
     fn test_config_load_error_to_diagnostics_secondary_annotation_shifted() {
-        use crate::analyser::config_load_error_to_diagnostics;
-        use chrn_utils::core_error::ConfigLoadError;
-        use chrn_utils::id_types::PathId;
-        use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
-        use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
-
         // Two-line document: line 0 is the config header, line 1 holds
         // the script section.  The primary annotation is on line 1 at
         // relative col 0-1; the secondary annotation is on line 1 at
@@ -1042,13 +998,6 @@ mod tests {
     /// name-resolution / type-check errors.
     #[test]
     fn test_push_diagnostics_relative_to_absolute_via_region() {
-        use crate::analyser::push_diagnostics;
-        use chrn_utils::arena::Arena;
-        use chrn_utils::id_types::{PathId, SourceRegionId};
-        use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
-        use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
-        use chrn_utils::source_map::source_region::SourceRegion;
-
         // The whole document is "@def\nlet x = 1\n".  The main region's
         // `src_bytes` are the script section only ("let x = 1\n"), with
         // script_start=5 pointing at the '@' in the file.
@@ -1113,13 +1062,6 @@ mod tests {
     /// the wrong `script_start` and land in the wrong file position.
     #[test]
     fn test_push_diagnostics_import_error_uses_importing_module_region() {
-        use crate::analyser::push_diagnostics;
-        use chrn_utils::arena::Arena;
-        use chrn_utils::id_types::{PathId, SourceRegionId};
-        use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
-        use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
-        use chrn_utils::source_map::source_region::SourceRegion;
-
         // Main file: config header "@def\n" (5 bytes) then script section
         // "import \"missing\"\n".  The import path "missing" is at script
         // section bytes [8, 15).
@@ -1195,13 +1137,6 @@ mod tests {
     /// lines up with the byte positions in `fallback_text`.
     #[test]
     fn test_push_diagnostics_no_matching_region_uses_fallback() {
-        use crate::analyser::push_diagnostics;
-        use chrn_utils::arena::Arena;
-        use chrn_utils::id_types::{PathId, SourceRegionId};
-        use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
-        use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
-        use chrn_utils::source_map::source_region::SourceRegion;
-
         let full_text = "let x = 1\n";
         // Region uses path_id=1; the diagnostic uses path_id=0.  The
         // lookup must fall back to `fallback_text` (no shift).
@@ -1257,8 +1192,6 @@ mod tests {
     /// `script_start`.
     #[test]
     fn test_find_matching_entities_propagates_script_start() {
-        use crate::state::{DocumentCache, DocumentState};
-
         let cache = Arc::new(DocumentCache::new(10));
 
         // Build two cached documents with different `script_start` values

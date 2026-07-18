@@ -1,4 +1,3 @@
-//TEST: May make structures like InternedId into _marker: I as well as for arenas
 use std::{
     marker::PhantomData,
     ops::{Index, IndexMut},
@@ -6,7 +5,6 @@ use std::{
 
 use crate::id_types::ArenaIndex;
 
-// TEST:
 /// Generic `Arena` which holds `items` of type `T` and an index of `I`.
 ///
 /// This is to reduce the duplication of basic arena types that just want to enforce type-safe
@@ -56,6 +54,11 @@ impl<T, I: ArenaIndex> Arena<T, I> {
     /// Wrapper for `len()` call for internal `items`
     pub fn len(&self) -> usize {
         self.items.len()
+    }
+
+    /// Wrapper for `len()` call for internal `items`
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
     }
 
     /// Iterates over items, returning references

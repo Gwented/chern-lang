@@ -15,7 +15,7 @@ pub struct Reporter {
     pub diags: Vec<SourceDiagnostic>,
     // The suppressed diagnostic count is the "exceeded_amt" in budget
     pub diag_budget: MemoryBudget,
-    // WHAT?
+    // Today?
     /// Summary of what the compiler did today
     pub(crate) summary: ScriptCompilerSummary,
 }

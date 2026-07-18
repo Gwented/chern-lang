@@ -669,7 +669,7 @@ fn parse_cfg_expr(
 
     let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
-        "Expected an identifier to describe configuration for, found ",
+        "Expected an identifier to define configuration for, found ",
         "",
         Branch::Section(SectionBranch::Complex),
         interner,

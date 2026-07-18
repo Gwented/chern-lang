@@ -88,7 +88,6 @@ impl MemoryBudget {
             if self.would_exceed(proposed_sum) {
                 let overage = proposed_sum - self.limit;
                 let can_add = to_apply - overage;
-                self.usage;
                 panic!("Hi");
                 self.times_exceeded += 1;
                 self.amt_exceeded = self.amt_exceeded.saturating_add(overage);

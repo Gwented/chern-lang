@@ -61,7 +61,7 @@ macro_rules! arena_idx_impl_u32 {
     }
 }
 
-/// Convenience for `usize` containing implementers of `ArenaIndex`
+/// Convenience for `u16` containing implementers of `ArenaIndex`
 macro_rules! arena_idx_impl_u16 {
     ($($t:ty),* $(,)?) => {
         $(
@@ -77,16 +77,6 @@ macro_rules! arena_idx_impl_u16 {
         )*
     }
 }
-
-// impl ArenaIndex for InternedId {
-//     fn into_usize(self) -> usize {
-//         self.0 as usize
-//     }
-//
-//     fn from_usize(val: usize) -> Self {
-//         InternedId(val as u32)
-//     }
-// }
 
 arena_idx_impl_u32!(
     InternedId,

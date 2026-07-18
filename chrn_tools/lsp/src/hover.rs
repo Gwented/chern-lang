@@ -49,6 +49,7 @@ use lang::values::Value;
 use tower_lsp::lsp_types;
 
 use crate::document::{self, Document};
+use crate::state::SemanticEntity;
 use crate::text::position_to_offset;
 
 /// Computes the hover response for a cursor position within a Chern document.
@@ -122,7 +123,6 @@ pub fn compute_hover(
             let interner = &state.interner;
             let interned = id;
 
-            use crate::state::SemanticEntity;
             let entity = state.get_entity_at_offset(offset);
 
             if let Some(entity) = entity {

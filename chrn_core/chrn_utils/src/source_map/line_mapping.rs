@@ -58,14 +58,14 @@ impl LineGroupManager {
         if let Some(pair) = self
             .span_groups
             .iter_mut()
-            .find(|group| group.ln_num as u32 == ln_key)
+            .find(|group| group.ln_num == ln_key)
         {
             //FIX: Do not insert duplicates
             if pair.spans.iter().any(|s| s == span) {
                 return;
             };
 
-            pair.spans.push(span.clone());
+            pair.spans.push(*span);
 
             pair.spans.sort_by_key(|s| s.start);
         } else {

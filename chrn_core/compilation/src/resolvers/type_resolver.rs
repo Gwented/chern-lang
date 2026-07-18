@@ -1,5 +1,3 @@
-//TODO: Lessen allocations overall for any stage that would need it for the concept of "seen"
-//TODO:
 // Please split this...
 // No
 pub mod type_context;
@@ -48,30 +46,58 @@ use crate::resolvers::type_resolver::type_context::{
 /// evaluated. Does so by mutating the compiler given, and maintaining context to retain it's last
 /// state.
 pub struct TypeResolver<'a> {
-    settings: &'a ChrnConfig,
+    cfg: &'a ChrnConfig,
     interner: &'a Intern,
     compiler: &'a mut ScriptCompiler,
     ty_ctx: TypeContext,
-    err_vec: Vec<SourceDiagnostic>,
+    diags: Vec<SourceDiagnostic>,
 }
 
 impl<'res> TypeResolver<'res> {
     /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new(
-        settings: &'res ChrnConfig,
+        cfg: &'res ChrnConfig,
         interner: &'res Intern,
         compiler: &'res mut ScriptCompiler,
     ) -> TypeResolver<'res> {
         debug_assert_eq!(ResolverState::TYPE, compiler.resolver_state);
         compiler.resolver_state.advance();
         TypeResolver {
-            settings,
+            cfg,
             ty_ctx: TypeContext::new(),
-            err_vec: Vec::new(),
+            diags: Vec::new(),
             interner,
             compiler,
         }
     }
+
+    //TODO: Refactor complex. It should only allow for the top-level type to mutate parts like it's
+    //acutal type identifier and casing. The inner should only go one layer deep inside the type
+    //itself.
+    //For example:
+    //```
+    //nest->
+    //  struct Point {state1: State, state2: State}
+    //  enum State {Low, Medium, High: i32}
+    //complex->
+    //  // CANNOT go any deeper. It can only mutate the field/variant naming and default value if
+    //  present, but not the type of the inner itself in any regard.
+    //  Point {x {} y {} }
+    //
+    //```
+    //
+    //The issue with this going deeper right now is that if x and y can mutate type `State`, who
+    //takes priority? Do they just append to each others properties?
+    //The biggest issue is actually that the split between who can implement is an unnecessary
+    //complexity which turns a simple configuration into a question of if the behavior being seen in
+    //serialized behavior is because more than one complex declaration configurates at the same time.
+    //
+    //This probably means that something like, "other::x {}" needs to be allowed, or allow other
+    //modules to define configuration and keep that in mind for the script file/block being compiled.
+    // Perhaps, if you re-configure from another module you can override, but not sure.
+    //
+    // Current idea is just: Only one layer deep of configs, configs are isolates, and maybe
+    // cross-module config declarations.
 
     /// Mutates inner `ScriptCompiler` and `TypeContext` given the `env`.
     ///
@@ -321,9 +347,9 @@ impl<'res> TypeResolver<'res> {
         //     }
         // }
 
-        if !self.err_vec.is_empty() {
+        if !self.diags.is_empty() {
             let mut diags = Vec::new();
-            diags.append(&mut self.err_vec);
+            diags.append(&mut self.diags);
 
             return Err(diags);
         }
@@ -378,11 +404,9 @@ impl<'res> TypeResolver<'res> {
                 SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
                     .add_annotation(abs_cfg_root.name_span, AnnotationKind::Primary, None);
 
-            self.err_vec.push(src_diag.build());
+            self.diags.push(src_diag.build());
             None
         };
-        // dbg!(self.compiler.symbols[found_sym_id_opt.unwrap()].kind);
-        // panic!("release me");
 
         // Get schema option then lookup against the actual possibilities
         // Maybe do this in constraints
@@ -412,10 +436,10 @@ impl<'res> TypeResolver<'res> {
                 Ok(expr_id) => expr_id,
                 Err(preset_err) => {
                     preset_reporter::report_preset(
-                        &mut self.err_vec,
+                        &mut self.diags,
                         preset_err,
                         env.region,
-                        self.settings,
+                        self.cfg,
                         self.interner,
                     );
 
@@ -475,7 +499,7 @@ impl<'res> TypeResolver<'res> {
                         .add_annotation(current_field_span, AnnotationKind::Primary, None)
                         .build();
 
-                self.err_vec.push(src_diag);
+                self.diags.push(src_diag);
             }
         }
         // Clearing for cfg members to use for their options
@@ -504,7 +528,7 @@ impl<'res> TypeResolver<'res> {
                         .add_help(
                             "Config roots must be a struct, enum, or from the scope `var`".into(),
                         );
-                self.err_vec.push(src_diag.build());
+                self.diags.push(src_diag.build());
                 // Terminates here because this means that the symbol being looked at can't
                 // actually use config at all
                 return;
@@ -578,7 +602,7 @@ impl<'res> TypeResolver<'res> {
                             preset_reporter::create_diag_builder_preset(
                                 preset_err,
                                 env.region,
-                                self.settings,
+                                self.cfg,
                                 self.interner,
                             )
                             .add_annotation(
@@ -624,7 +648,7 @@ impl<'res> TypeResolver<'res> {
                             preset_reporter::create_diag_builder_preset(
                                 preset_err,
                                 env.region,
-                                self.settings,
+                                self.cfg,
                                 self.interner,
                             )
                             .add_annotation(
@@ -652,7 +676,7 @@ impl<'res> TypeResolver<'res> {
                         MemberLookupResult::Found(_) => unreachable!(),
                     };
 
-                    self.err_vec.push(src_diag);
+                    self.diags.push(src_diag);
 
                     if should_break {
                         break;
@@ -714,7 +738,7 @@ impl<'res> TypeResolver<'res> {
                         .add_annotation(current_cfg_span, AnnotationKind::Primary, None)
                         .build();
 
-                self.err_vec.push(src_diag);
+                self.diags.push(src_diag);
             }
         }
 
@@ -783,10 +807,10 @@ impl<'res> TypeResolver<'res> {
                 Ok(expr_id) => expr_id,
                 Err(preset_err) => {
                     preset_reporter::report_preset(
-                        &mut self.err_vec,
+                        &mut self.diags,
                         preset_err,
                         env.region,
-                        self.settings,
+                        self.cfg,
                         self.interner,
                     );
 
@@ -846,7 +870,7 @@ impl<'res> TypeResolver<'res> {
                         .add_annotation(current_opt_span, AnnotationKind::Primary, None)
                         .build();
 
-                self.err_vec.push(src_diag);
+                self.diags.push(src_diag);
             }
         }
 
@@ -906,7 +930,7 @@ impl<'res> TypeResolver<'res> {
                     "The first config of a recursive type applies to all of it's inner recursive versions of innately".into(),
                 );
 
-                self.err_vec.push(src_diag.build());
+                self.diags.push(src_diag.build());
                 // Returning the `MemberSymbolKind::Unknown` reserved
                 return current_cfg_member_id;
             }
@@ -962,7 +986,7 @@ impl<'res> TypeResolver<'res> {
                                 preset_reporter::create_diag_builder_preset(
                                     preset_err,
                                     env.region,
-                                    self.settings,
+                                    self.cfg,
                                     self.interner,
                                 )
                                 .add_annotation(
@@ -1014,7 +1038,7 @@ impl<'res> TypeResolver<'res> {
                                 preset_reporter::create_diag_builder_preset(
                                     preset_err,
                                     env.region,
-                                    self.settings,
+                                    self.cfg,
                                     self.interner,
                                 )
                                 .add_annotation(
@@ -1049,7 +1073,7 @@ impl<'res> TypeResolver<'res> {
                             MemberLookupResult::Found(_) => unreachable!(),
                         };
 
-                        self.err_vec.push(src_diag);
+                        self.diags.push(src_diag);
 
                         if should_break {
                             break;
@@ -1117,7 +1141,7 @@ impl<'res> TypeResolver<'res> {
                         .add_annotation(current_cfg_span, AnnotationKind::Primary, None)
                         .build();
 
-                self.err_vec.push(src_diag);
+                self.diags.push(src_diag);
             }
         }
 
@@ -1272,10 +1296,10 @@ impl<'res> TypeResolver<'res> {
                         //WARN: Suspicious
 
                         preset_reporter::report_preset(
-                            &mut self.err_vec,
+                            &mut self.diags,
                             preset_err,
                             env.region,
-                            self.settings,
+                            self.cfg,
                             self.interner,
                         );
                     }
@@ -1612,10 +1636,10 @@ impl<'res> TypeResolver<'res> {
             Ok(expr_id) => expr_id,
             Err(preset_err) => {
                 preset_reporter::report_preset(
-                    &mut self.err_vec,
+                    &mut self.diags,
                     preset_err,
                     env.region,
-                    self.settings,
+                    self.cfg,
                     self.interner,
                 );
 
@@ -1681,10 +1705,10 @@ impl<'res> TypeResolver<'res> {
                 .expect("Result enforced by `match`");
 
                 preset_reporter::report_preset(
-                    &mut self.err_vec,
+                    &mut self.diags,
                     preset_err,
                     env.region,
-                    self.settings,
+                    self.cfg,
                     self.interner,
                 );
 
@@ -1708,10 +1732,10 @@ impl<'res> TypeResolver<'res> {
                 Ok(c) => conds.push(c),
                 Err(preset_err) => {
                     preset_reporter::report_preset(
-                        &mut self.err_vec,
+                        &mut self.diags,
                         preset_err,
                         env.region,
-                        self.settings,
+                        self.cfg,
                         self.interner,
                     );
                 }
@@ -1720,10 +1744,10 @@ impl<'res> TypeResolver<'res> {
 
         let (directives, preset_errs) = self.handle_directives(&abs_typedef.directives, env);
         preset_reporter::report_preset_vec(
-            &mut self.err_vec,
+            &mut self.diags,
             preset_errs,
             env.region,
-            self.settings,
+            self.cfg,
             self.interner,
         );
 
@@ -1780,10 +1804,10 @@ impl<'res> TypeResolver<'res> {
                     Ok(c) => conds.push(c),
                     Err(preset_err) => {
                         preset_reporter::report_preset(
-                            &mut self.err_vec,
+                            &mut self.diags,
                             preset_err,
                             env.region,
-                            self.settings,
+                            self.cfg,
                             self.interner,
                         );
                     }
@@ -1792,10 +1816,10 @@ impl<'res> TypeResolver<'res> {
 
             let (directives, preset_errs) = self.handle_directives(&abs_field.directives, env);
             preset_reporter::report_preset_vec(
-                &mut self.err_vec,
+                &mut self.diags,
                 preset_errs,
                 env.region,
-                self.settings,
+                self.cfg,
                 self.interner,
             );
 
@@ -1815,10 +1839,10 @@ impl<'res> TypeResolver<'res> {
                 Ok(c) => glob_conds.push(c),
                 Err(preset_err) => {
                     preset_reporter::report_preset(
-                        &mut self.err_vec,
+                        &mut self.diags,
                         preset_err,
                         env.region,
-                        self.settings,
+                        self.cfg,
                         self.interner,
                     );
                 }
@@ -1829,10 +1853,10 @@ impl<'res> TypeResolver<'res> {
             self.handle_directives(&abs_struct.glob_directives, env);
 
         preset_reporter::report_preset_vec(
-            &mut self.err_vec,
+            &mut self.diags,
             preset_errs,
             env.region,
-            self.settings,
+            self.cfg,
             self.interner,
         );
 
@@ -1878,10 +1902,10 @@ impl<'res> TypeResolver<'res> {
                     Ok(c) => Some(c),
                     Err(preset_err) => {
                         preset_reporter::report_preset(
-                            &mut self.err_vec,
+                            &mut self.diags,
                             preset_err,
                             env.region,
-                            self.settings,
+                            self.cfg,
                             self.interner,
                         );
                         None
@@ -1895,10 +1919,10 @@ impl<'res> TypeResolver<'res> {
 
             let (directives, preset_errs) = self.handle_directives(&abs_variant.directives, env);
             preset_reporter::report_preset_vec(
-                &mut self.err_vec,
+                &mut self.diags,
                 preset_errs,
                 env.region,
-                self.settings,
+                self.cfg,
                 self.interner,
             );
 
@@ -1924,10 +1948,10 @@ impl<'res> TypeResolver<'res> {
                 Ok(c) => Some(c),
                 Err(preset_err) => {
                     preset_reporter::report_preset(
-                        &mut self.err_vec,
+                        &mut self.diags,
                         preset_err,
                         env.region,
-                        self.settings,
+                        self.cfg,
                         self.interner,
                     );
                     None
@@ -1941,10 +1965,10 @@ impl<'res> TypeResolver<'res> {
 
         let (glob_directives, preset_errs) = self.handle_directives(&abs_enum.glob_directives, env);
         preset_reporter::report_preset_vec(
-            &mut self.err_vec,
+            &mut self.diags,
             preset_errs,
             env.region,
-            self.settings,
+            self.cfg,
             self.interner,
         );
 
@@ -1997,10 +2021,10 @@ impl<'res> TypeResolver<'res> {
                     .expect("Result enforced by `match`");
 
                     preset_reporter::report_preset(
-                        &mut self.err_vec,
+                        &mut self.diags,
                         preset_err,
                         env.region,
-                        self.settings,
+                        self.cfg,
                         self.interner,
                     );
 
@@ -2090,7 +2114,7 @@ impl<'res> TypeResolver<'res> {
                         .add_annotation(current_param_span, AnnotationKind::Primary, None)
                         .build();
 
-                self.err_vec.push(src_diag);
+                self.diags.push(src_diag);
             }
         }
 
@@ -2108,10 +2132,10 @@ impl<'res> TypeResolver<'res> {
                 Ok(c) => Some(c),
                 Err(preset_err) => {
                     preset_reporter::report_preset(
-                        &mut self.err_vec,
+                        &mut self.diags,
                         preset_err,
                         env.region,
-                        self.settings,
+                        self.cfg,
                         self.interner,
                     );
                     None
@@ -2125,10 +2149,10 @@ impl<'res> TypeResolver<'res> {
 
         let (directives, preset_errs) = self.handle_directives(&abs_alias.directives, env);
         preset_reporter::report_preset_vec(
-            &mut self.err_vec,
+            &mut self.diags,
             preset_errs,
             env.region,
-            self.settings,
+            self.cfg,
             self.interner,
         );
 

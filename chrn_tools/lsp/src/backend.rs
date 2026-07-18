@@ -48,7 +48,10 @@ use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
-use tower_lsp::lsp_types::{CompletionItemKind, Position, SemanticToken};
+use tower_lsp::lsp_types::{
+    CompletionItem, CompletionItemKind, CompletionResponse, GotoDefinitionResponse, LocationLink,
+    Position, Range, SemanticToken, Url,
+};
 use tower_lsp::{Client, LanguageServer, jsonrpc};
 
 use chrn_utils::id_types::ModuleId;
@@ -140,9 +143,10 @@ pub struct Backend {
     pub docs: Arc<RwLock<HashMap<String, Arc<String>>>>,
     /// Monotonic per-URI change counter; bumped on every `did_change` / `did_open`.
     pub pending_versions: Arc<RwLock<HashMap<String, u64>>>,
-    /// JSON-serialised last-published diagnostics per URI; used to suppress
-    /// redundant `publishDiagnostics` notifications.
-    pub diags_cache: Arc<RwLock<HashMap<String, String>>>,
+    /// Hash of the last-published diagnostics per URI; used to suppress
+    /// redundant `publishDiagnostics` notifications.  Only an 8-byte digest is
+    /// stored per document rather than the full JSON payload.
+    pub diags_cache: Arc<RwLock<HashMap<String, u64>>>,
     /// Handles to in-flight debounce tasks so they can be aborted on newer changes.
     pub pending_tasks: Arc<RwLock<HashMap<String, JoinHandle<()>>>>,
     /// Document analysis cache: tokens, AST, compiler, symbol map.
@@ -224,19 +228,29 @@ impl Backend {
             }
         };
 
-        // SAFETY: Pass the real per-URI version, not `0`. The previous
-        // hardcoded `0` made the synchronous `get_analyzed_state` path win
-        // the version race every time: the async debounced task's
-        // `publish_if_current` saw `0 != my_version` and silently dropped
-        // every subsequent diagnostics publish — which is exactly why
-        // diagnostics "stop working" after the first synchronous request
-        // (hover, goto, etc.) on a file.
-        let my_version = self.bump_version(&uri_str);
+        // Read the current version WITHOUT bumping it.  This synchronous path
+        // never publishes diagnostics itself, so it must not claim ownership of
+        // the version counter: bumping it here invalidated the debounced
+        // `did_change` task (whose `still_current` check compares versions),
+        // which swallowed the diagnostics publish for that change entirely —
+        // the editor then kept showing stale diagnostics until the next edit.
+        // Peeking instead lets the pending debounced task run, hit the cache
+        // this call just populated, and publish the fresh diagnostics exactly
+        // once.  (The even older hardcoded `0` had the inverse problem: it
+        // made `publish_if_current` in the async task see `0 != my_version`
+        // and drop every publish.)
+        let my_version = self
+            .pending_versions
+            .read()
+            .get(&uri_str)
+            .copied()
+            .unwrap_or(0);
 
         // Resolve imported modules outside the DocumentState write lock.  This is
         // the same pre-analysis step used by the async analysis task and prevents
         // the deadlock where `ensure_analyzed` held the per-document lock while
-        // calling `DocumentCache::get_text`.
+        // calling `DocumentCache::get_text`.  The interner from the config load
+        // is moved in so a second one is not allocated.
         let prepared = resolve_document_modules(
             uri,
             Arc::clone(&text),
@@ -244,17 +258,17 @@ impl Backend {
             &chrn_cfg,
             &self.doc_cache,
             my_version,
+            interner,
         );
-        let imported_uris = prepared.resolution.imported_uris.clone();
 
         let state_arc = self
             .doc_cache
             .insert_or_get(&uri_str, Arc::clone(&text), prepared.state);
 
-        {
+        let imported_uris = {
             let mut state = state_arc.write();
-            state.ensure_analyzed(prepared.resolution);
-        }
+            state.ensure_analyzed(prepared.resolution)
+        };
 
         if !imported_uris.is_empty() {
             self.doc_cache
@@ -286,6 +300,12 @@ impl Backend {
     /// Applies LSP content changes to a document, updating the docs map.
     /// Returns the new `Arc<String>` on success, or shows an error message
     /// and returns `None` on failure.
+    ///
+    /// The previous implementation cloned the entire document up front and
+    /// then allocated another full `String` per change event.  This version
+    /// borrows the existing text for the first change and only allocates the
+    /// strings `apply_text_change` itself produces — one full-document
+    /// allocation fewer per `did_change` notification.
     fn apply_content_changes(
         &self,
         params: &tower_lsp::lsp_types::DidChangeTextDocumentParams,
@@ -293,17 +313,22 @@ impl Backend {
     ) -> Option<Arc<String>> {
         let mut docs = self.docs.write();
         let existing = docs.remove(uri_str).unwrap_or_default();
-        let mut updated = (*existing).clone();
+        let mut updated: Option<String> = None;
         for change in params.content_changes.iter() {
-            match apply_text_change(&updated, change) {
-                Ok(next) => updated = next,
+            let current: &str = updated.as_deref().unwrap_or(&existing);
+            match apply_text_change(current, change) {
+                Ok(next) => updated = Some(next),
                 Err(_e) => {
                     docs.insert(uri_str.to_string(), existing);
                     return None;
                 }
             }
         }
-        let updated_arc = Arc::new(updated);
+        // No change events means the text is unchanged; reuse the existing Arc.
+        let updated_arc = match updated {
+            Some(u) => Arc::new(u),
+            None => existing,
+        };
         docs.insert(uri_str.to_string(), Arc::clone(&updated_arc));
         Some(updated_arc)
     }
@@ -967,8 +992,6 @@ impl LanguageServer for Backend {
         &self,
         params: tower_lsp::lsp_types::GotoDefinitionParams,
     ) -> jsonrpc::Result<Option<tower_lsp::lsp_types::GotoDefinitionResponse>> {
-        use tower_lsp::lsp_types::{GotoDefinitionResponse, LocationLink, Range, Url};
-
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
 
@@ -1072,8 +1095,6 @@ impl LanguageServer for Backend {
         &self,
         params: tower_lsp::lsp_types::CompletionParams,
     ) -> jsonrpc::Result<Option<tower_lsp::lsp_types::CompletionResponse>> {
-        use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, CompletionResponse};
-
         let uri = &params.text_document_position.text_document.uri;
         let Some(state_arc) = self.get_state(uri) else {
             return Ok(None);

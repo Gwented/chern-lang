@@ -82,7 +82,7 @@ pub enum Token {
 }
 
 impl Token {
-    pub fn kind(&self) -> TokenKind {
+    pub fn kind(self) -> TokenKind {
         match self {
             Token::Id(_) => TokenKind::Id,
             Token::Str(_) => TokenKind::Str,
@@ -135,7 +135,7 @@ impl Token {
     }
 
     // Um
-    pub(crate) fn precedence(&self) -> Option<(BinaryOp, u8)> {
+    pub(crate) fn precedence(self) -> Option<(BinaryOp, u8)> {
         match self {
             Token::Plus => Some((BinaryOp::Add, 1)),
             Token::Hyphen => Some((BinaryOp::Sub, 1)),
@@ -211,7 +211,7 @@ pub enum TokenKind {
 
 impl TokenKind {
     /// Wrapper for checking for `@end` and EOF since they are both valid end tokens
-    pub fn is_terminator(&self) -> bool {
+    pub fn is_terminator(self) -> bool {
         match self {
             TokenKind::End | TokenKind::EOF => true,
             _ => false,
@@ -327,7 +327,7 @@ pub(crate) const EOF: u64 = 1 << 46;
 
 //FIX: PLEASE ASSERT THIS THING
 impl TokenKind {
-    pub(crate) fn to_u64(&self) -> u64 {
+    pub(crate) fn to_u64(self) -> u64 {
         // Ignore this...
         match self {
             TokenKind::Id => ID,

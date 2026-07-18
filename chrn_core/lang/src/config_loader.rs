@@ -1,8 +1,8 @@
 // This is not getting streamed right now. See `IMPORTANT.txt`
 //FIX: This should probably be in compilation
-///! This module represents the stage of `chrn` processing where there it may read an entire file, or
-///! it may read between `@def` and `@end`. This exists so that if there is serial data within the
-///! file, the entire file isn't forced to be loaded into memory, which would be a net negative.
+//! This module represents the stage of `chrn` processing where there it may read an entire file, or
+//! it may read between `@def` and `@end`. This exists so that if there is serial data within the
+//! file, the entire file isn't forced to be loaded into memory, which would be a net negative.
 //TODO: Need relative spanning in renderers
 use std::io::{BufRead, BufReader, Read};
 
@@ -22,9 +22,9 @@ use crate::keywords::ANNOTATION_CLAUSE_SIZE;
 /// Can read 32KB before stopping if no `@def` or EOF is found
 const MAX_SEARCH_READ: usize = 1024 * 32;
 
-/// Size of the buffered reader used here of 64KB
+/// Size of the buffered reader used here of 64KB + 1 extra byte
 // TEST: Allows for checking if the file exceeded 64KB is the context where it matters without
-// refilling the buffer
+// refilling the buffer with the + 1
 const BUFFER_SIZE: usize = (1024 * 64) + 1;
 
 // Can read at most 32 KB before an @def, can read at most 32 KB after an @def
@@ -40,8 +40,8 @@ pub struct ConfigLoader<'a, R: Read> {
     current_path_id: PathId,
     handle: BufReader<R>,
     cfg: &'a ChrnConfig,
-    ln_num_tracker: NumberTracker,
-    col_tracker: NumberTracker,
+    ln_num_tracker: FreezeTrackerU32,
+    col_tracker: FreezeTrackerU32,
     // TODO: Remove this?
     interner: &'a Intern,
     /// Position specifically used for navigating the IO buffer
@@ -91,8 +91,8 @@ impl<R: Read> ConfigLoader<'_, R> {
             interner,
             current_path_id,
             handle: BufReader::with_capacity(BUFFER_SIZE, handle),
-            col_tracker: NumberTracker::new(1),
-            ln_num_tracker: NumberTracker::new(1),
+            col_tracker: FreezeTrackerU32::new(1),
+            ln_num_tracker: FreezeTrackerU32::new(1),
             cursor: 0,
             limit: MAX_SEARCH_READ,
             bytes_consumed: 0,
@@ -217,7 +217,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                     // Is there a reason for lines_read to be printed if there are multiple quotes?
                     // When are there ever NOT multiple quotes if it's in a serialized file?
                     if self.read_quotes(quote_type).is_err() {
-                        let core_msg = format!("Found unclosed quotes which reached <eof>");
+                        let core_msg = "Found unclosed quotes which reached <eof>".into();
 
                         let abs_q_start = (quote_start - script_start) as u32;
                         let q_span =
@@ -284,11 +284,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                     // does not have at most one extra byte
                     let can_check =
                         // DID THE - 1 FIX?
-                        if self.cursor + (ANNOTATION_CLAUSE_SIZE - 1) < self.handle.buffer().len() {
-                            true
-                        } else {
-                            false
-                        };
+                        self.cursor + (ANNOTATION_CLAUSE_SIZE - 1) < self.handle.buffer().len();
 
                     // OLD BEHAVIOR THAT MAY BE RE-APPLIED
                     // If `@def` was seen, there is enough space to check, and `@end` aligns with
@@ -371,14 +367,14 @@ impl<R: Read> ConfigLoader<'_, R> {
                         // Stops at "f" because there may not be a byte after f, which should be
                         // handled by the main loop.
                         //
-                        // Skips "@def" to the byte after it. This is safe since it will eithe
-                        // return '\0' or `None` which both avoid over-indexing being a possibility
+                        // Skips "@def" to the byte after it. This is safe since it will
+                        // return  `None` which avoids over-indexing being a possibility
                         self.skip_unchecked(ANNOTATION_CLAUSE_SIZE);
-                        // NOTE: SELF.POS IS 4 HERE
 
                         //WARN: This needs to be relative since only regions are used
                         // This is safe to hard-code because the condition itself only allows for
-                        // this to be made if it's the first time @def is seen
+                        // this to be made if it's the first time @def is seen, which has to be the
+                        // beginning of the region.
                         let rel_start = 0;
                         let rel_end = 4;
                         def_span = Some(SourceSpan::new(
@@ -411,7 +407,7 @@ impl<R: Read> ConfigLoader<'_, R> {
 
         // If the loop was broken because the limit was reached, and there is a byte after the
         // limit, that means it stopped because it reached the max read bytes not because of a valid
-        // script file with no @def used
+        // script file. So if limit + 1 == Some then probably an error
         //
         // Does not conflict with @end since @end has it's own return environment.
         //
@@ -428,7 +424,7 @@ impl<R: Read> ConfigLoader<'_, R> {
         } else {
             // Case of end <eof> being reached, which means it is within `READ_LIMIT` since it
             // didn't actively reach it
-            let core_msg = format!("Could not find `@end` after `@def`");
+            let core_msg = "Could not find `@end` after `@def`".into();
 
             let def_span = def_span.expect("@def must exist for this branch to be seen");
             // Explicitly declaring this so the end of the file can be pointed at too
@@ -549,7 +545,7 @@ impl<R: Read> ConfigLoader<'_, R> {
         }
 
         if depth > 0 {
-            let core_msg = format!("Found unclosed multi-line comment in script");
+            let core_msg = "Found unclosed multi-line comment in script".into();
 
             // To include full multi-line syntax. / + 1 = /*
             let comment_start = comment_start as u32;
@@ -868,17 +864,17 @@ impl<R: Read> ConfigLoader<'_, R> {
 /// Tracker that stores a "freeze" flag which takes the last bit in it's 32 bits, which allows it to stay 4
 /// bytes instead of memory padding from a `bool`.
 #[derive(Debug, Default)]
-struct NumberTracker {
+struct FreezeTrackerU32 {
     inner: u32,
 }
 
 // Not necessary. But it would be 8 bytes which would cause the entire program to otherwise combust.
-impl NumberTracker {
+impl FreezeTrackerU32 {
     const FREEZE_FLAG: u32 = 0x8000_0000;
     const VAL_MASK: u32 = 0x7FFF_FFFF;
 
-    fn new(inner: u32) -> NumberTracker {
-        NumberTracker { inner }
+    fn new(inner: u32) -> FreezeTrackerU32 {
+        FreezeTrackerU32 { inner }
     }
 
     fn val(&self) -> u32 {

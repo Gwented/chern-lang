@@ -94,7 +94,7 @@ impl ChrnConfigLogger {
     /// Prints msg with [Err] header
     pub fn log_err<F, T>(&self, f: F)
     where
-        F: FnOnce() -> &'static str,
+        F: FnOnce() -> T,
         T: Display,
     {
         if self.can_log {

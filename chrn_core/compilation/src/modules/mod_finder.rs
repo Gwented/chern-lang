@@ -267,7 +267,7 @@ impl ModuleFinder<'_> {
             let import_name = interner.search(name_id);
             let region_path = interner.search_path(self.current_region.path_id);
             format!(
-                "Created import `{import_name}` for region \"{}\"",
+                "Created import `{import_name}` (region=\"{}\")",
                 region_path.display()
             )
         });
@@ -353,13 +353,10 @@ impl ModuleFinder<'_> {
 
         let end_cursor = self.pos - 1;
 
-        let abs_start = (start_cursor + self.script_start) as u32;
-        let abs_end = (end_cursor + self.script_start) as u32;
-
         let path_span = SourceSpan::new(
             self.current_region.region_id,
-            abs_start - 1 as u32,
-            abs_end + 1 as u32,
+            start_cursor as u32,
+            end_cursor as u32,
         );
 
         if saw_backslash {
@@ -418,8 +415,8 @@ impl ModuleFinder<'_> {
     fn read_id(&mut self, interner: &mut Intern) -> InternedId {
         let start = self.pos;
 
-        while self.pos < self.src_bytes.len() && self.peek_char().is_alphanumeric()
-            || self.peek() == b'_'
+        while (self.pos < self.src_bytes.len() && self.peek_char().is_alphanumeric())
+            || (self.pos < self.src_bytes.len() && self.peek() == b'_')
         {
             self.advance_char();
         }

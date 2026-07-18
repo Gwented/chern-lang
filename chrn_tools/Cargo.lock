@@ -122,7 +122,6 @@ dependencies = [
  "compilation",
  "lang",
  "parking_lot",
- "serde",
  "serde_json",
  "tokio",
  "tower-lsp",

@@ -31,9 +31,10 @@
 //!
 //! ## Diagnostic cache
 //!
-//! `diags_cache` stores the last JSON-serialised diagnostic list per document.  A
-//! new publish is skipped when the serialised form is identical to the cached one,
-//! avoiding unnecessary LSP notifications for no-op edits.
+//! `diags_cache` stores a hash of the last-published diagnostic list per document.
+//! A new publish is skipped when the serialised form hashes to the cached value,
+//! avoiding unnecessary LSP notifications for no-op edits while keeping the
+//! per-entry memory cost to 8 bytes instead of the full JSON payload.
 
 use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
@@ -41,10 +42,11 @@ use compilation::lexer::Lexer;
 use compilation::modules::Bind;
 use compilation::modules::ImportKind;
 use compilation::modules::Module;
+use compilation::modules::ModuleState;
 use lang::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use parking_lot::RwLock;
-use serde_json;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tower_lsp::Client;
@@ -52,6 +54,7 @@ use tower_lsp::lsp_types;
 
 use chrn_utils::arena::Arena;
 use chrn_utils::chrn_config::ChrnConfig;
+use chrn_utils::core_error::{self, ConfigLoadError};
 use chrn_utils::id_types::{ModuleId, PathId, SourceRegionId};
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
@@ -70,7 +73,7 @@ const MAX_DIAGS_CACHE_SIZE: usize = 100;
 /// When the cache is full, ten extra entries are removed so the eviction does not
 /// happen on every subsequent insert.  The eviction order is unspecified (HashMap
 /// iteration order).
-fn evict_cache_if_needed(cache: &mut HashMap<String, String>) {
+fn evict_cache_if_needed(cache: &mut HashMap<String, u64>) {
     if cache.len() >= MAX_DIAGS_CACHE_SIZE {
         let to_remove = cache.len() - MAX_DIAGS_CACHE_SIZE + 10;
         let keys_to_remove: Vec<String> = cache
@@ -261,6 +264,12 @@ pub(crate) struct PreparedDocument {
 /// copies of imported files) or disk.  It is intentionally synchronous and does NOT
 /// acquire any `DocumentState` lock, so it can safely call `DocumentCache::get_text`
 /// without risking the deadlock described in [`ModuleResolution`].
+///
+/// The `interner` is the one that was already used for the initial config load of
+/// `main_region`, guaranteeing that `main_region.path_id` is valid in the same
+/// interner the resulting `DocumentState` owns.  (Previously a second interner was
+/// created here, which only worked because both interners happened to assign id 0
+/// to the first path interned.)
 pub(crate) fn resolve_document_modules(
     uri: &Url,
     text: Arc<String>,
@@ -268,9 +277,8 @@ pub(crate) fn resolve_document_modules(
     chrn_cfg: &ChrnConfig,
     doc_cache: &DocumentCache,
     version: u64,
+    mut interner: Intern,
 ) -> PreparedDocument {
-    let mut interner = Intern::init();
-
     let path_buf = uri
         .to_file_path()
         .unwrap_or_else(|_| PathBuf::from(uri.path()));
@@ -314,7 +322,6 @@ pub(crate) fn resolve_document_modules(
         Some(finder_diags)
     };
 
-    use compilation::modules::ModuleState;
     let main_mod = Module::new(
         name_id,
         ModuleState::Loading,
@@ -378,7 +385,7 @@ pub(crate) fn resolve_document_modules(
             sub_mods,
             sub_regions,
             config_errors,
-            imported_uris: imported_uris.clone(),
+            imported_uris,
         },
     }
 }
@@ -415,7 +422,7 @@ pub async fn analyze_and_publish_task(
     client: Client,
     uri: Url,
     text: Arc<String>,
-    diags_cache: Arc<RwLock<HashMap<String, String>>>,
+    diags_cache: Arc<RwLock<HashMap<String, u64>>>,
     doc_cache: Arc<DocumentCache>,
     pending_versions: Arc<RwLock<HashMap<String, u64>>>,
     version: u64,
@@ -426,9 +433,23 @@ pub async fn analyze_and_publish_task(
         .to_file_path()
         .unwrap_or_else(|_| PathBuf::from(uri.path()));
 
-    // 1. Initial config load to find boundaries
+    // 1. Initial config load to find boundaries.
+    //
+    // A single `Intern` is used for the whole analysis: the `path_id` carried by
+    // the region is interned in the same interner that later stages (module
+    // resolution, parsing, diagnostics) read from, so the ids always line up.
+    // The interner is then moved into the `DocumentState` instead of allocating
+    // a second, throwaway interner per analysis run.
     let mut interner = Intern::init();
     let path_id = interner.intern_path(&path_buf);
+
+    // Config-load diagnostics produced on the recoverable `Broken` path.  They
+    // are folded into the final publish at the end of the task rather than
+    // being published immediately: `publish_diagnostics` *replaces* the whole
+    // diagnostic set for a URI, so the previous early publish was wiped out by
+    // the pipeline publish that followed, making config-load errors vanish
+    // from the editor.
+    let mut pre_diags: Vec<tower_lsp::lsp_types::Diagnostic> = Vec::new();
     let region = match ConfigLoader::new(
         SourceRegionId::new(0),
         Cursor::new(text.as_bytes()),
@@ -444,17 +465,8 @@ pub async fn analyze_and_publish_task(
             // far (may be 0 if no `@def` was found), which is the offset the
             // diagnostic spans need to be shifted by to land in absolute file
             // coordinates.
-            let diags =
+            pre_diags =
                 config_load_error_to_diagnostics(cfg_err, &text, broken_region.script_start);
-            publish_if_current(
-                &client,
-                &uri,
-                diags,
-                &diags_cache,
-                &pending_versions,
-                version,
-            )
-            .await;
             broken_region
         }
         ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
@@ -479,7 +491,7 @@ pub async fn analyze_and_publish_task(
     // 2. Resolve imported modules and build a pre-analysis state **without**
     //    holding any DocumentState lock.  This breaks the previous deadlock cycle
     //    where ensure_analyzed held the per-document write lock while calling
-    //    DocumentCache::get_text.
+    //    DocumentCache::get_text.  The interner is moved in here.
     let prepared = resolve_document_modules(
         &uri,
         Arc::clone(&text),
@@ -487,25 +499,30 @@ pub async fn analyze_and_publish_task(
         &chrn_cfg,
         &doc_cache,
         version,
+        interner,
     );
-    let imported_uris = prepared.resolution.imported_uris.clone();
 
     // 3. Insert the prepared state into the cache.  If the same text is already
     //    cached, the existing state is reused.
     let state_arc = doc_cache.insert_or_get(uri.as_ref(), Arc::clone(&text), prepared.state);
 
     // 4. Run the compiler pipeline while holding only the per-document lock.
-    {
+    //    `ensure_analyzed` returns the imported module URIs (moved out of the
+    //    resolution), or an empty vec when the state was already analyzed.
+    let imported_uris = {
         let mut state = state_arc.write();
-        state.ensure_analyzed(prepared.resolution);
-    }
+        state.ensure_analyzed(prepared.resolution)
+    };
 
     if !imported_uris.is_empty() {
         doc_cache.register_dependencies(uri.as_ref(), &imported_uris);
     }
 
-    // 5. Get diagnostics and publish if still current
-    let lsp_diags = state_arc.read().get_lsp_diagnostics();
+    // 5. Get diagnostics and publish if still current.  Config-load diagnostics
+    //    from the `Broken` path are prepended so they survive this (replacing)
+    //    publish.
+    let mut lsp_diags = pre_diags;
+    lsp_diags.extend(state_arc.read().get_lsp_diagnostics());
     publish_if_current(
         &client,
         &uri,
@@ -526,14 +543,16 @@ pub async fn analyze_and_publish_task(
 /// stale — they are silently discarded.
 ///
 /// # Deduplication
-/// Serialises `lsp_diags` to JSON and compares against the last serialised form in
-/// `diags_cache`.  If they are equal the publish is skipped.  On serialisation
-/// failure the diagnostics are always sent (fail-open).
+/// Serialises `lsp_diags` to JSON and stores only a 64-bit hash of the payload in
+/// `diags_cache`.  If the hashes are equal the publish is skipped.  Keeping the
+/// hash rather than the full JSON string means the cache holds 8 bytes per
+/// document instead of a (potentially large) diagnostic payload per document.
+/// On serialisation failure the diagnostics are always sent (fail-open).
 async fn publish_if_current(
     client: &Client,
     uri: &Url,
     lsp_diags: Vec<tower_lsp::lsp_types::Diagnostic>,
-    diags_cache: &RwLock<HashMap<String, String>>,
+    diags_cache: &RwLock<HashMap<String, u64>>,
     pending_versions: &RwLock<HashMap<String, u64>>,
     version: u64,
 ) {
@@ -549,14 +568,18 @@ async fn publish_if_current(
 
     // Cache check
     if let Ok(serialized) = serde_json::to_string(&lsp_diags) {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        serialized.hash(&mut hasher);
+        let digest = hasher.finish();
+        // The JSON string is dropped here; only the digest persists in the cache.
         let key = uri.to_string();
         let should_send = {
             let mut cache = diags_cache.write();
             evict_cache_if_needed(&mut cache);
             match cache.get(&key) {
-                Some(prev) if prev == &serialized => false,
+                Some(prev) if *prev == digest => false,
                 _ => {
-                    cache.insert(key, serialized);
+                    cache.insert(key, digest);
                     true
                 }
             }
@@ -820,9 +843,6 @@ pub(crate) fn resolve_modules_lsp(
     diags: &mut Vec<SourceDiagnostic>,
     current_path_id: PathId,
 ) {
-    use chrn_utils::core_error::{self, ConfigLoadError};
-    use compilation::modules::ModuleState;
-
     for import in &prev_mod.imports {
         let ImportKind::Source(path_id, path_span) = import.kind else {
             continue;
@@ -845,43 +865,51 @@ pub(crate) fn resolve_modules_lsp(
 
         // Try to get from doc_cache first
         let uri = Url::from_file_path(path).unwrap();
-        let source_res: Result<Box<dyn std::io::Read + Send>, ConfigLoadError> =
-            if let Some(text) = doc_cache.get_text(uri.as_ref()) {
-                Ok(Box::new(Cursor::new(text.as_bytes().to_vec())))
-            } else {
-                // Fallback to disk
-                match std::fs::File::open(path) {
-                    Ok(_) if path.is_dir() => {
-                        let core_msg = format!("The path \"{}\" is a directory", path.display());
-                        let src_diag = SourceDiagnostic::builder(
-                            DiagnosticLevel::Error,
-                            core_msg,
-                            current_path_id,
-                        )
-                        .add_annotation(
-                            path_span,
-                            AnnotationKind::Primary,
-                            "Caused by this import".to_string().into(),
-                        )
-                        .build();
-                        Err(ConfigLoadError::Diagnostic(src_diag))
-                    }
-                    Ok(f) => Ok(Box::new(f) as Box<dyn std::io::Read + Send>),
-                    Err(e) => {
-                        let core_msg =
-                            core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
-                        let src_diag = SourceDiagnostic::builder(
-                            DiagnosticLevel::Error,
-                            core_msg,
-                            current_path_id,
-                        )
-                        .add_annotation(
-                            path_span,
-                            AnnotationKind::Primary,
-                            "Caused by this import".to_string().into(),
-                        )
-                        .build();
-                        Err(ConfigLoadError::Diagnostic(src_diag))
+        // Keep the cached `Arc<String>` alive in a local so the reader can borrow
+        // from it directly.  Previously the bytes were copied into a fresh
+        // `Vec<u8>` (`text.as_bytes().to_vec()`) on *every* analysis of *every*
+        // importing document, just to satisfy the boxed-reader type.  The box now
+        // borrows from `cached_text`, which outlives the `ConfigLoader` below.
+        let cached_text = doc_cache.get_text(uri.as_ref());
+        let source_res: Result<Box<dyn std::io::Read + '_>, ConfigLoadError> =
+            match &cached_text {
+                Some(text) => Ok(Box::new(Cursor::new(text.as_bytes()))),
+                None => {
+                    // Fallback to disk
+                    match std::fs::File::open(path) {
+                        Ok(_) if path.is_dir() => {
+                            let core_msg =
+                                format!("The path \"{}\" is a directory", path.display());
+                            let src_diag = SourceDiagnostic::builder(
+                                DiagnosticLevel::Error,
+                                core_msg,
+                                current_path_id,
+                            )
+                            .add_annotation(
+                                path_span,
+                                AnnotationKind::Primary,
+                                "Caused by this import".to_string().into(),
+                            )
+                            .build();
+                            Err(ConfigLoadError::Diagnostic(src_diag))
+                        }
+                        Ok(f) => Ok(Box::new(f) as Box<dyn std::io::Read + '_>),
+                        Err(e) => {
+                            let core_msg = core_error::form_string_from_io_err(&e, path)
+                                .unwrap_or(e.to_string());
+                            let src_diag = SourceDiagnostic::builder(
+                                DiagnosticLevel::Error,
+                                core_msg,
+                                current_path_id,
+                            )
+                            .add_annotation(
+                                path_span,
+                                AnnotationKind::Primary,
+                                "Caused by this import".to_string().into(),
+                            )
+                            .build();
+                            Err(ConfigLoadError::Diagnostic(src_diag))
+                        }
                     }
                 }
             };
