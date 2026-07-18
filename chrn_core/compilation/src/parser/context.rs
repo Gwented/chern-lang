@@ -60,7 +60,6 @@ pub(super) struct ParserContext<'a> {
     pub(super) region: &'a SourceRegion,
     toks: &'a [SpannedToken],
     pos: usize,
-    // pub(super) budget: ParserBudget,
     pub(super) err_vec: Vec<SourceDiagnostic>,
 }
 
@@ -69,13 +68,11 @@ impl<'a> ParserContext<'a> {
         cfg: &'a ChrnConfig,
         region: &'a SourceRegion,
         toks: &'a [SpannedToken],
-        // budget: ParserBudget,
     ) -> ParserContext<'a> {
         ParserContext {
             cfg,
             region,
             toks,
-            // budget,
             pos: 0,
             err_vec: Vec::new(),
         }
@@ -280,7 +277,7 @@ impl<'a> ParserContext<'a> {
                 NeutralBranch::Let => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
                 NeutralBranch::Import => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             },
-            Branch::AbstractSection(sect_branch) => match sect_branch {
+            Branch::Section(sect_branch) => match sect_branch {
                 SectionBranch::Searching => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
                 SectionBranch::Var => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
                 SectionBranch::Nest => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
@@ -406,7 +403,7 @@ impl<'a> ParserContext<'a> {
                 },
                 _ => builder,
             },
-            Branch::AbstractSection(sect_branch) => match sect_branch {
+            Branch::Section(sect_branch) => match sect_branch {
                 SectionBranch::Var => match found.tok {
                     // ident: core.i32
                     Token::Dot

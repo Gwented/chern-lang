@@ -1,3 +1,9 @@
+//TODO: May convert part of the responsibility here into a general context consuming system.
+//So, something like ".env_ctx(Env::Let)?" where propagation is actually used to traverse up where
+//parsing was conducted.
+//! Flat tree representation of all possible branching for the parser.
+//! Since tokens are the only source of information this allows for probabilistic help and note
+//! messages to be emitted.
 use std::fmt::Display;
 
 /// Branches that represent parsing stages so that more decriptive error messages and help messages
@@ -7,7 +13,7 @@ pub(super) enum Branch {
     Broken,
     Searching,
     Neutral(NeutralBranch),
-    AbstractSection(SectionBranch),
+    Section(SectionBranch),
     Expr,
     Cond,
     Type,
@@ -48,7 +54,7 @@ impl Display for Branch {
                 NeutralBranch::Let => write!(f, "let"),
                 NeutralBranch::Import => write!(f, "import"),
             },
-            Branch::AbstractSection(sect_branch) => match sect_branch {
+            Branch::Section(sect_branch) => match sect_branch {
                 SectionBranch::Searching => write!(f, "searching [section]"),
                 SectionBranch::Var => write!(f, "var"),
                 SectionBranch::Nest => write!(f, "nest"),

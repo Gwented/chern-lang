@@ -132,14 +132,10 @@ impl Lexer<'_> {
                     });
                 }
                 '(' => {
+                    let pos = self.pos as u32;
                     toks.push(SpannedToken {
                         tok: Token::OParen,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            //WARN: EXCLUSIVE SPANNING: To ensure full byte is spanned.
-                            self.pos as u32 + 1,
-                        ),
+                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
@@ -147,13 +143,10 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 ')' => {
+                    let pos = self.pos as u32;
                     toks.push(SpannedToken {
                         tok: Token::CParen,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            self.pos as u32 + 1,
-                        ),
+                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
@@ -200,13 +193,10 @@ impl Lexer<'_> {
                     });
                 }
                 '[' => {
+                    let pos = self.pos as u32;
                     toks.push(SpannedToken {
                         tok: Token::OBracket,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            self.pos as u32 + 1,
-                        ),
+                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
@@ -214,13 +204,10 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 ']' => {
+                    let pos = self.pos as u32;
                     toks.push(SpannedToken {
                         tok: Token::CBracket,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            self.pos as u32 + 1,
-                        ),
+                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
@@ -228,13 +215,10 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '{' => {
+                    let pos = self.pos as u32;
                     toks.push(SpannedToken {
                         tok: Token::OCurlyBracket,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            self.pos as u32 + 1,
-                        ),
+                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
@@ -242,13 +226,10 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '}' => {
+                    let pos = self.pos as u32;
                     toks.push(SpannedToken {
                         tok: Token::CCurlyBracket,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            self.pos as u32 + 1,
-                        ),
+                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
@@ -256,13 +237,10 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 ',' => {
+                    let pos = self.pos as u32;
                     toks.push(SpannedToken {
                         tok: Token::Comma,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            self.pos as u32 + 1,
-                        ),
+                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
@@ -306,13 +284,10 @@ impl Lexer<'_> {
                         // start_offset = self.pos + DEFINITION_SIZE;
                         break;
                     } else {
+                        let pos = self.pos as u32;
                         toks.push(SpannedToken {
                             tok: Token::At,
-                            span: SourceSpan::new(
-                                self.current_region_id,
-                                self.pos as u32,
-                                self.pos as u32 + 1,
-                            ),
+                            span: SourceSpan::new(self.current_region_id, pos, pos + 1),
                             leading_trivia_indices: self.trivia_start_idx as u32
                                 ..self.trivia_end_idx as u32,
                         });
@@ -326,7 +301,6 @@ impl Lexer<'_> {
                     // ..=
                     let tok = if self.peek_ahead(1) == b'.' && self.peek_ahead(2) == b'=' {
                         //WARN: EXCLUSIVE SPANNING:
-                        // 2 -> 3 skips
                         self.skip(3);
                         Token::DotRangeInclusive
                     } else {
@@ -342,13 +316,10 @@ impl Lexer<'_> {
                     });
                 }
                 '#' => {
+                    let pos = self.pos as u32;
                     toks.push(SpannedToken {
                         tok: Token::HashSymbol,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            self.pos as u32 + 1,
-                        ),
+                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
@@ -403,13 +374,10 @@ impl Lexer<'_> {
                     toks.push(self.read_char(interner));
                 }
                 '+' => {
+                    let pos = self.pos as u32;
                     toks.push(SpannedToken {
                         tok: Token::Plus,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            self.pos as u32 + 1,
-                        ),
+                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
@@ -436,13 +404,10 @@ impl Lexer<'_> {
                     });
                 }
                 '*' => {
+                    let pos = self.pos as u32;
                     toks.push(SpannedToken {
                         tok: Token::Asterisk,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            self.pos as u32 + 1,
-                        ),
+                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
@@ -450,13 +415,10 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '^' => {
+                    let pos = self.pos as u32;
                     toks.push(SpannedToken {
                         tok: Token::Caret,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            self.pos as u32 + 1,
-                        ),
+                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
@@ -472,13 +434,10 @@ impl Lexer<'_> {
                     //     self.skip(2);
                     //     self.handle_multi_comment();
                     // } else {
+                    let pos = self.pos as u32;
                     toks.push(SpannedToken {
                         tok: Token::Slash,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            self.pos as u32 + 1,
-                        ),
+                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
@@ -493,6 +452,10 @@ impl Lexer<'_> {
                     let tok = if self.peek_ahead(1) == b'=' {
                         self.skip(2);
                         Token::EqualTo
+                    } else if self.peek_ahead(1) == b'>' {
+                        // =>
+                        self.skip(2);
+                        Token::NotSlimArrow
                     } else {
                         self.advance();
                         Token::Assign
@@ -506,13 +469,10 @@ impl Lexer<'_> {
                     });
                 }
                 '~' => {
+                    let pos = self.pos as u32;
                     toks.push(SpannedToken {
                         tok: Token::Tilde,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            self.pos as u32 + 1,
-                        ),
+                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
@@ -537,13 +497,10 @@ impl Lexer<'_> {
                     });
                 }
                 '?' => {
+                    let pos = self.pos as u32;
                     toks.push(SpannedToken {
                         tok: Token::QuestionMark,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            self.pos as u32 + 1,
-                        ),
+                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
@@ -551,13 +508,10 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '%' => {
+                    let pos = self.pos as u32;
                     toks.push(SpannedToken {
                         tok: Token::Percent,
-                        span: SourceSpan::new(
-                            self.current_region_id,
-                            self.pos as u32,
-                            self.pos as u32 + 1,
-                        ),
+                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });

@@ -175,9 +175,9 @@ impl<R: Read> ConfigLoader<'_, R> {
                     if self.read_quotes(quote_type).is_err() {
                         let core_msg = "Found unclosed quotes which reached <eof>".to_string();
 
-                        let abs_q_start = (quote_start - script_start) as u32;
+                        let rel_q_start = (quote_start - script_start) as u32;
                         let q_span =
-                            SourceSpan::new(self.current_region_id, abs_q_start, abs_q_start + 1);
+                            SourceSpan::new(self.current_region_id, rel_q_start, rel_q_start + 1);
 
                         let mut diag_builder = SourceDiagnostic::builder(
                             DiagnosticLevel::Error,
@@ -219,9 +219,9 @@ impl<R: Read> ConfigLoader<'_, R> {
                     if self.read_quotes(quote_type).is_err() {
                         let core_msg = "Found unclosed quotes which reached <eof>".into();
 
-                        let abs_q_start = (quote_start - script_start) as u32;
+                        let rel_q_start = (quote_start - script_start) as u32;
                         let q_span =
-                            SourceSpan::new(self.current_region_id, abs_q_start, abs_q_start + 1);
+                            SourceSpan::new(self.current_region_id, rel_q_start, rel_q_start + 1);
 
                         let mut diag_builder = SourceDiagnostic::builder(
                             DiagnosticLevel::Error,

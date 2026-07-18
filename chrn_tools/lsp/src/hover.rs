@@ -516,7 +516,7 @@ pub fn compute_hover(
             Some((span_start, span_end)),
         ),
         ScriptToken::SlimArrow => (
-            "**->** — AbstractSection declaration operator".into(),
+            "**->** — Section declaration operator".into(),
             Some((span_start, span_end)),
         ),
         _ => (String::new(), Some((span_start, span_end))),

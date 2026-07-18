@@ -960,6 +960,7 @@ impl LanguageServer for Backend {
                     | ScriptToken::QuestionMark
                     | ScriptToken::Colon
                     | ScriptToken::SlimArrow
+                    | ScriptToken::NotSlimArrow
                     | ScriptToken::StaticAccess => SemanticTokenType::Operator.as_u32(),
                     _ => continue,
                 };

@@ -58,6 +58,9 @@ pub enum Token {
     Walrus,
     Comma,
     SlimArrow,
+    // Ignore this name
+    NotSlimArrow,
+    //TODO: Remove this?
     DotRangeInclusive,
     Slash,
     HashSymbol,
@@ -102,6 +105,7 @@ impl Token {
             Token::CAngleBracket => TokenKind::CAngleBracket,
             Token::Comma => TokenKind::Comma,
             Token::SlimArrow => TokenKind::SlimArrow,
+            Token::NotSlimArrow => TokenKind::NotSlimArrow,
             Token::DotRangeInclusive => TokenKind::DotRangeInclusive,
             Token::Slash => TokenKind::Slash,
             Token::HashSymbol => TokenKind::HashSymbol,
@@ -180,6 +184,7 @@ pub enum TokenKind {
     CAngleBracket,
     Comma,
     SlimArrow,
+    NotSlimArrow,
     StaticAccess,
     Slash,
     HashSymbol,
@@ -270,6 +275,7 @@ impl Display for TokenKind {
             TokenKind::Keyword => write!(f, "keyword"),
             TokenKind::Def => write!(f, "@def"),
             TokenKind::End => write!(f, "@end"),
+            TokenKind::NotSlimArrow => write!(f, "=>"),
         }
     }
 }
@@ -321,9 +327,10 @@ pub(crate) const POISON: u64 = 1 << 40;
 pub(crate) const KEYWORD: u64 = 1 << 41;
 pub(crate) const BOOL: u64 = 1 << 42;
 pub(crate) const STATIC_ACCESS: u64 = 1 << 43;
-pub(crate) const DEF: u64 = 1 << 44;
-pub(crate) const END: u64 = 1 << 45;
-pub(crate) const EOF: u64 = 1 << 46;
+pub(crate) const NOT_SLIM_ARROW: u64 = 1 << 44;
+pub(crate) const DEF: u64 = 1 << 45;
+pub(crate) const END: u64 = 1 << 46;
+pub(crate) const EOF: u64 = 1 << 47;
 
 //FIX: PLEASE ASSERT THIS THING
 impl TokenKind {
@@ -374,6 +381,7 @@ impl TokenKind {
             TokenKind::Keyword => KEYWORD,
             TokenKind::Bool => BOOL,
             TokenKind::StaticAccess => STATIC_ACCESS,
+            TokenKind::NotSlimArrow => NOT_SLIM_ARROW,
             TokenKind::Def => DEF,
             TokenKind::End => END,
             TokenKind::EOF => EOF,

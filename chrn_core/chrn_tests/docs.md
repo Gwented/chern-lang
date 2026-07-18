@@ -432,6 +432,35 @@ The section keyword `var` can be used before
 
 #### IMPORTANT NOTES
 
+##### Syntax shortening
+`=>` can be used for shortening syntax if no properties are desired.
+Example:
+```chrn
+nest->
+    struct First {second: Second}
+    struct Second {third: Third}
+    struct Third {fourth: Fourth}
+    struct Fourth {val: i32}
+complex->
+    // With arrows this is:
+    First=>second=>third=>fourth {
+        val {
+            idents = "different"
+        }
+    }
+    // Without them:
+    First { Second { Third { Fourth { val { idents = "different" } } } } }
+
+    // Does not have to be at root:
+    First {
+        second {
+            third=>fourth {
+                val { idents = "different" }
+            }
+        }
+    }
+```
+
 ##### Member access
 Member access like:
 ```chrn
@@ -467,6 +496,7 @@ complex->
         }
     }
 ```
+
 
 This is not allowed because it contradicts the previous recursive `Orange` by saying, this inner `Orange` of the same type `Orange` has different conditions from the original `Orange` config, which can't work because `Orange` was already given a set of properties. In short, there would be more than one set of properties as to how to treat a specific type that already has it's properties defined.
 
