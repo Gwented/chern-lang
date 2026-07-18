@@ -4,7 +4,7 @@ use compilation::{
         token::{SpannedToken, Token},
         trivia::{CommentLocation, Trivia, TriviaKind},
     },
-    parser::ast::ast_concepts::{AbstractVar, AstInfo, Item, Section},
+    parser::ast::ast_concepts::{AbstractSection, AbstractVar, AstInfo, Item},
 };
 
 use crate::text_hir::{TextHir, TextType};
@@ -13,7 +13,7 @@ pub(crate) struct TextBuilder<'a> {
     src_str: &'a str,
     ast_info: &'a AstInfo,
     // items: &'a [Item],
-    // sections: &'a [Option<Section>],
+    // sections: &'a [Option<AbstractSection>],
     toks: &'a Vec<SpannedToken>,
     interner: &'a Intern,
     trivia: &'a Vec<Trivia>,
@@ -27,7 +27,7 @@ impl TextBuilder<'_> {
         src_str: &'a str,
         ast_info: &'a AstInfo,
         // items: &'a [Item],
-        // sections: &'a [Option<Section>],
+        // sections: &'a [Option<AbstractSection>],
         toks: &'a Vec<SpannedToken>,
         interner: &'a Intern,
         trivia: &'a Vec<Trivia>,
@@ -53,43 +53,43 @@ impl TextBuilder<'_> {
             all_text_hirs.push(TextHir::new(TextType::Def(span), self.indent));
             all_text_hirs.push(TextHir::new(TextType::Newline, self.indent));
         }
-
-        for sect_opt in self.ast_info.sections() {
-            if let Some(sect) = sect_opt {
-                match sect {
-                    Section::Neutral(ast_ids) => {
-                        self.increase_indent();
-                        self.fmt_sect_neutral(ast_ids, &mut all_text_hirs);
-                        self.decrease_indent();
-                    }
-                    Section::Var(ast_ids) => {
-                        // "var"
-                        self.append_leading_trivia(&mut all_text_hirs);
-                        let span = self.advance_spanned().span;
-                        dbg!(self.peek_tok());
-                        panic!();
-                        all_text_hirs.push(TextHir::new(TextType::KW(span), self.indent));
-                        // "->"
-                        self.append_leading_trivia(&mut all_text_hirs);
-                        let span = self.advance_spanned().span;
-                        all_text_hirs.push(TextHir::new(TextType::Op(span), self.indent));
-
-                        println!("{}", &self.src_str[98..=111]);
-                        panic!("Huh");
-
-                        dbg!(all_text_hirs);
-                        panic!("End");
-                        self.fmt_sect_neutral(ast_ids, &mut all_text_hirs);
-                        todo!()
-                    }
-                    Section::Nest(ast_ids) => {
-                        todo!()
-                    }
-                    Section::Override(ast_ids) => todo!(),
-                    Section::Complex(ast_ids) => todo!(),
-                }
-            }
-        }
+        //
+        // for sect_opt in self.ast_info.sections() {
+        //     if let Some(sect) = sect_opt {
+        //         match sect {
+        //             AbstractSection::Neutral(ast_ids) => {
+        //                 self.increase_indent();
+        //                 self.fmt_sect_neutral(ast_ids, &mut all_text_hirs);
+        //                 self.decrease_indent();
+        //             }
+        //             AbstractSection::Var(ast_ids) => {
+        //                 // "var"
+        //                 self.append_leading_trivia(&mut all_text_hirs);
+        //                 let span = self.advance_spanned().span;
+        //                 dbg!(self.peek_tok());
+        //                 panic!();
+        //                 all_text_hirs.push(TextHir::new(TextType::KW(span), self.indent));
+        //                 // "->"
+        //                 self.append_leading_trivia(&mut all_text_hirs);
+        //                 let span = self.advance_spanned().span;
+        //                 all_text_hirs.push(TextHir::new(TextType::Op(span), self.indent));
+        //
+        //                 println!("{}", &self.src_str[98..=111]);
+        //                 panic!("Huh");
+        //
+        //                 dbg!(all_text_hirs);
+        //                 panic!("End");
+        //                 self.fmt_sect_neutral(ast_ids, &mut all_text_hirs);
+        //                 todo!()
+        //             }
+        //             AbstractSection::Nest(ast_ids) => {
+        //                 todo!()
+        //             }
+        //             AbstractSection::Override(ast_ids) => todo!(),
+        //             AbstractSection::Complex(ast_ids) => todo!(),
+        //         }
+        //     }
+        // }
 
         if self.peek_tok() == Token::End {
             self.append_leading_trivia(&mut all_text_hirs);

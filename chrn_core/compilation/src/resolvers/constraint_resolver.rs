@@ -22,10 +22,7 @@ use lang::{
 
 use crate::{
     constraints::ArgConstraint,
-    lookup::{
-        schema_lookup::{self, SchemaResult},
-        scopes::ScopeType,
-    },
+    lookup::schema_lookup::{self, SchemaResult},
     parser::ast::ast_concepts::{
         AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
         Item,

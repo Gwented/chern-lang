@@ -7,7 +7,7 @@ pub(super) enum Branch {
     Broken,
     Searching,
     Neutral(NeutralBranch),
-    Section(SectionBranch),
+    AbstractSection(SectionBranch),
     Expr,
     Cond,
     Type,
@@ -48,7 +48,7 @@ impl Display for Branch {
                 NeutralBranch::Let => write!(f, "let"),
                 NeutralBranch::Import => write!(f, "import"),
             },
-            Branch::Section(sect_branch) => match sect_branch {
+            Branch::AbstractSection(sect_branch) => match sect_branch {
                 SectionBranch::Searching => write!(f, "searching [section]"),
                 SectionBranch::Var => write!(f, "var"),
                 SectionBranch::Nest => write!(f, "nest"),

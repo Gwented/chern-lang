@@ -68,21 +68,36 @@ impl NamespaceResolver<'_> {
         // doens't have to depend on the ast to keep a coherent understanding of
         let mut mod_symbols: Vec<SymbolId> = Vec::new();
 
-        // Registering namespaces
-        for (id, item) in env.ast_info.items.iter().enumerate() {
-            let ast_id = AstId::new(id as u32);
-
-            // Maybe opt into section specific processing
-            let sym_id = match item {
-                Item::TypeDef(abs_typedef) => self.register_typedef(abs_typedef, ast_id, env),
-                Item::Struct(abs_struct) => self.register_struct(abs_struct, ast_id, env),
-                Item::Enum(abs_enum) => self.register_enum(abs_enum, ast_id, env),
-                Item::Alias(abs_alias) => self.register_alias(abs_alias, ast_id, env),
-                Item::Var(abs_var) => self.register_var(abs_var, ast_id, env),
-                Item::Config(abs_cfg) => self.register_config_root(abs_cfg, ast_id, env),
+        // Iterates through sections so that it stores the correct scope type assocaited with the
+        // current node for it's symbol id that will be created.
+        for abs_sect_opt in &env.ast_info.sections {
+            let Some(abs_sect) = abs_sect_opt else {
+                continue;
             };
 
-            mod_symbols.push(sym_id);
+            let scope_type = abs_sect.kind.to_scope_type();
+
+            for ast_id in abs_sect.nodes.iter().cloned() {
+                // Maybe opt into section specific processing
+                let sym_id = match &env.ast_info.items[ast_id] {
+                    Item::TypeDef(abs_typedef) => {
+                        self.register_typedef(abs_typedef, ast_id, scope_type, env)
+                    }
+                    Item::Struct(abs_struct) => {
+                        self.register_struct(abs_struct, ast_id, scope_type, env)
+                    }
+                    Item::Enum(abs_enum) => self.register_enum(abs_enum, ast_id, scope_type, env),
+                    Item::Alias(abs_alias) => {
+                        self.register_alias(abs_alias, ast_id, scope_type, env)
+                    }
+                    Item::Var(abs_var) => self.register_var(abs_var, ast_id, scope_type, env),
+                    Item::Config(abs_cfg) => {
+                        self.register_config_root(abs_cfg, ast_id, scope_type, env)
+                    }
+                };
+
+                mod_symbols.push(sym_id);
+            }
         }
 
         let mut diags = Vec::new();
@@ -95,13 +110,12 @@ impl NamespaceResolver<'_> {
     // - Create a new `var`, `nest`, `complex`, or `override` scope if the scope was not pushed yet.
     // - If a symbol with the same identifier as another is in the same scope, it overwrites the last symbol
     // and pushes the diagnostic
-    // . TODO: Should not overwrite by prioritizing the first symbol with that identifier.
-    //   FIX: Need to not iterate asts to skip invalid symbol searching by scope.
 
     fn register_config_root(
         &mut self,
         abs_cfg: &AbstractConfig,
         ast_id: AstId,
+        scope_type: ScopeType,
         env: &RegistrationEnv,
     ) -> SymbolId {
         debug_assert!(
@@ -113,9 +127,7 @@ impl NamespaceResolver<'_> {
             abs_cfg.lookup_pattern
         );
 
-        let scope_id = self
-            .compiler
-            .push_scope(ScopeType::Complex, env.current_mod);
+        let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
 
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
         let cfg_id = ConfigRootId::new(self.compiler.cfgs.len() as u32);
@@ -153,7 +165,7 @@ impl NamespaceResolver<'_> {
             SymbolOrigin::Module(env.current_mod),
             true,
             None,
-            ScopeType::Complex,
+            scope_type,
             SymbolKind::Config(cfg_id),
         );
 
@@ -176,10 +188,12 @@ impl NamespaceResolver<'_> {
         &mut self,
         abs_typedef: &AbstractTypeDef,
         ast_id: AstId,
+        scope_type: ScopeType,
         env: &RegistrationEnv,
     ) -> SymbolId {
+        // Why was this message put here???
         // This will all likely fail eventually
-        let scope_id = self.compiler.push_scope(ScopeType::Var, env.current_mod);
+        let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
 
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
@@ -214,7 +228,7 @@ impl NamespaceResolver<'_> {
             SymbolOrigin::Module(env.current_mod),
             true,
             None,
-            ScopeType::Var,
+            scope_type,
             SymbolKind::Type(type_def_type_id),
         );
 
@@ -237,10 +251,11 @@ impl NamespaceResolver<'_> {
         &mut self,
         abs_struct: &AbstractStruct,
         ast_id: AstId,
+        scope_type: ScopeType,
         env: &RegistrationEnv,
     ) -> SymbolId {
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
-        let scope_id = self.compiler.push_scope(ScopeType::Nest, env.current_mod);
+        let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
         table.ast_to_sym.insert(ast_id, sym_id);
@@ -267,7 +282,7 @@ impl NamespaceResolver<'_> {
             SymbolOrigin::Module(env.current_mod),
             abs_struct.is_priv,
             None,
-            ScopeType::Nest,
+            scope_type,
             SymbolKind::Type(type_id),
         );
 
@@ -286,9 +301,10 @@ impl NamespaceResolver<'_> {
         &mut self,
         abs_enum: &AbstractEnum,
         ast_id: AstId,
+        scope_type: ScopeType,
         env: &RegistrationEnv,
     ) -> SymbolId {
-        let scope_id = self.compiler.push_scope(ScopeType::Nest, env.current_mod);
+        let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
         let type_id = TypeId::new(self.compiler.types.len() as u32);
 
@@ -317,7 +333,7 @@ impl NamespaceResolver<'_> {
             SymbolOrigin::Module(env.current_mod),
             abs_enum.is_priv,
             None,
-            ScopeType::Nest,
+            scope_type,
             SymbolKind::Type(type_id),
         );
 
@@ -336,11 +352,10 @@ impl NamespaceResolver<'_> {
         &mut self,
         abs_alias: &AbstractAlias,
         ast_id: AstId,
+        scope_type: ScopeType,
         env: &RegistrationEnv,
     ) -> SymbolId {
-        let scope_id = self
-            .compiler
-            .push_scope(ScopeType::Neutral, env.current_mod);
+        let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
         let type_id = TypeId::new(self.compiler.types.len() as u32);
 
@@ -518,7 +533,7 @@ impl NamespaceResolver<'_> {
             SymbolOrigin::Module(env.current_mod),
             abs_alias.is_priv,
             None,
-            ScopeType::Neutral,
+            scope_type,
             SymbolKind::Type(type_id),
         );
 
@@ -540,12 +555,11 @@ impl NamespaceResolver<'_> {
         &mut self,
         abs_var: &AbstractVar,
         ast_id: AstId,
+        scope_type: ScopeType,
         env: &RegistrationEnv,
     ) -> SymbolId {
         let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
-        let scope_id = self
-            .compiler
-            .push_scope(ScopeType::Neutral, env.current_mod);
+        let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
         table.ast_to_sym.insert(ast_id, sym_id);
@@ -583,7 +597,7 @@ impl NamespaceResolver<'_> {
             SymbolOrigin::Module(env.current_mod),
             abs_var.is_priv,
             None,
-            ScopeType::Neutral,
+            scope_type,
             // Will be SymbolKind::Defer
             SymbolKind::Variable(var_id),
         );

@@ -9,7 +9,7 @@ use lang::{
 };
 
 use crate::{
-    lookup::scopes::ScopeLookupPattern,
+    lookup::scopes::{ScopeLookupPattern, ScopeType},
     parser::ast::ast_exprs::{SpannedExpr, TypeExpr},
 };
 
@@ -18,7 +18,7 @@ use crate::{
 #[derive(Debug)]
 pub struct AstInfo {
     /// Array that holds all 5 `chrn` sections.
-    pub sections: [Option<Section>; 5],
+    pub sections: [Option<AbstractSection>; 5],
     pub items: Arena<Item, AstId>,
 }
 
@@ -41,30 +41,14 @@ impl AstInfo {
             &mut self.sections[kind as usize].as_mut().expect("Just created")
         };
 
-        sect.push_ast_id(ast_id);
+        sect.nodes.push(ast_id);
     }
 
     pub fn push_sect(&mut self, kind: SectionKind) {
-        match kind {
-            SectionKind::Neutral => {
-                self.sections[kind as usize] = Some(Section::Neutral(Vec::new()));
-            }
-            SectionKind::Var => {
-                self.sections[kind as usize] = Some(Section::Var(Vec::new()));
-            }
-            SectionKind::Nest => {
-                self.sections[kind as usize] = Some(Section::Nest(Vec::new()));
-            }
-            SectionKind::Override => {
-                self.sections[kind as usize] = Some(Section::Override(Vec::new()));
-            }
-            SectionKind::Complex => {
-                self.sections[kind as usize] = Some(Section::Complex(Vec::new()));
-            }
-        }
+        self.sections[kind as usize] = AbstractSection::new(Vec::new(), kind).into();
     }
 
-    pub fn sections(&self) -> &[Option<Section>] {
+    pub fn sections(&self) -> &[Option<AbstractSection>] {
         &self.sections
     }
 
@@ -175,43 +159,36 @@ impl Item {
 }
 
 #[derive(Debug)]
-pub enum Section {
-    Neutral(Vec<AstId>),
-    Var(Vec<AstId>),
-    Nest(Vec<AstId>),
-    Override(Vec<AstId>),
-    Complex(Vec<AstId>),
+pub struct AbstractSection {
+    pub(crate) nodes: Vec<AstId>,
+    pub(crate) kind: SectionKind,
 }
 
-impl Section {
-    fn push_ast_id(&mut self, ast_id: AstId) {
-        match self {
-            Section::Neutral(ast_ids)
-            | Section::Var(ast_ids)
-            | Section::Nest(ast_ids)
-            | Section::Override(ast_ids)
-            | Section::Complex(ast_ids) => ast_ids.push(ast_id),
-        }
-    }
-
-    pub fn kind(&self) -> SectionKind {
-        match self {
-            Section::Neutral(_) => SectionKind::Neutral,
-            Section::Var(_) => SectionKind::Var,
-            Section::Nest(_) => SectionKind::Nest,
-            Section::Override(_) => SectionKind::Nest,
-            Section::Complex(_) => SectionKind::Complex,
-        }
+impl AbstractSection {
+    pub fn new(nodes: Vec<AstId>, kind: SectionKind) -> AbstractSection {
+        AbstractSection { nodes, kind }
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SectionKind {
     Neutral = 0,
     Var = 1,
     Nest = 2,
     Override = 3,
     Complex = 4,
+}
+
+impl SectionKind {
+    pub fn to_scope_type(self) -> ScopeType {
+        match self {
+            SectionKind::Neutral => ScopeType::Neutral,
+            SectionKind::Var => ScopeType::Var,
+            SectionKind::Nest => ScopeType::Nest,
+            SectionKind::Override => ScopeType::Override,
+            SectionKind::Complex => ScopeType::Complex,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

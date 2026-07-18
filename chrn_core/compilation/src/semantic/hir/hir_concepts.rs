@@ -27,6 +27,12 @@ use crate::{
 // This is kind of just a "concept" though
 use chrn_utils::id_types::{AstId, ConfigRootId, DirectiveId, InternedId, SymbolId, VariableId};
 
+// #[derive(Debug)]
+// pub struct SectionInfo {
+//     pub sections: [Option<SectionHir>; 5],
+//     pub compilation_syms: SymbolId,
+// }
+
 // Who is this?
 #[derive(Debug)]
 pub struct Table {
@@ -109,7 +115,7 @@ pub enum SymbolKind {
     /// Represents a config symbol
     Config(ConfigRootId),
     Directive(DirectiveId),
-    // Section(),
+    // AbstractSection(),
 }
 
 impl SymbolKind {

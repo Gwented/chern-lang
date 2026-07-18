@@ -22,7 +22,7 @@ impl Formattable for FuzzyMatch {
         match self {
             FuzzyMatch::KW => Formatted::KW,
             FuzzyMatch::Type => Formatted::Type,
-            FuzzyMatch::Sect => Formatted::Section,
+            FuzzyMatch::Sect => Formatted::AbstractSection,
             FuzzyMatch::Stmt => Formatted::Stmt,
             FuzzyMatch::Directive => Formatted::Directive,
         }

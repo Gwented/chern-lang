@@ -66,7 +66,7 @@ pub enum Formatted {
     Alias,
     Let,
     Change,
-    Section,
+    AbstractSection,
     SectVar,
     SectNest,
     Self_,
@@ -230,7 +230,7 @@ impl Display for Formatted {
             Formatted::Directive => write!(f, "directive"),
             Formatted::KW => write!(f, "keyword"),
             Formatted::Type => write!(f, "type"),
-            Formatted::Section => write!(f, "section"),
+            Formatted::AbstractSection => write!(f, "section"),
             Formatted::Stmt => write!(f, "statement"),
             Formatted::Boundaries(flags) => {
                 let parts: Vec<String> = flags

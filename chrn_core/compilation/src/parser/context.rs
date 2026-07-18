@@ -280,7 +280,7 @@ impl<'a> ParserContext<'a> {
                 NeutralBranch::Let => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
                 NeutralBranch::Import => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             },
-            Branch::Section(sect_branch) => match sect_branch {
+            Branch::AbstractSection(sect_branch) => match sect_branch {
                 SectionBranch::Searching => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
                 SectionBranch::Var => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
                 SectionBranch::Nest => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
@@ -406,7 +406,7 @@ impl<'a> ParserContext<'a> {
                 },
                 _ => builder,
             },
-            Branch::Section(sect_branch) => match sect_branch {
+            Branch::AbstractSection(sect_branch) => match sect_branch {
                 SectionBranch::Var => match found.tok {
                     // ident: core.i32
                     Token::Dot

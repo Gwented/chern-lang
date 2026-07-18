@@ -131,7 +131,7 @@ pub fn parse(
                         report_export(
                             &mut ctx,
                             Formatted::SectVar,
-                            Branch::Section(SectionBranch::Searching),
+                            Branch::AbstractSection(SectionBranch::Searching),
                             interner,
                         );
                     }
@@ -143,7 +143,7 @@ pub fn parse(
                     if state.has_var() {
                         ctx.report_verbose(
                             "Found `var` section more than once",
-                            Branch::Section(SectionBranch::Searching),
+                            Branch::AbstractSection(SectionBranch::Searching),
                             interner,
                         );
 
@@ -159,7 +159,7 @@ pub fn parse(
                         TokenKind::SlimArrow,
                         "Expected '->' after section `var`, found ",
                         "",
-                        Branch::Section(SectionBranch::Searching),
+                        Branch::AbstractSection(SectionBranch::Searching),
                         interner,
                     );
 
@@ -181,7 +181,7 @@ pub fn parse(
                         report_export(
                             &mut ctx,
                             Formatted::SectNest,
-                            Branch::Section(SectionBranch::Searching),
+                            Branch::AbstractSection(SectionBranch::Searching),
                             interner,
                         );
                     }
@@ -191,7 +191,7 @@ pub fn parse(
                     if state.has_nest() {
                         ctx.report_verbose(
                             "Found `nest` section more than once",
-                            Branch::Section(SectionBranch::Searching),
+                            Branch::AbstractSection(SectionBranch::Searching),
                             interner,
                         );
                         continue;
@@ -204,7 +204,7 @@ pub fn parse(
                         TokenKind::SlimArrow,
                         "Expected '->' after section `nest`, found ",
                         "",
-                        Branch::Section(SectionBranch::Searching),
+                        Branch::AbstractSection(SectionBranch::Searching),
                         interner,
                     );
 
@@ -235,7 +235,7 @@ pub fn parse(
                     if state.has_complex() {
                         ctx.report_verbose(
                             "Found `complex` section more than once",
-                            Branch::Section(SectionBranch::Searching),
+                            Branch::AbstractSection(SectionBranch::Searching),
                             interner,
                         );
                         continue;
@@ -248,7 +248,7 @@ pub fn parse(
                         TokenKind::SlimArrow,
                         "Expected '->' after section `complex`, found ",
                         "",
-                        Branch::Section(SectionBranch::Searching),
+                        Branch::AbstractSection(SectionBranch::Searching),
                         interner,
                     );
 
@@ -274,7 +274,7 @@ pub fn parse(
                         report_export(
                             &mut ctx,
                             Formatted::SectComplex,
-                            Branch::Section(SectionBranch::Searching),
+                            Branch::AbstractSection(SectionBranch::Searching),
                             interner,
                         );
                     }
@@ -286,7 +286,7 @@ pub fn parse(
                     if state.has_override() {
                         ctx.report_verbose(
                             "Found `override` section more than once",
-                            Branch::Section(SectionBranch::Searching),
+                            Branch::AbstractSection(SectionBranch::Searching),
                             interner,
                         );
                         continue;
@@ -299,7 +299,7 @@ pub fn parse(
                         TokenKind::SlimArrow,
                         "Expected '->' after section `override`, found ",
                         "",
-                        Branch::Section(SectionBranch::Searching),
+                        Branch::AbstractSection(SectionBranch::Searching),
                         interner,
                     );
                     // Please lint empty sections please emit 40000 warns for slightly misplaced
@@ -331,7 +331,7 @@ pub fn parse(
                         ctx.report_template(
                             "a section with a '->' after",
                             &parse_fmt::fmt_tok(tok, interner),
-                            Branch::Section(SectionBranch::Searching),
+                            Branch::AbstractSection(SectionBranch::Searching),
                             interner,
                         );
                     }
@@ -486,7 +486,7 @@ fn parse_typedef(
         "",
         // Not exactly true that var is being used, just that the type definition flow already
         // exists, so...
-        Branch::Section(SectionBranch::Var),
+        Branch::AbstractSection(SectionBranch::Var),
         interner,
     )?;
 
@@ -496,7 +496,7 @@ fn parse_typedef(
         TokenKind::Colon,
         &format!("Expected a ':' after \"{err_name}\" to declare a type, found "),
         "",
-        Branch::Section(SectionBranch::Var),
+        Branch::AbstractSection(SectionBranch::Var),
         interner,
     )?;
 
@@ -533,7 +533,7 @@ fn parse_nest_sect(
     let kw = ctx.expect_kw_verbose(
         "Expected an `enum` or `struct` declaration, found ",
         "",
-        Branch::Section(SectionBranch::Nest),
+        Branch::AbstractSection(SectionBranch::Nest),
         interner,
     )?;
 
@@ -546,7 +546,7 @@ fn parse_nest_sect(
                 TokenKind::Id,
                 "Expected an identifier for the given struct, found ",
                 "",
-                Branch::Section(SectionBranch::Nest),
+                Branch::AbstractSection(SectionBranch::Nest),
                 interner,
             )?;
 
@@ -556,7 +556,7 @@ fn parse_nest_sect(
                 TokenKind::OCurlyBracket,
                 &format!("Expected '{{' to define struct, found "),
                 "",
-                Branch::Section(SectionBranch::Nest),
+                Branch::AbstractSection(SectionBranch::Nest),
                 interner,
             )?;
 
@@ -590,7 +590,7 @@ fn parse_nest_sect(
                 TokenKind::Id,
                 "Expected an identifier for the given enum, found ",
                 "",
-                Branch::Section(SectionBranch::Nest),
+                Branch::AbstractSection(SectionBranch::Nest),
                 interner,
             )?;
 
@@ -600,7 +600,7 @@ fn parse_nest_sect(
                 TokenKind::OCurlyBracket,
                 &format!("Expected '{{' block to define enum, found"),
                 "",
-                Branch::Section(SectionBranch::Nest),
+                Branch::AbstractSection(SectionBranch::Nest),
                 interner,
             )?;
 
@@ -635,7 +635,7 @@ fn parse_nest_sect(
                     "Expected the keyword `enum` or `struct`, found keyword `{}`",
                     kw.to_fmt()
                 ),
-                Branch::Section(SectionBranch::Nest),
+                Branch::AbstractSection(SectionBranch::Nest),
                 interner,
             );
 
@@ -671,7 +671,7 @@ fn parse_cfg_expr(
         TokenKind::Id,
         "Expected an identifier to define configuration for, found ",
         "",
-        Branch::Section(SectionBranch::Complex),
+        Branch::AbstractSection(SectionBranch::Complex),
         interner,
     )?;
 
@@ -679,7 +679,7 @@ fn parse_cfg_expr(
         TokenKind::OCurlyBracket,
         "Expected a '{' block to define configuration expression, found ",
         "",
-        Branch::Section(SectionBranch::Complex),
+        Branch::AbstractSection(SectionBranch::Complex),
         interner,
     )?;
 
@@ -702,7 +702,7 @@ fn parse_cfg_expr(
                 TokenKind::CCurlyBracket,
                 "Expected a '}' or more declarations, found ",
                 "",
-                Branch::Section(SectionBranch::Complex),
+                Branch::AbstractSection(SectionBranch::Complex),
                 interner,
             )?;
 
@@ -733,7 +733,7 @@ fn parse_option_assignment(
         TokenKind::Id,
         "Expected an identifier for configuration field access, found ",
         "",
-        Branch::Section(SectionBranch::Complex),
+        Branch::AbstractSection(SectionBranch::Complex),
         interner,
     )?;
 
@@ -741,7 +741,7 @@ fn parse_option_assignment(
         TokenKind::Assign,
         "Expected '=' to assign value to configuration, found ",
         "",
-        Branch::Section(SectionBranch::Complex),
+        Branch::AbstractSection(SectionBranch::Complex),
         interner,
     )?;
 
@@ -1441,7 +1441,7 @@ fn handle_struct_fields(
         TokenKind::CCurlyBracket,
         &format!("Expected a field or '}}' to close struct `{struct_name}`, found "),
         "",
-        Branch::Section(SectionBranch::NestType),
+        Branch::AbstractSection(SectionBranch::NestType),
         interner,
     )?;
 
@@ -1475,7 +1475,7 @@ fn handle_enum_variants(
         TokenKind::CCurlyBracket,
         &format!("Expected a variant or '}}' to close enum `{enum_name}`, found "),
         "",
-        Branch::Section(SectionBranch::NestEnum),
+        Branch::AbstractSection(SectionBranch::NestEnum),
         interner,
     )?;
 
@@ -1494,7 +1494,7 @@ fn parse_variant(
         TokenKind::Id,
         "Expected an identifier for a variant, found ",
         "",
-        Branch::Section(SectionBranch::NestType),
+        Branch::AbstractSection(SectionBranch::NestType),
         interner,
     )?;
 

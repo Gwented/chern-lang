@@ -371,6 +371,7 @@ impl<'res> TypeResolver<'res> {
             .ast_id
             .expect("Should be user symbols only");
         let abs_cfg_root = env.ast_info.get_cfg_root(ast_id);
+        let scope_type = self.compiler.symbols[parent_sym_id].scope_origin;
 
         // Checks if the symbol is a valid config consumer later.
         // Returns an `Option` so that the option assignments can still be checked before
@@ -380,7 +381,7 @@ impl<'res> TypeResolver<'res> {
                 self.compiler,
                 associated_scope,
                 abs_cfg_root.name_id,
-                ScopeType::Complex,
+                scope_type,
                 // The config itself chooses it's lookup since it may is `OnlyVar` as specified in
                 // `parser.rs`
                 //
@@ -429,8 +430,7 @@ impl<'res> TypeResolver<'res> {
                 &abs_opt.array_expr,
                 None,
                 associated_scope,
-                // This is done on purpose.
-                ScopeType::Complex,
+                scope_type,
                 env,
             ) {
                 Ok(expr_id) => expr_id,
@@ -693,6 +693,7 @@ impl<'res> TypeResolver<'res> {
                 &mut seen_opt_vec,
                 member_id,
                 abs_inner_cfg,
+                scope_type,
                 env,
             );
 
@@ -773,6 +774,7 @@ impl<'res> TypeResolver<'res> {
         seen_opt_vec: &mut Vec<&'res AbstractOptionAssignment>,
         parent_member_id: MemberId,
         parent_abs_cfg: &'res AbstractConfig,
+        scope_type: ScopeType,
         env: &ResolverEnv,
     ) -> MemberId {
         // Does this have to be reserved?
@@ -801,7 +803,7 @@ impl<'res> TypeResolver<'res> {
                 None,
                 associated_scope,
                 // This purposeful setting is done on purpose.
-                ScopeType::Complex,
+                scope_type,
                 env,
             ) {
                 Ok(expr_id) => expr_id,
@@ -1090,6 +1092,7 @@ impl<'res> TypeResolver<'res> {
                     seen_opt_vec,
                     member_id,
                     abs_cfg_member,
+                    scope_type,
                     env,
                 );
 
@@ -1622,6 +1625,7 @@ impl<'res> TypeResolver<'res> {
         let abs_var = env.ast_info.get_var(ast_id);
 
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
+        let scope_type = self.compiler.symbols[parent_sym_id].scope_origin;
 
         //NOTE: Pipeline where expressions are always returned, just that some may have
         //unresolved parts, which are put into the queue, not the variable itself.
@@ -1630,7 +1634,7 @@ impl<'res> TypeResolver<'res> {
             &abs_var.spanned_expr,
             None,
             associated_scope,
-            ScopeType::Neutral,
+            scope_type,
             env,
         ) {
             Ok(expr_id) => expr_id,
@@ -1684,13 +1688,14 @@ impl<'res> TypeResolver<'res> {
             .expect("Should be user symbols only");
         let abs_typedef = env.ast_info.get_typedef(ast_id);
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
+        let scope_type = self.compiler.symbols[parent_sym_id].scope_origin;
 
         //TODO: typecheck here?
         let type_id = match resolve::resolve_type_expr(
             &mut self.compiler,
             AssociatedScopeKind::Module(env.current_mod),
             &abs_typedef.sp_ty_expr,
-            ScopeType::Var,
+            scope_type,
             ScopeLookupPattern::NoRestrictions,
             env,
         ) {
@@ -1724,7 +1729,7 @@ impl<'res> TypeResolver<'res> {
                 spanned_expr,
                 None,
                 associated_scope,
-                ScopeType::Neutral,
+                scope_type,
                 env,
             ) {
                 // For allowing for more diagnostics instead of just leaving the rest of the struct
@@ -1774,19 +1779,14 @@ impl<'res> TypeResolver<'res> {
         // field declared in var-> or not since var-> fields may be made possible to reference, but
         // fields in structures can't. Will possibly just be unified in the future.
 
-        let scope_id = self
-            .compiler
-            .extract_scope_id(ScopeType::Nest, env.current_mod);
-        let table = &self.compiler.get_scope(scope_id).scope.table;
-
         //TODO: global condition and argument setting.
         //field arg and cond settings.
         //same for enums.
 
-        let sym_id = table.interned_to_sym[&abs_struct.name_id];
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
+        let scope_type = self.compiler.symbols[parent_sym_id].scope_origin;
 
-        let fields: Vec<MemberId> = self.compiler.get_struct(sym_id).fields.clone();
+        let fields: Vec<MemberId> = self.compiler.get_struct(parent_sym_id).fields.clone();
 
         for (i, current_member_id) in fields.iter().enumerate() {
             let abs_field = &abs_struct.fields[i];
@@ -1794,11 +1794,11 @@ impl<'res> TypeResolver<'res> {
 
             for cond in &abs_field.conds {
                 match self.register_expr(
-                    sym_id,
+                    parent_sym_id,
                     &cond,
                     None,
                     associated_scope,
-                    ScopeType::Nest,
+                    scope_type,
                     env,
                 ) {
                     Ok(c) => conds.push(c),
@@ -1835,7 +1835,7 @@ impl<'res> TypeResolver<'res> {
         let mut glob_conds: Vec<ExprId> = Vec::new();
 
         for cond in &abs_struct.glob_conds {
-            match self.register_expr(sym_id, cond, None, associated_scope, ScopeType::Nest, env) {
+            match self.register_expr(parent_sym_id, cond, None, associated_scope, scope_type, env) {
                 Ok(c) => glob_conds.push(c),
                 Err(preset_err) => {
                     preset_reporter::report_preset(
@@ -1860,7 +1860,7 @@ impl<'res> TypeResolver<'res> {
             self.interner,
         );
 
-        let struct_def = self.compiler.get_struct_mut(sym_id);
+        let struct_def = self.compiler.get_struct_mut(parent_sym_id);
 
         debug_assert_eq!(struct_def.glob_conds.len(), 0);
         debug_assert_eq!(struct_def.glob_directives.len(), 0);
@@ -1874,17 +1874,11 @@ impl<'res> TypeResolver<'res> {
             .ast_id
             .expect("Should be user symbols only");
         let abs_enum = env.ast_info.get_enum(ast_id);
-
-        let scope_id = self
-            .compiler
-            .extract_scope_id(ScopeType::Nest, env.current_mod);
-        let table = &self.compiler.get_scope(scope_id).scope.table;
-
-        let sym_id = table.interned_to_sym[&abs_enum.name_id];
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
+        let scope_type = self.compiler.symbols[parent_sym_id].scope_origin;
 
         // Clone needed so iteration doesn't make the compiler borrow itself twice
-        let variants = self.compiler.get_enum(sym_id).variants.clone();
+        let variants = self.compiler.get_enum(parent_sym_id).variants.clone();
 
         for (i, current_member_id) in variants.iter().enumerate() {
             let abs_variant = &abs_enum.variants[i];
@@ -1892,11 +1886,11 @@ impl<'res> TypeResolver<'res> {
 
             for cond in &abs_variant.conds {
                 let cond_opt = match self.register_expr(
-                    sym_id,
+                    parent_sym_id,
                     &cond,
                     None,
                     associated_scope,
-                    ScopeType::Nest,
+                    scope_type,
                     env,
                 ) {
                     Ok(c) => Some(c),
@@ -1938,11 +1932,11 @@ impl<'res> TypeResolver<'res> {
         let mut glob_conds: Vec<ExprId> = Vec::new();
         for cond in &abs_enum.glob_conds {
             let cond_opt = match self.register_expr(
-                sym_id,
+                parent_sym_id,
                 cond,
                 None,
                 associated_scope,
-                ScopeType::Nest,
+                scope_type,
                 env,
             ) {
                 Ok(c) => Some(c),
@@ -1972,7 +1966,7 @@ impl<'res> TypeResolver<'res> {
             self.interner,
         );
 
-        let enum_def = self.compiler.get_enum_mut(sym_id);
+        let enum_def = self.compiler.get_enum_mut(parent_sym_id);
 
         debug_assert_eq!(enum_def.glob_conds.len(), 0);
         debug_assert_eq!(enum_def.glob_directives.len(), 0);
@@ -1985,10 +1979,9 @@ impl<'res> TypeResolver<'res> {
             .ast_id
             .expect("Should be user symbols only");
         let abs_alias = env.ast_info.get_alias(ast_id);
-
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
-
         let local_scope_id = self.compiler.get_alias(parent_sym_id).local_scope_id;
+        let scope_type = self.compiler.symbols[parent_sym_id].scope_origin;
 
         let mut params: Vec<Param> = Vec::new();
         let mut seen_params: Vec<&AbstractParam> = Vec::new();
@@ -2006,7 +1999,7 @@ impl<'res> TypeResolver<'res> {
                 self.compiler,
                 AssociatedScopeKind::Module(env.current_mod),
                 &abs_param.sp_ty_expr,
-                ScopeType::Neutral,
+                scope_type,
                 ScopeLookupPattern::NoRestrictions,
                 env,
             ) {
@@ -2126,7 +2119,7 @@ impl<'res> TypeResolver<'res> {
                 Some(local_scope_id),
                 //NOTE: Could this change?
                 associated_scope,
-                ScopeType::Neutral,
+                scope_type,
                 env,
             ) {
                 Ok(c) => Some(c),
