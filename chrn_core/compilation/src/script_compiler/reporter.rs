@@ -73,7 +73,7 @@ impl Reporter {
                 self.diags.append(diags);
                 true
             }
-            BudgetResult::Overage(overage) => {
+            BudgetResult::Overage(_) => {
                 // let can_append = amt - overage;
                 // dbg!(can_append, self.diag_budget.remaining());
                 // panic!("Test me");

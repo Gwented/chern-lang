@@ -1,4 +1,4 @@
-Config loader rejects any script block/file above 8KB in [config_loader](./lang/src/config_loader.rs)
+Config loader rejects any script block/file above 32KB in [config_loader](./lang/src/config_loader.rs)
 
 Module amount can't exceed MAX_MODULES in [chrn_utils](./chrn_utils/src/lib.rs)
 

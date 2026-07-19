@@ -70,15 +70,21 @@ var->
             // p: defs::Person
         }
 
-        enum State1 {stable: List<i32>, state2: State2}
+        enum State1 {stable: i32, state2: State2}
         enum State2 {Medium: i32, state3: State3}
         enum State3 {Low, state1: State1}
         enum StateStable {stable}
+        struct Point {x: Number, y: Number}
+        struct Number {inner: u32}
 
     // Nested configs are really hard to read. Maybe some labeling options?
     //
     // IDE should do the "thing: {Thing}" thing where it has the thing in grey
     complex->
+        Point {
+            x {}
+            y {}
+        }
         // Maybe recursion should keep track of if an inner of a config was already defined then
         // error saying that a past recursive definition of this type within this configuration has
         // already been defined
@@ -90,22 +96,18 @@ var->
             // Maybe just use colons
             // identifiers = [2, 3]
             state2 { // Should allow "state2: State2"?
-                state3 {
-                    state1 {
-                        stable {}
-                    }
-                }
+                
             }
         }*/
 
         // Help message help message.
-        State1=>state2=>state3 {
+        /*State1=>state2=>state3 {
             // Maybe just use colons
             // identifiers = [2, 3]
             state1 {
                 stable {}
             }
-        }
+        }*/
 
         // x {}
 
@@ -121,6 +123,7 @@ var->
             }
             // extra = def::e#2
         }*/
+
 @end
 
 #OVERRIDE
@@ -128,15 +131,16 @@ var->
 // Should be able to use overrides from other modules
 override->
 
+// Need to give override it's intrinsic scope, which should be lazily loaded
 JAVA {
     types {
         i8 = self::byte
-        i16, i32 = java::int
-        i32 = long
+            i16, i32 = java::int
+            i32 = long
     }
 }
 
-CPP {
+/*CPP {
     // Ok but what if I want a SPECIFIC u64 to be an unsinged long long but I want the others, or
     // the rest, to be uint64_t? Maybe allow for language override for all configs?
     // lang namespace?
@@ -154,10 +158,11 @@ CPP {
     // At this point maybe a syntactic sugar like "java->types {}" where it loses the "java{types{}}" 
     // nesting would make more sense since this would look VERY verbose even for simple cases. Maybe not
     // the arrow though since that's SUPPOSED to be section specific. Maybe "=>".
-アロー
-    u64 = unsinged_long_long_int
-    u64 = uint64_t
-}
+
+    // Just use the actual names for now, self can be used if that makes sense later.
+    u64 = cpp::unsinged_long_long_int
+    u64 = cpp::uint64_t
+}*/
 
 #OVERRIDE
 

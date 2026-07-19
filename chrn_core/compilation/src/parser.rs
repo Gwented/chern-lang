@@ -435,6 +435,7 @@ fn parse_alias_stmt(
     Ok(alias)
 }
 
+/// Since `modules.rs` handles modules with it's own mini-parser, this is just a parser check.
 fn check_bind(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token> {
     ctx.expect_id_verbose(
         TokenKind::Str,

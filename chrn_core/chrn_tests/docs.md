@@ -436,6 +436,7 @@ The section keyword `var` can be used before
 `=>` can be used for shortening syntax if no properties are desired.
 Example:
 ```chrn
+// What if the docs refuse to compile?
 nest->
     struct First {second: Second}
     struct Second {third: Third}

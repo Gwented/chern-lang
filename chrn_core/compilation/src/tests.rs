@@ -1,0 +1,9 @@
+mod budget_test;
+mod config_loader_test;
+mod constraint_resolver_test;
+mod helpers;
+mod lexer_test;
+mod modules_test;
+mod name_resolver_test;
+mod scopes_test;
+mod type_resolver_test;

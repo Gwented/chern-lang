@@ -547,6 +547,13 @@ impl MemberSymbolKind {
         }
     }
 
+    pub fn is_unknown(&self) -> bool {
+        match self {
+            MemberSymbolKind::Unknown(_) => true,
+            _ => false,
+        }
+    }
+
     // TODO:
     /// A local parent is the parent this member symbol was declared in, rather than it's actual
     /// parent symbol. For example, if we have "Person { state: State }" The local parent of `state`

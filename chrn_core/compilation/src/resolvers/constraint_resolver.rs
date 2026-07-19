@@ -188,6 +188,10 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         for cfg_member_id in cfg_root.cfg_members.iter().copied() {
+            if self.compiler.members[cfg_member_id].is_unknown() {
+                continue;
+            }
+
             let cfg_member = self.compiler.get_cfg_def_member(cfg_member_id);
             //NOTE: The somewhat dangerous part of this staying `Option` is that it IS a real
             //reflection of the fact that for something like a variant, there COULD be no boundary

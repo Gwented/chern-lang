@@ -23,6 +23,8 @@ pub struct MemoryBudget {
     // pub times_overflown: Option<usize>,
 }
 
+//TODO: Add Consume up to, then tests so that we know we aren't hallucinating at alarming rates.
+
 impl MemoryBudget {
     pub const fn new(limit: usize) -> MemoryBudget {
         MemoryBudget {
