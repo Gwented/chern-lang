@@ -153,7 +153,7 @@ impl MemberResolver<'_> {
             //      state: State
             // }
             //
-            // If an error ocurred at state, and a diagnostic wanted a look at where it's actual
+            // If an error occurred at state, and a diagnostic wanted a look at where it's actual
             // original field declaration is, it would instead get "Person" which is NOT the
             // declaration location, but just the spot where the particular member was used.
 

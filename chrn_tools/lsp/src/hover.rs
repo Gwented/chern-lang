@@ -251,7 +251,7 @@ pub fn compute_hover(
                                             "Unknown".to_string()
                                         };
 
-                                    hover_text = format!("**Config** `{}`", name);
+                                    hover_text = format!("**Configures** `{}`", name);
                                 }
                                 SymbolKind::Directive(_) => {
                                     let name = interner.search(sym.name_id);

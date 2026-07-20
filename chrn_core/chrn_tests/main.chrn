@@ -75,15 +75,26 @@ var->
         enum State3 {Low, state1: State1}
         enum StateStable {stable}
         struct Point {x: Number, y: Number}
-        struct Number {inner: u32}
+        struct Number {inner: InnerInnerNumber}
+        struct InnerNumber {inner: InnerNumber}
+        struct InnerInnerNumber {inner_inner: u32}
 
     // Nested configs are really hard to read. Maybe some labeling options?
     //
     // IDE should do the "thing: {Thing}" thing where it has the thing in grey
     complex->
+        // How can one field depth be enforced while still keeping the concept of generic config usage 
+        // to where override-> can use it?
         Point {
-            x {}
-            y {}
+            x {
+                idents = "4"
+                // SHOULD ERR
+                e#override {
+                        inner_inner {
+                        }
+                    }
+            }
+            // y {}
         }
         // Maybe recursion should keep track of if an inner of a config was already defined then
         // error saying that a past recursive definition of this type within this configuration has
@@ -96,7 +107,6 @@ var->
             // Maybe just use colons
             // identifiers = [2, 3]
             state2 { // Should allow "state2: State2"?
-                
             }
         }*/
 

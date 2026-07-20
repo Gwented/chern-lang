@@ -2,6 +2,8 @@ use std::fmt::Display;
 
 //TODO: Adjust behavior as needed for the type system since some oddities from the original
 //hallucinated idea are still in place since.
+//
+//TODO: Name id attachment?
 use bitflags::bitflags;
 
 use crate::fmter::Formatted;

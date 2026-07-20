@@ -40,6 +40,7 @@ pub(crate) fn render_terminal_diags(
 ) -> Vec<String> {
     let region_arena = match region_arena_opt {
         Some(arena) => arena,
+        // If no arena exists then it just makes basic error messages with at minimum a path and msg.
         None => {
             let mut rendered_diags: Vec<String> = Vec::new();
             for diag in diags {
@@ -63,11 +64,11 @@ pub(crate) fn render_terminal_diags(
 
     for diag in diags {
         for annotation in &diag.annotations {
-            let span_opt = required_mapping
+            let span_idx_opt = required_mapping
                 .iter()
                 .position(|other| annotation.span.region_id == other.region_id);
 
-            if let Some(span_idx) = span_opt {
+            if let Some(span_idx) = span_idx_opt {
                 let other = required_mapping[span_idx];
                 required_mapping[span_idx] = annotation.span.merge(&other);
             } else {
@@ -76,15 +77,21 @@ pub(crate) fn render_terminal_diags(
         }
     }
 
-    let mut ln_views = Vec::new();
-    let mut all_src_strs = Vec::new();
+    // THESE ARE POSSIBLE COMMENTS IGNORE THESE
+    // Not Option because it's only metadata based off bytes
+    let mut ln_views: Vec<LineView> = Vec::with_capacity(required_mapping.len());
+    // May or may not be valid UTF-8, so this is Option.
+    let mut all_src_strs: Vec<&str> = Vec::with_capacity(required_mapping.len());
 
     for span in &required_mapping {
         let region = &region_arena[span.region_id];
         let ln_view = line_mapping::form_ln_view(&region.src_bytes, &span);
         ln_views.push(ln_view);
+        // let src_str = String::from_utf8_lossy(v);
         let src_str = match str::from_utf8(&region.src_bytes) {
             Ok(s) => s,
+            //FIXME:
+            // Since it still does depend on dense ordering, maybe making this Option is best.
             Err(_) => unreachable!("Should already have UTF-8 validity at this stage from lexer"),
         };
 
@@ -216,7 +223,7 @@ fn render_text(
         let current_ln_view_idx = ln_views
             .iter()
             .position(|lv| lv.region_id == layout.ln.ln_span.region_id)
-            .expect("Infallable existence");
+            .expect("Layout should be derived by line view");
         let current_region_id = layout.ln.ln_span.region_id;
 
         // Checking if the region is different so files from different annotations are visually

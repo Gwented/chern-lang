@@ -8,6 +8,12 @@ pub mod lang_config;
 pub mod types;
 pub mod values;
 
+// I think this is appropriate placement?
+// It IS a general language level rule, but at the same time what if the implementation was
+// different? Maybe move this.
+/// Max depth for config reach for `chrn`, excluding `override` section expansion
+pub const MAX_CFG_NESTING_LEVEL: u8 = 2;
+
 #[cfg(test)]
 mod tests {
     // #[test]

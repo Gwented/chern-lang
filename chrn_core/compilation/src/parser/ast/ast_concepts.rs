@@ -11,6 +11,7 @@ use lang::{
 use crate::{
     lookup::scopes::{ScopeLookupPattern, ScopeType},
     parser::ast::ast_exprs::{SpannedExpr, TypeExpr},
+    semantic::hir::hir_concepts::ConfigMetadataKind,
 };
 
 // Maybe this type of thing should go into an ast_concepts module?
@@ -487,6 +488,7 @@ impl AbstractFuncDecl {
         }
     }
 }
+// Give parser distinct member, root configs?
 
 #[derive(Debug)]
 pub struct AbstractConfig {

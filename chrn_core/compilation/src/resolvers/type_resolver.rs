@@ -7,7 +7,7 @@ use chrn_utils::id_types::{
     AstId, DirectiveId, ExprId, MemberId, ScopeId, SpannedContainer, SpannedContainerRef, SymbolId,
     TypeId, ValueId, VariableId,
 };
-use chrn_utils::intern::Intern;
+use chrn_utils::intern::{self, Intern};
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{DiagnosticLevel, SourceDiagnostic};
 use chrn_utils::source_map::source_span::SourceSpan;
@@ -28,7 +28,8 @@ use crate::resolvers::resolver_state::ResolverState;
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::evaluator::UnaryOpResult;
 use crate::semantic::hir::hir_concepts::{
-    ConfigDefMember, MemberSymbolKind, OptionAssignmentMember, OptionAssignmentRoot, VariableState,
+    ComplexConfigMemberMetadata, ConfigDefMember, MemberSymbolKind, OptionAssignmentMember,
+    OptionAssignmentRoot, VariableState,
 };
 use crate::semantic::hir::hir_concepts::{Symbol, SymbolKind, SymbolOrigin, VarDef};
 use crate::semantic::hir::hir_concepts::{Type, TypeInfo};
@@ -135,6 +136,57 @@ impl<'res> TypeResolver<'res> {
             }
         }
 
+        //NOTE: TRYING TO COMPRESS THE EXPLANATION BELOW.
+        // This expression resolution dependency tracking system tracks whether the type or const value is
+        // resolved using a T/F state. These two booleans are in held by `PendingSymbol`. This
+        // structure is a `TypeContext` specific structure that only exists within the context of
+        // resolving expression, as it is merely a wrapper around the expr for metadata
+        // purposes (More info in struct's doc). The `Vec<PendingExpr>` stores all exprs that depend
+        // on the pending symbol.
+        //
+        // Pending exprs register themselves by storing themselves inside the pending symbols list.
+        // If we have:
+        // ```
+        // let a = b
+        // let b = 3
+        // ```
+        // The resolution ends with b being having a const val of 3, and a having no value or type
+        // because b wasn't resolved yet. But, when a was seen, a created the `PendingSymbol` for b,
+        // then it put itself inside b's pending exprs as `b -> [a]`. If we also had "let c = b"
+        // c would check if b is already a pending symbol, see that it is, push itself, with b now
+        // having [a, c].
+        // After b is seen, and has at least a const type and possibly a const value, b sets `needs_check`
+        // to true in `TypeContext`, which is ONLY checked if new information attached to `TypeContext` is
+        // found, otherwise it stays false and no checks are done to avoid wasting compute.
+        // The loop then goes through all pending symbols, and checks the ones that have at least a
+        // resolved type, as to also not waste compute. When the loop gets to b's pending symbol, it
+        // finds `a`, which has a `ParentState::Unresolved`, meaning it should have it's resolution
+        // attempted since we know `b` can help resolve `a`. Resolution traverses "let a = b" by
+        // starting with the root `b`. The resolution ALWAYS starts by resolving the root, because
+        // the root is always the pending symbol. Since in this scenario, "let a = b" only have b,
+        // that means solving the root intrinsically solves a
+        //
+        //
+        //
+        // The ore idea behind this system is that everything uses a tree which ALWAYS start at the
+        // root and stop at a `None` point
+        // Given:
+        // ```
+        // let a = b + d // b -> b + d -> None | d -> b + d -> None
+        // let b = c + e // c -> c + e -> None | e -> c + e -> None
+        // let c = e // e -> None
+        // let d = b // b -> None
+        // let e = 3 // Const
+        // ```
+        // Every root has one job, go as far as possible up the tree.
+        // If we have "let a = b + c" and `c` is unresolved, b resolves itself, goes b -> b + c, sees
+        // that c is unresolved, then stops. If c is resolved, c -> b + c, c sees that both b and
+        // itself are resolved, it creates the const value, c -> None, returns. This process
+        // involves mutated already stored addresses, so this root's only job is to repair
+        // everything that was not yet resolved.
+        //
+        //NOTE: TRYING TO COMPRESS THE EXPLANATION BELOW.
+
         // This is a system of tracking to where it dynamically through knowing the result
         // of the expression incremental resolution, and accounting for stale caching in regards
         // to not setting it's parent to resolved multiple times.
@@ -168,14 +220,14 @@ impl<'res> TypeResolver<'res> {
             let mut removable_syms: Vec<SymbolId> = Vec::new();
 
             for (sym_id, pending_sym) in &mut pending_syms {
-                // If there is no resolved type then there cannot exist a const value
+                // If there is no resolved type then there cannot be a const value
                 if !pending_sym.has_resolved_ty {
                     continue;
                 }
 
                 match self.try_resolve_pending(*sym_id, pending_sym, env) {
                     //TODO: Can something be done with these?
-                    //Succeeding just means no errors ocurred, not that new information was found,
+                    //Succeeding just means no errors occurred, not that new information was found,
                     //so maybe we can check here for removable symbols, say, if queue is empty?
                     //Is removing even worth it?
                     Ok(can_remove) => {
@@ -694,6 +746,7 @@ impl<'res> TypeResolver<'res> {
                 member_id,
                 abs_inner_cfg,
                 scope_type,
+                1,
                 env,
             );
 
@@ -775,6 +828,7 @@ impl<'res> TypeResolver<'res> {
         parent_member_id: MemberId,
         parent_abs_cfg: &'res AbstractConfig,
         scope_type: ScopeType,
+        depth: u8,
         env: &ResolverEnv,
     ) -> MemberId {
         // Does this have to be reserved?
@@ -784,6 +838,38 @@ impl<'res> TypeResolver<'res> {
         self.compiler
             .members
             .push(MemberSymbolKind::Unknown(current_cfg_member_id));
+
+        //NOTE: How do we account for override?
+        // Override doens't exist yet, but maybe, override has it's own specific method of
+        // resolution, which makes the check make sense because it ONLY fails if it wasn't delegated
+        // override, since override wouldn't account for depth.
+
+        // Enforcing nesting rules for complex
+        // So, "Point=>x" is fine and only hits depth 1,but "Point=>x=>inner" is an error because
+        // complex scope configs cannot configure an inner that is that deep, unless it's override.
+        // Override as in, "Point=>x=>override {}"
+        // if scope_type == ScopeType::Complex && depth == 2 {
+        //     // Make this less confusing sounding
+        //     let core_msg = "Nesting level too deep for `complex` scope config".into();
+        //     let cfg_root = self.compiler.get_cfg_def_root(root_parent_sym_id);
+        //
+        //     // Are we really going to add history for the sake of maintaining span info for this one
+        //     // error message that happens to need it?
+        //     let builder =
+        //         SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+        //             .add_annotation(
+        //                 parent_abs_cfg.name_span,
+        //                 AnnotationKind::Primary,
+        //                 "Two level nesting".to_string().into(),
+        //             )
+        //             .add_annotation(
+        //                 cfg_root.name_span,
+        //                 AnnotationKind::Secondary,
+        //                 "One level nesting".to_string().into(),
+        //             );
+        //     self.diags.push(builder.build());
+        //     return current_cfg_member_id;
+        // }
 
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
@@ -945,6 +1031,65 @@ impl<'res> TypeResolver<'res> {
             }
 
             for abs_cfg_member in &parent_abs_cfg.cfg_members {
+                // -- DEPTH HANDLING START --
+                // If the scope is complex, it's not override (which is an exception for deeper
+                // nesting in complex), and depth + 1 is 2 then err.
+                //
+                // This is handled in this specific context on purpose. If this were handled AFTER
+                // recursively going deeper instead of + 1, it would lose spanning information for
+                // the actual useful context to point at, and implementing history is likely not
+                // worth it to report one error.
+                if scope_type == ScopeType::Complex
+                    // This needs semantics not based on the identifier itself.
+                    && abs_cfg_member.name_id.id != intern::INTERNED_OVERRIDE
+                    && depth + 1 == lang::MAX_CFG_NESTING_LEVEL
+                {
+                    // Is this confusing?
+                    // Maybe from the perspective of ownership this could make more sense?
+                    let core_msg =
+                        "Nesting level of 2 is too deep for `complex` scope config context".into();
+                    let cfg_root = self.compiler.get_cfg_def_root(root_parent_sym_id);
+
+                    // Are we really going to add history for the sake of maintaining span info for this one
+                    // error message that happens to need it?
+                    let builder = SourceDiagnostic::builder(
+                        DiagnosticLevel::Error,
+                        core_msg,
+                        env.region.path_id,
+                    )
+                    // Pointing first nesting point
+                    .add_annotation(
+                        parent_abs_cfg.name_span,
+                        AnnotationKind::Secondary,
+                        "One level nesting".to_string().into(),
+                    )
+                    // Pointing to root
+                    .add_annotation(
+                        cfg_root.name_span,
+                        AnnotationKind::Secondary,
+                        "Root".to_string().into(),
+                    )
+                    // Pointing second nesting point
+                    .add_annotation(
+                        abs_cfg_member.name_span,
+                        AnnotationKind::Primary,
+                        "Two level nesting is too deep".to_string().into(),
+                    )
+                    // Is this ok to add?
+                    // It's hard to tell what information to add since we have the type name and
+                    // could point out just making a different top level config for it but - !{}}}
+                    // Ok maybe that should happen
+                    .add_help(
+                        "Prefer defining another config root instead (See docs for more info)"
+                            .into(),
+                    );
+                    self.diags.push(builder.build());
+                    // Breaks instead of returning so that the present information about the current
+                    // member can still be returned.
+                    break;
+                }
+
+                // -- DEPTH HANDLING END --
                 seen_cfg_len += 1;
                 seen_cfg_vec.push(abs_cfg_member);
 
@@ -1093,6 +1238,7 @@ impl<'res> TypeResolver<'res> {
                     member_id,
                     abs_cfg_member,
                     scope_type,
+                    depth + 1,
                     env,
                 );
 
@@ -1156,6 +1302,7 @@ impl<'res> TypeResolver<'res> {
             parent_abs_cfg.name_span,
             current_cfg_member_id,
             parent_member_id,
+            todo!("Hi"),
             opt_assignments,
             parent_abs_cfg.lookup_pattern,
             cfg_members,
@@ -1184,21 +1331,26 @@ impl<'res> TypeResolver<'res> {
         // Tells the caller if the given pending symbol is fully resolved to where it can be
         // removed as a pending symbol
         let mut can_remove = false;
-        let mut queue: Vec<ExprId> = Vec::new();
+        // (Idx insinde `pending_sym`, Corresponding Expr)
+        let mut queue: Vec<(usize, ExprId)> = Vec::new();
 
         //Suspicious
-        for pending_expr in &pending_sym.pending_exprs {
-            if let ParentState::Notified(true, true) = pending_expr.parent_state {
-                continue;
-            }
-
+        for (i, pending_expr) in pending_sym.pending_exprs.iter().enumerate() {
             // Error being treated the same as a resolved expression since it can't be mutated
             // further
-            if pending_expr.parent_state == ParentState::Error {
+            //
+            // If fully resolved or err (impossible to solve) skip
+            if matches!(
+                pending_expr.parent_state,
+                ParentState::Notified(true, true) | ParentState::Error
+            ) {
                 continue;
             }
 
-            queue.push(pending_expr.pending_id);
+            //WARN: Changed to store the tuple BEFORE the queue iteration since if an earlier part
+            //of the resolution where to ever be skipped, the indexing into the queue would be wrong
+            //because enumerate() over the queue may be smaller and misaligned with `pending_exprs`
+            queue.push((i, pending_expr.pending_id));
         }
 
         // In the example:
@@ -1213,7 +1365,7 @@ impl<'res> TypeResolver<'res> {
         //
 
         // Needs to resolve first root
-        for (i, root_id) in queue.iter().copied().enumerate() {
+        for (i, root_id) in queue.iter().copied() {
             // Still need to repair root expr
             let root_expr = &mut self.compiler.exprs[root_id];
             match self.compiler.symbols[resolved_sym_id].kind {
@@ -1246,13 +1398,15 @@ impl<'res> TypeResolver<'res> {
 
                     if pending_sym.has_const_val {
                         let val_info = &self.compiler.values[val_id];
+                        // Clone could be circumvented by creating ANOTHER arena, which only
+                        // contains `Value` types, which would mean the metadata of values is
+                        // not directly tied to the const value, but not sure if that's worth it here.
                         let const_val_opt = val_info.const_val.clone();
 
                         let inner_val = &mut self.compiler.values[root_expr.val_id];
                         inner_val.const_val = const_val_opt;
                     }
                 }
-                // I remember.
                 // NOTE: Since expressions are initialized as `ReservedTypeSlot`, if there is say,
                 // a cyclic dependency error, the error will exist and emit later, but this
                 // technically still exists and needs to be ignored. Not currently aware of any
@@ -2413,6 +2567,7 @@ impl<'res> TypeResolver<'res> {
 
                             return Err(PresetErr::General(src_diag));
                         }
+                        // Not possible
                         SymbolKind::Directive(_) => unreachable!("We'll see"),
                         // Config not declarable in neutral sections so this should not be possible
                         SymbolKind::Config(_) => {

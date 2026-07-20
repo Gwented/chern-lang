@@ -365,10 +365,12 @@ pub struct ConfigDefMember {
     pub linked_member_id: MemberId,
     /// Expects `OptionAssignmentMember`
     pub opt_assignments: Vec<MemberId>,
+    // These configs are supposed to be usable by override too so maybe this becomes an enum where
+    // it exposes metadata depending on override or not.
+    pub metadata: ConfigMetadataKind,
     /// Lookup pattern that needs to be used to properly discern if
     /// `ScopeLookupPattern::Namespace/OnlyVar` should be used to search for the member associacted with
     /// this config member
-    // Is this needed?
     pub lookup_pattern: ScopeLookupPattern,
     /// Members this member holds
     pub cfg_def_members: Vec<MemberId>,
@@ -380,6 +382,7 @@ impl ConfigDefMember {
         name_span: SourceSpan,
         member_id: MemberId,
         linked_member_id: MemberId,
+        metadata: ConfigMetadataKind,
         opt_assignments: Vec<MemberId>,
         lookup_pattern: ScopeLookupPattern,
         cfg_def_members: Vec<MemberId>,
@@ -389,12 +392,66 @@ impl ConfigDefMember {
             linked_member_id,
             name_id,
             name_span,
+            metadata,
             opt_assignments,
             lookup_pattern,
             cfg_def_members,
         }
     }
 }
+
+/// For allowing one config to hold different metadata depending on the context
+#[derive(Debug, Clone)]
+pub enum ConfigMetadataKind {
+    Complex(ComplexConfigMemberMetadata),
+    Override(OverrideConfigMemberMetadata),
+}
+impl ConfigMetadataKind {
+    pub fn expect_complex(&self) -> &ComplexConfigMemberMetadata {
+        match self {
+            ConfigMetadataKind::Complex(meta) => meta,
+            _ => panic!("Expected `complex` metadata, found {:?}", self),
+        }
+    }
+    pub fn complex(&self) -> Option<&ComplexConfigMemberMetadata> {
+        match self {
+            ConfigMetadataKind::Complex(meta) => meta.into(),
+            ConfigMetadataKind::Override(_) => None,
+        }
+    }
+
+    pub fn overrid(&self) -> Option<&OverrideConfigMemberMetadata> {
+        match self {
+            ConfigMetadataKind::Override(meta) => Some(meta),
+            ConfigMetadataKind::Complex(_) => None,
+        }
+    }
+
+    pub fn expect_override(&self) -> &OverrideConfigMemberMetadata {
+        match self {
+            ConfigMetadataKind::Override(meta) => meta,
+            _ => panic!("Expected `override` metadata, found {:?}", self),
+        }
+    }
+}
+
+/// `complex` scope `ConfigMember` specific metadata
+#[derive(Debug, Clone)]
+pub struct ComplexConfigMemberMetadata {
+    /// Whether or not the current member is an `override` keyword created scope, which has
+    /// different nesting rules
+    is_override: bool,
+}
+
+impl ComplexConfigMemberMetadata {
+    pub fn new(is_override: bool) -> ComplexConfigMemberMetadata {
+        ComplexConfigMemberMetadata { is_override }
+    }
+}
+
+/// `override` scope `ConfigMember` specific metadata
+#[derive(Debug, Clone)]
+pub struct OverrideConfigMemberMetadata {}
 
 // Would be:
 // Person {

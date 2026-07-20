@@ -30,8 +30,9 @@ impl TypeContext {
     }
 
     // This explanation is confusing!
-    /// Takes an input of the symbol that is pending and the expression that is pending.
-    /// This method is intended to prevent boiler-plate of checking if the symbol exists each time.
+    /// Takes the symbol that is pending and the expression that is pending.
+    /// This method is intended to prevent boiler-plate of checking if the symbol exists inside
+    /// `pending_exprs` each time
     pub(super) fn store_pending_expr(&mut self, sym_id: SymbolId, pending_expr: PendingExpr) {
         if let Some(pending_sym) = self.sym_queue.get_mut(&sym_id) {
             pending_sym.pending_exprs.push(pending_expr);
@@ -41,8 +42,9 @@ impl TypeContext {
         }
     }
 }
-/// Struct to represent a symbol that is has users. Mainly exists so there is one point where
-/// "is_resolved" can be cached as opposed to giving it to individual expressions
+/// Struct to represent a symbol has users but isn't resolved yet. Mainly exists so that metadata
+/// can be associated with a `Symbol` without making every expr own it's own resolved state, which
+/// would just be noise and wasted byte padding outside of type resolution.
 #[derive(Debug)]
 pub(super) struct PendingSymbol {
     pub(super) has_const_val: bool,

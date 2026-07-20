@@ -4,7 +4,7 @@
 use chrn_utils::{
     chrn_config::ChrnConfig,
     id_types::{
-        AstId, ExprId, InternedId, SpannedContainer, SpannedContainerRef, SymbolId, TypeId,
+        ExprId, InternedId, MemberId, SpannedContainer, SpannedContainerRef, SymbolId, TypeId,
     },
     intern::Intern,
     source_map::{
@@ -129,10 +129,10 @@ impl<'a> ConstraintResolver<'a> {
     // The code below is far far worse than all prior because the concept of what a config is and
     // enforces is not 100% done, but the end-behavior exists so the specifics will be sorted later.
     fn resolve_cfg_root(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
-        let ast_id = self.compiler.symbols[parent_sym_id]
-            .ast_id
-            .expect("Should be user symbols only");
-        let abs_cfg_root = env.ast_info.get_cfg_root(ast_id);
+        // let ast_id = self.compiler.symbols[parent_sym_id]
+        //     .ast_id
+        //     .expect("Should be user symbols only");
+        // let abs_cfg_root = env.ast_info.get_cfg_root(ast_id);
 
         // leconstraint_reot module = &self.compiler.mods[env.current_mod];
         let cfg_root = self.compiler.get_cfg_def_root(parent_sym_id);
@@ -187,7 +187,9 @@ impl<'a> ConstraintResolver<'a> {
             };
         }
 
-        for cfg_member_id in cfg_root.cfg_members.iter().copied() {
+        // :( Clone
+        for cfg_member_id in cfg_root.cfg_members.clone() {
+            //WARN: Suspicious
             if self.compiler.members[cfg_member_id].is_unknown() {
                 continue;
             }
@@ -200,6 +202,8 @@ impl<'a> ConstraintResolver<'a> {
             let boundaries =
                 MemberSymbolKind::boundaries(self.compiler, cfg_member.linked_member_id);
 
+            //TODO: Given the scope type, should react differently to depths of members.
+            //Or, maybe `TypeResolver` can just do this? This actually isn't that hard to check.
             for opt_member_id in cfg_member.opt_assignments.iter().copied() {
                 // Variant and field specific schemas?
                 let opt_member = self.compiler.get_opt_assignment_member(opt_member_id);
@@ -226,6 +230,8 @@ impl<'a> ConstraintResolver<'a> {
                 ) {
                     // Maybe return ONE more present? Just 2? A small slice?
                     // No
+                    // Slice as in [Option<PresetErr>;2]
+                    // Ok sure
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,
@@ -235,10 +241,24 @@ impl<'a> ConstraintResolver<'a> {
                     );
                 };
             }
-        }
 
-        // dbg!(cfg_root);
-        // todo!("cfg")
+            // AAAAAAAAAAAAAHHHHHHHHHHHHHHHHHH
+            // Recursively resolves inner members
+            // self.resolve_cfg_member(cfg_member_id, env);
+
+            // for thing in cfg_member.cfg_def_members.iter().cloned() {
+            //     let mem = self.compiler.get_cfg_def_member(thing);
+            //     dbg!(self.interner.search(mem.name_id));
+            //     dbg!(mem);
+            //     dbg!(thing);
+            //     todo!("Ok");
+            // }
+        }
+        // todo!("Recursively check inner cfg members");
+    }
+
+    fn resolve_cfg_member(&mut self, parent_member_id: MemberId, env: &ResolverEnv) {
+        todo!()
     }
 
     // Coupled so it's not member option or root option specific

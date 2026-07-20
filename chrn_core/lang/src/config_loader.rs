@@ -3,6 +3,11 @@
 //! This module represents the stage of `chrn` processing where there it may read an entire file, or
 //! it may read between `@def` and `@end`. This exists so that if there is serial data within the
 //! file, the entire file isn't forced to be loaded into memory, which would be a net negative.
+//!
+//! IMPORTANT NOTES:
+//! This loader does NOT UTF-8 check anything, it merely ensures that the region is valid for chrn's
+//! language rules. Only bytes are operated upon. The diagnostics sent expect that users of this
+//! data check that the data is valid and react accordingly.
 //TODO: Need relative spanning in renderers
 use std::io::{BufRead, BufReader, Read};
 
@@ -420,6 +425,8 @@ impl<R: Read> ConfigLoader<'_, R> {
         // This does not mean it is correct, it only means the read limit wasn't reached before the
         // file ended.
         if !requires_end {
+            // dbg!(String::from_utf8_lossy(&region.src_bytes));
+            // panic!();
             ConfigLoaderOutput::Success(region)
         } else {
             // Case of end <eof> being reached, which means it is within `READ_LIMIT` since it

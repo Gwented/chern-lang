@@ -9,3 +9,6 @@ Goal: Resolves expressions, infers types, creates configs
 
 4. ConstraintResolver
 Goal: ?
+
+NOTE: Since some resolvers are really just checkers, maybe make the distinction of
+checkers and resolvers in naming.

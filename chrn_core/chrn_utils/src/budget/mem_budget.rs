@@ -16,7 +16,7 @@ pub struct MemoryBudget {
     // Should this set amt exceeded to 0 if `LimitReached` is reached?
     /// If the budget was exceeded at any point, this adds the overage to itself
     amt_exceeded: usize,
-    // /// If `None`, it means no overflow has ocurred yet
+    // /// If `None`, it means no overflow has occurred yet
     // /// If `Some`, the counter inside reflects how many times `amt_exceeded` reached an overflown value
     // ///
     // /// So, each incremental value represents usize::MAX being exceeded

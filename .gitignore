@@ -1,9 +1,11 @@
 # chrn_core
 chrn_core/target/
-chrn_core/Cargo.lock
+# chrn_core/Cargo.lock
 chrn_core/chrn_tests/gwop
 chrn_core/chrn_tests/blob.chrn
 chrn_core/chrn_tests/temp.chrn
+# Temp file for testing current UTF-8 panics
+chrn_core/chrn_tests/testmenow.tar
 
 # chrn_tools
 chrn_tools/target/
