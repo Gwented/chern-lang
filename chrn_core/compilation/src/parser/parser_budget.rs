@@ -32,6 +32,7 @@ impl ParserBudget {
     }
 
     pub(super) fn increase_node(&mut self) -> Result<(), ()> {
+        todo!("NOT DONE YET");
         match self.node_budget.consume(1) {
             BudgetResult::Stable => Ok(()),
             BudgetResult::Overage(_) | BudgetResult::LimitReached => Err(()),

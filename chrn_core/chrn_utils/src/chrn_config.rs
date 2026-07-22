@@ -25,17 +25,17 @@ impl ChrnConfig {
 }
 
 //TEST: Can't be const..
-// impl From<ChrnConfigBuilder> for ChrnConfig {
-//     fn from(builder: ChrnConfigBuilder) -> Self {
-//         let logger = if let Some(inner) = builder.logger {
-//             inner
-//         } else {
-//             ChrnConfigLogger::new(false)
-//         };
-//
-//         ChrnConfig { logger }
-//     }
-// }
+impl From<ChrnConfigBuilder> for ChrnConfig {
+    fn from(builder: ChrnConfigBuilder) -> Self {
+        let logger = if let Some(inner) = builder.logger {
+            inner
+        } else {
+            ChrnConfigLogger::new(false)
+        };
+
+        ChrnConfig { logger }
+    }
+}
 
 //TEST:
 pub struct ChrnConfigBuilder {

@@ -58,7 +58,8 @@ pub static SCOPE_COMPLEX_ENCODED_SCOPES: [ScopeType; 4] = [
 
 //WARN: Suspicious accessibility
 pub static SCOPE_LOCAL_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Local];
-pub static VAR_ONLY_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Var];
+pub static SCOPE_VAR_ONLY: [ScopeType; 1] = [ScopeType::Var];
+pub static SCOPE_NEST_ONLY: [ScopeType; 1] = [ScopeType::Nest];
 
 pub static SCOPE_REST_ACCESSIBLE: [ScopeType; 4] = [
     ScopeType::Neutral,
@@ -176,7 +177,8 @@ pub fn find_type_id(
         }
         // If it's core then it'll only have access to core anyways so this is fine
         ScopeLookupPattern::NoRestrictions | ScopeLookupPattern::NamespaceOnly => accessible_scopes,
-        ScopeLookupPattern::OnlyVar => &VAR_ONLY_ACCESSIBLE,
+        ScopeLookupPattern::OnlyVar => &SCOPE_VAR_ONLY,
+        ScopeLookupPattern::OnlyNest => &SCOPE_NEST_ONLY,
     };
     // I don't think this can fail. Should maybe expect for clarity.
     //     let scope = &compiler.scopes[scope_id.id].scope;
@@ -261,7 +263,8 @@ pub fn find_sym_id(
                 ScopeLookupPattern::NoRestrictions | ScopeLookupPattern::NamespaceOnly => {
                     accessible_scopes
                 }
-                ScopeLookupPattern::OnlyVar => &VAR_ONLY_ACCESSIBLE,
+                ScopeLookupPattern::OnlyVar => &SCOPE_VAR_ONLY,
+                ScopeLookupPattern::OnlyNest => &SCOPE_NEST_ONLY,
             };
 
             for allowed_scope_type in accessible_scopes.iter() {
@@ -549,7 +552,10 @@ pub enum ScopeLookupPattern {
     /// Restricts lookup to only search what is within the given namespace, which restricts modules
     /// such as core, or anything not declared within the symbol's scope containment?
     NamespaceOnly,
-    /// Lookup that not only allows for var to be searched, but also enforces it's the only section
+    /// Lookup that not only allows for `nest` to be searched, but also enforces it's the only section
+    /// that can be searched
+    OnlyNest,
+    /// Lookup that not only allows for `var` to be searched, but also enforces it's the only section
     /// that can be searched
     OnlyVar,
 }

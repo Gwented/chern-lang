@@ -67,7 +67,27 @@ impl Formattable for Keyword {
 }
 
 impl Keyword {
-    pub fn is_sect(&self) -> bool {
+    fn name_id(self) -> InternedId {
+        let id = match self {
+            Keyword::Struct => intern::INTERNED_STRUCT,
+            Keyword::Enum => intern::INTERNED_ENUM,
+            Keyword::Import => intern::INTERNED_IMPORT,
+            Keyword::Export => intern::INTERNED_EXPORT,
+            Keyword::Bind => intern::INTERNED_BIND,
+            Keyword::Alias => intern::INTERNED_ALIAS,
+            Keyword::Let => intern::INTERNED_LET,
+            Keyword::Change => intern::INTERNED_CHANGE,
+            Keyword::As => intern::INTERNED_AS,
+            Keyword::Var => intern::INTERNED_VAR,
+            Keyword::Nest => intern::INTERNED_NEST,
+            Keyword::Complex => intern::INTERNED_COMPLEX,
+            Keyword::Override => intern::INTERNED_OVERRIDE,
+            Keyword::In => intern::INTERNED_IN,
+        };
+        InternedId::new(id)
+    }
+
+    pub fn is_sect(self) -> bool {
         match self {
             Keyword::Var | Keyword::Nest | Keyword::Complex | Keyword::Override => true,
             _ => false,
@@ -102,7 +122,6 @@ impl Keyword {
         if !stmt_range().contains(&(interned_id.id as usize)) {
             return None;
         }
-
         Keyword::try_from_interned_id(interned_id)
     }
 }

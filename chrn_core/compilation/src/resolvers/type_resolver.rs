@@ -20,7 +20,7 @@ use crate::lookup::scopes::{
     self, AssociatedScopeKind, ScopeLookupPattern, ScopeType, SymbolLookupOutput,
 };
 use crate::parser::ast::ast_concepts::{
-    AbstractConfig, AbstractDirective, AbstractOptionAssignment, AbstractParam,
+    AbstractConfig, AbstractConfigKind, AbstractDirective, AbstractOptionAssignment, AbstractParam,
 };
 use crate::parser::ast::ast_exprs::{Expr, PathSegment, SpannedExpr};
 use crate::resolvers::resolver_env::ResolverEnv;
@@ -28,8 +28,8 @@ use crate::resolvers::resolver_state::ResolverState;
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::evaluator::UnaryOpResult;
 use crate::semantic::hir::hir_concepts::{
-    ComplexConfigMemberMetadata, ConfigDefMember, MemberSymbolKind, OptionAssignmentMember,
-    OptionAssignmentRoot, VariableState,
+    ComplexConfigMemberMetadata, ConfigDefMember, ConfigMemberMetadataKind, MemberSymbolKind,
+    OptionAssignmentMember, OptionAssignmentRoot, VariableState,
 };
 use crate::semantic::hir::hir_concepts::{Symbol, SymbolKind, SymbolOrigin, VarDef};
 use crate::semantic::hir::hir_concepts::{Type, TypeInfo};
@@ -409,6 +409,9 @@ impl<'res> TypeResolver<'res> {
         Ok(())
     }
 
+    //TODO: When override is done add it's routing to this. Please.
+    //
+    //
     // The lifetime used here is needed so that the vectors that are pushed into during the recursive
     // maintaining of seen identifiers know that their shortest lifetime is more than long enough to
     // where the borrow cheker is satisfied.
@@ -432,7 +435,7 @@ impl<'res> TypeResolver<'res> {
             scopes::find_sym_id(
                 self.compiler,
                 associated_scope,
-                abs_cfg_root.name_id,
+                abs_cfg_root.name_id(),
                 scope_type,
                 // The config itself chooses it's lookup since it may is `OnlyVar` as specified in
                 // `parser.rs`
@@ -446,7 +449,7 @@ impl<'res> TypeResolver<'res> {
             // Options are checked for validity after this so returning `None` here is fine. But
             // this still does terminate eventually since a config's member's cannot be sarched
             // without an actual member holding symbol.
-            let name = self.interner.search(abs_cfg_root.name_id);
+            let name = self.interner.search(abs_cfg_root.name_id());
             let core_msg = format!(
                 //TODO: Need to store scope type or some scope metadata or some conversion
                 "Could not find `{name}` in `{:?}` searchable scopes",
@@ -472,7 +475,7 @@ impl<'res> TypeResolver<'res> {
         // I believe this was talking about "def::Other {}" where it's using complex scoped static
         // access as the config root
 
-        // Re-used vector to track duplicated identifiers for options
+        // Re-used vector to track duplicated identifiers for options across recursive levels
         let mut seen_opt_vec: Vec<&'res AbstractOptionAssignment> = Vec::new();
         for abs_opt in &abs_cfg_root.opt_assignments {
             seen_opt_vec.push(abs_opt);
@@ -615,7 +618,8 @@ impl<'res> TypeResolver<'res> {
             let member_id = match member_lookup::lookup_member(
                 self.compiler,
                 found_type_id,
-                abs_inner_cfg.name_id,
+                //TODO: CHANGE THIS
+                abs_inner_cfg.name_id(),
                 MemberScopeLookupPattern::NoRestrictions,
             ) {
                 // These are split so that the theoretical ok and err paths are able to reduce
@@ -682,10 +686,10 @@ impl<'res> TypeResolver<'res> {
                             let name_id = if abs_cfg_root.lookup_pattern
                                 == ScopeLookupPattern::NamespaceOnly
                             {
-                                abs_cfg_root.name_id
+                                abs_cfg_root.name_id()
                             } else {
                                 // TODO: Needs change
-                                abs_cfg_root.name_id
+                                abs_cfg_root.name_id()
                             };
 
                             let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
@@ -693,7 +697,7 @@ impl<'res> TypeResolver<'res> {
                                     name_id,
                                     abs_cfg_root.name_span,
                                 ),
-                                member: abs_inner_cfg.name_id,
+                                member: abs_inner_cfg.name_id(),
                             });
 
                             // List available members?
@@ -767,9 +771,9 @@ impl<'res> TypeResolver<'res> {
                 // Since this iteration specifically checks if the current was declared after the
                 // last and the iteration terminates upon the first match, this correctly points at
                 // the original field for all duplicates.
-                .find(|(other_i, cfg)| *other_i < i && current_cfg.name_id == cfg.name_id)
+                .find(|(other_i, cfg)| *other_i < i && current_cfg.name_id() == cfg.name_id())
             {
-                let dup_name = self.interner.search(current_cfg.name_id);
+                let dup_name = self.interner.search(current_cfg.name_id());
 
                 let orig_span = original_cfg.name_span;
                 let current_cfg_span = current_cfg.name_span;
@@ -798,15 +802,17 @@ impl<'res> TypeResolver<'res> {
 
         let cfg_root = self.compiler.get_cfg_def_mut(parent_sym_id);
 
+        debug_assert!(matches!(abs_cfg_root.kind, AbstractConfigKind::Root(_)));
         debug_assert_eq!(cfg_root.linked_sym_id, None);
         debug_assert_eq!(cfg_root.opt_assignments.len(), 0);
         debug_assert_eq!(cfg_root.cfg_members.len(), 0);
         debug_assert!(matches!(
             cfg_root.lookup_pattern,
-            ScopeLookupPattern::NamespaceOnly | ScopeLookupPattern::OnlyVar
+            ScopeLookupPattern::NamespaceOnly
+                | ScopeLookupPattern::OnlyVar
+                | ScopeLookupPattern::OnlyNest
         ));
 
-        // #!/user/bin/bash
         cfg_root.linked_sym_id = Some(found_sym_id);
         cfg_root.opt_assignments = opt_assignment_roots;
         cfg_root.cfg_members = cfg_def_members;
@@ -839,37 +845,14 @@ impl<'res> TypeResolver<'res> {
             .members
             .push(MemberSymbolKind::Unknown(current_cfg_member_id));
 
+        //TODO: MAKE THIS, UM, NOT THIS. LOOKS BAD.
+        // THIS IS PROBABLY NOT GOING TO BE THAT BAD SINCE OVERRIDE WOULD HAVE AN ENTIRELY
+        // DIFFERENT PROCESS FOR HOW IT CONSUMES DATA. I AM SCARED.
+
         //NOTE: How do we account for override?
         // Override doens't exist yet, but maybe, override has it's own specific method of
         // resolution, which makes the check make sense because it ONLY fails if it wasn't delegated
         // override, since override wouldn't account for depth.
-
-        // Enforcing nesting rules for complex
-        // So, "Point=>x" is fine and only hits depth 1,but "Point=>x=>inner" is an error because
-        // complex scope configs cannot configure an inner that is that deep, unless it's override.
-        // Override as in, "Point=>x=>override {}"
-        // if scope_type == ScopeType::Complex && depth == 2 {
-        //     // Make this less confusing sounding
-        //     let core_msg = "Nesting level too deep for `complex` scope config".into();
-        //     let cfg_root = self.compiler.get_cfg_def_root(root_parent_sym_id);
-        //
-        //     // Are we really going to add history for the sake of maintaining span info for this one
-        //     // error message that happens to need it?
-        //     let builder =
-        //         SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-        //             .add_annotation(
-        //                 parent_abs_cfg.name_span,
-        //                 AnnotationKind::Primary,
-        //                 "Two level nesting".to_string().into(),
-        //             )
-        //             .add_annotation(
-        //                 cfg_root.name_span,
-        //                 AnnotationKind::Secondary,
-        //                 "One level nesting".to_string().into(),
-        //             );
-        //     self.diags.push(builder.build());
-        //     return current_cfg_member_id;
-        // }
 
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
@@ -965,6 +948,24 @@ impl<'res> TypeResolver<'res> {
         // Clearing for cfg members to use for their options
         seen_opt_vec.clear();
 
+        // match &parent_abs_cfg.kind {
+        //     AbstractConfigKind::Member(cfg_meta_kind) => match cfg_meta_kind {
+        //         ConfigMemberMetadataKind::Complex(complex_meta) => {
+        //             todo!("Delegate me if needed")
+        //         }
+        //         ConfigMemberMetadataKind::Override(override_meta) => {
+        //             todo!("Route me")
+        //         }
+        //     },
+        //     // We are in a member context so this would only be reached if the parser itself
+        //     // wrongfully assigned a root, as a member.
+        //     //
+        //     // This is a property associated with the fact that the root, and config members from
+        //     // complex and override all encode themselves into one singular ast structure. Which may
+        //     // change.
+        //     AbstractConfigKind::Root(_) => unreachable!(),
+        // }
+
         // len() to truncate from `seen_cfg_member`
         let mut seen_cfg_len = seen_cfg_vec.len();
         // So that it knows where to start slicing up to len
@@ -1031,204 +1032,223 @@ impl<'res> TypeResolver<'res> {
             }
 
             for abs_cfg_member in &parent_abs_cfg.cfg_members {
-                // -- DEPTH HANDLING START --
-                // If the scope is complex, it's not override (which is an exception for deeper
-                // nesting in complex), and depth + 1 is 2 then err.
-                //
-                // This is handled in this specific context on purpose. If this were handled AFTER
-                // recursively going deeper instead of + 1, it would lose spanning information for
-                // the actual useful context to point at, and implementing history is likely not
-                // worth it to report one error.
-                if scope_type == ScopeType::Complex
-                    // This needs semantics not based on the identifier itself.
-                    && abs_cfg_member.name_id.id != intern::INTERNED_OVERRIDE
-                    && depth + 1 == lang::MAX_CFG_NESTING_LEVEL
-                {
-                    // Is this confusing?
-                    // Maybe from the perspective of ownership this could make more sense?
-                    let core_msg =
-                        "Nesting level of 2 is too deep for `complex` scope config context".into();
-                    let cfg_root = self.compiler.get_cfg_def_root(root_parent_sym_id);
+                let AbstractConfigKind::Member(inner_kind) = abs_cfg_member.kind.clone() else {
+                    panic!("Wrong member assignment");
+                };
 
-                    // Are we really going to add history for the sake of maintaining span info for this one
-                    // error message that happens to need it?
-                    let builder = SourceDiagnostic::builder(
-                        DiagnosticLevel::Error,
-                        core_msg,
-                        env.region.path_id,
-                    )
-                    // Pointing first nesting point
-                    .add_annotation(
-                        parent_abs_cfg.name_span,
-                        AnnotationKind::Secondary,
-                        "One level nesting".to_string().into(),
-                    )
-                    // Pointing to root
-                    .add_annotation(
-                        cfg_root.name_span,
-                        AnnotationKind::Secondary,
-                        "Root".to_string().into(),
-                    )
-                    // Pointing second nesting point
-                    .add_annotation(
-                        abs_cfg_member.name_span,
-                        AnnotationKind::Primary,
-                        "Two level nesting is too deep".to_string().into(),
-                    )
-                    // Is this ok to add?
-                    // It's hard to tell what information to add since we have the type name and
-                    // could point out just making a different top level config for it but - !{}}}
-                    // Ok maybe that should happen
-                    .add_help(
-                        "Prefer defining another config root instead (See docs for more info)"
-                            .into(),
-                    );
-                    self.diags.push(builder.build());
-                    // Breaks instead of returning so that the present information about the current
-                    // member can still be returned.
-                    break;
-                }
-
-                // -- DEPTH HANDLING END --
                 seen_cfg_len += 1;
                 seen_cfg_vec.push(abs_cfg_member);
 
-                let member_id = match member_lookup::lookup_member(
-                    self.compiler,
-                    parent_type_id,
-                    abs_cfg_member.name_id,
-                    MemberScopeLookupPattern::NoRestrictions,
-                ) {
-                    // These are split so that the theoretical ok and err paths are able to reduce
-                    // boilerplate where needed
-                    MemberLookupResult::Found(mem_id) => mem_id,
-                    lookup_res => {
-                        // For if something like an impossible member access is attempted, where it
-                        // would duplicate diagnostics if there are more `ConfigDefMember`s associated
-                        // with the current config member.
-                        let mut should_break = false;
+                //Complex
+                let member_id = if inner_kind.is_complex() {
+                    // -- DEPTH HANDLING START --
+                    // If the scope is complex, it's not override (which is an exception for deeper
+                    // nesting in complex), and depth + 1 is 2 then err.
+                    //
+                    // This is handled in this specific context on purpose. If this were handled AFTER
+                    // recursively going deeper instead of + 1, it would lose spanning information for
+                    // the actual useful context to point at, and implementing history is likely not
+                    // worth it to report one error.
 
-                        let parent_member_fmtted_ty = Type::to_fmt(self.compiler, parent_type_id);
+                    // If the CURRENT config member, is NOT using override semantics, account for
+                    // nesting depth.
+                    //TODO: Maybe make this a method
+                    if depth + 1 == lang::CFG_MAX_COMPLEX_NEST_LEVEL {
+                        // Is this confusing?
+                        // Maybe from the perspective of ownership this could make more sense?
+                        let core_msg =
+                            "Nesting level of 2 is too deep for `complex` scope config context"
+                                .into();
+                        let cfg_root = self.compiler.get_cfg_def_root(root_parent_sym_id);
 
-                        //WARN: COMPLEX SPAN ROUTING FOR ALL OF THESE SO COULD NEED ALTERING
-                        let src_diag = match lookup_res {
-                            MemberLookupResult::ImpossibleTypeMemberAccess(type_id) => {
-                                should_break = true;
-
-                                // NOTE: These cannot be defined earlier because not all lookups have
-                                // the same guarantees
-                                //
-                                let parent_member_span = self
-                                    .compiler
-                                    .get_span_from_member_id(parent_member_id)
-                                    .expect("NOT DONE YET");
-
-                                let preset_err = PresetErr::Lookup(
-                                    LookupError::ImpossibleTypeMemberAccess(SpannedContainer::new(
-                                        Type::to_fmt(self.compiler, type_id),
-                                        parent_member_span,
-                                    )),
-                                );
-
-                                preset_reporter::create_diag_builder_preset(
-                                    preset_err,
-                                    env.region,
-                                    self.cfg,
-                                    self.interner,
-                                )
-                                .add_annotation(
-                                    parent_abs_cfg.name_span,
-                                    AnnotationKind::Secondary,
-                                    format!("Is type `{parent_member_fmtted_ty}`").into(),
-                                )
-                                .add_annotation(
-                                    abs_cfg_member.name_span,
-                                    AnnotationKind::Secondary,
-                                    "Impossible member access".to_string().into(),
-                                )
-                                //TODO:
-                                .build()
-                            }
-                            MemberLookupResult::MemberNotFoundInType(type_id) => {
-                                //WARN: I BELIEVE this is fine because for this lookup result to be reached,
-                                // that would mean the type found CAN hold members, but it just didn't
-                                // have the identifier specified, which means it must be a symbol of
-                                // some kind.
-
-                                // Start of type declaration info
-                                let ty_sym_id = self
-                                    .compiler
-                                    .get_sym_id_from_type_id(type_id)
-                                    .expect("NOT DONE YET");
-
-                                // May change depending on if structural types are compiler built-in to
-                                // where they don't have an innate attached span anymore.
-                                let ty_name_id = self.compiler.symbols[ty_sym_id].name_id;
-                                let ty_span = self
-                                    .compiler
-                                    .get_span_from_type_id(type_id)
-                                    .expect("NOT DONE YET");
-                                // End of type declaration info
-
-                                let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
-                                    sp_parent_ty: SpannedContainer::new(
-                                        ty_name_id,
-                                        parent_abs_cfg.name_span,
-                                    ),
-                                    member: abs_cfg_member.name_id,
-                                });
-
-                                //TODO: RECURSIVELY TRACKING ENDS UP HERE FIX SHOULD BE APPLIED HERE IF
-                                //NEEDED
-
-                                // List available members?
-                                preset_reporter::create_diag_builder_preset(
-                                    preset_err,
-                                    env.region,
-                                    self.cfg,
-                                    self.interner,
-                                )
-                                .add_annotation(
-                                    //WARN: WAS  parent_ty_span
-                                    ty_span,
-                                    AnnotationKind::Secondary,
-                                    format!("{} defined here", parent_member_fmtted_ty).into(),
-                                )
-                                .add_annotation(
-                                    abs_cfg_member.name_span,
-                                    AnnotationKind::Secondary,
-                                    "Searched for this member".to_string().into(),
-                                )
-                                .build()
-                            }
-                            MemberLookupResult::Unknown(_) => {
-                                // NOTE: This is skipped right now because this will emit
-                                // incomprehensive errors deterministically. If the member parent is
-                                // unknown, and some random config member like "l" was typed, that would
-                                // make this emit `Type is not known` when "l" is just a random identifier.
-                                //
-                                // let core_msg = "Type is not known".to_string();
-                                // SourceDiagnostic::builder(
-                                //     DiagnosticLevel::Error,
-                                //     core_msg,
-                                //     env.region.path_id,
-                                // )
-                                // .add_annotation(abs_cfg_member.name_span, AnnotationKind::Primary, None)
-                                // .build()
-                                continue;
-                            }
-                            MemberLookupResult::Found(_) => unreachable!(),
-                        };
-
-                        self.diags.push(src_diag);
-
-                        if should_break {
-                            break;
-                        }
-
-                        continue;
+                        // Are we really going to add history for the sake of maintaining span info for this one
+                        // error message that happens to need it?
+                        let builder = SourceDiagnostic::builder(
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            env.region.path_id,
+                        )
+                        // Pointing first nesting point
+                        .add_annotation(
+                            parent_abs_cfg.name_span,
+                            AnnotationKind::Secondary,
+                            "One level nesting".to_string().into(),
+                        )
+                        // Pointing to root
+                        .add_annotation(
+                            cfg_root.name_span,
+                            AnnotationKind::Secondary,
+                            "Root".to_string().into(),
+                        )
+                        // Pointing second nesting point
+                        .add_annotation(
+                            abs_cfg_member.name_span,
+                            AnnotationKind::Primary,
+                            "Two level nesting is too deep".to_string().into(),
+                        )
+                        // Is this ok to add?
+                        // It's hard to tell what information to add since we have the type name and
+                        // could point out just making a different top level config for it but - !{}}}
+                        // Ok maybe that should happen
+                        .add_help(
+                            "Prefer defining another config root instead (See docs for more info)"
+                                .into(),
+                        );
+                        self.diags.push(builder.build());
+                        // Breaks instead of returning so that the present information about the current
+                        // member can still be returned.
+                        break;
                     }
+                    // -- DEPTH CHECK END --
+
+                    match member_lookup::lookup_member(
+                        self.compiler,
+                        parent_type_id,
+                        abs_cfg_member.name_id(),
+                        MemberScopeLookupPattern::NoRestrictions,
+                    ) {
+                        // These are split so that the theoretical ok and err paths are able to reduce
+                        // boilerplate where needed
+                        MemberLookupResult::Found(mem_id) => mem_id,
+                        lookup_res => {
+                            // For if something like an impossible member access is attempted, where it
+                            // would duplicate diagnostics if there are more `ConfigDefMember`s associated
+                            // with the current config member.
+                            let mut should_break = false;
+
+                            let parent_member_fmtted_ty =
+                                Type::to_fmt(self.compiler, parent_type_id);
+
+                            //WARN: COMPLEX SPAN ROUTING FOR ALL OF THESE SO COULD NEED ALTERING
+                            let src_diag = match lookup_res {
+                                MemberLookupResult::ImpossibleTypeMemberAccess(type_id) => {
+                                    should_break = true;
+
+                                    // NOTE: These cannot be defined earlier because not all lookups have
+                                    // the same guarantees
+                                    //
+                                    let parent_member_span = self
+                                        .compiler
+                                        .get_span_from_member_id(parent_member_id)
+                                        .expect("NOT DONE YET");
+
+                                    let preset_err =
+                                        PresetErr::Lookup(LookupError::ImpossibleTypeMemberAccess(
+                                            SpannedContainer::new(
+                                                Type::to_fmt(self.compiler, type_id),
+                                                parent_member_span,
+                                            ),
+                                        ));
+
+                                    preset_reporter::create_diag_builder_preset(
+                                        preset_err,
+                                        env.region,
+                                        self.cfg,
+                                        self.interner,
+                                    )
+                                    .add_annotation(
+                                        parent_abs_cfg.name_span,
+                                        AnnotationKind::Secondary,
+                                        format!("Is type `{parent_member_fmtted_ty}`").into(),
+                                    )
+                                    .add_annotation(
+                                        abs_cfg_member.name_span,
+                                        AnnotationKind::Secondary,
+                                        "Impossible member access".to_string().into(),
+                                    )
+                                    //TODO:
+                                    .build()
+                                }
+                                MemberLookupResult::MemberNotFoundInType(type_id) => {
+                                    //WARN: I BELIEVE this is fine because for this lookup result to be reached,
+                                    // that would mean the type found CAN hold members, but it just didn't
+                                    // have the identifier specified, which means it must be a symbol of
+                                    // some kind.
+
+                                    // Start of type declaration info
+                                    let ty_sym_id = self
+                                        .compiler
+                                        .get_sym_id_from_type_id(type_id)
+                                        .expect("NOT DONE YET");
+
+                                    // May change depending on if structural types are compiler built-in to
+                                    // where they don't have an innate attached span anymore.
+                                    let ty_name_id = self.compiler.symbols[ty_sym_id].name_id;
+                                    let ty_span = self
+                                        .compiler
+                                        .get_span_from_type_id(type_id)
+                                        .expect("NOT DONE YET");
+                                    // End of type declaration info
+
+                                    let preset_err =
+                                        PresetErr::Lookup(LookupError::MemberNotFound {
+                                            sp_parent_ty: SpannedContainer::new(
+                                                ty_name_id,
+                                                parent_abs_cfg.name_span,
+                                            ),
+                                            member: abs_cfg_member.name_id(),
+                                        });
+
+                                    //TODO: RECURSIVELY TRACKING ENDS UP HERE FIX SHOULD BE APPLIED HERE IF
+                                    //NEEDED
+
+                                    // List available members?
+                                    preset_reporter::create_diag_builder_preset(
+                                        preset_err,
+                                        env.region,
+                                        self.cfg,
+                                        self.interner,
+                                    )
+                                    .add_annotation(
+                                        //WARN: WAS  parent_ty_span
+                                        ty_span,
+                                        AnnotationKind::Secondary,
+                                        format!("{} defined here", parent_member_fmtted_ty).into(),
+                                    )
+                                    .add_annotation(
+                                        abs_cfg_member.name_span,
+                                        AnnotationKind::Secondary,
+                                        "Searched for this member".to_string().into(),
+                                    )
+                                    .build()
+                                }
+                                MemberLookupResult::Unknown(_) => {
+                                    // NOTE: This is skipped right now because this will emit
+                                    // incomprehensive errors deterministically. If the member parent is
+                                    // unknown, and some random config member like "l" was typed, that would
+                                    // make this emit `Type is not known` when "l" is just a random identifier.
+                                    //
+                                    // let core_msg = "Type is not known".to_string();
+                                    // SourceDiagnostic::builder(
+                                    //     DiagnosticLevel::Error,
+                                    //     core_msg,
+                                    //     env.region.path_id,
+                                    // )
+                                    // .add_annotation(abs_cfg_member.name_span, AnnotationKind::Primary, None)
+                                    // .build()
+                                    continue;
+                                }
+                                MemberLookupResult::Found(_) => unreachable!(),
+                            };
+
+                            self.diags.push(src_diag);
+
+                            if should_break {
+                                break;
+                            }
+
+                            continue;
+                        }
+                    }
+                    //Override
+                } else {
+                    panic!("We'll see");
                 };
+
+                dbg!(self.interner.search(abs_cfg_member.name_id()));
+                dbg!(inner_kind.is_complex());
+
+                // -- DEPTH HANDLING END --
 
                 let cfg_member_id = self.resolve_cfg_member(
                     root_parent_sym_id,
@@ -1265,9 +1285,9 @@ impl<'res> TypeResolver<'res> {
                 // Since this iteration specifically checks if the current was declared after the
                 // last and the iteration terminates upon the first match, this correctly points at
                 // the original field for all duplicates.
-                .find(|(other_i, cfg)| *other_i < i && current_cfg.name_id == cfg.name_id)
+                .find(|(other_i, cfg)| *other_i < i && current_cfg.name_id() == cfg.name_id())
             {
-                let dup_name = self.interner.search(current_cfg.name_id);
+                let dup_name = self.interner.search(current_cfg.name_id());
 
                 let orig_span = original_cfg.name_span;
                 let current_cfg_span = current_cfg.name_span;
@@ -1294,15 +1314,16 @@ impl<'res> TypeResolver<'res> {
             }
         }
 
-        // Final step of creating the actual config member
-        // let current_cfg_member_id = MemberId::new(self.compiler.members.len() as u32);
+        // Final step of assigning the actual config member
+        let AbstractConfigKind::Member(kind) = parent_abs_cfg.kind.clone() else {
+            panic!("Wrong member assignment");
+        };
 
         let cfg_member = ConfigDefMember::new(
-            parent_abs_cfg.name_id,
             parent_abs_cfg.name_span,
             current_cfg_member_id,
             parent_member_id,
-            todo!("Hi"),
+            kind,
             opt_assignments,
             parent_abs_cfg.lookup_pattern,
             cfg_members,
@@ -1310,10 +1331,6 @@ impl<'res> TypeResolver<'res> {
 
         self.compiler.members[current_cfg_member_id] =
             MemberSymbolKind::ConfigDefMember(cfg_member);
-
-        // self.compiler
-        //     .members
-        //     .push(MemberSymbolKind::ConfigDefMember(cfg_member));
 
         // Always returns a `ConfigDefMember` no matter how broken since diagnostics are already pushed
         current_cfg_member_id

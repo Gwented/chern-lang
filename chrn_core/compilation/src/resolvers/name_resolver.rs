@@ -6,6 +6,7 @@ use chrn_utils::{
         DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind,
     },
 };
+use lang::keywords::Keyword;
 
 use crate::{
     lookup::scopes::{Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
@@ -111,6 +112,7 @@ impl NamespaceResolver<'_> {
     // - If a symbol with the same identifier as another is in the same scope, it overwrites the last symbol
     // and pushes the diagnostic
 
+    // FIX: Should assert that the name id is some, semantically. Should cover this in tests.
     fn register_config_root(
         &mut self,
         abs_cfg: &AbstractConfig,
@@ -121,7 +123,9 @@ impl NamespaceResolver<'_> {
         debug_assert!(
             matches!(
                 abs_cfg.lookup_pattern,
-                ScopeLookupPattern::NamespaceOnly | ScopeLookupPattern::OnlyVar
+                ScopeLookupPattern::NamespaceOnly
+                    | ScopeLookupPattern::OnlyVar
+                    | ScopeLookupPattern::OnlyNest
             ),
             "Either configuration of `abs_cfg` was done wrong or a core language change did not update this assertion.\nExpected `ScopeLookupPattern::NoRestrictions/OnlyVar`, found {:?}",
             abs_cfg.lookup_pattern
@@ -137,10 +141,10 @@ impl NamespaceResolver<'_> {
         // If an original exists, get the key so that it can be reported, otherwise insert it. This
         // is to avoid inserting first and overwriting the last symbol since ergonomically, it
         // probably makes more sense to keep the original for scope searching to fall-back to.
-        let orig_sym_opt = if let Some(original) = table.interned_to_sym.get(&abs_cfg.name_id) {
+        let orig_sym_opt = if let Some(original) = table.interned_to_sym.get(&abs_cfg.name_id()) {
             Some(*original)
         } else {
-            table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
+            table.interned_to_sym.insert(abs_cfg.name_id(), sym_id);
             None
         };
 
@@ -149,7 +153,7 @@ impl NamespaceResolver<'_> {
 
         let cfg_def = ConfigDefRoot::new(
             sym_id,
-            abs_cfg.name_id,
+            abs_cfg.name_id(),
             abs_cfg.name_span,
             cfg_id,
             None,
@@ -159,7 +163,7 @@ impl NamespaceResolver<'_> {
         );
 
         let sym = Symbol::new(
-            abs_cfg.name_id,
+            abs_cfg.name_id(),
             sym_id,
             Some(ast_id),
             SymbolOrigin::Module(env.current_mod),

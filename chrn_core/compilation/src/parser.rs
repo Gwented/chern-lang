@@ -6,11 +6,11 @@ mod parser_budget;
 mod parser_state;
 
 use crate::lexer::token::{SpannedToken, Token, TokenKind};
-use crate::lookup::scopes::ScopeLookupPattern;
+use crate::lookup::scopes::{ScopeLookupPattern, ScopeType};
 use crate::parser::ast::ast_concepts::{
-    AbstractAlias, AbstractConfig, AbstractDirective, AbstractEnum, AbstractMemberAccess,
-    AbstractOptionAssignment, AbstractParam, AbstractStruct, AbstractTypeDef, AbstractVar,
-    AbstractVariant, AstInfo, BinaryOp, Item, SectionKind, Unary, UnaryOp,
+    AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDirective, AbstractEnum,
+    AbstractMemberAccess, AbstractOptionAssignment, AbstractParam, AbstractStruct, AbstractTypeDef,
+    AbstractVar, AbstractVariant, AstInfo, BinaryOp, Item, SectionKind, Unary, UnaryOp,
 };
 
 use crate::parser::ast::ast_exprs::{
@@ -20,8 +20,9 @@ use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::ParserContext;
 use crate::parser::parser_budget::ParserBudget;
 use crate::parser::parser_state::ParserState;
+use crate::semantic::hir::hir_concepts::{ComplexConfigMemberMetadata, ConfigMemberMetadataKind};
 use chrn_utils::chrn_config::ChrnConfig;
-use chrn_utils::id_types::SpannedContainer;
+use chrn_utils::id_types::{InternedId, SpannedContainer};
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
 use chrn_utils::source_map::source_region::SourceRegion;
@@ -264,7 +265,9 @@ pub fn parse(
                             break;
                         }
 
-                        if let Ok(abs_cfg) = parse_cfg_expr(&mut ctx, &budget, interner) {
+                        if let Ok(abs_cfg) =
+                            parse_cfg_expr(&mut ctx, &budget, true, ScopeType::Complex, interner)
+                        {
                             ast_info.push_item(SectionKind::Complex, Item::Config(abs_cfg));
                         }
                     }
@@ -313,7 +316,11 @@ pub fn parse(
                             break;
                         }
 
-                        _ = parse_override_sect(&mut ctx, interner);
+                        if let Ok(abs_cfg) =
+                            parse_cfg_expr(&mut ctx, &budget, true, ScopeType::Override, interner)
+                        {
+                            ast_info.push_item(SectionKind::Complex, Item::Config(abs_cfg));
+                        }
                     }
                 }
                 _ => {
@@ -649,37 +656,27 @@ fn parse_nest_sect(
 
 //TODO: Better complex branching tracking so that help messages can be made
 //
-//No other branches exist right now so it just parses expecting uh, stuff.
+// Maybe, separate config and override structures. Maybe.
+// We'll see :(
 fn parse_cfg_expr(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
+    // It's only one depth so just reflecting it with one T/F state
+    is_root: bool,
+    scope_type: ScopeType,
     interner: &Intern,
 ) -> Result<AbstractConfig, Token> {
+    let _guard = budget.increase_depth();
+    // Oh wow this looks great
+    //
     // If the prefix is something like "var x {}" then it for this special case allows for another
     // section to lookup var
-    let lookup_pattern = if ctx.peek_tok() == Token::Keyword(Keyword::Var) {
-        ctx.advance_tok();
-        ScopeLookupPattern::OnlyVar
-    } else {
-        // By default
-        // Is this an ok pattern to use for this config context?
-        ScopeLookupPattern::NamespaceOnly
-    };
-
-    let name_span = ctx.peek_span();
-
-    let name_id = ctx.expect_id_verbose(
-        TokenKind::Id,
-        "Expected an identifier to define configuration for, found ",
-        "",
-        Branch::Section(SectionBranch::Complex),
-        interner,
-    )?;
+    let (lookup_pat, name_span, kind) = handle_cfg_metadata(ctx, is_root, scope_type, interner)?;
 
     // Allows for "=>" to notify that
     if ctx.peek_tok() != Token::OCurlyBracket && ctx.peek_tok() != Token::NotSlimArrow {
         ctx.report_verbose(
-            "Expected a '{' block or '=>' to define configuration expression, found ",
+            "Expected a '{' block or '=>' to define config, found ",
             Branch::Section(SectionBranch::Complex),
             interner,
         );
@@ -688,7 +685,10 @@ fn parse_cfg_expr(
 
     //TODO: Unit tests
 
-    // catching state1=>state2=>state3 {} syntax sgogger
+    // Catching state1=>state2=>state3 {} syntax SHORTENING (Different)
+    //
+    // Is ok to advance() since last check ensures that it must be either an arrow or CCurly, but we
+    // only care about the arrow here
     let used_arrow = ctx.advance_tok() == Token::NotSlimArrow;
 
     let mut option_assignments: Vec<AbstractOptionAssignment> = Vec::new();
@@ -699,14 +699,18 @@ fn parse_cfg_expr(
             // for "cases = [snake_case]"
             let option_assignment = parse_option_assignment(ctx, budget, interner)?;
             option_assignments.push(option_assignment);
-        // } else if ctx.peek_ahead(1).tok == Token::NotSlimArrow {
-        //     // "=>" just means fill out empty config and continue looping
-        } else if ctx.peek_kind() == TokenKind::Id {
+        } else if ctx.peek_kind() == TokenKind::Id
+            // "nest/override {}" can be used so we need to catch those semantic identifiers
+            || ctx.peek_tok() == Token::Keyword(Keyword::Override)
+            || ctx.peek_tok() == Token::Keyword(Keyword::Nest)
+        {
             // for "inner {/*assignments*/}"
-            let abs_cfg = parse_cfg_expr(ctx, budget, interner)?;
+            let abs_cfg = parse_cfg_expr(ctx, budget, false, scope_type, interner)?;
             inner_field_cfg.push(abs_cfg);
         } else {
             // If no consumable token for this branch is seen
+            //
+            // To prevent looking for matching "}" when "=>" syntax was used
             if !used_arrow {
                 ctx.expect_verbose(
                     TokenKind::CCurlyBracket,
@@ -721,13 +725,77 @@ fn parse_cfg_expr(
         }
     }
 
+    // Might have to separate these, parent and member.
     Ok(AbstractConfig::new(
-        name_id,
         name_span,
-        lookup_pattern,
+        kind,
+        lookup_pat,
         option_assignments,
         inner_field_cfg,
     ))
+}
+
+/// Helper for handling metadata for the different semantic versions of a config.
+/// The config can be, a root, complex( with name or with semantic override meaning ),
+/// override (Not done yet)
+///
+/// On `Ok`: Returns (ADDRESS ME)
+fn handle_cfg_metadata(
+    ctx: &mut ParserContext,
+    is_root: bool,
+    scope_type: ScopeType,
+    interner: &Intern,
+) -> Result<
+    // I KNOW THIS LOOKS BAD. WAIT.
+    (ScopeLookupPattern, SourceSpan, AbstractConfigKind),
+    Token,
+> {
+    if is_root {
+        // Only keywords valid for root usage
+        let pat = if ctx.peek_tok() == Token::Keyword(Keyword::Var) {
+            ctx.advance_tok();
+            ScopeLookupPattern::OnlyVar
+        } else if ctx.peek_tok() == Token::Keyword(Keyword::Nest) {
+            ctx.advance_tok();
+            ScopeLookupPattern::OnlyNest
+        } else {
+            ScopeLookupPattern::NamespaceOnly
+        };
+        let name_span = ctx.peek_span();
+        let name_id = ctx.expect_id_verbose(
+            TokenKind::Id,
+            "Expected an identifier to define configuration for, found ",
+            "",
+            Branch::Section(SectionBranch::Complex),
+            interner,
+        )?;
+        Ok((pat, name_span, AbstractConfigKind::Root(name_id)))
+    } else {
+        // If !root
+
+        let name_span = ctx.peek_span();
+        let meta = if ctx.peek_tok() == Token::Keyword(Keyword::Override) {
+            ConfigMemberMetadataKind::Complex(ComplexConfigMemberMetadata::new(None))
+        } else {
+            let name_id = ctx.expect_id_verbose(
+                TokenKind::Id,
+                "Expected an identifier to define configuration for, found ",
+                "",
+                Branch::Section(SectionBranch::Complex),
+                interner,
+            )?;
+            ConfigMemberMetadataKind::Complex(ComplexConfigMemberMetadata::new(Some(name_id)))
+        };
+
+        // If !is_root that means it can use "override {}" so it's checked here
+        let kind = if ctx.peek_tok() == Token::Keyword(Keyword::Override) {
+            ctx.advance_tok();
+            AbstractConfigKind::Member(meta)
+        } else {
+            AbstractConfigKind::Member(meta)
+        };
+        Ok((ScopeLookupPattern::NamespaceOnly, name_span, kind))
+    }
 }
 
 // The field assignments could be ANYWHERE as long as it's in a valid scope with the parent it's
