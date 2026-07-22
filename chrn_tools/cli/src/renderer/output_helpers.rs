@@ -10,6 +10,7 @@
 
 use chrn_utils::{
     arena::Arena,
+    err_codes,
     id_types::SourceRegionId,
     intern::Intern,
     source_map::{
@@ -90,4 +91,25 @@ pub(super) fn project_absolute_span(
         .and_then(|arena| arena.get(span.region_id))
         .map_or(0, |region| region.script_start as u32);
     (span.start + script_start, span.end + script_start)
+}
+
+pub fn fmt_err_code(code: u16) -> String {
+    let width = get_code_width(code);
+    let needed_padding = err_codes::MAX_ERR_CODE_WIDTH - width;
+    let zero_padding = "0".repeat(needed_padding as usize);
+    format!("E{zero_padding}{code}")
+}
+
+// Doesn't use same helper as module line_mapping to avoid conversion since the function is fairly simple
+/// Is the preferred function for getting number widths to avoid allocating strings just for number sizes
+pub fn get_code_width(num: u16) -> u16 {
+    let mut size = 0;
+    let mut i = num;
+
+    while i != 0 {
+        i /= 10;
+        size += 1;
+    }
+
+    size
 }

@@ -3,6 +3,7 @@
 //TODO: Proper directive validation
 use chrn_utils::{
     chrn_config::ChrnConfig,
+    err_codes::{self, ErrorCode},
     id_types::{
         ExprId, InternedId, MemberId, SpannedContainer, SpannedContainerRef, SymbolId, TypeId,
     },
@@ -322,6 +323,7 @@ impl<'a> ConstraintResolver<'a> {
                         let err_expr_id = array_expr.inputs[err_idx];
                         let err_span = self.compiler.exprs[err_expr_id].span;
                         SourceDiagnostic::builder(
+                            ErrorCode::SchemaOptionErr.code().into(),
                             DiagnosticLevel::Error,
                             core_msg,
                             env.region.path_id,
@@ -349,6 +351,7 @@ impl<'a> ConstraintResolver<'a> {
                         let err_expr_id = array_expr.inputs[err_idx];
                         let err_span = self.compiler.exprs[err_expr_id].span;
                         SourceDiagnostic::builder(
+                            ErrorCode::SchemaOptionErr.code().into(),
                             DiagnosticLevel::Error,
                             core_msg,
                             env.region.path_id,
@@ -392,6 +395,7 @@ impl<'a> ConstraintResolver<'a> {
                         };
 
                         let mut builder = SourceDiagnostic::builder(
+                            ErrorCode::SchemaOptionErr.code().into(),
                             DiagnosticLevel::Error,
                             core_msg,
                             env.region.path_id,
@@ -426,6 +430,7 @@ impl<'a> ConstraintResolver<'a> {
                         // let err_expr_id = array_expr.inputs[err_idx];
                         // let err_span = self.compiler.exprs[err_expr_id].span;
                         SourceDiagnostic::builder(
+                            ErrorCode::SchemaOptionErr.code().into(),
                             DiagnosticLevel::Error,
                             core_msg,
                             env.region.path_id,
@@ -453,6 +458,7 @@ impl<'a> ConstraintResolver<'a> {
                             schema.kind
                         );
                         SourceDiagnostic::builder(
+                            ErrorCode::SchemaOptionErr.code().into(),
                             DiagnosticLevel::Error,
                             core_msg,
                             env.region.path_id,
@@ -496,7 +502,9 @@ impl<'a> ConstraintResolver<'a> {
                     // problematic. Hence, it just has to be a shallowly applied directive instead.
                     let core_msg = "Cannot give a `var->` defined type a condition when it has a `struct` or `enum` type, define\nthis within `nest->`".to_string();
 
+                    //TODO: Maybe add an error code but this isn't a final decision so not yet
                     let src_diag = SourceDiagnostic::basic(
+                        None,
                         DiagnosticLevel::Error,
                         core_msg,
                         env.region.path_id,
@@ -1525,7 +1533,9 @@ impl<'a> ConstraintResolver<'a> {
             Type::Func(_) => {
                 let core_msg = "Functions can only be placed within condition blocks".to_string();
 
+                //NOTE: I don't THINK this warrants a code?
                 let src_diag = SourceDiagnostic::basic_builder(
+                    None,
                     DiagnosticLevel::Error,
                     core_msg,
                     env.region.path_id,

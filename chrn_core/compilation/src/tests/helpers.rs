@@ -114,10 +114,9 @@ pub(super) fn mock_single_module(
     let path_id = interner.intern_path(Path::new(path_name));
     let region_id = SourceRegionId::new(mod_id as u32);
 
-    let source_region =
-        ConfigLoader::new(region_id, text.as_bytes(), path_id, &settings, interner)
-            .load_config()
-            .expect_success();
+    let source_region = ConfigLoader::new(region_id, text.as_bytes(), path_id, &settings, interner)
+        .load_config()
+        .expect_success();
 
     let module = Module::new(
         interner.intern(name),
@@ -324,7 +323,7 @@ pub(super) use crate::{
 /// constraints. Panics on any resolution error so that the returned compiler state is known to
 /// be fully resolved.
 pub(super) fn compile_and_resolve_single_module(text: &str) -> (ScriptCompiler, Intern) {
-    let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
+    let (arena, mut interner, cfg, mut compiler) = mock_single_module_compiler(text);
 
     let (mod_id, region) = {
         let module = &compiler.mods[ModuleId::new(0)];
@@ -334,21 +333,20 @@ pub(super) fn compile_and_resolve_single_module(text: &str) -> (ScriptCompiler, 
     let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
         .tokenize(&mut interner);
 
-    let ast_info = parser::parse(&settings, region, &toks, &interner).0;
+    let ast_info = parser::parse(&cfg, region, &toks, &interner).0;
 
     let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (comp_syms, _) =
-        NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
+    let (comp_syms, _) = NamespaceResolver::new(&cfg, &interner, &mut compiler).resolve(&reg_env);
 
     let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
     let envs = vec![Some(res_env)];
-    run_member_resolver(&settings, &envs, &interner, &mut compiler);
+    run_member_resolver(&cfg, &envs, &interner, &mut compiler);
     let env = envs[0].as_ref().expect("Env should exist");
 
-    TypeResolver::new(&settings, &interner, &mut compiler)
+    TypeResolver::new(&cfg, &interner, &mut compiler)
         .resolve(env)
         .unwrap();
-    ConstraintResolver::new(&settings, &interner, &mut compiler)
+    ConstraintResolver::new(&cfg, &interner, &mut compiler)
         .resolve(env)
         .unwrap();
 
@@ -445,8 +443,7 @@ pub(super) fn load_cfg_bytes(bytes: &[u8]) -> ConfigLoaderOutput {
     let mut interner = mock_interner(0, 1);
     let path_id = interner.intern_path(Path::new(""));
     let region_id = SourceRegionId::new(0);
-    ConfigLoader::new(region_id, bytes, path_id, &ChrnConfig::default(), &interner)
-        .load_config()
+    ConfigLoader::new(region_id, bytes, path_id, &ChrnConfig::default(), &interner).load_config()
 }
 
 /// Helper: runs the config loader on a string and returns the resulting region.
@@ -639,6 +636,7 @@ pub(super) fn make_diagnostics(amt: usize) -> Vec<SourceDiagnostic> {
     let mut diags = Vec::new();
     for i in 0..amt {
         diags.push(SourceDiagnostic::new(
+            None,
             DiagnosticLevel::Error,
             Default::default(),
             PathId::new(i as u32),
@@ -649,4 +647,3 @@ pub(super) fn make_diagnostics(amt: usize) -> Vec<SourceDiagnostic> {
     }
     diags
 }
-

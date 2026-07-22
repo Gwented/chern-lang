@@ -6,7 +6,6 @@ use chrn_utils::{
         DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind,
     },
 };
-use lang::keywords::Keyword;
 
 use crate::{
     lookup::scopes::{Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
@@ -122,13 +121,13 @@ impl NamespaceResolver<'_> {
     ) -> SymbolId {
         debug_assert!(
             matches!(
-                abs_cfg.lookup_pattern,
+                abs_cfg.lookup_pat,
                 ScopeLookupPattern::NamespaceOnly
                     | ScopeLookupPattern::OnlyVar
                     | ScopeLookupPattern::OnlyNest
             ),
             "Either configuration of `abs_cfg` was done wrong or a core language change did not update this assertion.\nExpected `ScopeLookupPattern::NoRestrictions/OnlyVar`, found {:?}",
-            abs_cfg.lookup_pattern
+            abs_cfg.lookup_pat
         );
 
         let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
@@ -157,7 +156,7 @@ impl NamespaceResolver<'_> {
             abs_cfg.name_span,
             cfg_id,
             None,
-            abs_cfg.lookup_pattern,
+            abs_cfg.lookup_pat,
             Vec::new(),
             Vec::new(),
         );
@@ -646,7 +645,7 @@ impl NamespaceResolver<'_> {
         );
 
         let src_diag =
-            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
+            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, env.region.path_id)
                 .add_annotation(
                     orig_span,
                     AnnotationKind::Secondary,

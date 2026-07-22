@@ -1,4 +1,5 @@
 use chrn_utils::chrn_config::ChrnConfig;
+use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{DiagnosticLevel, SourceDiagnosticBuilder};
 use chrn_utils::{
@@ -65,7 +66,6 @@ pub(crate) fn create_diag_builder_preset(
             sym_span,
         } => {
             let directive_boundaries = directive.inner.boundaries().to_fmt_vec();
-
             let mut boundaries_str = String::new();
 
             for (i, constraint) in directive_boundaries.iter().enumerate() {
@@ -82,21 +82,30 @@ pub(crate) fn create_diag_builder_preset(
                 directive.inner.to_fmt()
             );
 
-            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
-                .add_annotation(
-                    directive.span,
-                    AnnotationKind::Secondary,
-                    "Required by this directive".to_string().into(),
-                )
-                .add_annotation(sym_span, AnnotationKind::Primary, None)
+            SourceDiagnostic::builder(
+                ErrorCode::DirectiveErr.code().into(),
+                DiagnosticLevel::Error,
+                core_msg,
+                region.path_id,
+            )
+            .add_annotation(
+                directive.span,
+                AnnotationKind::Secondary,
+                "Required by this directive".to_string().into(),
+            )
+            .add_annotation(sym_span, AnnotationKind::Primary, None)
         }
         PresetErr::UnknownDirective(sp_interned_id) => {
             let err_name = interner.search(sp_interned_id.inner);
             let core_msg = format!("Unknown directive `#{err_name}`");
 
-            let mut builder =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
-                    .add_annotation(sp_interned_id.span, AnnotationKind::Primary, None);
+            let mut builder = SourceDiagnostic::builder(
+                ErrorCode::DirectiveErr.code().into(),
+                DiagnosticLevel::Error,
+                core_msg,
+                region.path_id,
+            )
+            .add_annotation(sp_interned_id.span, AnnotationKind::Primary, None);
 
             let similar_vec =
                 lang::algo::fuzzy_match(err_name.as_bytes(), lang::algo::FuzzyMatch::Directive);
@@ -123,7 +132,7 @@ pub(crate) fn create_diag_builder_preset(
                 sp_directive.inner.to_fmt()
             );
 
-            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg,  region.path_id)
+            SourceDiagnostic::builder(ErrorCode::DirectiveErr.code().into(), DiagnosticLevel::Error, core_msg,  region.path_id)
                     .add_annotation(sp_directive.span, AnnotationKind::Primary, None)
                     .add_note("This is not allowed since it would overlap with any specifics directives given to a defined type from `nest->`".into())
         }
@@ -161,28 +170,34 @@ pub(crate) fn create_diag_builder_preset(
                 sp_directive.inner.to_fmt()
             );
 
-            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
-                .add_annotation(
-                    sp_fmtted_parent.span,
-                    AnnotationKind::Secondary,
-                    format!("{} defined here", sp_fmtted_parent.inner).into(),
-                )
-                .add_annotation(
-                    err_ty_span,
-                    AnnotationKind::Secondary,
-                    "Recursive".to_string().into(),
-                )
-                .add_annotation(
-                    sp_directive.span,
-                    AnnotationKind::Primary,
-                    "Conflicting directive here".to_string().into(),
-                )
+            SourceDiagnostic::builder(
+                ErrorCode::DirectiveErr.code().into(),
+                DiagnosticLevel::Error,
+                core_msg,
+                region.path_id,
+            )
+            .add_annotation(
+                sp_fmtted_parent.span,
+                AnnotationKind::Secondary,
+                format!("{} defined here", sp_fmtted_parent.inner).into(),
+            )
+            .add_annotation(
+                err_ty_span,
+                AnnotationKind::Secondary,
+                "Recursive".to_string().into(),
+            )
+            .add_annotation(
+                sp_directive.span,
+                AnnotationKind::Primary,
+                "Conflicting directive here".to_string().into(),
+            )
             // I feel like a note should be here though
             //
             // This is a little hard to do since now all circulars. maybe this should be inline then
             // .add_help(format!("Either `#{}` needs to be removed or `{}` needs to get rid of it's recursive field"))
         }
         // Should have the data type's cap shown as well
+        //TODO: This shouldn't exist since it should use big int/float internally
         PresetErr::NumericOverflow {
             sp_num: spanned_num,
             fmtted_ty: ty,
@@ -193,7 +208,7 @@ pub(crate) fn create_diag_builder_preset(
                 overflown_num
             );
 
-            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
+            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
                 .add_annotation(spanned_num.span, AnnotationKind::Primary, None)
         }
         PresetErr::General(src_diag) => src_diag,
@@ -204,7 +219,7 @@ pub(crate) fn create_diag_builder_preset(
                     sp_fmtted_ty.inner,
                 );
 
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
+                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
                     .add_annotation(sp_fmtted_ty.span, AnnotationKind::Primary, None)
             }
             LookupError::MemberNotFound {
@@ -215,7 +230,7 @@ pub(crate) fn create_diag_builder_preset(
                 let member_name = interner.search(member);
                 let core_msg = format!("No member `{member_name}` found in type `{ty_name}`");
 
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
+                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
                     .add_annotation(
                         sp_parent_ty.span,
                         AnnotationKind::Primary,
@@ -224,24 +239,20 @@ pub(crate) fn create_diag_builder_preset(
             }
             LookupError::InvalidSymbolMemberAccess(sp_sym) => {
                 let core_msg = format!("Symbol `{}` cannot use member access", sp_sym.inner);
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
+                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
                     .add_annotation(sp_sym.span, AnnotationKind::Primary, None)
             }
         },
         PresetErr::Math(math_err) => match math_err {
-            MathError::BinaryOpMismatch {
-                sp_lhs: lhs,
-                sp_rhs: rhs,
-                op,
-            } => {
+            MathError::BinaryOpMismatch { sp_lhs, sp_rhs, op } => {
                 let core_msg = format!(
                     "The type `{}` cannot apply `{op}` to type `{}`",
-                    lhs.inner, rhs.inner,
+                    sp_lhs.inner, sp_rhs.inner,
                 );
 
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
-                    .add_annotation(lhs.span, AnnotationKind::Primary, None)
-                    .add_annotation(rhs.span, AnnotationKind::Primary, None)
+                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
+                    .add_annotation(sp_lhs.span, AnnotationKind::Primary, None)
+                    .add_annotation(sp_rhs.span, AnnotationKind::Primary, None)
             }
             MathError::UnaryOpMismatch {
                 sp_operand: operand,
@@ -249,13 +260,14 @@ pub(crate) fn create_diag_builder_preset(
             } => {
                 let core_msg = format!("Cannot apply `{}` to type `{}`", op, operand.inner);
 
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
+                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
                     .add_annotation(operand.span, AnnotationKind::Primary, None)
             }
+            //TODO: Link to "ADDRESS ME" elephant
             MathError::DivideByZero { lhs_span, rhs_span } => {
                 let core_msg = format!("Cannot divide by zero");
 
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
+                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
                     .add_annotation(lhs_span, AnnotationKind::Primary, None)
                     .add_annotation(rhs_span, AnnotationKind::Primary, None)
             }
@@ -284,7 +296,7 @@ pub(crate) fn create_diag_builder_preset(
         //TODO: Not done
         PresetErr::UndefinedMember(span) => {
             let core_msg = format!("Cannot infer member access");
-            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, region.path_id)
+            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
                 .add_annotation(
                     span,
                     AnnotationKind::Primary,
@@ -365,6 +377,7 @@ pub fn type_expr_result_to_preset_err(
             let core_msg = format!("`{name}` is a {kind} not a type");
 
             let src_diag = SourceDiagnostic::basic_builder(
+                None,
                 DiagnosticLevel::Error,
                 core_msg,
                 env.region.path_id,
@@ -400,6 +413,7 @@ pub fn type_expr_result_to_preset_err(
             };
 
             let src_diag = SourceDiagnostic::basic_builder(
+                None,
                 DiagnosticLevel::Error,
                 core_msg,
                 env.region.path_id,
@@ -409,7 +423,7 @@ pub fn type_expr_result_to_preset_err(
             Some(PresetErr::General(src_diag))
         }
         TypeExprResult::PrivateTypeAccess {
-            found_sym_id: sym_id,
+            found_sym_id,
             current_mod,
             ty_expr_span,
             ..
@@ -418,19 +432,23 @@ pub fn type_expr_result_to_preset_err(
             let current_mod = &compiler.mods[*current_mod];
             let current_mod_name = interner.search(current_mod.name_id);
 
-            let sym = &compiler.symbols[*sym_id];
+            let sym = &compiler.symbols[*found_sym_id];
             let sym_name = interner.search(sym.name_id);
 
             let core_msg =
                 format!("Type `{sym_name}` is private within the module `{current_mod_name}`");
 
-            let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                    .add_annotation(*ty_expr_span, AnnotationKind::Primary, None)
-                    // Redundant?
-                    .add_help(format!(
-                        "Consider using `export` on `{sym_name}` if that was intended"
-                    ));
+            let src_diag = SourceDiagnostic::builder(
+                ErrorCode::PrivacyErr.code().into(),
+                DiagnosticLevel::Error,
+                core_msg,
+                env.region.path_id,
+            )
+            .add_annotation(*ty_expr_span, AnnotationKind::Primary, None)
+            // Redundant?
+            .add_help(format!(
+                "Consider using `export` on `{sym_name}` if that was intended"
+            ));
 
             Some(PresetErr::General(src_diag))
         }
@@ -445,9 +463,13 @@ pub fn type_expr_result_to_preset_err(
             // BRING S_IFIER IN HERE NOW
             let core_msg = format!("`{name}` expects {expected} input(s)");
 
-            let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                    .add_annotation(*inputs_span, AnnotationKind::Primary, None);
+            let src_diag = SourceDiagnostic::builder(
+                ErrorCode::GenericsErr.code().into(),
+                DiagnosticLevel::Error,
+                core_msg,
+                env.region.path_id,
+            )
+            .add_annotation(*inputs_span, AnnotationKind::Primary, None);
 
             Some(PresetErr::General(src_diag))
         }
@@ -455,13 +477,17 @@ pub fn type_expr_result_to_preset_err(
             let name = interner.search(sp_name_id.inner);
             let core_msg = format!("Unknown generic identifier `{name}`");
 
-            let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                    .add_annotation(sp_name_id.span, AnnotationKind::Primary, None)
-                    // Redundant?
-                    .add_help(format!(
-                        "Only the data structures `List`, `Set`, `Map` and `Tuple` exist"
-                    ));
+            let src_diag = SourceDiagnostic::builder(
+                ErrorCode::GenericsErr.code().into(),
+                DiagnosticLevel::Error,
+                core_msg,
+                env.region.path_id,
+            )
+            .add_annotation(sp_name_id.span, AnnotationKind::Primary, None)
+            // Redundant?
+            .add_help(format!(
+                "Only the data structures `List`, `Set`, `Map` and `Tuple` exist"
+            ));
 
             Some(PresetErr::General(src_diag))
         }
@@ -491,13 +517,23 @@ pub fn static_access_result_to_preset_err(
                     current_seg_name, prev_seg_name
                 );
 
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                    .add_annotation(current_seg.span, AnnotationKind::Primary, None)
+                SourceDiagnostic::builder(
+                    ErrorCode::NotFoundInScope.code().into(),
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    env.region.path_id,
+                )
+                .add_annotation(current_seg.span, AnnotationKind::Primary, None)
             } else {
                 let core_msg = format!("Could not find namespace `{current_seg_name}`");
 
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                    .add_annotation(current_seg.span, AnnotationKind::Primary, None)
+                SourceDiagnostic::builder(
+                    ErrorCode::NotFoundInScope.code().into(),
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    env.region.path_id,
+                )
+                .add_annotation(current_seg.span, AnnotationKind::Primary, None)
             };
 
             Some(PresetErr::General(src_diag))
@@ -506,15 +542,20 @@ pub fn static_access_result_to_preset_err(
             let namespace_name = interner.search(sp_name_id.inner);
             let core_msg = format!("No namespace found in `{namespace_name}`");
 
-            let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                    .add_annotation(sp_name_id.span, AnnotationKind::Primary, None);
+            let src_diag = SourceDiagnostic::builder(
+                ErrorCode::NotFoundInScope.code().into(),
+                DiagnosticLevel::Error,
+                core_msg,
+                env.region.path_id,
+            )
+            .add_annotation(sp_name_id.span, AnnotationKind::Primary, None);
 
             Some(PresetErr::General(src_diag))
         }
         StaticAccessResult::GenericUsingStaticPath(generic_span) => {
             let core_msg = "Generics cannot contain namespaces".to_string();
             let src_diag = SourceDiagnostic::basic_builder(
+                ErrorCode::GenericsErr.code().into(),
                 DiagnosticLevel::Error,
                 core_msg,
                 env.region.path_id,

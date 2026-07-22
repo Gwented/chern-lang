@@ -1,9 +1,12 @@
 use std::path::Path;
 
-use chrn_utils::source_map::source_diagnostic::{DiagnosticLevel, annotations::AnnotationKind};
+use chrn_utils::{
+    err_codes,
+    source_map::source_diagnostic::{DiagnosticLevel, annotations::AnnotationKind},
+};
 use common::color::{self, TerminalColorType};
 
-use crate::renderer::terminal_renderer::terminal_config::TerminalRenderConfig;
+use crate::renderer::{output_helpers, terminal_renderer::terminal_config::TerminalRenderConfig};
 
 /// Returns the text that corresponds with a given diagnostic level
 pub(super) fn get_diag_level_text(level: DiagnosticLevel) -> &'static str {
@@ -129,10 +132,19 @@ pub(super) fn create_path_header(path: &Path, settings: &TerminalRenderConfig) -
 
 /// Creates a template header with the diagnostic level and msg given
 pub(super) fn create_level_header(
+    err_code_opt: Option<u16>,
     level: DiagnosticLevel,
     msg: &str,
     settings: &TerminalRenderConfig,
 ) -> String {
+    let err_code_str = if let Some(code) = err_code_opt {
+        // So the brackets are omitted if no code exists
+        let fmtted_code = output_helpers::fmt_err_code(code);
+        format!("[{fmtted_code}]")
+    } else {
+        "".into()
+    };
+
     let header_text = get_diag_level_text(level);
 
     let nc = color::get_nc(settings.can_color);
@@ -140,7 +152,7 @@ pub(super) fn create_level_header(
 
     let level_header = format!("{header_color}{header_text}{nc}");
 
-    format!("{level_header}: {msg}")
+    format!("{level_header}{err_code_str}: {msg}")
 }
 
 // Not sure about this anymore but might use it

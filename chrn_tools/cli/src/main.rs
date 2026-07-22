@@ -23,7 +23,6 @@ fn main() {
                     color::get_red(cli.glob_args.can_color, cli_cfg.terminal_color_type);
                 println!("{red}exited{nc}: {err_msg}");
             }
-
             std::process::exit(1);
         }
     }

@@ -14,6 +14,7 @@ use std::io::{BufRead, BufReader, Read};
 use chrn_utils::{
     chrn_config::ChrnConfig,
     core_error::ConfigLoadError,
+    err_codes::{self, ErrorCode},
     id_types::{PathId, SourceRegionId},
     intern::Intern,
     source_map::{
@@ -185,6 +186,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                             SourceSpan::new(self.current_region_id, rel_q_start, rel_q_start + 1);
 
                         let mut diag_builder = SourceDiagnostic::builder(
+                            None,
                             DiagnosticLevel::Error,
                             core_msg,
                             self.current_path_id,
@@ -229,6 +231,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                             SourceSpan::new(self.current_region_id, rel_q_start, rel_q_start + 1);
 
                         let mut diag_builder = SourceDiagnostic::builder(
+                            None,
                             DiagnosticLevel::Error,
                             core_msg,
                             self.current_path_id,
@@ -450,19 +453,23 @@ impl<R: Read> ConfigLoader<'_, R> {
             // Cannot do + 1 to the end of the span or it extends one past len
             let eof_span = SourceSpan::new(self.current_region_id, eof_pos - 1, eof_pos);
 
-            let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.current_path_id)
-                    .add_annotation(
-                        def_span,
-                        AnnotationKind::Secondary,
-                        "`@def` started here".to_string().into(),
-                    )
-                    .add_annotation(
-                        eof_span,
-                        AnnotationKind::Primary,
-                        "Unexpected <eof>".to_string().into(),
-                    )
-                    .build();
+            let src_diag = SourceDiagnostic::builder(
+                ErrorCode::ConfigLoadErr.code().into(),
+                DiagnosticLevel::Error,
+                core_msg,
+                self.current_path_id,
+            )
+            .add_annotation(
+                def_span,
+                AnnotationKind::Secondary,
+                "`@def` started here".to_string().into(),
+            )
+            .add_annotation(
+                eof_span,
+                AnnotationKind::Primary,
+                "Unexpected <eof>".to_string().into(),
+            )
+            .build();
 
             ConfigLoaderOutput::Broken(region, ConfigLoadError::Diagnostic(src_diag))
         }
@@ -564,19 +571,23 @@ impl<R: Read> ConfigLoader<'_, R> {
             // Intended to allow it to at least cover one byte since its an exclusive span end
             let eof_span = SourceSpan::new(self.current_region_id, current_pos, current_pos + 1);
 
-            let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.current_path_id)
-                    .add_annotation(
-                        comment_start_span,
-                        AnnotationKind::Secondary,
-                        "Comment starts here".to_string().into(),
-                    )
-                    .add_annotation(
-                        eof_span,
-                        AnnotationKind::Primary,
-                        "Unexpected <eof>".to_string().into(),
-                    )
-                    .build();
+            let src_diag = SourceDiagnostic::builder(
+                None,
+                DiagnosticLevel::Error,
+                core_msg,
+                self.current_path_id,
+            )
+            .add_annotation(
+                comment_start_span,
+                AnnotationKind::Secondary,
+                "Comment starts here".to_string().into(),
+            )
+            .add_annotation(
+                eof_span,
+                AnnotationKind::Primary,
+                "Unexpected <eof>".to_string().into(),
+            )
+            .build();
 
             // If a file really did hit eof during a multi-line comment the file is more likely than
             // not broken to even attempt to view. Also the lexer would get really really scared if

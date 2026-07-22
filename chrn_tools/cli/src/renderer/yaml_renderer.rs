@@ -3,6 +3,7 @@ pub(crate) mod yaml_config;
 
 use chrn_utils::{
     arena::Arena,
+    err_codes::err_code_fmter,
     id_types::SourceRegionId,
     intern::Intern,
     source_map::{
@@ -154,6 +155,15 @@ fn write_diagnostic(
         let key_level = level + 1;
 
         write_indent(out, key_level, config);
+        push_yaml_str(out, "err_code");
+        out.push_str(": ");
+        match diag.err_code {
+            Some(code) => push_yaml_str(out, &err_code_fmter(code)),
+            None => out.push_str("null"),
+        }
+        out.push('\n');
+
+        write_indent(out, key_level, config);
         push_yaml_str(out, "message");
         out.push_str(": ");
         push_yaml_str(out, &diag.core_msg);
@@ -210,6 +220,15 @@ fn write_diagnostic_fields_minify(
     push_yaml_str(out, "level");
     out.push_str(": ");
     push_yaml_str(out, level_str(diag.level));
+    out.push_str(", ");
+
+    // err_code
+    push_yaml_str(out, "err_code");
+    out.push_str(": ");
+    match diag.err_code {
+        Some(code) => push_yaml_str(out, &err_code_fmter(code)),
+        None => out.push_str("null"),
+    }
     out.push_str(", ");
 
     // message
@@ -655,6 +674,7 @@ mod tests {
         let span = SourceSpan::new(SourceRegionId::new(0), 4, 9);
         let ann = Annotation::new(span, AnnotationKind::Primary, Some("here".to_string()));
         let diag = SourceDiagnostic::new(
+            None,
             DiagnosticLevel::Error,
             "boom".to_string(),
             path_id,
@@ -670,6 +690,7 @@ mod tests {
             "missing '- level: error' in:\n{out}"
         );
         // Continuation keys are aligned with `level` (column 4).
+        assert!(out.contains("    err_code: null\n"), "got:\n{out}");
         assert!(out.contains("    message: boom\n"), "got:\n{out}");
         assert!(out.contains("    path: /tmp/a.chrn\n"), "got:\n{out}");
         // annotations sub-list lives at column 4, with items at column 6.
@@ -695,6 +716,7 @@ mod tests {
         let span = SourceSpan::new(SourceRegionId::new(0), 0, 1);
         let ann = Annotation::new(span, AnnotationKind::Secondary, None);
         let diag = SourceDiagnostic::new(
+            None,
             DiagnosticLevel::Warn,
             String::new(),
             path_id,
@@ -734,6 +756,7 @@ mod tests {
         let span = SourceSpan::new(SourceRegionId::new(0), 4, 9);
         let ann = Annotation::new(span, AnnotationKind::Primary, Some("here".to_string()));
         let diag = SourceDiagnostic::new(
+            None,
             DiagnosticLevel::Error,
             "boom".to_string(),
             path_id,
@@ -756,6 +779,7 @@ mod tests {
         assert!(out.contains(", footers: []"), "got: {out}");
         // Diagnostics are flow-style mappings joined by `, ` inside `[...]`.
         assert!(out.contains("{level: error,"), "got: {out}");
+        assert!(out.contains("err_code: null,"), "got: {out}");
         assert!(out.contains("message: boom,"), "got: {out}");
         // Annotations is a flow-style sequence of flow-style mappings.
         assert!(out.contains("annotations: [{kind: primary,"), "got: {out}");
@@ -849,6 +873,7 @@ mod tests {
         let span = SourceSpan::new(region_id, 4, 9);
         let ann = Annotation::new(span, AnnotationKind::Primary, Some("here".to_string()));
         let diag = SourceDiagnostic::new(
+            None,
             DiagnosticLevel::Error,
             "boom".to_string(),
             path_id,
@@ -896,6 +921,7 @@ mod tests {
         let span = SourceSpan::new(region_id, 4, 9);
         let ann = Annotation::new(span, AnnotationKind::Primary, Some("here".to_string()));
         let diag = SourceDiagnostic::new(
+            None,
             DiagnosticLevel::Error,
             "boom".to_string(),
             path_id,
@@ -937,6 +963,7 @@ mod tests {
         let span = SourceSpan::new(SourceRegionId::new(0), 4, 9);
         let ann = Annotation::new(span, AnnotationKind::Primary, Some("here".to_string()));
         let diag = SourceDiagnostic::new(
+            None,
             DiagnosticLevel::Error,
             "boom".to_string(),
             path_id,

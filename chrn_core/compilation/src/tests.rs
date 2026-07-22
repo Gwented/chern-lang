@@ -5,5 +5,6 @@ mod helpers;
 mod lexer_test;
 mod modules_test;
 mod name_resolver_test;
+mod parser_test;
 mod scopes_test;
 mod type_resolver_test;

@@ -137,7 +137,7 @@ impl<'a> ParserContext<'a> {
         };
 
         let mut diag_builder =
-            SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, self.region.path_id)
+            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, self.region.path_id)
                 .add_annotation(spans[0], kind, label);
 
         // Meaning EOF error

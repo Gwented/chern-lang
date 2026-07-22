@@ -506,7 +506,7 @@ pub struct AbstractConfig {
     pub opt_assignments: Vec<AbstractOptionAssignment>,
     /// `ScopeType` that should be looked within for the given identifier
     /// Can only be `ScopeLookupPattern::OnlyVar/NamespaceOnly`
-    pub lookup_pattern: ScopeLookupPattern,
+    pub lookup_pat: ScopeLookupPattern,
     /// Configuration for inner fields to define recursively
     pub cfg_members: Vec<AbstractConfig>,
 }
@@ -546,14 +546,14 @@ impl AbstractConfig {
     pub fn new(
         name_span: SourceSpan,
         kind: AbstractConfigKind,
-        lookup_pattern: ScopeLookupPattern,
+        lookup_pat: ScopeLookupPattern,
         opt_assignments: Vec<AbstractOptionAssignment>,
         cfg_members: Vec<AbstractConfig>,
     ) -> AbstractConfig {
         AbstractConfig {
             name_span,
             kind,
-            lookup_pattern,
+            lookup_pat,
             opt_assignments,
             cfg_members,
         }

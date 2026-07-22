@@ -3,6 +3,7 @@ pub(crate) mod json_config;
 
 use chrn_utils::{
     arena::Arena,
+    err_codes::err_code_fmter,
     id_types::SourceRegionId,
     intern::Intern,
     source_map::{
@@ -152,6 +153,17 @@ fn write_diagnostic(
     push_json_str(out, "level");
     out.push_str(": ");
     push_json_str(out, level_str(diag.level));
+    out.push(',');
+    out.push('\n');
+
+    // "err_code"
+    write_indent(out, depth + 1);
+    push_json_str(out, "err_code");
+    out.push_str(": ");
+    match diag.err_code {
+        Some(code) => push_json_str(out, &err_code_fmter(code)),
+        None => out.push_str("null"),
+    }
     out.push(',');
     out.push('\n');
 
@@ -458,6 +470,7 @@ mod tests {
         let span = SourceSpan::new(SourceRegionId::new(0), 4, 9);
         let ann = Annotation::new(span, AnnotationKind::Primary, Some("here".to_string()));
         let diag = SourceDiagnostic::new(
+            None,
             DiagnosticLevel::Error,
             "boom".to_string(),
             path_id,
@@ -468,6 +481,7 @@ mod tests {
 
         let out = render_json_diags(&[diag], &[], None, &interner, &JsonRenderConfig::new(false));
         assert!(out.contains("\"level\": \"error\""));
+        assert!(out.contains("\"err_code\": null"));
         assert!(out.contains("\"message\": \"boom\""));
         assert!(out.contains("\"path\": \"/tmp/a.chrn\""));
         assert!(out.contains("\"kind\": \"primary\""));
@@ -491,6 +505,7 @@ mod tests {
         let span = SourceSpan::new(SourceRegionId::new(0), 0, 1);
         let ann = Annotation::new(span, AnnotationKind::Secondary, None);
         let diag = SourceDiagnostic::new(
+            None,
             DiagnosticLevel::Warn,
             String::new(),
             path_id,
@@ -524,6 +539,7 @@ mod tests {
         let span = SourceSpan::new(SourceRegionId::new(0), 4, 9);
         let ann = Annotation::new(span, AnnotationKind::Primary, Some("here".to_string()));
         let diag = SourceDiagnostic::new(
+            None,
             DiagnosticLevel::Error,
             "boom".to_string(),
             path_id,
@@ -541,6 +557,7 @@ mod tests {
         );
         // Tokens should sit directly next to the colon and comma (no `": "` or `, `).
         assert!(out.contains(r#""level":"error""#), "got: {out}");
+        assert!(out.contains(r#""err_code":null"#), "got: {out}");
         assert!(out.contains(r#""message":"boom""#), "got: {out}");
         assert!(out.contains(r#""path":"/tmp/a.chrn""#), "got: {out}");
         // Sequence and nested object should still parse.
@@ -558,6 +575,7 @@ mod tests {
         let mut interner = Intern::init();
         let path_id = interner.intern_path(std::path::Path::new("/tmp/a.chrn"));
         let diag = SourceDiagnostic::new(
+            None,
             DiagnosticLevel::Error,
             "two  spaces  here".to_string(),
             path_id,
@@ -629,6 +647,7 @@ mod tests {
         let span = SourceSpan::new(region_id, 4, 9);
         let ann = Annotation::new(span, AnnotationKind::Primary, Some("here".to_string()));
         let diag = SourceDiagnostic::new(
+            None,
             DiagnosticLevel::Error,
             "boom".to_string(),
             path_id,
@@ -675,6 +694,7 @@ mod tests {
         let span = SourceSpan::new(region_id, 4, 9);
         let ann = Annotation::new(span, AnnotationKind::Primary, Some("here".to_string()));
         let diag = SourceDiagnostic::new(
+            None,
             DiagnosticLevel::Error,
             "boom".to_string(),
             path_id,
@@ -716,6 +736,7 @@ mod tests {
         let span = SourceSpan::new(SourceRegionId::new(0), 4, 9);
         let ann = Annotation::new(span, AnnotationKind::Primary, Some("here".to_string()));
         let diag = SourceDiagnostic::new(
+            None,
             DiagnosticLevel::Error,
             "boom".to_string(),
             path_id,

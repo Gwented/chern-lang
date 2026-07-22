@@ -1,3 +1,22 @@
+// Since sections use `->` the idea of NOT tabbing on `->` but instead only tabbing on nests seems like a better formatting heuristic, readability-wise.
+Like for:
+```chrn
+complex->
+First {
+    second {
+
+    }
+}
+
+    First {
+        second {
+
+        }
+    }
+```
+// If there is no tab, why pay the indentation overhead of if there were CCurlies?
+// The first seems -$#9)$ ok this is the format [ADDRESS ME]
+
 ## Language intent
 - This is a scripting language that is meant to have a serialized data representation paired with it which allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required inline in a language, and most favorably allows for cross-language serial configuration. The scripting language can either use the keyword [`bind`](#keywords) to define where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
 
@@ -217,6 +236,10 @@ More often than not this will not actually matter for normal usage since the rul
 
 `"."`: Member access operator for accessing fields
 
+### SPECIAL
+`=>`: Allows `complex` declarations to do "first=>second=>third{}" instead of "first{second{third{}}}"
+to avoid nesting overhead if only the defaults are desired.
+
 ## Modules
 
 Syntax for accessing through a module symbol uses [`::`](#pathing) with "module::Type" just like Rust, C++, etc.
@@ -331,7 +354,7 @@ var->
 
 
 
-`nest->`: Allows for the definition of a struct or enum
+`nest`: Allows for the definition of a struct or enum
 
 `nest` allows for:
 - Defining nested data
@@ -362,7 +385,9 @@ nest->
 
 Searchable scopes: `neutral`, `nest` and special case `var`
 
-To avoid redundancy the examples will use the following structs:
+`complex` can only at most be nested ONCE unless `override` is used. Which is "Thing { inner {} }" where "Thing { inner { inner_inner {} } }" would be an error at inner_inner.
+
+To avoid redundancy the examples will use the following structures:
 
 ```chrn
 nest->
@@ -376,7 +401,6 @@ nest->
     enum StressLevel {
         HIGH
         MEDIUM
-        MEDIUM_LOW
         LOW
     }
 
@@ -388,6 +412,7 @@ nest->
 
 
 ### Options Assignments
+// Should explain all built-in schemas and options associated
 - Option assignments are built-in options associated with schemas, which align with what type is currently being used. (Field, struct, etc.)
 
 ```chrn
@@ -404,8 +429,8 @@ complex->
     }
 ```
 
-### Nested Inner Configs
-- Configuration also allows for nesting in the case of defining special properties specific to members. This is done through "." prefixes which given the most recent parent, attempts to find the member with the identifier given.
+### Inner Configs
+- Configuration also allows for nesting in the case of defining special properties specific to members. This attempts to find the member with the identifier given.
 
 ```chrn
 complex->
@@ -422,13 +447,62 @@ complex->
 
         identifiers = "Happy"
 
-        .mortgage {/*code*/}
+        mortgage {/*code*/}
     }
 ```
 
-### Searching var scopes
+// SHOW OVER-NESTING EXAMPLE HERE
 
-The section keyword `var` can be used before 
+### Embedding override into complex
+
+As noted, `complex` sections can **ONLY** be nested 2 levels, but if `override` section semantics are embedded then this rule no longer applies.
+
+```chrn
+complex->
+    Cat {
+        override {
+            CPP {
+                types { u8 = cpp::unsigned_char }
+            }
+        }
+        cases = ["snake_case", "UpperSnakeCase"]
+
+        stressLevel {
+            // Applies to specific config so can be used any amount of times.
+            override {}
+            HIGH {
+                // Operates fine
+                override {
+                    JAVA {
+                        types {
+                            i64 = java::int
+                        }
+                    }
+                }
+                idents = "High"
+            }
+        }
+
+        identifiers = "Happy"
+
+        mortgage {/*code*/}
+    }
+```
+
+### Searching var/nest scopes specifically
+
+The section keyword `var` or `nest` can be used before a config root to narrow the search range, and most notably remove same identifier conflicts.
+
+```chrn
+var->
+    same: i32
+nest->
+    struct same {}
+complex->
+    // Avoids any form of conflict
+    var same {}
+    nest same {}
+```
 
 #### IMPORTANT NOTES
 
@@ -462,6 +536,7 @@ complex->
     }
 ```
 
+# UPDATE
 ##### Member access
 Member access like:
 ```chrn
@@ -521,7 +596,7 @@ complex->
         orange {
             // This is fine since it's setting the properties of what the member of Apple which is of
             // type orange will have, not re-defining properties that already exist.
-            .identifiers = "memberOrange"
+            identifiers = "memberOrange"
         }
     }
 ```
@@ -529,7 +604,9 @@ complex->
 This is not allowed that would mean recursive descent count specific properties would have to exist for a type that already has properties defined in an earlier config, which would mean the type itself has a recursive other version of itself, within itself, without another recursive version of itself.
 
 # DOES NOT EXIST YET
-`override`: Most important part of the language which controls things such as possible namespace casing to also look for and setting language type defaults. Language defaults exist but this can change any if needed.
+`override`: Controls elements such as possible namespace casing to also look for and setting language specific defaults. Language defaults exist intrinsically but this can change any if needed.
+
+override sections use the same exact semantics as the earlier explained `complex` scope's configs. The only difference is that override does NOT restrict nesting levels, and strictly acts on language known semantics.
 
 # DOES NOT EXIST YET
 -------------------------------

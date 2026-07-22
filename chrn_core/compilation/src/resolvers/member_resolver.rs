@@ -189,20 +189,24 @@ impl MemberResolver<'_> {
 
                 let core_msg = format!("More than one field has the identifier \"{dup_name}\"");
 
-                let src_diag =
-                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                        .add_annotation(
-                            abs_struct.name_span,
-                            AnnotationKind::Secondary,
-                            "Found inside this struct".to_string().into(),
-                        )
-                        .add_annotation(
-                            orig_span,
-                            AnnotationKind::Secondary,
-                            format!("Original usage of `{dup_name}` here").into(),
-                        )
-                        .add_annotation(current_field_span, AnnotationKind::Primary, None)
-                        .build();
+                let src_diag = SourceDiagnostic::builder(
+                    None,
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    env.region.path_id,
+                )
+                .add_annotation(
+                    abs_struct.name_span,
+                    AnnotationKind::Secondary,
+                    "Found inside this struct".to_string().into(),
+                )
+                .add_annotation(
+                    orig_span,
+                    AnnotationKind::Secondary,
+                    format!("Original usage of `{dup_name}` here").into(),
+                )
+                .add_annotation(current_field_span, AnnotationKind::Primary, None)
+                .build();
 
                 self.err_vec.push(src_diag);
             }
@@ -308,20 +312,24 @@ impl MemberResolver<'_> {
                 // Preset error?
                 let core_msg = format!("More than one variant has the identifier \"{dup_name}\"");
 
-                let src_diag =
-                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                        .add_annotation(
-                            abs_enum.name_span,
-                            AnnotationKind::Secondary,
-                            "Found inside this enum".to_string().into(),
-                        )
-                        .add_annotation(
-                            orig_span,
-                            AnnotationKind::Secondary,
-                            format!("Original usage of identifier `{dup_name}` here").into(),
-                        )
-                        .add_annotation(current_field_span, AnnotationKind::Primary, None)
-                        .build();
+                let src_diag = SourceDiagnostic::builder(
+                    None,
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    env.region.path_id,
+                )
+                .add_annotation(
+                    abs_enum.name_span,
+                    AnnotationKind::Secondary,
+                    "Found inside this enum".to_string().into(),
+                )
+                .add_annotation(
+                    orig_span,
+                    AnnotationKind::Secondary,
+                    format!("Original usage of identifier `{dup_name}` here").into(),
+                )
+                .add_annotation(current_field_span, AnnotationKind::Primary, None)
+                .build();
 
                 self.err_vec.push(src_diag);
             }

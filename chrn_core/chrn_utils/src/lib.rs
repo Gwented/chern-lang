@@ -2,6 +2,7 @@ pub mod arena;
 pub mod budget;
 pub mod chrn_config;
 pub mod core_error;
+pub mod err_codes;
 pub mod files;
 pub mod help_model;
 pub mod id_types;

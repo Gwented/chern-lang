@@ -184,7 +184,9 @@ impl ModuleFinder<'_> {
 
             // Since we know it's invalid
 
+            //NOTE: Maybe an error code?
             let src_diag = SourceDiagnostic::builder(
+                None,
                 DiagnosticLevel::Error,
                 core_msg,
                 self.current_region.path_id,
@@ -204,6 +206,7 @@ impl ModuleFinder<'_> {
                     core_error::form_string_from_io_err(&e, &path_buf).unwrap_or(e.to_string());
 
                 let src_diag = SourceDiagnostic::builder(
+                    None,
                     DiagnosticLevel::Error,
                     core_msg,
                     self.current_region.path_id,
@@ -225,7 +228,9 @@ impl ModuleFinder<'_> {
                     import_path.display()
                 );
 
+                //TODO: Aliasing
                 let src_diag = SourceDiagnostic::builder(
+                    None,
                     DiagnosticLevel::Error,
                     core_msg,
                     self.current_region.path_id,
@@ -301,6 +306,7 @@ impl ModuleFinder<'_> {
                 Err(_) => {
                     let msg = "Invalid UTF-8 found within file".to_string();
                     let src_diag = SourceDiagnostic::builder(
+                        None,
                         DiagnosticLevel::Error,
                         msg,
                         self.current_region.path_id,
@@ -317,6 +323,7 @@ impl ModuleFinder<'_> {
             Err(_) => {
                 let msg = "Invalid UTF-8 found within file".to_string();
                 let src_diag = SourceDiagnostic::builder(
+                    None,
                     DiagnosticLevel::Error,
                     msg,
                     self.current_region.path_id,
@@ -362,7 +369,9 @@ impl ModuleFinder<'_> {
         if saw_backslash {
             let core_msg = "Only '/' can be used as path separators.".to_string();
 
+            //NOTE: Maybe
             let src_diag = SourceDiagnostic::builder(
+                None,
                 DiagnosticLevel::Error,
                 core_msg,
                 self.current_region.path_id,
@@ -385,6 +394,7 @@ impl ModuleFinder<'_> {
                     core_error::form_string_from_io_err(&e, &path_buf).unwrap_or(e.to_string());
 
                 let src_diag = SourceDiagnostic::builder(
+                    None,
                     DiagnosticLevel::Error,
                     core_msg,
                     self.current_region.path_id,

@@ -20,7 +20,6 @@ use crate::{
         yaml_renderer,
         yaml_renderer::yaml_config::YamlRenderConfig,
     },
-    s_ifier,
 };
 
 pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, Option<String>> {

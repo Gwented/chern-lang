@@ -34,7 +34,7 @@ const DEFAULT_VISUAL_SEPARATORS: &str =
 pub(crate) fn render_terminal_diags(
     diags: &[SourceDiagnostic],
     footers: &[FooterKind],
-    settings: &TerminalRenderConfig,
+    cfg: &TerminalRenderConfig,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     interner: &Intern,
 ) -> Vec<String> {
@@ -45,9 +45,10 @@ pub(crate) fn render_terminal_diags(
             let mut rendered_diags: Vec<String> = Vec::new();
             for diag in diags {
                 let path = interner.search_path(diag.path_id);
-                let path_header = style::create_path_header(path, settings);
+                let path_header = style::create_path_header(path, cfg);
                 // Not really a header when it's using the message too
-                let level_header = style::create_level_header(diag.level, &diag.core_msg, settings);
+                let level_header =
+                    style::create_level_header(diag.err_code, diag.level, &diag.core_msg, cfg);
 
                 let header = format!("{path_header}\n{level_header}");
                 rendered_diags.push(header);
@@ -101,19 +102,12 @@ pub(crate) fn render_terminal_diags(
     // Final step of rendering and returning the text
     let mut rendered_diags: Vec<String> = Vec::with_capacity(diags.len());
     for diag in diags {
-        let rendered_diag = form_diag(
-            diag,
-            &all_src_strs,
-            &ln_views,
-            settings,
-            region_arena,
-            interner,
-        );
+        let rendered_diag = form_diag(diag, &all_src_strs, &ln_views, cfg, region_arena, interner);
         rendered_diags.push(rendered_diag);
     }
 
     for footer in footers {
-        rendered_diags.push(render_footer(footer, settings));
+        rendered_diags.push(render_footer(footer, cfg));
     }
 
     // Might just return a new line joined string of a single diagnostic
@@ -305,7 +299,8 @@ fn render_text(
         }
     }
 
-    let level_header = style::create_level_header(diag.level, &diag.core_msg, render_cfg);
+    let level_header =
+        style::create_level_header(diag.err_code, diag.level, &diag.core_msg, render_cfg);
 
     format!("{level_header} {layout_text}{help}{notes}\n{DEFAULT_VISUAL_SEPARATORS}")
 }

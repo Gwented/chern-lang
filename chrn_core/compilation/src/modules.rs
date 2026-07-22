@@ -11,6 +11,7 @@ use chrn_utils::{
     arena::Arena,
     chrn_config::ChrnConfig,
     core_error::{self, ConfigLoadError, ModuleInitError},
+    err_codes::{self, ErrorCode},
     files::file_ops,
     id_types::{InternedId, ModuleId, PathId, ScopeId, SourceRegionId, SymbolId},
     intern::{self, Intern},
@@ -184,7 +185,7 @@ pub fn extract_modules(
             // Interning mangled path id so it can still go into the diagnostic
             let path_id = interner.intern_path(path);
             let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, err_msg, path_id).build();
+                SourceDiagnostic::builder(None, DiagnosticLevel::Error, err_msg, path_id).build();
             let cfg_err = ConfigLoadError::Diagnostic(src_diag);
 
             return Err(ModuleInitError::new(None, interner, cfg_err));
@@ -211,8 +212,14 @@ pub fn extract_modules(
                     ConfigLoadError::IO(io_err) => {
                         let err_str = core_error::form_string_from_io_err(&io_err, path)
                             .unwrap_or(io_err.to_string());
-                        SourceDiagnostic::builder(DiagnosticLevel::Error, err_str, main_path_id)
-                            .build()
+                        SourceDiagnostic::builder(
+                            //TODO: Should this have a code?
+                            None,
+                            DiagnosticLevel::Error,
+                            err_str,
+                            main_path_id,
+                        )
+                        .build()
                     }
                 };
 
@@ -234,7 +241,9 @@ pub fn extract_modules(
             );
 
             let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, main_path_id).build();
+                // Would have code explaining that aliases can circumvent invalid utf8 file names
+                SourceDiagnostic::builder(todo!(), DiagnosticLevel::Error, core_msg, main_path_id)
+                    .build();
 
             let cfg_err = ConfigLoadError::Diagnostic(src_diag);
             //NOTE: Not sure what behavior to expect from this since, the region is available, but
@@ -454,13 +463,14 @@ fn resolve_modules(
             Ok(_) if path.is_dir() => {
                 let core_msg = format!("The path \"{}\" is a directory", path.display());
 
-                let src_diag = SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
-                    .add_annotation(
-                        path_span,
-                        AnnotationKind::Primary,
-                        "Caused by this import".to_string().into(),
-                    )
-                    .build();
+                let src_diag =
+                    SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, path_id)
+                        .add_annotation(
+                            path_span,
+                            AnnotationKind::Primary,
+                            "Caused by this import".to_string().into(),
+                        )
+                        .build();
 
                 diags.push(src_diag);
                 cfg.logger().log_err(|| {
@@ -475,13 +485,14 @@ fn resolve_modules(
                 let core_msg =
                     core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
 
-                let src_diag = SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
-                    .add_annotation(
-                        path_span,
-                        AnnotationKind::Primary,
-                        "Caused by this import".to_string().into(),
-                    )
-                    .build();
+                let src_diag =
+                    SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, path_id)
+                        .add_annotation(
+                            path_span,
+                            AnnotationKind::Primary,
+                            "Caused by this import".to_string().into(),
+                        )
+                        .build();
 
                 diags.push(src_diag);
                 continue;
@@ -505,7 +516,8 @@ fn resolve_modules(
 
                     //WARN: This didn't use a span before so could be an issue
                     let src_diag =
-                        SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
+                        //TODO: Alias handling
+                        SourceDiagnostic::builder(todo!(), DiagnosticLevel::Error, core_msg, path_id)
                             .add_annotation(
                                 path_span,
                                 AnnotationKind::Primary,
@@ -536,6 +548,7 @@ fn resolve_modules(
                             let core_msg = core_error::form_string_from_io_err(&e, path)
                                 .unwrap_or(e.to_string());
                             let src_diag = SourceDiagnostic::builder(
+                                None,
                                 DiagnosticLevel::Error,
                                 core_msg,
                                 path_id,
@@ -555,16 +568,11 @@ fn resolve_modules(
                             diags.push(diag);
                         }
                         ConfigLoadError::IO(e) => {
-                            // FIX:
-                            // If this case is met, an index out of bounds error occurs inside of the
-                            // cli because this uses the region id of the source itself, which is valid
-                            // because the source does exist, but the region is never pushed, hence it's
-                            // still out of bounds despite being correct.
                             let path = interner.search_path(path_id);
                             let core_msg = core_error::form_string_from_io_err(&e, path)
                                 .unwrap_or(e.to_string());
-                            //FIX: THIS MAY NOT BE COVERED
                             let src_diag = SourceDiagnostic::builder(
+                                None,
                                 DiagnosticLevel::Error,
                                 core_msg,
                                 path_id,
@@ -605,8 +613,13 @@ fn resolve_modules(
             let sub_mod_name = interner.search(sub_mod_name_id);
             let core_msg = format!("Exceeded max module amount of {}", chrn_utils::MAX_MODULES);
 
-            let src_diag = SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, path_id)
-                .add_note(format!("Last analyzed module was `{sub_mod_name}`"));
+            let src_diag = SourceDiagnostic::builder(
+                ErrorCode::CompilerSafetyLimits.code().into(),
+                DiagnosticLevel::Error,
+                core_msg,
+                path_id,
+            )
+            .add_note(format!("Last analyzed module was `{sub_mod_name}`"));
             diags.push(src_diag.build());
             reporter.summary.exceeded_max_mods = Some(chrn_utils::MAX_MODULES);
             return;

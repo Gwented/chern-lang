@@ -871,48 +871,46 @@ pub(crate) fn resolve_modules_lsp(
         // importing document, just to satisfy the boxed-reader type.  The box now
         // borrows from `cached_text`, which outlives the `ConfigLoader` below.
         let cached_text = doc_cache.get_text(uri.as_ref());
-        let source_res: Result<Box<dyn std::io::Read + '_>, ConfigLoadError> =
-            match &cached_text {
-                Some(text) => Ok(Box::new(Cursor::new(text.as_bytes()))),
-                None => {
-                    // Fallback to disk
-                    match std::fs::File::open(path) {
-                        Ok(_) if path.is_dir() => {
-                            let core_msg =
-                                format!("The path \"{}\" is a directory", path.display());
-                            let src_diag = SourceDiagnostic::builder(
-                                DiagnosticLevel::Error,
-                                core_msg,
-                                current_path_id,
-                            )
-                            .add_annotation(
-                                path_span,
-                                AnnotationKind::Primary,
-                                "Caused by this import".to_string().into(),
-                            )
-                            .build();
-                            Err(ConfigLoadError::Diagnostic(src_diag))
-                        }
-                        Ok(f) => Ok(Box::new(f) as Box<dyn std::io::Read + '_>),
-                        Err(e) => {
-                            let core_msg = core_error::form_string_from_io_err(&e, path)
-                                .unwrap_or(e.to_string());
-                            let src_diag = SourceDiagnostic::builder(
-                                DiagnosticLevel::Error,
-                                core_msg,
-                                current_path_id,
-                            )
-                            .add_annotation(
-                                path_span,
-                                AnnotationKind::Primary,
-                                "Caused by this import".to_string().into(),
-                            )
-                            .build();
-                            Err(ConfigLoadError::Diagnostic(src_diag))
-                        }
+        let source_res: Result<Box<dyn std::io::Read + '_>, ConfigLoadError> = match &cached_text {
+            Some(text) => Ok(Box::new(Cursor::new(text.as_bytes()))),
+            None => {
+                // Fallback to disk
+                match std::fs::File::open(path) {
+                    Ok(_) if path.is_dir() => {
+                        let core_msg = format!("The path \"{}\" is a directory", path.display());
+                        let src_diag = SourceDiagnostic::builder(
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            current_path_id,
+                        )
+                        .add_annotation(
+                            path_span,
+                            AnnotationKind::Primary,
+                            "Caused by this import".to_string().into(),
+                        )
+                        .build();
+                        Err(ConfigLoadError::Diagnostic(src_diag))
+                    }
+                    Ok(f) => Ok(Box::new(f) as Box<dyn std::io::Read + '_>),
+                    Err(e) => {
+                        let core_msg =
+                            core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
+                        let src_diag = SourceDiagnostic::builder(
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            current_path_id,
+                        )
+                        .add_annotation(
+                            path_span,
+                            AnnotationKind::Primary,
+                            "Caused by this import".to_string().into(),
+                        )
+                        .build();
+                        Err(ConfigLoadError::Diagnostic(src_diag))
                     }
                 }
-            };
+            }
+        };
 
         let src = match source_res {
             Ok(s) => s,

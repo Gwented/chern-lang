@@ -3,6 +3,7 @@
 pub mod type_context;
 
 use chrn_utils::chrn_config::ChrnConfig;
+use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::{
     AstId, DirectiveId, ExprId, MemberId, ScopeId, SpannedContainer, SpannedContainerRef, SymbolId,
     TypeId, ValueId, VariableId,
@@ -442,7 +443,7 @@ impl<'res> TypeResolver<'res> {
                 //
                 // Is `NamespaceOnly` by default since it is using the current module's namespace
                 // specifically since that's what configs are restricted to.
-                abs_cfg_root.lookup_pattern,
+                abs_cfg_root.lookup_pat,
             ) {
             Some(found_sym_id)
         } else {
@@ -453,12 +454,16 @@ impl<'res> TypeResolver<'res> {
             let core_msg = format!(
                 //TODO: Need to store scope type or some scope metadata or some conversion
                 "Could not find `{name}` in `{:?}` searchable scopes",
-                abs_cfg_root.lookup_pattern
+                abs_cfg_root.lookup_pat
             );
 
-            let src_diag =
-                SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                    .add_annotation(abs_cfg_root.name_span, AnnotationKind::Primary, None);
+            let src_diag = SourceDiagnostic::builder(
+                ErrorCode::NotFoundInScope.code().into(),
+                DiagnosticLevel::Error,
+                core_msg,
+                env.region.path_id,
+            )
+            .add_annotation(abs_cfg_root.name_span, AnnotationKind::Primary, None);
 
             self.diags.push(src_diag.build());
             None
@@ -539,20 +544,24 @@ impl<'res> TypeResolver<'res> {
 
                 let core_msg = format!("More than one option has the identifier `{dup_name}`");
 
-                let src_diag =
-                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                        .add_annotation(
-                            abs_cfg_root.name_span,
-                            AnnotationKind::Secondary,
-                            "Found inside this config root".to_string().into(),
-                        )
-                        .add_annotation(
-                            orig_span,
-                            AnnotationKind::Secondary,
-                            format!("Original usage of `{dup_name}` here").into(),
-                        )
-                        .add_annotation(current_field_span, AnnotationKind::Primary, None)
-                        .build();
+                let src_diag = SourceDiagnostic::builder(
+                    None,
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    env.region.path_id,
+                )
+                .add_annotation(
+                    abs_cfg_root.name_span,
+                    AnnotationKind::Secondary,
+                    "Found inside this config root".to_string().into(),
+                )
+                .add_annotation(
+                    orig_span,
+                    AnnotationKind::Secondary,
+                    format!("Original usage of `{dup_name}` here").into(),
+                )
+                .add_annotation(current_field_span, AnnotationKind::Primary, None)
+                .build();
 
                 self.diags.push(src_diag);
             }
@@ -576,13 +585,15 @@ impl<'res> TypeResolver<'res> {
                     kind_fmt
                 );
 
-                let src_diag =
-                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                        .add_annotation(abs_cfg_root.name_span, AnnotationKind::Primary, None)
-                        // Right...var needs to be usable here..$#$*IjdjalndIPOIPO.
-                        .add_help(
-                            "Config roots must be a struct, enum, or from the scope `var`".into(),
-                        );
+                let src_diag = SourceDiagnostic::builder(
+                    ErrorCode::ConfigDeclErr.code().into(),
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    env.region.path_id,
+                )
+                .add_annotation(abs_cfg_root.name_span, AnnotationKind::Primary, None)
+                // Right...var needs to be usable here..$#$*IjdjalndIPOIPO.
+                .add_help("Config roots must be a struct, enum, or from the scope `var`".into());
                 self.diags.push(src_diag.build());
                 // Terminates here because this means that the symbol being looked at can't
                 // actually use config at all
@@ -683,14 +694,13 @@ impl<'res> TypeResolver<'res> {
 
                             // Needs to be done otherwise typedefs, given "x: State" will emit the
                             // type as `x` rather than `State`
-                            let name_id = if abs_cfg_root.lookup_pattern
-                                == ScopeLookupPattern::NamespaceOnly
-                            {
-                                abs_cfg_root.name_id()
-                            } else {
-                                // TODO: Needs change
-                                abs_cfg_root.name_id()
-                            };
+                            let name_id =
+                                if abs_cfg_root.lookup_pat == ScopeLookupPattern::NamespaceOnly {
+                                    abs_cfg_root.name_id()
+                                } else {
+                                    // TODO: Needs change
+                                    abs_cfg_root.name_id()
+                                };
 
                             let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
                                 sp_parent_ty: SpannedContainer::new(
@@ -781,20 +791,25 @@ impl<'res> TypeResolver<'res> {
                 let core_msg =
                     format!("More than one member config has the identifier `{dup_name}`");
 
-                let src_diag =
-                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                        .add_annotation(
-                            abs_cfg_root.name_span,
-                            AnnotationKind::Secondary,
-                            "Found inside this config root".to_string().into(),
-                        )
-                        .add_annotation(
-                            orig_span,
-                            AnnotationKind::Secondary,
-                            format!("Original usage of `{dup_name}` here").into(),
-                        )
-                        .add_annotation(current_cfg_span, AnnotationKind::Primary, None)
-                        .build();
+                // Maybe give `None` here..
+                let src_diag = SourceDiagnostic::builder(
+                    ErrorCode::ConfigDeclErr.code().into(),
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    env.region.path_id,
+                )
+                .add_annotation(
+                    abs_cfg_root.name_span,
+                    AnnotationKind::Secondary,
+                    "Found inside this config root".to_string().into(),
+                )
+                .add_annotation(
+                    orig_span,
+                    AnnotationKind::Secondary,
+                    format!("Original usage of `{dup_name}` here").into(),
+                )
+                .add_annotation(current_cfg_span, AnnotationKind::Primary, None)
+                .build();
 
                 self.diags.push(src_diag);
             }
@@ -926,20 +941,24 @@ impl<'res> TypeResolver<'res> {
 
                 let core_msg = format!("More than one option has the identifier `{dup_name}`");
 
-                let src_diag =
-                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                        .add_annotation(
-                            parent_abs_cfg.name_span,
-                            AnnotationKind::Secondary,
-                            "Found inside this config member".to_string().into(),
-                        )
-                        .add_annotation(
-                            orig_span,
-                            AnnotationKind::Secondary,
-                            format!("Original usage of `{dup_name}` here").into(),
-                        )
-                        .add_annotation(current_opt_span, AnnotationKind::Primary, None)
-                        .build();
+                let src_diag = SourceDiagnostic::builder(
+                    None,
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    env.region.path_id,
+                )
+                .add_annotation(
+                    parent_abs_cfg.name_span,
+                    AnnotationKind::Secondary,
+                    "Found inside this config member".to_string().into(),
+                )
+                .add_annotation(
+                    orig_span,
+                    AnnotationKind::Secondary,
+                    format!("Original usage of `{dup_name}` here").into(),
+                )
+                .add_annotation(current_opt_span, AnnotationKind::Primary, None)
+                .build();
 
                 self.diags.push(src_diag);
             }
@@ -996,6 +1015,7 @@ impl<'res> TypeResolver<'res> {
 
                 let core_msg = format!("Recursive config of `{type_name}`");
                 let src_diag = SourceDiagnostic::builder(
+                    ErrorCode::ConfigDeclErr.code().into(),
                     DiagnosticLevel::Error,
                     core_msg,
                     env.region.path_id,
@@ -1064,6 +1084,7 @@ impl<'res> TypeResolver<'res> {
                         // Are we really going to add history for the sake of maintaining span info for this one
                         // error message that happens to need it?
                         let builder = SourceDiagnostic::builder(
+                            ErrorCode::ConfigDeclErr.code().into(),
                             DiagnosticLevel::Error,
                             core_msg,
                             env.region.path_id,
@@ -1099,7 +1120,7 @@ impl<'res> TypeResolver<'res> {
                         // member can still be returned.
                         break;
                     }
-                    // -- DEPTH CHECK END --
+                    // -- DEPTH HANDLING END --
 
                     match member_lookup::lookup_member(
                         self.compiler,
@@ -1248,8 +1269,6 @@ impl<'res> TypeResolver<'res> {
                 dbg!(self.interner.search(abs_cfg_member.name_id()));
                 dbg!(inner_kind.is_complex());
 
-                // -- DEPTH HANDLING END --
-
                 let cfg_member_id = self.resolve_cfg_member(
                     root_parent_sym_id,
                     cfg_dfs,
@@ -1295,20 +1314,24 @@ impl<'res> TypeResolver<'res> {
                 let core_msg =
                     format!("More than one member config has the identifier `{dup_name}`");
 
-                let src_diag =
-                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                        .add_annotation(
-                            parent_abs_cfg.name_span,
-                            AnnotationKind::Secondary,
-                            "Found inside this config member".to_string().into(),
-                        )
-                        .add_annotation(
-                            orig_span,
-                            AnnotationKind::Secondary,
-                            format!("Original usage of `{dup_name}` here").into(),
-                        )
-                        .add_annotation(current_cfg_span, AnnotationKind::Primary, None)
-                        .build();
+                let src_diag = SourceDiagnostic::builder(
+                    None,
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    env.region.path_id,
+                )
+                .add_annotation(
+                    parent_abs_cfg.name_span,
+                    AnnotationKind::Secondary,
+                    "Found inside this config member".to_string().into(),
+                )
+                .add_annotation(
+                    orig_span,
+                    AnnotationKind::Secondary,
+                    format!("Original usage of `{dup_name}` here").into(),
+                )
+                .add_annotation(current_cfg_span, AnnotationKind::Primary, None)
+                .build();
 
                 self.diags.push(src_diag);
             }
@@ -1325,7 +1348,7 @@ impl<'res> TypeResolver<'res> {
             parent_member_id,
             kind,
             opt_assignments,
-            parent_abs_cfg.lookup_pattern,
+            parent_abs_cfg.lookup_pat,
             cfg_members,
         );
 
@@ -2263,20 +2286,24 @@ impl<'res> TypeResolver<'res> {
                 // Preset error?
                 let core_msg = format!("More than one variant has the identifier \"{dup_name}\"");
 
-                let src_diag =
-                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                        .add_annotation(
-                            abs_alias.name_span,
-                            AnnotationKind::Secondary,
-                            "Found inside this alias".to_string().into(),
-                        )
-                        .add_annotation(
-                            orig_span,
-                            AnnotationKind::Secondary,
-                            format!("Original usage of `{dup_name}` here").into(),
-                        )
-                        .add_annotation(current_param_span, AnnotationKind::Primary, None)
-                        .build();
+                let src_diag = SourceDiagnostic::builder(
+                    None,
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    env.region.path_id,
+                )
+                .add_annotation(
+                    abs_alias.name_span,
+                    AnnotationKind::Secondary,
+                    "Found inside this alias".to_string().into(),
+                )
+                .add_annotation(
+                    orig_span,
+                    AnnotationKind::Secondary,
+                    format!("Original usage of `{dup_name}` here").into(),
+                )
+                .add_annotation(current_param_span, AnnotationKind::Primary, None)
+                .build();
 
                 self.diags.push(src_diag);
             }
@@ -2441,6 +2468,7 @@ impl<'res> TypeResolver<'res> {
                         let parent_span = env.ast_info.get_name_span(parent_ast_id);
 
                         let src_diag = SourceDiagnostic::builder(
+                            None,
                             DiagnosticLevel::Error,
                             core_msg,
                             env.region.path_id,
@@ -2492,6 +2520,7 @@ impl<'res> TypeResolver<'res> {
                                         "Cannot have a type within expressions".to_string();
 
                                     let src_diag = SourceDiagnostic::builder(
+                                        None,
                                         DiagnosticLevel::Error,
                                         core_msg,
                                         env.region.path_id,
@@ -2572,6 +2601,7 @@ impl<'res> TypeResolver<'res> {
                             );
 
                             let src_diag = SourceDiagnostic::builder(
+                                None,
                                 DiagnosticLevel::Error,
                                 core_msg,
                                 env.region.path_id,
@@ -2615,6 +2645,7 @@ impl<'res> TypeResolver<'res> {
                         format!("`{ident}` was not found in module `{mod_name}`{and_local}");
 
                     let src_diag = SourceDiagnostic::builder(
+                        ErrorCode::NotFoundInScope.code().into(),
                         DiagnosticLevel::Error,
                         core_msg,
                         env.region.path_id,
@@ -3107,6 +3138,8 @@ impl<'res> TypeResolver<'res> {
                     PathSegment::Generic(_) => {
                         let core_msg = "Generics are only usable in type expressions".to_string();
                         let src_diag = SourceDiagnostic::builder(
+                            // Maybe make this `None` since this is more so an obvious quick fix error
+                            ErrorCode::GenericsErr.code().into(),
                             DiagnosticLevel::Error,
                             core_msg,
                             env.region.path_id,
@@ -3321,18 +3354,22 @@ impl<'res> TypeResolver<'res> {
                     current_name, cycled_name
                 );
 
-                let src_diag =
-                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, env.region.path_id)
-                        .add_annotation(
-                            cycled_span,
-                            AnnotationKind::Secondary,
-                            "This has no value yet".to_string().into(),
-                        )
-                        .add_annotation(
-                            current_span,
-                            AnnotationKind::Primary,
-                            format!("Uses `{cycled_name}` before it has a value").into(),
-                        );
+                let src_diag = SourceDiagnostic::builder(
+                    None,
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    env.region.path_id,
+                )
+                .add_annotation(
+                    cycled_span,
+                    AnnotationKind::Secondary,
+                    "This has no value yet".to_string().into(),
+                )
+                .add_annotation(
+                    current_span,
+                    AnnotationKind::Primary,
+                    format!("Uses `{cycled_name}` before it has a value").into(),
+                );
 
                 return Err(PresetErr::General(src_diag));
             }

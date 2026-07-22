@@ -3,11 +3,7 @@ pub mod footers;
 // What if there was said, ".attach()" in the builder of diags to where I could tell renderers,
 // do not detach or mutate this ordering in any form by file found in
 use crate::{
-    budget::{
-        mem_budget::{BudgetResult, MemoryBudget},
-        mem_cost::{self, MemoryCost},
-    },
-    core_error::{self, ConfigLoadError},
+    budget::mem_cost::{self, MemoryCost},
     id_types::PathId,
     source_map::{
         source_diagnostic::annotations::{Annotation, AnnotationKind},
@@ -28,6 +24,7 @@ use crate::{
 /// Diagnostic intended to represent a set of instructions to be rendered.
 #[derive(Debug)]
 pub struct SourceDiagnostic {
+    pub err_code: Option<u16>,
     /// Severity of the given diagnostic
     pub level: DiagnosticLevel,
     /// Header message for this diagnostic
@@ -42,6 +39,7 @@ pub struct SourceDiagnostic {
 
 impl SourceDiagnostic {
     pub const fn new(
+        err_code: Option<u16>,
         level: DiagnosticLevel,
         core_msg: String,
         path_id: PathId,
@@ -50,6 +48,7 @@ impl SourceDiagnostic {
         notes: Vec<String>,
     ) -> SourceDiagnostic {
         SourceDiagnostic {
+            err_code,
             level,
             core_msg,
             path_id,
@@ -61,6 +60,7 @@ impl SourceDiagnostic {
 
     /// Creates basic error where the given span is the primary annotation with no extra details
     pub fn basic(
+        err_code: Option<u16>,
         level: DiagnosticLevel,
         core_msg: String,
         path_id: PathId,
@@ -68,6 +68,7 @@ impl SourceDiagnostic {
     ) -> SourceDiagnostic {
         let annotations = vec![Annotation::new(span, AnnotationKind::Primary, None)];
         SourceDiagnostic {
+            err_code,
             level,
             core_msg,
             path_id,
@@ -79,6 +80,7 @@ impl SourceDiagnostic {
 
     /// Creates basic error where the given span vector gives all spans a primary level annotation
     pub fn basic_multiple(
+        err_code: Option<u16>,
         level: DiagnosticLevel,
         core_msg: String,
         path_id: PathId,
@@ -90,6 +92,7 @@ impl SourceDiagnostic {
         }
 
         SourceDiagnostic {
+            err_code,
             level,
             core_msg,
             path_id,
@@ -101,6 +104,7 @@ impl SourceDiagnostic {
 
     /// Creates basic error where the given span is the primary annotation with no extra details
     pub fn basic_builder(
+        err_code: Option<u16>,
         level: DiagnosticLevel,
         core_msg: String,
         path_id: PathId,
@@ -108,6 +112,7 @@ impl SourceDiagnostic {
     ) -> SourceDiagnosticBuilder {
         let annotations = vec![Annotation::new(span, AnnotationKind::Primary, None)];
         SourceDiagnosticBuilder {
+            err_code,
             level,
             core_msg,
             path_id,
@@ -118,11 +123,13 @@ impl SourceDiagnostic {
     }
 
     pub fn builder(
+        err_code: Option<u16>,
         level: DiagnosticLevel,
         core_msg: String,
         path_id: PathId,
     ) -> SourceDiagnosticBuilder {
         SourceDiagnosticBuilder {
+            err_code,
             level,
             core_msg,
             path_id,
@@ -164,6 +171,7 @@ impl MemoryCost for SourceDiagnostic {
 /// constructor
 #[derive(Debug)]
 pub struct SourceDiagnosticBuilder {
+    err_code: Option<u16>,
     level: DiagnosticLevel,
     core_msg: String,
     path_id: PathId,
@@ -197,6 +205,7 @@ impl SourceDiagnosticBuilder {
 
     pub fn build(self) -> SourceDiagnostic {
         SourceDiagnostic {
+            err_code: self.err_code,
             level: self.level,
             core_msg: self.core_msg,
             path_id: self.path_id,
