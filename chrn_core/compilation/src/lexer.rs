@@ -576,9 +576,12 @@ impl Lexer<'_> {
         // Enforces utf-8 but module paths themselves don't need to be valid utf-8, am I
 
         // hallucinating?
-        let id_str = str::from_utf8(&self.src_bytes[start..end])
-            //FIX:
-            .expect("Invalid UTF-8");
+        let id_str = match str::from_utf8(&self.src_bytes[start..end]) {
+            Ok(s) => s,
+            Err(_) => {
+                return self.recover_invalid(start.into(), interner);
+            }
+        };
 
         // Would it ever not be escaped if it's empty?
         // This means that we only found "e#" which is an error since it's an empty ident
@@ -1028,10 +1031,7 @@ impl Lexer<'_> {
         }
         //WARN: Same behavior as read_id
         let end = self.pos;
-
-        let err_str = str::from_utf8(&self.src_bytes[start..end])
-            //FIX: This DOES actually panic depending on the file being read, like an image
-            .unwrap_or("<INVALID UTF-8>");
+        let err_str = String::from_utf8_lossy(&self.src_bytes[start..end]);
 
         let id = interner.intern(&err_str);
 
@@ -1056,6 +1056,9 @@ impl Lexer<'_> {
 
         // Should be a test for this this is suspicious
         // Lazy evaluation to avoid utf-8 checking entire self.bytes
+        //TODO: Handle this please!
+        //No, we silently return null bytes.
+        //Oh ok
         std::str::from_utf8(chunk)
             .ok()
             .and_then(|c| c.chars().next())

@@ -1082,8 +1082,7 @@ impl<'res> TypeResolver<'res> {
                         // Is this confusing?
                         // Maybe from the perspective of ownership this could make more sense?
                         let core_msg =
-                            "Nesting level of 2 is too deep for `complex` scope config context"
-                                .into();
+                            "Nesting level of 2 is too deep for a `complex` scope config".into();
                         let cfg_root = self.compiler.get_cfg_def_root(root_parent_sym_id);
 
                         let builder = SourceDiagnostic::builder(

@@ -3,6 +3,8 @@ pub(super) mod layout;
 pub(super) mod style;
 pub(crate) mod terminal_config;
 
+use std::borrow::Cow;
+
 use chrn_utils::{
     arena::Arena,
     id_types::SourceRegionId,
@@ -82,19 +84,13 @@ pub(crate) fn render_terminal_diags(
     // Not Option because it's only metadata based off bytes
     let mut ln_views: Vec<LineView> = Vec::with_capacity(required_mapping.len());
     // May or may not be valid UTF-8, so this is Option.
-    let mut all_src_strs: Vec<&str> = Vec::with_capacity(required_mapping.len());
+    let mut all_src_strs: Vec<Cow<str>> = Vec::with_capacity(required_mapping.len());
 
     for span in &required_mapping {
         let region = &region_arena[span.region_id];
         let ln_view = line_mapping::form_ln_view(&region.src_bytes, &span);
         ln_views.push(ln_view);
-        // let src_str = String::from_utf8_lossy(v);
-        let src_str = match str::from_utf8(&region.src_bytes) {
-            Ok(s) => s,
-            //FIXME:
-            // Since it still does depend on dense ordering, maybe making this Option is best.
-            Err(_) => unreachable!("Should already have UTF-8 validity at this stage from lexer"),
-        };
+        let src_str = String::from_utf8_lossy(&region.src_bytes);
 
         all_src_strs.push(src_str);
     }
@@ -119,7 +115,7 @@ pub(crate) fn render_terminal_diags(
 /// then renders result to text.
 fn form_diag(
     diag: &SourceDiagnostic,
-    src_strs: &[&str],
+    src_strs: &[Cow<str>],
     ln_views: &[LineView],
     settings: &TerminalRenderConfig,
     region_arena: &Arena<SourceRegion, SourceRegionId>,
@@ -165,7 +161,7 @@ fn form_diag(
             .position(|lv| lv.region_id == layout.ln.ln_span.region_id)
             .expect("Should already have mapped the given annotation's ln_view");
 
-        layout::assign_layers_in_layout(layout, src_strs[current_idx]);
+        layout::assign_layers_in_layout(layout, &src_strs[current_idx]);
     }
 
     // Remove layouts that ended up with no annotations after layer assignment
@@ -190,7 +186,7 @@ fn form_diag(
 fn render_text(
     diag: &SourceDiagnostic,
     ln_layouts: &[RenderLineLayout],
-    src_strs: &[&str],
+    src_strs: &[Cow<str>],
     ln_views: &[LineView],
     render_cfg: &TerminalRenderConfig,
     ln_num_width: usize,
@@ -256,7 +252,8 @@ fn render_text(
 
         layout_text.push_str(&render_line_layout_text(
             layout,
-            src_strs[current_ln_view_idx],
+            // Is this ok?
+            &src_strs[current_ln_view_idx],
             region_arena[current_region_id].abs_ln_num_start,
             render_cfg,
             ln_num_width,

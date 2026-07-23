@@ -298,6 +298,7 @@ impl ModuleFinder<'_> {
             //
             //     return Ok(PathBuf::from(slice));
             // }
+            //TODO: Do not. Enforce. UTF-8. !
             match str::from_utf8(slice) {
                 // To my knowledge, a valid UTF-8 string cannot fail conversion to a path,
                 // therefore this is infallable as said by the return type, which fits whatever
@@ -435,6 +436,7 @@ impl ModuleFinder<'_> {
 
         // Enforces utf-8 but module paths themselves don't need to be valid utf-8, am I
         // hallucinating?
+        // Yes, yes.
         let id_str = str::from_utf8(&self.src_bytes[start..end])
             .expect("Cannot fail due to loop only accepting valid UTF-8 characters.");
 
@@ -447,6 +449,7 @@ impl ModuleFinder<'_> {
         // a saturating sub to make up for it
         let chunk = &self.src_bytes[0..=self.pos];
 
+        //TODO: Fix forced validation
         std::str::from_utf8(chunk)
             .ok()
             .and_then(|c| c.chars().rev().skip(dest).next())

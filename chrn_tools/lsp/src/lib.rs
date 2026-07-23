@@ -64,12 +64,14 @@ mod tests {
             rel_to_abs_offset, rel_to_abs_span,
         },
     };
-    use chrn_utils::core_error::ConfigLoadError;
     use chrn_utils::id_types::{PathId, SourceRegionId};
     use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
     use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
     use chrn_utils::source_map::source_region::SourceRegion;
     use chrn_utils::{arena::Arena, source_map::source_span::SourceSpan};
+    use chrn_utils::{
+        core_error::ConfigLoadError, source_map::source_diagnostic::SourceDiagnostic,
+    };
     use std::collections::HashSet;
     use std::sync::Arc;
     use tower_lsp::lsp_types::{Position, Range, TextDocumentContentChangeEvent};
@@ -880,7 +882,8 @@ mod tests {
         // to absolute byte offsets [7, 11), i.e. the substring "let x" on
         // line 1 (line 0 is "@def\n").
         let primary_span = SourceSpan::new(SourceRegionId::new(0), 2, 6);
-        let diag = chrn_utils::source_map::source_diagnostic::SourceDiagnostic::builder(
+        let diag = SourceDiagnostic::builder(
+            None,
             DiagnosticLevel::Error,
             "test error".to_string(),
             PathId::new(0),
@@ -918,7 +921,8 @@ mod tests {
     fn test_config_load_error_to_diagnostics_no_script_start_is_identity() {
         let text = "let x = 1\n";
         let primary_span = SourceSpan::new(SourceRegionId::new(0), 4, 5);
-        let diag = chrn_utils::source_map::source_diagnostic::SourceDiagnostic::builder(
+        let diag = SourceDiagnostic::builder(
+            None,
             DiagnosticLevel::Error,
             "identity test".to_string(),
             PathId::new(0),
@@ -949,7 +953,8 @@ mod tests {
         let text = "@def\nlet x = 1\n";
         let primary_span = SourceSpan::new(SourceRegionId::new(0), 0, 1);
         let secondary_span = SourceSpan::new(SourceRegionId::new(0), 4, 5);
-        let diag = chrn_utils::source_map::source_diagnostic::SourceDiagnostic::builder(
+        let diag = SourceDiagnostic::builder(
+            None,
             DiagnosticLevel::Error,
             "secondary test".to_string(),
             PathId::new(0),
@@ -1019,7 +1024,8 @@ mod tests {
         // the same path_id as the main region, so it is resolved to the
         // main region (script_start=5).  The expected absolute range is
         // [5, 6) on line 1.
-        let diag = chrn_utils::source_map::source_diagnostic::SourceDiagnostic::builder(
+        let diag = SourceDiagnostic::builder(
+            None,
             DiagnosticLevel::Error,
             "type check failed".to_string(),
             PathId::new(0),
@@ -1094,7 +1100,8 @@ mod tests {
 
         // Import error diagnostic uses the IMPORTING module's path_id (0)
         // because the span points at the import statement in the main file.
-        let diag = chrn_utils::source_map::source_diagnostic::SourceDiagnostic::builder(
+        let diag = SourceDiagnostic::builder(
+            None,
             DiagnosticLevel::Error,
             "import not found".to_string(),
             PathId::new(0),
@@ -1153,7 +1160,8 @@ mod tests {
         let mut arena: Arena<SourceRegion, SourceRegionId> = Arena::new();
         arena.push(main_region);
 
-        let diag = chrn_utils::source_map::source_diagnostic::SourceDiagnostic::builder(
+        let diag = SourceDiagnostic::builder(
+            None,
             DiagnosticLevel::Warn,
             "fallback test".to_string(),
             PathId::new(0), // Does NOT match the region's path_id.

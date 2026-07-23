@@ -879,6 +879,7 @@ pub(crate) fn resolve_modules_lsp(
                     Ok(_) if path.is_dir() => {
                         let core_msg = format!("The path \"{}\" is a directory", path.display());
                         let src_diag = SourceDiagnostic::builder(
+                            None,
                             DiagnosticLevel::Error,
                             core_msg,
                             current_path_id,
@@ -896,6 +897,7 @@ pub(crate) fn resolve_modules_lsp(
                         let core_msg =
                             core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
                         let src_diag = SourceDiagnostic::builder(
+                            None,
                             DiagnosticLevel::Error,
                             core_msg,
                             current_path_id,
@@ -921,7 +923,7 @@ pub(crate) fn resolve_modules_lsp(
             Err(ConfigLoadError::IO(e)) => {
                 let core_msg = format!("IO error: {}", e);
                 let src_diag =
-                    SourceDiagnostic::builder(DiagnosticLevel::Error, core_msg, current_path_id)
+                    SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, current_path_id)
                         .add_annotation(path_span, AnnotationKind::Primary, None)
                         .build();
                 diags.push(src_diag);
@@ -948,6 +950,7 @@ pub(crate) fn resolve_modules_lsp(
                         let core_msg =
                             core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
                         let src_diag = SourceDiagnostic::builder(
+                            None,
                             DiagnosticLevel::Error,
                             core_msg,
                             current_path_id,
@@ -969,6 +972,7 @@ pub(crate) fn resolve_modules_lsp(
                         let core_msg =
                             core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
                         let src_diag = SourceDiagnostic::builder(
+                            None,
                             DiagnosticLevel::Error,
                             core_msg,
                             current_path_id,
@@ -993,6 +997,7 @@ pub(crate) fn resolve_modules_lsp(
                         path.display()
                     );
                     let src_diag = SourceDiagnostic::builder(
+                        None,
                         DiagnosticLevel::Error,
                         core_msg.clone(),
                         current_path_id,
