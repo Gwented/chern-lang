@@ -151,7 +151,7 @@ var->
 `Map<K, V>`: Holds a two generic parameters.
 `Tuple<A, B, ..>`: Holds any amount of types within generic parameters.
 
-### Structural types
+### struct/enum types
 // Would something like C/C++ conversion be fine implicitly converting an enum with types to a union type or would something like #c_union be better?
 
 - Both the structural types [`struct`](#keywords) and [`enum`](#keywords) are ONLY able to be defined within [`nest->`](#sections) sections. The only difference between these two are that structs are required to hold types, but enums can hold either have no type or a type.
@@ -159,24 +159,23 @@ var->
 Example:
 ```chrn
 nest->
-    // Commas are optional when defining in `var->` and `nest->`
-    struct Book {
-        title: str,
-        chapters: u16
-        pages: u16,
-        color: Color
-    }
+// Commas are optional when defining in `var->` and `nest->`
+struct Book {
+    title: str,
+    chapters: u16
+    pages: u16,
+    color: Color
+}
 
-    enum Color {
-        Red,
-        Blue,
-        RGB: Tuple<u8, u8, u8>,
-        Hex: str,
-    }
+enum Color {
+    Red,
+    Blue,
+    RGB: Tuple<u8, u8, u8>,
+    Hex: str,
+}
 ```
 
 
-// Either boundaries or concepts
 ### Boundaries
 
 A `Boundary` is a set of constraints given to a type, same as a trait, interface, concept, etc.
@@ -311,10 +310,10 @@ Contains("chrn") | Contains(1xF)
 `neutral`: This section has no keyword and exists until a section is explicitly used.
 
 `neutral` allows for:
-- [importing](#keywords) / [exporting](#keywords)
+- [importing](#keywords) & [exporting](#keywords)
 - Setting [bind](#keywords)
 - Variable declarations
-- [Alias](#keywords) declarations
+- [`alias`](#keywords) declarations
 
 Searchable scopes: `neutral`
 
@@ -385,7 +384,7 @@ nest->
 
 Searchable scopes: `neutral`, `nest` and special case `var`
 
-`complex` can have at most two nesting levels unless `override` is used. Which is "Thing { inner {} }" where "Thing { inner { inner_inner {} } }" would be an error at inner_inner.
+`complex` can have at most two nesting levels. Which is "Thing { inner {} }" where "Thing { inner { inner_inner {} } }" would be an error at inner_inner.
 
 To avoid redundancy the examples will use the following structures:
 
@@ -543,8 +542,9 @@ override sections use the same exact semantics as the earlier explained `complex
 
 `#scient`, `#hex`, `#bin`, `#octal`: Numeric notations to output in serialized file instead of base ten.
 
+`#unicode`: Output characters as their unicode such as '\u{1F480}' instead of '💀'
+
 # DOES NOT EXIST
-`#unicode`:
 `#ignore_rm`: (Would remove anything that didn't align under constraint rather than crash or warn.)
 # DOES NOT EXIST
 

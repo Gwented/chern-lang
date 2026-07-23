@@ -115,6 +115,7 @@ pub const DIRECTIVE_SCIENT_IDX: usize = 2;
 pub const DIRECTIVE_HEX_IDX: usize = 3;
 pub const DIRECTIVE_BIN_IDX: usize = 4;
 pub const DIRECTIVE_OCTAL_IDX: usize = 5;
+pub const DIRECTIVE_UNICODE_IDX: usize = 6;
 
 pub fn directive_to_id(directive: &Directive) -> DirectiveId {
     let idx = match directive {
@@ -125,6 +126,7 @@ pub fn directive_to_id(directive: &Directive) -> DirectiveId {
             TypeDirective::Hex => DIRECTIVE_HEX_IDX,
             TypeDirective::Bin => DIRECTIVE_BIN_IDX,
             TypeDirective::Octal => DIRECTIVE_OCTAL_IDX,
+            TypeDirective::Unicode => DIRECTIVE_UNICODE_IDX,
         },
     };
 
@@ -165,7 +167,7 @@ impl ScriptCompiler {
 
         // Should this lazy load the section intrinsics though?
         Self::load_core(&mut compiler);
-        let directives = Self::load_directives(&mut compiler);
+        Self::load_directives(&mut compiler);
         Self::create_module_symbols(&mut compiler);
 
         compiler
@@ -883,7 +885,7 @@ impl ScriptCompiler {
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
         let directive_id = DirectiveId::new(compiler.directives.len() as u32);
         let interned_id = InternedId::new(intern::INTERNED_WARN);
-        debug_assert_eq!(directive_id.id, 0);
+        debug_assert_eq!(directive_id.id, 0, "There should not be any directives");
 
         let sym = Symbol::new(
             interned_id,
@@ -1002,6 +1004,27 @@ impl ScriptCompiler {
         );
 
         let directive = Directive::Type(TypeDirective::Octal);
+
+        compiler.symbols.push(sym);
+        compiler.directives.push(directive);
+
+        // #unicode | 6
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+        let directive_id = DirectiveId::new(compiler.directives.len() as u32);
+        let interned_id = InternedId::new(intern::INTERNED_UNICODE);
+
+        let sym = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            SymbolOrigin::Compiler,
+            false,
+            None,
+            ScopeType::Compiler,
+            SymbolKind::Directive(directive_id),
+        );
+
+        let directive = Directive::Type(TypeDirective::Unicode);
 
         compiler.symbols.push(sym);
         compiler.directives.push(directive);

@@ -62,7 +62,8 @@ var->
     nest->
         enum Opt {
                 // o: Equals
-            } #bin
+                o: char #char
+            } #unicode
         struct Forb {
             p: def::Person
             root_holder: Runtime

@@ -81,6 +81,7 @@ pub const INTERNED_IDENTS: u32 = 71;
 pub const INTERNED_CASES: u32 = 72;
 pub const INTERNED_JAVA_LOWER: u32 = 73;
 pub const INTERNED_INT: u32 = 74;
+pub const INTERNED_UNICODE: u32 = 75;
 
 // Collection,
 // CharacterMappable,
@@ -111,7 +112,7 @@ pub struct Intern {
     pos: usize,
 }
 
-pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_INT + 1) as usize;
+pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_UNICODE + 1) as usize;
 
 impl Intern {
     /// Creates interner that pre-loads itself with all defined interned string literals.
@@ -339,6 +340,10 @@ impl Intern {
         interner.stored_strs.push("java".to_string());
         interner.id_map.insert("int".to_string(), INTERNED_INT);
         interner.stored_strs.push("int".to_string());
+        interner
+            .id_map
+            .insert("unicode".to_string(), INTERNED_UNICODE);
+        interner.stored_strs.push("unicode".to_string());
 
         interner.pos = interner.stored_strs.len();
 

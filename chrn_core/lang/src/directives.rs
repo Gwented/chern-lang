@@ -6,7 +6,8 @@ use crate::{
 };
 
 /// If a new directive is added ensure this is updated
-pub static BUILTIN_DIRECTIVE_STRS: [&str; 6] = ["warn", "scient", "hex", "bin", "octal", "ignore"];
+pub static BUILTIN_DIRECTIVE_STRS: [&str; 7] =
+    ["warn", "scient", "hex", "bin", "octal", "ignore", "unicode"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// General directives not specific to anything
@@ -74,6 +75,7 @@ pub enum TypeDirective {
     Hex,
     Bin,
     Octal,
+    Unicode,
 }
 
 impl TypeDirective {
@@ -85,6 +87,7 @@ impl TypeDirective {
             TypeDirective::Scient
             | TypeDirective::Hex
             | TypeDirective::Bin
+            | TypeDirective::Unicode
             | TypeDirective::Octal => true,
         }
     }
@@ -118,6 +121,8 @@ impl TypeDirective {
                     | BuiltinType::Unsized
                     //NOTE: Checks this at runtime
                     |BuiltinType::Runtime => true,
+                    //FIXME: This seems like an odd abstraction to accept!
+                    //
                     // Maybe this means that it shouldn't be a method, it should be a function that
                     // has access to their inner, which can do the rolving. Rolving.
                     //
@@ -129,6 +134,10 @@ impl TypeDirective {
                     _ => false,
                 }
             }
+            TypeDirective::Unicode => match builtin_type {
+                BuiltinType::Char | BuiltinType::Runtime => true,
+                _ => false,
+            },
         }
     }
 
@@ -165,6 +174,7 @@ impl TypeDirective {
             | TypeDirective::Hex
             | TypeDirective::Bin
             | TypeDirective::Octal => TypeBoundaryFlags::NUMERIC,
+            TypeDirective::Unicode => TypeBoundaryFlags::CHAR,
         }
     }
 
@@ -174,6 +184,7 @@ impl TypeDirective {
             intern::INTERNED_HEX => Some(TypeDirective::Hex),
             intern::INTERNED_BIN => Some(TypeDirective::Bin),
             intern::INTERNED_OCTAL => Some(TypeDirective::Octal),
+            intern::INTERNED_UNICODE => Some(TypeDirective::Unicode),
             _ => None,
         }
     }
@@ -186,6 +197,7 @@ impl Formattable for TypeDirective {
             TypeDirective::Hex => Formatted::DirectiveHex,
             TypeDirective::Bin => Formatted::DirectiveBin,
             TypeDirective::Octal => Formatted::DirectiveOctal,
+            TypeDirective::Unicode => Formatted::DirectiveUnicode,
         }
     }
 }

@@ -1,6 +1,7 @@
 mod budget_test;
 mod config_loader_test;
 mod constraint_resolver_test;
+mod directives_test;
 mod helpers;
 mod lexer_test;
 mod modules_test;
