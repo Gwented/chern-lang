@@ -14,7 +14,7 @@ use std::io::{BufRead, BufReader, Read};
 use chrn_utils::{
     chrn_config::ChrnConfig,
     core_error::ConfigLoadError,
-    err_codes::{self, ErrorCode},
+    err_codes::ErrorCode,
     id_types::{PathId, SourceRegionId},
     intern::Intern,
     source_map::{
@@ -300,7 +300,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                     // OLD BEHAVIOR THAT MAY BE RE-APPLIED
                     //
                     // This no longer requires @def first for now, so files can end with @end
-                    // without any start syntax.
+                    // without any `@def` start syntax.
                     //
                     // Probably should not be allowed since the behavior from this is fairly
                     // non-deterministic unless someone is actively counting bytes

@@ -496,8 +496,8 @@ pub struct AbstractConfig {
     // In regards to "var->" defined variables, I think just allowing for, "var.inner" would be the
     // best in regards to accessing and changing fields
     // Could be a "Outer.a { }" where it is defining it's fields config specifically
-    //// Name of assumed structural type to configure
-    // pub name_id: InternedId,
+    /// Name of assumed struct/enum type to configure
+    pub name_id: InternedId,
     /// Span assocaited with name to configure
     pub name_span: SourceSpan,
     //// Config specific to the origin of this metadata. ONLY `ConfigDefMember` can have this.
@@ -511,14 +511,6 @@ pub struct AbstractConfig {
     pub cfg_members: Vec<AbstractConfig>,
 }
 
-impl AbstractConfig {
-    // Is this necessary?
-    /// Get's `InternedId` out of `AbstractConfigKind`
-    pub fn name_id(&self) -> InternedId {
-        self.kind.name_id()
-    }
-}
-
 //TEST:
 /// Semantic!
 pub enum ConfigMemberNameKind {
@@ -526,24 +518,9 @@ pub enum ConfigMemberNameKind {
     Override,
 }
 
-//TEST: @@@@
-/// All common pieces of data that all configs
-// #[derive(Debug)]
-// pub struct AbstractConfigCommon {
-//     pub name_span: SourceSpan,
-//     //// Config specific to the origin of this metadata. ONLY `ConfigDefMember` can have this.
-//     pub kind: AbstractConfigKind,
-//     /// Configuration options for the current parent to apply
-//     pub opt_assignments: Vec<AbstractOptionAssignment>,
-//     /// `ScopeType` that should be looked within for the given identifier
-//     /// Can only be `ScopeLookupPattern::OnlyVar/NamespaceOnly`
-//     pub lookup_pattern: ScopeLookupPattern,
-//     /// Configuration for inner fields to define recursively
-//     pub cfg_members: Vec<AbstractConfig>,
-// }
-
 impl AbstractConfig {
     pub fn new(
+        name_id: InternedId,
         name_span: SourceSpan,
         kind: AbstractConfigKind,
         lookup_pat: ScopeLookupPattern,
@@ -551,6 +528,7 @@ impl AbstractConfig {
         cfg_members: Vec<AbstractConfig>,
     ) -> AbstractConfig {
         AbstractConfig {
+            name_id,
             name_span,
             kind,
             lookup_pat,
@@ -563,18 +541,8 @@ impl AbstractConfig {
 #[derive(Debug, Clone)]
 pub enum AbstractConfigKind {
     /// Name attached to root
-    Root(InternedId),
+    Root,
     Member(ConfigMemberMetadataKind),
-}
-
-impl AbstractConfigKind {
-    /// Get's `InternedId` out of `AbstractConfigKind`
-    pub fn name_id(&self) -> InternedId {
-        match self {
-            AbstractConfigKind::Root(interned_id) => *interned_id,
-            AbstractConfigKind::Member(meta) => meta.name_id(),
-        }
-    }
 }
 
 //TEST: Might need this if these are genuinely distinctly different types if an origin is

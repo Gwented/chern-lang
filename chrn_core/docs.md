@@ -237,8 +237,8 @@ More often than not this will not actually matter for normal usage since the rul
 `"."`: Member access operator for accessing fields
 
 ### SPECIAL
-`=>`: Allows `complex` declarations to do "first=>second=>third{}" instead of "first{second{third{}}}"
-to avoid nesting overhead if only the defaults are desired.
+`=>`: Allows config declarations to do "first=>second=>third{}" instead of "first{second{third{}}}"
+to avoid nesting overhead if no properties wish to be set.
 
 ## Modules
 
@@ -385,7 +385,7 @@ nest->
 
 Searchable scopes: `neutral`, `nest` and special case `var`
 
-`complex` can only at most be nested ONCE unless `override` is used. Which is "Thing { inner {} }" where "Thing { inner { inner_inner {} } }" would be an error at inner_inner.
+`complex` can have at most two nesting levels unless `override` is used. Which is "Thing { inner {} }" where "Thing { inner { inner_inner {} } }" would be an error at inner_inner.
 
 To avoid redundancy the examples will use the following structures:
 
@@ -429,7 +429,7 @@ complex->
     }
 ```
 
-### Inner Configs
+### Config members
 - Configuration also allows for nesting in the case of defining special properties specific to members. This attempts to find the member with the identifier given.
 
 ```chrn
@@ -453,42 +453,6 @@ complex->
 
 // SHOW OVER-NESTING EXAMPLE HERE
 
-### Embedding override into complex
-
-As noted, `complex` sections can **ONLY** be nested 2 levels, but if `override` section semantics are embedded then this rule no longer applies.
-
-```chrn
-complex->
-    Cat {
-        override {
-            CPP {
-                types { u8 = cpp::unsigned_char }
-            }
-        }
-        cases = ["snake_case", "UpperSnakeCase"]
-
-        stressLevel {
-            // Applies to specific config so can be used any amount of times.
-            override {}
-            HIGH {
-                // Operates fine
-                override {
-                    JAVA {
-                        types {
-                            i64 = java::int
-                        }
-                    }
-                }
-                idents = "High"
-            }
-        }
-
-        identifiers = "Happy"
-
-        mortgage {/*code*/}
-    }
-```
-
 ### Searching var/nest scopes specifically
 
 The section keyword `var` or `nest` can be used before a config root to narrow the search range, and most notably remove same identifier conflicts.
@@ -506,35 +470,24 @@ complex->
 
 #### IMPORTANT NOTES
 
-##### Syntax shortening
-`=>` can be used for shortening syntax if no properties are desired.
+##### Syntax shortening with `=>`
+`=>` can be used to shorten syntax if no properties are desired.
 Example:
 ```chrn
 // What if the docs refuse to compile?
+// I think that means it's wrong
 nest->
     struct First {second: Second}
-    struct Second {third: Third}
-    struct Third {fourth: Fourth}
-    struct Fourth {val: i32}
+    struct Second {val: i32}
 complex->
-    // With arrows this is:
-    First=>second=>third=>fourth {
-        val {
-            idents = "different"
-        }
-    }
-    // Without them:
-    First { Second { Third { Fourth { val { idents = "different" } } } } }
+    // Without arrows:
+    First { second { idents = "different" } }
 
-    // Does not have to be at root:
-    First {
-        second {
-            third=>fourth {
-                val { idents = "different" }
-            }
-        }
-    }
+    // With arrows:
+    First=>second { idents = "different" }
 ```
+
+NOTE: This is mainly meant for `override` since it has no nesting limit and may prefer such arrow usage.
 
 # UPDATE
 ##### Member access
@@ -553,55 +506,24 @@ For example, It could be:
 None of these are very concrete to where just enforcing that the current module's defined type must be the root for any config used is currently the only way this is done (This is not final)
 
 ##### Recursive types within configs
-Recursive types are not allowed to be defined within configs more than once.
+Recursive types are allowed to be defined within configs.
 
 For example:
 ```chrn
 nest->
-    struct Orange {
-        orange: Orange
-    }
+struct Orange {
+    orange: Orange
+}
 complex->
-    Orange {
-        // Would already be applying these options and config member properties to all
-        // recursive versions of itself.
-        idents = ["Urang", "Crust"]
-        orange {
-            // This is an error and should be placed within the original recursive orange identifier list
-            idents = "Recursive Orange"
-        }
+Orange {
+    // This applies to the actual type of `Orange` and it's possible identifiers
+    idents = ["Urang", "Crust"]
+    orange {
+        idents = "Recursive Orange"
+        // This applies to the member's possible identifiers
     }
+}
 ```
-
-
-This is not allowed because it contradicts the previous recursive `Orange` by saying, this inner `Orange` of the same type `Orange` has different conditions from the original `Orange` config, which can't work because `Orange` was already given a set of properties. In short, there would be more than one set of properties as to how to treat a specific type that already has it's properties defined.
-
-This does not impact separate configs which happen to have the same type like:
-```chrn
-nest->
-    struct Orange {
-        orange: Orange
-    }
-    struct Apple {
-        orange: Orange
-    }
-
-// Should config be locked to where it only starts from var-> defined variables?
-complex->
-    Orange {
-        idents = ["Urang", "Crust"],
-    }
-
-    Apple {
-        orange {
-            // This is fine since it's setting the properties of what the member of Apple which is of
-            // type orange will have, not re-defining properties that already exist.
-            identifiers = "memberOrange"
-        }
-    }
-```
-
-This is not allowed that would mean recursive descent count specific properties would have to exist for a type that already has properties defined in an earlier config, which would mean the type itself has a recursive other version of itself, within itself, without another recursive version of itself.
 
 # DOES NOT EXIST YET
 `override`: Controls elements such as possible namespace casing to also look for and setting language specific defaults. Language defaults exist intrinsically but this can change any if needed.

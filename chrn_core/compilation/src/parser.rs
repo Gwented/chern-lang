@@ -233,6 +233,8 @@ pub fn parse(
 
                     ctx.advance_tok();
 
+                    //TODO: Maybe this shouldn't continue since if complex was used twice that
+                    //probably means syntax should at least still be shown
                     if state.has_complex() {
                         ctx.report_verbose(
                             "Found `complex` section more than once",
@@ -671,7 +673,8 @@ fn parse_cfg_expr(
     //
     // If the prefix is something like "var x {}" then it for this special case allows for another
     // section to lookup var
-    let (lookup_pat, name_span, kind) = handle_cfg_metadata(ctx, is_root, scope_type, interner)?;
+    let (lookup_pat, name_id, name_span, kind) =
+        handle_cfg_metadata(ctx, is_root, scope_type, interner)?;
 
     // Allows for "=>" to notify that
     if ctx.peek_tok() != Token::OCurlyBracket && ctx.peek_tok() != Token::NotSlimArrow {
@@ -727,6 +730,7 @@ fn parse_cfg_expr(
 
     // Might have to separate these, parent and member.
     Ok(AbstractConfig::new(
+        name_id,
         name_span,
         kind,
         lookup_pat,
@@ -747,7 +751,12 @@ fn handle_cfg_metadata(
     interner: &Intern,
 ) -> Result<
     // I KNOW THIS LOOKS BAD. WAIT.
-    (ScopeLookupPattern, SourceSpan, AbstractConfigKind),
+    (
+        ScopeLookupPattern,
+        InternedId,
+        SourceSpan,
+        AbstractConfigKind,
+    ),
     Token,
 > {
     if is_root {
@@ -769,23 +778,20 @@ fn handle_cfg_metadata(
             Branch::Section(SectionBranch::Complex),
             interner,
         )?;
-        Ok((pat, name_span, AbstractConfigKind::Root(name_id)))
+        Ok((pat, name_id, name_span, AbstractConfigKind::Root))
     } else {
         // If !root
 
         let name_span = ctx.peek_span();
-        let meta = if ctx.peek_tok() == Token::Keyword(Keyword::Override) {
-            ConfigMemberMetadataKind::Complex(ComplexConfigMemberMetadata::new(None))
-        } else {
-            let name_id = ctx.expect_id_verbose(
-                TokenKind::Id,
-                "Expected an identifier to define configuration for, found ",
-                "",
-                Branch::Section(SectionBranch::Complex),
-                interner,
-            )?;
-            ConfigMemberMetadataKind::Complex(ComplexConfigMemberMetadata::new(Some(name_id)))
-        };
+        let name_id = ctx.expect_id_verbose(
+            TokenKind::Id,
+            "Expected an identifier to define configuration for, found ",
+            "",
+            Branch::Section(SectionBranch::Complex),
+            interner,
+        )?;
+
+        let meta = ConfigMemberMetadataKind::Complex(ComplexConfigMemberMetadata::new());
 
         // If !is_root that means it can use "override {}" so it's checked here
         let kind = if ctx.peek_tok() == Token::Keyword(Keyword::Override) {
@@ -794,7 +800,7 @@ fn handle_cfg_metadata(
         } else {
             AbstractConfigKind::Member(meta)
         };
-        Ok((ScopeLookupPattern::NamespaceOnly, name_span, kind))
+        Ok((ScopeLookupPattern::NamespaceOnly, name_id, name_span, kind))
     }
 }
 
@@ -849,6 +855,8 @@ fn parse_option_assignment(
 
 // Should this just return elements similar to how call_args does?
 //NOTE: May add parse_array to parse_expr eventually
+/// Parses assuming that '[' is the starting point.
+/// Parses ',' delimited elements "[1,2,3,4,]"
 fn parse_array(
     ctx: &mut ParserContext,
     budget: &ParserBudget,

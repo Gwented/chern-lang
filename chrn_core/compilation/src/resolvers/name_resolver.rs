@@ -10,8 +10,8 @@ use chrn_utils::{
 use crate::{
     lookup::scopes::{Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
     parser::ast::ast_concepts::{
-        AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
-        Item,
+        AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractEnum, AbstractStruct,
+        AbstractTypeDef, AbstractVar, Item,
     },
     resolvers::{resolver_env::RegistrationEnv, resolver_state::ResolverState},
     script_compiler::ScriptCompiler,
@@ -129,6 +129,7 @@ impl NamespaceResolver<'_> {
             "Either configuration of `abs_cfg` was done wrong or a core language change did not update this assertion.\nExpected `ScopeLookupPattern::NoRestrictions/OnlyVar`, found {:?}",
             abs_cfg.lookup_pat
         );
+        debug_assert!(matches!(abs_cfg.kind, AbstractConfigKind::Root));
 
         let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
 
@@ -140,10 +141,10 @@ impl NamespaceResolver<'_> {
         // If an original exists, get the key so that it can be reported, otherwise insert it. This
         // is to avoid inserting first and overwriting the last symbol since ergonomically, it
         // probably makes more sense to keep the original for scope searching to fall-back to.
-        let orig_sym_opt = if let Some(original) = table.interned_to_sym.get(&abs_cfg.name_id()) {
+        let orig_sym_opt = if let Some(original) = table.interned_to_sym.get(&abs_cfg.name_id) {
             Some(*original)
         } else {
-            table.interned_to_sym.insert(abs_cfg.name_id(), sym_id);
+            table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
             None
         };
 
@@ -152,7 +153,7 @@ impl NamespaceResolver<'_> {
 
         let cfg_def = ConfigDefRoot::new(
             sym_id,
-            abs_cfg.name_id(),
+            abs_cfg.name_id,
             abs_cfg.name_span,
             cfg_id,
             None,
@@ -162,7 +163,7 @@ impl NamespaceResolver<'_> {
         );
 
         let sym = Symbol::new(
-            abs_cfg.name_id(),
+            abs_cfg.name_id,
             sym_id,
             Some(ast_id),
             SymbolOrigin::Module(env.current_mod),

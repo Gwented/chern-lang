@@ -3,7 +3,6 @@ pub(crate) mod yaml_config;
 
 use chrn_utils::{
     arena::Arena,
-    err_codes::err_code_fmter,
     id_types::SourceRegionId,
     intern::Intern,
     source_map::{
@@ -14,7 +13,9 @@ use chrn_utils::{
 };
 
 use crate::renderer::{
-    output_helpers::{annotation_kind_str, level_str, project_absolute_span, resolve_region_path},
+    output_helpers::{
+        self, annotation_kind_str, level_str, project_absolute_span, resolve_region_path,
+    },
     yaml_renderer::{escape::push_yaml_str, yaml_config::YamlRenderConfig},
 };
 
@@ -158,7 +159,7 @@ fn write_diagnostic(
         push_yaml_str(out, "err_code");
         out.push_str(": ");
         match diag.err_code {
-            Some(code) => push_yaml_str(out, &err_code_fmter(code)),
+            Some(code) => push_yaml_str(out, &output_helpers::fmt_err_code(code)),
             None => out.push_str("null"),
         }
         out.push('\n');
@@ -226,7 +227,7 @@ fn write_diagnostic_fields_minify(
     push_yaml_str(out, "err_code");
     out.push_str(": ");
     match diag.err_code {
-        Some(code) => push_yaml_str(out, &err_code_fmter(code)),
+        Some(code) => push_yaml_str(out, &output_helpers::fmt_err_code(code)),
         None => out.push_str("null"),
     }
     out.push_str(", ");

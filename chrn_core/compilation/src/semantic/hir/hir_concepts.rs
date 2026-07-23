@@ -356,9 +356,9 @@ impl ConfigDefRoot {
 /// but with ties to a `MemberSymbol` instead of a `Symbol`
 #[derive(Debug)]
 pub struct ConfigDefMember {
-    // /// Is a name id instead of symbol id since `NameResolver` merely registers names, with no
-    // /// knowledge of symbol specifics. A dependency system may be used in the future.
-    // pub name_id: InternedId,
+    /// Is a name id instead of symbol id since `NameResolver` merely registers names, with no
+    /// knowledge of symbol specifics. A dependency system may be used in the future.
+    pub name_id: InternedId,
     // This is not a `SpannedContainer` because it may become an Option
     pub name_span: SourceSpan,
     /// `MemberId` of `self`
@@ -380,6 +380,7 @@ pub struct ConfigDefMember {
 
 impl ConfigDefMember {
     pub fn new(
+        name_id: InternedId,
         name_span: SourceSpan,
         member_id: MemberId,
         linked_member_id: MemberId,
@@ -389,6 +390,7 @@ impl ConfigDefMember {
         cfg_def_members: Vec<MemberId>,
     ) -> ConfigDefMember {
         ConfigDefMember {
+            name_id,
             member_id,
             linked_member_id,
             name_span,
@@ -398,10 +400,13 @@ impl ConfigDefMember {
             cfg_def_members,
         }
     }
-    pub fn name_id(&self) -> InternedId {
-        self.metadata.name_id()
-    }
 }
+
+// Maybe embed this into lookup instead?
+// #[derive(Debug, Clone)]
+// pub enum ConfigRootMetadataKind {
+//     Override,
+// }
 
 /// For allowing one config to hold different metadata depending on the context
 #[derive(Debug, Clone)]
@@ -410,25 +415,20 @@ pub enum ConfigMemberMetadataKind {
     Override(OverrideConfigMemberMetadata),
 }
 impl ConfigMemberMetadataKind {
-    /// Returns `true` if is complex variant.
-    /// Returns `false` if the complex metadata has override inside of it, or if it's from the
+    /// Returns `true` if complex variant, false otherwise
     /// `override` section
     pub fn is_complex(&self) -> bool {
         match self {
-            // If name is some then the identifier isn't semantic, which means its just complex
-            ConfigMemberMetadataKind::Complex(meta) => meta.name_id_opt.is_some(),
+            ConfigMemberMetadataKind::Complex(_) => true,
 
             ConfigMemberMetadataKind::Override(_) => false,
         }
     }
 
-    /// Returns `true` if the complex metadata has override inside of it, or if it's from the
-    /// `override` section
-    /// Returns `false` if complex
+    /// Returns `true` if override variant, false otherwise
     pub fn is_override(&self) -> bool {
         match self {
-            // If name is some then the identifier isn't semantic, which means its just complex
-            ConfigMemberMetadataKind::Complex(meta) => meta.name_id_opt.is_none(),
+            ConfigMemberMetadataKind::Complex(_) => false,
 
             ConfigMemberMetadataKind::Override(_) => true,
         }
@@ -462,44 +462,36 @@ impl ConfigMemberMetadataKind {
         }
     }
 
-    pub fn name_id(&self) -> InternedId {
-        match self {
-            ConfigMemberMetadataKind::Complex(meta) => {
-                // If there exists a name id that means it was a declaration with a member of
-                // some kind
-                if let Some(name_id) = meta.name_id_opt {
-                    name_id
-
-                    // If there exists no name id then it is an "override {}" block
-                    // NOTE: Should probably just make this a specialized enum instead of
-                    // heuristic decision making
-                } else {
-                    InternedId::new(intern::INTERNED_OVERRIDE)
-                }
-            }
-            ConfigMemberMetadataKind::Override(meta) => todo!("STOP USING OVERRIDE"),
-        }
-    }
+    // pub fn name_id(&self) -> InternedId {
+    //     match self {
+    //         ConfigMemberMetadataKind::Complex(meta) => {
+    //             // If there exists a name id that means it was a declaration with a member of
+    //             // some kind
+    //             if let Some(name_id) = meta.name_id_opt {
+    //                 name_id
+    //
+    //                 // If there exists no name id then it is an "override {}" block
+    //                 // NOTE: Should probably just make this a specialized enum instead of
+    //                 // heuristic decision making
+    //             } else {
+    //                 InternedId::new(intern::INTERNED_OVERRIDE)
+    //             }
+    //         }
+    //         ConfigMemberMetadataKind::Override(meta) => todo!("STOP USING OVERRIDE"),
+    //     }
+    // }
 }
 
+//NOTE: UNUSED
 /// `complex` scope `ConfigMember` specific metadata
 #[derive(Debug, Clone)]
-pub struct ComplexConfigMemberMetadata {
-    //NOTE: Maybe use the namekind
-    //
-    /// If `None` then this is an `override {}` config block, otherwise it's a default complex config block
-    pub name_id_opt: Option<InternedId>,
-    // /// Whether or not the current member is an `override` keyword created scope, which has
-    // /// different nesting rules
-    // is_override: bool,
-}
+pub struct ComplexConfigMemberMetadata {}
 
 impl ComplexConfigMemberMetadata {
-    pub fn new(name_id_opt: Option<InternedId>) -> ComplexConfigMemberMetadata {
-        ComplexConfigMemberMetadata { name_id_opt }
+    pub fn new() -> ComplexConfigMemberMetadata {
+        ComplexConfigMemberMetadata {}
     }
 }
-
 /// `override` scope `ConfigMember` specific metadata
 #[derive(Debug, Clone)]
 pub struct OverrideConfigMemberMetadata {}
@@ -636,7 +628,7 @@ impl MemberSymbolKind {
             MemberSymbolKind::OptAssignmentMember(opt_assignment_member) => {
                 Some(opt_assignment_member.name_id)
             }
-            MemberSymbolKind::ConfigDefMember(cfg_def_member) => Some(cfg_def_member.name_id()),
+            MemberSymbolKind::ConfigDefMember(cfg_def_member) => Some(cfg_def_member.name_id),
             MemberSymbolKind::Unknown(_) => None,
         }
     }

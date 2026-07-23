@@ -29,8 +29,7 @@ use crate::resolvers::resolver_state::ResolverState;
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::evaluator::UnaryOpResult;
 use crate::semantic::hir::hir_concepts::{
-    ComplexConfigMemberMetadata, ConfigDefMember, ConfigMemberMetadataKind, MemberSymbolKind,
-    OptionAssignmentMember, OptionAssignmentRoot, VariableState,
+    ConfigDefMember, MemberSymbolKind, OptionAssignmentMember, OptionAssignmentRoot, VariableState,
 };
 use crate::semantic::hir::hir_concepts::{Symbol, SymbolKind, SymbolOrigin, VarDef};
 use crate::semantic::hir::hir_concepts::{Type, TypeInfo};
@@ -436,7 +435,7 @@ impl<'res> TypeResolver<'res> {
             scopes::find_sym_id(
                 self.compiler,
                 associated_scope,
-                abs_cfg_root.name_id(),
+                abs_cfg_root.name_id,
                 scope_type,
                 // The config itself chooses it's lookup since it may is `OnlyVar` as specified in
                 // `parser.rs`
@@ -450,7 +449,7 @@ impl<'res> TypeResolver<'res> {
             // Options are checked for validity after this so returning `None` here is fine. But
             // this still does terminate eventually since a config's member's cannot be sarched
             // without an actual member holding symbol.
-            let name = self.interner.search(abs_cfg_root.name_id());
+            let name = self.interner.search(abs_cfg_root.name_id);
             let core_msg = format!(
                 //TODO: Need to store scope type or some scope metadata or some conversion
                 "Could not find `{name}` in `{:?}` searchable scopes",
@@ -630,7 +629,7 @@ impl<'res> TypeResolver<'res> {
                 self.compiler,
                 found_type_id,
                 //TODO: CHANGE THIS
-                abs_inner_cfg.name_id(),
+                abs_inner_cfg.name_id,
                 MemberScopeLookupPattern::NoRestrictions,
             ) {
                 // These are split so that the theoretical ok and err paths are able to reduce
@@ -696,10 +695,10 @@ impl<'res> TypeResolver<'res> {
                             // type as `x` rather than `State`
                             let name_id =
                                 if abs_cfg_root.lookup_pat == ScopeLookupPattern::NamespaceOnly {
-                                    abs_cfg_root.name_id()
+                                    abs_cfg_root.name_id
                                 } else {
                                     // TODO: Needs change
-                                    abs_cfg_root.name_id()
+                                    abs_cfg_root.name_id
                                 };
 
                             let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
@@ -707,7 +706,7 @@ impl<'res> TypeResolver<'res> {
                                     name_id,
                                     abs_cfg_root.name_span,
                                 ),
-                                member: abs_inner_cfg.name_id(),
+                                member: abs_inner_cfg.name_id,
                             });
 
                             // List available members?
@@ -754,7 +753,7 @@ impl<'res> TypeResolver<'res> {
 
             let cfg_member_id = self.resolve_cfg_member(
                 parent_sym_id,
-                &mut cfg_dfs,
+                // &mut cfg_dfs,
                 &mut seen_cfg_vec,
                 &mut seen_opt_vec,
                 member_id,
@@ -781,9 +780,9 @@ impl<'res> TypeResolver<'res> {
                 // Since this iteration specifically checks if the current was declared after the
                 // last and the iteration terminates upon the first match, this correctly points at
                 // the original field for all duplicates.
-                .find(|(other_i, cfg)| *other_i < i && current_cfg.name_id() == cfg.name_id())
+                .find(|(other_i, cfg)| *other_i < i && current_cfg.name_id == cfg.name_id)
             {
-                let dup_name = self.interner.search(current_cfg.name_id());
+                let dup_name = self.interner.search(current_cfg.name_id);
 
                 let orig_span = original_cfg.name_span;
                 let current_cfg_span = current_cfg.name_span;
@@ -817,7 +816,7 @@ impl<'res> TypeResolver<'res> {
 
         let cfg_root = self.compiler.get_cfg_def_mut(parent_sym_id);
 
-        debug_assert!(matches!(abs_cfg_root.kind, AbstractConfigKind::Root(_)));
+        debug_assert!(matches!(abs_cfg_root.kind, AbstractConfigKind::Root));
         debug_assert_eq!(cfg_root.linked_sym_id, None);
         debug_assert_eq!(cfg_root.opt_assignments.len(), 0);
         debug_assert_eq!(cfg_root.cfg_members.len(), 0);
@@ -842,7 +841,13 @@ impl<'res> TypeResolver<'res> {
         // For resolve_expr
         root_parent_sym_id: SymbolId,
         // For tracking invalid recursive usage
-        cfg_dfs: &mut Vec<(TypeId, SourceSpan)>,
+        // Recursive errors no longer exist at the moment because override can only access known
+        // configs like "types" inside of "RUST { types {} }".
+        //
+        // `complex` can only go two nesting levels so recursion isn't an issue there besides the
+        // parent symbol which should be accounted for since it no longer innately is with this
+        // being removed.
+        // cfg_dfs: &mut Vec<(TypeId, SourceSpan)>,
         //TEST: For identifier tracking right now. Trying out something questionable.
         seen_cfg_vec: &mut Vec<&'res AbstractConfig>,
         seen_opt_vec: &mut Vec<&'res AbstractOptionAssignment>,
@@ -999,68 +1004,68 @@ impl<'res> TypeResolver<'res> {
         // type, but a bug happened earlier, which would be ignored from this if let silently
         // because some consumers actually do need this. We'll see.
         if let Some(parent_type_id) = self.compiler.get_type_id_from_member_id(parent_member_id) {
-            // If recursive then reporting then returning
+            //     // If recursive then reporting then returning
+            //     //
+            //     // May change
+            //     if let Some((_, original_span)) = cfg_dfs.iter().find(|(id, _)| *id == parent_type_id) {
+            //         // Can't fail since this being recursive itself means that the member this is
+            //         // associated with needed to have some sort of inner type to begin with, meaning it
+            //         // was user-defined
+            //         let sym_id = self
+            //             .compiler
+            //             .get_sym_id_from_type_id(parent_type_id)
+            //             .expect("Should only be reached from recursion");
+            //         let sym = &self.compiler.symbols[sym_id];
+            //         let type_name = self.interner.search(sym.name_id);
             //
-            // May change
-            if let Some((_, original_span)) = cfg_dfs.iter().find(|(id, _)| *id == parent_type_id) {
-                // Can't fail since this being recursive itself means that the member this is
-                // associated with needed to have some sort of inner type to begin with, meaning it
-                // was user-defined
-                let sym_id = self
-                    .compiler
-                    .get_sym_id_from_type_id(parent_type_id)
-                    .expect("Should only be reached from recursion");
-                let sym = &self.compiler.symbols[sym_id];
-                let type_name = self.interner.search(sym.name_id);
-
-                let core_msg = format!("Recursive config of `{type_name}`");
-                let src_diag = SourceDiagnostic::builder(
-                    ErrorCode::ConfigDeclErr.code().into(),
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    env.region.path_id,
-                )
-                .add_annotation(
-                    parent_abs_cfg.name_span,
-                    AnnotationKind::Primary,
-                    format!("Recursive `{type_name}` config").into(),
-                )
-                .add_annotation(
-                    *original_span,
-                    AnnotationKind::Secondary,
-                    format!("Original `{type_name}` config").into(),
-                )
-                // Um
-                .add_note(
-                    "There can only be one property defining config if the type is recursive"
-                        .into(),
-                )
-                .add_note(
-                    "The first config of a recursive type applies to all of it's inner recursive versions of innately".into(),
-                );
-
-                self.diags.push(src_diag.build());
-                // Returning the `MemberSymbolKind::Unknown` reserved
-                return current_cfg_member_id;
-            }
-
-            // Only pushing types that are not built-in
+            //         let core_msg = format!("Recursive config of `{type_name}`");
+            //         let src_diag = SourceDiagnostic::builder(
+            //             ErrorCode::ConfigDeclErr.code().into(),
+            //             DiagnosticLevel::Error,
+            //             core_msg,
+            //             env.region.path_id,
+            //         )
+            //         .add_annotation(
+            //             parent_abs_cfg.name_span,
+            //             AnnotationKind::Primary,
+            //             format!("Recursive `{type_name}` config").into(),
+            //         )
+            //         .add_annotation(
+            //             *original_span,
+            //             AnnotationKind::Secondary,
+            //             format!("Original `{type_name}` config").into(),
+            //         )
+            //         // Um
+            //         .add_note(
+            //             "There can only be one property defining config if the type is recursive"
+            //                 .into(),
+            //         )
+            //         .add_note(
+            //             "The first config of a recursive type applies to all of it's inner recursive versions of innately".into(),
+            //         );
             //
-            // This is the only time this Vec is mutated
-            if !self.compiler.check_builtin(parent_type_id) {
-                cfg_dfs.push((parent_type_id, parent_abs_cfg.name_span));
-            }
+            //         self.diags.push(src_diag.build());
+            //         // Returning the `MemberSymbolKind::Unknown` reserved
+            //         return current_cfg_member_id;
+            //     }
+            //
+            //     // Only pushing types that are not built-in
+            //     //
+            //     // This is the only time this Vec is mutated
+            //     if !self.compiler.check_builtin(parent_type_id) {
+            //         cfg_dfs.push((parent_type_id, parent_abs_cfg.name_span));
+            //     }
 
             for abs_cfg_member in &parent_abs_cfg.cfg_members {
-                let AbstractConfigKind::Member(inner_kind) = abs_cfg_member.kind.clone() else {
-                    panic!("Wrong member assignment");
-                };
+                // let AbstractConfigKind::Member(inner_kind) = abs_cfg_member.kind.clone() else {
+                //     panic!("Wrong member assignment");
+                // };
 
                 seen_cfg_len += 1;
                 seen_cfg_vec.push(abs_cfg_member);
 
                 //Complex
-                let member_id = if inner_kind.is_complex() {
+                let member_id = if scope_type == ScopeType::Complex {
                     // -- DEPTH HANDLING START --
                     // If the scope is complex, it's not override (which is an exception for deeper
                     // nesting in complex), and depth + 1 is 2 then err.
@@ -1081,8 +1086,6 @@ impl<'res> TypeResolver<'res> {
                                 .into();
                         let cfg_root = self.compiler.get_cfg_def_root(root_parent_sym_id);
 
-                        // Are we really going to add history for the sake of maintaining span info for this one
-                        // error message that happens to need it?
                         let builder = SourceDiagnostic::builder(
                             ErrorCode::ConfigDeclErr.code().into(),
                             DiagnosticLevel::Error,
@@ -1111,11 +1114,9 @@ impl<'res> TypeResolver<'res> {
                         // It's hard to tell what information to add since we have the type name and
                         // could point out just making a different top level config for it but - !{}}}
                         // Ok maybe that should happen
-                        .add_help(
-                            "Prefer defining another config root instead (See docs for more info)"
-                                .into(),
-                        );
+                        .add_help("Prefer defining another config root instead".into());
                         self.diags.push(builder.build());
+
                         // Breaks instead of returning so that the present information about the current
                         // member can still be returned.
                         break;
@@ -1125,7 +1126,7 @@ impl<'res> TypeResolver<'res> {
                     match member_lookup::lookup_member(
                         self.compiler,
                         parent_type_id,
-                        abs_cfg_member.name_id(),
+                        abs_cfg_member.name_id,
                         MemberScopeLookupPattern::NoRestrictions,
                     ) {
                         // These are split so that the theoretical ok and err paths are able to reduce
@@ -1207,7 +1208,7 @@ impl<'res> TypeResolver<'res> {
                                                 ty_name_id,
                                                 parent_abs_cfg.name_span,
                                             ),
-                                            member: abs_cfg_member.name_id(),
+                                            member: abs_cfg_member.name_id,
                                         });
 
                                     //TODO: RECURSIVELY TRACKING ENDS UP HERE FIX SHOULD BE APPLIED HERE IF
@@ -1261,17 +1262,14 @@ impl<'res> TypeResolver<'res> {
                             continue;
                         }
                     }
-                    //Override
                 } else {
+                    debug_assert_eq!(scope_type, ScopeType::Override);
                     panic!("We'll see");
                 };
 
-                dbg!(self.interner.search(abs_cfg_member.name_id()));
-                dbg!(inner_kind.is_complex());
-
                 let cfg_member_id = self.resolve_cfg_member(
                     root_parent_sym_id,
-                    cfg_dfs,
+                    // cfg_dfs,
                     seen_cfg_vec,
                     seen_opt_vec,
                     member_id,
@@ -1304,9 +1302,9 @@ impl<'res> TypeResolver<'res> {
                 // Since this iteration specifically checks if the current was declared after the
                 // last and the iteration terminates upon the first match, this correctly points at
                 // the original field for all duplicates.
-                .find(|(other_i, cfg)| *other_i < i && current_cfg.name_id() == cfg.name_id())
+                .find(|(other_i, cfg)| *other_i < i && current_cfg.name_id == cfg.name_id)
             {
-                let dup_name = self.interner.search(current_cfg.name_id());
+                let dup_name = self.interner.search(current_cfg.name_id);
 
                 let orig_span = original_cfg.name_span;
                 let current_cfg_span = current_cfg.name_span;
@@ -1343,6 +1341,7 @@ impl<'res> TypeResolver<'res> {
         };
 
         let cfg_member = ConfigDefMember::new(
+            parent_abs_cfg.name_id,
             parent_abs_cfg.name_span,
             current_cfg_member_id,
             parent_member_id,
