@@ -125,6 +125,7 @@ impl MemberResolver<'_> {
                     )
                     .expect("Result enforced by `match`");
 
+                    // `another` failed here
                     preset_reporter::report_preset(
                         &mut self.err_vec,
                         preset_err,

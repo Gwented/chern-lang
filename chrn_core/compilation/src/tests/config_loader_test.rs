@@ -1,3 +1,5 @@
+use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
+
 use super::helpers::*;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 

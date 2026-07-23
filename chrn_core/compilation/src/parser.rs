@@ -20,7 +20,9 @@ use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
 use crate::parser::context::ParserContext;
 use crate::parser::parser_budget::ParserBudget;
 use crate::parser::parser_state::ParserState;
-use crate::semantic::hir::hir_concepts::{ComplexConfigMemberMetadata, ConfigMemberMetadataKind};
+use crate::semantic::hir::hir_concepts::{
+    ComplexConfigMemberMetadata, ConfigMemberMetadataKind, OverrideConfigMemberMetadata,
+};
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::id_types::{InternedId, SpannedContainer};
 use chrn_utils::intern::Intern;
@@ -284,8 +286,6 @@ pub fn parse(
                         );
                     }
 
-                    todo!("Override not done yet");
-
                     ctx.advance_tok();
 
                     if state.has_override() {
@@ -309,6 +309,7 @@ pub fn parse(
                     );
                     // Please lint empty sections please emit 40000 warns for slightly misplaced
                     // spaces
+                    // As you wish.
 
                     while !ctx.peek_kind().is_terminator() {
                         // This would look simpler with keywords
@@ -321,7 +322,7 @@ pub fn parse(
                         if let Ok(abs_cfg) =
                             parse_cfg_expr(&mut ctx, &budget, true, ScopeType::Override, interner)
                         {
-                            ast_info.push_item(SectionKind::Complex, Item::Config(abs_cfg));
+                            ast_info.push_item(SectionKind::Override, Item::Config(abs_cfg));
                         }
                     }
                 }
@@ -759,48 +760,89 @@ fn handle_cfg_metadata(
     ),
     Token,
 > {
-    if is_root {
-        // Only keywords valid for root usage
-        let pat = if ctx.peek_tok() == Token::Keyword(Keyword::Var) {
-            ctx.advance_tok();
-            ScopeLookupPattern::OnlyVar
-        } else if ctx.peek_tok() == Token::Keyword(Keyword::Nest) {
-            ctx.advance_tok();
-            ScopeLookupPattern::OnlyNest
-        } else {
-            ScopeLookupPattern::NamespaceOnly
-        };
-        let name_span = ctx.peek_span();
-        let name_id = ctx.expect_id_verbose(
-            TokenKind::Id,
-            "Expected an identifier to define configuration for, found ",
-            "",
-            Branch::Section(SectionBranch::Complex),
-            interner,
-        )?;
-        Ok((pat, name_id, name_span, AbstractConfigKind::Root))
-    } else {
-        // If !root
+    //TODO: Collapse these
+    match scope_type {
+        ScopeType::Complex => {
+            if is_root {
+                // Only keywords valid for root usage
+                let pat = if ctx.peek_tok() == Token::Keyword(Keyword::Var) {
+                    ctx.advance_tok();
+                    ScopeLookupPattern::OnlyVar
+                } else if ctx.peek_tok() == Token::Keyword(Keyword::Nest) {
+                    ctx.advance_tok();
+                    ScopeLookupPattern::OnlyNest
+                } else {
+                    ScopeLookupPattern::NamespaceOnly
+                };
 
-        let name_span = ctx.peek_span();
-        let name_id = ctx.expect_id_verbose(
-            TokenKind::Id,
-            "Expected an identifier to define configuration for, found ",
-            "",
-            Branch::Section(SectionBranch::Complex),
-            interner,
-        )?;
+                let name_span = ctx.peek_span();
+                let name_id = ctx.expect_id_verbose(
+                    TokenKind::Id,
+                    "Expected an identifier to define configuration for, found ",
+                    "",
+                    Branch::Section(SectionBranch::Complex),
+                    interner,
+                )?;
+                return Ok((pat, name_id, name_span, AbstractConfigKind::Root));
+            } else {
+                // If !root
+                let name_span = ctx.peek_span();
+                let name_id = ctx.expect_id_verbose(
+                    TokenKind::Id,
+                    "Expected an identifier to define configuration for, found ",
+                    "",
+                    Branch::Section(SectionBranch::Complex),
+                    interner,
+                )?;
 
-        let meta = ConfigMemberMetadataKind::Complex(ComplexConfigMemberMetadata::new());
+                let kind = AbstractConfigKind::Member(ConfigMemberMetadataKind::Complex(
+                    ComplexConfigMemberMetadata::new(),
+                ));
 
-        // If !is_root that means it can use "override {}" so it's checked here
-        let kind = if ctx.peek_tok() == Token::Keyword(Keyword::Override) {
-            ctx.advance_tok();
-            AbstractConfigKind::Member(meta)
-        } else {
-            AbstractConfigKind::Member(meta)
-        };
-        Ok((ScopeLookupPattern::NamespaceOnly, name_id, name_span, kind))
+                return Ok((ScopeLookupPattern::NamespaceOnly, name_id, name_span, kind));
+            }
+        }
+        ScopeType::Override => {
+            if is_root {
+                // Only keywords valid for root usage
+                let pat = if ctx.peek_tok() == Token::Keyword(Keyword::Var) {
+                    ctx.advance_tok();
+                    ScopeLookupPattern::OnlyVar
+                } else if ctx.peek_tok() == Token::Keyword(Keyword::Nest) {
+                    ctx.advance_tok();
+                    ScopeLookupPattern::OnlyNest
+                } else {
+                    ScopeLookupPattern::NamespaceOnly
+                };
+
+                let name_span = ctx.peek_span();
+                let name_id = ctx.expect_id_verbose(
+                    TokenKind::Id,
+                    "Expected an identifier to define configuration for, found ",
+                    "",
+                    Branch::Section(SectionBranch::Override),
+                    interner,
+                )?;
+                return Ok((pat, name_id, name_span, AbstractConfigKind::Root));
+            } else {
+                // If !root
+                let name_span = ctx.peek_span();
+                let name_id = ctx.expect_id_verbose(
+                    TokenKind::Id,
+                    "Expected an identifier to define configuration for, found ",
+                    "",
+                    Branch::Section(SectionBranch::Complex),
+                    interner,
+                )?;
+
+                let kind = AbstractConfigKind::Member(ConfigMemberMetadataKind::Override(
+                    OverrideConfigMemberMetadata::new(),
+                ));
+
+                return Ok((ScopeLookupPattern::NamespaceOnly, name_id, name_span, kind));
+            }
+        }
+        _ => unreachable!(),
     }
 }
 

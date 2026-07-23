@@ -452,6 +452,39 @@ complex->
 
 // SHOW OVER-NESTING EXAMPLE HERE
 
+### Schemas
+// Should address that the initial naming given to identifiers like in "struct Person {name:str}" is just the identifier the langauge wants as a stable indicator for that particular field, and is alterable easily through the complex cfgs.
+// Need some migration specific tools that help with fixing old versions instead of "idents" possibly being the only form of mitigation
+
+## CONCEPTS HANDLED BY CONDITIONS BUT IF THEY WERE REMOVED USED THESE OOPTIONS
+if_nil_ignore:
+deserialize_nil_as_default(`bool`)
+## CONCEPTS HANDLED BY CONDITIONS BUT IF THEY WERE REMOVED USED THESE OOPTIONS
+
+NOT DONE YET NOR FINAL
+struct, enum, member schemas
+
+struct/enum options:
+idents(`str`): Allows for multiple identifiers to be matched (For the type itself)
+// Should support all the names like kebab_case, snake_case, etc. (Kebab????)
+cases: Allows for different cases to be matched. Is more so a convenience over idents.
+serialized_ident: The given identifier is what the serialized data is output as. By default, this value is just the field's name. Meaning, for "First { second {} }" second is what the serialized data is output as by default unless specified.
+serialized_output_ordering: Orders the members of this type in the specified manner. (Would probably look like "serialized_output_ordering(`str`) = ["field1", "field2"]" where if there is a `field3` it just puts it just greedily orders)
+// Maybe this should be an internal macro, even though that means we lost the config outside of code part.
+skip_unknown_members(`bool`): If a member in this type was found that does not exist in the chrn defined file then it's not an error it's just skipped. (This is maybe `false` by default and errs)
+
+member options:
+default_val: If the language has a null/None concept, this is applied. (if possible)
+idents: Allows for multiple identifiers to be matched for the given member (Not its type)
+// Should support all the names like kebab_case, snake_case, etc.
+cases: Allows for different cases to be matched. Is more so a convenience over idents.
+(as/under/ident)
+serialized_ident: The given identifier is what the serialized data is output as. By default, this value is just the field's name. Meaning, for "First { second {} }" second is what the serialized data is output as by default unless specified.
+
+NOTE: What if there was a way to give specified values to the options? Like, "serialized_output_ordering = #alphabetical"? Would probably need a better way internally to do this since this could get bad quickly.
+
+NOT DONE YET NOR FINAL
+
 ### Searching var/nest scopes specifically
 
 The section keyword `var` or `nest` can be used before a config root to narrow the search range, and most notably remove same identifier conflicts.
@@ -546,6 +579,9 @@ override sections use the same exact semantics as the earlier explained `complex
 
 # DOES NOT EXIST
 `#ignore_rm`: (Would remove anything that didn't align under constraint rather than crash or warn.)
+// Maybe collapse some conditions into serialization options. Seems easier to do, "skip_if = self == 30" than timeout: u64 [Equals(30)] #skip_if or [Equals(30) #skip_if, ] Ok maybe this doesn't look that bad.
+// What if we threw the concept of conditions INTO options?
+`#skip_if`: Um
 # DOES NOT EXIST
 
 - Directives can be applied to all types within a `struct` or `enum` if put directly after declaration within a nest.

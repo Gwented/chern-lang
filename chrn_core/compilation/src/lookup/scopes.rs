@@ -4,6 +4,7 @@ use chrn_utils::{
     id_types::{InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId},
     intern::Intern,
 };
+use lang::fmter::{Formattable, Formatted};
 
 use crate::{
     script_compiler::ScriptCompiler,
@@ -201,7 +202,7 @@ pub fn find_type_id(
 
                             return Some(type_id);
                         }
-                        SymbolKind::Module(_)
+                        SymbolKind::Namespace
                         | SymbolKind::Config(_)
                         | SymbolKind::Directive(_) => return None,
                     }
@@ -267,6 +268,12 @@ pub fn find_sym_id(
                 ScopeLookupPattern::OnlyNest => &SCOPE_NEST_ONLY,
             };
 
+            // `another` failed here
+            // if target_name_id.id == 50 {
+            //     dbg!(lookup_pattern, associated_scope, accessible_scopes);
+            //     panic!();
+            // }
+
             for allowed_scope_type in accessible_scopes.iter() {
                 if let Some(scope_info) = find_scope(compiler, *allowed_scope_type, mod_id) {
                     if let Some(sym_id) =
@@ -312,6 +319,7 @@ pub fn find_sym_id(
             }
         }
     }
+    // `another` failed here
 
     None
 }
@@ -586,21 +594,24 @@ pub enum AssociatedScopeKind {
     Scope(ScopeId),
 }
 
+impl Formattable for AssociatedScopeKind {
+    fn to_fmt(&self) -> lang::fmter::Formatted {
+        match self {
+            AssociatedScopeKind::Module(_) => Formatted::Module,
+            AssociatedScopeKind::Scope(_) => Formatted::Namespace,
+        }
+    }
+}
+
 pub struct IntrinsicRegistry {
     pub core_mod_id: ModuleId,
-    pub complex_scope_id: Option<ScopeId>,
     pub override_scope_id: Option<ScopeId>,
 }
 
 impl IntrinsicRegistry {
-    pub fn new(
-        core_mod_id: ModuleId,
-        complex_scope_id: Option<ScopeId>,
-        override_scope_id: Option<ScopeId>,
-    ) -> IntrinsicRegistry {
+    pub fn new(core_mod_id: ModuleId, override_scope_id: Option<ScopeId>) -> IntrinsicRegistry {
         IntrinsicRegistry {
             core_mod_id,
-            complex_scope_id,
             override_scope_id,
         }
     }

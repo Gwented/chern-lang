@@ -38,12 +38,12 @@
 
 use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
+use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use compilation::lexer::Lexer;
 use compilation::modules::Bind;
 use compilation::modules::ImportKind;
 use compilation::modules::Module;
 use compilation::modules::ModuleState;
-use lang::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -922,10 +922,14 @@ pub(crate) fn resolve_modules_lsp(
             }
             Err(ConfigLoadError::IO(e)) => {
                 let core_msg = format!("IO error: {}", e);
-                let src_diag =
-                    SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, current_path_id)
-                        .add_annotation(path_span, AnnotationKind::Primary, None)
-                        .build();
+                let src_diag = SourceDiagnostic::builder(
+                    None,
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    current_path_id,
+                )
+                .add_annotation(path_span, AnnotationKind::Primary, None)
+                .build();
                 diags.push(src_diag);
                 continue;
             }

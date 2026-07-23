@@ -132,7 +132,7 @@ impl<'res> TypeResolver<'res> {
                 SymbolKind::Variable(_) => self.resolve_var(sym_id, env),
                 SymbolKind::Config(_) => self.resolve_cfg_root(sym_id, env),
                 // Users cannot define these but they exist internally.
-                SymbolKind::Module(_) | SymbolKind::Directive(_) => unreachable!(),
+                SymbolKind::Namespace | SymbolKind::Directive(_) => unreachable!(),
             }
         }
 
@@ -1450,7 +1450,7 @@ impl<'res> TypeResolver<'res> {
                 // technically still exists and needs to be ignored. Not currently aware of any
                 // direct issues with this. Maybe an Error tag on a pending expression could help?
                 SymbolKind::Type(_)
-                | SymbolKind::Module(_)
+                | SymbolKind::Namespace
                 | SymbolKind::Config(_)
                 | SymbolKind::Directive(_) => {
                     unreachable!("Not possible")
@@ -2420,7 +2420,7 @@ impl<'res> TypeResolver<'res> {
                             }
                             // Local scopes can't reach these right now
                             SymbolKind::Type(type_id) => todo!(),
-                            SymbolKind::Module(mod_id) => todo!(),
+                            SymbolKind::Namespace => todo!(),
                             SymbolKind::Config(cfg_id) => todo!(),
                             SymbolKind::Directive(directive_id) => todo!(),
                         };
@@ -2590,12 +2590,12 @@ impl<'res> TypeResolver<'res> {
                                 }
                             }
                         }
-                        SymbolKind::Module(_) => {
+                        SymbolKind::Namespace => {
                             let err_mod_name = self.interner.search(*name_id);
                             // TODO: Should send help, which should be done after re-doing how
                             // errors are rendered
                             let core_msg = format!(
-                                "`{err_mod_name}` is a module, which cannot be assigned as an expression value"
+                                "`{err_mod_name}` is a namspace, which cannot be assigned as an expression value"
                             );
 
                             let src_diag = SourceDiagnostic::builder(

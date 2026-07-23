@@ -61,6 +61,7 @@ pub enum Formatted {
     Export,
     Variable,
     Module,
+    Namespace,
     Config,
     Bind,
     Alias,
@@ -207,6 +208,7 @@ impl Display for Formatted {
             Formatted::ExclamationPoint => write!(f, "!"),
             Formatted::Func => write!(f, "function"),
             Formatted::Array => write!(f, "Array"),
+            Formatted::Namespace => write!(f, "namespace"),
             Formatted::In => write!(f, "in"),
             Formatted::TypeDef => write!(f, "typedef"),
             // WARN: What

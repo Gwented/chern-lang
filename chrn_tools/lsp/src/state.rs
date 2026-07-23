@@ -755,10 +755,18 @@ impl DocumentState {
                             let mut current_ty: Option<TypeId> = None;
                             let mut matched = false;
                             match sym.kind {
-                                SymbolKind::Module(mid) => {
-                                    map.push((segments[0].span, SemanticEntity::Module(mid)));
-                                    current_mod = Some(mid);
-                                    matched = true;
+                                SymbolKind::Namespace => {
+                                    match sym.associated_scope.expect("Namespace should have associated scope") {
+                                        AssociatedScopeKind::Module(mid) => {
+                                            map.push((segments[0].span, SemanticEntity::Module(mid)));
+                                            current_mod = Some(mid);
+                                            matched = true;
+                                        }
+                                        AssociatedScopeKind::Scope(_) => {
+                                            map.push((segments[0].span, SemanticEntity::Symbol(sid)));
+                                            matched = true;
+                                        }
+                                    }
                                 }
                                 SymbolKind::Type(tid) => {
                                     map.push((segments[0].span, SemanticEntity::Symbol(sid)));
@@ -802,13 +810,25 @@ impl DocumentState {
                                             }) {
                                                 if let Some(sym) = compiler.symbols.get(sym_id) {
                                                     match sym.kind {
-                                                        SymbolKind::Module(mid) => {
-                                                            map.push((
-                                                                seg.span,
-                                                                SemanticEntity::Module(mid),
-                                                            ));
-                                                            current_mod = Some(mid);
-                                                            current_ty = None;
+                                                        SymbolKind::Namespace => {
+                                                            match sym.associated_scope.expect("Namespace should have associated scope") {
+                                                                AssociatedScopeKind::Module(mid) => {
+                                                                    map.push((
+                                                                        seg.span,
+                                                                        SemanticEntity::Module(mid),
+                                                                    ));
+                                                                    current_mod = Some(mid);
+                                                                    current_ty = None;
+                                                                }
+                                                                AssociatedScopeKind::Scope(_) => {
+                                                                    map.push((
+                                                                        seg.span,
+                                                                        SemanticEntity::Symbol(sym_id),
+                                                                    ));
+                                                                    current_mod = None;
+                                                                    current_ty = None;
+                                                                }
+                                                            }
                                                         }
                                                         SymbolKind::Type(tid) => {
                                                             map.push((

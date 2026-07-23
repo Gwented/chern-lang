@@ -4,8 +4,11 @@ use chrn_utils::{
     intern,
     source_map::source_span::SourceSpan,
 };
-use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
 use lang::{directives::Directive, fmter::Formatted};
+use lang::{
+    fmter::Formattable,
+    types::builtins::{BuiltinType, BuiltinTypeKind},
+};
 
 use crate::{
     lookup::scopes::{
@@ -131,7 +134,8 @@ pub fn resolve_type_expr(
                 lookup_pattern,
             ) {
                 Some(SymbolLookupOutput { found_sym_id, .. }) => {
-                    match compiler.symbols[found_sym_id].kind {
+                    let found_sym = &compiler.symbols[found_sym_id];
+                    match found_sym.kind {
                         SymbolKind::Type(type_id) => {
                             let sym = &compiler.symbols[found_sym_id];
 
@@ -152,11 +156,15 @@ pub fn resolve_type_expr(
 
                             TypeExprResult::Type(type_id)
                         }
-                        SymbolKind::Module(_) => {
+                        SymbolKind::Namespace => {
+                            let fmtted = found_sym
+                                .associated_scope
+                                .expect("Should be namespace")
+                                .to_fmt();
                             return TypeExprResult::NotAType {
                                 found_sym_id,
                                 sp_name_id: sp_name,
-                                kind: Formatted::Module,
+                                kind: fmtted,
                                 scope_found_in: associated_scope,
                             };
                         }
@@ -165,6 +173,7 @@ pub fn resolve_type_expr(
                                 found_sym_id,
                                 sp_name_id: sp_name,
                                 kind: Formatted::Variable,
+                                //WARN: Feels like this should be very concerning...
                                 scope_found_in: associated_scope,
                             };
                         }
@@ -414,6 +423,7 @@ pub fn resolve_static_access(
     for (i, sp_path_seg) in sp_path_segs.iter().enumerate() {
         match &sp_path_seg.kind {
             PathSegment::Ident(interned_id) => {
+                // NOTE: `another` searched here
                 if let Some(SymbolLookupOutput { found_sym_id, .. }) = scopes::find_sym_id(
                     compiler,
                     current_scope,
@@ -424,6 +434,7 @@ pub fn resolve_static_access(
                     let sym = &compiler.symbols[found_sym_id];
                     match sym.associated_scope {
                         Some(new_scope) => {
+                            // Transitioning to next namespace
                             current_scope = new_scope;
                         }
                         None => {
@@ -448,6 +459,7 @@ pub fn resolve_static_access(
                         None
                     };
 
+                    // `another` failed here
                     return StaticAccessResult::SymNotFound {
                         current_seg: SpannedContainer::new(*interned_id, sp_path_seg.span),
                         prev_seg,

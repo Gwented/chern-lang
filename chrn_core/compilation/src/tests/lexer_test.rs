@@ -1,3 +1,5 @@
+use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
+
 use super::helpers::*;
 
 #[test]
@@ -72,12 +74,8 @@ fn lex_tok_test_rev() {
     assert_eq!(region.script_start, 0);
     assert_eq!(region.serial_start, Some(26));
 
-    let (toks, _) = Lexer::new(
-        region.region_id,
-        &region.src_bytes,
-        region.script_start,
-    )
-    .tokenize(&mut interner);
+    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner);
 
     // Expect: Def(0,4), Id("bind")(4,8), Str("./some/path")(9,22), End(22,26)
     assert_eq!(toks.len(), 4);

@@ -7,11 +7,12 @@ use std::{fs, path::Path};
 
 pub mod mod_finder;
 
+use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use chrn_utils::{
     arena::Arena,
     chrn_config::ChrnConfig,
     core_error::{self, ConfigLoadError, ModuleInitError},
-    err_codes::{self, ErrorCode},
+    err_codes::ErrorCode,
     files::file_ops,
     id_types::{InternedId, ModuleId, PathId, ScopeId, SourceRegionId, SymbolId},
     intern::{self, Intern},
@@ -21,7 +22,6 @@ use chrn_utils::{
         source_span::SourceSpan,
     },
 };
-use lang::config_loader::{ConfigLoader, ConfigLoaderOutput};
 
 use crate::{
     modules::mod_finder::ModuleFinder,
@@ -325,6 +325,12 @@ pub fn extract_modules(
     // );
 
     // let mut failed_indices: Vec<usize> = Vec::new();
+    //TODO: Emit warn if name == `core`
+    // If it's the same as core, core still takes precedence, but tooling may interpret it
+    // differently, so should reflect that non-deterministic behavior is expected and that the
+    // module's name should be changed
+    // Before this would need reporting to take care of counting errors and warns instead of just
+    // $#%@$#%$%$$ if len() != 0
     let mut next_id = 1;
     for mod_opt in other_mods.drain(..) {
         if let Some(mut inner) = mod_opt {

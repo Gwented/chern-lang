@@ -1,3 +1,4 @@
+pub mod config_loader;
 pub mod constraints;
 pub mod cst;
 pub mod lexer;

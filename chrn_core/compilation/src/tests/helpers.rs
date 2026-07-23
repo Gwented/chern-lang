@@ -299,8 +299,8 @@ pub(super) use chrn_utils::{
         source_region::SourceRegion,
     },
 };
+use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
 pub(super) use lang::{
-    config_loader::{ConfigLoader, ConfigLoaderOutput},
     keywords::Keyword,
     values::Value,
 };

@@ -93,7 +93,7 @@ impl<'a> ConstraintResolver<'a> {
                 SymbolKind::Variable(_) => self.resolve_var(sym_id, env),
                 SymbolKind::Config(_) => self.resolve_cfg_root(sym_id, env),
                 // Users cannot define these but they exist internally.
-                SymbolKind::Module(_) | SymbolKind::Directive(_) => unreachable!(),
+                SymbolKind::Namespace | SymbolKind::Directive(_) => unreachable!(),
             }
         }
 

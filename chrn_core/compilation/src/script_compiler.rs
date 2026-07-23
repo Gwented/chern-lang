@@ -146,7 +146,7 @@ impl ScriptCompiler {
     pub fn init(bind: Option<Bind>, mods: Arena<Module, ModuleId>) -> ScriptCompiler {
         //TEST:
         let core_mod_id = ModuleId::new(mods.len() as u32);
-        let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None, None);
+        let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None);
 
         let mut compiler = ScriptCompiler {
             bind,
@@ -182,8 +182,8 @@ impl ScriptCompiler {
         // through their imports to then inject those symbols as modules that can be looked up
 
         // So, if we have main AND other
-        // It registers "main" as a module symbol so usage such as "main.MainType" can be used
-        // It then registers a symbol for "other" so that the same "other.OtherType" semantics can
+        // It registers "main" as a module symbol so usage such as "main::MainType" can be used
+        // It then registers a symbol for "other" so that the same "other::OtherType" semantics can
         // be done
         // If there is an alias, that is also ensured to be pushed as a symbol connected to the
         // module "other"
@@ -191,7 +191,7 @@ impl ScriptCompiler {
             let current_mod_id = ModuleId::new(i as u32);
             let module = &compiler.mods[current_mod_id];
 
-            // Avoiding borrow issues by just storing the ids earlier
+            // Avoiding borrow issues by storing the ids earlier
             let current_mod_name_id = module.name_id;
             let current_mod_id = module.mod_id;
 
@@ -206,7 +206,7 @@ impl ScriptCompiler {
                 true,
                 Some(AssociatedScopeKind::Module(current_mod_id)),
                 ScopeType::Neutral,
-                SymbolKind::Module(current_mod_id),
+                SymbolKind::Namespace,
             );
 
             // Module symbols go into the neutral scope because, uh
@@ -234,7 +234,7 @@ impl ScriptCompiler {
                     true,
                     Some(AssociatedScopeKind::Module(import.mod_id)),
                     ScopeType::Neutral,
-                    SymbolKind::Module(import.mod_id),
+                    SymbolKind::Namespace,
                 );
 
                 // Module symbols go into the neutral scope because, uh
@@ -262,7 +262,7 @@ impl ScriptCompiler {
                         true,
                         Some(AssociatedScopeKind::Module(import.mod_id)),
                         ScopeType::Neutral,
-                        SymbolKind::Module(import.mod_id),
+                        SymbolKind::Namespace,
                     );
 
                     let scope = &mut compiler.get_scope_mut(scope_id).scope;
@@ -575,7 +575,7 @@ impl ScriptCompiler {
                     VariableState::ReservedTypeSlot(type_id) => type_id,
                     VariableState::Known(val_id) => self.values[val_id].type_id,
                 },
-                SymbolKind::Module(_) | SymbolKind::Config(_) | SymbolKind::Directive(_) => {
+                SymbolKind::Namespace | SymbolKind::Config(_) | SymbolKind::Directive(_) => {
                     unreachable!()
                 }
             },
@@ -593,7 +593,7 @@ impl ScriptCompiler {
                     VariableState::Known(val_id) => Some(self.values[val_id].type_id),
                 },
                 // Not a type, just a symbol with a scope
-                SymbolKind::Directive(_) | SymbolKind::Module(_) | SymbolKind::Config(_) => None,
+                SymbolKind::Directive(_) | SymbolKind::Namespace | SymbolKind::Config(_) => None,
             },
         }
     }
@@ -637,7 +637,7 @@ impl ScriptCompiler {
             SymbolKind::Type(type_id) => self.get_span_from_type_id(*type_id),
             SymbolKind::Variable(var_id) => Some(self.variables[*var_id].name_span),
             SymbolKind::Config(cfg_id) => Some(self.cfgs[*cfg_id].name_span),
-            SymbolKind::Module(_) | SymbolKind::Directive(_) => None,
+            SymbolKind::Namespace | SymbolKind::Directive(_) => None,
         }
     }
 
@@ -736,7 +736,6 @@ impl ScriptCompiler {
     ///
     /// This method exists along with extract_scope_id due to cross module namespace checking not
     /// innately confirming whether or not it contains a particular `ScopeType`
-    //FIX: Id for consistency
     pub fn get_scope_id(&self, scope_type: ScopeType, owner: ModuleId) -> Option<ScopeId> {
         scopes::find_scope(self, scope_type, owner).map(|s| s.scope.scope_id)
     }
@@ -772,22 +771,12 @@ impl ScriptCompiler {
         let scope_id = ScopeId::new(self.scopes.len() as u16);
         // Beep
         let intrinsic_scope_opt: Option<ScopeId> = match scope_type {
-            // Maybe this stages an internal language construct at compile time
-            ScopeType::Complex => {
-                None
-                // if let Some(scope_id) = self.intrinsic_registry.complex_scope_id {
-                //     Some(scope_id)
-                // } else {
-                //     // let scope_id = Some(self.load_complex_constants());
-                //     self.intrinsic_registry.complex_scope_id = scope_id;
-                //     scope_id
-                // }
-            }
+            // Lazy
             ScopeType::Override => {
                 if let Some(scope_id) = self.intrinsic_registry.override_scope_id {
                     Some(scope_id)
                 } else {
-                    let scope_id = Some(self.load_override_constants());
+                    let scope_id = Some(self.load_override_symbols());
                     self.intrinsic_registry.override_scope_id = scope_id;
                     scope_id
                 }
@@ -796,6 +785,7 @@ impl ScriptCompiler {
             | ScopeType::Neutral
             | ScopeType::Var
             | ScopeType::Nest
+            | ScopeType::Complex
             | ScopeType::Compiler
             | ScopeType::Core => None,
         };
@@ -807,7 +797,6 @@ impl ScriptCompiler {
         let owner_mod = &mut self.mods[owner_id];
         owner_mod.scopes.push(scope_id);
         // owner_mod.held_scopes |= scope_type.to_u8();
-        // BRAIN OFF
 
         scope_id
     }
@@ -854,11 +843,6 @@ impl ScriptCompiler {
 
         // Injecting core as an import and pushing it's scope so user modules can search it
         for user_mod in &mut compiler.mods.items {
-            //TODO: Not sure about removing this yet
-            if user_mod.name_id == core_name_id {
-                continue;
-            }
-
             user_mod.imports.push(core_import.clone());
             user_mod.scopes.push(core_scope_id);
         }
@@ -875,8 +859,7 @@ impl ScriptCompiler {
                 _ => return false,
             }
         }
-
-        loop_abort!();
+        loop_abort!()
     }
 
     /// Loads all compiler known directives
@@ -1109,38 +1092,45 @@ impl ScriptCompiler {
 
     /// Creates scope with the constants needed for an `override` section to function then returns
     /// it's `ScopeId`
-    fn load_override_constants(&mut self) -> ScopeId {
+    fn load_override_symbols(&mut self) -> ScopeId {
         // IS it from core? The semantics are getting a little lost
-        let core_mod_id = self.intrinsic_registry.core_mod_id;
+        //
+        // Saying it's not from core for now because !
+        // let core_mod_id = self.intrinsic_registry.core_mod_id;
         let scope_type = ScopeType::Override;
         let override_scope_id = ScopeId::new(self.scopes.len() as u16);
 
+        // Override intrisic scope's table which holes stuff like "RUST" and "JAVA" namespaces
         let mut table = Table::new();
-        self.load_override_java_symbols(&mut table, override_scope_id, core_mod_id);
-
+        self.load_override_java_cfg(&mut table, override_scope_id);
         let scope = Scope::with_table(override_scope_id, scope_type, None, true, table);
-        let java_scope = ScopeInfo::new(scope, None, core_mod_id);
-        todo!()
+
+        todo!("We want to return you");
+
+        override_scope_id
     }
 
-    fn load_override_java_symbols(
-        &mut self,
-        table: &mut Table,
-        complex_scope_id: ScopeId,
-        core_mod_id: ModuleId,
-    ) {
+    fn load_override_java_cfg(&mut self, table: &mut Table, override_scope_id: ScopeId) {
         let name_id = InternedId::new(intern::INTERNED_JAVA_UPPER);
+        let scope_type = ScopeType::Override;
+
         let sym_id = SymbolId::new(self.symbols.len() as u32);
+        let cfg_root_id = ConfigRootId::new(self.cfgs.len() as u32);
+
         let java_symbol = Symbol::new(
             name_id,
             sym_id,
             None,
-            SymbolOrigin::Module(core_mod_id),
+            SymbolOrigin::Compiler,
             false,
             None,
-            ScopeType::Complex,
-            SymbolKind::Module(todo!()),
+            scope_type,
+            SymbolKind::Config(cfg_root_id),
         );
+
+        table.interned_to_sym.insert(name_id, sym_id);
+        self.symbols.push(java_symbol);
+        // self.cfgs.push(val);
 
         todo!()
     }

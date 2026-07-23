@@ -1,5 +1,4 @@
 pub mod algo;
-pub mod config_loader;
 pub mod config_schemas;
 pub mod directives;
 pub mod fmter;

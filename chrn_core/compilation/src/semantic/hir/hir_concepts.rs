@@ -111,20 +111,23 @@ pub enum SymbolKind {
     // /// to isolate this type of state inside of a kind of symbol, rather than polluting type-space.
     // ReservedTypeSlot(TypeId),
     /// Represents a module symbol
-    Module(ModuleId),
+    Namespace,
     /// Represents a config symbol
     Config(ConfigRootId),
     Directive(DirectiveId),
-    // AbstractSection(),
 }
 
 impl SymbolKind {
     // This is getting obscure now...
     pub fn to_fmt(compiler: &ScriptCompiler, sym_id: SymbolId) -> Formatted {
-        match &compiler.symbols[sym_id].kind {
+        let sym = &compiler.symbols[sym_id];
+        match &sym.kind {
             SymbolKind::Type(type_id) => Type::to_fmt(compiler, *type_id),
             SymbolKind::Variable(_) => Formatted::Variable,
-            SymbolKind::Module(_) => Formatted::Module,
+            SymbolKind::Namespace => match sym.associated_scope.expect("Is kind namespace") {
+                AssociatedScopeKind::Module(_) => Formatted::Module,
+                AssociatedScopeKind::Scope(_) => Formatted::Namespace,
+            },
             SymbolKind::Config(_) => Formatted::Config,
             SymbolKind::Directive(_) => Formatted::Directive,
         }
@@ -495,6 +498,11 @@ impl ComplexConfigMemberMetadata {
 /// `override` scope `ConfigMember` specific metadata
 #[derive(Debug, Clone)]
 pub struct OverrideConfigMemberMetadata {}
+impl OverrideConfigMemberMetadata {
+    pub fn new() -> OverrideConfigMemberMetadata {
+        OverrideConfigMemberMetadata {}
+    }
+}
 
 // Would be:
 // Person {

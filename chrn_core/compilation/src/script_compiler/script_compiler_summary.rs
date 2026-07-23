@@ -15,3 +15,5 @@ impl ScriptCompilerSummary {
         }
     }
 }
+
+pub trait CompilerSummary {}

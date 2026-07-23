@@ -36,13 +36,13 @@
 //! carry the version they were spawned for; stale results are discarded in
 //! [`crate::analyser::publish_if_current`].
 
+use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use compilation::lexer::token::Token as ScriptToken;
 use compilation::lookup::scopes;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::{
     Symbol, SymbolKind, SymbolOrigin, Type, VariableState,
 };
-use lang::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use parking_lot::RwLock;
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
@@ -378,7 +378,10 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
                 }
             }
         }
-        SymbolKind::Module(_) => CompletionItemKind::MODULE,
+        SymbolKind::Namespace => match sym.associated_scope.expect("Should have namespace") {
+            scopes::AssociatedScopeKind::Module(_) => CompletionItemKind::MODULE,
+            scopes::AssociatedScopeKind::Scope(_) => CompletionItemKind::VARIABLE,
+        },
         SymbolKind::Config(_) => CompletionItemKind::CLASS,
         SymbolKind::Directive(_) => CompletionItemKind::KEYWORD,
     }
@@ -437,7 +440,7 @@ fn classify_id_token(
                             }
                             return Some(SemanticTokenType::Variable.as_u32());
                         }
-                        SymbolKind::Module(_) => {
+                        SymbolKind::Namespace => {
                             return Some(SemanticTokenType::Variable.as_u32());
                         }
                         SymbolKind::Config(_) => {

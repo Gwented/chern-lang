@@ -2,6 +2,7 @@
 //@end
 //@def
 // How should aliasses infer their own constraints?
+// What if types could be conditionally loaded and overriden?
 
 // In this scenario, it should see that equals x is used, meaning it's numeric.
 // It sees y is startsW, filters, Numeric is all that's left since that's all they have in common.
@@ -82,7 +83,7 @@ var->
     // Nested configs are really hard to read. Maybe some labeling options?
     //
     // IDE should do the "thing: {Thing}" thing where it has the thing in grey
-    complex->
+    /*complex->
         // How can one field depth be enforced while still keeping the concept of generic config usage 
         // to where override-> can use it?
         Point {
@@ -135,13 +136,18 @@ var->
             }
             // extra = def::e#2
         }*/
-
+*/
+override->
+JAVA {
+    u8 = types::int
+}
 @end
 
 #OVERRIDE
 
 // Should be able to use overrides from other modules
 override->
+JAVA {}
 
 // Need to give override it's intrinsic scope, which should be lazily loaded
 JAVA {

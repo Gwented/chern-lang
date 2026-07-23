@@ -1,11 +1,9 @@
 export let READ = 0b0
 export let WRITE = 0b1
 
-// import "../chrn_core/chrn_tests/core.chrn"
+import "../chrn_core/chrn_tests/core.chrn"
 
 let x = 3 == 3
-
-let z = 2
 
 // if this was something that wanted to be added, that would then mean the compiler store needs to be 
 // mutable, but the environments USE the compiler store, which makes it hard to concat and intern
@@ -16,6 +14,7 @@ let z = 2
 
 nest->
     export struct Person {
+        // another: core::Person
         // state: State
         // p: str #scient The error emitted by this should be able to place the directive pointers
                           // directly under #scient. Too greedy. Feed them less.

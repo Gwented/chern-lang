@@ -16,6 +16,7 @@ pub struct Reporter {
     // The suppressed diagnostic count is the "exceeded_amt" in budget
     pub diag_budget: MemoryBudget,
     // Today?
+    // Yuppy
     /// Summary of what the compiler did today
     pub(crate) summary: ScriptCompilerSummary,
 }

@@ -24,7 +24,7 @@ use chrn_utils::{
     },
 };
 
-use crate::keywords::ANNOTATION_CLAUSE_SIZE;
+use lang::keywords::ANNOTATION_CLAUSE_SIZE;
 /// Can read 32KB before stopping if no `@def` or EOF is found
 const MAX_SEARCH_READ: usize = 1024 * 32;
 

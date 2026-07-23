@@ -1,3 +1,5 @@
+use crate::config_loader::ConfigLoader;
+
 use super::helpers::*;
 
 #[test]

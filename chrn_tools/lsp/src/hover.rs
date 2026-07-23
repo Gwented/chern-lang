@@ -39,6 +39,7 @@
 use chrn_utils::id_types::ModuleId;
 use chrn_utils::intern::Intern;
 use compilation::lexer::token::Token as ScriptToken;
+use compilation::lookup::scopes::AssociatedScopeKind;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::{
     self, MemberSymbolKind, SymbolKind, Type, VariableState,
@@ -227,12 +228,18 @@ pub fn compute_hover(
                                         }
                                     }
                                 }
-                                SymbolKind::Module(mod_id) => {
-                                    // `SymbolKind::Module` carries the `ModuleId` directly;
-                                    // index the `Arena` with the typed id.
-                                    let module = &compiler.mods[mod_id];
-                                    let mod_name = interner.search(module.name_id);
-                                    hover_text = format!("module **{}**", mod_name);
+                                SymbolKind::Namespace => {
+                                    let ns_name = interner.search(sym.name_id);
+                                    match sym.associated_scope.expect("Namespace should have associated scope") {
+                                        AssociatedScopeKind::Module(mod_id) => {
+                                            let module = &compiler.mods[mod_id];
+                                            let mod_name = interner.search(module.name_id);
+                                            hover_text = format!("module **{}**", mod_name);
+                                        }
+                                        AssociatedScopeKind::Scope(_) => {
+                                            hover_text = format!("namespace **{}**", ns_name);
+                                        }
+                                    }
                                 }
                                 SymbolKind::Config(cfg_id) => {
                                     let cfg_root = &compiler.cfgs[cfg_id];
