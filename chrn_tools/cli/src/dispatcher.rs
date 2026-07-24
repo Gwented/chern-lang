@@ -4,16 +4,15 @@ use chrn_utils::{
     chrn_config::ChrnConfig,
     core_error::{ConfigLoadError, ScriptError},
     id_types::SourceRegionId,
-    intern::Intern,
     source_map::source_region::SourceRegion,
 };
-use compilation::{config_loader::ConfigLoader, script_compiler::reporter::Reporter};
+use compilation::{
+    modules::{self, ModuleState},
+    script_compiler::reporter::Reporter,
+};
 use dumper::dump_settings::ModuleOptions;
 use lang::keywords;
-use orchestration::{
-    constructors, orchestrator,
-    script_compiler_cache::{self},
-};
+use orchestration::{constructors, orchestrator};
 
 use crate::{
     args::{CheckCmd, Cli, Commands, EmbedCmd, FmtCmd, GlobalArgs, QueryCmd},
@@ -46,7 +45,7 @@ fn exec_check(
     // Centralized cmd to config construction for all known cmds?
     let mut builder = ChrnConfig::builder();
     if check_cmd.dbg_mode {
-        builder = builder.with_logger();
+        builder = builder.add_logger();
     }
 
     let chrn_cfg = builder.build();
@@ -107,7 +106,7 @@ fn exec_check(
                     return Err(msg_opt);
                 }
                 ConfigLoadError::IO(err) => {
-                    let msg = format!("Process exited unsuccessfully. Reason: {err}");
+                    let msg = format!("Process exited unsuccessfully.\nReason: {err}");
                     return Err(msg.into());
                 }
             },
@@ -317,62 +316,153 @@ fn exec_embed(
     cli_cfg: &CliConfig,
 ) -> Result<String, Option<String>> {
     // Centralized cmd to config construction for all known cmds?
-    let mut chrn_cfg = ChrnConfig::default();
+    let chrn_cfg = ChrnConfig::default();
 
     // let mut reporter = Reporter::new(crate::MAX_DIAGNOSTICS);
     let src = files::make_canon(&embed_cmd.src_path)?;
     let dest = files::make_canon(&embed_cmd.dest_path)?;
 
     // Maybe allow the different ouputs for checking
+    //
+    // Not sure how to lower this pasting because either, there is one extremely specific
+    // method/function that does everything in this block of code, or we paste.
+    // Will try the helper maybe.
     let region: SourceRegion = if embed_cmd.check {
-        todo!()
+        let mut reporter = Reporter::new(crate::MAX_DIAGNOSTICS);
+
+        let (mut compiler, mut compiler_store, mut compiler_cache) =
+            match constructors::create_compiler_with_cache(&src, &mut reporter, chrn_cfg) {
+                Ok(data) => data,
+                Err(init_err) => match init_err.cfg_err {
+                    ConfigLoadError::Diagnostic(diag) => {
+                        let footers = presentation::make_footers(&reporter);
+                        let render_cfg = TerminalRenderConfig::new(
+                            glob_args.can_color,
+                            cli_cfg.terminal_color_type,
+                        );
+
+                        let rendered_diags = terminal_renderer::render_terminal_diags(
+                            &[diag],
+                            &footers,
+                            &render_cfg,
+                            // reporter.budget.amt_exceeded,
+                            init_err.region.as_ref(),
+                            &init_err.interner,
+                        );
+
+                        print_diags!(&rendered_diags);
+                        let msg = "`--check` failed, cannot embed file".to_string();
+                        return Err(msg.into());
+                    }
+                    ConfigLoadError::IO(err) => {
+                        let msg = format!("Process exited unsuccessfully. Reason: {err}");
+                        return Err(msg.into());
+                    }
+                },
+            };
+
+        match orchestrator::run_all(
+            &mut reporter,
+            &mut compiler,
+            &mut compiler_store,
+            Some(&mut compiler_cache),
+        ) {
+            Ok(_) => (),
+            Err(script_err) => match script_err {
+                ScriptError::Parser | ScriptError::Semantic => {
+                    let footers = presentation::make_footers(&reporter);
+                    let msg_opt = {
+                        let render_cfg = TerminalRenderConfig::new(
+                            glob_args.can_color,
+                            cli_cfg.terminal_color_type,
+                        );
+                        let rendered_diags = terminal_renderer::render_terminal_diags(
+                            &reporter.diags,
+                            &footers,
+                            &render_cfg,
+                            Some(&compiler_store.region_arena),
+                            &compiler_store.interner,
+                        );
+
+                        //TODO: Internally cut error message strings in the parser
+                        print_diags!(&rendered_diags);
+                        // Seems redundant to have this msg
+                        // "Failed to parse configuration file".to_string().into()
+                        "`--check` failed, cannot embed file".to_string().into()
+                    };
+
+                    return Err(msg_opt);
+                }
+                // Enforces that only one diagnostic is emitted so this is fine
+                ScriptError::IO(e) => {
+                    let msg = format!("Process exited unsuccessfully.\nReason: {e}");
+                    return Err(msg.into());
+                }
+            },
+        }
+        // This is fine since main should be 0, unless internals broke. At that point the compiler
+        // would need to directly take note of what the entry point was then we'd just use the id here.
+        compiler_store
+            .region_arena
+            .swap_remove(SourceRegionId::new(0))
     } else {
-        // let handle = chrn_utils::files::file_ops::fopen(&src)?;
-        // let mut interner = Intern::init();
-        // let path_id = interner.intern_path(&src);
-        // let region_id = SourceRegionId::new(0);
-        // match ConfigLoader::new(region_id, handle, path_id, &chrn_cfg, &interner).load_config() {
-        //     compilation::config_loader::ConfigLoaderOutput::Success(reg) => reg,
-        //     compilation::config_loader::ConfigLoaderOutput::Broken(_, cfg_err)
-        //     | compilation::config_loader::ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
-        //         match cfg_err {
-        //             ConfigLoadError::Diagnostic(diag) => {
-        //                 let render_cfg = TerminalRenderConfig::new(
-        //                     glob_args.can_color,
-        //                     cli_cfg.terminal_color_type,
-        //                 );
-        //
-        //                 let rendered_diags = terminal_renderer::render_terminal_diags(
-        //                     &[diag],
-        //                     &[],
-        //                     &render_cfg,
-        //                     region.as_ref(),
-        //                     &interner,
-        //                 );
-        //
-        //                 print_diags!(&rendered_diags);
-        //                 "Failed to parse configuration file".to_string().into();
-        //
-        //                 return Err(msg_opt);
-        //             }
-        //             ConfigLoadError::IO(err) => {
-        //                 let msg = format!("Process exited unsuccessfully. Reason: {err}");
-        //                 return Err(msg.into());
-        //             }
-        //         }
-        //     }
-        // }
-        panic!();
+        match modules::extract_main(&src, &chrn_cfg) {
+            Ok((main_mod, graph, interner, diags)) => {
+                // If the region is broken then it's probably not the best idea to embed it
+                if main_mod.state == ModuleState::BrokenRegion {
+                    let render_cfg =
+                        TerminalRenderConfig::new(glob_args.can_color, cli_cfg.terminal_color_type);
+
+                    let rendered_diags = terminal_renderer::render_terminal_diags(
+                        &diags,
+                        &[],
+                        &render_cfg,
+                        // reporter.budget.amt_exceeded,
+                        Some(&graph.region_arena),
+                        &interner,
+                    );
+
+                    print_diags!(&rendered_diags);
+                    let msg = "Failed to embed file".to_string();
+                    return Err(msg.into());
+                }
+
+                // Taking out region from main since that's all we're interested in
+                let mut arena = graph.region_arena;
+                let main_region_id = main_mod.region_id.expect("Just created");
+                arena.swap_remove(main_region_id)
+            }
+            Err(init_err) => match init_err.cfg_err {
+                ConfigLoadError::Diagnostic(diag) => {
+                    let render_cfg =
+                        TerminalRenderConfig::new(glob_args.can_color, cli_cfg.terminal_color_type);
+
+                    let rendered_diags = terminal_renderer::render_terminal_diags(
+                        &[diag],
+                        &[],
+                        &render_cfg,
+                        // reporter.budget.amt_exceeded,
+                        init_err.region.as_ref(),
+                        &init_err.interner,
+                    );
+
+                    print_diags!(&rendered_diags);
+                    let msg = "Failed to embed file".to_string();
+                    return Err(msg.into());
+                }
+                ConfigLoadError::IO(err) => {
+                    let msg = format!("Process exited unsuccessfully.\nReason: {err}");
+                    return Err(msg.into());
+                }
+            },
+        }
     };
 
-    // The issue here is that we do NOT care about syntax, unless asked, which means we WANT
-    // granular operations that don't care about semantics.
-    //
-    // But, we also want semantics if asked for.
     //If script start is above 0, that means there is an "@def -> @end", and if serial start is `Some`,
     // that means there exists at least an `@end`.
     //
-    // Both of these mean that there doesn't need to be any insertion of an @def or @end
+    // Both of these mean that there doesn't need to be any insertion of an @def or @end since they
+    // are self-contained regions
     let mut bytes = if region.script_start > 0 || region.serial_start.is_some() {
         Cow::Borrowed(&region.src_bytes)
     } else {
@@ -384,7 +474,11 @@ fn exec_embed(
         altered_bytes.extend_from_slice(keywords::END_CLAUSE_BYTES);
         Cow::Owned(altered_bytes)
     };
-    // TODO: Eventually
+
+    // Bytes would mutate itself here
+    //
+    // Maybe if `--check` was chosen, we actually store the store, then if `Some` store we don't have
+    // to run the parser again.
     if embed_cmd.fmt {
         todo!();
     } else if embed_cmd.minify {
@@ -402,73 +496,4 @@ fn exec_embed(
         }
         Err(_) => todo!(),
     }
-
-    // Please please please
-    // let (mut compiler, mut compiler_store, mut compiler_cache) =
-    //     match script_compiler_cache::create_compiler_with_cache(&src_path, &mut reporter, chrn_cfg)
-    //     {
-    //         Ok(data) => data,
-    //         Err(init_err) => match init_err.cfg_err {
-    //             ConfigLoadError::Diagnostic(diag) => {
-    //                 let footers = presentation::make_footers(&reporter);
-    //                 let render_cfg =
-    //                     TerminalRenderConfig::new(glob_args.can_color, cli_cfg.terminal_color_type);
-    //
-    //                 let rendered_diags = terminal_renderer::render_terminal_diags(
-    //                     &[diag],
-    //                     &footers,
-    //                     &render_cfg,
-    //                     // reporter.budget.amt_exceeded,
-    //                     init_err.region.as_ref(),
-    //                     &init_err.interner,
-    //                 );
-    //
-    //                 print_diags!(&rendered_diags);
-    //                 let msg = "Failed to parse configuration file".to_string();
-    //                 return Err(msg.into());
-    //             }
-    //             ConfigLoadError::IO(err) => {
-    //                 let msg = format!("Process exited unsuccessfully. Reason: {err}");
-    //                 return Err(msg.into());
-    //             }
-    //         },
-    //     };
-    //
-    // match orchestrator::run_all(
-    //     &mut reporter,
-    //     &mut compiler,
-    //     &mut compiler_store,
-    //     Some(&mut compiler_cache),
-    // ) {
-    //     Ok(_) => (),
-    //     Err(script_err) => match script_err {
-    //         ScriptError::Parser | ScriptError::Semantic => {
-    //             let footers = presentation::make_footers(&reporter);
-    //             let msg_opt = {
-    //                 let render_cfg =
-    //                     TerminalRenderConfig::new(glob_args.can_color, cli_cfg.terminal_color_type);
-    //                 let rendered_diags = terminal_renderer::render_terminal_diags(
-    //                     &reporter.diags,
-    //                     &footers,
-    //                     &render_cfg,
-    //                     Some(&compiler_store.region_arena),
-    //                     &compiler_store.interner,
-    //                 );
-    //
-    //                 //TODO: Internally cut error message strings in the parser
-    //                 print_diags!(&rendered_diags);
-    //                 // Seems redundant to have this msg
-    //                 // "Failed to parse configuration file".to_string().into()
-    //                 None
-    //             };
-    //
-    //             return Err(msg_opt);
-    //         }
-    //         // Enforces that only one diagnostic is emitted so this is fine
-    //         ScriptError::IO(e) => {
-    //             let msg = format!("Process exited unsuccessfully.\nReason: {e}");
-    //             return Err(msg.into());
-    //         }
-    //     },
-    // }
 }

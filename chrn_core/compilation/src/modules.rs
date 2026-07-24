@@ -1,5 +1,3 @@
-// TODO: The compiler probably shouldn't OWN the `bind` statement, and instead know what module id
-// is main so that it knows where to extract the meaningful bind statement.
 // TODO: This should be split but not sure what would be best since it is fairly local and small
 //TODO: This needs tests
 use std::{fs, path::Path};
@@ -79,6 +77,7 @@ impl Bind {
 //or, a wrapper that has a module that could explicitly represent if it's user or not
 //OR maybe src_metadata is actually a kind, which says whether it's user defined or not so it's
 //just not a basic nullable field, and actually has meaning
+/// Module
 #[derive(Debug, Clone)]
 pub struct Module {
     /// File name that will be used internally
@@ -98,6 +97,41 @@ pub struct Module {
     /// Metadata that exists if the module contains a source file
     // As of right now this represents the difference between a pre-loaded and user space module
     pub region_id: Option<SourceRegionId>,
+}
+
+impl Module {
+    pub const fn new(
+        name_id: InternedId,
+        state: ModuleState,
+        mod_id: ModuleId,
+        bind: Option<Bind>,
+        imports: Vec<Import>,
+        //TODO: Convert to explicit kind
+        region_id: Option<SourceRegionId>,
+    ) -> Module {
+        Module {
+            name_id,
+            mod_id,
+            state,
+            bind,
+            imports,
+            exports: Vec::new(),
+            scopes: Vec::new(),
+            region_id,
+        }
+    }
+
+    //NOTE: Does not check for alias, but it doesn't change anything since the import with the
+    //module's actual name still exists inside the import, with the alias just being second-hand
+    // pub fn contains_import(&self, other: &Module) -> bool {
+    //     let mut has_import = self.imports.iter().any(|i| i.name_id == other.name_id);
+    //
+    //     if !has_import {
+    //         has_import = self.mod_id == other.mod_id;
+    //     }
+    //
+    //     has_import
+    // }
 }
 
 pub enum ModuleKind {
@@ -126,56 +160,21 @@ pub enum ModuleState {
 //     overrid: Option<usize>,
 // }
 
-impl Module {
-    pub const fn new(
-        name_id: InternedId,
-        state: ModuleState,
-        mod_id: ModuleId,
-        bind: Option<Bind>,
-        imports: Vec<Import>,
-        //TODO: Convert to explicit kind
-        region_id: Option<SourceRegionId>,
-    ) -> Module {
-        Module {
-            name_id,
-            mod_id,
-            state,
-            bind,
-            imports,
-            exports: Vec::new(),
-            scopes: Vec::new(),
-            region_id,
-        }
-    }
-
-    //NOTE: Does not check for alias, but it doesn't change anything since the import with the
-    //module's actual name still exists inside the import, with the alias just being second-hand
-    pub fn contains_import(&self, other: &Module) -> bool {
-        let mut has_import = self.imports.iter().any(|i| i.name_id == other.name_id);
-
-        if !has_import {
-            has_import = self.mod_id == other.mod_id;
-        }
-
-        has_import
-    }
-}
-
 //TODO: Methods
 /// State needed to build the module graph from main to all sub modules
 pub struct ModuleGraph {
     /// Arena
-    region_arena: Arena<SourceRegion, SourceRegionId>,
+    pub region_arena: Arena<SourceRegion, SourceRegionId>,
     /// This is a Vector relationship stored where, the path id of an import is stored along with a
     /// `ModuleId`. So, we store main, go into main's imports then fill in OR create the module id of
     /// unknown imports based off of reserved len(). This works during the recursive process because
     /// it MUST look at all imports before ever recursing further, and it reserves it's spot as
     /// `None`.
-    reserved_mod_ids: Vec<(PathId, ModuleId)>,
+    pub reserved_mod_ids: Vec<(PathId, ModuleId)>,
     /// All modules except main
-    other_mods: Vec<Option<Module>>,
+    pub other_mods: Vec<Option<Module>>,
     /// All paths seen
-    seen: Vec<PathId>,
+    pub seen: Vec<PathId>,
 }
 
 impl ModuleGraph {
@@ -194,7 +193,7 @@ impl ModuleGraph {
     }
     // THEY MADE ME DO IT
 
-    pub const fn arena(&self) -> &Arena<SourceRegion, SourceRegionId> {
+    pub const fn region_arena(&self) -> &Arena<SourceRegion, SourceRegionId> {
         &self.region_arena
     }
 
@@ -445,7 +444,6 @@ pub fn extract_modules(
 //WARN: mod_map means that if any have the same identifier then the entire module space is broken
 // Need to either error or store differently
 
-// Maybe this has gone a little bit too far
 /// This function recursively resolves each import after being given a root module with imports to go off of.
 /// `reserved_mod_ids`: All stored K = Path, V = ModuleId, relationships, which were found by
 /// `ModuleFinder`'s collect imports method

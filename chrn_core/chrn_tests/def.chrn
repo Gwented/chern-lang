@@ -1,3 +1,4 @@
+@defimport x
 export let READ = 0b0
 export let WRITE = 0b1
 
@@ -27,3 +28,4 @@ nest->
         Ready: str [] #warn
         InProgress
     }
+@end

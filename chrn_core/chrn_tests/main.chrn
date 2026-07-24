@@ -36,7 +36,6 @@ let x = 5*/
 // Multi-file.
 // Same-line spanning.
 // Collisions.
-@def
 
 let x= (1 << 2)
 

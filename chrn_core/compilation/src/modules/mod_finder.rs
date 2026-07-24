@@ -1,5 +1,4 @@
-// Has weird behavior and silent errors when it comes to import keyword usage
-// FIX: When an import is next to something like, "@defimport" it is NOT identified because the i
+//! Module graph building parser that understands just enough to do it's job
 use std::{ffi::OsStr, path::PathBuf, str::FromStr};
 
 use chrn_utils::chrn_config::ChrnConfig;
@@ -13,6 +12,7 @@ use chrn_utils::{
         source_diagnostic::SourceDiagnostic, source_region::SourceRegion, source_span::SourceSpan,
     },
 };
+use lang::keywords;
 
 use crate::modules::{Bind, Import, ImportKind};
 
@@ -107,7 +107,20 @@ impl ModuleFinder<'_> {
                 // Should probably just work with &str directly at this point
                 c if c == b'i' || c == b'b' => {
                     // The operation requires a full utf-8 check
-                    if self.peek_behind_char(1).is_whitespace() {
+                    let prev_ch = self.peek_behind_char(1);
+                    // WARN: band-aid :(
+                    // The real fix to this is to make the parser more capable, which is not allowed. The
+                    // parser stays this way for a large set of unexplained reasons that may change.
+                    let can_look = prev_ch.is_whitespace()
+                        // Start should always be valid
+                        || self.pos == 0
+                        // Same as checking for start of file
+                        || (self.pos == keywords::ANNOTATION_CLAUSE_SIZE
+                            // Is + 1 because we haven't actually advanced
+                        && &self.src_bytes[0..keywords::ANNOTATION_CLAUSE_SIZE]
+                            == b"@def");
+
+                    if can_look {
                         if c == b'i' && self.is_import() {
                             let import = match self.parse_import(interner) {
                                 Ok(i) => i,
@@ -128,6 +141,7 @@ impl ModuleFinder<'_> {
                             };
                         }
                     } else {
+                        // skipping i/b
                         self.advance();
                     }
                 }
@@ -450,6 +464,8 @@ impl ModuleFinder<'_> {
         let chunk = &self.src_bytes[0..=self.pos];
 
         //TODO: Fix forced validation
+        // This is a bug. Call it a bug.
+        // BUG: <- Bug
         std::str::from_utf8(chunk)
             .ok()
             .and_then(|c| c.chars().rev().skip(dest).next())

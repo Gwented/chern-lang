@@ -361,7 +361,7 @@ mod tests {
         // Should not panic; result depends on clamping behaviour but must be Err
         // or an out-of-bounds case handled gracefully.
         // Our implementation returns Err for invalid ranges.
-        let _ = apply_text_change(existing, &change);
+        _ = apply_text_change(existing, &change);
         // Just ensure no panic occurred.
     }
 

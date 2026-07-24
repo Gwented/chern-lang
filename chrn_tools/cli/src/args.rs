@@ -108,7 +108,8 @@ pub enum Commands {
     #[command(name = "query", alias = "q")]
     Query(QueryCmd),
     /// Embeds a given script src into a destination. This inserts `@def` and `@end` by default
-    /// after embedding around the region by default.
+    /// after embedding around the region by default. Embedding fails only fails on severe errors
+    /// such as `@def` without `@end`.
     #[command(name = "embed", alias = "e")]
     Embed(EmbedCmd),
 }
@@ -150,7 +151,8 @@ pub struct EmbedCmd {
     #[arg(short = 'm', long = "minify", default_value_t = false)]
     pub(crate) minify: bool,
     /// By default, no semantics are checked beyond ensuring the region is valid.
-    /// This enforces that it ensures the file is a valid chrn file before inserting.
+    /// This enforces that the file is a valid chrn file before inserting. Basically a check command
+    /// post-hook.
     #[arg(short = 'c', long = "check", default_value_t = false)]
     pub(crate) check: bool,
 }

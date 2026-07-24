@@ -385,12 +385,8 @@ impl<R: Read> ConfigLoader<'_, R> {
                         // beginning of the region.
                         let rel_start = 0;
                         let rel_end = 4;
-                        def_span = Some(SourceSpan::new(
-                            self.current_region_id,
-                            rel_start,
-                            // WARN: - 1 REMOVED FOR EXCLUSIVE SPANNING
-                            rel_end,
-                        ));
+                        def_span =
+                            Some(SourceSpan::new(self.current_region_id, rel_start, rel_end));
 
                         // Needs to continue or the last advance causes one-off errors since it
                         // conflicts with @def which already deals with itself

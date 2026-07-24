@@ -632,7 +632,7 @@ impl LanguageServer for Backend {
 
         // Apply all content changes in order. If a change has no range, it is a full text replace.
         let Some(updated_arc) = self.apply_content_changes(&params, &uri_str) else {
-            let _ = self
+            _ = self
                 .client
                 .show_message(
                     tower_lsp::lsp_types::MessageType::ERROR,
@@ -681,7 +681,7 @@ impl LanguageServer for Backend {
             }
 
             if let Some(pending_tasks_arc) = pending_tasks_weak.upgrade() {
-                let _ = pending_tasks_arc.write().remove(&inner_uri_str);
+                _ = pending_tasks_arc.write().remove(&inner_uri_str);
             }
         });
 

@@ -53,7 +53,7 @@ impl ChrnConfigBuilder {
         ChrnConfig { logger }
     }
 
-    pub const fn with_logger(mut self) -> Self {
+    pub const fn add_logger(mut self) -> Self {
         self.logger = Some(ChrnConfigLogger::new(true));
         self
     }

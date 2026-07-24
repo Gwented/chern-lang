@@ -47,6 +47,6 @@ mod tests {
         // On Unix this is a valid path; the function should not panic.
         let arg = "chrn-\u{FFFD}";
         // We don't care which result we get as long as the call doesn't panic.
-        let _ = detect::subcommand_from_bin_name(&arg);
+        _ = detect::subcommand_from_bin_name(&arg);
     }
 }

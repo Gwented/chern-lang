@@ -18,7 +18,7 @@ pub(super) fn push_json_str(out: &mut String, s: &str) {
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
             c if (c as u32) < 0x20 => {
-                let _ = write!(out, "\\u{:04x}", c as u32);
+                _ = write!(out, "\\u{:04x}", c as u32);
             }
             c => out.push(c),
         }

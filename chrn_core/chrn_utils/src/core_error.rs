@@ -53,6 +53,7 @@ impl From<std::io::Error> for ConfigLoadError {
 
 // Should this be here?
 /// Struct for carrying module data if `main` fails to be loaded within `extract_all_modules`.
+#[derive(Debug)]
 pub struct ModuleInitError {
     pub region: Option<Arena<SourceRegion, SourceRegionId>>,
     pub interner: Intern,
