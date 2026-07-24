@@ -815,6 +815,7 @@ impl ScriptCompiler {
             core_name_id,
             ModuleState::Loaded,
             core_mod_id,
+            None,
             Vec::new(),
             None,
         );

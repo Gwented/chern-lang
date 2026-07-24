@@ -109,6 +109,7 @@ dependencies = [
  "compilation",
  "dumper",
  "formatter",
+ "lang",
  "orchestration",
  "unicode-width",
 ]

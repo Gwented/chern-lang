@@ -1,6 +1,5 @@
-// FIX: Being able to use @end by itself with @def is technically a bug since the lexer is the one
-// quitting after seeing @end, not the other way around. Either the loader needs to stop caring
-// about if @end has an @def, or the emergent feature needs to be removed.
+// TODO: The compiler probably shouldn't OWN the `bind` statement, and instead know what module id
+// is main so that it knows where to extract the meaningful bind statement.
 // TODO: This should be split but not sure what would be best since it is fairly local and small
 //TODO: This needs tests
 use std::{fs, path::Path};
@@ -27,11 +26,10 @@ use crate::{
     modules::mod_finder::ModuleFinder,
     script_compiler::{
         ScriptCompiler, reporter::Reporter, script_compiler_store::ScriptCompilerStore,
-        script_compiler_summary::ScriptCompilerSummary,
     },
 };
 
-pub const RESERVED_INTERNED_MODULE_IDENTS: [u32; 1] = [intern::INTERNED_CORE];
+pub static RESERVED_INTERNED_MODULE_IDENTS: [u32; 1] = [intern::INTERNED_CORE];
 
 //TEST: Relocate reollacl rreellocrelac
 #[derive(Debug, Clone)]
@@ -64,7 +62,7 @@ pub enum ImportKind {
     Core,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Bind {
     pub path_id: PathId,
     pub path_span: SourceSpan,
@@ -92,6 +90,7 @@ pub struct Module {
     pub imports: Vec<Import>,
     /// Representation of the module's state
     pub state: ModuleState,
+    pub bind: Option<Bind>,
     /// Represents the 5 known scopes as well as any local scopes
     pub scopes: Vec<ScopeId>,
     // HashSet maybe
@@ -132,6 +131,7 @@ impl Module {
         name_id: InternedId,
         state: ModuleState,
         mod_id: ModuleId,
+        bind: Option<Bind>,
         imports: Vec<Import>,
         //TODO: Convert to explicit kind
         region_id: Option<SourceRegionId>,
@@ -140,6 +140,7 @@ impl Module {
             name_id,
             mod_id,
             state,
+            bind,
             imports,
             exports: Vec::new(),
             scopes: Vec::new(),
@@ -160,7 +161,142 @@ impl Module {
     }
 }
 
-//TEST: Let depending on self recursively as a module happen for now
+//TEST: May be a bit much but !
+// pub fn extract_main(
+//     path: &Path,
+//     cfg: ChrnConfig,
+//     mut interner: Intern,
+// ) -> Result<(ScriptCompiler, ScriptCompilerStore, Vec<SourceDiagnostic>), ModuleInitError> {
+//     // All errors regarding the instantiation of main, aside from it's imports, are terminal, since
+//     // it's the only path that actually gives access to the module tree
+//     let src = match file_ops::fopen(path) {
+//         Ok(f) => f,
+//         Err(err_msg) => {
+//             // Interning mangled path id so it can still go into the diagnostic
+//             let path_id = interner.intern_path(path);
+//             let src_diag =
+//                 SourceDiagnostic::builder(None, DiagnosticLevel::Error, err_msg, path_id).build();
+//             let cfg_err = ConfigLoadError::Diagnostic(src_diag);
+//
+//             return Err(ModuleInitError::new(None, interner, cfg_err));
+//         }
+//     };
+//
+//     // Maybe the reporter should just be used
+//     let mut diags = Vec::new();
+//
+//     let main_path_id = interner.intern_path(&path);
+//
+//     let mut region_arena: Arena<SourceRegion, SourceRegionId> = Arena::new();
+//     let main_region_id = SourceRegionId::new(0);
+//
+//     // Not sure if main should even recover from this beyond having an existent region
+//     let (main_region, main_mod_state) =
+//         match ConfigLoader::new(main_region_id, src, main_path_id, &cfg, &interner).load_config() {
+//             ConfigLoaderOutput::Success(region) => (region, ModuleState::Loaded),
+//             // This could be pretty bad to leave here because
+//             ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
+//                 // Odd handling..
+//                 let diag = match cfg_err {
+//                     ConfigLoadError::Diagnostic(diag) => diag,
+//                     ConfigLoadError::IO(io_err) => {
+//                         let err_str = core_error::form_string_from_io_err(&io_err, path)
+//                             .unwrap_or(io_err.to_string());
+//                         SourceDiagnostic::builder(
+//                             //TODO: Should this have a code?
+//                             None,
+//                             DiagnosticLevel::Error,
+//                             err_str,
+//                             main_path_id,
+//                         )
+//                         .build()
+//                     }
+//                 };
+//
+//                 diags.push(diag);
+//                 (broken_region, ModuleState::BrokenRegion)
+//             }
+//             ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
+//                 return Err(ModuleInitError::new(None, interner, cfg_err));
+//             }
+//         };
+//
+//     // FIX: Aliasing?
+//     let file_name = match path.file_prefix().map(|n| n.to_str()) {
+//         Some(Some(p)) => p,
+//         _ => {
+//             let core_msg = format!(
+//                 "The path \"{}\" does not have a valid UTF-8 file name usable within the program",
+//                 path.display()
+//             );
+//
+//             let src_diag =
+//                 // Would have code explaining that aliases can circumvent invalid utf8 file names
+//                 SourceDiagnostic::builder(todo!(), DiagnosticLevel::Error, core_msg, main_path_id)
+//                     .build();
+//
+//             let cfg_err = ConfigLoadError::Diagnostic(src_diag);
+//             //NOTE: Not sure what behavior to expect from this since, the region is available, but
+//             //the cli renderer may or may not properly innately just create a diagnostic that
+//             //simply has no extra information besides the error msg
+//             return Err(ModuleInitError::new(Some(region_arena), interner, cfg_err));
+//         }
+//     };
+//
+//     let name_id = interner.intern(&file_name);
+//
+//     let main_mod_id = ModuleId::new(0);
+//
+//     // This is a Vector relationship stored where, the path id of an import is stored along with a
+//     // module id. So, we store main, go into main's imports then fill in OR create the module id of
+//     // unknown imports based off of reserved len(). This works during the recursive process because
+//     // it MUST look at all imports before ever recursing further, and it reserves it's spot as
+//     // `None`.
+//     let mut reserved_mod_ids: Vec<(PathId, ModuleId)> = vec![(main_path_id, main_mod_id)];
+//
+//     // Maybe don't inherently declare here since it's a little odd to use a returned variable as
+//     // the main variable to then collect future diagnostics?
+//     // Maybe not?
+//     let (bind, main_imports, mut finder_diags) = ModuleFinder::new(
+//         &main_region.src_bytes,
+//         &cfg,
+//         &mut reserved_mod_ids,
+//         &main_region,
+//         // We don't know the module id for imports. At all.
+//         main_region.script_start,
+//         main_region.serial_start,
+//     )
+//     .collect_imports(&mut interner);
+//     diags.append(&mut finder_diags);
+//
+//     // No errors are immediately terminal after this point since the main entry point now exists and
+//     // can be viewed even if it's the only module that was successfully created
+//     let main_mod = Module::new(
+//         name_id,
+//         main_mod_state,
+//         main_mod_id,
+//         // Cheap clone
+//         bind.clone(),
+//         main_imports,
+//         Some(main_region_id),
+//     );
+//
+//     region_arena.push(main_region);
+//
+//     let compiler_store = ScriptCompilerStore::new(
+//         cfg,
+//         region_arena,
+//         interner,
+//         Vec::new(),
+//         Vec::new(),
+//         Vec::new(),
+//         Vec::new(),
+//     );
+//
+//     let compiler = ScriptCompiler::init(bind, Arena::new());
+//     Ok((compiler, compiler_store, diags))
+// }
+
 /// Takes in a path to a `chrn` config file, then recursively resolved all imports associated with
 /// the path given in separate modules.
 ///
@@ -242,7 +378,7 @@ pub fn extract_modules(
 
             let src_diag =
                 // Would have code explaining that aliases can circumvent invalid utf8 file names
-                SourceDiagnostic::builder(todo!(), DiagnosticLevel::Error, core_msg, main_path_id)
+                SourceDiagnostic::builder(todo!("REACH ME"), DiagnosticLevel::Error, core_msg, main_path_id)
                     .build();
 
             let cfg_err = ConfigLoadError::Diagnostic(src_diag);
@@ -253,8 +389,7 @@ pub fn extract_modules(
         }
     };
 
-    let name_id = interner.intern(&file_name);
-
+    let main_name_id = interner.intern(&file_name);
     let main_mod_id = ModuleId::new(0);
 
     // This is a Vector relationship stored where, the path id of an import is stored along with a
@@ -282,9 +417,11 @@ pub fn extract_modules(
     // No errors are immediately terminal after this point since the main entry point now exists and
     // can be viewed even if it's the only module that was successfully created
     let main_mod = Module::new(
-        name_id,
+        main_name_id,
         main_mod_state,
         main_mod_id,
+        // Cheap clone
+        bind.clone(),
         main_imports,
         Some(main_region_id),
     );
@@ -594,7 +731,7 @@ fn resolve_modules(
                 }
             };
 
-        let (_, sub_imports, mut found_diags) = ModuleFinder::new(
+        let (bind, sub_imports, mut found_diags) = ModuleFinder::new(
             &sub_region.src_bytes,
             cfg,
             reserved_mod_ids,
@@ -646,6 +783,7 @@ fn resolve_modules(
             sub_mod_name_id,
             ModuleState::Loaded,
             current_mod_id,
+            bind,
             sub_imports,
             Some(sub_region_id),
         );

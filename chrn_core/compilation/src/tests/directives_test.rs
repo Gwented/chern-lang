@@ -39,6 +39,7 @@ fn directive_count_consistency() {
         InternedId::new(0),
         ModuleState::Loaded,
         ModuleId::new(0),
+        None,
         vec![],
         None,
     );
@@ -60,6 +61,7 @@ fn pre_registered_directive_indices_match() {
         InternedId::new(0),
         ModuleState::Loaded,
         ModuleId::new(0),
+        None,
         vec![],
         None,
     );

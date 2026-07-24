@@ -3,5 +3,5 @@
 - Must add it to `load_directives()` if it's not user defined (#lang(RUST) would be user defined, #bin would be compiler defined hence so should be added to `load_directives()`)
 - Must add index to script compiler's pre-registered indices if it isn't user-defined
 - Must add to static directives array
-- Update `try_from_interned_idr` call
-- Probably should update docs
+- Update `try_from_interned_idx` call
+- Update docs

@@ -38,6 +38,7 @@ fn module_simple_test() {
         main_mod_name_id,
         ModuleState::Loaded,
         main_mod_id,
+        None,
         vec![sub_import],
         Some(main_region_id),
     );
@@ -64,6 +65,7 @@ fn module_simple_test() {
         sub_mod_name_id,
         ModuleState::Loaded,
         sub_mod_id,
+        Default::default(),
         Default::default(),
         Some(sub_region_id),
     );

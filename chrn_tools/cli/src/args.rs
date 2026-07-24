@@ -107,6 +107,10 @@ pub enum Commands {
     Gen(GenCmd),
     #[command(name = "query", alias = "q")]
     Query(QueryCmd),
+    /// Embeds a given script src into a destination. This inserts `@def` and `@end` by default
+    /// after embedding around the region by default.
+    #[command(name = "embed", alias = "e")]
+    Embed(EmbedCmd),
 }
 
 #[derive(Args)]
@@ -118,7 +122,7 @@ pub struct CheckCmd {
     pub(crate) can_lint: bool,
     /// Emits developer debug info during check
     #[arg(long = "dbg", default_value_t = false)]
-    pub(crate) has_dbg_mode: bool,
+    pub(crate) dbg_mode: bool,
     /// Emits diagnostics as a JSON document on stdout
     #[arg(long = "json", default_value_t = false)]
     pub(crate) json: bool,
@@ -129,6 +133,26 @@ pub struct CheckCmd {
     /// Minifies output iff JSON or YAML output is chosen
     #[arg(short = 'm', long = "minify", default_value_t = false)]
     pub(crate) minify: bool,
+}
+
+/// For `embed` cmd
+#[derive(Args)]
+pub struct EmbedCmd {
+    /// Path of file to extract chrn file/block from
+    pub(crate) src_path: PathBuf,
+    /// Path of file to put the extracted chrn file into
+    pub(crate) dest_path: PathBuf,
+    //TODO: Maybe just separate the minify and fmt cmd, like overall.
+    /// Formats output with opinionated formatter
+    #[arg(long = "fmt", default_value_t = false)]
+    pub(crate) fmt: bool,
+    /// Formats output to be minified
+    #[arg(short = 'm', long = "minify", default_value_t = false)]
+    pub(crate) minify: bool,
+    /// By default, no semantics are checked beyond ensuring the region is valid.
+    /// This enforces that it ensures the file is a valid chrn file before inserting.
+    #[arg(short = 'c', long = "check", default_value_t = false)]
+    pub(crate) check: bool,
 }
 
 // chrn gen <PATH> --<LANGUAGE> man<TypeName>

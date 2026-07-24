@@ -326,6 +326,7 @@ pub(crate) fn resolve_document_modules(
         name_id,
         ModuleState::Loading,
         ModuleId::new(0),
+        bind.clone(),
         main_imports,
         Some(SourceRegionId::new(0)),
     );
@@ -1020,7 +1021,7 @@ pub(crate) fn resolve_modules_lsp(
 
         let sub_mod_name_id = interner.intern(&file_name);
 
-        let (_, sub_imports, mut finder_diags) = ModuleFinder::new(
+        let (bind, sub_imports, mut finder_diags) = ModuleFinder::new(
             &sub_region.src_bytes,
             settings,
             reserved_mod_ids,
@@ -1049,6 +1050,7 @@ pub(crate) fn resolve_modules_lsp(
             sub_mod_name_id,
             ModuleState::Loaded,
             current_mod_id,
+            bind.clone(),
             sub_imports,
             Some(sub_region_id),
         );

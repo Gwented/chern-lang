@@ -31,29 +31,6 @@ pub struct ScriptCompilerCache {
     pub(crate) mod_cache: Vec<ModuleCache>,
 }
 
-/// Creates
-pub fn create_compiler_with_cache(
-    path: &Path,
-    reporter: &mut Reporter,
-    cfg: ChrnConfig,
-    // I'm so scared
-) -> Result<(ScriptCompiler, ScriptCompilerStore, ScriptCompilerCache), ModuleInitError> {
-    let interner = Intern::init();
-    // let mut spans = SpanArena::new(Vec::new());
-
-    // I'm so scared
-    let (compiler, compiler_store, mut diags) =
-        modules::extract_modules(path, cfg, reporter, interner)?;
-    reporter.append_safe(&mut diags);
-
-    let cache = ScriptCompilerCache {
-        // spans,
-        mod_cache: Default::default(),
-    };
-
-    Ok((compiler, compiler_store, cache))
-}
-
 impl ScriptCompilerCache {
     pub fn new() -> ScriptCompilerCache {
         ScriptCompilerCache {

@@ -72,6 +72,7 @@ pub(super) fn mock_single_module_compiler(
         Default::default(),
         Default::default(),
         Default::default(),
+        Default::default(),
         Some(region_id),
     );
 
@@ -122,6 +123,7 @@ pub(super) fn mock_single_module(
         interner.intern(name),
         ModuleState::Loaded,
         ModuleId::new(mod_id),
+        None,
         imports,
         Some(region_id),
     );
@@ -287,6 +289,7 @@ pub(super) fn run_member_resolver(
 
 pub(super) use std::path::Path;
 
+use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
 pub(super) use chrn_utils::{
     arena::Arena,
     budget::mem_budget::{BudgetResult, MemoryBudget},
@@ -299,11 +302,7 @@ pub(super) use chrn_utils::{
         source_region::SourceRegion,
     },
 };
-use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
-pub(super) use lang::{
-    keywords::Keyword,
-    values::Value,
-};
+pub(super) use lang::{keywords::Keyword, values::Value};
 
 pub(super) use crate::{
     lexer::Lexer,

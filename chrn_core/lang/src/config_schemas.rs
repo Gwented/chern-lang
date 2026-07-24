@@ -17,6 +17,8 @@ impl ConfigSchema {
     }
     //TODO: Change to O(1) with interned id -> idx mapppppppppppppppppppppppppppppping
     //Huh
+    //We would need a static hashmap to do this since the name is the only actual entity
+    //that can be checkeddddjdoiajdod
 
     /// Attempts to find option from the given identifier and returns it's `OptionSchema`
     pub fn get_opt(&self, target_name_id: InternedId) -> Option<&OptionSchema> {
