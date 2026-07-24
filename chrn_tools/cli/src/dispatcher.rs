@@ -373,7 +373,7 @@ fn exec_embed(
     // that means there exists at least an `@end`.
     //
     // Both of these mean that there doesn't need to be any insertion of an @def or @end
-    let bytes = if region.script_start > 0 || region.serial_start.is_some() {
+    let mut bytes = if region.script_start > 0 || region.serial_start.is_some() {
         Cow::Borrowed(&region.src_bytes)
     } else {
         // Wraps the src in @def[bytes]@end

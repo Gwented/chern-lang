@@ -18,7 +18,7 @@ use crate::{script_prettifier::ScriptPrettifier, text_builder::TextBuilder};
 //     let mut interner = Intern::init();
 //     // Maybe a way to only load main?
 //     let (script_compiler, region_arena, diags) =
-//         modules::extract_modules(path, compiler_store.settings, &mut interner)?;
+//         modules::extract_all_modules(path, compiler_store.settings, &mut interner)?;
 //
 //     // TEMP
 //     let module = &script_compiler.mods[0];

@@ -18,12 +18,9 @@ pub fn create_compiler(
     reporter: &mut Reporter,
     cfg: ChrnConfig,
 ) -> Result<(ScriptCompiler, ScriptCompilerStore), ModuleInitError> {
-    let interner = Intern::init();
-    let (compiler, compiler_store, mut diags) =
-        modules::extract_modules(path, cfg, reporter, interner)?;
+    let (compiler, store, mut diags) = modules::extract_all_modules(path, cfg, reporter)?;
     reporter.append_safe(&mut diags);
-
-    Ok((compiler, compiler_store))
+    Ok((compiler, store))
 }
 
 // Not sure if this will stay
@@ -37,10 +34,7 @@ pub fn create_compiler_with_cache(
     cfg: ChrnConfig,
     // I'm so scared
 ) -> Result<(ScriptCompiler, ScriptCompilerStore, ScriptCompilerCache), ModuleInitError> {
-    let interner = Intern::init();
-
-    let (compiler, compiler_store, mut diags) =
-        modules::extract_modules(path, cfg, reporter, interner)?;
+    let (compiler, compiler_store, mut diags) = modules::extract_all_modules(path, cfg, reporter)?;
     reporter.append_safe(&mut diags);
 
     let cache = ScriptCompilerCache {

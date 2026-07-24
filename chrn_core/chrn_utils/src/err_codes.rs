@@ -64,6 +64,7 @@ const GENERICS_ERR: isize = 0007;
 // Embedding `override` in `complex`
 // Recursive configs
 const CONFIG_DECL_ERR: isize = 0008;
+const IMPORT_ERR: isize = 0009;
 //FIX: ConfigLoad and ConfigSchema have confusingly similar names. Should just be more distinct.
 
 // Maybe these should lead to general docs instead of being so granular, where possible. ?
@@ -86,6 +87,7 @@ pub enum ErrorCode {
     GenericsErr = GENERICS_ERR,
     /// Error specifically regarding how the config was declared, not schema verification
     ConfigDeclErr = CONFIG_DECL_ERR,
+    ImportErr = IMPORT_ERR,
 }
 
 impl ErrorCode {
@@ -100,6 +102,7 @@ impl ErrorCode {
             ErrorCode::PrivacyErr => PRIVACY_ERR,
             ErrorCode::GenericsErr => GENERICS_ERR,
             ErrorCode::ConfigDeclErr => CONFIG_DECL_ERR,
+            ErrorCode::ImportErr => IMPORT_ERR,
         }) as u16
     }
 }
