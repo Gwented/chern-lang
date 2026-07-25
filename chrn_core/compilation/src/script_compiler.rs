@@ -144,6 +144,7 @@ impl ScriptCompiler {
     //to anything, similar to the interner's constants.
     /// Loads core library and builds script specific compiler with parameters given
     pub fn init(bind: Option<Bind>, mods: Arena<Module, ModuleId>) -> ScriptCompiler {
+        // dbg!(&mods[ModuleId::new(0)]);
         //TEST:
         let core_mod_id = ModuleId::new(mods.len() as u32);
         let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None);

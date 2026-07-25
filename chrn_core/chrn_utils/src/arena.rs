@@ -24,6 +24,13 @@ impl<T, I: ArenaIndex> Arena<T, I> {
         }
     }
 
+    pub fn with_capacity(capacity: usize) -> Arena<T, I> {
+        Arena {
+            items: Vec::with_capacity(capacity),
+            _marker: PhantomData,
+        }
+    }
+
     /// Pushes `T` then returns the asociated index `I`.
     pub fn push(&mut self, val: T) -> I {
         let idx = self.items.len();

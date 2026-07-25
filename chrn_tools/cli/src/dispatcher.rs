@@ -309,7 +309,7 @@ fn exec_query(
     todo!("detailing")
 }
 
-//TODO: Maybe a "-c/--check" flag that specifies that it should be checked for errs before embedding
+/// Runs embed cmd :=
 fn exec_embed(
     embed_cmd: &EmbedCmd,
     glob_args: &GlobalArgs,

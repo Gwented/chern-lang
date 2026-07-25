@@ -2,6 +2,8 @@
 use std::{ffi::OsStr, path::PathBuf, str::FromStr};
 
 use chrn_utils::chrn_config::ChrnConfig;
+use chrn_utils::err_codes::ErrorCode;
+use chrn_utils::id_types::SpannedContainer;
 use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::{
@@ -25,7 +27,7 @@ pub struct ModuleFinder<'a> {
     // Maybe turn this into &str
     src_bytes: &'a [u8],
     cfg: &'a ChrnConfig,
-    seen: &'a mut Vec<(PathId, ModuleId)>,
+    reserved_mod_ids: &'a mut Vec<(PathId, ModuleId)>,
     diags: Vec<SourceDiagnostic>,
     /// Path origin so that errors can accurately report the path where the import was declared
     current_region: &'a SourceRegion,
@@ -39,7 +41,7 @@ impl ModuleFinder<'_> {
     pub fn new<'a>(
         src_bytes: &'a [u8],
         cfg: &'a ChrnConfig,
-        seen: &'a mut Vec<(PathId, ModuleId)>,
+        reserved_mod_ids: &'a mut Vec<(PathId, ModuleId)>,
         current_region: &'a SourceRegion,
         script_start: usize,
         serial_start: Option<usize>,
@@ -49,7 +51,7 @@ impl ModuleFinder<'_> {
             cfg,
             current_region,
             diags: Vec::new(),
-            seen,
+            reserved_mod_ids,
             pos: 0,
             script_start,
             // If there is no serial start then it's a script file not a script block with @def ->
@@ -220,13 +222,14 @@ impl ModuleFinder<'_> {
                     core_error::form_string_from_io_err(&e, &path_buf).unwrap_or(e.to_string());
 
                 let src_diag = SourceDiagnostic::builder(
-                    None,
+                    ErrorCode::ImportErr.code().into(),
                     DiagnosticLevel::Error,
                     core_msg,
                     self.current_region.path_id,
                 )
                 .add_annotation(path_span, AnnotationKind::Primary, None)
                 .build();
+                // panic!();
 
                 return Err(src_diag);
             }
@@ -266,18 +269,18 @@ impl ModuleFinder<'_> {
             None
         };
 
-        let import_kind = ImportKind::Source(path_id, path_span);
+        let import_kind = ImportKind::Source(SpannedContainer::new(path_id, path_span));
 
         let mod_id =
             // If there exists a module attached to the path seen, the import being viewed has
             // already been processed and should maintain the same module id
-            if let Some((_, inner_mod_id)) = self.seen.iter().find(|(p_id, _)| *p_id == path_id) {
+            if let Some((_, inner_mod_id)) = self.reserved_mod_ids.iter().find(|(p_id, _)| *p_id == path_id) {
                 *inner_mod_id
             } else {
             // First time seeing this path, so a new key = PathId, Value = ModuleId relationship is
             // made
-                let new_mod_id = ModuleId::new(self.seen.len() as u32);
-                self.seen.push((path_id, new_mod_id));
+                let new_mod_id = ModuleId::new(self.reserved_mod_ids.len() as u32);
+                self.reserved_mod_ids.push((path_id, new_mod_id));
                 new_mod_id
             };
         let import = Import::new(name_id, mod_id, import_kind, alias_id);

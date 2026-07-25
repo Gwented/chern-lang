@@ -203,7 +203,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                         };
 
                         let src_diag = diag_builder.build();
-                        let broken_region = self.create_region(script_start, None);
+                        let broken_region = self.create_region(script_start, None, true);
 
                         return ConfigLoaderOutput::Broken(
                             broken_region,
@@ -249,7 +249,7 @@ impl<R: Read> ConfigLoader<'_, R> {
 
                         let src_diag = diag_builder.build();
 
-                        let broken_region = self.create_region(script_start, None);
+                        let broken_region = self.create_region(script_start, None, true);
 
                         return ConfigLoaderOutput::Broken(
                             broken_region,
@@ -317,6 +317,11 @@ impl<R: Read> ConfigLoader<'_, R> {
                         // ));
                         // panic!("Not done");
 
+                        // If doesn't require end then that means this is an `@end` only block,
+                        // which needs to start at the start of the file line tracking-wise
+                        let needs_reset = !requires_end;
+                        self.create_region(script_start, Some(serial_start), needs_reset);
+
                         //WARN: Doesn't use helper because the helper doesn't take in a position
                         //argument. It doesn't take one because it doesn't seem meaningful, it seems
                         //like a forced compatibility later for this one singular case.
@@ -329,10 +334,6 @@ impl<R: Read> ConfigLoader<'_, R> {
                             script_start,
                             Some(serial_start),
                         );
-                        // dbg!(region.abs_ln_num_start, region.abs_col_start);
-                        // panic!();
-                        // dbg!(str::from_utf8((&region.src_bytes)));
-                        // panic!();
 
                         return ConfigLoaderOutput::Success(region);
                     }
@@ -406,8 +407,7 @@ impl<R: Read> ConfigLoader<'_, R> {
         }
         // TODO: Assert this...
 
-        let region = self.create_region(script_start, None);
-        // dbg!(str::from_utf8(&region.src_bytes));
+        let region = self.create_region(script_start, None, true);
 
         // If the loop was broken because the limit was reached, and there is a byte after the
         // limit, that means it stopped because it reached the max read bytes not because of a valid
@@ -510,7 +510,16 @@ impl<R: Read> ConfigLoader<'_, R> {
         &mut self,
         script_start: usize,
         serial_start_opt: Option<usize>,
+        needs_reset: bool,
     ) -> SourceRegion {
+        // Resetting since this means there was no `@def` or `@end`
+        // This needs to be done because the counter would otherwise remain at the last line and
+        // col, rather than sitting at the first.
+        if needs_reset {
+            self.ln_num_tracker.reset_soft();
+            self.col_tracker.reset_soft();
+        }
+
         // self.persistent_buffer[script_start..self.cursor].to_vec(),
         SourceRegion::new(
             self.ln_num_tracker.val(),
@@ -612,7 +621,7 @@ impl<R: Read> ConfigLoader<'_, R> {
         let b = self.peek();
         if b == Some(b'\n') {
             self.ln_num_tracker.increment();
-            self.col_tracker.reset();
+            self.col_tracker.reset_soft();
         } else {
             self.col_tracker.increment();
         }
@@ -908,7 +917,7 @@ impl FreezeTrackerU32 {
         }
     }
 
-    fn reset(&mut self) {
+    fn reset_soft(&mut self) {
         if !self.is_frozen() {
             self.inner = 1;
         }

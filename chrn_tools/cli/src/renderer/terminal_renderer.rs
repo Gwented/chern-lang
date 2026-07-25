@@ -467,7 +467,7 @@ fn render_footer(footer: &FooterKind, render_cfg: &TerminalRenderConfig) -> Stri
             style::standardize_warn(&msg, render_cfg.can_color, render_cfg.terminal_type)
         }
         FooterKind::MaxModulesExceeded(max_mods) => {
-            let msg = format!("Exceeded max module amount of {max_mods} (Stopped compilation)");
+            let msg = format!("Exceeded max module count of {max_mods} (Stopped compilation)");
             style::standardize_error(&msg, render_cfg.can_color, render_cfg.terminal_type)
         }
         FooterKind::ErrorsEmitted(count) => {

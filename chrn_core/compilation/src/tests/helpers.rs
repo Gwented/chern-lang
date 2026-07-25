@@ -91,10 +91,10 @@ pub(super) fn mock_import(
     alias_id: Option<&str>,
     interner: &mut Intern,
 ) -> Import {
-    let kind = ImportKind::Source(
+    let kind = ImportKind::Source(SpannedContainer::new(
         interner.intern_path(&Path::new(path_name)),
         Default::default(),
-    );
+    ));
     Import::new(
         interner.intern(name),
         mod_id,
@@ -290,6 +290,7 @@ pub(super) fn run_member_resolver(
 pub(super) use std::path::Path;
 
 use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
+use chrn_utils::id_types::SpannedContainer;
 pub(super) use chrn_utils::{
     arena::Arena,
     budget::mem_budget::{BudgetResult, MemoryBudget},
