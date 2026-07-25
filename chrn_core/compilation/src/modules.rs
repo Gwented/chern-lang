@@ -3,12 +3,7 @@
 // module0 imported module1, and module1 fails, module2 sets it's mod id to 1, but it's import
 // is still mod id 2. How has this been working for so long? Is this a hallucination?
 //
-// UPDATE: This ISN'T a bug because invalid imports are skipped, therefore not given
-// module ids. The only way this would be an issue is if a region was not returned after the import
-// was created for the existence path to file. CONDITONAL BUG.
-//
 // TODO: This should be split but not sure what would be best since it is fairly local and small
-//TODO: This needs tests
 use std::{collections::VecDeque, fs, path::Path};
 
 pub mod mod_finder;
@@ -42,7 +37,7 @@ pub static RESERVED_INTERNED_MODULE_IDENTS: [u32; 1] = [intern::INTERNED_CORE];
 #[derive(Debug, Clone)]
 pub struct Import {
     pub name_id: InternedId,
-    pub mod_id: ModuleId,
+    // pub mod_id: ModuleId,
     pub kind: ImportKind,
     pub alias_id: Option<InternedId>,
 }
@@ -50,13 +45,13 @@ pub struct Import {
 impl Import {
     pub const fn new(
         name_id: InternedId,
-        mod_id: ModuleId,
+        // mod_id: ModuleId,
         kind: ImportKind,
         alias_id: Option<InternedId>,
     ) -> Import {
         Import {
             name_id,
-            mod_id,
+            // mod_id,
             kind,
             alias_id,
         }
@@ -65,22 +60,17 @@ impl Import {
 
 #[derive(Debug, Clone)]
 pub enum ImportKind {
-    Source(SpannedContainer<PathId>),
-    Core,
-}
-
-impl ImportKind {
-    pub fn expect_source(&self) -> SpannedContainer<PathId> {
-        match self {
-            ImportKind::Source(sp_path_id) => sp_path_id.clone(),
-            ImportKind::Core => {
-                panic!(
-                    "Called `expect` for `ImportKind::Source`, found `{:?}`",
-                    self
-                )
-            }
-        }
-    }
+    /// Import that is from a source file and fully resolved.
+    /// Contains it's spanned path and module id
+    Source(SpannedContainer<PathId>, ModuleId),
+    /// Import from a source file that has a path attached to it, but no module id yet
+    UnresolvedSource(SpannedContainer<PathId>),
+    /// Import from source that had an unrecoverable error occur.
+    /// This means the import should NOT be touched in any resolution scenario, unless for
+    /// reporting or storing metadata.
+    ErrorSource(SpannedContainer<PathId>),
+    /// Core module originated importt
+    Core(ModuleId),
 }
 
 #[derive(Debug, Default, Clone)]
@@ -193,7 +183,7 @@ pub struct ModuleGraph {
     /// unknown imports based off of reserved len(). This works during the recursive process because
     /// it MUST look at all imports before ever recursing further, and it reserves it's spot as
     /// `None`.
-    pub reserved_mod_ids: Vec<(PathId, ModuleId)>,
+    pub registered_mod_ids: Vec<(PathId, ModuleId)>,
     //// All modules except main
     // pub other_mods: Vec<Option<Module>>,
     /// All paths seen
@@ -203,13 +193,13 @@ pub struct ModuleGraph {
 impl ModuleGraph {
     pub const fn new(
         region_arena: Arena<SourceRegion, SourceRegionId>,
-        reserved_mod_ids: Vec<(PathId, ModuleId)>,
+        registered_mod_ids: Vec<(PathId, ModuleId)>,
         // other_mods: Vec<Option<Module>>,
         seen: Vec<PathId>,
     ) -> ModuleGraph {
         ModuleGraph {
             region_arena,
-            reserved_mod_ids,
+            registered_mod_ids,
             // other_mods,
             seen,
         }
@@ -221,7 +211,7 @@ impl ModuleGraph {
     }
 
     pub const fn reserved_mod_ids(&self) -> &Vec<(PathId, ModuleId)> {
-        &self.reserved_mod_ids
+        &self.registered_mod_ids
     }
 
     // pub const fn other_mods(&self) -> &Vec<Option<Module>> {
@@ -371,7 +361,7 @@ pub fn extract_main(
     let (bind, main_imports, mut finder_diags) = ModuleFinder::new(
         &main_region.src_bytes,
         cfg,
-        &mut reserved_mod_ids,
+        // &mut reserved_mod_ids,
         &main_region,
         // We don't know the module id for imports. At all.
         main_region.script_start,
@@ -420,24 +410,21 @@ pub fn extract_modules(
 ) -> (ScriptCompiler, ScriptCompilerStore, Vec<SourceDiagnostic>) {
     debug_assert_eq!(main_mod.mod_id.id, 0);
     let mut diags = Vec::new();
-    // Oh ok.
-    // resolve_modules(
-    //     &mut graph,
-    //     &main_mod,
-    //     &mut diags,
-    //     &cfg,
-    //     reporter,
-    //     &mut interner,
-    // );
+
     let main_bind = main_mod.bind.clone();
 
     // TODO: Maybe bring the seen imports outside of the graph since it may look too transient
 
-    // let mut pending_imports: VecDeque<Import> = VecDeque::with_capacity(main_mod.imports.len());
     let mut pending_mods: VecDeque<Module> = vec![main_mod].into();
+    // Cannot make in-line changes to imports being iterated through
+    // let mut pending_import_changes: Vec<ImportKind> = Vec::new();
 
-    // This needs to be an `Option` because if an import fails,
-    let mut all_mods_opt: Vec<Option<Module>> = vec![None];
+    // This ONLY contains verified modules.
+    // Modules are only pushed when their all their imports are processed.
+    let mut valid_mods: Arena<Module, ModuleId> = Arena::with_capacity(1);
+
+    // If this is true then the outer loop must stop (HELLO I AM A LOOP LABEL)
+    let mut should_break_outer = false;
 
     //-- CHANGE FROM RECURSIVE MODEL --
     //
@@ -446,14 +433,35 @@ pub fn extract_modules(
     // If the import from the popped module has not been seen before, mark it as seen so that it is
     // not processed again, create it's module, then push it to the end of the queue so that it's
     // imports can be viewed and processed as modules.
-    while let Some(module) = pending_mods.pop_front() {
-        for import in &module.imports {
-            // Should this be unreachable!'d? If something gets in here and it really isn't a source
-            // import, then something major probably happened that's actively wrong
-            let sp_path_id = import.kind.expect_source().clone();
+    while let Some(mut importer_mod) = pending_mods.pop_front() {
+        // This diner still makes Coke the old-fashioned way
+        for i in 0..importer_mod.imports.len() {
+            let import = importer_mod.imports[i].clone();
+
+            // We haven't made the compiler yet so no other imports should exist
+            let ImportKind::UnresolvedSource(ref sp_path_id) = import.kind else {
+                unreachable!();
+            };
 
             // If the path from a given import was seen already then it skips
             if graph.seen.contains(&sp_path_id.inner) {
+                // Checking if there is a module id associated with it's path before skipping so
+                // that the import can be updated if possible.
+                let mod_id_opt = graph
+                    .registered_mod_ids
+                    .iter()
+                    .find(|(p_id, _)| *p_id == sp_path_id.inner)
+                    .map(|(_, m_id)| *m_id);
+
+                // Valid import
+                if let Some(mod_id) = mod_id_opt {
+                    importer_mod.imports[i].kind = ImportKind::Source(sp_path_id.clone(), mod_id);
+                } else {
+                    // Meaning the import was an error source because resolve_module did register a
+                    // module id for this import, and it was already seen
+                    importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
+                }
+
                 continue;
             }
 
@@ -464,27 +472,48 @@ pub fn extract_modules(
             // The module produced by this import (Happy birthday)
             let new_mod = match resolve_module(
                 import.clone(),
-                &module,
+                &importer_mod,
                 &mut graph,
                 &mut diags,
                 &cfg,
                 &mut interner,
             ) {
-                Ok(m) => m,
-                Err(_) => continue,
+                Ok(m) => {
+                    // Need to set the current import to a resolved source or it stays unresolved
+                    importer_mod.imports[i].kind = ImportKind::Source(sp_path_id.clone(), m.mod_id);
+                    m
+                }
+                // Need to transition state from unresolved source to error so future users of this
+                // state machine know
+                Err(_) => {
+                    importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
+                    continue;
+                }
             };
 
             // [WAS]: let expected_len = graph.reserved_mod_ids.len() - 1;
             // Is subtracting 1 because reserved mod includes main.
             //
-            // The amount of reserved module ids grows O(imports)
-            let expected_len = graph.reserved_mod_ids.len();
+            // The amount of reserved module ids grows O(modules registered), which is
+            // all_mods_len + pending_mods_len, which ensures modules not yet registered are also
+            // checked for over-allocation
+            let expected_len = graph.registered_mod_ids.len();
 
             //SAFETY
             // Ensuring before any resizing that the total modules never exceed MAX_MODULES
-            if all_mods_opt.len().saturating_add(expected_len) > chrn_utils::MAX_MODULES as usize {
-                let sub_mod_name = interner.search(new_mod.name_id);
-                let core_msg = format!("Exceeded max module amount of {}", chrn_utils::MAX_MODULES);
+            if expected_len > chrn_utils::MAX_MODULES as usize {
+                // Checking if the last processed is in the queue
+                let last_processed_name = if let Some(module) = pending_mods.iter().last() {
+                    interner.search(module.name_id)
+                // Checking if the last processed has been pushed into the final module list
+                } else if let Some(module) = valid_mods.iter().last() {
+                    interner.search(module.name_id)
+                } else {
+                    // All checks were exhausted so this was a failure at the entry point
+                    interner.search(importer_mod.name_id)
+                };
+
+                let core_msg = format!("Exceeded max module count of {}", chrn_utils::MAX_MODULES);
 
                 let src_diag = SourceDiagnostic::builder(
                     ErrorCode::CompilerSafetyLimits.code().into(),
@@ -492,56 +521,60 @@ pub fn extract_modules(
                     core_msg,
                     sp_path_id.inner,
                 )
-                .add_note(format!("Last processed module was `{sub_mod_name}`"));
+                // Not true
+                .add_note(format!("Last processed module was `{last_processed_name}`"));
 
                 diags.push(src_diag.build());
                 reporter.summary.exceeded_max_mods = Some(chrn_utils::MAX_MODULES);
+                should_break_outer = true;
                 break;
             }
 
-            // Checking if modules needs to reserve space for more modules. This check is needed
-            // because module id registration is tied to when an import is seen, which COULD be later
-            // than the module is found recursively, so extra space needs to be reserved in that case.
-            if all_mods_opt.len() < expected_len {
-                all_mods_opt.resize(expected_len, None);
-            }
-
-            // Pushing back so that it's imports can be viewed BEFORE putting it into all_mods_opt
+            // Pushing back so that it's imports can be viewed BEFORE putting it into valid_mods
             pending_mods.push_back(new_mod);
         }
-        let current_mod_id = module.mod_id;
+
+        // This is only met if max modules have been exceeded.
+        if should_break_outer {
+            if should_break_outer {
+                let valid_mods_len = valid_mods.len();
+                //SAFETY:
+                // Goes through valid module and checks if any module id from one of their imports
+                // correspond to an invalid module. All modules from this iteration, including the
+                // importer, are dropped.
+                //
+                // This loop is required because if say module0 imported module1, module1 was a
+                // valid module, but then module2 reaches the capacity, that would mean module0
+                // already set it's imported associated with module1 as a valid source module. This
+                // corrects that by setting it to an error source, which DOESN'T really matter since
+                // the caller should be terminating after this anyways but if it ever weren't done
+                // this would prevent said bug.
+                for valid_mod in valid_mods.iter_mut() {
+                    for imp in valid_mod.imports.iter_mut() {
+                        if let ImportKind::Source(sp_path_id, m_id) = &imp.kind {
+                            if m_id.id as usize >= valid_mods_len {
+                                imp.kind = ImportKind::ErrorSource(sp_path_id.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            // It could guarantee the current module, which would mean main is ALWAYS processed, but
+            // not sure if that really matters.
+            // valid_mods.push(importer_mod);
+            break;
+        }
 
         // The pending module's imports have all been seen making this the final assignment.
-        // Is assigned by index since `ModuleFinder` module id labeling is not sequential.
-        all_mods_opt[(current_mod_id.id) as usize] = Some(module);
+        // Module ids are sequential so this is fine.
+        valid_mods.push(importer_mod);
     }
-
-    // dbg!(&all_mods_opt, &pending_mods);
-
-    let mut all_mods: Arena<Module, ModuleId> = Arena::with_capacity(1);
 
     // let mut failed_indices: Vec<usize> = Vec::new();
     //TODO: Emit warn if name == `core`
     // If it's the same as core, core still takes precedence, but tooling may interpret it
     // differently, so should reflect that non-deterministic behavior is expected and that the
     // module's name should be changed
-    // Before this would need reporting to take care of counting errors and warns instead of just
-    // $#%@$#%$%$$ if len() != 0
-    let mut next_id = 0;
-    for mod_opt in all_mods_opt.drain(..) {
-        // Are we adding bugs for fun?
-        // NO?
-        if let Some(mut inner) = mod_opt {
-            // If the `ModuleId` is not sequential due to a `None` module then make sequential
-            //
-            // This is needed because modules are processed in alignment with their id, which isn't
-            // inherently isn't required depending on how a tool uses it, but still retained explicitly here.
-            inner.mod_id.id = next_id;
-            all_mods.push(inner);
-        }
-
-        next_id += 1;
-    }
 
     // More like compilation store
     let compiler_store = ScriptCompilerStore::new(
@@ -554,7 +587,7 @@ pub fn extract_modules(
         Vec::new(),
     );
 
-    let compiler = ScriptCompiler::init(main_bind, all_mods);
+    let compiler = ScriptCompiler::init(main_bind, valid_mods);
     (compiler, compiler_store, diags)
 }
 
@@ -571,20 +604,16 @@ fn resolve_module(
 ) -> Result<Module, ()> {
     //WARN: If there is ever an instance where reserved_mod_ids reserves a module id that is valid,
     //but fails with "Err(())" below, it has broken module id alignment
-    //
-    let sp_path_id = import.kind.expect_source();
+
+    let ImportKind::UnresolvedSource(sp_path_id) = import.kind.clone() else {
+        unreachable!();
+    };
     // Tracks the id of the current module by tracking however many imports were seen, which
     // all represent one module
     //
     // This uses expect() because mod_finder is the only collector imports.
     // We are iterating through said imports. Meaning for this iteration to happen mod_finder
     // would have to register the path first.
-    let current_mod_id = graph
-        .reserved_mod_ids
-        .iter()
-        .find(|(p_id, _)| *p_id == sp_path_id.inner)
-        .map(|(_, m_id)| *m_id)
-        .expect("`mod_finder` registration failed");
 
     //WARN: This can't fail, if the mod finder found it that means it normalized it, which means
     //it's a real path, which could be a dir I guess
@@ -724,18 +753,37 @@ fn resolve_module(
         }
     };
 
-    // dbg!(str::from_utf8(&sub_region.src_bytes));
-    // panic!();
+    // NOT RELEVANT
+    // Searches for if the path it's under already has a module id
+    // let mod_id_opt = graph
+    //     .registered_mod_ids
+    //     .iter()
+    //     .find(|(p_id, _)| *p_id == sp_path_id.inner)
+    //     .map(|(_, m_id)| *m_id);
+
+    // The check before MUST have ensured the module id created here is going to be NEW
+
+    let current_mod_id = ModuleId::new(graph.registered_mod_ids.len() as u32);
+    debug_assert!(
+        graph
+            .registered_mod_ids
+            .iter()
+            .all(|(_, m_id)| *m_id != current_mod_id)
+    );
+
+    graph
+        .registered_mod_ids
+        .push((sp_path_id.inner, current_mod_id));
+
     let (bind, sub_imports, mut found_diags) = ModuleFinder::new(
         &sub_region.src_bytes,
         cfg,
-        &mut graph.reserved_mod_ids,
+        // &mut graph.reserved_mod_ids,
         &sub_region,
         sub_region.script_start,
         sub_region.serial_start,
     )
     .collect_imports(interner);
-    // panic!("Hey");
     diags.append(&mut found_diags);
 
     // As opposed to how modules are pushed, regions are pushed before recursively descending
@@ -753,261 +801,3 @@ fn resolve_module(
 
     Ok(sub_mod)
 }
-
-//TODO: Maybe, this can be turned into a work-list creation system instead of inline recursively
-//descending through imports and modules as they come.
-//So, instead of, see import, notice that import is new, make module, then discover it's imports, it
-//turns into: See import, if uniqe then place in work-list, after building module check work-list
-//for any unique imports. Would do the same thing except that the code
-//would be clearer than the current, understandable but a little convoluted version.
-
-//// This function recursively resolves each import after being given a root module with imports to go off of.
-//// `reserved_mod_ids`: All stored K = Path, V = ModuleId, relationships, which were found by
-//// `ModuleFinder`'s collect imports method
-//// `seen`: All imports seen to perform DFS.
-//// `other_mods`: Modules to store during recursive process, which is to be returned and
-////  appended with main module.
-//// `prev_mod`: The last module so that it's spanning information can be tracked.
-//// `diags`: Vector to append any found diagnostics to since errors do not signify immediate
-//// failure.
-// fn resolve_modules(
-//     graph: &mut ModuleGraph,
-//     prev_mod: &Module,
-//     diags: &mut Vec<SourceDiagnostic>,
-//     cfg: &ChrnConfig,
-//     reporter: &mut Reporter,
-//     interner: &mut Intern,
-// ) {
-//     for import in &prev_mod.imports {
-//         // Should this be unreachable!'d? If something gets in here and it really isn't a source
-//         // import, then something major probably happened that's actively wrong
-//         let ImportKind::Source(sp_path_id) = import.kind.clone() else {
-//             continue;
-//         };
-//
-//         // If the path from a given import was seen already then it skips
-//         if graph.seen.iter().any(|p_id| *p_id == sp_path_id.inner) {
-//             continue;
-//         }
-//
-//         graph.seen.push(sp_path_id.inner);
-//
-//         // Tracks the id of the current module by tracking however many imports were seen, which
-//         // all represent one module
-//         //
-//         // This uses expect() because mod_finder is the only collector imports.
-//         // We are iterating through said imports. Meaning for this iteration to happen mod_finder
-//         // would have to register the path first.
-//         let current_mod_id = graph
-//             .reserved_mod_ids
-//             .iter()
-//             .find(|(p_id, _)| *p_id == sp_path_id.inner)
-//             .map(|(_, m_id)| *m_id)
-//             .expect("`mod_finder` registration failed");
-//
-//         let path = interner.search_path(sp_path_id.inner);
-//         let src = match fs::File::open(path) {
-//             // Why.
-//             Ok(_) if path.is_dir() => {
-//                 let core_msg = format!("The path \"{}\" is a directory", path.display());
-//
-//                 let src_diag = SourceDiagnostic::builder(
-//                     None,
-//                     DiagnosticLevel::Error,
-//                     core_msg,
-//                     sp_path_id.inner,
-//                 )
-//                 .add_annotation(
-//                     sp_path_id.span,
-//                     AnnotationKind::Primary,
-//                     "Caused by this import".to_string().into(),
-//                 )
-//                 .build();
-//
-//                 diags.push(src_diag);
-//                 cfg.logger().log_err(|| {
-//                     let prev_name = interner.search(prev_mod.name_id);
-//                     format!("import dropped for {prev_name} (reason=Import is a path)")
-//                 });
-//                 // Skips import on this error since this means the import is entirely invalid
-//                 continue;
-//             }
-//             Ok(f) => f,
-//             Err(e) => {
-//                 let core_msg =
-//                     core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
-//
-//                 let src_diag = SourceDiagnostic::builder(
-//                     None,
-//                     DiagnosticLevel::Error,
-//                     core_msg,
-//                     sp_path_id.inner,
-//                 )
-//                 .add_annotation(
-//                     sp_path_id.span,
-//                     AnnotationKind::Primary,
-//                     "Caused by this import".to_string().into(),
-//                 )
-//                 .build();
-//
-//                 diags.push(src_diag);
-//                 continue;
-//             }
-//         };
-//
-//         // Creating region id for the current module on this level in the recursive stacke
-//         let sub_region_id = SourceRegionId::new(graph.region_arena.len() as u32);
-//
-//         //Oh my
-//         let file_name = match path.file_prefix().map(|n| n.to_str()).flatten() {
-//             Some(p) => p.to_string(),
-//             _ => {
-//                 if let Some(name_id) = import.alias_id {
-//                     interner.search(name_id).to_string()
-//                 } else {
-//                     let core_msg = format!(
-//                         "The path \"{}\" does not have a valid UTF-8 file name usable within the program. Consider using 'as' to give it an alias if a file name change is not possible.",
-//                         path.display()
-//                     );
-//
-//                     let src_diag =
-//                         //TODO: Alias handling
-//                         SourceDiagnostic::builder(ErrorCode::ImportErr.code().into(), DiagnosticLevel::Error, core_msg, sp_path_id.inner)
-//                             .add_annotation(
-//                                 sp_path_id.span,
-//                                 AnnotationKind::Primary,
-//                                 "Caused by this import".to_string().into(),
-//                             )
-//                             .build();
-//
-//                     diags.push(src_diag);
-//                     continue;
-//                 }
-//             }
-//         };
-//
-//         let sub_mod_name_id = interner.intern(&file_name);
-//
-//         // Using region id before pushing
-//         let (sub_region, sub_state) =
-//             match ConfigLoader::new(sub_region_id, src, sp_path_id.inner, cfg, interner)
-//                 .load_config()
-//             {
-//                 ConfigLoaderOutput::Success(region) => (region, ModuleState::Loaded),
-//                 //FIX: Works but code liability
-//                 ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
-//                     match cfg_err {
-//                         ConfigLoadError::Diagnostic(diag) => {
-//                             diags.push(diag);
-//                         }
-//                         ConfigLoadError::IO(e) => {
-//                             let path = interner.search_path(sp_path_id.inner);
-//                             let core_msg = core_error::form_string_from_io_err(&e, path)
-//                                 .unwrap_or(e.to_string());
-//                             let src_diag = SourceDiagnostic::builder(
-//                                 None,
-//                                 DiagnosticLevel::Error,
-//                                 core_msg,
-//                                 sp_path_id.inner,
-//                             )
-//                             .add_annotation(sp_path_id.span, AnnotationKind::Primary, None)
-//                             .build();
-//
-//                             diags.push(src_diag);
-//                         }
-//                     }
-//
-//                     (broken_region, ModuleState::BrokenRegion)
-//                 }
-//                 ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
-//                     match cfg_err {
-//                         ConfigLoadError::Diagnostic(diag) => {
-//                             diags.push(diag);
-//                         }
-//                         ConfigLoadError::IO(e) => {
-//                             let path = interner.search_path(sp_path_id.inner);
-//                             let core_msg = core_error::form_string_from_io_err(&e, path)
-//                                 .unwrap_or(e.to_string());
-//                             let src_diag = SourceDiagnostic::builder(
-//                                 None,
-//                                 DiagnosticLevel::Error,
-//                                 core_msg,
-//                                 sp_path_id.inner,
-//                             )
-//                             .add_annotation(sp_path_id.span, AnnotationKind::Primary, None)
-//                             .build();
-//
-//                             diags.push(src_diag);
-//                         }
-//                     }
-//
-//                     continue;
-//                 }
-//             };
-//
-//         let (bind, sub_imports, mut found_diags) = ModuleFinder::new(
-//             &sub_region.src_bytes,
-//             cfg,
-//             &mut graph.reserved_mod_ids,
-//             &sub_region,
-//             sub_region.script_start,
-//             sub_region.serial_start,
-//         )
-//         .collect_imports(interner);
-//
-//         diags.append(&mut found_diags);
-//
-//         // Is subtracting 1 because reserved mod includes main.
-//         let expected_len = graph.reserved_mod_ids.len() - 1;
-//
-//         //SAFETY
-//         // Ensuring before any resizing that the total modules never exceed MAX_MODULES
-//         //
-//         // Is + 1 because the main module is going to be included inside the actual output so it has
-//         // to be accounted for or else a max module count of 100 would be exceeded since 100
-//         // accounts for the other modules + 1 main module.
-//         if graph.other_mods.len().saturating_add(expected_len + 1)
-//             > chrn_utils::MAX_MODULES as usize
-//         {
-//             let sub_mod_name = interner.search(sub_mod_name_id);
-//             let core_msg = format!("Exceeded max module amount of {}", chrn_utils::MAX_MODULES);
-//
-//             let src_diag = SourceDiagnostic::builder(
-//                 ErrorCode::CompilerSafetyLimits.code().into(),
-//                 DiagnosticLevel::Error,
-//                 core_msg,
-//                 sp_path_id.inner,
-//             )
-//             .add_note(format!("Last analyzed module was `{sub_mod_name}`"));
-//             diags.push(src_diag.build());
-//             reporter.summary.exceeded_max_mods = Some(chrn_utils::MAX_MODULES);
-//             return;
-//         }
-//
-//         // Checking if modules needs to reserve space for more modules. This check is needed
-//         // because module id registration is tied to when an import is seen, which COULD be later
-//         // than the module is found recursively, so extra space needs to be reserved in that case.
-//         if graph.other_mods.len() < expected_len {
-//             graph.other_mods.resize(expected_len, None);
-//         }
-//
-//         // As opposed to how modules are pushed, regions are pushed before recursively descending
-//         // so no special cases needed for indexing it
-//         graph.region_arena.push(sub_region);
-//
-//         let sub_mod = Module::new(
-//             sub_mod_name_id,
-//             sub_state,
-//             current_mod_id,
-//             bind,
-//             sub_imports,
-//             Some(sub_region_id),
-//         );
-//
-//         resolve_modules(graph, &sub_mod, diags, cfg, reporter, interner);
-//
-//         // Needs - 1 so that it fits inside the temporary Vec, but still uses it's actual module
-//         // id.
-//         graph.other_mods[(current_mod_id.id - 1) as usize] = Some(sub_mod);
-//     }
-// }

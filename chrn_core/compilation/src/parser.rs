@@ -542,7 +542,7 @@ fn parse_nest_sect(
 ) -> Result<Item, Token> {
     // Wait what is this error?
     let kw = ctx.expect_kw_verbose(
-        "Expected an `enum` or `struct` declaration, found ",
+        "Expected `enum` or `struct` declaration, found ",
         "",
         Branch::Section(SectionBranch::Nest),
         interner,
@@ -609,7 +609,7 @@ fn parse_nest_sect(
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
-                &format!("Expected '{{' block to define enum, found"),
+                &format!("Expected '{{' to define enum, found"),
                 "",
                 Branch::Section(SectionBranch::Nest),
                 interner,
@@ -643,7 +643,7 @@ fn parse_nest_sect(
         _ => {
             ctx.report_verbose(
                 &format!(
-                    "Expected the keyword `enum` or `struct`, found keyword `{}`",
+                    "Expected keyword `enum` or `struct`, found keyword `{}`",
                     kw.to_fmt()
                 ),
                 Branch::Section(SectionBranch::Nest),

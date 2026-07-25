@@ -106,6 +106,16 @@ fn mod_id_for_path(reserved: &[(PathId, ModuleId)], path_id: PathId) -> Option<M
         .map(|(_, m)| *m)
 }
 
+/// Extracts the `ModuleId` from an `Import` if its kind carries one.
+/// Returns `None` for unresolved or error-source imports.
+fn import_mod_id(import: &Import) -> Option<ModuleId> {
+    match &import.kind {
+        ImportKind::Source(_, mod_id) => Some(*mod_id),
+        ImportKind::Core(mod_id) => Some(*mod_id),
+        _ => None,
+    }
+}
+
 // ===========================================================================
 // ModuleFinder unit tests
 // ===========================================================================
@@ -129,11 +139,9 @@ fn modfinder_no_imports_or_bind() {
     .load_config()
     .expect_success();
 
-    let mut seen: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
     let (bind, imports, diags) = ModuleFinder::new(
         &region.src_bytes,
         &cfg,
-        &mut seen,
         &region,
         region.script_start,
         region.serial_start,
@@ -147,8 +155,6 @@ fn modfinder_no_imports_or_bind() {
         imports.len()
     );
     assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
-    // `seen` should have grown no new entries beyond the initial main module
-    assert_eq!(seen.len(), 1, "seen must not gain entries with no imports");
 }
 
 /// `ModuleFinder` should find a single import with a valid path.
@@ -168,11 +174,9 @@ fn modfinder_single_import() {
         .load_config()
         .expect_success();
 
-    let mut seen: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
     let (bind, imports, diags) = ModuleFinder::new(
         &region.src_bytes,
         &cfg,
-        &mut seen,
         &region,
         region.script_start,
         region.serial_start,
@@ -185,14 +189,14 @@ fn modfinder_single_import() {
 
     let import = &imports[0];
     let sub_path_id = interner.intern_path(&sub_path);
-    let expected_mod_id = ModuleId::new(1);
-    assert_eq!(import.mod_id, expected_mod_id, "sub gets module id 1");
-    // Verify import kind carries the correct path id and span.
+    // ModuleFinder now returns UnresolvedSource imports (module id is assigned
+    // later in resolve_module). Verify the import kind carries the correct path
+    // id and span.
     // Source is `import "PATH"\nlet x = 5\n`; module finder's `parse_import` starts
     // at the opening `"` (byte 7), advances past it, so the span covers the path
     // without quotes:  start = 8,  end = 8 + path.len().
     let import_span = match &import.kind {
-        ImportKind::Source(sp_path_id) => {
+        ImportKind::UnresolvedSource(sp_path_id) => {
             assert_eq!(
                 sp_path_id.inner, sub_path_id,
                 "import must carry the correct sub path id"
@@ -214,7 +218,7 @@ fn modfinder_single_import() {
             );
             sp_path_id.span
         }
-        ImportKind::Core => panic!("expected Source import kind, got Core"),
+        _ => panic!("expected UnresolvedSource import kind, got {:?}", import.kind),
     };
     // Verify the span slices out the exact path from src bytes
     let span_bytes = &region.src_bytes[import_span.start as usize..import_span.end as usize];
@@ -224,16 +228,8 @@ fn modfinder_single_import() {
         "import span must extract the exact path string from src bytes"
     );
 
-    // The `seen` vector must contain both the main and the sub module
-    assert_eq!(seen.len(), 2, "seen must contain main + sub entry");
-    assert!(
-        seen.iter().any(|(p, _)| *p == path_id),
-        "seen must contain main path"
-    );
-    assert!(
-        seen.iter().any(|(p, _)| *p == sub_path_id),
-        "seen must contain sub path"
-    );
+    // ModuleFinder no longer registers module ids, so no assertions about
+    // a `seen` vector are needed here.
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -261,11 +257,9 @@ fn modfinder_multiple_imports() {
         .load_config()
         .expect_success();
 
-    let mut seen: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
     let (bind, imports, diags) = ModuleFinder::new(
         &region.src_bytes,
         &cfg,
-        &mut seen,
         &region,
         region.script_start,
         region.serial_start,
@@ -275,13 +269,17 @@ fn modfinder_multiple_imports() {
     assert!(bind.is_none());
     assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
     assert_eq!(imports.len(), 2, "exactly two imports expected");
-    assert_eq!(seen.len(), 3, "main + 2 subs in seen");
 
-    // Each import should have a distinct mod_id
-    assert_ne!(
-        imports[0].mod_id, imports[1].mod_id,
-        "each import gets a unique mod_id"
-    );
+    // ModuleFinder returns UnresolvedSource imports; module ids are assigned
+    // later by resolve_module.  Both imports should be unresolved.
+    for (idx, imp) in imports.iter().enumerate() {
+        assert!(
+            matches!(imp.kind, ImportKind::UnresolvedSource(_)),
+            "import {} must be UnresolvedSource, got {:?}",
+            idx,
+            imp.kind
+        );
+    }
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -303,11 +301,9 @@ fn modfinder_import_with_alias() {
         .load_config()
         .expect_success();
 
-    let mut seen: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
     let (_, imports, diags) = ModuleFinder::new(
         &region.src_bytes,
         &cfg,
-        &mut seen,
         &region,
         region.script_start,
         region.serial_start,
@@ -341,11 +337,9 @@ fn modfinder_bind() {
         .load_config()
         .expect_success();
 
-    let mut seen: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
     let (bind, imports, diags) = ModuleFinder::new(
         &region.src_bytes,
         &cfg,
-        &mut seen,
         &region,
         region.script_start,
         region.serial_start,
@@ -381,11 +375,9 @@ fn modfinder_backslash_error() {
         .load_config()
         .expect_success();
 
-    let mut seen: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
     let (_bind, imports, diags) = ModuleFinder::new(
         &region.src_bytes,
         &cfg,
-        &mut seen,
         &region,
         region.script_start,
         region.serial_start,
@@ -419,11 +411,9 @@ fn modfinder_import_inside_line_comment() {
         .load_config()
         .expect_success();
 
-    let mut seen: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
     let (_bind, imports, diags) = ModuleFinder::new(
         &region.src_bytes,
         &cfg,
-        &mut seen,
         &region,
         region.script_start,
         region.serial_start,
@@ -450,11 +440,9 @@ fn modfinder_import_inside_block_comment() {
         .load_config()
         .expect_success();
 
-    let mut seen: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
     let (_bind, imports, diags) = ModuleFinder::new(
         &region.src_bytes,
         &cfg,
-        &mut seen,
         &region,
         region.script_start,
         region.serial_start,
@@ -490,11 +478,10 @@ fn modfinder_duplicate_import_path_reuses_mod_id() {
         .load_config()
         .expect_success();
 
-    let mut seen: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
+    let sub_path_id = interner.intern_path(&sub_path);
     let (_bind, imports, diags) = ModuleFinder::new(
         &region.src_bytes,
         &cfg,
-        &mut seen,
         &region,
         region.script_start,
         region.serial_start,
@@ -504,13 +491,14 @@ fn modfinder_duplicate_import_path_reuses_mod_id() {
     assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
     assert_eq!(imports.len(), 2, "both imports should be recorded");
 
-    // Both imports must reference the same module id
-    assert_eq!(
-        imports[0].mod_id, imports[1].mod_id,
-        "duplicate path imports must share the same mod_id"
-    );
-    // `seen` must have only two entries (main + sub)
-    assert_eq!(seen.len(), 2, "seen must not grow beyond main + sub");
+    // ModuleFinder returns UnresolvedSource imports; both should carry
+    // the same path_id since they reference the same path.
+    for imp in &imports {
+        assert!(
+            matches!(imp.kind, ImportKind::UnresolvedSource(ref sp) if sp.inner == sub_path_id),
+            "import must reference the sub path"
+        );
+    }
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -529,11 +517,9 @@ fn modfinder_nonexistent_path() {
         .load_config()
         .expect_success();
 
-    let mut seen: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
     let (_bind, imports, diags) = ModuleFinder::new(
         &region.src_bytes,
         &cfg,
-        &mut seen,
         &region,
         region.script_start,
         region.serial_start,
@@ -564,11 +550,9 @@ fn modfinder_import_inside_string_is_not_parsed() {
         .load_config()
         .expect_success();
 
-    let mut seen: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
     let (_bind, imports, diags) = ModuleFinder::new(
         &region.src_bytes,
         &cfg,
-        &mut seen,
         &region,
         region.script_start,
         region.serial_start,
@@ -640,7 +624,8 @@ fn extract_main_simple_script() {
 }
 
 /// `extract_main` on a file with a valid import should attach the import to
-/// the main module and register the sub-path in `reserved_mod_ids`.
+/// the main module.  Module ids are not yet assigned (that happens later in
+/// `extract_modules`), so imports remain `UnresolvedSource`.
 #[test]
 fn extract_main_with_import() {
     let dir = create_temp_dir("extract_main_import");
@@ -659,16 +644,13 @@ fn extract_main_with_import() {
         "main should have 1 import from the sub module"
     );
 
-    // The import should have the correct module id (1)
+    // Imports returned by extract_main are UnresolvedSource; no module id
+    // is assigned yet.
     let import = &main_mod.imports[0];
-    assert_eq!(import.mod_id, ModuleId::new(1), "sub gets mod_id 1");
     let sub_path_id = interner.intern_path(&sub_path);
     let sub_path_str = sub_path.to_string_lossy();
-    // Verify import kind and extract span for content check.
-    // Source is `import "PATH"\nlet x = 5\n`; span covers path without quotes:
-    // start = 8, end = 8 + path.len().
     let import_span = match &import.kind {
-        ImportKind::Source(sp_path_id) => {
+        ImportKind::UnresolvedSource(sp_path_id) => {
             assert_eq!(
                 sp_path_id.inner, sub_path_id,
                 "import must carry the correct sub path id"
@@ -690,7 +672,8 @@ fn extract_main_with_import() {
             );
             sp_path_id.span
         }
-        ImportKind::Core => panic!("expected Source import kind, got Core"),
+        ImportKind::Core(_) => panic!("expected UnresolvedSource, got Core"),
+        _ => panic!("expected UnresolvedSource, got {:?}", import.kind),
     };
     // Verify the span slices out the exact path from src bytes
     let region = &graph.region_arena()[main_mod.region_id.expect("main mod has region_id")];
@@ -701,22 +684,16 @@ fn extract_main_with_import() {
         "import span must extract the exact path string from src bytes"
     );
 
-    // reserved_mod_ids must have entries for both main and sub
-    assert_eq!(graph.reserved_mod_ids().len(), 2, "main + sub in reserved");
+    // reserved_mod_ids only contains main (sub is registered later in
+    // extract_modules by resolve_module).
     let main_path_id = interner.intern_path(&main_path);
+    assert_eq!(graph.reserved_mod_ids().len(), 1, "only main in reserved");
     assert!(
         graph
             .reserved_mod_ids()
             .iter()
             .any(|(p, _)| *p == main_path_id),
         "main path must be in reserved"
-    );
-    assert!(
-        graph
-            .reserved_mod_ids()
-            .iter()
-            .any(|(p, _)| *p == sub_path_id),
-        "sub path must be in reserved"
     );
 
     // `seen` must contain main
@@ -1243,7 +1220,7 @@ fn extract_all_modules_diamond_dependency() {
     for i in 0..compiler.mods.len() {
         let m = &compiler.mods[ModuleId::new(i as u32)];
         for imp in &m.imports {
-            if imp.mod_id == shared_mod_id {
+            if import_mod_id(imp) == Some(shared_mod_id) {
                 ref_count += 1;
             }
         }
@@ -1404,7 +1381,7 @@ fn extract_all_modules_complex_overlap() {
     for i in 0..compiler.mods.len() {
         let m = &compiler.mods[ModuleId::new(i as u32)];
         for imp in &m.imports {
-            if imp.mod_id == shared_mod_id {
+            if import_mod_id(imp) == Some(shared_mod_id) {
                 shared_ref_count += 1;
             }
         }
@@ -1440,10 +1417,12 @@ fn import_kind_span_preserved() {
 
     assert!(!main_mod.imports.is_empty(), "at least one import expected");
     let import = &main_mod.imports[0];
-    // Extract the span from ImportKind via pattern matching
+    // Extract the span from ImportKind via pattern matching.
+    // After extract_main, imports are still UnresolvedSource.
     let span = match &import.kind {
-        ImportKind::Source(sp_path_id) => sp_path_id.span,
-        ImportKind::Core => panic!("expected Source import kind, got Core"),
+        ImportKind::UnresolvedSource(sp_path_id) => sp_path_id.span,
+        ImportKind::Core(_) => panic!("expected UnresolvedSource import kind, got Core"),
+        _ => panic!("expected UnresolvedSource, got {:?}", import.kind),
     };
     // The span should cover the import path without quotes.
     // Source is `import "PATH"\nlet x = 5\n`; span starts at byte 8, ends at 8 + path.len().
@@ -1597,6 +1576,360 @@ fn extract_main_invalid_utf8_filename() {
 
     // On other platforms we skip this test as the file system may not
     // allow non-UTF-8 file names.
+
+    _ = fs::remove_dir_all(&dir);
+}
+
+// ===========================================================================
+// Module id assignment tests
+// ===========================================================================
+
+/// Verifies that module ids are assigned sequentially for a simple chain:
+///   main (0) → a (1) → b (2)
+///
+/// Import layout (core is injected post-resolution with its own mod_id):
+///   main.imports = [Source(a, 1), Core(3)]
+///   a.imports    = [Source(b, 2), Core(3)]
+///   b.imports    = [Core(3)]
+#[test]
+fn mod_ids_sequential_chain() {
+    let dir = create_temp_dir("mod_ids_chain");
+
+    // b.chrn (leaf)
+    let b_path = create_chrn_file(&dir, "b.chrn", "let z = 1\n");
+    // a.chrn imports b
+    let b_canonical = b_path.to_string_lossy();
+    let a_content = format!("import \"{}\"\nlet y = b::z\n", b_canonical);
+    let a_path = create_chrn_file(&dir, "a.chrn", &a_content);
+    // main.chrn imports a
+    let a_canonical = a_path.to_string_lossy();
+    let main_content = format!("import \"{}\"\nlet x = a::y\n", a_canonical);
+    let main_path = create_chrn_file(&dir, "main.chrn", &main_content);
+
+    let cfg = ChrnConfig::default();
+    let mut reporter = Reporter::new(100);
+
+    let (compiler, store, diags) =
+        extract_all_modules(&main_path, cfg, &mut reporter)
+            .expect("extract_all_modules must succeed");
+
+    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    let user_count = 3;
+    assert_eq!(get_user_mod_count(&compiler), user_count, "expected 3 user modules (main, a, b)");
+
+    let interner = &store.interner;
+
+    // -- Exact mod_id checks --
+    let main_mod = find_module_by_name(&compiler, interner, "main")
+        .expect("main must be present");
+    assert_eq!(main_mod.mod_id, ModuleId::new(0), "main gets mod_id 0");
+
+    let a_mod = find_module_by_name(&compiler, interner, "a")
+        .expect("a must be present");
+    assert_eq!(a_mod.mod_id, ModuleId::new(1), "a (imported first) gets mod_id 1");
+
+    let b_mod = find_module_by_name(&compiler, interner, "b")
+        .expect("b must be present");
+    assert_eq!(b_mod.mod_id, ModuleId::new(2), "b (leaf) gets mod_id 2");
+
+    // -- Import numbering --
+    let core_mod_id = ModuleId::new(user_count as u32); // 3 = last index
+
+    // main imports a then core
+    assert_eq!(main_mod.imports.len(), 2, "main: 1 user import + 1 core");
+    assert_eq!(
+        import_mod_id(&main_mod.imports[0]),
+        Some(ModuleId::new(1)),
+        "main.imports[0] must be Source(a, 1)"
+    );
+    assert!(
+        matches!(main_mod.imports[1].kind, ImportKind::Core(id) if id == core_mod_id),
+        "main.imports[1] must be Core(3), got {:?}",
+        main_mod.imports[1].kind
+    );
+
+    // a imports b then core
+    assert_eq!(a_mod.imports.len(), 2, "a: 1 user import + 1 core");
+    assert_eq!(
+        import_mod_id(&a_mod.imports[0]),
+        Some(ModuleId::new(2)),
+        "a.imports[0] must be Source(b, 2)"
+    );
+    assert!(
+        matches!(a_mod.imports[1].kind, ImportKind::Core(id) if id == core_mod_id),
+        "a.imports[1] must be Core(3), got {:?}",
+        a_mod.imports[1].kind
+    );
+
+    // b only has core
+    assert_eq!(b_mod.imports.len(), 1, "b: only core import");
+    assert!(
+        matches!(b_mod.imports[0].kind, ImportKind::Core(id) if id == core_mod_id),
+        "b.imports[0] must be Core(3), got {:?}",
+        b_mod.imports[0].kind
+    );
+
+    _ = fs::remove_dir_all(&dir);
+}
+
+/// Diamond dependency: main imports a and b, both a and b import shared.
+/// shared is resolved only once; deduplication is verified through exact
+/// module id checks.
+///
+/// Resolution order (deterministic):
+///   main(0, pre-registered), a(1), b(2), shared(3, resolved as a's import)
+///
+/// Import layout (core is injected post-resolution):
+///   main.imports   = [Source(a, 1), Source(b, 2), Core(4)]
+///   a.imports      = [Source(shared, 3), Core(4)]
+///   b.imports      = [Source(shared, 3), Core(4)]
+///   shared.imports = [Core(4)]
+#[test]
+fn mod_ids_diamond_dedup() {
+    let dir = create_temp_dir("mod_ids_diamond");
+
+    // shared.chrn (leaf)
+    let shared_path = create_chrn_file(&dir, "shared.chrn", "let val = 42\n");
+    let shared_canonical = shared_path.to_string_lossy();
+
+    // a.chrn imports shared
+    let a_content = format!("import \"{}\"\nlet a_val = shared::val\n", shared_canonical);
+    let a_path = create_chrn_file(&dir, "a.chrn", &a_content);
+
+    // b.chrn imports shared
+    let b_content = format!("import \"{}\"\nlet b_val = shared::val\n", shared_canonical);
+    let b_path = create_chrn_file(&dir, "b.chrn", &b_content);
+
+    // main.chrn imports a and b
+    let a_canonical = a_path.to_string_lossy();
+    let b_canonical = b_path.to_string_lossy();
+    let main_content = format!(
+        "import \"{}\"\nimport \"{}\"\nlet x = a::a_val + b::b_val\n",
+        a_canonical, b_canonical
+    );
+    let main_path = create_chrn_file(&dir, "main.chrn", &main_content);
+
+    let cfg = ChrnConfig::default();
+    let mut reporter = Reporter::new(100);
+
+    let (compiler, store, diags) =
+        extract_all_modules(&main_path, cfg, &mut reporter)
+            .expect("extract_all_modules must succeed");
+
+    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    let user_count = 4;
+    assert_eq!(
+        get_user_mod_count(&compiler), user_count,
+        "expected 4 user modules (main, a, b, shared)"
+    );
+
+    let interner = &store.interner;
+
+    // — Exact mod_id checks (deterministic registration order) —
+    let main_mod = find_module_by_name(&compiler, interner, "main")
+        .expect("main must be present");
+    assert_eq!(main_mod.mod_id, ModuleId::new(0), "main gets mod_id 0");
+
+    let a_mod = find_module_by_name(&compiler, interner, "a")
+        .expect("a must be present");
+    assert_eq!(a_mod.mod_id, ModuleId::new(1), "a (first import of main) gets mod_id 1");
+
+    let b_mod = find_module_by_name(&compiler, interner, "b")
+        .expect("b must be present");
+    assert_eq!(b_mod.mod_id, ModuleId::new(2), "b (second import of main) gets mod_id 2");
+
+    let shared_mod = find_module_by_name(&compiler, interner, "shared")
+        .expect("shared must be present");
+    assert_eq!(shared_mod.mod_id, ModuleId::new(3), "shared (resolved as a's import) gets mod_id 3");
+
+    // — Import numbering —
+    let core_mod_id = ModuleId::new(user_count as u32); // 4
+
+    // main: a, then b, then core
+    assert_eq!(main_mod.imports.len(), 3, "main: 2 user imports + 1 core");
+    assert_eq!(
+        import_mod_id(&main_mod.imports[0]),
+        Some(ModuleId::new(1)),
+        "main.imports[0] must be Source(a, 1)"
+    );
+    assert_eq!(
+        import_mod_id(&main_mod.imports[1]),
+        Some(ModuleId::new(2)),
+        "main.imports[1] must be Source(b, 2)"
+    );
+    assert!(
+        matches!(main_mod.imports[2].kind, ImportKind::Core(id) if id == core_mod_id),
+        "main.imports[2] must be Core(4), got {:?}",
+        main_mod.imports[2].kind
+    );
+
+    // a: shared, then core
+    assert_eq!(a_mod.imports.len(), 2, "a: 1 user import + 1 core");
+    assert_eq!(
+        import_mod_id(&a_mod.imports[0]),
+        Some(ModuleId::new(3)),
+        "a.imports[0] must be Source(shared, 3)"
+    );
+    assert!(
+        matches!(a_mod.imports[1].kind, ImportKind::Core(id) if id == core_mod_id),
+        "a.imports[1] must be Core(4), got {:?}",
+        a_mod.imports[1].kind
+    );
+
+    // b: shared (dedup) at imports[0], then core
+    assert_eq!(b_mod.imports.len(), 2, "b: 1 user import + 1 core (shared deduped)");
+    assert_eq!(
+        import_mod_id(&b_mod.imports[0]),
+        Some(ModuleId::new(3)),
+        "b.imports[0] must be Source(shared, 3) (same mod_id as a.imports[0])"
+    );
+    assert!(
+        matches!(b_mod.imports[1].kind, ImportKind::Core(id) if id == core_mod_id),
+        "b.imports[1] must be Core(4), got {:?}",
+        b_mod.imports[1].kind
+    );
+
+    // shared: only core
+    assert_eq!(shared_mod.imports.len(), 1, "shared: only core import");
+    assert!(
+        matches!(shared_mod.imports[0].kind, ImportKind::Core(id) if id == core_mod_id),
+        "shared.imports[0] must be Core(4), got {:?}",
+        shared_mod.imports[0].kind
+    );
+
+    // — Deduplication cross-check —
+    assert_eq!(
+        import_mod_id(&a_mod.imports[0]),
+        import_mod_id(&b_mod.imports[0]),
+        "a and b carry the same shared mod_id"
+    );
+
+    _ = fs::remove_dir_all(&dir);
+}
+
+/// When an import points to a non-existent file, the import is dropped
+/// at ModuleFinder level (no `Import` record is created) and no module id
+/// is consumed.  The next valid import gets the next sequential id.
+///
+/// Import layout:
+///   main.imports = [Source(sub, 1), Core(2)]
+///   sub.imports  = [Core(2)]
+#[test]
+fn mod_ids_nonexistent_import_does_not_consume_id() {
+    let dir = create_temp_dir("mod_ids_missing");
+
+    // sub.chrn exists
+    let sub_path = make_sub_script(&dir);
+    let sub_canonical = sub_path.to_string_lossy();
+
+    // main.chrn imports a missing file then the valid sub
+    let main_content = format!(
+        "import \"/definitely/does/not/exist.chrn\"\nimport \"{}\"\nlet x = 5\n",
+        sub_canonical
+    );
+    let main_path = create_chrn_file(&dir, "main.chrn", &main_content);
+
+    let cfg = ChrnConfig::default();
+    let mut reporter = Reporter::new(100);
+
+    let (compiler, store, diags) =
+        extract_all_modules(&main_path, cfg, &mut reporter)
+            .expect("extract_all_modules must succeed");
+
+    let interner = &store.interner;
+
+    // -- Main assertions --
+    let user_count = 2;
+    assert_eq!(get_user_mod_count(&compiler), user_count, "expected 2 user modules (main + sub)");
+    let core_mod_id = ModuleId::new(user_count as u32); // 2
+
+    let main_mod = find_module_by_name(&compiler, interner, "main")
+        .expect("main must be present");
+    assert_eq!(main_mod.mod_id, ModuleId::new(0), "main gets mod_id 0");
+    assert_eq!(
+        main_mod.state,
+        ModuleState::Loaded,
+        "main should be Loaded despite bad import"
+    );
+
+    // The missing-file import is dropped entirely at ModuleFinder level:
+    // parse_import returns Err before any import record is created.
+    assert_eq!(main_mod.imports.len(), 2, "main: 1 Source (sub) + 1 Core");
+
+    // imports[0] = Source(sub, 1)
+    let sub_import_mod_id = match &main_mod.imports[0].kind {
+        ImportKind::Source(_, m_id) => Some(*m_id),
+        _ => None,
+    }
+    .expect("main.imports[0] should be Source(resolved sub)");
+    assert_eq!(sub_import_mod_id, ModuleId::new(1), "main.imports[0] must be Source(sub, 1)");
+
+    // imports[1] = Core(2)
+    assert!(
+        matches!(main_mod.imports[1].kind, ImportKind::Core(id) if id == core_mod_id),
+        "main.imports[1] must be Core(2), got {:?}",
+        main_mod.imports[1].kind
+    );
+
+    // -- Sub assertions --
+    let sub_mod = find_module_by_name(&compiler, interner, "sub")
+        .expect("sub must be present");
+    assert_eq!(sub_mod.mod_id, ModuleId::new(1), "sub gets mod_id 1 (sequential, no gap)");
+    assert_eq!(
+        sub_import_mod_id, sub_mod.mod_id,
+        "main's import to sub must carry sub's mod_id"
+    );
+
+    // sub has only the core import
+    assert_eq!(sub_mod.imports.len(), 1, "sub: only core import");
+    assert!(
+        matches!(sub_mod.imports[0].kind, ImportKind::Core(id) if id == core_mod_id),
+        "sub.imports[0] must be Core(2), got {:?}",
+        sub_mod.imports[0].kind
+    );
+
+    // Diagnostics must be emitted for the missing file
+    assert!(
+        !diags.is_empty(),
+        "non-existent import must produce diagnostics"
+    );
+
+    _ = fs::remove_dir_all(&dir);
+}
+
+/// Verifies that the main module always gets mod_id 0 in the final compiler
+/// and its only import is the core module.
+///
+/// Import layout:
+///   main.imports = [Core(1)]
+#[test]
+fn mod_ids_main_module_id_is_zero() {
+    let dir = create_temp_dir("mod_ids_main_zero");
+    let main_path = make_simple_script(&dir);
+    let cfg = ChrnConfig::default();
+    let mut reporter = Reporter::new(100);
+
+    let (compiler, _store, _diags) =
+        extract_all_modules(&main_path, cfg, &mut reporter)
+            .expect("extract_all_modules must succeed");
+
+    let user_count = 1;
+    assert_eq!(get_user_mod_count(&compiler), user_count);
+    let core_mod_id = ModuleId::new(user_count as u32); // 1
+
+    assert_eq!(
+        compiler.mods[ModuleId::new(0)].mod_id,
+        ModuleId::new(0),
+        "main module at index 0 must have mod_id 0"
+    );
+
+    let main_mod = &compiler.mods[ModuleId::new(0)];
+    assert_eq!(main_mod.imports.len(), 1, "main: only core import");
+    assert!(
+        matches!(main_mod.imports[0].kind, ImportKind::Core(id) if id == core_mod_id),
+        "main.imports[0] must be Core(1), got {:?}",
+        main_mod.imports[0].kind
+    );
 
     _ = fs::remove_dir_all(&dir);
 }

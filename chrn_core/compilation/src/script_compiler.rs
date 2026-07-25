@@ -167,6 +167,7 @@ impl ScriptCompiler {
         };
 
         // Should this lazy load the section intrinsics though?
+        // Yuppy
         Self::load_core(&mut compiler);
         Self::load_directives(&mut compiler);
         Self::create_module_symbols(&mut compiler);
@@ -225,6 +226,18 @@ impl ScriptCompiler {
 
             // Clone..
             for import in module.imports.clone() {
+                let mod_id = match import.kind {
+                    ImportKind::Source(_, m_id) => m_id,
+                    ImportKind::ErrorSource(_) => continue,
+                    // Should not stay as unresolved source, should be converted to err or a
+                    // resolved source
+                    ImportKind::UnresolvedSource(_) => unreachable!(),
+                    // Core DOES exist at this point, but is already given so this needs to be skipped.
+                    // Or is that not the case?
+                    // We'll see
+                    ImportKind::Core(m_id) => m_id,
+                };
+
                 let import_sym_id = SymbolId::new(compiler.symbols.len() as u32);
                 // Pushing any imports found within the given module
                 let symbol = Symbol::new(
@@ -233,7 +246,7 @@ impl ScriptCompiler {
                     None,
                     SymbolOrigin::Module(current_mod_id),
                     true,
-                    Some(AssociatedScopeKind::Module(import.mod_id)),
+                    Some(AssociatedScopeKind::Module(mod_id)),
                     ScopeType::Neutral,
                     SymbolKind::Namespace,
                 );
@@ -261,7 +274,7 @@ impl ScriptCompiler {
                         None,
                         SymbolOrigin::Module(current_mod_id),
                         true,
-                        Some(AssociatedScopeKind::Module(import.mod_id)),
+                        Some(AssociatedScopeKind::Module(mod_id)),
                         ScopeType::Neutral,
                         SymbolKind::Namespace,
                     );
@@ -841,7 +854,7 @@ impl ScriptCompiler {
 
         compiler.mods.push(core_mod);
 
-        let core_import = Import::new(core_name_id, core_mod_id, ImportKind::Core, None);
+        let core_import = Import::new(core_name_id, ImportKind::Core(core_mod_id), None);
 
         // Injecting core as an import and pushing it's scope so user modules can search it
         for user_mod in &mut compiler.mods.items {

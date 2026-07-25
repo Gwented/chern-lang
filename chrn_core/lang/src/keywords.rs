@@ -70,7 +70,7 @@ impl Formattable for Keyword {
 }
 
 impl Keyword {
-    fn name_id(self) -> InternedId {
+    pub fn name_id(self) -> InternedId {
         let id = match self {
             Keyword::Struct => intern::INTERNED_STRUCT,
             Keyword::Enum => intern::INTERNED_ENUM,

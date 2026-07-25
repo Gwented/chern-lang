@@ -91,13 +91,15 @@ pub(super) fn mock_import(
     alias_id: Option<&str>,
     interner: &mut Intern,
 ) -> Import {
-    let kind = ImportKind::Source(SpannedContainer::new(
-        interner.intern_path(&Path::new(path_name)),
-        Default::default(),
-    ));
+    let kind = ImportKind::Source(
+        SpannedContainer::new(
+            interner.intern_path(&Path::new(path_name)),
+            SourceSpan::default(),
+        ),
+        mod_id,
+    );
     Import::new(
         interner.intern(name),
-        mod_id,
         kind,
         alias_id.map(|a| interner.intern(&a)),
     )
@@ -301,6 +303,7 @@ pub(super) use chrn_utils::{
     source_map::{
         source_diagnostic::{DiagnosticLevel, SourceDiagnostic},
         source_region::SourceRegion,
+        source_span::SourceSpan,
     },
 };
 pub(super) use lang::{keywords::Keyword, values::Value};

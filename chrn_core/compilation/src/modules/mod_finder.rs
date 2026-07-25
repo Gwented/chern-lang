@@ -27,7 +27,7 @@ pub struct ModuleFinder<'a> {
     // Maybe turn this into &str
     src_bytes: &'a [u8],
     cfg: &'a ChrnConfig,
-    reserved_mod_ids: &'a mut Vec<(PathId, ModuleId)>,
+    // reserved_mod_ids: &'a mut Vec<(PathId, ModuleId)>,
     diags: Vec<SourceDiagnostic>,
     /// Path origin so that errors can accurately report the path where the import was declared
     current_region: &'a SourceRegion,
@@ -41,7 +41,7 @@ impl ModuleFinder<'_> {
     pub fn new<'a>(
         src_bytes: &'a [u8],
         cfg: &'a ChrnConfig,
-        reserved_mod_ids: &'a mut Vec<(PathId, ModuleId)>,
+        // reserved_mod_ids: &'a mut Vec<(PathId, ModuleId)>,
         current_region: &'a SourceRegion,
         script_start: usize,
         serial_start: Option<usize>,
@@ -51,7 +51,7 @@ impl ModuleFinder<'_> {
             cfg,
             current_region,
             diags: Vec::new(),
-            reserved_mod_ids,
+            // reserved_mod_ids,
             pos: 0,
             script_start,
             // If there is no serial start then it's a script file not a script block with @def ->
@@ -65,7 +65,6 @@ impl ModuleFinder<'_> {
     pub fn collect_imports(
         &mut self,
         interner: &mut Intern,
-        // A little crowded..
     ) -> (Option<Bind>, Vec<Import>, Vec<SourceDiagnostic>) {
         let mut imports: Vec<Import> = Vec::new();
         let mut bind: Option<Bind> = None;
@@ -80,18 +79,6 @@ impl ModuleFinder<'_> {
             let ch = self.peek();
 
             match ch {
-                // b'i' => {
-                //     if self.is_import() {
-                //         let import = self.parse_import(interner)?;
-                //         imports.push(import);
-                //     }
-                // }
-                // b'b' if is_after_whitespace => {
-                //     if self.is_bind() {
-                //         bind = Some(self.parse_bind(interner)?);
-                //     }
-                //     self.advance();
-                // }
                 b'"' => {
                     self.skip_quotes();
                 }
@@ -113,7 +100,7 @@ impl ModuleFinder<'_> {
                     // WARN: band-aid :(
                     // The real fix to this is to make the parser more capable, which is not allowed. The
                     // parser stays this way for a large set of unexplained reasons that may change.
-                    let can_look = prev_ch.is_whitespace()
+                    let can_check = prev_ch.is_whitespace()
                         // Start should always be valid
                         || self.pos == 0
                         // Same as checking for start of file
@@ -122,7 +109,7 @@ impl ModuleFinder<'_> {
                         && &self.src_bytes[0..keywords::ANNOTATION_CLAUSE_SIZE]
                             == b"@def");
 
-                    if can_look {
+                    if can_check {
                         if c == b'i' && self.is_import() {
                             let import = match self.parse_import(interner) {
                                 Ok(i) => i,
@@ -195,14 +182,13 @@ impl ModuleFinder<'_> {
             end_cursor as u32,
         );
 
+        // Solely for the intent of giving a more descriptive error
         if saw_backslash {
             let core_msg = "Only '/' can be used as path separators.".to_string();
 
-            // Since we know it's invalid
-
             //NOTE: Maybe an error code?
             let src_diag = SourceDiagnostic::builder(
-                None,
+                ErrorCode::ImportErr.code().into(),
                 DiagnosticLevel::Error,
                 core_msg,
                 self.current_region.path_id,
@@ -229,7 +215,6 @@ impl ModuleFinder<'_> {
                 )
                 .add_annotation(path_span, AnnotationKind::Primary, None)
                 .build();
-                // panic!();
 
                 return Err(src_diag);
             }
@@ -237,8 +222,8 @@ impl ModuleFinder<'_> {
 
         // We could check for an alias here too in case the file name is invalid and needs an alias
         //TODO:
-        let file_name = match import_path.file_prefix().map(|n| n.to_str()) {
-            Some(Some(n)) => n,
+        let file_name = match import_path.file_prefix().map(|n| n.to_str()).flatten() {
+            Some(n) => n,
             _ => {
                 let core_msg = format!(
                     "Failed to extract file name for path \"{}\"",
@@ -247,7 +232,7 @@ impl ModuleFinder<'_> {
 
                 //TODO: Aliasing
                 let src_diag = SourceDiagnostic::builder(
-                    None,
+                    ErrorCode::ImportErr.code().into(),
                     DiagnosticLevel::Error,
                     core_msg,
                     self.current_region.path_id,
@@ -269,21 +254,21 @@ impl ModuleFinder<'_> {
             None
         };
 
-        let import_kind = ImportKind::Source(SpannedContainer::new(path_id, path_span));
+        let import_kind = ImportKind::UnresolvedSource(SpannedContainer::new(path_id, path_span));
 
-        let mod_id =
-            // If there exists a module attached to the path seen, the import being viewed has
-            // already been processed and should maintain the same module id
-            if let Some((_, inner_mod_id)) = self.reserved_mod_ids.iter().find(|(p_id, _)| *p_id == path_id) {
-                *inner_mod_id
-            } else {
-            // First time seeing this path, so a new key = PathId, Value = ModuleId relationship is
-            // made
-                let new_mod_id = ModuleId::new(self.reserved_mod_ids.len() as u32);
-                self.reserved_mod_ids.push((path_id, new_mod_id));
-                new_mod_id
-            };
-        let import = Import::new(name_id, mod_id, import_kind, alias_id);
+        // let mod_id =
+        //     // If there exists a module attached to the path seen, the import being viewed has
+        //     // already been processed and should maintain the same module id
+        //     if let Some((_, inner_mod_id)) = self.reserved_mod_ids.iter().find(|(p_id, _)| *p_id == path_id) {
+        //         *inner_mod_id
+        //     } else {
+        //     // First time seeing this path, so a new key = PathId, Value = ModuleId relationship is
+        //     // made
+        //         let new_mod_id = ModuleId::new(self.reserved_mod_ids.len() as u32);
+        //         self.reserved_mod_ids.push((path_id, new_mod_id));
+        //         new_mod_id
+        //     };
+        let import = Import::new(name_id, import_kind, alias_id);
 
         self.cfg.logger().log_dbg(|| {
             let import_name = interner.search(name_id);
@@ -384,10 +369,10 @@ impl ModuleFinder<'_> {
             end_cursor as u32,
         );
 
+        // Solely for the intent of giving a more descriptive error
         if saw_backslash {
             let core_msg = "Only '/' can be used as path separators.".to_string();
 
-            //NOTE: Maybe
             let src_diag = SourceDiagnostic::builder(
                 None,
                 DiagnosticLevel::Error,

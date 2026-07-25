@@ -246,8 +246,8 @@ impl MemoryBudget {
 // Should this even exist? This is mostly for helping tests run more easily since they more likely
 // than not don't care about the budget, but maybe that should be delegated to a local function
 // inside of tests.
-/// 4 MB
-const DEFAULT_LIMIT: usize = (1024 * 1024) * 4;
+/// 4 KB
+const DEFAULT_LIMIT: usize = 1024 * 4;
 
 impl Default for MemoryBudget {
     fn default() -> Self {
