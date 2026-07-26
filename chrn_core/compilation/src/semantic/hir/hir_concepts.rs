@@ -600,7 +600,10 @@ pub enum MemberSymbolKind {
     /// Member specific option assignment
     OptAssignmentMember(OptionAssignmentMember),
     /// Member that has reserved a slot but not yet defined
-    Unknown(MemberId),
+    Unknown {
+        sp_name_id: SpannedContainer<InternedId>,
+        reserved_member_id: MemberId,
+    },
 }
 
 impl MemberSymbolKind {
@@ -615,7 +618,7 @@ impl MemberSymbolKind {
             MemberSymbolKind::ConfigDefMember(_)
             | MemberSymbolKind::OptAssignmentRoot(_)
             | MemberSymbolKind::OptAssignmentMember(_)
-            | MemberSymbolKind::Unknown(_) => None,
+            | MemberSymbolKind::Unknown { .. } => None,
         };
 
         if let Some(type_id) = type_id_opt {
@@ -626,24 +629,21 @@ impl MemberSymbolKind {
     }
 
     /// Returns `None` if the type is unknown
-    pub fn name_id(&self) -> Option<InternedId> {
+    pub fn name_id(&self) -> InternedId {
         match self {
-            MemberSymbolKind::Field(field_repre) => Some(field_repre.name_id),
-            MemberSymbolKind::Variant(variant_repre) => Some(variant_repre.name_id),
-            MemberSymbolKind::OptAssignmentRoot(opt_assignment_root) => {
-                Some(opt_assignment_root.name_id)
-            }
+            MemberSymbolKind::Field(field_repre) => field_repre.name_id,
+            MemberSymbolKind::Variant(variant_repre) => variant_repre.name_id,
+            MemberSymbolKind::OptAssignmentRoot(opt_assignment_root) => opt_assignment_root.name_id,
             MemberSymbolKind::OptAssignmentMember(opt_assignment_member) => {
-                Some(opt_assignment_member.name_id)
+                opt_assignment_member.name_id
             }
-            MemberSymbolKind::ConfigDefMember(cfg_def_member) => Some(cfg_def_member.name_id),
-            MemberSymbolKind::Unknown(_) => None,
+            MemberSymbolKind::ConfigDefMember(cfg_def_member) => cfg_def_member.name_id,
+            MemberSymbolKind::Unknown { sp_name_id, .. } => sp_name_id.inner,
         }
     }
 
     pub fn member_id(&self) -> MemberId {
         match self {
-            MemberSymbolKind::Unknown(member_id) => *member_id,
             MemberSymbolKind::Field(field_repre) => field_repre.member_id,
             MemberSymbolKind::Variant(variant_repre) => variant_repre.member_id,
             MemberSymbolKind::OptAssignmentRoot(opt_assignment_root) => {
@@ -653,12 +653,15 @@ impl MemberSymbolKind {
                 opt_assignment_member.member_id
             }
             MemberSymbolKind::ConfigDefMember(cfg_def_member) => cfg_def_member.member_id,
+            MemberSymbolKind::Unknown {
+                reserved_member_id, ..
+            } => *reserved_member_id,
         }
     }
 
     pub fn is_unknown(&self) -> bool {
         match self {
-            MemberSymbolKind::Unknown(_) => true,
+            MemberSymbolKind::Unknown { .. } => true,
             _ => false,
         }
     }
@@ -674,7 +677,7 @@ impl MemberSymbolKind {
             MemberSymbolKind::ConfigDefMember(_)
             | MemberSymbolKind::OptAssignmentRoot(_)
             | MemberSymbolKind::OptAssignmentMember(_)
-            | MemberSymbolKind::Unknown(_) => None,
+            | MemberSymbolKind::Unknown { .. } => None,
         }
     }
 }

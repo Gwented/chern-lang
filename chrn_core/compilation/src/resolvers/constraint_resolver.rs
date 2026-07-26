@@ -176,6 +176,7 @@ impl<'a> ConstraintResolver<'a> {
                 // A SLICE?
                 // Yeah sure
                 preset_reporter::report_preset(
+                    &self.compiler,
                     &mut self.summary,
                     preset_err,
                     env.region,
@@ -231,6 +232,7 @@ impl<'a> ConstraintResolver<'a> {
                     // Slice as in [Option<PresetErr>;2]
                     // Ok sure
                     preset_reporter::report_preset(
+                        &self.compiler,
                         &mut self.summary,
                         preset_err,
                         env.region,
@@ -515,6 +517,7 @@ impl<'a> ConstraintResolver<'a> {
             if let Err(preset_errs) = self.check_cond(type_def.type_id, ty_span, *cond_expr) {
                 for err in preset_errs {
                     preset_reporter::report_preset(
+                        &self.compiler,
                         &mut self.summary,
                         err,
                         env.region,
@@ -536,7 +539,8 @@ impl<'a> ConstraintResolver<'a> {
                         ));
 
                         preset_reporter::report_preset(
-                            &mut self.summary,
+                            &self.compiler,
+                        &mut self.summary,
                             preset_err,
                             env.region,
                             self.cfg,
@@ -558,6 +562,7 @@ impl<'a> ConstraintResolver<'a> {
                 env,
             ) {
                 preset_reporter::report_preset(
+                    &self.compiler,
                     &mut self.summary,
                     preset_err,
                     env.region,
@@ -705,6 +710,7 @@ impl<'a> ConstraintResolver<'a> {
             if let Err(preset_errs) = self.check_cond(alias_type_id, sym_span, *cond_expr_id) {
                 for err in preset_errs {
                     preset_reporter::report_preset(
+                        &self.compiler,
                         &mut self.summary,
                         err,
                         env.region,
@@ -875,7 +881,8 @@ impl<'a> ConstraintResolver<'a> {
                 if let Err(preset_errs) = self.check_cond(field.type_id, ty_span, *cond_expr) {
                     for err in preset_errs {
                         preset_reporter::report_preset(
-                            &mut self.summary,
+                            &self.compiler,
+                        &mut self.summary,
                             err,
                             env.region,
                             self.cfg,
@@ -895,7 +902,8 @@ impl<'a> ConstraintResolver<'a> {
                 if let Err(preset_errs) = self.check_cond(field.type_id, ty_span, *cond_expr) {
                     for err in preset_errs {
                         preset_reporter::report_preset(
-                            &mut self.summary,
+                            &self.compiler,
+                        &mut self.summary,
                             err,
                             env.region,
                             self.cfg,
@@ -922,6 +930,7 @@ impl<'a> ConstraintResolver<'a> {
                     env,
                 ) {
                     preset_reporter::report_preset(
+                        &self.compiler,
                         &mut self.summary,
                         preset_err,
                         env.region,
@@ -949,6 +958,7 @@ impl<'a> ConstraintResolver<'a> {
                     env,
                 ) {
                     preset_reporter::report_preset(
+                        &self.compiler,
                         &mut self.summary,
                         preset_err,
                         env.region,
@@ -982,7 +992,8 @@ impl<'a> ConstraintResolver<'a> {
                     if let Err(preset_errs) = self.check_cond(inner_id, ty_span, *cond_expr) {
                         for err in preset_errs {
                             preset_reporter::report_preset(
-                                &mut self.summary,
+                                &self.compiler,
+                        &mut self.summary,
                                 err,
                                 env.region,
                                 self.cfg,
@@ -1008,7 +1019,8 @@ impl<'a> ConstraintResolver<'a> {
                     if let Err(preset_errs) = self.check_cond(inner_id, ty_span, *cond_expr) {
                         for err in preset_errs {
                             preset_reporter::report_preset(
-                                &mut self.summary,
+                                &self.compiler,
+                        &mut self.summary,
                                 err,
                                 env.region,
                                 self.cfg,
@@ -1041,7 +1053,8 @@ impl<'a> ConstraintResolver<'a> {
                         env,
                     ) {
                         preset_reporter::report_preset(
-                            &mut self.summary,
+                            &self.compiler,
+                        &mut self.summary,
                             preset_err,
                             env.region,
                             self.cfg,
@@ -1070,7 +1083,8 @@ impl<'a> ConstraintResolver<'a> {
                         env,
                     ) {
                         preset_reporter::report_preset(
-                            &mut self.summary,
+                            &self.compiler,
+                        &mut self.summary,
                             preset_err,
                             env.region,
                             self.cfg,
@@ -1514,7 +1528,7 @@ impl<'a> ConstraintResolver<'a> {
             // I kinda would rather it just did nothing rather than report
             Type::Unknown => Err(None),
             Type::Func(_) => {
-                let core_msg = "Functions can only be placed within condition blocks".to_string();
+                let core_msg = "Functions can only be in condition blocks".to_string();
 
                 //NOTE: I don't THINK this warrants a code?
                 let src_diag = SourceDiagnostic::basic_builder(

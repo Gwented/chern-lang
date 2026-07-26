@@ -1,3 +1,4 @@
+//TODO: Config summmarryyyy
 //! This module represents the stage of `chrn` processing where there it may read an entire file, or
 //! it may read between `@def` and `@end`. This exists so that if there is serial data within the
 //! file, the entire file isn't forced to be loaded into memory, which would be a net negative.
@@ -26,6 +27,8 @@ use chrn_utils::{
 };
 
 use lang::keywords::ANNOTATION_CLAUSE_SIZE;
+
+use crate::config_loader::config_loader_summary::ConfigLoaderSummary;
 /// Can read 32KB before stopping if no `@def` or EOF is found
 const MAX_SEARCH_READ: usize = 1024 * 32;
 
@@ -145,27 +148,6 @@ impl<R: Read> ConfigLoader<'_, R> {
         let mut diag_summary = SourceDiagnosticSummary::default();
 
         while let Some(b) = self.peek() {
-            // dbg!(
-            //     self.handle.buffer().get(self.pos).map(|c| *c as char),
-            //     self.pos
-            // );
-            // What about um...macros?
-            // if self.has_def && self.cursor == 5 {
-            //     dbg!(b as char);
-            // }
-            // dbg!(b as char);
-            // dbg!(self.pos);
-
-            // This should also not be terminal
-            // if self.pos >= chrn_utils::MAX_REGION_SIZE {
-            //     let script_type = if requires_end { "block" } else { "file" };
-            //
-            //     panic!(
-            //         "Exceeded read limit `{}` while attempting to read script {script_type}",
-            //         chrn_utils::MAX_REGION_SIZE
-            //     );
-            // }
-
             let span_start = self.cursor;
 
             match b {
@@ -181,7 +163,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                     // Is there a reason for lines_read to be printed if there are multiple quotes?
                     // When are there ever NOT multiple quotes if it's in a serialized file?
                     if self.read_quotes(quote_type).is_err() {
-                        let core_msg = "Found unclosed quotes which reached <eof>".to_string();
+                        let core_msg = "Unclosed quotes reached end of read limit".to_string();
 
                         let rel_q_start = (quote_start - script_start) as u32;
                         let q_span =
@@ -226,7 +208,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                     // Is there a reason for lines_read to be printed if there are multiple quotes?
                     // When are there ever NOT multiple quotes if it's in a serialized file?
                     if self.read_quotes(quote_type).is_err() {
-                        let core_msg = "Found unclosed quotes which reached <eof>".into();
+                        let core_msg = "Unclosed quotes reached end of read limit".into();
 
                         let rel_q_start = (quote_start - script_start) as u32;
                         let q_span =
@@ -420,13 +402,14 @@ impl<R: Read> ConfigLoader<'_, R> {
         // NOTE: Needs direct indexing because peek already reached it's limit
         if self.handle.buffer().get(self.cursor).is_some() {
             // Sole reason this is here
-            let core_msg = "Amount of bytes in file exceeds max amount of 32KB".into();
+            let core_msg = "Amount of bytes in file exceeds max of 32KB".into();
             let diag = SourceDiagnostic::builder(
                 ErrorCode::CompilerSafetyLimits.code().into(),
                 DiagnosticLevel::Warn,
                 core_msg,
                 self.current_path_id,
             )
+            .add_note("Possibly @def or @end usage".into())
             .build();
             diag_summary.push_diag(diag);
         }
@@ -573,7 +556,7 @@ impl<R: Read> ConfigLoader<'_, R> {
         }
 
         if depth > 0 {
-            let core_msg = "Found unclosed multi-line comment in script".into();
+            let core_msg = "Unclosed multi-line comment".into();
 
             // To include full multi-line syntax. / + 1 = /*
             let comment_start = comment_start as u32;
@@ -890,14 +873,3 @@ impl<R: Read> ConfigLoader<'_, R> {
     //     // If difference is 0 then we reached buffer size otherwise
     // }
 }
-// Maybe when streaming is used this can be used
-// enum InternalErr {
-//     MaxTurns,
-//     Diagnostic(SourceDiagnostic),
-// }
-//
-// #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-// enum SearchingState {
-//     Searching,
-//     InDef,
-// }

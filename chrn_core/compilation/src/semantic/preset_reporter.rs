@@ -10,6 +10,7 @@ use chrn_utils::{
 };
 use lang::fmter::Formattable;
 
+use crate::lookup::member_lookup;
 use crate::lookup::scopes::AssociatedScopeKind;
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::script_compiler::ScriptCompiler;
@@ -26,13 +27,14 @@ use super::preset_err::{LookupError, MathError};
 pub(crate) fn report_preset<S: SourceDiagnosticSink>(
     // If we want a scenario where it doesn't require diagnostics, then we should make a trait where
     // the summary can choose to abide by summary rules.
+    compiler: &ScriptCompiler,
     sink: &mut S,
     preset_err: PresetErr,
     region: &SourceRegion,
     cfg: &ChrnConfig,
     interner: &Intern,
 ) {
-    let diag_builder = create_diag_builder_preset(preset_err, region, cfg, interner);
+    let diag_builder = create_diag_builder_preset(compiler, preset_err, region, cfg, interner);
     sink.push_diagnostic(diag_builder.build());
 }
 
@@ -44,6 +46,7 @@ pub(crate) fn report_preset<S: SourceDiagnosticSink>(
 ///
 /// Returns a tuple of any directives and diagnostics found
 pub(crate) fn report_preset_vec<S: SourceDiagnosticSink>(
+    compiler: &ScriptCompiler,
     sink: &mut S,
     preset_errs: Vec<PresetErr>,
     region: &SourceRegion,
@@ -51,13 +54,14 @@ pub(crate) fn report_preset_vec<S: SourceDiagnosticSink>(
     interner: &Intern,
 ) {
     for preset in preset_errs {
-        let diag_builder = create_diag_builder_preset(preset, region, cfg, interner);
+        let diag_builder = create_diag_builder_preset(compiler, preset, region, cfg, interner);
         sink.push_diagnostic(diag_builder.build());
     }
 }
 
 /// Creates `SourceDiagnostic` with the preset associated with it's `SemanticError`
 pub(crate) fn create_diag_builder_preset(
+    compiler: &ScriptCompiler,
     preset_err: PresetErr,
     region: &SourceRegion,
     cfg: &ChrnConfig,
@@ -132,7 +136,7 @@ pub(crate) fn create_diag_builder_preset(
         PresetErr::VagueDirective(sp_directive) => {
             let core_msg = format!(
                 //FIXME: Still vague
-                "The directive \"#{}\" cannot be used for a `var->` defined variable that holds a `struct` or `enum`",
+                "\"#{}\" cannot be used for a `var->` defined variable that holds a `struct` or `enum`",
                 sp_directive.inner.to_fmt()
             );
 
@@ -170,7 +174,7 @@ pub(crate) fn create_diag_builder_preset(
         } => {
             let core_msg = format!(
                 // Suspicious error message
-                "The directive `#{}` cannot be applied to recursive types",
+                "`#{}` cannot be applied to recursive types",
                 sp_directive.inner.to_fmt()
             );
 
@@ -202,18 +206,15 @@ pub(crate) fn create_diag_builder_preset(
         }
         // Should have the data type's cap shown as well
         //TODO: This shouldn't exist since it should use big int/float internally
-        PresetErr::NumericOverflow {
-            sp_num: spanned_num,
-            fmtted_ty: ty,
-        } => {
-            let overflown_num = interner.search(spanned_num.inner);
+        PresetErr::NumericOverflow { sp_num, fmtted_ty } => {
+            let overflown_num = interner.search(sp_num.inner);
             let core_msg = format!(
-                "The type `{ty}` had an overflow with the value \"{}\" ",
+                "The type `{fmtted_ty}` had an overflow with the value \"{}\" ",
                 overflown_num
             );
 
             SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
-                .add_annotation(spanned_num.span, AnnotationKind::Primary, None)
+                .add_annotation(sp_num.span, AnnotationKind::Primary, None)
         }
         PresetErr::General(src_diag) => src_diag,
         PresetErr::Lookup(lookup_err) => match lookup_err {
@@ -227,12 +228,28 @@ pub(crate) fn create_diag_builder_preset(
                     .add_annotation(sp_fmtted_ty.span, AnnotationKind::Primary, None)
             }
             LookupError::MemberNotFound {
-                sp_parent_ty,
+                parent_type_id,
+                sp_parent_name_id: sp_parent_ty,
                 member,
             } => {
                 let ty_name = interner.search(sp_parent_ty.inner);
                 let member_name = interner.search(member);
-                let core_msg = format!("No member `{member_name}` found in type `{ty_name}`");
+                let core_msg = format!("No member `{member_name}` in type `{ty_name}`");
+
+                // Shouuld search available fields and similar name fields
+                //
+                // What about, if one member is similar enough, only suggest, otherwise just print
+                // all fields
+                // Also maybe limit the amount that can be printed at a time
+                let available_members = member_lookup::collect_members(compiler, parent_type_id);
+                let mut available_members_str = String::new();
+                for (i, member_id) in available_members.iter().enumerate() {
+                    let member_name = interner.search(compiler.members[*member_id].name_id());
+                    available_members_str.push_str(&format!("`{member_name}`"));
+                    if i + 1 < available_members.len() {
+                        available_members_str.push_str(&format!(", "));
+                    }
+                }
 
                 SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
                     .add_annotation(
@@ -240,6 +257,7 @@ pub(crate) fn create_diag_builder_preset(
                         AnnotationKind::Primary,
                         format!("Is type `{ty_name}`").into(),
                     )
+                    .add_help(format!("Available members: {available_members_str}"))
             }
             LookupError::InvalidSymbolMemberAccess(sp_sym) => {
                 let core_msg = format!("Symbol `{}` cannot use member access", sp_sym.inner);
@@ -397,7 +415,7 @@ pub fn type_expr_result_to_preset_err(
                     let err_mod = &compiler.mods[*mod_id];
                     let err_mod_name = interner.search(err_mod.name_id);
 
-                    format!("No type `{err_name}` is defined in module `{err_mod_name}`")
+                    format!("No type `{err_name}` defined in module `{err_mod_name}`")
                 }
                 //NOTE: Not current symbol exists that has it's own scope except modules
                 AssociatedScopeKind::Scope(scope_id) => {
@@ -439,8 +457,7 @@ pub fn type_expr_result_to_preset_err(
             let sym = &compiler.symbols[*found_sym_id];
             let sym_name = interner.search(sym.name_id);
 
-            let core_msg =
-                format!("Type `{sym_name}` is private within the module `{current_mod_name}`");
+            let core_msg = format!("Type `{sym_name}` is private in module `{current_mod_name}`");
 
             let src_diag = SourceDiagnostic::builder(
                 ErrorCode::PrivacyErr.code().into(),
@@ -517,12 +534,12 @@ pub fn static_access_result_to_preset_err(
             let src_diag = if let Some(prev) = prev_seg {
                 let prev_seg_name = interner.search(prev.inner);
                 let core_msg = format!(
-                    "Could not find `{}` in the namespace `{}`",
+                    "Could not find `{}` in namespace `{}`",
                     current_seg_name, prev_seg_name
                 );
 
                 SourceDiagnostic::builder(
-                    ErrorCode::NotFoundInScope.code().into(),
+                    ErrorCode::ScopeErr.code().into(),
                     DiagnosticLevel::Error,
                     core_msg,
                     env.region.path_id,
@@ -532,7 +549,7 @@ pub fn static_access_result_to_preset_err(
                 let core_msg = format!("Could not find namespace `{current_seg_name}`");
 
                 SourceDiagnostic::builder(
-                    ErrorCode::NotFoundInScope.code().into(),
+                    ErrorCode::ScopeErr.code().into(),
                     DiagnosticLevel::Error,
                     core_msg,
                     env.region.path_id,
@@ -547,7 +564,7 @@ pub fn static_access_result_to_preset_err(
             let core_msg = format!("No namespace found in `{namespace_name}`");
 
             let src_diag = SourceDiagnostic::builder(
-                ErrorCode::NotFoundInScope.code().into(),
+                ErrorCode::ScopeErr.code().into(),
                 DiagnosticLevel::Error,
                 core_msg,
                 env.region.path_id,

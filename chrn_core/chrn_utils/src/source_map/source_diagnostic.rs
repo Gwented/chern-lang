@@ -182,6 +182,11 @@ pub struct SourceDiagnosticBuilder {
 }
 
 impl SourceDiagnosticBuilder {
+    pub fn set_core_msg(mut self, core_msg: String) -> Self {
+        self.core_msg = core_msg;
+        self
+    }
+
     /// Creates annotation for the current diagnostic being built
     pub fn add_annotation(
         mut self,
@@ -247,7 +252,7 @@ pub struct SourceDiagnosticSummary {
 //TEST: The extraction of data is painful, but trying to give encapsulation a fair chance on a real
 //structure
 impl SourceDiagnosticSummary {
-    pub fn new(warn_and_err_count: SharedU32, is_terminal: bool) -> SourceDiagnosticSummary {
+    pub const fn new(warn_and_err_count: SharedU32, is_terminal: bool) -> SourceDiagnosticSummary {
         SourceDiagnosticSummary {
             warn_and_err_count,
             diags: Vec::new(),
@@ -294,7 +299,7 @@ impl SourceDiagnosticSummary {
         other.warn_and_err_count.set_shared_inner(0);
     }
 
-    pub fn increment_from_level(&mut self, level: DiagnosticLevel) {
+    pub const fn increment_from_level(&mut self, level: DiagnosticLevel) {
         match level {
             DiagnosticLevel::Error => self.increment_err(),
             DiagnosticLevel::Warn => self.increment_warn(),
@@ -303,39 +308,39 @@ impl SourceDiagnosticSummary {
         };
     }
 
-    pub fn set_terminal(&mut self, is_terminal: bool) {
+    pub const fn set_terminal(&mut self, is_terminal: bool) {
         self.is_terminal = is_terminal;
     }
 
-    pub fn err_count(&self) -> u16 {
+    pub const fn err_count(&self) -> u16 {
         self.warn_and_err_count.right()
     }
 
-    pub fn warn_count(&self) -> u16 {
+    pub const fn warn_count(&self) -> u16 {
         self.warn_and_err_count.left()
     }
 
-    pub fn increment_warn(&mut self) {
+    pub const fn increment_warn(&mut self) {
         self.warn_and_err_count.add_left(1);
     }
 
-    pub fn increment_err(&mut self) {
+    pub const fn increment_err(&mut self) {
         self.warn_and_err_count.add_right(1);
     }
 
-    pub fn add_warn(&mut self, amt: u16) {
+    pub const fn add_warn(&mut self, amt: u16) {
         self.warn_and_err_count.add_left(amt);
     }
 
-    pub fn add_err(&mut self, amt: u16) {
+    pub const fn add_err(&mut self, amt: u16) {
         self.warn_and_err_count.add_right(amt);
     }
 
-    pub fn diags(&self) -> &Vec<SourceDiagnostic> {
+    pub const fn diags(&self) -> &Vec<SourceDiagnostic> {
         &self.diags
     }
 
-    pub fn is_terminal(&self) -> bool {
+    pub const fn is_terminal(&self) -> bool {
         self.is_terminal
     }
 }

@@ -12,7 +12,7 @@ pub struct LexerOutput {
 
 impl LexerOutput {
     //Yes.
-    pub fn new(toks: Vec<SpannedToken>, trivia: Vec<Trivia>, found_invalid_toks: u8) -> Self {
+    pub const fn new(toks: Vec<SpannedToken>, trivia: Vec<Trivia>, found_invalid_toks: u8) -> Self {
         Self {
             toks,
             trivia,

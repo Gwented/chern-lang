@@ -18,22 +18,22 @@ pub enum MemberLookupResult {
     /// `MemberId` found with no issues
     Found(MemberId),
     /// A type that does not have members
+    /// Contains `TypeId` that was found that cannot hold members
     ImpossibleTypeMemberAccess(TypeId),
     /// A type having members, but not having the field identifier specified
+    /// Contains `TypeId` of searched type
     MemberNotFoundInType(TypeId),
     // IncompatibleLookup(TypeId),
     // Seems like a bit of a jump
     /// Unknown type found
+    /// Contains `TypeId` of found type
     Unknown(TypeId),
 }
 
 /// Collects all members if possible from a given type id
 ///
 /// Return type is empty if the given type cannot carry members
-pub fn collect_all_members(
-    compiler: &ScriptCompiler,
-    mut current_type_id: TypeId,
-) -> Vec<MemberId> {
+pub fn collect_members(compiler: &ScriptCompiler, mut current_type_id: TypeId) -> Vec<MemberId> {
     for _ in 0..chrn_utils::MAX_LOOPS {
         match &compiler.types[current_type_id].ty {
             Type::BuiltinTypeInfo(builtin_type) => todo!(),

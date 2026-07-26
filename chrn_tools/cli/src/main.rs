@@ -21,7 +21,7 @@ fn main() {
             if let Some(err_msg) = err_msg_opt {
                 let (red, nc) =
                     color::get_red(cli.glob_args.can_color, cli_cfg.terminal_color_type);
-                println!("{red}exited{nc}: {err_msg}");
+                eprintln!("{red}exited{nc}: {err_msg}");
             }
             std::process::exit(1);
         }

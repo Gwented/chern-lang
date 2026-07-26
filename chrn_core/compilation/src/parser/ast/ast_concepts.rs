@@ -192,6 +192,18 @@ impl SectionKind {
     }
 }
 
+impl Formattable for SectionKind {
+    fn to_fmt(&self) -> Formatted {
+        match self {
+            SectionKind::Neutral => Formatted::SectNeutral,
+            SectionKind::Var => Formatted::SectVar,
+            SectionKind::Nest => Formatted::SectNest,
+            SectionKind::Override => Formatted::SectOverride,
+            SectionKind::Complex => Formatted::SectComplex,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,

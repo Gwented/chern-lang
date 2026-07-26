@@ -1,6 +1,7 @@
 pub mod ast;
 mod branch;
 mod context;
+mod evidence;
 mod parse_fmt;
 mod parser_budget;
 mod parser_state;
@@ -16,7 +17,7 @@ use crate::parser::ast::ast_concepts::{
 use crate::parser::ast::ast_exprs::{
     ArrayExpr, Expr, Generic, PathSegment, SpannedExpr, SpannedPathSegment, TypeExpr,
 };
-use crate::parser::branch::{Branch, NeutralBranch, SectionBranch};
+use crate::parser::branch::{Branch, NestBranch, NeutralBranch, SectionBranch};
 use crate::parser::context::ParserContext;
 use crate::parser::parser_budget::ParserBudget;
 use crate::parser::parser_state::ParserState;
@@ -82,7 +83,7 @@ pub fn parse(
 
                     if state.has_bind() {
                         ctx.report_verbose(
-                            "Found a bind statement more than once",
+                            "Duplicate bind statement",
                             Branch::Neutral(NeutralBranch::Searching),
                             interner,
                         );
@@ -145,7 +146,7 @@ pub fn parse(
                     //Could lead to less detailed error messages so may put back in its place.
                     if state.has_var() {
                         ctx.report_verbose(
-                            "Found `var` section more than once",
+                            "Duplicate `var` section",
                             Branch::Section(SectionBranch::Searching),
                             interner,
                         );
@@ -193,7 +194,7 @@ pub fn parse(
 
                     if state.has_nest() {
                         ctx.report_verbose(
-                            "Found `nest` section more than once",
+                            "Duplicate `nest` section",
                             Branch::Section(SectionBranch::Searching),
                             interner,
                         );
@@ -239,7 +240,7 @@ pub fn parse(
                     //probably means syntax should at least still be shown
                     if state.has_complex() {
                         ctx.report_verbose(
-                            "Found `complex` section more than once",
+                            "Duplicate `complex` section",
                             Branch::Section(SectionBranch::Searching),
                             interner,
                         );
@@ -290,7 +291,7 @@ pub fn parse(
 
                     if state.has_override() {
                         ctx.report_verbose(
-                            "Found `override` section more than once",
+                            "Duplicate `override` section",
                             Branch::Section(SectionBranch::Searching),
                             interner,
                         );
@@ -340,7 +341,7 @@ pub fn parse(
                         );
                     } else {
                         ctx.report_template(
-                            "a section with a '->' after",
+                            "a section with '->' after",
                             &parse_fmt::fmt_tok(tok, interner),
                             Branch::Section(SectionBranch::Searching),
                             interner,
@@ -366,18 +367,6 @@ pub fn parse(
                 };
 
                 let fmsg = parse_fmt::fmt_tok(t, interner);
-                // let fmsg = match t {
-                //     Token::Def => "`@def`".to_string(),
-                //     Token::Id(id)
-                //     | Token::Str(id)
-                //     | Token::Integer(id, _)
-                //     | Token::Float(id, _) => {
-                //         let name = interner.search(id);
-                //         format!("{} \"{}\"", t.kind(), name)
-                //     }
-                //     t => t.kind().to_string(),
-                // };
-
                 ctx.advance_tok();
                 ctx.report_template(allowed_msg, &fmsg, Branch::Searching, interner);
             }
@@ -400,7 +389,7 @@ fn parse_alias_stmt(
 
     let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
-        "Expected an identifier after `alias`, found ",
+        "Expected identifier after `alias`, found ",
         "",
         Branch::Neutral(NeutralBranch::Alias),
         interner,
@@ -450,7 +439,7 @@ fn parse_alias_stmt(
 fn check_bind(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token> {
     ctx.expect_id_verbose(
         TokenKind::Str,
-        "Expected a string literal after `bind`, found ",
+        "Expected string literal after `bind`, found ",
         "",
         Branch::Neutral(NeutralBranch::Bind),
         interner,
@@ -463,7 +452,7 @@ fn check_bind(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token> {
 fn check_import(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token> {
     ctx.expect_id_verbose(
         TokenKind::Str,
-        "Expected a string literal path, found ",
+        "Expected string literal path, found ",
         "",
         Branch::Neutral(NeutralBranch::Import),
         interner,
@@ -475,7 +464,7 @@ fn check_import(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token>
         ctx.advance_tok();
         ctx.expect_id_verbose(
             TokenKind::Id,
-            "Expected an identifier alias for the given import after keyword `as`, found ",
+            "Expected an identifier alias for the given import after `as`, found ",
             "",
             Branch::Neutral(NeutralBranch::Import),
             interner,
@@ -506,7 +495,7 @@ fn parse_typedef(
 
     ctx.expect_verbose(
         TokenKind::Colon,
-        &format!("Expected a ':' after \"{err_name}\" to declare a type, found "),
+        &format!("Expected a ':' after `{err_name}` to define a type, found "),
         "",
         Branch::Section(SectionBranch::Var),
         interner,
@@ -543,9 +532,9 @@ fn parse_nest_sect(
 ) -> Result<Item, Token> {
     // Wait what is this error?
     let kw = ctx.expect_kw_verbose(
-        "Expected `enum` or `struct` declaration, found ",
+        "Expected `enum` or `struct`, found ",
         "",
-        Branch::Section(SectionBranch::Nest),
+        Branch::Section(NestBranch::NestStart.into()),
         interner,
     )?;
 
@@ -556,9 +545,9 @@ fn parse_nest_sect(
 
             let name_id = ctx.expect_id_verbose(
                 TokenKind::Id,
-                "Expected an identifier for the given struct, found ",
+                "Expected an identifier for type struct, found ",
                 "",
-                Branch::Section(SectionBranch::Nest),
+                Branch::Section(NestBranch::StructType.into()),
                 interner,
             )?;
 
@@ -568,7 +557,7 @@ fn parse_nest_sect(
                 TokenKind::OCurlyBracket,
                 &format!("Expected '{{' to define struct, found "),
                 "",
-                Branch::Section(SectionBranch::Nest),
+                Branch::Section(NestBranch::StructType.into()),
                 interner,
             )?;
 
@@ -600,9 +589,9 @@ fn parse_nest_sect(
 
             let name_id = ctx.expect_id_verbose(
                 TokenKind::Id,
-                "Expected an identifier for the given enum, found ",
+                "Expected an identifier for type enum, found ",
                 "",
-                Branch::Section(SectionBranch::Nest),
+                Branch::Section(NestBranch::EnumType.into()),
                 interner,
             )?;
 
@@ -612,7 +601,7 @@ fn parse_nest_sect(
                 TokenKind::OCurlyBracket,
                 &format!("Expected '{{' to define enum, found"),
                 "",
-                Branch::Section(SectionBranch::Nest),
+                Branch::Section(NestBranch::EnumType.into()),
                 interner,
             )?;
 
@@ -644,10 +633,10 @@ fn parse_nest_sect(
         _ => {
             ctx.report_verbose(
                 &format!(
-                    "Expected keyword `enum` or `struct`, found keyword `{}`",
+                    "Expected keyword `enum` or `struct`, found `{}`",
                     kw.to_fmt()
                 ),
-                Branch::Section(SectionBranch::Nest),
+                Branch::Section(NestBranch::NestStart.into()),
                 interner,
             );
 
@@ -681,7 +670,7 @@ fn parse_cfg_expr(
     // Allows for "=>" to notify that
     if ctx.peek_tok() != Token::OCurlyBracket && ctx.peek_tok() != Token::NotSlimArrow {
         ctx.report_verbose(
-            "Expected a '{' block or '=>' to define config, found ",
+            "Expected '{' block or '=>' to define config, found ",
             Branch::Section(SectionBranch::Complex),
             interner,
         );
@@ -719,7 +708,7 @@ fn parse_cfg_expr(
             if !used_arrow {
                 ctx.expect_verbose(
                     TokenKind::CCurlyBracket,
-                    "Expected a '}' or more declarations, found ",
+                    "Expected '}' or more declarations, found ",
                     "",
                     Branch::Section(SectionBranch::Complex),
                     interner,
@@ -779,7 +768,7 @@ fn handle_cfg_metadata(
                 let name_span = ctx.peek_span();
                 let name_id = ctx.expect_id_verbose(
                     TokenKind::Id,
-                    "Expected an identifier to define configuration for, found ",
+                    "Expected an identifier to define configuration, found ",
                     "",
                     Branch::Section(SectionBranch::Complex),
                     interner,
@@ -790,7 +779,7 @@ fn handle_cfg_metadata(
                 let name_span = ctx.peek_span();
                 let name_id = ctx.expect_id_verbose(
                     TokenKind::Id,
-                    "Expected an identifier to define configuration for, found ",
+                    "Expected an identifier to define configuration, found ",
                     "",
                     Branch::Section(SectionBranch::Complex),
                     interner,
@@ -819,7 +808,7 @@ fn handle_cfg_metadata(
                 let name_span = ctx.peek_span();
                 let name_id = ctx.expect_id_verbose(
                     TokenKind::Id,
-                    "Expected an identifier to define configuration for, found ",
+                    "Expected an identifier to define configuration, found ",
                     "",
                     Branch::Section(SectionBranch::Override),
                     interner,
@@ -830,7 +819,7 @@ fn handle_cfg_metadata(
                 let name_span = ctx.peek_span();
                 let name_id = ctx.expect_id_verbose(
                     TokenKind::Id,
-                    "Expected an identifier to define configuration for, found ",
+                    "Expected an identifier to define configuration, found ",
                     "",
                     Branch::Section(SectionBranch::Complex),
                     interner,
@@ -859,7 +848,7 @@ fn parse_option_assignment(
 
     let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
-        "Expected an identifier for configuration field access, found ",
+        "Expected an identifier for config option, found ",
         "",
         Branch::Section(SectionBranch::Complex),
         interner,
@@ -867,7 +856,7 @@ fn parse_option_assignment(
 
     ctx.expect_verbose(
         TokenKind::Assign,
-        "Expected '=' to assign value to configuration, found ",
+        "Expected '=' to assign value to option, found ",
         "",
         Branch::Section(SectionBranch::Complex),
         interner,
@@ -907,7 +896,7 @@ fn parse_array(
 ) -> Result<SpannedExpr, Token> {
     ctx.expect_verbose(
         TokenKind::OBracket,
-        "Expected a '[' to declare array, found ",
+        "Expected '[' to declare array, found ",
         "",
         Branch::Expr,
         interner,
@@ -939,7 +928,7 @@ fn parse_array(
 
     ctx.expect_verbose(
         TokenKind::CBracket,
-        "Expected a ']' to close array, found ",
+        "Expected ']' to close array, found ",
         "",
         Branch::Expr,
         interner,
@@ -965,7 +954,7 @@ fn parse_let(
 
     let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
-        "Expected an identifier after `let`, found ",
+        "Expected identifier after `let`, found ",
         "",
         Branch::Neutral(NeutralBranch::Let),
         interner,
@@ -973,7 +962,7 @@ fn parse_let(
 
     ctx.expect_verbose(
         TokenKind::Assign,
-        "Expected '=' to declare a value, found ",
+        "Expected '=' to declare value, found ",
         "",
         Branch::Neutral(NeutralBranch::Let),
         interner,
@@ -1222,7 +1211,7 @@ fn parse_primary(
             let terminator = if t == Token::EOF { "<eof>" } else { "`@end`" };
 
             ctx.report_verbose(
-                &format!("Expected an expression, found {terminator}"),
+                &format!("Expected expression, found {terminator}"),
                 Branch::Type,
                 interner,
             );
@@ -1232,16 +1221,16 @@ fn parse_primary(
         t => {
             ctx.advance_tok();
 
+            let fmtted_tok = parse_fmt::fmt_tok(t, interner);
+
             let msg = match t {
-                Token::Invalid(id) => format!(
-                    "Expected a valid expression, found invalid \"{}\"",
-                    interner.search(id)
-                ),
-                Token::Keyword(kw) => format!(
-                    "Expected a valid expression, found keyword `{}`",
-                    kw.to_fmt()
-                ),
-                _ => format!("Expected a valid expression, found \"{}\"", t.kind()),
+                Token::Invalid(_) => {
+                    format!("Expected a valid expression, found invalid {fmtted_tok}")
+                }
+                Token::Keyword(_) => {
+                    format!("Expected a valid expression, found keyword {fmtted_tok}",)
+                }
+                _ => format!("Expected a valid expression, found {fmtted_tok}"),
             };
 
             ctx.report_verbose(&msg, Branch::Expr, interner);
@@ -1279,9 +1268,9 @@ fn parse_call_args(
 
         ctx.expect_verbose(
             TokenKind::Comma,
-            "Expected ',' to separate arguments or ')' to close, found ",
+            "Expected ',' to separate arguments, found ",
             "",
-            Branch::FuncArgs,
+            Branch::ArgList,
             interner,
         )?;
     }
@@ -1450,7 +1439,7 @@ fn parse_static_path(
             let start = ctx.peek_span().start;
             let base_id = ctx.expect_id_verbose(
                 TokenKind::Id,
-                "Expected an identifier after '::', found ",
+                "Expected identifier after '::', found ",
                 "",
                 Branch::Type,
                 interner,
@@ -1476,7 +1465,7 @@ fn parse_static_path(
             let span = ctx.peek_span();
             let name_id = ctx.expect_id_verbose(
                 TokenKind::Id,
-                "Expected an identifier after '::', found ",
+                "Expected identifier after '::', found ",
                 "",
                 Branch::Type,
                 interner,
@@ -1494,7 +1483,7 @@ fn parse_static_path(
             let span = ctx.peek_span();
             let final_ident = ctx.expect_id_verbose(
                 TokenKind::Id,
-                "Expected a complete member access, found ",
+                "Expected complete member access, found ",
                 "",
                 Branch::Type,
                 interner,
@@ -1519,7 +1508,7 @@ fn parse_generic(
     let _guard = budget.increase_depth();
     ctx.expect_verbose(
         TokenKind::OAngleBracket,
-        "Expected a '<' to declare generic, found ",
+        "Expected '<' to declare generic, found ",
         "",
         Branch::Type,
         interner,
@@ -1541,7 +1530,7 @@ fn parse_generic(
 
     ctx.expect_verbose(
         TokenKind::CAngleBracket,
-        "Expected a '>' to close generic parameters, found ",
+        "Expected '>' to close generic parameters, found ",
         "",
         Branch::Type,
         interner,
@@ -1569,9 +1558,9 @@ fn handle_struct_fields(
 
     ctx.expect_verbose(
         TokenKind::CCurlyBracket,
-        &format!("Expected a field or '}}' to close struct `{struct_name}`, found "),
+        &format!("Expected field or '}}' to close struct `{struct_name}`, found "),
         "",
-        Branch::Section(SectionBranch::NestType),
+        Branch::Section(NestBranch::StructType.into()),
         interner,
     )?;
 
@@ -1603,9 +1592,9 @@ fn handle_enum_variants(
 
     ctx.expect_verbose(
         TokenKind::CCurlyBracket,
-        &format!("Expected a variant or '}}' to close enum `{enum_name}`, found "),
+        &format!("Expected variant or '}}' to close enum `{enum_name}`, found "),
         "",
-        Branch::Section(SectionBranch::NestEnum),
+        Branch::Section(NestBranch::EnumType.into()),
         interner,
     )?;
 
@@ -1622,9 +1611,9 @@ fn parse_variant(
 
     let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
-        "Expected an identifier for a variant, found ",
+        "Expected identifier for variant, found ",
         "",
-        Branch::Section(SectionBranch::NestType),
+        Branch::Section(NestBranch::EnumType.into()),
         interner,
     )?;
 
@@ -1674,8 +1663,8 @@ fn parse_directive(ctx: &mut ParserContext, interner: &Intern) -> Result<Abstrac
     let name_span = ctx.peek_span();
     let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
+        "Unknown directive ",
         "",
-        " is not a valid directive.",
         Branch::Directive,
         interner,
     )?;
@@ -1705,7 +1694,7 @@ fn parse_alias_decl(
 
                 ctx.expect_verbose(
                     TokenKind::Colon,
-                    "Expected a ':' to define a type or boundary, found ",
+                    "Expected ':' to define a type or boundary, found ",
                     "",
                     Branch::Neutral(NeutralBranch::Alias),
                     interner,
@@ -1733,9 +1722,9 @@ fn parse_alias_decl(
 
         _ = ctx.expect_verbose(
             TokenKind::Comma,
-            "Expected a ',' to separate arguments or ')' to close, found ",
+            "Expected ',' to separate arguments, found ",
             "",
-            Branch::FuncArgs,
+            Branch::ArgList,
             interner,
         )?;
     }
@@ -1744,7 +1733,7 @@ fn parse_alias_decl(
         TokenKind::CParen,
         "Expected ')' to close declaration, found ",
         "",
-        Branch::FuncArgs,
+        Branch::ArgList,
         interner,
     )?;
 
@@ -1815,7 +1804,7 @@ fn parse_export(ctx: &mut ParserContext, interner: &Intern) -> Result<bool, ()> 
             ctx.advance_tok();
 
             ctx.report_verbose(
-                "Cannot use `export` more than once at a time",
+                "Cannot apply `export` more than once",
                 Branch::Searching,
                 interner,
             );

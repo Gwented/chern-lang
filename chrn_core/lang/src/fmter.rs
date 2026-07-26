@@ -2,8 +2,6 @@ use std::fmt::Display;
 
 use crate::types::boundaries::TypeBoundaryFlags;
 
-// Would it be better to just have it as a singular enum, or a trait?
-
 /// A trait meant to unify the way in which parts of the program are printed
 pub trait Formattable {
     fn to_fmt(&self) -> Formatted;
@@ -68,6 +66,7 @@ pub enum Formatted {
     Let,
     Change,
     AbstractSection,
+    SectNeutral,
     SectVar,
     SectNest,
     Self_,
@@ -166,6 +165,7 @@ impl Display for Formatted {
             Formatted::Alias => write!(f, "alias"),
             Formatted::Let => write!(f, "let"),
             Formatted::Change => write!(f, "change"),
+            Formatted::SectNeutral => write!(f, "neutral"),
             Formatted::SectVar => write!(f, "var"),
             Formatted::SectNest => write!(f, "nest"),
             Formatted::SectComplex => write!(f, "complex"),

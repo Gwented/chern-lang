@@ -454,7 +454,7 @@ impl<'res> TypeResolver<'res> {
             );
 
             let src_diag = SourceDiagnostic::builder(
-                ErrorCode::NotFoundInScope.code().into(),
+                ErrorCode::ScopeErr.code().into(),
                 DiagnosticLevel::Error,
                 core_msg,
                 env.region.path_id,
@@ -492,6 +492,7 @@ impl<'res> TypeResolver<'res> {
                 Ok(expr_id) => expr_id,
                 Err(preset_err) => {
                     preset_reporter::report_preset(
+                        &self.compiler,
                         &mut self.summary,
                         preset_err,
                         env.region,
@@ -538,7 +539,7 @@ impl<'res> TypeResolver<'res> {
                 let orig_span = original_field.name_span;
                 let current_field_span = current_opt.name_span;
 
-                let core_msg = format!("More than one option has the identifier `{dup_name}`");
+                let core_msg = format!("Duplicate option `{dup_name}`");
 
                 let src_diag = SourceDiagnostic::builder(
                     None,
@@ -663,6 +664,7 @@ impl<'res> TypeResolver<'res> {
                             );
 
                             preset_reporter::create_diag_builder_preset(
+                                &self.compiler,
                                 preset_err,
                                 env.region,
                                 self.cfg,
@@ -699,7 +701,8 @@ impl<'res> TypeResolver<'res> {
                                 };
 
                             let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
-                                sp_parent_ty: SpannedContainer::new(
+                                parent_type_id: type_id,
+                                sp_parent_name_id: SpannedContainer::new(
                                     name_id,
                                     abs_cfg_root.name_span,
                                 ),
@@ -708,6 +711,7 @@ impl<'res> TypeResolver<'res> {
 
                             // List available members?
                             preset_reporter::create_diag_builder_preset(
+                                &self.compiler,
                                 preset_err,
                                 env.region,
                                 self.cfg,
@@ -784,8 +788,7 @@ impl<'res> TypeResolver<'res> {
                 let orig_span = original_cfg.name_span;
                 let current_cfg_span = current_cfg.name_span;
 
-                let core_msg =
-                    format!("More than one member config has the identifier `{dup_name}`");
+                let core_msg = format!("More than one config member has identifier `{dup_name}`");
 
                 // Maybe give `None` here..
                 let src_diag = SourceDiagnostic::builder(
@@ -858,9 +861,10 @@ impl<'res> TypeResolver<'res> {
         //
         // Reserving spot since this is a recursive function
         let current_cfg_member_id = MemberId::new(self.compiler.members.len() as u32);
-        self.compiler
-            .members
-            .push(MemberSymbolKind::Unknown(current_cfg_member_id));
+        self.compiler.members.push(MemberSymbolKind::Unknown {
+            sp_name_id: SpannedContainer::new(parent_abs_cfg.name_id, parent_abs_cfg.name_span),
+            reserved_member_id: current_cfg_member_id,
+        });
 
         //TODO: MAKE THIS, UM, NOT THIS. LOOKS BAD.
         // THIS IS PROBABLY NOT GOING TO BE THAT BAD SINCE OVERRIDE WOULD HAVE AN ENTIRELY
@@ -895,6 +899,7 @@ impl<'res> TypeResolver<'res> {
                 Ok(expr_id) => expr_id,
                 Err(preset_err) => {
                     preset_reporter::report_preset(
+                        &self.compiler,
                         &mut self.summary,
                         preset_err,
                         env.region,
@@ -1159,6 +1164,7 @@ impl<'res> TypeResolver<'res> {
                                         ));
 
                                     preset_reporter::create_diag_builder_preset(
+                                        &self.compiler,
                                         preset_err,
                                         env.region,
                                         self.cfg,
@@ -1200,7 +1206,8 @@ impl<'res> TypeResolver<'res> {
 
                                     let preset_err =
                                         PresetErr::Lookup(LookupError::MemberNotFound {
-                                            sp_parent_ty: SpannedContainer::new(
+                                            parent_type_id: type_id,
+                                            sp_parent_name_id: SpannedContainer::new(
                                                 ty_name_id,
                                                 parent_abs_cfg.name_span,
                                             ),
@@ -1212,6 +1219,7 @@ impl<'res> TypeResolver<'res> {
 
                                     // List available members?
                                     preset_reporter::create_diag_builder_preset(
+                                        &self.compiler,
                                         preset_err,
                                         env.region,
                                         self.cfg,
@@ -1305,8 +1313,7 @@ impl<'res> TypeResolver<'res> {
                 let orig_span = original_cfg.name_span;
                 let current_cfg_span = current_cfg.name_span;
 
-                let core_msg =
-                    format!("More than one member config has the identifier `{dup_name}`");
+                let core_msg = format!("More than one config member has identifier `{dup_name}`");
 
                 let src_diag = SourceDiagnostic::builder(
                     None,
@@ -1488,6 +1495,7 @@ impl<'res> TypeResolver<'res> {
                         //WARN: Suspicious
 
                         preset_reporter::report_preset(
+                            &self.compiler,
                             &mut self.summary,
                             preset_err,
                             env.region,
@@ -1829,6 +1837,7 @@ impl<'res> TypeResolver<'res> {
             Ok(expr_id) => expr_id,
             Err(preset_err) => {
                 preset_reporter::report_preset(
+                    &self.compiler,
                     &mut self.summary,
                     preset_err,
                     env.region,
@@ -1899,6 +1908,7 @@ impl<'res> TypeResolver<'res> {
                 .expect("Result enforced by `match`");
 
                 preset_reporter::report_preset(
+                    &self.compiler,
                     &mut self.summary,
                     preset_err,
                     env.region,
@@ -1926,6 +1936,7 @@ impl<'res> TypeResolver<'res> {
                 Ok(c) => conds.push(c),
                 Err(preset_err) => {
                     preset_reporter::report_preset(
+                        &self.compiler,
                         &mut self.summary,
                         preset_err,
                         env.region,
@@ -1938,6 +1949,7 @@ impl<'res> TypeResolver<'res> {
 
         let (directives, preset_errs) = self.handle_directives(&abs_typedef.directives, env);
         preset_reporter::report_preset_vec(
+            &self.compiler,
             &mut self.summary,
             preset_errs,
             env.region,
@@ -1993,6 +2005,7 @@ impl<'res> TypeResolver<'res> {
                     Ok(c) => conds.push(c),
                     Err(preset_err) => {
                         preset_reporter::report_preset(
+                            &self.compiler,
                             &mut self.summary,
                             preset_err,
                             env.region,
@@ -2005,6 +2018,7 @@ impl<'res> TypeResolver<'res> {
 
             let (directives, preset_errs) = self.handle_directives(&abs_field.directives, env);
             preset_reporter::report_preset_vec(
+                &self.compiler,
                 &mut self.summary,
                 preset_errs,
                 env.region,
@@ -2028,6 +2042,7 @@ impl<'res> TypeResolver<'res> {
                 Ok(c) => glob_conds.push(c),
                 Err(preset_err) => {
                     preset_reporter::report_preset(
+                        &self.compiler,
                         &mut self.summary,
                         preset_err,
                         env.region,
@@ -2042,6 +2057,7 @@ impl<'res> TypeResolver<'res> {
             self.handle_directives(&abs_struct.glob_directives, env);
 
         preset_reporter::report_preset_vec(
+            &self.compiler,
             &mut self.summary,
             preset_errs,
             env.region,
@@ -2085,6 +2101,7 @@ impl<'res> TypeResolver<'res> {
                     Ok(c) => Some(c),
                     Err(preset_err) => {
                         preset_reporter::report_preset(
+                            &self.compiler,
                             &mut self.summary,
                             preset_err,
                             env.region,
@@ -2102,6 +2119,7 @@ impl<'res> TypeResolver<'res> {
 
             let (directives, preset_errs) = self.handle_directives(&abs_variant.directives, env);
             preset_reporter::report_preset_vec(
+                &self.compiler,
                 &mut self.summary,
                 preset_errs,
                 env.region,
@@ -2131,6 +2149,7 @@ impl<'res> TypeResolver<'res> {
                 Ok(c) => Some(c),
                 Err(preset_err) => {
                     preset_reporter::report_preset(
+                        &self.compiler,
                         &mut self.summary,
                         preset_err,
                         env.region,
@@ -2148,6 +2167,7 @@ impl<'res> TypeResolver<'res> {
 
         let (glob_directives, preset_errs) = self.handle_directives(&abs_enum.glob_directives, env);
         preset_reporter::report_preset_vec(
+            &self.compiler,
             &mut self.summary,
             preset_errs,
             env.region,
@@ -2203,6 +2223,7 @@ impl<'res> TypeResolver<'res> {
                     .expect("Result enforced by `match`");
 
                     preset_reporter::report_preset(
+                        &self.compiler,
                         &mut self.summary,
                         preset_err,
                         env.region,
@@ -2279,7 +2300,7 @@ impl<'res> TypeResolver<'res> {
                 let current_param_span = current_param.name_span;
 
                 // Preset error?
-                let core_msg = format!("More than one variant has the identifier \"{dup_name}\"");
+                let core_msg = format!("More than one variant has identifier \"{dup_name}\"");
 
                 let src_diag = SourceDiagnostic::builder(
                     None,
@@ -2318,6 +2339,7 @@ impl<'res> TypeResolver<'res> {
                 Ok(c) => Some(c),
                 Err(preset_err) => {
                     preset_reporter::report_preset(
+                        &self.compiler,
                         &mut self.summary,
                         preset_err,
                         env.region,
@@ -2335,6 +2357,7 @@ impl<'res> TypeResolver<'res> {
 
         let (directives, preset_errs) = self.handle_directives(&abs_alias.directives, env);
         preset_reporter::report_preset_vec(
+            &self.compiler,
             &mut self.summary,
             preset_errs,
             env.region,
@@ -2592,7 +2615,7 @@ impl<'res> TypeResolver<'res> {
                             // TODO: Should send help, which should be done after re-doing how
                             // errors are rendered
                             let core_msg = format!(
-                                "`{err_mod_name}` is a namspace, which cannot be assigned as an expression value"
+                                "`{err_mod_name}` is a namspace, which cannot be assigned as an expression"
                             );
 
                             let src_diag = SourceDiagnostic::builder(
@@ -2636,11 +2659,10 @@ impl<'res> TypeResolver<'res> {
                         ""
                     };
 
-                    let core_msg =
-                        format!("`{ident}` was not found in module `{mod_name}`{and_local}");
+                    let core_msg = format!("`{ident}` not found in module `{mod_name}`{and_local}");
 
                     let src_diag = SourceDiagnostic::builder(
-                        ErrorCode::NotFoundInScope.code().into(),
+                        ErrorCode::ScopeErr.code().into(),
                         DiagnosticLevel::Error,
                         core_msg,
                         env.region.path_id,
@@ -2905,7 +2927,6 @@ impl<'res> TypeResolver<'res> {
 
                 self.compiler.exprs[default_ident_expr_id].user = Some(expr_id);
                 self.compiler.exprs[default_val_expr_id].user = Some(expr_id);
-
                 self.compiler.exprs.push(resolved_expr);
 
                 Ok(expr_id)

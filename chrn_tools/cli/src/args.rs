@@ -124,10 +124,10 @@ pub struct CheckCmd {
     /// Emits developer debug info during check
     #[arg(long = "dbg", default_value_t = false)]
     pub(crate) dbg_mode: bool,
-    /// Emits diagnostics as a JSON document on stdout
+    /// Emits diagnostics as a JSON document on stderr
     #[arg(long = "json", default_value_t = false)]
     pub(crate) json: bool,
-    /// Emits diagnostics as a YAML document on stdout.
+    /// Emits diagnostics as a YAML document on stderr
     /// When combined with `--json`, JSON is emitted.
     #[arg(long = "yaml", default_value_t = false)]
     pub(crate) yaml: bool,

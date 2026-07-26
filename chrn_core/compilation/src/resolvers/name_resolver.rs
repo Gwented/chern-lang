@@ -1,5 +1,6 @@
 use chrn_utils::{
     chrn_config::ChrnConfig,
+    err_codes::ErrorCode,
     id_types::{AstId, ConfigRootId, ScopeId, SymbolId, TypeId, VariableId},
     intern::Intern,
     source_map::source_diagnostic::{
@@ -421,7 +422,7 @@ impl NamespaceResolver<'_> {
         //             )
         //             .expect("Result enforced by `match`");
         //
-        //             preset_reporter::report_preset(
+        //             preset_reporter::report_preset(&self.compiler,
         //                 &mut self.err_vec,
         //                 preset_err,
         //                 env.region,
@@ -639,19 +640,23 @@ impl NamespaceResolver<'_> {
         let dup_span = env.ast_info.items[dup_ast_id].span();
 
         let core_msg = format!(
-            "Found more than one symbol with identifier \"{dup_name}\" in section `{}`",
+            "Duplicate identifier `{dup_name}` in section `{}`",
             &scope_type
         );
 
-        let src_diag =
-            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, env.region.path_id)
-                .add_annotation(
-                    orig_span,
-                    AnnotationKind::Secondary,
-                    format!("`{dup_name}` first seen here").into(),
-                )
-                .add_annotation(dup_span, AnnotationKind::Primary, None)
-                .build();
+        let src_diag = SourceDiagnostic::builder(
+            ErrorCode::ScopeErr.code().into(),
+            DiagnosticLevel::Error,
+            core_msg,
+            env.region.path_id,
+        )
+        .add_annotation(
+            orig_span,
+            AnnotationKind::Secondary,
+            format!("`{dup_name}` first seen here").into(),
+        )
+        .add_annotation(dup_span, AnnotationKind::Primary, None)
+        .build();
 
         self.summary.push_diag(src_diag);
     }

@@ -62,7 +62,7 @@ Would also have something similar to the pattern of cargo-clippy cargo clippy so
 - The module `core` is a required and implicitly loaded module which defines types, functions, etc. 
 Some of what's in `core` like functions and generics are strictly compiler level concepts with no external way of declaration.
 
-- A script region/file can AT MOST be 16KB in size.
+- A script region/file can AT MOST be 32KB in size.
 
 Singline comments = //
 Multi-line comments = /* */

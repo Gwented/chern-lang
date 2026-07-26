@@ -127,6 +127,7 @@ impl MemberResolver<'_> {
 
                     // `another` failed here
                     preset_reporter::report_preset(
+                        &self.compiler,
                         &mut self.summary,
                         preset_err,
                         env.region,
@@ -256,6 +257,7 @@ impl MemberResolver<'_> {
                         .expect("Result enforced by `match`");
 
                         preset_reporter::report_preset(
+                            &self.compiler,
                             &mut self.summary,
                             preset_err,
                             env.region,

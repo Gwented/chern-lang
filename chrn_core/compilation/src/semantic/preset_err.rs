@@ -1,5 +1,5 @@
 use chrn_utils::{
-    id_types::{InternedId, SpannedContainer},
+    id_types::{InternedId, SpannedContainer, TypeId},
     source_map::{source_diagnostic::SourceDiagnosticBuilder, source_span::SourceSpan},
 };
 use lang::{directives::Directive, fmter::Formatted, types::boundaries::TypeBoundaryFlags};
@@ -125,7 +125,8 @@ pub enum LookupError {
     ImpossibleTypeMemberAccess(SpannedContainer<Formatted>),
     /// Spanned type's identifier which has no members, Identifier of member looked up
     MemberNotFound {
-        sp_parent_ty: SpannedContainer<InternedId>,
+        parent_type_id: TypeId,
+        sp_parent_name_id: SpannedContainer<InternedId>,
         member: InternedId,
     },
     /// Spanned Formatted Symbol

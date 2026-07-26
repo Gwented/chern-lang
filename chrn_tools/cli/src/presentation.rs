@@ -5,9 +5,9 @@ use compilation::script_compiler::reporter::Reporter;
 
 // The ordering of each footer insertion is on purpose
 
-// The idea behind footers is that they are from information found internally, but not made
-// internally like a diagnostic would be.
-//
+// The idea behind footers is that they are from information found internally, but not always
+// made internally.
+
 /// Makes footers, given internal information
 pub fn make_footers(reporter: &Reporter) -> Vec<FooterKind> {
     let mut footers: Vec<FooterKind> = Vec::new();
@@ -24,18 +24,18 @@ pub fn make_footers(reporter: &Reporter) -> Vec<FooterKind> {
         footers.push(FooterKind::MaxModulesExceeded(max));
     }
 
-    if diag_summary.err_count() > 0 {
-        //WARN: Needs warns emitted too, and some sort of filtering internally so that this is
-        //tracked. Right now no warns are emitted at the top level but this will be needed when said
-        //time comes.
-        footers.push(FooterKind::ErrorsEmitted(diag_summary.err_count()));
-    }
-
     if diag_summary.warn_count() > 0 {
         //WARN: Needs warns emitted too, and some sort of filtering internally so that this is
         //tracked. Right now no warns are emitted at the top level but this will be needed when said
         //time comes.
         footers.push(FooterKind::WarnsEmitted(diag_summary.warn_count()));
+    }
+
+    if diag_summary.err_count() > 0 {
+        //WARN: Needs warns emitted too, and some sort of filtering internally so that this is
+        //tracked. Right now no warns are emitted at the top level but this will be needed when said
+        //time comes.
+        footers.push(FooterKind::ErrorsEmitted(diag_summary.err_count()));
     }
 
     footers

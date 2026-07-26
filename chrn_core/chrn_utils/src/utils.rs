@@ -9,77 +9,77 @@ const LEFT_MASK: u32 = 0xFFFF_0000;
 const RIGHT_MASK: u32 = 0x0000_FFFF;
 
 impl SharedU32 {
-    pub fn new(left: u16, right: u16) -> SharedU32 {
+    pub const fn new(left: u16, right: u16) -> SharedU32 {
         let shared_inner = ((left as u32) << 16) | (right as u32);
         SharedU32 { shared_inner }
     }
 
-    pub fn from_u32(shared_inner: u32) -> SharedU32 {
+    pub const fn from_u32(shared_inner: u32) -> SharedU32 {
         SharedU32 { shared_inner }
     }
 
-    pub fn shared_inner(&self) -> u32 {
+    pub const fn shared_inner(&self) -> u32 {
         self.shared_inner
     }
 
-    pub fn set_shared_inner(&mut self, inner: u32) {
+    pub const fn set_shared_inner(&mut self, inner: u32) {
         self.shared_inner = inner;
     }
 
-    pub fn left(&self) -> u16 {
+    pub const fn left(&self) -> u16 {
         (self.shared_inner >> 16) as u16
     }
 
-    pub fn set_left(&mut self, val: u16) {
+    pub const fn set_left(&mut self, val: u16) {
         self.shared_inner = (self.shared_inner & RIGHT_MASK) | ((val as u32) << 16);
     }
 
-    pub fn add_left(&mut self, val: u16) {
+    pub const fn add_left(&mut self, val: u16) {
         let new_left = self.left().wrapping_add(val);
         self.set_left(new_left);
     }
 
-    pub fn sub_left(&mut self, val: u16) {
+    pub const fn sub_left(&mut self, val: u16) {
         let new_left = self.left().wrapping_sub(val);
         self.set_left(new_left);
     }
 
-    pub fn right(&self) -> u16 {
+    pub const fn right(&self) -> u16 {
         (self.shared_inner & RIGHT_MASK) as u16
     }
 
-    pub fn set_right(&mut self, val: u16) {
+    pub const fn set_right(&mut self, val: u16) {
         self.shared_inner = (self.shared_inner & LEFT_MASK) | (val as u32);
     }
 
-    pub fn add_right(&mut self, val: u16) {
+    pub const fn add_right(&mut self, val: u16) {
         let new_right = self.right().wrapping_add(val);
         self.set_right(new_right);
     }
 
-    pub fn sub_right(&mut self, val: u16) {
+    pub const fn sub_right(&mut self, val: u16) {
         let new_right = self.right().wrapping_sub(val);
         self.set_right(new_right);
     }
 
-    pub fn add(mut self, other: SharedU32) -> SharedU32 {
+    pub const fn add(mut self, other: SharedU32) -> SharedU32 {
         self.add_left(other.left());
         self.add_right(other.right());
         self
     }
 
-    pub fn sub(mut self, other: SharedU32) -> SharedU32 {
+    pub const fn sub(mut self, other: SharedU32) -> SharedU32 {
         self.sub_left(other.left());
         self.sub_right(other.right());
         self
     }
 
-    pub fn add_assign(&mut self, other: SharedU32) {
+    pub const fn add_assign(&mut self, other: SharedU32) {
         self.add_left(other.left());
         self.add_right(other.right());
     }
 
-    pub fn sub_assign(&mut self, other: SharedU32) {
+    pub const fn sub_assign(&mut self, other: SharedU32) {
         self.sub_left(other.left());
         self.sub_right(other.right());
     }
@@ -124,8 +124,6 @@ impl std::fmt::Debug for SharedU32 {
     }
 }
 
-// Should probably put this in some sort of utils/utils file with obscure structures?
-// Or maybe just a local config loader owned thing
 /// Tracker that stores a "freeze" flag which takes the last bit in it's 32 bits, which allows it to stay 4
 /// bytes instead of memory padding from a `bool`.
 #[derive(Debug, Default)]
@@ -142,34 +140,41 @@ impl FreezeTrackerU32 {
         FreezeTrackerU32 { inner }
     }
 
-    pub fn val(&self) -> u32 {
+    pub const fn val(&self) -> u32 {
         self.inner & Self::VAL_MASK
     }
 
-    pub fn increment(&mut self) {
+    pub const fn increment(&mut self) {
         // If inner takes over val radius we instantly combust.
         if !self.is_frozen() {
             self.inner += 1;
         }
     }
 
-    pub fn increment_many(&mut self, amt: u32) {
+    pub const fn increment_many(&mut self, amt: u32) {
         if !self.is_frozen() {
             self.inner += amt;
         }
     }
 
-    pub fn reset_soft(&mut self) {
+    pub const fn reset_soft(&mut self) {
         if !self.is_frozen() {
             self.inner = 1;
         }
     }
 
-    pub fn freeze(&mut self) {
+    pub const fn freeze(&mut self) {
         self.inner |= Self::SIGNAL_FLAG;
     }
 
-    pub fn is_frozen(&self) -> bool {
+    pub const fn is_frozen(&self) -> bool {
         (self.inner & Self::SIGNAL_FLAG) != 0
     }
+}
+
+// Ignore me
+// Ok but wouldn't making this a trait generate behavior instead of requiring a match each time?
+pub enum SignalTrackerOptions {
+    NoEffect,
+    Freeze,
 }

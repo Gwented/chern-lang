@@ -42,7 +42,7 @@ const SCHEMA_OPTION_ERR: isize = 0003;
 // module privacy
 // What can and can't be private
 // Namespaces
-const NOT_FOUND_IN_SCOPE: isize = 0004;
+const SCOPE_ERR: isize = 0004;
 // Account for:
 // Showing all known directives
 // How their boundaries work
@@ -64,6 +64,8 @@ const GENERICS_ERR: isize = 0007;
 // Embedding `override` in `complex`
 // Recursive configs
 const CONFIG_DECL_ERR: isize = 0008;
+// Main cannot use aliases (unelss its added i guess)
+// Lliases with imports that have invalid file names can oopt fo aliasesss
 const IMPORT_ERR: isize = 0009;
 //FIX: ConfigLoad and ConfigSchema have confusingly similar names. Should just be more distinct.
 
@@ -71,14 +73,14 @@ const IMPORT_ERR: isize = 0009;
 /// ITS JUST THE WAY WE'RE WAIRED
 pub enum ErrorCode {
     // This is so enums remain aligned with the source of truth and error on same numeric value
-    /// Found `@def` without `@end` during config load.
+    /// Config loader originating errors
     ConfigLoadErr = CONFIG_LOAD_ERR,
     /// An error emitted because of internal compiler guarantees, not the user's fault
     CompilerSafetyLimits = COMPILER_SAFETY_LIMITS,
     /// Error is from an option failing
     SchemaOptionErr = SCHEMA_OPTION_ERR,
     /// Scope error of any kind. Should lead to scope semantics.
-    NotFoundInScope = NOT_FOUND_IN_SCOPE,
+    ScopeErr = SCOPE_ERR,
     /// Any error with directives
     DirectiveErr = DIRECTIVE_ERR,
     /// Any privacy error
@@ -97,7 +99,7 @@ impl ErrorCode {
             ErrorCode::ConfigLoadErr => CONFIG_LOAD_ERR,
             ErrorCode::CompilerSafetyLimits => COMPILER_SAFETY_LIMITS,
             ErrorCode::SchemaOptionErr => SCHEMA_OPTION_ERR,
-            ErrorCode::NotFoundInScope => NOT_FOUND_IN_SCOPE,
+            ErrorCode::ScopeErr => SCOPE_ERR,
             ErrorCode::DirectiveErr => DIRECTIVE_ERR,
             ErrorCode::PrivacyErr => PRIVACY_ERR,
             ErrorCode::GenericsErr => GENERICS_ERR,

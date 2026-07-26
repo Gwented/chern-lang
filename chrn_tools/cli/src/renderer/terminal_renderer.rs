@@ -472,12 +472,12 @@ fn render_footer(footer: &FooterKind, render_cfg: &TerminalRenderConfig) -> Stri
         }
         FooterKind::ErrorsEmitted(count) => {
             let s_suffix = s_ifier!(*count);
-            let msg = format!("Reported {count} error{s_suffix}");
+            let msg = format!("Emitted {count} error{s_suffix}");
             style::standardize_error(&msg, render_cfg.can_color, render_cfg.terminal_type)
         }
         FooterKind::WarnsEmitted(count) => {
             let s_suffix = s_ifier!(*count);
-            let msg = format!("Reported {count} warn{s_suffix}");
+            let msg = format!("Emitted {count} warn{s_suffix}");
             style::standardize_warn(&msg, render_cfg.can_color, render_cfg.terminal_type)
         }
     }

@@ -23,6 +23,8 @@ use crate::{
     parser::{NeutralBranch, ParserBudget, SectionBranch, branch::Branch, parse_fmt},
 };
 
+use super::NestBranch;
+
 // C_ == current. A_ == ahead
 
 // ALL SET LOGIC AND PARSE LOGIC NEED TO WORK WITH EACH OTHER
@@ -89,7 +91,6 @@ impl<'a> ParserContext<'a> {
         branch: Branch,
         interner: &Intern,
     ) -> Result<InternedId, Token> {
-        // WARN: IF ANYTHING GOES WRONG ADD THE IF STATEMENTS BACK FOR EOF
         let found = self.advance();
 
         let fmtted_tok = match found.tok {
@@ -162,8 +163,6 @@ impl<'a> ParserContext<'a> {
         branch: Branch,
         interner: &Intern,
     ) -> Result<Keyword, Token> {
-        // WARN: IF ANYTHING GOES WRONG ADD THE IF STATEMENTS BACK FOR EOF
-        // HIGHLIY SUSPICIOUS
         let found = self.advance();
 
         if let Token::Keyword(kw) = found.tok {
@@ -254,7 +253,7 @@ impl<'a> ParserContext<'a> {
     }
 
     fn recover(&mut self, branch: Branch) {
-        let (current_targets, next_targets) = self.match_branch(branch);
+        let (current_targets, next_targets) = self.get_set_from_branch(branch);
 
         if self.peek_kind() != TokenKind::EOF {
             while self.pos < self.toks.len() + 2
@@ -268,7 +267,7 @@ impl<'a> ParserContext<'a> {
 
     // AM I TO ASSUME YOU CANNOT READ TEMPO?
     // Yes. You may.
-    fn match_branch(&self, branch: Branch) -> (u64, u64) {
+    fn get_set_from_branch(&self, branch: Branch) -> (u64, u64) {
         match branch {
             Branch::Broken => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             Branch::Searching => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
@@ -282,16 +281,14 @@ impl<'a> ParserContext<'a> {
             Branch::Section(sect_branch) => match sect_branch {
                 SectionBranch::Searching => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
                 SectionBranch::Var => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
-                SectionBranch::Nest => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
-                SectionBranch::NestType => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
-                SectionBranch::NestEnum => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
+                SectionBranch::Nest(_) => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
                 SectionBranch::Complex => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
                 SectionBranch::Override => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
             },
             Branch::Expr => (C_BRANCH_COND_SET, A_BRANCH_COND_SET),
             Branch::Cond => (C_BRANCH_COND_SET, A_BRANCH_COND_SET),
             Branch::Type => (C_BRANCH_TYPE_SET, A_BRANCH_TYPE_SET),
-            Branch::FuncArgs => (C_BRANCH_FUNC_SET, A_BRANCH_FUNC_SET),
+            Branch::ArgList => (C_BRANCH_FUNC_SET, A_BRANCH_FUNC_SET),
             Branch::Directive => (C_BRANCH_TYPE_ARGS_SET, A_BRANCH_TYPE_ARGS_SET),
         }
     }
@@ -305,8 +302,6 @@ impl<'a> ParserContext<'a> {
         branch: Branch,
         interner: &Intern,
     ) -> SourceDiagnosticBuilder {
-        // ) -> (AnnotationKind, Option<String>) {
-        // Maybe saturating could lead to mis info
         let prev_prev_tok = match self.toks.get(self.pos.saturating_sub(3)).clone() {
             Some(t) => t,
             None => return builder,
@@ -331,6 +326,7 @@ impl<'a> ParserContext<'a> {
             .map(|t| t.tok.kind())
             .unwrap_or(TokenKind::Poison);
 
+        // This is NOT good
         let builder = match branch {
             Branch::Neutral(neutral_branch) => match neutral_branch {
                 NeutralBranch::Let => match found.tok {
@@ -342,7 +338,7 @@ impl<'a> ParserContext<'a> {
                         // : [Token] =
                         if expected == TokenKind::Assign && next_kind == TokenKind::Assign =>
                     {
-                        builder.add_note("Only `alias` parameters can specify types, all others are inferred".to_string())
+                        builder.add_note("`let` variables are only inferred".to_string())
                     }
                     _ => builder,
                 },
@@ -466,37 +462,25 @@ impl<'a> ParserContext<'a> {
                     }
                     _ => builder,
                 },
-                SectionBranch::Nest => match found.tok {
-                    // If in `nest->` and found, struct|enum [keyword]
-                    Token::Keyword(kw) if expected == TokenKind::Id => {
-                        if let Token::Keyword(kw) = prev_tok.tok {
-                            if kw == Keyword::Struct || kw == Keyword::Enum {
-                                let help = format!("Can be escaped with `e#{}`", kw.to_fmt());
+                SectionBranch::Nest(branch) => match branch {
+                    NestBranch::NestStart => match found.tok {
+                        // If in `nest->` and found, struct|enum [keyword]
+                        Token::Keyword(kw) if expected == TokenKind::Id => {
+                            if let Token::Keyword(kw) = prev_tok.tok {
+                                if kw == Keyword::Struct || kw == Keyword::Enum {
+                                    let help = format!("Can be escaped with `e#{}`", kw.to_fmt());
 
-                                return builder.add_help(help);
+                                    return builder.add_help(help);
+                                }
                             }
+
+                            builder
                         }
-
-                        builder
-                    }
-                    // This will not be usable until a keyword token is made
-                    Token::Id(id) if expected == TokenKind::Id && next_kind == TokenKind::Str => {
-                        let Token::Id(possible_kw_id) = prev_tok.tok else {
-                            return builder;
-                        };
-
-                        if let Some(kw) = Keyword::try_from_interned_id(possible_kw_id) {
-                            let help = format!(
-                                "If this was meant to use the statement `{}`, place this within `neutral`, which is the area before any section was used.",
-                                kw.to_fmt()
-                            );
-
-                            return builder.add_help(help);
-                        };
-
-                        builder
-                    }
-                    _ => builder,
+                        _ => builder,
+                    },
+                    NestBranch::EnumType => builder,
+                    NestBranch::StructType => builder,
+                    NestBranch::Expr => builder,
                 },
                 // SectionBranch::NestType => todo!(),
                 // SectionBranch::NestEnum => todo!(),

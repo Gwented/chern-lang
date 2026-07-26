@@ -479,7 +479,7 @@ impl ScriptCompiler {
             MemberSymbolKind::Variant(_)
             | MemberSymbolKind::OptAssignmentRoot(_)
             | MemberSymbolKind::ConfigDefMember(_)
-            | MemberSymbolKind::Unknown(_)
+            | MemberSymbolKind::Unknown { .. }
             | MemberSymbolKind::OptAssignmentMember(_) => unreachable!(),
         }
     }
@@ -641,7 +641,7 @@ impl ScriptCompiler {
             MemberSymbolKind::Variant(variant_repre) => variant_repre.type_id,
             MemberSymbolKind::ConfigDefMember(_)
             | MemberSymbolKind::OptAssignmentRoot(_)
-            | MemberSymbolKind::Unknown(_)
+            | MemberSymbolKind::Unknown { .. }
             | MemberSymbolKind::OptAssignmentMember(_) => None,
         }
     }
@@ -664,7 +664,7 @@ impl ScriptCompiler {
             MemberSymbolKind::OptAssignmentMember(opt_assignment_member) => {
                 Some(opt_assignment_member.name_span)
             }
-            MemberSymbolKind::Unknown(_) => None,
+            MemberSymbolKind::Unknown { .. } => None,
         }
     }
 

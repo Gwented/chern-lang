@@ -1,4 +1,7 @@
 bind "serialized_data.chrn"
+// let x = basic_array::basic_array::basic_array::basic_array::core::IsEmpty
+
+let x = s::l
 
 var->
     ptr: u8

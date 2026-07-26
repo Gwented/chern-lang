@@ -5,7 +5,7 @@ export let WRITE = 0b1
 // import "../chrn_core/chrn_tests/other.chrn"
 import "../chrn_core/chrn_tests/nothing.chrn"
 // Maybe this shouldn't be seen as a valid import
-import "../chrn_core/chrn_tests/"
+import "../chrn_core/chrn_tests/def.chrn"
 
 let x = 3 == 3
 

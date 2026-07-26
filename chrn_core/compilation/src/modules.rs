@@ -315,11 +315,11 @@ pub fn extract_main<R: Read>(
         };
 
     // FIX: Aliasing please
-    let file_name = match main_path.file_prefix().map(|n| n.to_str()) {
-        Some(Some(p)) => p,
+    let file_name = match main_path.file_prefix().map(|n| n.to_str()).flatten() {
+        Some(p) => p,
         _ => {
             let core_msg = format!(
-                "The path \"{}\" does not have a valid UTF-8 file name usable within the program",
+                "Path \"{}\" does not have a valid UTF-8 file name usable within the program",
                 main_path.display()
             );
 
@@ -641,7 +641,7 @@ fn resolve_module(
                 interner.search(name_id).to_string()
             } else {
                 let core_msg = format!(
-                    "The path \"{}\" does not have a valid UTF-8 file name usable within the program. Consider using 'as' to give it an alias if a file name change is not possible.",
+                    "The path \"{}\" does not have a valid UTF-8 file name usable within the program. ",
                     path.display()
                 );
 
@@ -651,8 +651,8 @@ fn resolve_module(
                             .add_annotation(
                                 sp_path_id.span,
                                 AnnotationKind::Primary,
-                                "Caused by this import".to_string().into(),
-                            )
+                                None,
+                            ).add_note("Using 'as' for an import alias with a valid UTF-8 name circumvents this error".into())
                             .build();
 
                 summary.push_diag(src_diag);
@@ -666,7 +666,7 @@ fn resolve_module(
     // Using region id before pushing
     let (sub_region, sub_state) =
         match ConfigLoader::new(sub_region_id, src, sp_path_id.inner, cfg).load_config() {
-            ConfigLoaderOutput::Success(region, mut new_summary) => {
+            ConfigLoaderOutput::Success(region, new_summary) => {
                 summary.merge(new_summary);
                 (region, ModuleState::Loaded)
             }
