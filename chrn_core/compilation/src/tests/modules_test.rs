@@ -134,7 +134,6 @@ fn modfinder_no_imports_or_bind() {
         Cursor::new("let x = 5\nlet y = 10\n"),
         path_id,
         &cfg,
-        &interner,
     )
     .load_config()
     .expect_success();
@@ -154,7 +153,7 @@ fn modfinder_no_imports_or_bind() {
         "no imports expected, got {}",
         imports.len()
     );
-    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    assert!(diags.diags.is_empty(), "no diagnostics expected, got {:?}", diags);
 }
 
 /// `ModuleFinder` should find a single import with a valid path.
@@ -170,7 +169,7 @@ fn modfinder_single_import() {
     let region_id = SourceRegionId::new(0);
 
     let src = format!("import \"{}\"\nlet x = 5\n", sub_canonical);
-    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg, &interner)
+    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg)
         .load_config()
         .expect_success();
 
@@ -184,7 +183,7 @@ fn modfinder_single_import() {
     .collect_imports(&mut interner);
 
     assert!(bind.is_none(), "no bind expected");
-    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    assert!(diags.diags.is_empty(), "no diagnostics expected, got {:?}", diags);
     assert_eq!(imports.len(), 1, "exactly one import expected");
 
     let import = &imports[0];
@@ -256,7 +255,7 @@ fn modfinder_multiple_imports() {
         "import \"{}\"\nimport \"{}\"\nlet x = 5\n",
         sub1_str, sub2_str
     );
-    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg, &interner)
+    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg)
         .load_config()
         .expect_success();
 
@@ -270,7 +269,7 @@ fn modfinder_multiple_imports() {
     .collect_imports(&mut interner);
 
     assert!(bind.is_none());
-    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    assert!(diags.diags.is_empty(), "no diagnostics expected, got {:?}", diags);
     assert_eq!(imports.len(), 2, "exactly two imports expected");
 
     // ModuleFinder returns UnresolvedSource imports; module ids are assigned
@@ -300,7 +299,7 @@ fn modfinder_import_with_alias() {
     let region_id = SourceRegionId::new(0);
 
     let src = format!("import \"{}\" as my_mod\nlet x = 5\n", sub_canonical);
-    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg, &interner)
+    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg)
         .load_config()
         .expect_success();
 
@@ -313,7 +312,7 @@ fn modfinder_import_with_alias() {
     )
     .collect_imports(&mut interner);
 
-    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    assert!(diags.diags.is_empty(), "no diagnostics expected, got {:?}", diags);
     assert_eq!(imports.len(), 1);
     let import = &imports[0];
     assert!(import.alias_id.is_some(), "import should have an alias_id");
@@ -336,7 +335,7 @@ fn modfinder_bind() {
     let region_id = SourceRegionId::new(0);
 
     let src = format!("bind \"{}\"\nlet x = 5\n", bind_canonical);
-    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg, &interner)
+    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg)
         .load_config()
         .expect_success();
 
@@ -349,7 +348,7 @@ fn modfinder_bind() {
     )
     .collect_imports(&mut interner);
 
-    assert!(diags.is_empty(), "no diagnostics expected");
+    assert!(diags.diags.is_empty(), "no diagnostics expected");
     assert!(imports.is_empty(), "no imports expected");
     assert!(bind.is_some(), "bind should be present");
     assert_eq!(
@@ -374,7 +373,7 @@ fn modfinder_backslash_error() {
     // Use a backslash in the import path — even though the real file exists,
     // the backslash triggers the error *before* canonicalization is attempted.
     let src = r#"import "bad\path" "#;
-    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg, &interner)
+    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg)
         .load_config()
         .expect_success();
 
@@ -391,8 +390,8 @@ fn modfinder_backslash_error() {
         imports.is_empty(),
         "no valid import must be produced for a backslash path"
     );
-    assert!(!diags.is_empty(), "backslash should produce a diagnostic");
-    let has_backslash_msg = diags.iter().any(|d| d.core_msg.contains("'/'"));
+    assert!(!diags.diags.is_empty(), "backslash should produce a diagnostic");
+    let has_backslash_msg = diags.diags.iter().any(|d| d.core_msg.contains("'/'"));
     assert!(
         has_backslash_msg,
         "diagnostic should mention that only '/' is allowed"
@@ -410,7 +409,7 @@ fn modfinder_import_inside_line_comment() {
     let region_id = SourceRegionId::new(0);
 
     let src = Cursor::new(b"// import \"sub.chrn\"\nlet x = 5\n");
-    let region = ConfigLoader::new(region_id, src, path_id, &cfg, &interner)
+    let region = ConfigLoader::new(region_id, src, path_id, &cfg)
         .load_config()
         .expect_success();
 
@@ -427,7 +426,7 @@ fn modfinder_import_inside_line_comment() {
         imports.is_empty(),
         "import inside line comment must be ignored"
     );
-    assert!(diags.is_empty(), "no diagnostics expected");
+    assert!(diags.diags.is_empty(), "no diagnostics expected");
 }
 
 /// An import written inside a multi-line comment must be ignored.
@@ -439,7 +438,7 @@ fn modfinder_import_inside_block_comment() {
     let region_id = SourceRegionId::new(0);
 
     let src = Cursor::new(b"/* import \"sub.chrn\" */\nlet x = 5\n");
-    let region = ConfigLoader::new(region_id, src, path_id, &cfg, &interner)
+    let region = ConfigLoader::new(region_id, src, path_id, &cfg)
         .load_config()
         .expect_success();
 
@@ -456,7 +455,7 @@ fn modfinder_import_inside_block_comment() {
         imports.is_empty(),
         "import inside block comment must be ignored"
     );
-    assert!(diags.is_empty(), "no diagnostics expected");
+    assert!(diags.diags.is_empty(), "no diagnostics expected");
 }
 
 /// Duplicate imports to the same path should reuse the same module id via the
@@ -477,7 +476,7 @@ fn modfinder_duplicate_import_path_reuses_mod_id() {
         "import \"{}\"\nimport \"{}\"\nlet x = 5\n",
         sub_canonical, sub_canonical
     );
-    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg, &interner)
+    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg)
         .load_config()
         .expect_success();
 
@@ -491,7 +490,7 @@ fn modfinder_duplicate_import_path_reuses_mod_id() {
     )
     .collect_imports(&mut interner);
 
-    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    assert!(diags.diags.is_empty(), "no diagnostics expected, got {:?}", diags);
     assert_eq!(imports.len(), 2, "both imports should be recorded");
 
     // ModuleFinder returns UnresolvedSource imports; both should carry
@@ -516,7 +515,7 @@ fn modfinder_nonexistent_path() {
     let region_id = SourceRegionId::new(0);
 
     let src = Cursor::new(b"import \"/does/not/exist.chrn\"\nlet x = 5\n");
-    let region = ConfigLoader::new(region_id, src, path_id, &cfg, &interner)
+    let region = ConfigLoader::new(region_id, src, path_id, &cfg)
         .load_config()
         .expect_success();
 
@@ -534,7 +533,7 @@ fn modfinder_nonexistent_path() {
         "import for non-existent path must be dropped"
     );
     assert!(
-        !diags.is_empty(),
+        !diags.diags.is_empty(),
         "non-existent path must produce a diagnostic"
     );
 }
@@ -549,7 +548,7 @@ fn modfinder_import_inside_string_is_not_parsed() {
     let region_id = SourceRegionId::new(0);
 
     let src = Cursor::new(b"\"this has import inside a string\" let x = 5\n");
-    let region = ConfigLoader::new(region_id, src, path_id, &cfg, &interner)
+    let region = ConfigLoader::new(region_id, src, path_id, &cfg)
         .load_config()
         .expect_success();
 
@@ -566,7 +565,7 @@ fn modfinder_import_inside_string_is_not_parsed() {
         imports.is_empty(),
         "'import' inside a string must not be parsed as an import"
     );
-    assert!(diags.is_empty(), "no diagnostics expected");
+    assert!(diags.diags.is_empty(), "no diagnostics expected");
 }
 
 // ===========================================================================
@@ -621,7 +620,7 @@ fn extract_main_simple_script() {
     // region_arena must have one entry
     assert_eq!(graph.region_arena().len(), 1, "one region pushed");
 
-    assert!(diags.is_empty(), "no diagnostics expected");
+    assert!(diags.diags.is_empty(), "no diagnostics expected");
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -707,7 +706,7 @@ fn extract_main_with_import() {
         "only main in seen (sub not visited yet)"
     );
 
-    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    assert!(diags.diags.is_empty(), "no diagnostics expected, got {:?}", diags);
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -741,8 +740,8 @@ fn extract_main_broken_config() {
     );
 
     // There should be at least one diagnostic about the missing @end
-    assert!(!diags.is_empty(), "broken config must produce diagnostics");
-    let has_missing_end = diags.iter().any(|d| d.core_msg.contains("@end"));
+    assert!(!diags.diags.is_empty(), "broken config must produce diagnostics");
+    let has_missing_end = diags.diags.iter().any(|d| d.core_msg.contains("@end"));
     assert!(has_missing_end, "diagnostic should mention missing @end");
 
     _ = fs::remove_dir_all(&dir);
@@ -791,7 +790,7 @@ fn extract_main_with_bind() {
         "bind path must match the target file"
     );
 
-    assert!(diags.is_empty(), "no diagnostics expected");
+    assert!(diags.diags.is_empty(), "no diagnostics expected");
 
     // Also verify that bind is the only thing found (no imports)
     assert!(
@@ -835,7 +834,7 @@ fn extract_main_with_at_def_block() {
         region.serial_start
     );
 
-    assert!(diags.is_empty(), "no diagnostics expected");
+    assert!(diags.diags.is_empty(), "no diagnostics expected");
 
     // Verify the region bytes contain @def and @end
     let src_str = String::from_utf8_lossy(&region.src_bytes);
@@ -882,7 +881,7 @@ fn extract_all_modules_single() {
         "last module must be core"
     );
 
-    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    assert!(diags.diags.is_empty(), "no diagnostics expected, got {:?}", diags);
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -919,7 +918,7 @@ fn extract_all_modules_with_sub_module() {
         find_module_by_name(&compiler, interner, "main").expect("main module must be present");
     assert_eq!(main_mod.state, ModuleState::Loaded);
 
-    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    assert!(diags.diags.is_empty(), "no diagnostics expected, got {:?}", diags);
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -960,10 +959,11 @@ fn extract_all_modules_submodule_broken() {
 
     // Diagnostics must be emitted (at least the missing @end diagnostic)
     assert!(
-        !diags.is_empty(),
+        !diags.diags.is_empty(),
         "broken sub-module must produce diagnostics"
     );
     let has_end_diag = diags
+        .diags
         .iter()
         .any(|d| d.core_msg.contains("@end") || d.core_msg.contains("broken"));
     assert!(
@@ -1012,7 +1012,7 @@ fn extract_all_modules_import_to_nonexistent() {
 
     // Diagnostics must be emitted about the missing import
     assert!(
-        !diags.is_empty(),
+        !diags.diags.is_empty(),
         "non-existent import must produce diagnostics"
     );
 
@@ -1053,7 +1053,7 @@ fn extract_all_modules_duplicate_import() {
         find_module_by_name(&compiler, interner, "sub").expect("sub module must be present");
     assert_eq!(sub_mod.state, ModuleState::Loaded);
 
-    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    assert!(diags.diags.is_empty(), "no diagnostics expected, got {:?}", diags);
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -1101,7 +1101,7 @@ fn extract_all_modules_import_chain() {
         );
     }
 
-    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    assert!(diags.diags.is_empty(), "no diagnostics expected, got {:?}", diags);
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -1159,7 +1159,7 @@ fn extract_all_modules_4_deep_chain() {
         );
     }
 
-    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    assert!(diags.diags.is_empty(), "no diagnostics expected, got {:?}", diags);
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -1237,7 +1237,7 @@ fn extract_all_modules_diamond_dependency() {
         ref_count
     );
 
-    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    assert!(diags.diags.is_empty(), "no diagnostics expected, got {:?}", diags);
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -1310,7 +1310,7 @@ fn extract_all_modules_fan_out_3_imports() {
         user_import_count
     );
 
-    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    assert!(diags.diags.is_empty(), "no diagnostics expected, got {:?}", diags);
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -1398,7 +1398,7 @@ fn extract_all_modules_complex_overlap() {
         shared_ref_count
     );
 
-    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    assert!(diags.diags.is_empty(), "no diagnostics expected, got {:?}", diags);
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -1456,7 +1456,7 @@ fn import_kind_span_preserved() {
         "import span must extract the exact path string from src bytes, got '{}'",
         span_str
     );
-    assert!(diags.is_empty(), "no diagnostics expected");
+    assert!(diags.diags.is_empty(), "no diagnostics expected");
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -1505,7 +1505,7 @@ fn module_graph_initial_state() {
         graph.seen().contains(&main_path_id),
         "seen must contain main"
     );
-    assert!(diags.is_empty());
+    assert!(diags.diags.is_empty());
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -1553,7 +1553,7 @@ fn extract_main_empty_file() {
     );
     assert!(main_mod.imports.is_empty(), "empty file has no imports");
     assert!(main_mod.bind.is_none(), "empty file has no bind");
-    assert!(diags.is_empty(), "empty file produces no diagnostics");
+    assert!(diags.diags.is_empty(), "empty file produces no diagnostics");
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -1618,7 +1618,7 @@ fn mod_ids_sequential_chain() {
     let (compiler, store, diags) = extract_all_modules(&main_path, std::fs::File::open(&main_path).unwrap(), cfg, &mut reporter)
         .expect("extract_all_modules must succeed");
 
-    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    assert!(diags.diags.is_empty(), "no diagnostics expected, got {:?}", diags);
     let user_count = 3;
     assert_eq!(
         get_user_mod_count(&compiler),
@@ -1725,7 +1725,7 @@ fn mod_ids_diamond_dedup() {
     let (compiler, store, diags) = extract_all_modules(&main_path, std::fs::File::open(&main_path).unwrap(), cfg, &mut reporter)
         .expect("extract_all_modules must succeed");
 
-    assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
+    assert!(diags.diags.is_empty(), "no diagnostics expected, got {:?}", diags);
     let user_count = 4;
     assert_eq!(
         get_user_mod_count(&compiler),
@@ -1922,7 +1922,7 @@ fn mod_ids_nonexistent_import_does_not_consume_id() {
 
     // Diagnostics must be emitted for the missing file
     assert!(
-        !diags.is_empty(),
+        !diags.diags.is_empty(),
         "non-existent import must produce diagnostics"
     );
 

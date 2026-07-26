@@ -7,7 +7,7 @@ use chrn_utils::{
     id_types::{AstId, MemberId, SymbolId, TypeId},
     intern::Intern,
     source_map::source_diagnostic::{
-        DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind,
+        DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSummary, annotations::AnnotationKind,
     },
 };
 
@@ -35,7 +35,7 @@ pub struct MemberResolver<'a> {
     settings: &'a ChrnConfig,
     interner: &'a Intern,
     compiler: &'a mut ScriptCompiler,
-    err_vec: Vec<SourceDiagnostic>,
+    summary: SourceDiagnosticSummary,
 }
 
 impl MemberResolver<'_> {
@@ -51,7 +51,7 @@ impl MemberResolver<'_> {
             settings,
             interner,
             compiler,
-            err_vec: Vec::new(),
+            summary: SourceDiagnosticSummary::default(),
         }
     }
 
@@ -66,7 +66,7 @@ impl MemberResolver<'_> {
     ///
     /// If diagnostics > 0 then an error occured
     // Would options be ok here?
-    pub fn resolve(&mut self, env: &ResolverEnv) -> Vec<SourceDiagnostic> {
+    pub fn resolve(&mut self, env: &ResolverEnv) -> SourceDiagnosticSummary {
         // Goes through all symbols the current module has and only picks structs and enums to
         // append to.
         for sym_id in env.compilation_syms {
@@ -80,9 +80,9 @@ impl MemberResolver<'_> {
             }
         }
 
-        let mut diags = Vec::new();
-        diags.append(&mut self.err_vec);
-        diags
+        let mut summary = SourceDiagnosticSummary::default();
+        summary.append_summary(&mut self.summary);
+        summary
     }
 
     fn resolve_struct(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
@@ -127,7 +127,7 @@ impl MemberResolver<'_> {
 
                     // `another` failed here
                     preset_reporter::report_preset(
-                        &mut self.err_vec,
+                        &mut self.summary,
                         preset_err,
                         env.region,
                         self.settings,
@@ -209,7 +209,7 @@ impl MemberResolver<'_> {
                 .add_annotation(current_field_span, AnnotationKind::Primary, None)
                 .build();
 
-                self.err_vec.push(src_diag);
+                self.summary.push_diag(src_diag);
             }
         }
 
@@ -256,7 +256,7 @@ impl MemberResolver<'_> {
                         .expect("Result enforced by `match`");
 
                         preset_reporter::report_preset(
-                            &mut self.err_vec,
+                            &mut self.summary,
                             preset_err,
                             env.region,
                             self.settings,
@@ -332,7 +332,7 @@ impl MemberResolver<'_> {
                 .add_annotation(current_field_span, AnnotationKind::Primary, None)
                 .build();
 
-                self.err_vec.push(src_diag);
+                self.summary.push_diag(src_diag);
             }
         }
 

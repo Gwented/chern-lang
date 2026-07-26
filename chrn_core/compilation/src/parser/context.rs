@@ -5,7 +5,8 @@ use chrn_utils::{
     intern::Intern,
     source_map::{
         source_diagnostic::{
-            DiagnosticLevel, SourceDiagnostic, SourceDiagnosticBuilder, annotations::AnnotationKind,
+            DiagnosticLevel, SourceDiagnostic, SourceDiagnosticBuilder, SourceDiagnosticSummary,
+            annotations::AnnotationKind,
         },
         source_region::SourceRegion,
         source_span::SourceSpan,
@@ -60,7 +61,8 @@ pub(super) struct ParserContext<'a> {
     pub(super) region: &'a SourceRegion,
     toks: &'a [SpannedToken],
     pos: usize,
-    pub(super) err_vec: Vec<SourceDiagnostic>,
+    //TODO: Maybe a budget too
+    pub(super) summary: SourceDiagnosticSummary,
 }
 
 impl<'a> ParserContext<'a> {
@@ -74,7 +76,7 @@ impl<'a> ParserContext<'a> {
             region,
             toks,
             pos: 0,
-            err_vec: Vec::new(),
+            summary: SourceDiagnosticSummary::default(),
         }
     }
 
@@ -106,7 +108,7 @@ impl<'a> ParserContext<'a> {
         let builder = self.create_diag_builder(&found, core_msg);
         let builder = self.try_assistance(builder, expected, &found, branch, interner);
 
-        self.err_vec.push(builder.build());
+        self.summary.push_diag(builder.build());
 
         self.recover(branch);
 
@@ -176,7 +178,7 @@ impl<'a> ParserContext<'a> {
         let builder = self.create_diag_builder(&found, core_msg);
 
         let builder = self.try_assistance(builder, TokenKind::Keyword, &found, branch, interner);
-        self.err_vec.push(builder.build());
+        self.summary.push_diag(builder.build());
 
         self.recover(branch);
 
@@ -195,7 +197,7 @@ impl<'a> ParserContext<'a> {
         let builder = self.create_diag_builder(&found, core_msg);
         let builder = self.try_assistance(builder, TokenKind::Poison, &found, branch, interner);
 
-        self.err_vec.push(builder.build());
+        self.summary.push_diag(builder.build());
 
         self.recover(branch);
     }
@@ -220,7 +222,7 @@ impl<'a> ParserContext<'a> {
 
             let builder = self.create_diag_builder(&found, core_msg);
             let builder = self.try_assistance(builder, expected, &found, branch, interner);
-            self.err_vec.push(builder.build());
+            self.summary.push_diag(builder.build());
 
             self.recover(branch);
 
@@ -246,7 +248,7 @@ impl<'a> ParserContext<'a> {
         let core_msg = format!("(in {branch})\nExpected {emsg}, found {fmsg}");
         let builder = self.create_diag_builder(&found, core_msg);
         let builder = self.try_assistance(builder, TokenKind::Poison, &found, branch, interner);
-        self.err_vec.push(builder.build());
+        self.summary.push_diag(builder.build());
 
         self.recover(branch);
     }

@@ -1,14 +1,10 @@
-use std::path::Path;
-
 use chrn_utils::{
-    chrn_config::ChrnConfig,
-    core_error::{ModuleInitError, ScriptError},
+    core_error::ScriptError,
     id_types::{ModuleId, SymbolId},
-    intern::Intern,
-    source_map::source_diagnostic::SourceDiagnostic,
+    source_map::source_diagnostic::SourceDiagnosticSummary,
 };
 use compilation::{
-    lexer::{Lexer, token::SpannedToken, trivia::Trivia},
+    lexer::{Lexer, lexer_output::LexerOutput, token::SpannedToken},
     modules::{self, ModuleState},
     parser::{self, ast::ast_concepts::AstInfo},
     resolvers::{
@@ -47,12 +43,17 @@ pub fn run_all(
         //TEST: The error messages get worse when they are allowed  to be read with a broken region
         let mod_id = ModuleId::new(i as u32);
 
-        let (toks_opt, trivia_opt) = run_lexer(compiler, compiler_store, &compiler_cache, mod_id);
+        let (toks_opt, trivia_opt) =
+            if let Some(lex_out) = run_lexer(compiler, compiler_store, &compiler_cache, mod_id) {
+                (lex_out.toks.into(), lex_out.trivia.into())
+            } else {
+                (None, None)
+            };
 
         let ast_info_opt = if let Some(toks) = &toks_opt {
-            let (ast_info_opt, mut diags) =
+            let (ast_info_opt, diag_summary) =
                 run_parser(compiler, compiler_store, &compiler_cache, mod_id, toks);
-            reporter.append_safe(&mut diags);
+            reporter.merge_summary_safe(diag_summary);
             ast_info_opt
         } else {
             None
@@ -92,8 +93,8 @@ pub fn run_all(
             }
         };
 
-        let (current_mod_symbols, mut diags) = ns_resolver.resolve(&current_env);
-        reporter.append_safe(&mut diags);
+        let (current_mod_symbols, summary) = ns_resolver.resolve(&current_env);
+        reporter.merge_summary_safe(summary);
         mod_symbols.push(Some(current_mod_symbols));
     }
 
@@ -104,10 +105,8 @@ pub fn run_all(
     // Leaving the registration stage and being able to use the later resolver stage env
     let resolver_envs = create_resolver_envs(compiler, compiler_store);
 
-    // if !reporter.diags.is_empty() {
-    //     let mut diags = Vec::new();
-    //     diags.append(&mut reporter.diags);
-    //     return Err(ScriptError::Semantic(diags).into());
+    // if reporter.diag_summary().err_count() > 0 {
+    //     return Err(ScriptError::Semantic);
     // }
 
     //NOTE: Up to here would be parallelizable since at most they would need to wait asynchronously
@@ -124,8 +123,7 @@ pub fn run_all(
             None => continue,
         };
 
-        let mut member_diags = member_resolver.resolve(&current_env);
-        reporter.append_safe(&mut member_diags);
+        reporter.merge_summary_safe(member_resolver.resolve(&current_env));
     }
 
     //TODO: Wrap some of these resolvers into convience functions?
@@ -139,18 +137,11 @@ pub fn run_all(
             None => continue,
         };
 
-        ty_resolver
-            .resolve(&current_env)
-            .unwrap_or_else(|mut diags| {
-                reporter.append_safe(&mut diags);
-            });
+        reporter.merge_summary_safe(ty_resolver.resolve(&current_env));
     }
 
-    // //TODO: Change this
-    // if !reporter.diags.is_empty() {
-    //     let mut diags = Vec::new();
-    //     diags.append(&mut reporter.diags);
-    //     return Err(ScriptError::Semantic(diags).into());
+    // if reporter.diag_summary().err_count() > 0 {
+    //     return Err(ScriptError::Semantic);
     // }
 
     let mut constraint_resolver =
@@ -162,14 +153,10 @@ pub fn run_all(
             None => continue,
         };
 
-        constraint_resolver
-            .resolve(&current_env)
-            .unwrap_or_else(|mut diags| {
-                reporter.append_safe(&mut diags);
-            });
+        reporter.merge_summary_safe(constraint_resolver.resolve(&current_env));
     }
 
-    if !reporter.diags.is_empty() {
+    if reporter.diag_summary().err_count() > 0 {
         return Err(ScriptError::Semantic);
     }
 
@@ -191,7 +178,7 @@ pub fn run_lexer(
     //TODO: I don't think this can stay external and maintain usefulness
     compiler_cache: &Option<&mut ScriptCompilerCache>,
     current_mod_id: ModuleId,
-) -> (Option<Vec<SpannedToken>>, Option<Vec<Trivia>>) {
+) -> Option<LexerOutput> {
     let module = &compiler.mods[current_mod_id];
     // Skipping any that aren't `Loaded` because it usually leads to duplicated errors from the
     // config loading stage
@@ -201,15 +188,15 @@ pub fn run_lexer(
         }
         _ => {
             // Meaning it's a lib module where None should be found upon any queries
-            return (None, None);
+            return None;
         }
     };
 
     // Should the lexer just own the interner? This looks weird.
-    let (toks, trivia) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+    let out = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
         .tokenize(&mut compiler_store.interner);
 
-    (Some(toks), Some(trivia))
+    Some(out)
 }
 
 /// * reporter: To store diagnostics
@@ -229,24 +216,24 @@ pub fn run_parser(
     compiler_cache: &Option<&mut ScriptCompilerCache>,
     current_mod_id: ModuleId,
     toks: &[SpannedToken],
-) -> (Option<AstInfo>, Vec<SourceDiagnostic>) {
+) -> (Option<AstInfo>, SourceDiagnosticSummary) {
     let module = &compiler.mods[current_mod_id];
     let region = match &module.region_id {
         Some(region_id) => &compiler_store.region_arena[*region_id],
         None => {
             // Meaning it's a lib module where None should be found upon any queries
-            return (None, Vec::new());
+            return (None, SourceDiagnosticSummary::default());
         }
     };
 
-    let (ast_info, mut diags) = parser::parse(
+    let (ast_info, summary) = parser::parse(
         &compiler_store.cfg,
         &region,
         &toks,
         &mut compiler_store.interner,
     );
 
-    (Some(ast_info), diags)
+    (Some(ast_info), summary)
 }
 
 /// Creates all environments possible, which is stored aligned with all modules

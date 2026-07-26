@@ -14,17 +14,16 @@ fn lex_tok_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
 
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(
         None, metadata.serial_start,
@@ -62,20 +61,19 @@ fn lex_tok_test_rev() {
         correct.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config();
 
     let region = match opt {
-        ConfigLoaderOutput::Success(region) => region,
+        ConfigLoaderOutput::Success(region, _) => region,
         other => panic!("properly closed @def and @end should succeed, got {other:?}"),
     };
 
     assert_eq!(region.script_start, 0);
     assert_eq!(region.serial_start, Some(26));
 
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     // Expect: Def(0,4), Id("bind")(4,8), Str("./some/path")(9,22), End(22,26)
     assert_eq!(toks.len(), 4);
@@ -105,7 +103,6 @@ fn lex_tok_test_rev() {
         wrong.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config();
 
@@ -131,15 +128,14 @@ fn cfg_at_test() {
         content.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
     let region_str = str::from_utf8(&region.src_bytes[..]).unwrap();
     assert_eq!(region_str, content);
 
-    let (toks, _) =
-        Lexer::new(region_id, &region.src_bytes, region.script_start).tokenize(&mut interner);
+    let toks =
+        Lexer::new(region_id, &region.src_bytes, region.script_start).tokenize(&mut interner).toks;
     assert_eq!(toks.len(), 3);
     assert_eq!(toks[0].tok, Token::At);
     assert_eq!(toks[0].span.start, 6);
@@ -152,7 +148,7 @@ fn cfg_at_test() {
 
     let (_, diags) = parser::parse(&settings, &region, &toks, &interner);
     assert!(
-        diags.len() > 0,
+        !diags.diags.is_empty(),
         "parser should have picked up at least one error"
     );
 }
@@ -181,16 +177,15 @@ fn char_literal_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(2, toks.len());
     assert!(
@@ -216,17 +211,16 @@ fn char_literal_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
 
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(2, toks.len());
     assert!(
@@ -252,17 +246,16 @@ fn char_literal_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
 
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(2, toks.len());
     assert!(
@@ -286,16 +279,15 @@ fn char_literal_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(2, toks.len());
     assert!(
@@ -319,16 +311,15 @@ fn char_literal_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(2, toks.len());
     assert!(
@@ -353,16 +344,15 @@ fn char_literal_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(2, toks.len());
     assert!(
@@ -386,16 +376,15 @@ fn char_literal_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(2, toks.len());
     assert!(
@@ -419,16 +408,15 @@ fn char_literal_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(2, toks.len());
     assert!(
@@ -457,17 +445,16 @@ fn lex_notation_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
 
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(2, toks.len());
     match toks[0].tok {
@@ -488,16 +475,15 @@ fn lex_notation_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(2, toks.len());
     match toks[0].tok {
@@ -518,16 +504,15 @@ fn lex_notation_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(2, toks.len());
     match toks[0].tok {
@@ -548,16 +533,15 @@ fn lex_notation_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(2, toks.len());
     match toks[0].tok {
@@ -578,16 +562,15 @@ fn lex_notation_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(2, toks.len());
     match toks[0].tok {
@@ -608,16 +591,15 @@ fn lex_notation_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(2, toks.len());
     match toks[0].tok {
@@ -638,16 +620,15 @@ fn lex_notation_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(2, toks.len());
     match toks[0].tok {
@@ -668,16 +649,15 @@ fn lex_notation_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(2, toks.len());
     match toks[0].tok {
@@ -698,16 +678,15 @@ fn lex_notation_test() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();
-    let (toks, _) = Lexer::new(
+    let toks = Lexer::new(
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
     )
-    .tokenize(&mut interner);
+    .tokenize(&mut interner).toks;
 
     assert_eq!(2, toks.len());
     match toks[0].tok {
@@ -727,7 +706,7 @@ fn read_ident_includes_trailing_underscore() {
     let src: &[u8] = b"foo_";
     let mut interner = Intern::init();
     let mut lex = Lexer::new(SourceRegionId::new(0), src, 0);
-    let (toks, _) = lex.tokenize(&mut interner);
+    let toks = lex.tokenize(&mut interner).toks;
 
     // Expect at least one identifier token: "foo_"
     let id_tok = toks
@@ -753,7 +732,7 @@ fn read_ident_handles_bare_underscore() {
     let src: &[u8] = b"_";
     let mut interner = Intern::init();
     let mut lex = Lexer::new(SourceRegionId::new(0), src, 0);
-    let (toks, _) = lex.tokenize(&mut interner);
+    let toks = lex.tokenize(&mut interner).toks;
 
     let id = toks
         .iter()
@@ -778,7 +757,7 @@ fn read_ident_mixed_alphanumeric_and_underscore() {
     let src: &[u8] = b"foo_bar+_qux+a_b_c_";
     let mut interner = Intern::init();
     let mut lex = Lexer::new(SourceRegionId::new(0), src, 0);
-    let (toks, _) = lex.tokenize(&mut interner);
+    let toks = lex.tokenize(&mut interner).toks;
 
     let names: Vec<(String, u32, u32)> = toks
         .iter()

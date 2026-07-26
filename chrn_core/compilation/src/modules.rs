@@ -8,7 +8,10 @@ use std::{collections::VecDeque, fs, io::Read, path::Path};
 
 pub mod mod_finder;
 
-use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
+use crate::{
+    config_loader::{ConfigLoader, ConfigLoaderOutput},
+    script_compiler::script_compiler_summary::ScriptCompilerSummary,
+};
 use chrn_utils::{
     arena::Arena,
     chrn_config::ChrnConfig,
@@ -18,7 +21,9 @@ use chrn_utils::{
     id_types::{InternedId, ModuleId, PathId, ScopeId, SourceRegionId, SpannedContainer, SymbolId},
     intern::{self, Intern},
     source_map::{
-        source_diagnostic::{DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind},
+        source_diagnostic::{
+            DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSummary, annotations::AnnotationKind,
+        },
         source_region::SourceRegion,
         source_span::SourceSpan,
     },
@@ -241,17 +246,16 @@ pub fn extract_all_modules<R: Read>(
     cfg: ChrnConfig,
     //TODO: Need to figure out how reporter should be treated
     reporter: &mut Reporter,
-) -> Result<(ScriptCompiler, ScriptCompilerStore, Vec<SourceDiagnostic>), ModuleInitError> {
-    let mut diags = Vec::new();
+) -> Result<(ScriptCompiler, ScriptCompilerStore, SourceDiagnosticSummary), ModuleInitError> {
+    let mut summary = SourceDiagnosticSummary::default();
 
-    let (main_mod, graph, interner, mut new_diags) = extract_main(path, src, &cfg)?;
-    diags.append(&mut new_diags);
+    let (main_mod, graph, interner, new_summary) = extract_main(path, src, &cfg)?;
+    summary.merge(new_summary);
 
-    let (compiler, store, mut new_diags) =
-        extract_modules(main_mod, graph, reporter, interner, cfg);
-    diags.append(&mut new_diags);
+    let (compiler, store, new_summary) = extract_modules(main_mod, graph, reporter, interner, cfg);
+    summary.merge(new_summary);
 
-    Ok((compiler, store, diags))
+    Ok((compiler, store, summary))
 }
 
 /// Attempts to extract only the entry point (main)
@@ -265,11 +269,11 @@ pub fn extract_main<R: Read>(
     main_path: &Path,
     main_src: R,
     cfg: &ChrnConfig,
-) -> Result<(Module, ModuleGraph, Intern, Vec<SourceDiagnostic>), ModuleInitError> {
+) -> Result<(Module, ModuleGraph, Intern, SourceDiagnosticSummary), ModuleInitError> {
     let mut interner = Intern::init();
 
     // Maybe the reporter should just be used
-    let mut diags = Vec::new();
+    let mut summary = SourceDiagnosticSummary::default();
 
     let main_path_id = interner.intern_path(&main_path);
 
@@ -278,10 +282,11 @@ pub fn extract_main<R: Read>(
 
     // Not sure if main should even recover from this beyond having an existent region
     let (main_region, main_mod_state) =
-        match ConfigLoader::new(main_region_id, main_src, main_path_id, &cfg, &interner)
-            .load_config()
-        {
-            ConfigLoaderOutput::Success(region) => (region, ModuleState::Loaded),
+        match ConfigLoader::new(main_region_id, main_src, main_path_id, &cfg).load_config() {
+            ConfigLoaderOutput::Success(region, loader_summary) => {
+                summary.merge(loader_summary);
+                (region, ModuleState::Loaded)
+            }
             // This could be pretty bad to leave here because
             ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
                 // Odd handling..
@@ -301,7 +306,7 @@ pub fn extract_main<R: Read>(
                     }
                 };
 
-                diags.push(diag);
+                summary.push_diag(diag);
                 (broken_region, ModuleState::BrokenRegion)
             }
             ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
@@ -347,7 +352,7 @@ pub fn extract_main<R: Read>(
     // Maybe don't inherently declare here since it's a little odd to use a returned variable as
     // the main variable to then collect future diagnostics?
     // Maybe not?
-    let (main_bind, main_imports, mut finder_diags) = ModuleFinder::new(
+    let (main_bind, main_imports, mut finder_summary) = ModuleFinder::new(
         &main_region.src_bytes,
         cfg,
         // &mut reserved_mod_ids,
@@ -357,7 +362,7 @@ pub fn extract_main<R: Read>(
         main_region.serial_start,
     )
     .collect_imports(&mut interner);
-    diags.append(&mut finder_diags);
+    summary.append_summary(&mut finder_summary);
 
     // Pushing main's region
     region_arena.push(main_region);
@@ -382,7 +387,7 @@ pub fn extract_main<R: Read>(
     let seen: Vec<PathId> = vec![main_path_id];
     let graph = ModuleGraph::new(region_arena, registered_mod_ids, seen);
 
-    Ok((main_mod, graph, interner, diags))
+    Ok((main_mod, graph, interner, summary))
 }
 
 /// Is intended to pick up where `extract_main` left off
@@ -396,9 +401,9 @@ pub fn extract_modules(
     reporter: &mut Reporter,
     mut interner: Intern,
     cfg: ChrnConfig,
-) -> (ScriptCompiler, ScriptCompilerStore, Vec<SourceDiagnostic>) {
+) -> (ScriptCompiler, ScriptCompilerStore, SourceDiagnosticSummary) {
     debug_assert_eq!(main_mod.mod_id.id, 0);
-    let mut diags = Vec::new();
+    let mut summary = SourceDiagnosticSummary::default();
 
     let main_bind = main_mod.bind.clone();
 
@@ -463,7 +468,7 @@ pub fn extract_modules(
                 import.clone(),
                 &importer_mod,
                 &mut graph,
-                &mut diags,
+                &mut summary,
                 &cfg,
                 &mut interner,
             ) {
@@ -513,7 +518,7 @@ pub fn extract_modules(
                 // Not true
                 .add_note(format!("Last processed module was `{last_processed_name}`"));
 
-                diags.push(src_diag.build());
+                summary.push_diag(src_diag.build());
                 reporter.summary.exceeded_max_mods = Some(chrn_utils::MAX_MODULES);
                 should_break_outer = true;
                 break;
@@ -577,7 +582,7 @@ pub fn extract_modules(
     );
 
     let compiler = ScriptCompiler::init(main_bind, valid_mods);
-    (compiler, compiler_store, diags)
+    (compiler, compiler_store, summary)
 }
 
 /// Takes an import and attempts to turn it into a module
@@ -587,7 +592,7 @@ fn resolve_module(
     // Module that imported this module, which triggered this module's processing,
     importer_mod: &Module,
     graph: &mut ModuleGraph,
-    diags: &mut Vec<SourceDiagnostic>,
+    summary: &mut SourceDiagnosticSummary,
     cfg: &ChrnConfig,
     interner: &mut Intern,
 ) -> Result<Module, ()> {
@@ -619,7 +624,7 @@ fn resolve_module(
                     )
                     .build();
 
-            diags.push(src_diag);
+            summary.push_diag(src_diag);
             return Err(());
         }
     };
@@ -650,7 +655,7 @@ fn resolve_module(
                             )
                             .build();
 
-                diags.push(src_diag);
+                summary.push_diag(src_diag);
                 return Err(());
             }
         }
@@ -659,66 +664,62 @@ fn resolve_module(
     let sub_mod_name_id = interner.intern(&file_name);
 
     // Using region id before pushing
-    let (sub_region, sub_state) = match ConfigLoader::new(
-        sub_region_id,
-        src,
-        sp_path_id.inner,
-        cfg,
-        interner,
-    )
-    .load_config()
-    {
-        ConfigLoaderOutput::Success(region) => (region, ModuleState::Loaded),
-        //FIX: Works but code liability
-        ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
-            match cfg_err {
-                ConfigLoadError::Diagnostic(diag) => {
-                    diags.push(diag);
-                }
-                ConfigLoadError::IO(e) => {
-                    let path = interner.search_path(sp_path_id.inner);
-                    let core_msg =
-                        core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
-                    let src_diag = SourceDiagnostic::builder(
-                        None,
-                        DiagnosticLevel::Error,
-                        core_msg,
-                        sp_path_id.inner,
-                    )
-                    .add_annotation(sp_path_id.span, AnnotationKind::Primary, None)
-                    .build();
-
-                    diags.push(src_diag);
-                }
+    let (sub_region, sub_state) =
+        match ConfigLoader::new(sub_region_id, src, sp_path_id.inner, cfg).load_config() {
+            ConfigLoaderOutput::Success(region, mut new_summary) => {
+                summary.merge(new_summary);
+                (region, ModuleState::Loaded)
             }
+            //FIX: Works but code liability
+            ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
+                match cfg_err {
+                    ConfigLoadError::Diagnostic(diag) => {
+                        summary.push_diag(diag);
+                    }
+                    ConfigLoadError::IO(e) => {
+                        let path = interner.search_path(sp_path_id.inner);
+                        let core_msg =
+                            core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
+                        let src_diag = SourceDiagnostic::builder(
+                            None,
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            sp_path_id.inner,
+                        )
+                        .add_annotation(sp_path_id.span, AnnotationKind::Primary, None)
+                        .build();
 
-            (broken_region, ModuleState::BrokenRegion)
-        }
-        ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
-            match cfg_err {
-                ConfigLoadError::Diagnostic(diag) => {
-                    diags.push(diag);
+                        summary.push_diag(src_diag);
+                    }
                 }
-                ConfigLoadError::IO(e) => {
-                    let path = interner.search_path(sp_path_id.inner);
-                    let core_msg =
-                        core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
-                    let src_diag = SourceDiagnostic::builder(
-                        None,
-                        DiagnosticLevel::Error,
-                        core_msg,
-                        sp_path_id.inner,
-                    )
-                    .add_annotation(sp_path_id.span, AnnotationKind::Primary, None)
-                    .build();
 
-                    diags.push(src_diag);
-                }
+                (broken_region, ModuleState::BrokenRegion)
             }
+            ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
+                match cfg_err {
+                    ConfigLoadError::Diagnostic(diag) => {
+                        summary.push_diag(diag);
+                    }
+                    ConfigLoadError::IO(e) => {
+                        let path = interner.search_path(sp_path_id.inner);
+                        let core_msg =
+                            core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
+                        let src_diag = SourceDiagnostic::builder(
+                            None,
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            sp_path_id.inner,
+                        )
+                        .add_annotation(sp_path_id.span, AnnotationKind::Primary, None)
+                        .build();
 
-            return Err(());
-        }
-    };
+                        summary.push_diag(src_diag);
+                    }
+                }
+
+                return Err(());
+            }
+        };
 
     // The check in the main loop MUST have ensured the module id created here is going to be new
     let current_mod_id = ModuleId::new(graph.registered_mod_ids.len() as u32);
@@ -733,7 +734,7 @@ fn resolve_module(
         .registered_mod_ids
         .push((sp_path_id.inner, current_mod_id));
 
-    let (bind, sub_imports, mut found_diags) = ModuleFinder::new(
+    let (bind, sub_imports, finder_summary) = ModuleFinder::new(
         &sub_region.src_bytes,
         cfg,
         // &mut graph.reserved_mod_ids,
@@ -742,7 +743,7 @@ fn resolve_module(
         sub_region.serial_start,
     )
     .collect_imports(interner);
-    diags.append(&mut found_diags);
+    summary.merge(finder_summary);
 
     // As opposed to how modules are pushed, regions are pushed before recursively descending
     // so no special cases needed for indexing it

@@ -14,8 +14,8 @@ fn variable_declaration_test() {
         (module.mod_id, get_module_region(&arena, module))
     };
 
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -28,13 +28,13 @@ fn variable_declaration_test() {
     run_member_resolver(&settings, &envs, &interner, &mut compiler);
     let env = envs[0].as_ref().expect("Env should exist");
 
-    TypeResolver::new(&settings, &interner, &mut compiler)
-        .resolve(env)
-        .unwrap();
+    let summary = TypeResolver::new(&settings, &interner, &mut compiler)
+        .resolve(env);
+    assert!(summary.err_count() == 0, "Type resolution failed");
 
-    ConstraintResolver::new(&settings, &interner, &mut compiler)
-        .resolve(env)
-        .unwrap();
+    let summary = ConstraintResolver::new(&settings, &interner, &mut compiler)
+        .resolve(env);
+    assert!(summary.err_count() == 0, "Constraint resolution failed");
 
     assert_eq!(compiler.values.len(), 1);
     let last_val = &compiler.values[ValueId::new(0)];
@@ -55,8 +55,8 @@ fn variable_declaration_test() {
         (module.mod_id, get_module_region(&arena, module))
     };
 
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -69,13 +69,13 @@ fn variable_declaration_test() {
     run_member_resolver(&settings, &envs, &interner, &mut compiler);
     let env = envs[0].as_ref().expect("Env should exist");
 
-    TypeResolver::new(&settings, &interner, &mut compiler)
-        .resolve(env)
-        .unwrap();
+    let summary = TypeResolver::new(&settings, &interner, &mut compiler)
+        .resolve(env);
+    assert!(summary.err_count() == 0, "Type resolution failed");
 
-    ConstraintResolver::new(&settings, &interner, &mut compiler)
-        .resolve(env)
-        .unwrap();
+    let summary = ConstraintResolver::new(&settings, &interner, &mut compiler)
+        .resolve(env);
+    assert!(summary.err_count() == 0, "Constraint resolution failed");
 
     assert_eq!(compiler.values.len(), 1);
     let last_val = &compiler.values[ValueId::new(0)];
@@ -98,8 +98,8 @@ fn variable_declaration_test() {
         (module.mod_id, get_module_region(&arena, module))
     };
 
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -112,13 +112,13 @@ fn variable_declaration_test() {
     run_member_resolver(&settings, &envs, &interner, &mut compiler);
     let env = envs[0].as_ref().expect("Env should exist");
 
-    TypeResolver::new(&settings, &interner, &mut compiler)
-        .resolve(env)
-        .unwrap();
+    let summary = TypeResolver::new(&settings, &interner, &mut compiler)
+        .resolve(env);
+    assert!(summary.err_count() == 0, "Type resolution failed");
 
-    ConstraintResolver::new(&settings, &interner, &mut compiler)
-        .resolve(env)
-        .unwrap();
+    let summary = ConstraintResolver::new(&settings, &interner, &mut compiler)
+        .resolve(env);
+    assert!(summary.err_count() == 0, "Constraint resolution failed");
 
     assert_eq!(compiler.values.len(), 1);
     let last_val = &compiler.values[ValueId::new(0)];
@@ -139,8 +139,8 @@ fn variable_declaration_test() {
         (module.mod_id, get_module_region(&arena, module))
     };
 
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -153,13 +153,13 @@ fn variable_declaration_test() {
     run_member_resolver(&settings, &envs, &interner, &mut compiler);
     let env = envs[0].as_ref().expect("Env should exist");
 
-    TypeResolver::new(&settings, &interner, &mut compiler)
-        .resolve(env)
-        .unwrap();
+    let summary = TypeResolver::new(&settings, &interner, &mut compiler)
+        .resolve(env);
+    assert!(summary.err_count() == 0, "Type resolution failed");
 
-    ConstraintResolver::new(&settings, &interner, &mut compiler)
-        .resolve(env)
-        .unwrap();
+    let summary = ConstraintResolver::new(&settings, &interner, &mut compiler)
+        .resolve(env);
+    assert!(summary.err_count() == 0, "Constraint resolution failed");
 
     assert_eq!(compiler.values.len(), 1);
     let last_val = &compiler.values[ValueId::new(0)];
@@ -180,8 +180,8 @@ fn variable_declaration_test() {
         (module.mod_id, get_module_region(&arena, module))
     };
 
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -194,13 +194,13 @@ fn variable_declaration_test() {
     run_member_resolver(&settings, &envs, &interner, &mut compiler);
     let env = envs[0].as_ref().expect("Env should exist");
 
-    TypeResolver::new(&settings, &interner, &mut compiler)
-        .resolve(env)
-        .unwrap();
+    let summary = TypeResolver::new(&settings, &interner, &mut compiler)
+        .resolve(env);
+    assert!(summary.err_count() == 0, "Type resolution failed");
 
-    ConstraintResolver::new(&settings, &interner, &mut compiler)
-        .resolve(env)
-        .unwrap();
+    let summary = ConstraintResolver::new(&settings, &interner, &mut compiler)
+        .resolve(env);
+    assert!(summary.err_count() == 0, "Constraint resolution failed");
 
     assert_eq!(compiler.values.len(), 1);
     let last_val = &compiler.values[ValueId::new(0)];
@@ -221,8 +221,8 @@ fn variable_declaration_test() {
         (module.mod_id, get_module_region(&arena, module))
     };
 
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -235,13 +235,13 @@ fn variable_declaration_test() {
     run_member_resolver(&settings, &envs, &interner, &mut compiler);
     let env = envs[0].as_ref().expect("Env should exist");
 
-    TypeResolver::new(&settings, &interner, &mut compiler)
-        .resolve(env)
-        .unwrap();
+    let summary = TypeResolver::new(&settings, &interner, &mut compiler)
+        .resolve(env);
+    assert!(summary.err_count() == 0, "Type resolution failed");
 
-    ConstraintResolver::new(&settings, &interner, &mut compiler)
-        .resolve(env)
-        .unwrap();
+    let summary = ConstraintResolver::new(&settings, &interner, &mut compiler)
+        .resolve(env);
+    assert!(summary.err_count() == 0, "Constraint resolution failed");
 
     assert_eq!(compiler.values.len(), 1);
     let last_val = &compiler.values[ValueId::new(0)];
@@ -269,8 +269,8 @@ fn type_resolver_values_test() {
         (module.mod_id, get_module_region(&arena, module))
     };
 
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -283,13 +283,13 @@ fn type_resolver_values_test() {
     run_member_resolver(&settings, &envs, &interner, &mut compiler);
     let env = envs[0].as_ref().expect("Env should exist");
 
-    TypeResolver::new(&settings, &interner, &mut compiler)
-        .resolve(env)
-        .unwrap();
+    let summary = TypeResolver::new(&settings, &interner, &mut compiler)
+        .resolve(env);
+    assert!(summary.err_count() == 0, "Type resolution failed");
 
-    ConstraintResolver::new(&settings, &interner, &mut compiler)
-        .resolve(env)
-        .unwrap();
+    let summary = ConstraintResolver::new(&settings, &interner, &mut compiler)
+        .resolve(env);
+    assert!(summary.err_count() == 0, "Constraint resolution failed");
 
     let find_val = |name: &str| -> &Value {
         let name_id = interner.try_search_str(name).unwrap();
@@ -328,8 +328,8 @@ fn all_operators_test() {
             let module = &compiler.mods[ModuleId::new(0)];
             (module.mod_id, get_module_region(&arena, module))
         };
-        let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-            .tokenize(&mut interner);
+        let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+            .tokenize(&mut interner).toks;
         let ast_info = parser::parse(&settings, region, &toks, &interner).0;
         let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
         let (comp_syms, _) =
@@ -338,12 +338,12 @@ fn all_operators_test() {
         let envs = vec![Some(res_env)];
         run_member_resolver(&settings, &envs, &interner, &mut compiler);
         let env = envs[0].as_ref().expect("Env should exist");
-        TypeResolver::new(&settings, &interner, &mut compiler)
-            .resolve(env)
-            .unwrap();
-        ConstraintResolver::new(&settings, &interner, &mut compiler)
-            .resolve(env)
-            .unwrap();
+        let summary = TypeResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env);
+        assert!(summary.err_count() == 0, "Type resolution failed");
+        let summary = ConstraintResolver::new(&settings, &interner, &mut compiler)
+            .resolve(env);
+        assert!(summary.err_count() == 0, "Constraint resolution failed");
         let name_id = interner.try_search_str("X").unwrap();
         let var_def = compiler
             .variables

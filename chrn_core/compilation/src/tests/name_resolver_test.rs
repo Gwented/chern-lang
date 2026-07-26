@@ -14,8 +14,8 @@ fn nameresolver_duplicate_simple_test() {
         let module = &compiler.mods[ModuleId::new(0)];
         (module.mod_id, get_module_region(&arena, module))
     };
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -23,7 +23,7 @@ fn nameresolver_duplicate_simple_test() {
     let (_, diags) =
         NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-    assert!(!diags.is_empty(), "Expected errors from NamespaceResolver");
+    assert!(!diags.diags.is_empty(), "Expected errors from NamespaceResolver");
 
     let correct = "
                 let ORIGINAL = 2 + 2
@@ -36,8 +36,8 @@ fn nameresolver_duplicate_simple_test() {
         let module = &compiler.mods[ModuleId::new(0)];
         (module.mod_id, get_module_region(&arena, module))
     };
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -46,7 +46,7 @@ fn nameresolver_duplicate_simple_test() {
         NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
     assert!(
-        diags.is_empty(),
+        diags.diags.is_empty(),
         "NamespaceResolver should have no errors: {:?}",
         diags
     );
@@ -66,8 +66,8 @@ fn nameresolver_duplicate_simple_test() {
         let module = &compiler.mods[ModuleId::new(0)];
         (module.mod_id, get_module_region(&arena, module))
     };
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -75,7 +75,7 @@ fn nameresolver_duplicate_simple_test() {
     let (_, diags) =
         NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-    assert!(!diags.is_empty(), "Expected errors from NamespaceResolver");
+    assert!(!diags.diags.is_empty(), "Expected errors from NamespaceResolver");
 
     let correct = "
             var->
@@ -89,8 +89,8 @@ fn nameresolver_duplicate_simple_test() {
         let module = &compiler.mods[ModuleId::new(0)];
         (module.mod_id, get_module_region(&arena, module))
     };
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -99,7 +99,7 @@ fn nameresolver_duplicate_simple_test() {
         NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
     assert!(
-        diags.is_empty(),
+        diags.diags.is_empty(),
         "NamespaceResolver should have no errors: {:?}",
         diags
     );
@@ -118,8 +118,8 @@ fn nameresolver_duplicate_simple_test() {
         let module = &compiler.mods[ModuleId::new(0)];
         (module.mod_id, get_module_region(&arena, module))
     };
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -127,7 +127,7 @@ fn nameresolver_duplicate_simple_test() {
     let (_, diags) =
         NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
-    assert!(!diags.is_empty(), "Expected errors from NamespaceResolver");
+    assert!(!diags.diags.is_empty(), "Expected errors from NamespaceResolver");
 
     let correct = "
             nest->
@@ -141,8 +141,8 @@ fn nameresolver_duplicate_simple_test() {
         let module = &compiler.mods[ModuleId::new(0)];
         (module.mod_id, get_module_region(&arena, module))
     };
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -151,7 +151,7 @@ fn nameresolver_duplicate_simple_test() {
         NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
 
     assert!(
-        diags.is_empty(),
+        diags.diags.is_empty(),
         "NamespaceResolver should have no errors: {:?}",
         diags
     );

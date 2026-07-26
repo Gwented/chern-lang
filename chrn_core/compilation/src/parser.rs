@@ -26,7 +26,7 @@ use crate::semantic::hir::hir_concepts::{
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::id_types::{InternedId, SpannedContainer};
 use chrn_utils::intern::Intern;
-use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
+use chrn_utils::source_map::source_diagnostic::{SourceDiagnostic, SourceDiagnosticSummary};
 use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
 use lang::fmter::{Formattable, Formatted};
@@ -40,7 +40,7 @@ pub fn parse(
     region: &SourceRegion,
     tokens: &[SpannedToken],
     interner: &Intern,
-) -> (AstInfo, Vec<SourceDiagnostic>) {
+) -> (AstInfo, SourceDiagnosticSummary) {
     // Output it's own summary? Does AstInfo hold a summary?
     let mut ast_info = AstInfo::new();
 
@@ -315,6 +315,7 @@ pub fn parse(
                         // This would look simpler with keywords
                         if let Token::Keyword(kw) = ctx.peek_tok()
                             && kw.is_sect()
+                            && ctx.peek_ahead(1).tok == Token::SlimArrow
                         {
                             break;
                         }
@@ -385,7 +386,7 @@ pub fn parse(
 
     // Returning broken ast and the diagnostics
 
-    (ast_info, ctx.err_vec)
+    (ast_info, ctx.summary)
 }
 
 //FIXME: These sets may be misaligned

@@ -9,7 +9,9 @@ use chrn_utils::{
     },
     intern::Intern,
     source_map::{
-        source_diagnostic::{DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind},
+        source_diagnostic::{
+            DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSummary, annotations::AnnotationKind,
+        },
         source_span::SourceSpan,
     },
 };
@@ -46,7 +48,7 @@ pub struct ConstraintResolver<'a> {
     pub(crate) cfg: &'a ChrnConfig,
     pub(crate) interner: &'a Intern,
     pub(crate) compiler: &'a mut ScriptCompiler,
-    pub(crate) err_vec: Vec<SourceDiagnostic>,
+    pub(crate) summary: SourceDiagnosticSummary,
 }
 
 impl<'a> ConstraintResolver<'a> {
@@ -62,11 +64,11 @@ impl<'a> ConstraintResolver<'a> {
             cfg,
             interner,
             compiler,
-            err_vec: Vec::new(),
+            summary: SourceDiagnosticSummary::default(),
         }
     }
 
-    pub fn resolve(&mut self, env: &ResolverEnv) -> Result<(), Vec<SourceDiagnostic>> {
+    pub fn resolve(&mut self, env: &ResolverEnv) -> SourceDiagnosticSummary {
         // Everything skipped is not a factor in this compilation step.
         for sym_id in env.compilation_syms.iter().cloned() {
             match self.compiler.symbols[sym_id].kind {
@@ -97,14 +99,9 @@ impl<'a> ConstraintResolver<'a> {
             }
         }
 
-        if !self.err_vec.is_empty() {
-            let mut diags = Vec::new();
-            diags.append(&mut self.err_vec);
-
-            return Err(diags);
-        }
-
-        Ok(())
+        let mut summary = SourceDiagnosticSummary::default();
+        summary.append_summary(&mut self.summary);
+        summary
     }
 
     // Needs:
@@ -179,7 +176,7 @@ impl<'a> ConstraintResolver<'a> {
                 // A SLICE?
                 // Yeah sure
                 preset_reporter::report_preset(
-                    &mut self.err_vec,
+                    &mut self.summary,
                     preset_err,
                     env.region,
                     self.cfg,
@@ -234,7 +231,7 @@ impl<'a> ConstraintResolver<'a> {
                     // Slice as in [Option<PresetErr>;2]
                     // Ok sure
                     preset_reporter::report_preset(
-                        &mut self.err_vec,
+                        &mut self.summary,
                         preset_err,
                         env.region,
                         self.cfg,
@@ -510,21 +507,7 @@ impl<'a> ConstraintResolver<'a> {
                         env.region.path_id,
                         *ast_span,
                     );
-                    // semantic_reporter::report_semantic(
-                    //     &mut self.err_vec,
-                    //     preset_err,
-                    //     env.region,
-                    //     self.settings,
-                    //     self.interner,
-                    // );
-                    // semantic_reporter::create_diag_builder_preset(
-                    //     &mut self.err_vec,
-                    //     preset_err,
-                    //     env.region,
-                    //     self.settings,
-                    //     self.interner,
-                    // );
-                    self.err_vec.push(src_diag);
+                    self.summary.push_diag(src_diag);
                 }
                 _ => (),
             }
@@ -532,7 +515,7 @@ impl<'a> ConstraintResolver<'a> {
             if let Err(preset_errs) = self.check_cond(type_def.type_id, ty_span, *cond_expr) {
                 for err in preset_errs {
                     preset_reporter::report_preset(
-                        &mut self.err_vec,
+                        &mut self.summary,
                         err,
                         env.region,
                         self.cfg,
@@ -553,7 +536,7 @@ impl<'a> ConstraintResolver<'a> {
                         ));
 
                         preset_reporter::report_preset(
-                            &mut self.err_vec,
+                            &mut self.summary,
                             preset_err,
                             env.region,
                             self.cfg,
@@ -575,7 +558,7 @@ impl<'a> ConstraintResolver<'a> {
                 env,
             ) {
                 preset_reporter::report_preset(
-                    &mut self.err_vec,
+                    &mut self.summary,
                     preset_err,
                     env.region,
                     self.cfg,
@@ -722,7 +705,7 @@ impl<'a> ConstraintResolver<'a> {
             if let Err(preset_errs) = self.check_cond(alias_type_id, sym_span, *cond_expr_id) {
                 for err in preset_errs {
                     preset_reporter::report_preset(
-                        &mut self.err_vec,
+                        &mut self.summary,
                         err,
                         env.region,
                         self.cfg,
@@ -892,7 +875,7 @@ impl<'a> ConstraintResolver<'a> {
                 if let Err(preset_errs) = self.check_cond(field.type_id, ty_span, *cond_expr) {
                     for err in preset_errs {
                         preset_reporter::report_preset(
-                            &mut self.err_vec,
+                            &mut self.summary,
                             err,
                             env.region,
                             self.cfg,
@@ -912,7 +895,7 @@ impl<'a> ConstraintResolver<'a> {
                 if let Err(preset_errs) = self.check_cond(field.type_id, ty_span, *cond_expr) {
                     for err in preset_errs {
                         preset_reporter::report_preset(
-                            &mut self.err_vec,
+                            &mut self.summary,
                             err,
                             env.region,
                             self.cfg,
@@ -939,7 +922,7 @@ impl<'a> ConstraintResolver<'a> {
                     env,
                 ) {
                     preset_reporter::report_preset(
-                        &mut self.err_vec,
+                        &mut self.summary,
                         preset_err,
                         env.region,
                         self.cfg,
@@ -966,7 +949,7 @@ impl<'a> ConstraintResolver<'a> {
                     env,
                 ) {
                     preset_reporter::report_preset(
-                        &mut self.err_vec,
+                        &mut self.summary,
                         preset_err,
                         env.region,
                         self.cfg,
@@ -999,7 +982,7 @@ impl<'a> ConstraintResolver<'a> {
                     if let Err(preset_errs) = self.check_cond(inner_id, ty_span, *cond_expr) {
                         for err in preset_errs {
                             preset_reporter::report_preset(
-                                &mut self.err_vec,
+                                &mut self.summary,
                                 err,
                                 env.region,
                                 self.cfg,
@@ -1025,7 +1008,7 @@ impl<'a> ConstraintResolver<'a> {
                     if let Err(preset_errs) = self.check_cond(inner_id, ty_span, *cond_expr) {
                         for err in preset_errs {
                             preset_reporter::report_preset(
-                                &mut self.err_vec,
+                                &mut self.summary,
                                 err,
                                 env.region,
                                 self.cfg,
@@ -1058,7 +1041,7 @@ impl<'a> ConstraintResolver<'a> {
                         env,
                     ) {
                         preset_reporter::report_preset(
-                            &mut self.err_vec,
+                            &mut self.summary,
                             preset_err,
                             env.region,
                             self.cfg,
@@ -1087,7 +1070,7 @@ impl<'a> ConstraintResolver<'a> {
                         env,
                     ) {
                         preset_reporter::report_preset(
-                            &mut self.err_vec,
+                            &mut self.summary,
                             preset_err,
                             env.region,
                             self.cfg,

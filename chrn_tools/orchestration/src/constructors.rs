@@ -20,8 +20,8 @@ pub fn create_compiler<R: Read>(
     reporter: &mut Reporter,
     cfg: ChrnConfig,
 ) -> Result<(ScriptCompiler, ScriptCompilerStore), ModuleInitError> {
-    let (compiler, store, mut diags) = modules::extract_all_modules(path, src, cfg, reporter)?;
-    reporter.append_safe(&mut diags);
+    let (compiler, store, new_summary) = modules::extract_all_modules(path, src, cfg, reporter)?;
+    reporter.merge_summary_safe(new_summary);
     Ok((compiler, store))
 }
 
@@ -37,9 +37,9 @@ pub fn create_compiler_with_cache<R: Read>(
     reporter: &mut Reporter,
     cfg: ChrnConfig,
 ) -> Result<(ScriptCompiler, ScriptCompilerStore, ScriptCompilerCache), ModuleInitError> {
-    let (compiler, compiler_store, mut diags) =
+    let (compiler, compiler_store, new_summary) =
         modules::extract_all_modules(path, src, cfg, reporter)?;
-    reporter.append_safe(&mut diags);
+    reporter.merge_summary_safe(new_summary);
 
     let cache = ScriptCompilerCache {
         mod_cache: Default::default(),

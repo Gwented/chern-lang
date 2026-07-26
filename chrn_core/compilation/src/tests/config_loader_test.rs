@@ -332,7 +332,7 @@ fn cfg_tab_characters_around_at_def_test() {
     // :crab:
     let res = load_cfg("\t@def\tva\nr->\tx:\ti3\r2\t\r\u{32}@end\t");
     match res {
-        ConfigLoaderOutput::Success(region) => {
+        ConfigLoaderOutput::Success(region, _) => {
             // The leading tab (byte 0) is serial; @def starts at byte 1.
             assert_eq!(region.script_start, 1);
             // @end starts at byte 23; serial_start = 23 + 4 = 27.
@@ -371,7 +371,6 @@ fn multi_line_comment_test() {
         correct_input,
         PathId::default(),
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config();
 
@@ -380,7 +379,6 @@ fn multi_line_comment_test() {
         wrong_input,
         PathId::default(),
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config();
 
@@ -419,7 +417,6 @@ fn start_and_serial_offset_test() {
         text.as_bytes(),
         PathId::default(),
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config()
     .expect_success();

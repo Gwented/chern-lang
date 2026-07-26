@@ -1,7 +1,7 @@
 // REPORTER IS BACK 🦅🦅🦅🦅🦅𐔌
 use chrn_utils::{
     budget::mem_budget::{BudgetResult, MemoryBudget},
-    source_map::source_diagnostic::SourceDiagnostic,
+    source_map::source_diagnostic::{SourceDiagnostic, SourceDiagnosticSummary},
 };
 
 use crate::script_compiler::script_compiler_summary::ScriptCompilerSummary;
@@ -12,9 +12,9 @@ use crate::script_compiler::script_compiler_summary::ScriptCompilerSummary;
 #[derive(Debug, Default)]
 pub struct Reporter {
     /// Stored diagnostics
-    pub diags: Vec<SourceDiagnostic>,
+    pub(crate) diag_summary: SourceDiagnosticSummary,
     // The suppressed diagnostic count is the "exceeded_amt" in budget
-    pub diag_budget: MemoryBudget,
+    pub(crate) diag_budget: MemoryBudget,
     // Today?
     // Yuppy
     /// Summary of what the compiler did today
@@ -23,9 +23,9 @@ pub struct Reporter {
 
 impl Reporter {
     // Should this track module count?
-    pub const fn new(max_diags: usize) -> Reporter {
+    pub fn new(max_diags: usize) -> Reporter {
         Reporter {
-            diags: Vec::new(),
+            diag_summary: SourceDiagnosticSummary::default(),
             summary: ScriptCompilerSummary::new(),
             diag_budget: MemoryBudget::new(max_diags),
         }
@@ -33,8 +33,12 @@ impl Reporter {
 
     // This is only done when the internals are ACTUALLY something that ONLY happens at crate level,
     // this isn't from Java hypnosis (I think?)
-    pub const fn summary(&self) -> &ScriptCompilerSummary {
+    pub const fn compiler_summary(&self) -> &ScriptCompilerSummary {
         &self.summary
+    }
+
+    pub const fn diag_summary(&self) -> &SourceDiagnosticSummary {
+        &self.diag_summary
     }
 
     // I think this count is WRONG because there is no consumption from budget that assumes the
@@ -45,15 +49,41 @@ impl Reporter {
     }
 
     pub fn push_safe(&mut self, diag: SourceDiagnostic) -> bool {
+        self.diag_summary.increment_from_level(diag.level);
         // Need to do something with consume() before using it so this stays checked.
         match self.diag_budget.consume(1) {
             BudgetResult::Stable | BudgetResult::LimitReached => {
-                self.diags.push(diag);
+                self.diag_summary.push_diag(diag);
                 true
             }
             // Reward hacking my own semantics </3
             BudgetResult::Overage(_) | BudgetResult::Overflow => false,
         }
+    }
+
+    /// Consumes summary with budget safety
+    ///
+    /// `true` means there were no issues
+    /// `false` means as many diagnostics as possible were appended, but there was an overage in budget
+    pub fn merge_summary_safe(&mut self, mut other: SourceDiagnosticSummary) -> bool {
+        // Smell...
+        let amt = other.diags.len();
+
+        let ok = match self.diag_budget.checked_consume(amt) {
+            BudgetResult::Stable | BudgetResult::LimitReached => true,
+            BudgetResult::Overage(_) => {
+                other.diags.truncate(self.diag_budget.remaining());
+
+                // Since the budget doesn't set itself to the limit the user must manually use the
+                // set to limit after compensating for said limit.
+                self.diag_budget.set_to_limit();
+                false
+            }
+            BudgetResult::Overflow => return false,
+        };
+
+        self.diag_summary.merge(other);
+        ok
     }
 
     /// Checks if max budget has been exceeded before appending.
@@ -71,7 +101,7 @@ impl Reporter {
 
         match self.diag_budget.checked_consume(amt) {
             BudgetResult::Stable | BudgetResult::LimitReached => {
-                self.diags.append(diags);
+                self.diag_summary.append_diags(diags);
                 true
             }
             BudgetResult::Overage(_) => {
@@ -79,7 +109,7 @@ impl Reporter {
                 // dbg!(can_append, self.diag_budget.remaining());
                 // panic!("Test me");
                 for i in diags.drain(..self.diag_budget.remaining()) {
-                    self.diags.push(i);
+                    self.diag_summary.push_diag(i);
                 }
                 // Since the budget doesn't set itself to the limit the user must manually use the
                 // set to limit after compensating for said limit.
@@ -88,21 +118,6 @@ impl Reporter {
                 false
             }
             BudgetResult::Overflow => false,
-            // Ok(_) => {
-            //     self.diags.append(diags);
-            //     true
-            // }
-            // Err(overage_opt) => {
-            //     self.budget.amt_exceeded = self.budget.amt_exceeded.saturating_add(amt);
-            //     // If the overeage
-            //     if let Some(overage) = overage_opt {
-            //         let can_append = overage - amt;
-            //         dbg!(can_append);
-            //         panic!()
-            //     } else {
-            //         false
-            //     }
-            // }
         }
     }
 }

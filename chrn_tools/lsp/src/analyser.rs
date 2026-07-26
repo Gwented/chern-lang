@@ -58,6 +58,7 @@ use chrn_utils::core_error::{self, ConfigLoadError};
 use chrn_utils::id_types::{ModuleId, PathId, SourceRegionId};
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
+use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use chrn_utils::source_map::source_region::SourceRegion;
 use compilation::modules::mod_finder::ModuleFinder;
 use std::io::Cursor;
@@ -246,7 +247,7 @@ pub(crate) struct ModuleResolution {
     /// Imported module regions; ids are `1..=sub_mods.len()`.
     pub sub_regions: Vec<SourceRegion>,
     /// Config/import diagnostics collected during resolution.
-    pub config_errors: Option<Vec<SourceDiagnostic>>,
+    pub config_errors: SourceDiagnosticSummary,
     /// URI strings of every imported module, for dependency registration.
     pub imported_uris: Vec<String>,
 }
@@ -290,12 +291,14 @@ pub(crate) fn resolve_document_modules(
     // which is what the parser/compiler expect. The LSP later converts these
     // relative spans to absolute file positions using `script_start` whenever it
     // needs to surface them as LSP `Position`s.
-    let (tokens, trivia) = Lexer::new(
+    let lex_output = Lexer::new(
         SourceRegionId::new(0),
         &main_region.src_bytes,
         main_region.script_start,
     )
     .tokenize(&mut interner);
+    let tokens = lex_output.toks;
+    let trivia = lex_output.trivia;
 
     let name = path_buf
         .file_stem()
@@ -306,7 +309,7 @@ pub(crate) fn resolve_document_modules(
 
     let mut reserved_mod_ids: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
 
-    let (bind, main_imports, finder_diags) = ModuleFinder::new(
+    let (bind, main_imports, mut finder_summary) = ModuleFinder::new(
         &main_region.src_bytes,
         chrn_cfg,
         &main_region,
@@ -315,11 +318,10 @@ pub(crate) fn resolve_document_modules(
     )
     .collect_imports(&mut interner);
 
-    let mut config_errors = if finder_diags.is_empty() {
-        None
-    } else {
-        Some(finder_diags)
-    };
+    let mut config_errors = SourceDiagnosticSummary::default();
+    if !finder_summary.diags.is_empty() {
+        config_errors.append_diags(&mut finder_summary.diags);
+    }
 
     let main_mod = Module::new(
         name_id,
@@ -349,10 +351,7 @@ pub(crate) fn resolve_document_modules(
     );
 
     if !sub_diags.is_empty() {
-        match &mut config_errors {
-            Some(existing) => existing.append(&mut sub_diags),
-            None => config_errors = Some(sub_diags),
-        }
+        config_errors.append_diags(&mut sub_diags);
     }
 
     let imported_uris: Vec<String> = sub_mods
@@ -450,16 +449,19 @@ pub async fn analyze_and_publish_task(
     // the pipeline publish that followed, making config-load errors vanish
     // from the editor.
     let mut pre_diags: Vec<tower_lsp::lsp_types::Diagnostic> = Vec::new();
+    let mut cfg_loader_warns: Vec<SourceDiagnostic> = Vec::new();
     let region = match ConfigLoader::new(
         SourceRegionId::new(0),
         Cursor::new(text.as_bytes()),
         path_id,
         &chrn_cfg,
-        &interner,
     )
     .load_config()
     {
-        ConfigLoaderOutput::Success(region) => region,
+        ConfigLoaderOutput::Success(region, summary) => {
+            cfg_loader_warns = summary.diags;
+            region
+        }
         ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
             // The broken region still carries the `script_start` discovered so
             // far (may be 0 if no `@def` was found), which is the offset the
@@ -492,7 +494,7 @@ pub async fn analyze_and_publish_task(
     //    holding any DocumentState lock.  This breaks the previous deadlock cycle
     //    where ensure_analyzed held the per-document write lock while calling
     //    DocumentCache::get_text.  The interner is moved in here.
-    let prepared = resolve_document_modules(
+    let mut prepared = resolve_document_modules(
         &uri,
         Arc::clone(&text),
         region,
@@ -501,6 +503,13 @@ pub async fn analyze_and_publish_task(
         version,
         interner,
     );
+
+    // Merge config-loader warnings from the Success path into the
+    // resolution's config_errors so they are published through the
+    // normal diagnostic pipeline.
+    if !cfg_loader_warns.is_empty() {
+        prepared.resolution.config_errors.append_diags(&mut cfg_loader_warns);
+    }
 
     // 3. Insert the prepared state into the cache.  If the same text is already
     //    cached, the existing state is reused.
@@ -953,55 +962,57 @@ pub(crate) fn resolve_modules_lsp(
             // document region.
             let sub_region_id = SourceRegionId::new((sub_regions.len() + 1) as u32);
 
-            let sub_region = match ConfigLoader::new(sub_region_id, src, path_id, settings, interner)
-                .load_config()
-            {
-                ConfigLoaderOutput::Success(region) => region,
-                ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
-                    match cfg_err {
-                        ConfigLoadError::Diagnostic(diag) => {
-                            diags.push(diag);
-                        }
-                        ConfigLoadError::IO(e) => {
-                            let path = interner.search_path(path_id);
-                            let core_msg = core_error::form_string_from_io_err(&e, path)
-                                .unwrap_or(e.to_string());
-                            let src_diag = SourceDiagnostic::builder(
-                                None,
-                                DiagnosticLevel::Error,
-                                core_msg,
-                                current_path_id,
-                            )
-                            .add_annotation(path_span, AnnotationKind::Primary, None)
-                            .build();
-                            diags.push(src_diag);
-                        }
+            let sub_region =
+                match ConfigLoader::new(sub_region_id, src, path_id, settings).load_config() {
+                    ConfigLoaderOutput::Success(region, summary) => {
+                        diags.extend(summary.diags);
+                        region
                     }
-                    broken_region
-                }
-                ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
-                    match cfg_err {
-                        ConfigLoadError::Diagnostic(diag) => {
-                            diags.push(diag);
+                    ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
+                        match cfg_err {
+                            ConfigLoadError::Diagnostic(diag) => {
+                                diags.push(diag);
+                            }
+                            ConfigLoadError::IO(e) => {
+                                let path = interner.search_path(path_id);
+                                let core_msg = core_error::form_string_from_io_err(&e, path)
+                                    .unwrap_or(e.to_string());
+                                let src_diag = SourceDiagnostic::builder(
+                                    None,
+                                    DiagnosticLevel::Error,
+                                    core_msg,
+                                    current_path_id,
+                                )
+                                .add_annotation(path_span, AnnotationKind::Primary, None)
+                                .build();
+                                diags.push(src_diag);
+                            }
                         }
-                        ConfigLoadError::IO(e) => {
-                            let path = interner.search_path(path_id);
-                            let core_msg = core_error::form_string_from_io_err(&e, path)
-                                .unwrap_or(e.to_string());
-                            let src_diag = SourceDiagnostic::builder(
-                                None,
-                                DiagnosticLevel::Error,
-                                core_msg,
-                                current_path_id,
-                            )
-                            .add_annotation(path_span, AnnotationKind::Primary, None)
-                            .build();
-                            diags.push(src_diag);
-                        }
+                        broken_region
                     }
-                    continue;
-                }
-            };
+                    ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
+                        match cfg_err {
+                            ConfigLoadError::Diagnostic(diag) => {
+                                diags.push(diag);
+                            }
+                            ConfigLoadError::IO(e) => {
+                                let path = interner.search_path(path_id);
+                                let core_msg = core_error::form_string_from_io_err(&e, path)
+                                    .unwrap_or(e.to_string());
+                                let src_diag = SourceDiagnostic::builder(
+                                    None,
+                                    DiagnosticLevel::Error,
+                                    core_msg,
+                                    current_path_id,
+                                )
+                                .add_annotation(path_span, AnnotationKind::Primary, None)
+                                .build();
+                                diags.push(src_diag);
+                            }
+                        }
+                        continue;
+                    }
+                };
 
             let file_name = match path.file_prefix().and_then(|n| n.to_str()) {
                 Some(p) => p.to_string(),
@@ -1033,7 +1044,7 @@ pub(crate) fn resolve_modules_lsp(
 
             let sub_mod_name_id = interner.intern(&file_name);
 
-            let (bind, sub_imports, mut finder_diags) = ModuleFinder::new(
+            let (bind, sub_imports, mut finder_summary) = ModuleFinder::new(
                 &sub_region.src_bytes,
                 settings,
                 &sub_region,
@@ -1042,7 +1053,7 @@ pub(crate) fn resolve_modules_lsp(
             )
             .collect_imports(interner);
 
-            diags.append(&mut finder_diags);
+            diags.append(&mut finder_summary.diags);
 
             let expected_len = reserved_mod_ids.len() - 1;
 

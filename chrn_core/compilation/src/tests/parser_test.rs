@@ -20,9 +20,9 @@ fn parse_text(text: &str) -> (AstInfo, Intern) {
         let module = &_compiler.mods[ModuleId::new(0)];
         get_module_region(&arena, module)
     };
-    let (toks, _) =
+    let toks =
         Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-            .tokenize(&mut interner);
+            .tokenize(&mut interner).toks;
     let (ast, _diags) = parser::parse(&settings, region, &toks, &interner);
     (ast, interner)
 }
@@ -34,11 +34,11 @@ fn parse_text_with_diags(text: &str) -> (AstInfo, Vec<SourceDiagnostic>, Intern)
         let module = &_compiler.mods[ModuleId::new(0)];
         get_module_region(&arena, module)
     };
-    let (toks, _) =
+    let toks =
         Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-            .tokenize(&mut interner);
-    let (ast, diags) = parser::parse(&settings, region, &toks, &interner);
-    (ast, diags, interner)
+            .tokenize(&mut interner).toks;
+    let (ast, summary) = parser::parse(&settings, region, &toks, &interner);
+    (ast, summary.diags, interner)
 }
 
 /// Helper: given `items` from `AstInfo::items()`, find the first item of a
@@ -1522,13 +1522,12 @@ fn parse_bind_unclosed_string_yields_diags() {
         text.as_bytes(),
         path_id,
         &ChrnConfig::default(),
-        &interner,
     )
     .load_config();
     // The config loader should recognize this as broken (unclosed quote).
     match result {
         ConfigLoaderOutput::Broken(_, _) => {} // expected
-        ConfigLoaderOutput::Success(_) => panic!("expected Broken for unclosed quotes"),
+        ConfigLoaderOutput::Success(_, _) => panic!("expected Broken for unclosed quotes"),
         ConfigLoaderOutput::UnrecoverableErr(e) => panic!("unrecoverable: {e:?}"),
     }
 }

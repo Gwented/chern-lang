@@ -1,5 +1,9 @@
 use std::cell::Cell;
 
+/// General purpose structure that creates guards when increasing in depth, that drop when the call
+/// stack is popped.
+///
+/// When the limit is reached returns a basic Err(())
 #[derive(Debug)]
 pub struct RecursionTracker {
     depth: Cell<u16>,

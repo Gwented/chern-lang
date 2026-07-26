@@ -10,40 +10,10 @@ pub mod intern;
 pub mod macros;
 pub mod pair;
 pub mod source_map;
-
-//TEST: IGNORE THIS
-//// Half!
-// pub struct SharedU32 {
-//     pub shared_inner: u32,
-// }
-//
-// // Middle u16
-// const RIGHT_MASK: u32 = 0xFFFF;
-//
-// impl SharedU32 {
-//     pub fn new(left: u16, right: u16) -> SharedU32 {
-//         let shared_inner = ((left as u32) << 16) | (right as u32);
-//         SharedU32 { shared_inner }
-//     }
-//
-//     fn left(&self) -> u16 {
-//         // Remove all bits containing right's value then convert to u16
-//         (self.shared_inner >> 16) as u16
-//     }
-//
-//     fn add_left(&mut self, val: u16) {
-//         let new_left = self.left() + val;
-//     }
-//
-//     fn right(&self) -> u16 {
-//         // Get shared_inner but remove all bits not apart of right
-//         (self.shared_inner & RIGHT_MASK) as u16
-//     }
-// }
+pub mod utils;
 
 // -- Heuristic max amounts for `chrn` to abide by for safety purposes --
 
-// IGNORE THIS
 /// Max loops before what would be considered a broken mutation loop.
 /// Arbitrarily high number to help examine recursive bugs better and for stopping infinite loops in
 /// general.

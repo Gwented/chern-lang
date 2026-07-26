@@ -14,8 +14,8 @@ fn scope_simple_test() {
         (module.mod_id, get_module_region(&arena, module))
     };
 
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -43,8 +43,8 @@ fn scope_simple_test() {
         (module.mod_id, get_module_region(&arena, module))
     };
 
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -73,8 +73,8 @@ fn scope_simple_test() {
         (module.mod_id, get_module_region(&arena, module))
     };
 
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -197,8 +197,8 @@ fn scope_simple_test() {
         (module.mod_id, get_module_region(&arena, module))
     };
 
-    let (toks, _) = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner);
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner).toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 

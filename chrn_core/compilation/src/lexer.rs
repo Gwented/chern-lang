@@ -5,10 +5,11 @@
 //WARN: LEXER HAS BEEN CHANGED TO USE (INCLUSIVE, EXCLUSIVE) SO THERE MAY BE BUGS LATER IF SOMETHING
 //WAS MISSED. I DO NOT BELIEVE THERE ARE BUGS LEFT.
 
-//TODO: MAX_READ makes it so there is no quote reading risk here, probably?
+pub mod lexer_output;
 pub mod token;
 pub mod trivia;
 // TODO: Maybe give this diagnostics
+//  I don't know buddy
 
 use chrn_utils::{
     id_types::SourceRegionId,
@@ -18,11 +19,12 @@ use chrn_utils::{
 use lang::keywords::{self, Keyword};
 
 use crate::lexer::{
+    lexer_output::LexerOutput,
     token::{Notation, SpannedToken, Token},
     trivia::{Trivia, TriviaKind},
 };
 
-const MAX_INVALID_TOKS: u8 = 10;
+const MAX_INVALID_TOKS: u8 = 12;
 
 // Bit-wise operations for read_num
 const NOTATION_FLOAT: u8 = 1 << 0;
@@ -32,11 +34,12 @@ const NOTATION_OCTAL: u8 = 1 << 3;
 
 pub struct Lexer<'a> {
     // Should be &str
-    // absolute_pos: usize,
     src_bytes: &'a [u8],
     script_start: usize,
     pos: usize,
     current_region_id: SourceRegionId,
+    /// Invalid toks found count
+    invalid_toks: u8,
     trivia: Vec<Trivia>,
     trivia_start_idx: usize,
     trivia_end_idx: usize,
@@ -55,6 +58,7 @@ impl Lexer<'_> {
             // Not even going to acknowledge what was here before
             pos: 0,
             trivia: Vec::new(),
+            invalid_toks: 0,
             trivia_start_idx: 0,
             trivia_end_idx: 0,
         }
@@ -62,7 +66,15 @@ impl Lexer<'_> {
 
     // Maybe this should just return Result since it'd take extra work to know if there are invalid
     // tokens and if it failed in any form
-    pub fn tokenize(&mut self, interner: &mut Intern) -> (Vec<SpannedToken>, Vec<Trivia>) {
+    /// Tokenizes `self.src_bytes`
+    ///
+    /// Returns a type of `LexerOutput` instead of a summary or result because the lexer does not
+    /// emit errors or warns.
+    ///
+    /// This is so that the parser can emit more detailed errors regarding syntax AND the invalid
+    /// tokens, as well as avoiding the parser reporting the same errors as the lexer since both act
+    /// off the same token data.
+    pub fn tokenize(&mut self, interner: &mut Intern) -> LexerOutput {
         let mut toks: Vec<SpannedToken> = Vec::new();
 
         // For threshold of invalid tokens before just giving up
@@ -547,7 +559,7 @@ impl Lexer<'_> {
 
         let mut trivia: Vec<Trivia> = Vec::new();
         trivia.append(&mut self.trivia);
-        (toks, trivia)
+        LexerOutput::new(toks, trivia, self.invalid_toks)
     }
 
     /// Reads a string of characters based off of language expected heuristics
@@ -1024,6 +1036,7 @@ impl Lexer<'_> {
     }
 
     fn recover_invalid(&mut self, start: Option<usize>, interner: &mut Intern) -> SpannedToken {
+        self.invalid_toks += 1;
         let start = if let Some(s) = start { s } else { self.pos };
 
         while self.pos < self.src_bytes.len() && !self.peek_char().is_whitespace() {

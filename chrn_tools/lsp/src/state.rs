@@ -73,7 +73,7 @@ use chrn_utils::id_types::{
     InternedId, ModuleId, SourceRegionId, SpannedContainer, SymbolId, TypeId,
 };
 use chrn_utils::intern::Intern;
-use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
+use chrn_utils::source_map::source_diagnostic::{SourceDiagnostic, SourceDiagnosticSummary};
 use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
 
@@ -162,17 +162,17 @@ pub struct DocumentState {
     /// had no region).  Consumed by the later resolver stages via `ResolverEnv`.
     pub compilation_syms: Vec<Option<Vec<SymbolId>>>,
     /// Diagnostics from config/import parsing (module discovery phase).
-    pub config_errors: Option<Vec<SourceDiagnostic>>,
+    pub config_errors: SourceDiagnosticSummary,
     /// Diagnostics from the script parser.
-    pub parse_errors: Option<Vec<SourceDiagnostic>>,
+    pub parse_errors: SourceDiagnosticSummary,
     /// Diagnostics from namespace resolution.
-    pub ns_errors: Option<Vec<SourceDiagnostic>>,
+    pub ns_errors: SourceDiagnosticSummary,
     /// Diagnostics from member (field/variant) resolution.
-    pub member_errors: Option<Vec<SourceDiagnostic>>,
+    pub member_errors: SourceDiagnosticSummary,
     /// Diagnostics from type resolution.
-    pub ty_errors: Option<Vec<SourceDiagnostic>>,
+    pub ty_errors: SourceDiagnosticSummary,
     /// Diagnostics from constraint resolution.
-    pub cn_errors: Option<Vec<SourceDiagnostic>>,
+    pub cn_errors: SourceDiagnosticSummary,
     /// Sorted list of `(span, entity)` pairs built after analysis; queried by offset.
     pub symbol_map: Vec<(SourceSpan, SemanticEntity)>,
     /// LSP document version counter (used to detect stale analysis results).
@@ -207,12 +207,12 @@ impl DocumentState {
             compiler: None,
             asts: Vec::new(),
             compilation_syms: Vec::new(),
-            config_errors: None,
-            parse_errors: None,
-            ns_errors: None,
-            member_errors: None,
-            ty_errors: None,
-            cn_errors: None,
+            config_errors: SourceDiagnosticSummary::default(),
+            parse_errors: SourceDiagnosticSummary::default(),
+            ns_errors: SourceDiagnosticSummary::default(),
+            member_errors: SourceDiagnosticSummary::default(),
+            ty_errors: SourceDiagnosticSummary::default(),
+            cn_errors: SourceDiagnosticSummary::default(),
             symbol_map: Vec::new(),
             version,
         }
@@ -247,7 +247,7 @@ impl DocumentState {
             imported_uris,
         } = resolution;
 
-        self.config_errors = config_errors;
+        self.config_errors = config_errors;  // now SourceDiagnosticSummary, moved directly
 
         // Main region has id 0; sub-regions were assigned ids 1..=N during resolution.
         self.region_arena.push(main_region);
@@ -295,21 +295,17 @@ impl DocumentState {
                 // Reuse pre-computed tokens for main module
                 compilation::parser::parse(&chrn_cfg, region, &self.tokens, &self.interner)
             } else {
-                let (toks, _) =
+                let lex_output =
                     Lexer::new(region.region_id, &region.src_bytes, region.script_start)
                         .tokenize(&mut self.interner);
+                let toks = lex_output.toks;
                 compilation::parser::parse(&chrn_cfg, region, &toks, &self.interner)
             };
 
-            let (ast_info, errs) = parse_result;
-            let parse_errors = if errs.is_empty() { None } else { Some(errs) };
+            let (ast_info, mut errs) = parse_result;
 
             if mod_idx == 0 {
-                if let Some(diags) = parse_errors {
-                    self.parse_errors = Some(diags);
-                } else {
-                    self.parse_errors = None;
-                }
+                self.parse_errors.append_diags(&mut errs.diags);
             }
 
             all_asts[mod_idx] = Some(ast_info);
@@ -368,19 +364,10 @@ impl DocumentState {
                     }
                 };
 
-                let (current_mod_symbols, ns_diags) = ns_resolver.resolve(env);
+                let (current_mod_symbols, mut ns_summary) = ns_resolver.resolve(env);
 
-                if !ns_diags.is_empty() {
-                    if mod_idx == 0 {
-                        self.ns_errors = Some(ns_diags);
-                    } else {
-                        // Imported modules: extend the existing collection so
-                        // their diagnostics still surface in the editor.
-                        match &mut self.ns_errors {
-                            Some(existing) => existing.extend(ns_diags),
-                            None => self.ns_errors = Some(ns_diags),
-                        }
-                    }
+                if !ns_summary.diags.is_empty() {
+                    self.ns_errors.append_diags(&mut ns_summary.diags);
                 }
 
                 compilation_syms.push(Some(current_mod_symbols));
@@ -443,16 +430,9 @@ impl DocumentState {
                     None => continue,
                 };
 
-                let member_diags = member_resolver.resolve(env);
-                if !member_diags.is_empty() {
-                    if mod_idx == 0 {
-                        self.member_errors = Some(member_diags);
-                    } else {
-                        match &mut self.member_errors {
-                            Some(existing) => existing.extend(member_diags),
-                            None => self.member_errors = Some(member_diags),
-                        }
-                    }
+                let mut member_summary = member_resolver.resolve(env);
+                if !member_summary.diags.is_empty() {
+                    self.member_errors.append_diags(&mut member_summary.diags);
                 }
             }
 
@@ -487,19 +467,10 @@ impl DocumentState {
                     None => continue,
                 };
 
-                if let Err(ty_diags) = type_resolver.resolve(env)
-                    && !ty_diags.is_empty()
+            let mut ty_summary = type_resolver.resolve(env);
+                if !ty_summary.diags.is_empty()
                 {
-                    if mod_idx == 0 {
-                        self.ty_errors = Some(ty_diags);
-                    } else {
-                        // Imported modules: extend the existing collection so
-                        // their diagnostics still surface in the editor.
-                        match &mut self.ty_errors {
-                            Some(existing) => existing.extend(ty_diags),
-                            None => self.ty_errors = Some(ty_diags),
-                        }
-                    }
+                    self.ty_errors.append_diags(&mut ty_summary.diags);
                 }
             }
 
@@ -516,17 +487,10 @@ impl DocumentState {
                     None => continue,
                 };
 
-                if let Err(cn_diags) = constraint_resolver.resolve(env)
-                    && !cn_diags.is_empty()
+            let mut cn_summary = constraint_resolver.resolve(env);
+                if !cn_summary.diags.is_empty()
                 {
-                    if mod_idx == 0 {
-                        self.cn_errors = Some(cn_diags);
-                    } else {
-                        match &mut self.cn_errors {
-                            Some(existing) => existing.extend(cn_diags),
-                            None => self.cn_errors = Some(cn_diags),
-                        }
-                    }
+                    self.cn_errors.append_diags(&mut cn_summary.diags);
                 }
             }
         }
@@ -1327,60 +1291,60 @@ impl DocumentState {
         let mut lsp_diags = Vec::new();
         let doc_len = self.text.len();
 
-        if let Some(diags) = &self.config_errors {
+        if !self.config_errors.diags().is_empty() {
             analyser::push_diagnostics(
                 &mut lsp_diags,
-                diags,
+                self.config_errors.diags(),
                 &self.region_arena,
                 &self.text,
                 doc_len,
                 "chrn-config",
             );
         }
-        if let Some(diags) = &self.parse_errors {
+        if !self.parse_errors.diags().is_empty() {
             analyser::push_diagnostics(
                 &mut lsp_diags,
-                diags,
+                self.parse_errors.diags(),
                 &self.region_arena,
                 &self.text,
                 doc_len,
                 "chrn-parser",
             );
         }
-        if let Some(diags) = &self.ns_errors {
+        if !self.ns_errors.diags().is_empty() {
             analyser::push_diagnostics(
                 &mut lsp_diags,
-                diags,
+                self.ns_errors.diags(),
                 &self.region_arena,
                 &self.text,
                 doc_len,
                 "chrn-namespace",
             );
         }
-        if let Some(diags) = &self.member_errors {
+        if !self.member_errors.diags().is_empty() {
             analyser::push_diagnostics(
                 &mut lsp_diags,
-                diags,
+                self.member_errors.diags(),
                 &self.region_arena,
                 &self.text,
                 doc_len,
                 "chrn-member",
             );
         }
-        if let Some(diags) = &self.ty_errors {
+        if !self.ty_errors.diags().is_empty() {
             analyser::push_diagnostics(
                 &mut lsp_diags,
-                diags,
+                self.ty_errors.diags(),
                 &self.region_arena,
                 &self.text,
                 doc_len,
                 "chrn-type",
             );
         }
-        if let Some(diags) = &self.cn_errors {
+        if !self.cn_errors.diags().is_empty() {
             analyser::push_diagnostics(
                 &mut lsp_diags,
-                diags,
+                self.cn_errors.diags(),
                 &self.region_arena,
                 &self.text,
                 doc_len,
@@ -1769,8 +1733,10 @@ impl DocumentCache {
         // `hover`, `references`, `rename`) treats as relative.
         let mut interner = Intern::init();
         let script_src = &text.as_bytes()[script_start..];
-        let (tokens, trivia) =
+        let lex_output =
             Lexer::new(SourceRegionId::new(0), script_src, script_start).tokenize(&mut interner);
+        let tokens = lex_output.toks;
+        let trivia = lex_output.trivia;
 
         // 3. Re-acquire write lock to insert
         let mut cache = self.inner.write();

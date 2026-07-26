@@ -137,7 +137,7 @@ fn exec_check(
                 let msg_opt = match render_kind {
                     RenderKind::Json => {
                         let rendered = json_renderer::render_json_diags(
-                            &reporter.diags,
+                            &reporter.diag_summary().diags(),
                             &footers,
                             Some(&compiler_store.region_arena),
                             &compiler_store.interner,
@@ -148,7 +148,7 @@ fn exec_check(
                     }
                     RenderKind::Yaml => {
                         let rendered = yaml_renderer::render_yaml_diags(
-                            &reporter.diags,
+                            &reporter.diag_summary().diags(),
                             &footers,
                             Some(&compiler_store.region_arena),
                             &compiler_store.interner,
@@ -163,7 +163,7 @@ fn exec_check(
                             cli_cfg.terminal_color_type,
                         );
                         let rendered_diags = terminal_renderer::render_terminal_diags(
-                            &reporter.diags,
+                            &reporter.diag_summary().diags(),
                             &footers,
                             &render_cfg,
                             Some(&compiler_store.region_arena),
@@ -274,7 +274,7 @@ fn exec_query(
                     let render_cfg =
                         TerminalRenderConfig::new(glob_args.can_color, cli_cfg.terminal_color_type);
                     let rendered_diags = terminal_renderer::render_terminal_diags(
-                        &reporter.diags,
+                        &reporter.diag_summary().diags(),
                         &footers,
                         &render_cfg,
                         Some(&compiler_store.region_arena),
@@ -402,7 +402,7 @@ fn exec_embed(
                             cli_cfg.terminal_color_type,
                         );
                         let rendered_diags = terminal_renderer::render_terminal_diags(
-                            &reporter.diags,
+                            &reporter.diag_summary().diags(),
                             &footers,
                             &render_cfg,
                             Some(&compiler_store.region_arena),
@@ -432,14 +432,14 @@ fn exec_embed(
             .swap_remove(SourceRegionId::new(0))
     } else {
         match modules::extract_main(&src_path, src, &chrn_cfg) {
-            Ok((main_mod, graph, interner, diags)) => {
+            Ok((main_mod, graph, interner, summary)) => {
                 // If the region is broken then it's probably not the best idea to embed it
                 if main_mod.state == ModuleState::BrokenRegion {
                     let render_cfg =
                         TerminalRenderConfig::new(glob_args.can_color, cli_cfg.terminal_color_type);
 
                     let rendered_diags = terminal_renderer::render_terminal_diags(
-                        &diags,
+                        &summary.diags(),
                         &[],
                         &render_cfg,
                         // reporter.budget.amt_exceeded,

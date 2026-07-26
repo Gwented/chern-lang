@@ -1,7 +1,9 @@
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
-use chrn_utils::source_map::source_diagnostic::{DiagnosticLevel, SourceDiagnosticBuilder};
+use chrn_utils::source_map::source_diagnostic::{
+    DiagnosticLevel, SourceDiagnosticBuilder, SourceDiagnosticSink,
+};
 use chrn_utils::{
     intern::Intern,
     source_map::{source_diagnostic::SourceDiagnostic, source_region::SourceRegion},
@@ -21,15 +23,17 @@ use super::preset_err::{LookupError, MathError};
 
 /// Convenience function that creates a `SourceDiagnostic` from the given `preset_err` and pushes
 /// into `diags`
-pub(crate) fn report_preset(
-    diags: &mut Vec<SourceDiagnostic>,
+pub(crate) fn report_preset<S: SourceDiagnosticSink>(
+    // If we want a scenario where it doesn't require diagnostics, then we should make a trait where
+    // the summary can choose to abide by summary rules.
+    sink: &mut S,
     preset_err: PresetErr,
     region: &SourceRegion,
     cfg: &ChrnConfig,
     interner: &Intern,
 ) {
     let diag_builder = create_diag_builder_preset(preset_err, region, cfg, interner);
-    diags.push(diag_builder.build());
+    sink.push_diagnostic(diag_builder.build());
 }
 
 // The s is like that on purpose
@@ -39,8 +43,8 @@ pub(crate) fn report_preset(
 /// created.
 ///
 /// Returns a tuple of any directives and diagnostics found
-pub(crate) fn report_preset_vec(
-    diags: &mut Vec<SourceDiagnostic>,
+pub(crate) fn report_preset_vec<S: SourceDiagnosticSink>(
+    sink: &mut S,
     preset_errs: Vec<PresetErr>,
     region: &SourceRegion,
     cfg: &ChrnConfig,
@@ -48,7 +52,7 @@ pub(crate) fn report_preset_vec(
 ) {
     for preset in preset_errs {
         let diag_builder = create_diag_builder_preset(preset, region, cfg, interner);
-        diags.push(diag_builder.build());
+        sink.push_diagnostic(diag_builder.build());
     }
 }
 

@@ -3,7 +3,7 @@ use chrn_utils::{
     id_types::{AstId, ConfigRootId, ScopeId, SymbolId, TypeId, VariableId},
     intern::Intern,
     source_map::source_diagnostic::{
-        DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind,
+        DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSummary, annotations::AnnotationKind,
     },
 };
 
@@ -30,7 +30,7 @@ pub struct NamespaceResolver<'a> {
     cfg: &'a ChrnConfig,
     interner: &'a Intern,
     compiler: &'a mut ScriptCompiler,
-    err_vec: Vec<SourceDiagnostic>,
+    summary: SourceDiagnosticSummary,
     //NOTE: May handle this differently but ok for now
 }
 
@@ -53,7 +53,7 @@ impl NamespaceResolver<'_> {
             cfg,
             interner,
             compiler,
-            err_vec: Vec::new(),
+            summary: SourceDiagnosticSummary::default(),
             //TODO: This will be different
         }
     }
@@ -61,9 +61,7 @@ impl NamespaceResolver<'_> {
     // Needs the reporter though
     /// Returns the symbols created from the ast nodes within the given module `env` to allow for
     /// module by module compilation at the symbol level.
-    ///
-    /// Any diagnostics being returned means an error occurred.
-    pub fn resolve(&mut self, env: &RegistrationEnv) -> (Vec<SymbolId>, Vec<SourceDiagnostic>) {
+    pub fn resolve(&mut self, env: &RegistrationEnv) -> (Vec<SymbolId>, SourceDiagnosticSummary) {
         // Storing all symbols created associated with the current module so that compilation
         // doens't have to depend on the ast to keep a coherent understanding of
         let mut mod_symbols: Vec<SymbolId> = Vec::new();
@@ -100,10 +98,10 @@ impl NamespaceResolver<'_> {
             }
         }
 
-        let mut diags = Vec::new();
-        diags.append(&mut self.err_vec);
+        let mut summary = SourceDiagnosticSummary::default();
+        summary.append_summary(&mut self.summary);
 
-        (mod_symbols, diags)
+        (mod_symbols, summary)
     }
     // These registrations:
     // - Create a new symbol
@@ -655,6 +653,6 @@ impl NamespaceResolver<'_> {
                 .add_annotation(dup_span, AnnotationKind::Primary, None)
                 .build();
 
-        self.err_vec.push(src_diag);
+        self.summary.push_diag(src_diag);
     }
 }

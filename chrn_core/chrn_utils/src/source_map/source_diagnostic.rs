@@ -9,6 +9,7 @@ use crate::{
         source_diagnostic::annotations::{Annotation, AnnotationKind},
         source_span::SourceSpan,
     },
+    utils::SharedU32,
 };
 
 // /// Although there are error types that say where the error came from, all of `CoreError` needs to
@@ -225,18 +226,144 @@ pub enum DiagnosticLevel {
     Help,
 }
 
-//// Convenience function for converting a `ConfigLoadError` into a `SourceDiagnosticBuilder`
-// pub fn cfg_err_to_builder(
-//     cfg_err: ConfigLoadError,
-//     path: &std::path::Path,
-//     path_id: PathId,
-// ) -> SourceDiagnosticBuilder {
-//     match cfg_load_err {
-//         ConfigLoadError::Diagnostic(diag) => diag,
-//         ConfigLoadError::IO(io_err) => {
-//             let err_str =
-//                 core_error::form_string_from_io_err(&io_err, path).unwrap_or(io_err.to_string());
-//             SourceDiagnostic::builder(DiagnosticLevel::Error, err_str, path)
-//         }
-//     }
-// }
+// There's something about getters and setters for generic APIs that make sense.
+// Welcome back Java. (Rude)
+
+// Budget?
+// I feel like we really want budget here
+/// Generic structure for providing a reporting summary
+#[derive(Debug, Default)]
+pub struct SourceDiagnosticSummary {
+    /// Left is warn, right is err
+    warn_and_err_count: SharedU32,
+    // We lost.
+    pub diags: Vec<SourceDiagnostic>,
+    // Ok but what if we had SharedSignalU32 where it was u31
+    // PADDING ITS PADDING
+    /// Whether or not the errors that have occurred are terminal
+    is_terminal: bool,
+}
+
+//TEST: The extraction of data is painful, but trying to give encapsulation a fair chance on a real
+//structure
+impl SourceDiagnosticSummary {
+    pub fn new(warn_and_err_count: SharedU32, is_terminal: bool) -> SourceDiagnosticSummary {
+        SourceDiagnosticSummary {
+            warn_and_err_count,
+            diags: Vec::new(),
+            is_terminal,
+        }
+    }
+
+    /// Internally checks the kind of the diagnostic before pushing to keep count
+    pub fn push_diag(&mut self, diag: SourceDiagnostic) {
+        match diag.level {
+            DiagnosticLevel::Error => self.increment_err(),
+            DiagnosticLevel::Warn => self.increment_warn(),
+            // We don't emit these and may remove them as top-level kinds
+            DiagnosticLevel::Help | DiagnosticLevel::Note => (),
+        };
+        self.diags.push(diag);
+    }
+
+    pub fn append_diags(&mut self, diags: &mut Vec<SourceDiagnostic>) {
+        for diag in diags.iter() {
+            self.increment_from_level(diag.level);
+        }
+        self.diags.append(diags);
+    }
+    // Boolean on whether or not to accept the terminality?
+    /// Terminalness does NOT carry over because summaries operate under a different context.
+    /// If that is desired then externally do so.
+    pub fn merge(&mut self, mut other: SourceDiagnosticSummary) {
+        self.diags.append(&mut other.diags);
+        // I don't know about this. Operator overloading is a little too transient
+        self.warn_and_err_count += other.warn_and_err_count;
+    }
+
+    /// Takes data from summary without transferring ownership
+    ///
+    /// Sets other's values to zero where possible, but does not touch is_terminal.
+    ///
+    /// Terminalness does NOT carry over because summaries operate under a different context.
+    /// If that is desired then externally do so.
+    pub fn append_summary(&mut self, other: &mut SourceDiagnosticSummary) {
+        self.diags.append(&mut other.diags);
+
+        self.warn_and_err_count += other.warn_and_err_count;
+        other.warn_and_err_count.set_shared_inner(0);
+    }
+
+    pub fn increment_from_level(&mut self, level: DiagnosticLevel) {
+        match level {
+            DiagnosticLevel::Error => self.increment_err(),
+            DiagnosticLevel::Warn => self.increment_warn(),
+            // We don't emit these and may remove them as top-level kinds
+            DiagnosticLevel::Help | DiagnosticLevel::Note => (),
+        };
+    }
+
+    pub fn set_terminal(&mut self, is_terminal: bool) {
+        self.is_terminal = is_terminal;
+    }
+
+    pub fn err_count(&self) -> u16 {
+        self.warn_and_err_count.right()
+    }
+
+    pub fn warn_count(&self) -> u16 {
+        self.warn_and_err_count.left()
+    }
+
+    pub fn increment_warn(&mut self) {
+        self.warn_and_err_count.add_left(1);
+    }
+
+    pub fn increment_err(&mut self) {
+        self.warn_and_err_count.add_right(1);
+    }
+
+    pub fn add_warn(&mut self, amt: u16) {
+        self.warn_and_err_count.add_left(amt);
+    }
+
+    pub fn add_err(&mut self, amt: u16) {
+        self.warn_and_err_count.add_right(amt);
+    }
+
+    pub fn diags(&self) -> &Vec<SourceDiagnostic> {
+        &self.diags
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        self.is_terminal
+    }
+}
+
+// Wow. This is...wow.
+// Beautiful
+/// Allows for sink implementors to push or append while performing internal computations if needed.
+pub trait SourceDiagnosticSink {
+    fn push_diagnostic(&mut self, diag: SourceDiagnostic);
+    fn append_diagnostics(&mut self, diags: &mut Vec<SourceDiagnostic>);
+}
+
+impl SourceDiagnosticSink for SourceDiagnosticSummary {
+    fn push_diagnostic(&mut self, diag: SourceDiagnostic) {
+        self.push_diag(diag);
+    }
+
+    fn append_diagnostics(&mut self, diags: &mut Vec<SourceDiagnostic>) {
+        self.append_diags(diags);
+    }
+}
+
+impl SourceDiagnosticSink for Vec<SourceDiagnostic> {
+    fn push_diagnostic(&mut self, diag: SourceDiagnostic) {
+        self.push(diag);
+    }
+
+    fn append_diagnostics(&mut self, diags: &mut Vec<SourceDiagnostic>) {
+        self.append(diags);
+    }
+}

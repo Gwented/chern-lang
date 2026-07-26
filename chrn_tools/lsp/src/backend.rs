@@ -66,6 +66,7 @@ use crate::text::apply_text_change;
 use crate::state::SemanticEntity;
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::core_error::ConfigLoadError;
+use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
 use chrn_utils::intern::Intern;
 use lang::types::builtins::BuiltinTypeKind as ChBuiltinTypeKind;
 use std::io::Cursor;
@@ -199,16 +200,19 @@ impl Backend {
 
         let mut interner = Intern::init();
         let path_id = interner.intern_path(&path_buf);
+        let mut cfg_loader_warns: Vec<SourceDiagnostic> = Vec::new();
         let region = match ConfigLoader::new(
             chrn_utils::id_types::SourceRegionId::new(0),
             Cursor::new(text.as_bytes()),
             path_id,
             &chrn_cfg,
-            &interner,
         )
         .load_config()
         {
-            ConfigLoaderOutput::Success(region) => region,
+            ConfigLoaderOutput::Success(region, summary) => {
+                cfg_loader_warns = summary.diags;
+                region
+            },
             ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
                 publish_config_load_error(
                     self.client.clone(),
@@ -251,7 +255,7 @@ impl Backend {
         // the deadlock where `ensure_analyzed` held the per-document lock while
         // calling `DocumentCache::get_text`.  The interner from the config load
         // is moved in so a second one is not allocated.
-        let prepared = resolve_document_modules(
+        let mut prepared = resolve_document_modules(
             uri,
             Arc::clone(&text),
             region,
@@ -260,6 +264,13 @@ impl Backend {
             my_version,
             interner,
         );
+
+        // Merge config-loader warnings from the Success path into the
+        // resolution's config_errors so they are persisted through
+        // ensure_analyzed and surface via get_lsp_diagnostics.
+        if !cfg_loader_warns.is_empty() {
+            prepared.resolution.config_errors.append_diags(&mut cfg_loader_warns);
+        }
 
         let state_arc = self
             .doc_cache

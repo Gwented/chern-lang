@@ -1,5 +1,3 @@
-// This is not getting streamed right now. See `IMPORTANT.txt`
-//FIX: This should probably be in compilation
 //! This module represents the stage of `chrn` processing where there it may read an entire file, or
 //! it may read between `@def` and `@end`. This exists so that if there is serial data within the
 //! file, the entire file isn't forced to be loaded into memory, which would be a net negative.
@@ -8,6 +6,7 @@
 //! This loader does NOT UTF-8 check anything, it merely ensures that the region is valid for chrn's
 //! language rules. Only bytes are operated upon. The diagnostics sent expect that users of this
 //! data check that the data is valid and react accordingly.
+pub mod config_loader_summary;
 //TODO: Need relative spanning in renderers
 use std::io::{BufRead, BufReader, Read};
 
@@ -16,12 +15,14 @@ use chrn_utils::{
     core_error::ConfigLoadError,
     err_codes::ErrorCode,
     id_types::{PathId, SourceRegionId},
-    intern::Intern,
     source_map::{
-        source_diagnostic::{DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind},
+        source_diagnostic::{
+            DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSummary, annotations::AnnotationKind,
+        },
         source_region::SourceRegion,
         source_span::SourceSpan,
     },
+    utils::FreezeTrackerU32,
 };
 
 use lang::keywords::ANNOTATION_CLAUSE_SIZE;
@@ -48,8 +49,6 @@ pub struct ConfigLoader<'a, R: Read> {
     cfg: &'a ChrnConfig,
     ln_num_tracker: FreezeTrackerU32,
     col_tracker: FreezeTrackerU32,
-    // TODO: Remove this?
-    interner: &'a Intern,
     /// Position specifically used for navigating the IO buffer
     cursor: usize,
     /// The max amount of bytes to stop it, which is dynamically set, hence why it's apart of the struct.
@@ -68,7 +67,7 @@ pub struct ConfigLoader<'a, R: Read> {
 pub enum ConfigLoaderOutput {
     // Should this just be Option ConfigLoaderError?
     /// Loaded region with no issues
-    Success(SourceRegion),
+    Success(SourceRegion, SourceDiagnosticSummary),
     /// A region that experienced an error during the loading process.
     ///
     /// This is not called "partial" because an error like `@def` without `@end` isn't a partial
@@ -89,12 +88,10 @@ impl<R: Read> ConfigLoader<'_, R> {
         handle: R,
         current_path_id: PathId,
         cfg: &'a ChrnConfig,
-        interner: &'a Intern,
     ) -> ConfigLoader<'a, R> {
         ConfigLoader {
             current_region_id,
             cfg,
-            interner,
             current_path_id,
             handle: BufReader::with_capacity(BUFFER_SIZE, handle),
             col_tracker: FreezeTrackerU32::new(1),
@@ -141,6 +138,11 @@ impl<R: Read> ConfigLoader<'_, R> {
                 return out;
             }
         }
+
+        // This is here because technically, a warn CAN be emitted, and should be kept track of.
+        // But it's not owned by the loader itself because the loader can only emit one error
+        // at a time all of them are terminal
+        let mut diag_summary = SourceDiagnosticSummary::default();
 
         while let Some(b) = self.peek() {
             // dbg!(
@@ -335,7 +337,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                             Some(serial_start),
                         );
 
-                        return ConfigLoaderOutput::Success(region);
+                        return ConfigLoaderOutput::Success(region, diag_summary);
                     }
 
                     // If no @def has been seen yet, there is enough space to check, and the next 4
@@ -416,17 +418,24 @@ impl<R: Read> ConfigLoader<'_, R> {
         // Does not conflict with @end since @end has it's own return environment.
         //
         // NOTE: Needs direct indexing because peek already reached it's limit
-        // if self.handle.buffer().get(self.cursor).is_some() {
-        //     panic!();
-        // }
+        if self.handle.buffer().get(self.cursor).is_some() {
+            // Sole reason this is here
+            let core_msg = "Amount of bytes in file exceeds max amount of 32KB".into();
+            let diag = SourceDiagnostic::builder(
+                ErrorCode::CompilerSafetyLimits.code().into(),
+                DiagnosticLevel::Warn,
+                core_msg,
+                self.current_path_id,
+            )
+            .build();
+            diag_summary.push_diag(diag);
+        }
 
         // Case of no @def and no @end which requires a 'None' return from the main loop.
         // This does not mean it is correct, it only means the read limit wasn't reached before the
         // file ended.
         if !requires_end {
-            // dbg!(String::from_utf8_lossy(&region.src_bytes));
-            // panic!();
-            ConfigLoaderOutput::Success(region)
+            ConfigLoaderOutput::Success(region, diag_summary)
         } else {
             // Case of end <eof> being reached, which means it is within `READ_LIMIT` since it
             // didn't actively reach it
@@ -881,57 +890,6 @@ impl<R: Read> ConfigLoader<'_, R> {
     //     // If difference is 0 then we reached buffer size otherwise
     // }
 }
-
-// Should probably put this in some sort of utils/utils file with obscure structures?
-// Or maybe just a local config loader owned thing
-/// Tracker that stores a "freeze" flag which takes the last bit in it's 32 bits, which allows it to stay 4
-/// bytes instead of memory padding from a `bool`.
-#[derive(Debug, Default)]
-struct FreezeTrackerU32 {
-    inner: u32,
-}
-
-// Not necessary. But it would be 8 bytes which would cause the entire program to otherwise combust.
-impl FreezeTrackerU32 {
-    const FREEZE_FLAG: u32 = 0x8000_0000;
-    const VAL_MASK: u32 = 0x7FFF_FFFF;
-
-    fn new(inner: u32) -> FreezeTrackerU32 {
-        FreezeTrackerU32 { inner }
-    }
-
-    fn val(&self) -> u32 {
-        self.inner & Self::VAL_MASK
-    }
-
-    fn increment(&mut self) {
-        // If inner takes over val radius we instantly combust.
-        if !self.is_frozen() {
-            self.inner += 1;
-        }
-    }
-
-    fn increment_many(&mut self, amt: u32) {
-        if !self.is_frozen() {
-            self.inner += amt;
-        }
-    }
-
-    fn reset_soft(&mut self) {
-        if !self.is_frozen() {
-            self.inner = 1;
-        }
-    }
-
-    fn freeze(&mut self) {
-        self.inner |= Self::FREEZE_FLAG;
-    }
-
-    fn is_frozen(&self) -> bool {
-        (self.inner & Self::FREEZE_FLAG) != 0
-    }
-}
-
 // Maybe when streaming is used this can be used
 // enum InternalErr {
 //     MaxTurns,

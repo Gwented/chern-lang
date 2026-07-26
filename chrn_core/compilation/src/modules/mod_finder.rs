@@ -4,11 +4,11 @@ use std::{ffi::OsStr, path::PathBuf, str::FromStr};
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::SpannedContainer;
-use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
+use chrn_utils::source_map::source_diagnostic::{DiagnosticLevel, SourceDiagnosticSummary};
 use chrn_utils::{
     core_error::{self},
-    id_types::{InternedId, ModuleId, PathId},
+    id_types::InternedId,
     intern::Intern,
     source_map::{
         source_diagnostic::SourceDiagnostic, source_region::SourceRegion, source_span::SourceSpan,
@@ -28,7 +28,7 @@ pub struct ModuleFinder<'a> {
     src_bytes: &'a [u8],
     cfg: &'a ChrnConfig,
     // reserved_mod_ids: &'a mut Vec<(PathId, ModuleId)>,
-    diags: Vec<SourceDiagnostic>,
+    summary: SourceDiagnosticSummary,
     /// Path origin so that errors can accurately report the path where the import was declared
     current_region: &'a SourceRegion,
     pos: usize,
@@ -50,7 +50,7 @@ impl ModuleFinder<'_> {
             src_bytes,
             cfg,
             current_region,
-            diags: Vec::new(),
+            summary: SourceDiagnosticSummary::default(),
             // reserved_mod_ids,
             pos: 0,
             script_start,
@@ -65,7 +65,7 @@ impl ModuleFinder<'_> {
     pub fn collect_imports(
         &mut self,
         interner: &mut Intern,
-    ) -> (Option<Bind>, Vec<Import>, Vec<SourceDiagnostic>) {
+    ) -> (Option<Bind>, Vec<Import>, SourceDiagnosticSummary) {
         let mut imports: Vec<Import> = Vec::new();
         let mut bind: Option<Bind> = None;
 
@@ -114,7 +114,7 @@ impl ModuleFinder<'_> {
                             let import = match self.parse_import(interner) {
                                 Ok(i) => i,
                                 Err(d) => {
-                                    self.diags.push(d);
+                                    self.summary.push_diag(d);
                                     continue;
                                 }
                             };
@@ -124,7 +124,7 @@ impl ModuleFinder<'_> {
                             bind = match self.parse_bind(interner) {
                                 Ok(b) => Some(b),
                                 Err(d) => {
-                                    self.diags.push(d);
+                                    self.summary.push_diag(d);
                                     continue;
                                 }
                             };
@@ -140,10 +140,9 @@ impl ModuleFinder<'_> {
             }
         }
 
-        let mut diags = Vec::new();
-        diags.append(&mut self.diags);
-
-        (bind, imports, diags)
+        let mut summary = SourceDiagnosticSummary::default();
+        summary.append_summary(&mut self.summary);
+        (bind, imports, summary)
     }
 
     /// Assumes the starting point is at the start quote

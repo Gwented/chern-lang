@@ -10,7 +10,7 @@ use chrn_utils::budget::{
 pub(super) struct ParserBudget {
     // Is cell so that this structure can be borrowed and internally mutated without borrow checker
     // issues since this is just a counter.
-    pub(crate) recursion_tracker: RecursionTracker,
+    pub(super) recursion_tracker: RecursionTracker,
     node_budget: MemoryBudget,
 }
 
