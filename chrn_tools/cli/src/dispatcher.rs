@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use chrn_utils::{
     chrn_config::ChrnConfig,
     core_error::{ConfigLoadError, ScriptError},
+    files::file_ops,
     id_types::SourceRegionId,
     source_map::source_region::SourceRegion,
 };
@@ -52,11 +53,19 @@ fn exec_check(
 
     let mut reporter = Reporter::new(crate::MAX_DIAGNOSTICS);
     let path = files::make_canon(&check_cmd.path)?;
+    let src = match file_ops::fopen(&path) {
+        Ok(f) => f,
+        Err((_, err_msg)) => {
+            let msg = format!("Process exited unsuccessfully.\nReason: {err_msg}");
+            return Err(msg.into());
+        }
+    };
+
     let render_kind = RenderKind::from_check_cmd(check_cmd);
 
     // Please please please
     let (mut compiler, mut compiler_store, mut compiler_cache) =
-        match constructors::create_compiler_with_cache(&path, &mut reporter, chrn_cfg) {
+        match constructors::create_compiler_with_cache(&path, src, &mut reporter, chrn_cfg) {
             Ok(data) => data,
             Err(init_err) => match init_err.cfg_err {
                 ConfigLoadError::Diagnostic(diag) => {
@@ -70,7 +79,7 @@ fn exec_check(
                                 &init_err.interner,
                                 &JsonRenderConfig::new(check_cmd.minify),
                             );
-                            println!("{rendered}");
+                            eprintln!("{rendered}");
                             None
                         }
                         RenderKind::Yaml => {
@@ -81,7 +90,7 @@ fn exec_check(
                                 &init_err.interner,
                                 &YamlRenderConfig::new(check_cmd.minify),
                             );
-                            println!("{rendered}");
+                            eprintln!("{rendered}");
                             None
                         }
                         RenderKind::Terminal => {
@@ -134,7 +143,7 @@ fn exec_check(
                             &compiler_store.interner,
                             &JsonRenderConfig::new(check_cmd.minify),
                         );
-                        println!("{rendered}");
+                        eprintln!("{rendered}");
                         None
                     }
                     RenderKind::Yaml => {
@@ -145,7 +154,7 @@ fn exec_check(
                             &compiler_store.interner,
                             &YamlRenderConfig::new(check_cmd.minify),
                         );
-                        println!("{rendered}");
+                        eprintln!("{rendered}");
                         None
                     }
                     RenderKind::Terminal => {
@@ -209,14 +218,21 @@ fn exec_query(
     cli_cfg: &CliConfig,
 ) -> Result<String, Option<String>> {
     // Centralized cmd to config construction for all known cmds?
-    let mut chrn_cfg = ChrnConfig::default();
+    let chrn_cfg = ChrnConfig::default();
 
     let mut reporter = Reporter::new(crate::MAX_DIAGNOSTICS);
     let path = files::make_canon(&query_cmd.path)?;
+    let src = match file_ops::fopen(&path) {
+        Ok(f) => f,
+        Err((_, err_msg)) => {
+            let msg = format!("Process exited unsuccessfully.\nReason: {err_msg}");
+            return Err(msg.into());
+        }
+    };
 
     // Please please please
     let (mut compiler, mut compiler_store, mut compiler_cache) =
-        match constructors::create_compiler_with_cache(&path, &mut reporter, chrn_cfg) {
+        match constructors::create_compiler_with_cache(&path, src, &mut reporter, chrn_cfg) {
             Ok(data) => data,
             Err(init_err) => match init_err.cfg_err {
                 ConfigLoadError::Diagnostic(diag) => {
@@ -319,8 +335,16 @@ fn exec_embed(
     let chrn_cfg = ChrnConfig::default();
 
     // let mut reporter = Reporter::new(crate::MAX_DIAGNOSTICS);
-    let src = files::make_canon(&embed_cmd.src_path)?;
-    let dest = files::make_canon(&embed_cmd.dest_path)?;
+    let src_path = files::make_canon(&embed_cmd.src_path)?;
+    let dest_path = files::make_canon(&embed_cmd.dest_path)?;
+
+    let src = match file_ops::fopen(&src_path) {
+        Ok(f) => f,
+        Err((_, err_msg)) => {
+            let msg = format!("Process exited unsuccessfully.\nReason: {err_msg}");
+            return Err(msg.into());
+        }
+    };
 
     // Maybe allow the different ouputs for checking
     //
@@ -331,7 +355,8 @@ fn exec_embed(
         let mut reporter = Reporter::new(crate::MAX_DIAGNOSTICS);
 
         let (mut compiler, mut compiler_store, mut compiler_cache) =
-            match constructors::create_compiler_with_cache(&src, &mut reporter, chrn_cfg) {
+            match constructors::create_compiler_with_cache(&src_path, src, &mut reporter, chrn_cfg)
+            {
                 Ok(data) => data,
                 Err(init_err) => match init_err.cfg_err {
                     ConfigLoadError::Diagnostic(diag) => {
@@ -406,7 +431,7 @@ fn exec_embed(
             .region_arena
             .swap_remove(SourceRegionId::new(0))
     } else {
-        match modules::extract_main(&src, &chrn_cfg) {
+        match modules::extract_main(&src_path, src, &chrn_cfg) {
             Ok((main_mod, graph, interner, diags)) => {
                 // If the region is broken then it's probably not the best idea to embed it
                 if main_mod.state == ModuleState::BrokenRegion {
@@ -485,12 +510,12 @@ fn exec_embed(
         todo!();
     }
 
-    match files::write_bytes_front(&dest, &bytes) {
+    match files::write_bytes_front(&dest_path, &bytes) {
         Ok(_) => {
             let msg = format!(
                 "Embedded\nsrc: {}\n ↓\ndest: {}",
-                src.display(),
-                dest.display()
+                src_path.display(),
+                dest_path.display()
             );
             Ok(msg)
         }

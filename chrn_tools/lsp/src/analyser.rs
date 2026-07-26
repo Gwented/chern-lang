@@ -45,7 +45,7 @@ use compilation::modules::ImportKind;
 use compilation::modules::Module;
 use compilation::modules::ModuleState;
 use parking_lot::RwLock;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -309,7 +309,6 @@ pub(crate) fn resolve_document_modules(
     let (bind, main_imports, finder_diags) = ModuleFinder::new(
         &main_region.src_bytes,
         chrn_cfg,
-        &mut reserved_mod_ids,
         &main_region,
         main_region.script_start,
         main_region.serial_start,
@@ -800,12 +799,15 @@ pub(crate) fn push_diagnostics(
     }
 }
 
-/// Recursively resolves all imports declared in `prev_mod`, building the flat module
-/// list required by [`ScriptCompiler`](compilation::script_compiler::ScriptCompiler).
+/// Resolves all imported modules using a worklist (non-recursive) approach,
+/// mirroring the compiler's `extract_modules` in `chrn_core/compilation/src/modules.rs`.
 ///
-/// The function walks each `ImportKind::Source` import, attempts to obtain the source
-/// bytes from the open-document cache (in-memory) or from disk (fallback), parses the
-/// imported file, and calls itself recursively for that file's own imports.
+/// The worklist replaces the previous recursive strategy, avoiding potential stack
+/// overflow on deeply nested import trees and matching the compiler's traversal order.
+///
+/// Each import is resolved by first checking the open-document cache, then falling
+/// back to disk.  Imported modules are stored in `modules` (indexed by `ModuleId - 1`)
+/// and their source regions are appended to `sub_regions`.
 ///
 /// # Parameters
 /// * `reserved_mod_ids` — Global registry mapping file paths to pre-assigned module
@@ -815,7 +817,7 @@ pub(crate) fn push_diagnostics(
 ///   `None` until a module is successfully loaded.
 /// * `sub_regions`      — Output vector of imported module source regions.  Region
 ///   ids are `1 + index` because id `0` is reserved for the main document region.
-/// * `prev_mod`         — The module whose imports are to be resolved in this call.
+/// * `main_mod`         — The main module whose imports start the traversal.
 /// * `settings`         — Global compiler settings forwarded to `ChrnConfigLoader` and
 ///   `ModuleFinder`.
 /// * `interner`         — Shared string/path interner for all modules being resolved.
@@ -823,10 +825,8 @@ pub(crate) fn push_diagnostics(
 ///   back to disk I/O.
 /// * `diags`            — Accumulator for any import-related diagnostics (path errors,
 ///   IO errors, parse errors in imported files).
-/// * `current_path_id`  — The [`PathId`] of `prev_mod` (the module containing the
-///   `import` statement).  Import errors that point at the import path span must use
-///   this `path_id` so their spans are resolved against the correct region when they
-///   are later surfaced through [`push_diagnostics`].
+/// * `main_path_id`     — The [`PathId`] of the main document, used as the initial
+///   context for error attribution.
 ///
 /// # Errors
 /// All errors are appended to `diags` rather than returned.  The function always
@@ -837,237 +837,241 @@ pub(crate) fn resolve_modules_lsp(
     seen: &mut Vec<PathId>,
     modules: &mut Vec<Option<Module>>,
     sub_regions: &mut Vec<SourceRegion>,
-    prev_mod: &Module,
+    main_mod: &Module,
     settings: &ChrnConfig,
     interner: &mut Intern,
     doc_cache: &DocumentCache,
     diags: &mut Vec<SourceDiagnostic>,
-    current_path_id: PathId,
+    main_path_id: PathId,
 ) {
-    for import in &prev_mod.imports {
-        let ImportKind::Source(path_id, path_span) = import.kind else {
-            continue;
-        };
+    //-- WORKLIST APPROACH (mirrors compiler's extract_modules) --
+    //
+    // Each entry is (importer_module, importer_path_id) where:
+    //   - importer_module  — The module whose imports we need to resolve.
+    //   - importer_path_id — The path_id of the file containing the imports,
+    //                        used for error attribution on failed imports.
+    let mut worklist: VecDeque<(Module, PathId)> = VecDeque::new();
+    worklist.push_back((main_mod.clone(), main_path_id));
 
-        if seen.contains(&path_id) {
-            continue;
-        }
+    while let Some((importer_mod, current_path_id)) = worklist.pop_front() {
+        for import in &importer_mod.imports {
+            let ImportKind::UnresolvedSource(sp_path_id) = &import.kind else {
+                continue;
+            };
+            let path_id = sp_path_id.inner;
+            let path_span = sp_path_id.span;
 
-        seen.push(path_id);
-
-        let current_mod_id = reserved_mod_ids
-            .iter()
-            .find(|(p_id, _)| *p_id == path_id)
-            .map(|(_, m_id)| *m_id)
-            .expect("Previous registration failed");
-
-        let path_owned = interner.search_path(path_id).to_path_buf();
-        let path = path_owned.as_path();
-
-        // Try to get from doc_cache first
-        let uri = Url::from_file_path(path).unwrap();
-        // Keep the cached `Arc<String>` alive in a local so the reader can borrow
-        // from it directly.  Previously the bytes were copied into a fresh
-        // `Vec<u8>` (`text.as_bytes().to_vec()`) on *every* analysis of *every*
-        // importing document, just to satisfy the boxed-reader type.  The box now
-        // borrows from `cached_text`, which outlives the `ConfigLoader` below.
-        let cached_text = doc_cache.get_text(uri.as_ref());
-        let source_res: Result<Box<dyn std::io::Read + '_>, ConfigLoadError> = match &cached_text {
-            Some(text) => Ok(Box::new(Cursor::new(text.as_bytes()))),
-            None => {
-                // Fallback to disk
-                match std::fs::File::open(path) {
-                    Ok(_) if path.is_dir() => {
-                        let core_msg = format!("The path \"{}\" is a directory", path.display());
-                        let src_diag = SourceDiagnostic::builder(
-                            None,
-                            DiagnosticLevel::Error,
-                            core_msg,
-                            current_path_id,
-                        )
-                        .add_annotation(
-                            path_span,
-                            AnnotationKind::Primary,
-                            "Caused by this import".to_string().into(),
-                        )
-                        .build();
-                        Err(ConfigLoadError::Diagnostic(src_diag))
-                    }
-                    Ok(f) => Ok(Box::new(f) as Box<dyn std::io::Read + '_>),
-                    Err(e) => {
-                        let core_msg =
-                            core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
-                        let src_diag = SourceDiagnostic::builder(
-                            None,
-                            DiagnosticLevel::Error,
-                            core_msg,
-                            current_path_id,
-                        )
-                        .add_annotation(
-                            path_span,
-                            AnnotationKind::Primary,
-                            "Caused by this import".to_string().into(),
-                        )
-                        .build();
-                        Err(ConfigLoadError::Diagnostic(src_diag))
-                    }
-                }
-            }
-        };
-
-        let src = match source_res {
-            Ok(s) => s,
-            Err(ConfigLoadError::Diagnostic(diag)) => {
-                diags.push(diag);
+            // If this path was already seen (by any module), skip it.
+            if seen.contains(&path_id) {
                 continue;
             }
-            Err(ConfigLoadError::IO(e)) => {
-                let core_msg = format!("IO error: {}", e);
-                let src_diag = SourceDiagnostic::builder(
-                    None,
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    current_path_id,
-                )
-                .add_annotation(path_span, AnnotationKind::Primary, None)
-                .build();
-                diags.push(src_diag);
-                continue;
-            }
-        };
 
-        // `ConfigLoader::new` requires the region's id up front.  Sub-regions are
-        // stored in `sub_regions` with ids `1 + index` because id 0 is the main
-        // document region.
-        let sub_region_id = SourceRegionId::new((sub_regions.len() + 1) as u32);
+            seen.push(path_id);
 
-        let sub_region = match ConfigLoader::new(sub_region_id, src, path_id, settings, interner)
-            .load_config()
-        {
-            ConfigLoaderOutput::Success(region) => region,
-            ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
-                match cfg_err {
-                    ConfigLoadError::Diagnostic(diag) => {
-                        diags.push(diag);
+            let current_mod_id = ModuleId::new(reserved_mod_ids.len() as u32);
+            reserved_mod_ids.push((path_id, current_mod_id));
+
+            let path_owned = interner.search_path(path_id).to_path_buf();
+            let path = path_owned.as_path();
+
+            // Try to get from doc_cache first
+            let uri = Url::from_file_path(path).unwrap();
+            // Keep the cached `Arc<String>` alive in a local so the reader can borrow
+            // from it directly.  Previously the bytes were copied into a fresh
+            // `Vec<u8>` (`text.as_bytes().to_vec()`) on *every* analysis of *every*
+            // importing document, just to satisfy the boxed-reader type.  The box now
+            // borrows from `cached_text`, which outlives the `ConfigLoader` below.
+            let cached_text = doc_cache.get_text(uri.as_ref());
+            let source_res: Result<Box<dyn std::io::Read + '_>, ConfigLoadError> =
+                match &cached_text {
+                    Some(text) => Ok(Box::new(Cursor::new(text.as_bytes()))),
+                    None => {
+                        // Fallback to disk
+                        match std::fs::File::open(path) {
+                            Ok(_) if path.is_dir() => {
+                                let core_msg =
+                                    format!("The path \"{}\" is a directory", path.display());
+                                let src_diag = SourceDiagnostic::builder(
+                                    None,
+                                    DiagnosticLevel::Error,
+                                    core_msg,
+                                    current_path_id,
+                                )
+                                .add_annotation(
+                                    path_span,
+                                    AnnotationKind::Primary,
+                                    "Caused by this import".to_string().into(),
+                                )
+                                .build();
+                                Err(ConfigLoadError::Diagnostic(src_diag))
+                            }
+                            Ok(f) => Ok(Box::new(f) as Box<dyn std::io::Read + '_>),
+                            Err(e) => {
+                                let core_msg = core_error::form_string_from_io_err(&e, path)
+                                    .unwrap_or(e.to_string());
+                                let src_diag = SourceDiagnostic::builder(
+                                    None,
+                                    DiagnosticLevel::Error,
+                                    core_msg,
+                                    current_path_id,
+                                )
+                                .add_annotation(
+                                    path_span,
+                                    AnnotationKind::Primary,
+                                    "Caused by this import".to_string().into(),
+                                )
+                                .build();
+                                Err(ConfigLoadError::Diagnostic(src_diag))
+                            }
+                        }
                     }
-                    ConfigLoadError::IO(e) => {
-                        let path = interner.search_path(path_id);
-                        let core_msg =
-                            core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
-                        let src_diag = SourceDiagnostic::builder(
-                            None,
-                            DiagnosticLevel::Error,
-                            core_msg,
-                            current_path_id,
-                        )
-                        .add_annotation(path_span, AnnotationKind::Primary, None)
-                        .build();
-                        diags.push(src_diag);
-                    }
+                };
+
+            let src = match source_res {
+                Ok(s) => s,
+                Err(ConfigLoadError::Diagnostic(diag)) => {
+                    diags.push(diag);
+                    continue;
                 }
-                broken_region
-            }
-            ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
-                match cfg_err {
-                    ConfigLoadError::Diagnostic(diag) => {
-                        diags.push(diag);
-                    }
-                    ConfigLoadError::IO(e) => {
-                        let path = interner.search_path(path_id);
-                        let core_msg =
-                            core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
-                        let src_diag = SourceDiagnostic::builder(
-                            None,
-                            DiagnosticLevel::Error,
-                            core_msg,
-                            current_path_id,
-                        )
-                        .add_annotation(path_span, AnnotationKind::Primary, None)
-                        .build();
-                        diags.push(src_diag);
-                    }
-                }
-                continue;
-            }
-        };
-
-        let file_name = match path.file_prefix().and_then(|n| n.to_str()) {
-            Some(p) => p.to_string(),
-            _ => {
-                if let Some(name_id) = import.alias_id {
-                    interner.search(name_id).to_string()
-                } else {
-                    let core_msg = format!(
-                        "The path \"{}\" does not have a valid UTF-8 file name usable within the program.",
-                        path.display()
-                    );
+                Err(ConfigLoadError::IO(e)) => {
+                    let core_msg = format!("IO error: {}", e);
                     let src_diag = SourceDiagnostic::builder(
                         None,
                         DiagnosticLevel::Error,
-                        core_msg.clone(),
+                        core_msg,
                         current_path_id,
                     )
-                    .add_annotation(
-                        path_span,
-                        AnnotationKind::Primary,
-                        "Caused by this import".to_string().into(),
-                    )
+                    .add_annotation(path_span, AnnotationKind::Primary, None)
                     .build();
                     diags.push(src_diag);
                     continue;
                 }
+            };
+
+            // `ConfigLoader::new` requires the region's id up front.  Sub-regions are
+            // stored in `sub_regions` with ids `1 + index` because id 0 is the main
+            // document region.
+            let sub_region_id = SourceRegionId::new((sub_regions.len() + 1) as u32);
+
+            let sub_region = match ConfigLoader::new(sub_region_id, src, path_id, settings, interner)
+                .load_config()
+            {
+                ConfigLoaderOutput::Success(region) => region,
+                ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
+                    match cfg_err {
+                        ConfigLoadError::Diagnostic(diag) => {
+                            diags.push(diag);
+                        }
+                        ConfigLoadError::IO(e) => {
+                            let path = interner.search_path(path_id);
+                            let core_msg = core_error::form_string_from_io_err(&e, path)
+                                .unwrap_or(e.to_string());
+                            let src_diag = SourceDiagnostic::builder(
+                                None,
+                                DiagnosticLevel::Error,
+                                core_msg,
+                                current_path_id,
+                            )
+                            .add_annotation(path_span, AnnotationKind::Primary, None)
+                            .build();
+                            diags.push(src_diag);
+                        }
+                    }
+                    broken_region
+                }
+                ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
+                    match cfg_err {
+                        ConfigLoadError::Diagnostic(diag) => {
+                            diags.push(diag);
+                        }
+                        ConfigLoadError::IO(e) => {
+                            let path = interner.search_path(path_id);
+                            let core_msg = core_error::form_string_from_io_err(&e, path)
+                                .unwrap_or(e.to_string());
+                            let src_diag = SourceDiagnostic::builder(
+                                None,
+                                DiagnosticLevel::Error,
+                                core_msg,
+                                current_path_id,
+                            )
+                            .add_annotation(path_span, AnnotationKind::Primary, None)
+                            .build();
+                            diags.push(src_diag);
+                        }
+                    }
+                    continue;
+                }
+            };
+
+            let file_name = match path.file_prefix().and_then(|n| n.to_str()) {
+                Some(p) => p.to_string(),
+                _ => {
+                    if let Some(name_id) = import.alias_id {
+                        interner.search(name_id).to_string()
+                    } else {
+                        let core_msg = format!(
+                            "The path \"{}\" does not have a valid UTF-8 file name usable within the program.",
+                            path.display()
+                        );
+                        let src_diag = SourceDiagnostic::builder(
+                            None,
+                            DiagnosticLevel::Error,
+                            core_msg.clone(),
+                            current_path_id,
+                        )
+                        .add_annotation(
+                            path_span,
+                            AnnotationKind::Primary,
+                            "Caused by this import".to_string().into(),
+                        )
+                        .build();
+                        diags.push(src_diag);
+                        continue;
+                    }
+                }
+            };
+
+            let sub_mod_name_id = interner.intern(&file_name);
+
+            let (bind, sub_imports, mut finder_diags) = ModuleFinder::new(
+                &sub_region.src_bytes,
+                settings,
+                &sub_region,
+                sub_region.script_start,
+                sub_region.serial_start,
+            )
+            .collect_imports(interner);
+
+            diags.append(&mut finder_diags);
+
+            let expected_len = reserved_mod_ids.len() - 1;
+
+            if modules.len() < expected_len {
+                modules.resize(expected_len, None);
             }
-        };
 
-        let sub_mod_name_id = interner.intern(&file_name);
+            sub_regions.push(sub_region);
+            debug_assert_eq!(
+                SourceRegionId::new(sub_regions.len() as u32),
+                sub_region_id,
+                "Sub-region id must match the pre-computed id"
+            );
 
-        let (bind, sub_imports, mut finder_diags) = ModuleFinder::new(
-            &sub_region.src_bytes,
-            settings,
-            reserved_mod_ids,
-            &sub_region,
-            sub_region.script_start,
-            sub_region.serial_start,
-        )
-        .collect_imports(interner);
+            let sub_mod = Module::new(
+                sub_mod_name_id,
+                ModuleState::Loaded,
+                current_mod_id,
+                bind.clone(),
+                sub_imports,
+                Some(sub_region_id),
+            );
 
-        diags.append(&mut finder_diags);
+            // Push the new module onto the worklist so its own imports will be
+            // processed in a future iteration (breadth-first / queue order).
+            worklist.push_back((sub_mod.clone(), path_id));
 
-        let expected_len = reserved_mod_ids.len() - 1;
-
-        if modules.len() < expected_len {
-            modules.resize(expected_len, None);
+            // Store the module in the output slot array.
+            modules[(current_mod_id.id - 1) as usize] = Some(sub_mod);
         }
-
-        sub_regions.push(sub_region);
-        debug_assert_eq!(
-            SourceRegionId::new(sub_regions.len() as u32),
-            sub_region_id,
-            "Sub-region id must match the pre-computed id"
-        );
-
-        let sub_mod = Module::new(
-            sub_mod_name_id,
-            ModuleState::Loaded,
-            current_mod_id,
-            bind.clone(),
-            sub_imports,
-            Some(sub_region_id),
-        );
-
-        resolve_modules_lsp(
-            reserved_mod_ids,
-            seen,
-            modules,
-            sub_regions,
-            &sub_mod,
-            settings,
-            interner,
-            doc_cache,
-            diags,
-            path_id,
-        );
-
-        modules[(current_mod_id.id - 1) as usize] = Some(sub_mod);
     }
 }

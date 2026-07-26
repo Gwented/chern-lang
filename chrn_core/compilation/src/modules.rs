@@ -4,7 +4,7 @@
 // is still mod id 2. How has this been working for so long? Is this a hallucination?
 //
 // TODO: This should be split but not sure what would be best since it is fairly local and small
-use std::{collections::VecDeque, fs, path::Path};
+use std::{collections::VecDeque, fs, io::Read, path::Path};
 
 pub mod mod_finder;
 
@@ -210,7 +210,7 @@ impl ModuleGraph {
         &self.region_arena
     }
 
-    pub const fn reserved_mod_ids(&self) -> &Vec<(PathId, ModuleId)> {
+    pub const fn registered_mod_ids(&self) -> &Vec<(PathId, ModuleId)> {
         &self.registered_mod_ids
     }
 
@@ -235,15 +235,16 @@ impl ModuleGraph {
 ///
 /// Returns `Err` when the entry point path given experiences an unrecoverable error to where no
 /// sort of half state can be processed.
-pub fn extract_all_modules(
+pub fn extract_all_modules<R: Read>(
     path: &Path,
+    src: R,
     cfg: ChrnConfig,
     //TODO: Need to figure out how reporter should be treated
     reporter: &mut Reporter,
 ) -> Result<(ScriptCompiler, ScriptCompilerStore, Vec<SourceDiagnostic>), ModuleInitError> {
     let mut diags = Vec::new();
 
-    let (main_mod, graph, interner, mut new_diags) = extract_main(path, &cfg)?;
+    let (main_mod, graph, interner, mut new_diags) = extract_main(path, src, &cfg)?;
     diags.append(&mut new_diags);
 
     let (compiler, store, mut new_diags) =
@@ -260,38 +261,26 @@ pub fn extract_all_modules(
 ///
 /// NOTE: The corresponding `extract_modules` function expects the pure graph output from this
 /// function to be given to it, otherwise the behavior is undefined.
-pub fn extract_main(
-    path: &Path,
+pub fn extract_main<R: Read>(
+    main_path: &Path,
+    main_src: R,
     cfg: &ChrnConfig,
 ) -> Result<(Module, ModuleGraph, Intern, Vec<SourceDiagnostic>), ModuleInitError> {
     let mut interner = Intern::init();
 
-    // All errors regarding the instantiation of main, aside from it's imports, are terminal, since
-    // it's the only path that actually gives access to the module tree
-    let src = match file_ops::fopen(path) {
-        Ok(f) => f,
-        Err(err_msg) => {
-            // Interning mangled path id so it can still go into the diagnostic
-            let path_id = interner.intern_path(path);
-            let src_diag =
-                SourceDiagnostic::builder(None, DiagnosticLevel::Error, err_msg, path_id).build();
-            let cfg_err = ConfigLoadError::Diagnostic(src_diag);
-
-            return Err(ModuleInitError::new(None, interner, cfg_err));
-        }
-    };
-
     // Maybe the reporter should just be used
     let mut diags = Vec::new();
 
-    let main_path_id = interner.intern_path(&path);
+    let main_path_id = interner.intern_path(&main_path);
 
     let mut region_arena: Arena<SourceRegion, SourceRegionId> = Arena::new();
     let main_region_id = SourceRegionId::new(0);
 
     // Not sure if main should even recover from this beyond having an existent region
     let (main_region, main_mod_state) =
-        match ConfigLoader::new(main_region_id, src, main_path_id, &cfg, &interner).load_config() {
+        match ConfigLoader::new(main_region_id, main_src, main_path_id, &cfg, &interner)
+            .load_config()
+        {
             ConfigLoaderOutput::Success(region) => (region, ModuleState::Loaded),
             // This could be pretty bad to leave here because
             ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
@@ -299,7 +288,7 @@ pub fn extract_main(
                 let diag = match cfg_err {
                     ConfigLoadError::Diagnostic(diag) => diag,
                     ConfigLoadError::IO(io_err) => {
-                        let err_str = core_error::form_string_from_io_err(&io_err, path)
+                        let err_str = core_error::form_string_from_io_err(&io_err, main_path)
                             .unwrap_or(io_err.to_string());
                         SourceDiagnostic::builder(
                             //TODO: Should this have a code?
@@ -321,12 +310,12 @@ pub fn extract_main(
         };
 
     // FIX: Aliasing please
-    let file_name = match path.file_prefix().map(|n| n.to_str()) {
+    let file_name = match main_path.file_prefix().map(|n| n.to_str()) {
         Some(Some(p)) => p,
         _ => {
             let core_msg = format!(
                 "The path \"{}\" does not have a valid UTF-8 file name usable within the program",
-                path.display()
+                main_path.display()
             );
 
             let src_diag =
@@ -353,12 +342,12 @@ pub fn extract_main(
     // unknown imports based off of reserved len(). This works during the recursive process because
     // it MUST look at all imports before ever recursing further, and it reserves it's spot as
     // `None`.
-    let mut reserved_mod_ids: Vec<(PathId, ModuleId)> = vec![(main_path_id, main_mod_id)];
+    let registered_mod_ids: Vec<(PathId, ModuleId)> = vec![(main_path_id, main_mod_id)];
 
     // Maybe don't inherently declare here since it's a little odd to use a returned variable as
     // the main variable to then collect future diagnostics?
     // Maybe not?
-    let (bind, main_imports, mut finder_diags) = ModuleFinder::new(
+    let (main_bind, main_imports, mut finder_diags) = ModuleFinder::new(
         &main_region.src_bytes,
         cfg,
         // &mut reserved_mod_ids,
@@ -380,7 +369,7 @@ pub fn extract_main(
         main_mod_state,
         main_mod_id,
         // Cheap clone
-        bind.clone(),
+        main_bind,
         main_imports,
         Some(main_region_id),
     );
@@ -391,7 +380,7 @@ pub fn extract_main(
     // let other_mods: Vec<Option<Module>> = Vec::with_capacity(main_mod.imports.len());
 
     let seen: Vec<PathId> = vec![main_path_id];
-    let graph = ModuleGraph::new(region_arena, reserved_mod_ids, seen);
+    let graph = ModuleGraph::new(region_arena, registered_mod_ids, seen);
 
     Ok((main_mod, graph, interner, diags))
 }
@@ -618,34 +607,11 @@ fn resolve_module(
     //WARN: This can't fail, if the mod finder found it that means it normalized it, which means
     //it's a real path, which could be a dir I guess
     let path = interner.search_path(sp_path_id.inner);
-    let src = match fs::File::open(path) {
-        // Why.
-        Ok(_) if path.is_dir() => {
-            let core_msg = format!("The path \"{}\" is a directory", path.display());
-
-            let src_diag =
-                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, sp_path_id.inner)
-                    .add_annotation(
-                        sp_path_id.span,
-                        AnnotationKind::Primary,
-                        "Caused by this import".to_string().into(),
-                    )
-                    .build();
-
-            diags.push(src_diag);
-            cfg.logger().log_err(|| {
-                let prev_name = interner.search(importer_mod.name_id);
-                format!("import dropped for {prev_name} (reason=Import is a path)")
-            });
-            // Skips import on this error since this means the import is entirely invalid
-            return Err(());
-        }
+    let src = match file_ops::fopen(path) {
         Ok(f) => f,
-        Err(e) => {
-            let core_msg = core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
-
+        Err((_, err_msg)) => {
             let src_diag =
-                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, sp_path_id.inner)
+                SourceDiagnostic::builder(None, DiagnosticLevel::Error, err_msg, sp_path_id.inner)
                     .add_annotation(
                         sp_path_id.span,
                         AnnotationKind::Primary,
@@ -665,6 +631,7 @@ fn resolve_module(
     let file_name = match path.file_prefix().map(|n| n.to_str()).flatten() {
         Some(p) => p.to_string(),
         _ => {
+            //TODO: This implicitly uses the alias instead so make sure this works everywhere fine
             if let Some(name_id) = import.alias_id {
                 interner.search(name_id).to_string()
             } else {
@@ -753,16 +720,7 @@ fn resolve_module(
         }
     };
 
-    // NOT RELEVANT
-    // Searches for if the path it's under already has a module id
-    // let mod_id_opt = graph
-    //     .registered_mod_ids
-    //     .iter()
-    //     .find(|(p_id, _)| *p_id == sp_path_id.inner)
-    //     .map(|(_, m_id)| *m_id);
-
-    // The check before MUST have ensured the module id created here is going to be NEW
-
+    // The check in the main loop MUST have ensured the module id created here is going to be new
     let current_mod_id = ModuleId::new(graph.registered_mod_ids.len() as u32);
     debug_assert!(
         graph

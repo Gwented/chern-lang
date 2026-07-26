@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 
 use super::helpers::*;
@@ -218,7 +218,10 @@ fn modfinder_single_import() {
             );
             sp_path_id.span
         }
-        _ => panic!("expected UnresolvedSource import kind, got {:?}", import.kind),
+        _ => panic!(
+            "expected UnresolvedSource import kind, got {:?}",
+            import.kind
+        ),
     };
     // Verify the span slices out the exact path from src bytes
     let span_bytes = &region.src_bytes[import_span.start as usize..import_span.end as usize];
@@ -580,7 +583,7 @@ fn extract_main_simple_script() {
     let cfg = ChrnConfig::default();
 
     let (main_mod, graph, mut interner, diags) =
-        extract_main(&main_path, &cfg).expect("extract_main must succeed");
+        extract_main(&main_path, std::fs::File::open(&main_path).unwrap(), &cfg).expect("extract_main must succeed");
 
     // ---- Module assertions ----
     assert_eq!(
@@ -607,9 +610,9 @@ fn extract_main_simple_script() {
     // ---- Graph assertions ----
     // reserved_mod_ids must contain main's path -> mod_id 0
     let main_path_id = interner.intern_path(&main_path);
-    let main_entry = mod_id_for_path(graph.reserved_mod_ids(), main_path_id);
+    let main_entry = mod_id_for_path(graph.registered_mod_ids(), main_path_id);
     assert_eq!(main_entry, Some(ModuleId::new(0)));
-    assert_eq!(graph.reserved_mod_ids().len(), 1, "only main in reserved");
+    assert_eq!(graph.registered_mod_ids().len(), 1, "only main in reserved");
     // `seen` must contain main's path id
     assert_eq!(graph.seen().len(), 1, "only main in seen");
     assert!(graph.seen().contains(&main_path_id));
@@ -634,7 +637,7 @@ fn extract_main_with_import() {
     let cfg = ChrnConfig::default();
 
     let (main_mod, graph, mut interner, diags) =
-        extract_main(&main_path, &cfg).expect("extract_main must succeed");
+        extract_main(&main_path, std::fs::File::open(&main_path).unwrap(), &cfg).expect("extract_main must succeed");
 
     assert_eq!(main_mod.state, ModuleState::Loaded);
     // Wait for import - there should be one import found
@@ -687,10 +690,10 @@ fn extract_main_with_import() {
     // reserved_mod_ids only contains main (sub is registered later in
     // extract_modules by resolve_module).
     let main_path_id = interner.intern_path(&main_path);
-    assert_eq!(graph.reserved_mod_ids().len(), 1, "only main in reserved");
+    assert_eq!(graph.registered_mod_ids().len(), 1, "only main in reserved");
     assert!(
         graph
-            .reserved_mod_ids()
+            .registered_mod_ids()
             .iter()
             .any(|(p, _)| *p == main_path_id),
         "main path must be in reserved"
@@ -717,7 +720,7 @@ fn extract_main_broken_config() {
     let main_path = make_broken_script(&dir);
     let cfg = ChrnConfig::default();
 
-    let (main_mod, graph, _interner, diags) = extract_main(&main_path, &cfg)
+    let (main_mod, graph, _interner, diags) = extract_main(&main_path, std::fs::File::open(&main_path).unwrap(), &cfg)
         .expect("extract_main should still return Ok with BrokenRegion");
 
     assert_eq!(
@@ -745,17 +748,20 @@ fn extract_main_broken_config() {
     _ = fs::remove_dir_all(&dir);
 }
 
-/// `extract_main` on a non-existent path should return `Err(ModuleInitError)`.
+/// `extract_main` with an arbitrary path and an empty source should still
+/// succeed since it no longer opens the file itself — the caller provides
+/// the source via `R: Read`.
 #[test]
 fn extract_main_missing_file() {
     let dir = create_temp_dir("extract_main_missing");
     let non_existent = dir.join("does_not_exist.chrn");
     let cfg = ChrnConfig::default();
 
-    let result = extract_main(&non_existent, &cfg);
+    // Passing a Cursor source so extract_main doesn't need to open the file
+    let result = extract_main(&non_existent, Cursor::new(b"let x = 5\n"), &cfg);
     assert!(
-        result.is_err(),
-        "non-existent file should produce ModuleInitError"
+        result.is_ok(),
+        "extract_main should succeed even when the file does not exist, since the source is provided separately"
     );
 
     _ = fs::remove_dir_all(&dir);
@@ -771,7 +777,7 @@ fn extract_main_with_bind() {
     let cfg = ChrnConfig::default();
 
     let (main_mod, _graph, mut interner, diags) =
-        extract_main(&main_path, &cfg).expect("extract_main must succeed");
+        extract_main(&main_path, std::fs::File::open(&main_path).unwrap(), &cfg).expect("extract_main must succeed");
 
     assert_eq!(main_mod.state, ModuleState::Loaded);
     assert!(
@@ -805,7 +811,7 @@ fn extract_main_with_at_def_block() {
     let cfg = ChrnConfig::default();
 
     let (main_mod, graph, _interner, diags) =
-        extract_main(&main_path, &cfg).expect("extract_main must succeed");
+        extract_main(&main_path, std::fs::File::open(&main_path).unwrap(), &cfg).expect("extract_main must succeed");
 
     assert_eq!(main_mod.state, ModuleState::Loaded);
 
@@ -852,7 +858,7 @@ fn extract_all_modules_single() {
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, _store, diags) = extract_all_modules(&main_path, cfg, &mut reporter)
+    let (compiler, _store, diags) = extract_all_modules(&main_path, std::fs::File::open(&main_path).unwrap(), cfg, &mut reporter)
         .expect("extract_all_modules must succeed");
 
     // Number of user modules = total mods - 1 (core module is injected last)
@@ -891,7 +897,7 @@ fn extract_all_modules_with_sub_module() {
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) = extract_all_modules(&main_path, cfg, &mut reporter)
+    let (compiler, store, diags) = extract_all_modules(&main_path, std::fs::File::open(&main_path).unwrap(), cfg, &mut reporter)
         .expect("extract_all_modules must succeed");
 
     let user_count = get_user_mod_count(&compiler);
@@ -929,7 +935,7 @@ fn extract_all_modules_submodule_broken() {
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) = extract_all_modules(&main_path, cfg, &mut reporter)
+    let (compiler, store, diags) = extract_all_modules(&main_path, std::fs::File::open(&main_path).unwrap(), cfg, &mut reporter)
         .expect("extract_all_modules must succeed");
 
     let interner = &store.interner;
@@ -982,7 +988,7 @@ fn extract_all_modules_import_to_nonexistent() {
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) = extract_all_modules(&main_path, cfg, &mut reporter)
+    let (compiler, store, diags) = extract_all_modules(&main_path, std::fs::File::open(&main_path).unwrap(), cfg, &mut reporter)
         .expect("extract_all_modules must succeed even with bad import");
 
     // Main module should still be present
@@ -1030,7 +1036,7 @@ fn extract_all_modules_duplicate_import() {
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) = extract_all_modules(&main_path, cfg, &mut reporter)
+    let (compiler, store, diags) = extract_all_modules(&main_path, std::fs::File::open(&main_path).unwrap(), cfg, &mut reporter)
         .expect("extract_all_modules must succeed");
 
     let interner = &store.interner;
@@ -1071,7 +1077,7 @@ fn extract_all_modules_import_chain() {
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) = extract_all_modules(&main_path, cfg, &mut reporter)
+    let (compiler, store, diags) = extract_all_modules(&main_path, std::fs::File::open(&main_path).unwrap(), cfg, &mut reporter)
         .expect("extract_all_modules must succeed");
 
     let interner = &store.interner;
@@ -1124,7 +1130,7 @@ fn extract_all_modules_4_deep_chain() {
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) = extract_all_modules(&main_path, cfg, &mut reporter)
+    let (compiler, store, diags) = extract_all_modules(&main_path, std::fs::File::open(&main_path).unwrap(), cfg, &mut reporter)
         .expect("extract_all_modules must succeed with 4-deep chain");
 
     let interner = &store.interner;
@@ -1189,7 +1195,7 @@ fn extract_all_modules_diamond_dependency() {
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) = extract_all_modules(&main_path, cfg, &mut reporter)
+    let (compiler, store, diags) = extract_all_modules(&main_path, std::fs::File::open(&main_path).unwrap(), cfg, &mut reporter)
         .expect("extract_all_modules must succeed with diamond deps");
 
     let interner = &store.interner;
@@ -1259,7 +1265,7 @@ fn extract_all_modules_fan_out_3_imports() {
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) = extract_all_modules(&main_path, cfg, &mut reporter)
+    let (compiler, store, diags) = extract_all_modules(&main_path, std::fs::File::open(&main_path).unwrap(), cfg, &mut reporter)
         .expect("extract_all_modules must succeed with 3-way fan-out");
 
     let interner = &store.interner;
@@ -1351,7 +1357,7 @@ fn extract_all_modules_complex_overlap() {
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) = extract_all_modules(&main_path, cfg, &mut reporter)
+    let (compiler, store, diags) = extract_all_modules(&main_path, std::fs::File::open(&main_path).unwrap(), cfg, &mut reporter)
         .expect("extract_all_modules must succeed with complex overlap");
 
     let interner = &store.interner;
@@ -1413,7 +1419,7 @@ fn import_kind_span_preserved() {
     let sub_path_str = sub_path.to_string_lossy();
 
     let (main_mod, graph, _interner, diags) =
-        extract_main(&main_path, &cfg).expect("extract_main must succeed");
+        extract_main(&main_path, std::fs::File::open(&main_path).unwrap(), &cfg).expect("extract_main must succeed");
 
     assert!(!main_mod.imports.is_empty(), "at least one import expected");
     let import = &main_mod.imports[0];
@@ -1471,7 +1477,7 @@ fn module_graph_initial_state() {
     let cfg = ChrnConfig::default();
 
     let (_main_mod, graph, mut interner, diags) =
-        extract_main(&main_path, &cfg).expect("extract_main must succeed");
+        extract_main(&main_path, std::fs::File::open(&main_path).unwrap(), &cfg).expect("extract_main must succeed");
 
     let main_path_id = interner.intern_path(&main_path);
 
@@ -1481,12 +1487,12 @@ fn module_graph_initial_state() {
         "region_arena must have 1 region"
     );
     assert_eq!(
-        graph.reserved_mod_ids().len(),
+        graph.registered_mod_ids().len(),
         1,
         "reserved_mod_ids must have 1 entry"
     );
     assert_eq!(
-        graph.reserved_mod_ids()[0],
+        graph.registered_mod_ids()[0],
         (main_path_id, ModuleId::new(0)),
         "reserved_mod_ids[0] must be (main_path, mod_id 0)"
     );
@@ -1513,7 +1519,7 @@ fn main_module_id_is_zero_in_compiler() {
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::default();
 
-    let (compiler, _, _) = extract_all_modules(&main_path, cfg, &mut reporter)
+    let (compiler, _, _) = extract_all_modules(&main_path, std::fs::File::open(&main_path).unwrap(), cfg, &mut reporter)
         .expect("extract_all_modules must succeed");
 
     let main_mod = &compiler.mods[ModuleId::new(0)];
@@ -1538,7 +1544,7 @@ fn extract_main_empty_file() {
     let cfg = ChrnConfig::default();
 
     let (main_mod, _graph, _interner, diags) =
-        extract_main(&main_path, &cfg).expect("extract_main must succeed on empty file");
+        extract_main(&main_path, std::fs::File::open(&main_path).unwrap(), &cfg).expect("extract_main must succeed on empty file");
 
     assert_eq!(
         main_mod.state,
@@ -1567,7 +1573,7 @@ fn extract_main_invalid_utf8_filename() {
         fs::write(&file_path, "let x = 5\n").expect("failed to write invalid UTF-8 file");
         let cfg = ChrnConfig::default();
 
-        let result = extract_main(&file_path, &cfg);
+        let result = extract_main(&file_path, std::fs::File::open(&file_path).unwrap(), &cfg);
         assert!(
             result.is_err(),
             "file with invalid UTF-8 name should produce Err"
@@ -1609,27 +1615,31 @@ fn mod_ids_sequential_chain() {
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) =
-        extract_all_modules(&main_path, cfg, &mut reporter)
-            .expect("extract_all_modules must succeed");
+    let (compiler, store, diags) = extract_all_modules(&main_path, std::fs::File::open(&main_path).unwrap(), cfg, &mut reporter)
+        .expect("extract_all_modules must succeed");
 
     assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
     let user_count = 3;
-    assert_eq!(get_user_mod_count(&compiler), user_count, "expected 3 user modules (main, a, b)");
+    assert_eq!(
+        get_user_mod_count(&compiler),
+        user_count,
+        "expected 3 user modules (main, a, b)"
+    );
 
     let interner = &store.interner;
 
     // -- Exact mod_id checks --
-    let main_mod = find_module_by_name(&compiler, interner, "main")
-        .expect("main must be present");
+    let main_mod = find_module_by_name(&compiler, interner, "main").expect("main must be present");
     assert_eq!(main_mod.mod_id, ModuleId::new(0), "main gets mod_id 0");
 
-    let a_mod = find_module_by_name(&compiler, interner, "a")
-        .expect("a must be present");
-    assert_eq!(a_mod.mod_id, ModuleId::new(1), "a (imported first) gets mod_id 1");
+    let a_mod = find_module_by_name(&compiler, interner, "a").expect("a must be present");
+    assert_eq!(
+        a_mod.mod_id,
+        ModuleId::new(1),
+        "a (imported first) gets mod_id 1"
+    );
 
-    let b_mod = find_module_by_name(&compiler, interner, "b")
-        .expect("b must be present");
+    let b_mod = find_module_by_name(&compiler, interner, "b").expect("b must be present");
     assert_eq!(b_mod.mod_id, ModuleId::new(2), "b (leaf) gets mod_id 2");
 
     // -- Import numbering --
@@ -1712,35 +1722,44 @@ fn mod_ids_diamond_dedup() {
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) =
-        extract_all_modules(&main_path, cfg, &mut reporter)
-            .expect("extract_all_modules must succeed");
+    let (compiler, store, diags) = extract_all_modules(&main_path, std::fs::File::open(&main_path).unwrap(), cfg, &mut reporter)
+        .expect("extract_all_modules must succeed");
 
     assert!(diags.is_empty(), "no diagnostics expected, got {:?}", diags);
     let user_count = 4;
     assert_eq!(
-        get_user_mod_count(&compiler), user_count,
+        get_user_mod_count(&compiler),
+        user_count,
         "expected 4 user modules (main, a, b, shared)"
     );
 
     let interner = &store.interner;
 
     // — Exact mod_id checks (deterministic registration order) —
-    let main_mod = find_module_by_name(&compiler, interner, "main")
-        .expect("main must be present");
+    let main_mod = find_module_by_name(&compiler, interner, "main").expect("main must be present");
     assert_eq!(main_mod.mod_id, ModuleId::new(0), "main gets mod_id 0");
 
-    let a_mod = find_module_by_name(&compiler, interner, "a")
-        .expect("a must be present");
-    assert_eq!(a_mod.mod_id, ModuleId::new(1), "a (first import of main) gets mod_id 1");
+    let a_mod = find_module_by_name(&compiler, interner, "a").expect("a must be present");
+    assert_eq!(
+        a_mod.mod_id,
+        ModuleId::new(1),
+        "a (first import of main) gets mod_id 1"
+    );
 
-    let b_mod = find_module_by_name(&compiler, interner, "b")
-        .expect("b must be present");
-    assert_eq!(b_mod.mod_id, ModuleId::new(2), "b (second import of main) gets mod_id 2");
+    let b_mod = find_module_by_name(&compiler, interner, "b").expect("b must be present");
+    assert_eq!(
+        b_mod.mod_id,
+        ModuleId::new(2),
+        "b (second import of main) gets mod_id 2"
+    );
 
-    let shared_mod = find_module_by_name(&compiler, interner, "shared")
-        .expect("shared must be present");
-    assert_eq!(shared_mod.mod_id, ModuleId::new(3), "shared (resolved as a's import) gets mod_id 3");
+    let shared_mod =
+        find_module_by_name(&compiler, interner, "shared").expect("shared must be present");
+    assert_eq!(
+        shared_mod.mod_id,
+        ModuleId::new(3),
+        "shared (resolved as a's import) gets mod_id 3"
+    );
 
     // — Import numbering —
     let core_mod_id = ModuleId::new(user_count as u32); // 4
@@ -1777,7 +1796,11 @@ fn mod_ids_diamond_dedup() {
     );
 
     // b: shared (dedup) at imports[0], then core
-    assert_eq!(b_mod.imports.len(), 2, "b: 1 user import + 1 core (shared deduped)");
+    assert_eq!(
+        b_mod.imports.len(),
+        2,
+        "b: 1 user import + 1 core (shared deduped)"
+    );
     assert_eq!(
         import_mod_id(&b_mod.imports[0]),
         Some(ModuleId::new(3)),
@@ -1832,19 +1855,21 @@ fn mod_ids_nonexistent_import_does_not_consume_id() {
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) =
-        extract_all_modules(&main_path, cfg, &mut reporter)
-            .expect("extract_all_modules must succeed");
+    let (compiler, store, diags) = extract_all_modules(&main_path, std::fs::File::open(&main_path).unwrap(), cfg, &mut reporter)
+        .expect("extract_all_modules must succeed");
 
     let interner = &store.interner;
 
     // -- Main assertions --
     let user_count = 2;
-    assert_eq!(get_user_mod_count(&compiler), user_count, "expected 2 user modules (main + sub)");
+    assert_eq!(
+        get_user_mod_count(&compiler),
+        user_count,
+        "expected 2 user modules (main + sub)"
+    );
     let core_mod_id = ModuleId::new(user_count as u32); // 2
 
-    let main_mod = find_module_by_name(&compiler, interner, "main")
-        .expect("main must be present");
+    let main_mod = find_module_by_name(&compiler, interner, "main").expect("main must be present");
     assert_eq!(main_mod.mod_id, ModuleId::new(0), "main gets mod_id 0");
     assert_eq!(
         main_mod.state,
@@ -1862,7 +1887,11 @@ fn mod_ids_nonexistent_import_does_not_consume_id() {
         _ => None,
     }
     .expect("main.imports[0] should be Source(resolved sub)");
-    assert_eq!(sub_import_mod_id, ModuleId::new(1), "main.imports[0] must be Source(sub, 1)");
+    assert_eq!(
+        sub_import_mod_id,
+        ModuleId::new(1),
+        "main.imports[0] must be Source(sub, 1)"
+    );
 
     // imports[1] = Core(2)
     assert!(
@@ -1872,9 +1901,12 @@ fn mod_ids_nonexistent_import_does_not_consume_id() {
     );
 
     // -- Sub assertions --
-    let sub_mod = find_module_by_name(&compiler, interner, "sub")
-        .expect("sub must be present");
-    assert_eq!(sub_mod.mod_id, ModuleId::new(1), "sub gets mod_id 1 (sequential, no gap)");
+    let sub_mod = find_module_by_name(&compiler, interner, "sub").expect("sub must be present");
+    assert_eq!(
+        sub_mod.mod_id,
+        ModuleId::new(1),
+        "sub gets mod_id 1 (sequential, no gap)"
+    );
     assert_eq!(
         sub_import_mod_id, sub_mod.mod_id,
         "main's import to sub must carry sub's mod_id"
@@ -1909,9 +1941,8 @@ fn mod_ids_main_module_id_is_zero() {
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, _store, _diags) =
-        extract_all_modules(&main_path, cfg, &mut reporter)
-            .expect("extract_all_modules must succeed");
+    let (compiler, _store, _diags) = extract_all_modules(&main_path, std::fs::File::open(&main_path).unwrap(), cfg, &mut reporter)
+        .expect("extract_all_modules must succeed");
 
     let user_count = 1;
     assert_eq!(get_user_mod_count(&compiler), user_count);

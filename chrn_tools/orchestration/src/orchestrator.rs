@@ -5,6 +5,7 @@ use chrn_utils::{
     core_error::{ModuleInitError, ScriptError},
     id_types::{ModuleId, SymbolId},
     intern::Intern,
+    source_map::source_diagnostic::SourceDiagnostic,
 };
 use compilation::{
     lexer::{Lexer, token::SpannedToken, trivia::Trivia},
@@ -23,16 +24,6 @@ use compilation::{
 };
 
 use crate::script_compiler_cache::ScriptCompilerCache;
-
-// Should probably just be an option type, assuming the cache won't $#*(%%5j54ojj)jj hi
-// pub fn run_all(
-//     reporter: &mut Reporter,
-//     compiler: &mut ScriptCompiler,
-//     compiler_store: &mut ScriptCompilerStore,
-// ) -> Result<(), ScriptError> {
-// }
-
-pub fn run_cfg_loader() {}
 
 // Ok...
 // TODO: This should, um
@@ -59,14 +50,9 @@ pub fn run_all(
         let (toks_opt, trivia_opt) = run_lexer(compiler, compiler_store, &compiler_cache, mod_id);
 
         let ast_info_opt = if let Some(toks) = &toks_opt {
-            let ast_info_opt = run_parser(
-                reporter,
-                compiler,
-                compiler_store,
-                &compiler_cache,
-                mod_id,
-                toks,
-            );
+            let (ast_info_opt, mut diags) =
+                run_parser(compiler, compiler_store, &compiler_cache, mod_id, toks);
+            reporter.append_safe(&mut diags);
             ast_info_opt
         } else {
             None
@@ -234,7 +220,6 @@ pub fn run_lexer(
 /// * compiler: Compiler associated with the current module
 /// * compiler_cache: Optional caching structure
 pub fn run_parser(
-    reporter: &mut Reporter,
     compiler: &ScriptCompiler,
     // Also needs mutable for lexer
     compiler_store: &mut ScriptCompilerStore,
@@ -244,13 +229,13 @@ pub fn run_parser(
     compiler_cache: &Option<&mut ScriptCompilerCache>,
     current_mod_id: ModuleId,
     toks: &[SpannedToken],
-) -> Option<AstInfo> {
+) -> (Option<AstInfo>, Vec<SourceDiagnostic>) {
     let module = &compiler.mods[current_mod_id];
     let region = match &module.region_id {
         Some(region_id) => &compiler_store.region_arena[*region_id],
         None => {
             // Meaning it's a lib module where None should be found upon any queries
-            return None;
+            return (None, Vec::new());
         }
     };
 
@@ -261,9 +246,7 @@ pub fn run_parser(
         &mut compiler_store.interner,
     );
 
-    reporter.append_safe(&mut diags);
-
-    Some(ast_info)
+    (Some(ast_info), diags)
 }
 
 /// Creates all environments possible, which is stored aligned with all modules

@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{io::Read, path::Path};
 
 use chrn_utils::{chrn_config::ChrnConfig, core_error::ModuleInitError, intern::Intern};
 use compilation::{
@@ -13,12 +13,14 @@ use crate::script_compiler_cache::ScriptCompilerCache;
 /// Performs the minimum operates to create a `ScriptCompiler` and `ScriptCompilerStore`.
 ///
 /// If the loading stage fails critically, returns `Err(ModuleInitError)`
-pub fn create_compiler(
+pub fn create_compiler<R: Read>(
     path: &Path,
+    // path's bytes
+    src: R,
     reporter: &mut Reporter,
     cfg: ChrnConfig,
 ) -> Result<(ScriptCompiler, ScriptCompilerStore), ModuleInitError> {
-    let (compiler, store, mut diags) = modules::extract_all_modules(path, cfg, reporter)?;
+    let (compiler, store, mut diags) = modules::extract_all_modules(path, src, cfg, reporter)?;
     reporter.append_safe(&mut diags);
     Ok((compiler, store))
 }
@@ -28,13 +30,15 @@ pub fn create_compiler(
 /// creates `ScriptCompilerCache` alongside it.
 ///
 /// If the loading stage fails critically, returns `Err(ModuleInitError)`
-pub fn create_compiler_with_cache(
+pub fn create_compiler_with_cache<R: Read>(
     path: &Path,
+    // path's bytes
+    src: R,
     reporter: &mut Reporter,
     cfg: ChrnConfig,
-    // I'm so scared
 ) -> Result<(ScriptCompiler, ScriptCompilerStore, ScriptCompilerCache), ModuleInitError> {
-    let (compiler, compiler_store, mut diags) = modules::extract_all_modules(path, cfg, reporter)?;
+    let (compiler, compiler_store, mut diags) =
+        modules::extract_all_modules(path, src, cfg, reporter)?;
     reporter.append_safe(&mut diags);
 
     let cache = ScriptCompilerCache {
