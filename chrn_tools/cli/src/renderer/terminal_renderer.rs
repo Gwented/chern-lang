@@ -23,7 +23,7 @@ use crate::{
         layout::{RenderInfo, RenderLineLayout},
         terminal_config::TerminalRenderConfig,
     },
-    s_ifier,
+    s_suffix,
 };
 
 /// 60 dashes used as a visual separator between diagnostics
@@ -462,7 +462,7 @@ fn render_line_layout_text(
 fn render_footer(footer: &FooterKind, render_cfg: &TerminalRenderConfig) -> String {
     match footer {
         FooterKind::DiagnosticsExceeded(amt_exceeded) => {
-            let s_suffix = s_ifier!(*amt_exceeded);
+            let s_suffix = s_suffix!(*amt_exceeded);
             let msg = format!("Suppressed {amt_exceeded} diagnostic{s_suffix}");
             style::standardize_warn(&msg, render_cfg.can_color, render_cfg.terminal_type)
         }
@@ -471,12 +471,12 @@ fn render_footer(footer: &FooterKind, render_cfg: &TerminalRenderConfig) -> Stri
             style::standardize_error(&msg, render_cfg.can_color, render_cfg.terminal_type)
         }
         FooterKind::ErrorsEmitted(count) => {
-            let s_suffix = s_ifier!(*count);
+            let s_suffix = s_suffix!(*count);
             let msg = format!("Emitted {count} error{s_suffix}");
             style::standardize_error(&msg, render_cfg.can_color, render_cfg.terminal_type)
         }
         FooterKind::WarnsEmitted(count) => {
-            let s_suffix = s_ifier!(*count);
+            let s_suffix = s_suffix!(*count);
             let msg = format!("Emitted {count} warn{s_suffix}");
             style::standardize_warn(&msg, render_cfg.can_color, render_cfg.terminal_type)
         }

@@ -5,7 +5,7 @@ use lang::{fmter::Formattable, types::boundaries::TypeBoundaryFlags};
 
 use crate::{
     script_compiler::ScriptCompiler,
-    semantic::{hir::hir_concepts::Type, preset_err::PresetErr},
+    semantic::{hir::hir_concepts::Type, preset_reporter::preset_err::PresetErr},
 };
 
 //TEST:

@@ -36,7 +36,7 @@ use crate::semantic::hir::hir_concepts::{
 use crate::semantic::hir::hir_concepts::{Symbol, SymbolKind, SymbolOrigin, VarDef};
 use crate::semantic::hir::hir_concepts::{Type, TypeInfo};
 use crate::semantic::hir::hir_exprs::{ExprHir, Param, PossibleMember, ResolvedExpr};
-use crate::semantic::preset_err::{LookupError, MathError, PresetErr};
+use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, PresetErr};
 use crate::semantic::resolve::{StaticAccessResult, TypeExprResult};
 use crate::semantic::{evaluator, inference, preset_reporter, resolve};
 

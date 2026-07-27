@@ -1,3 +1,6 @@
+mod engine;
+pub mod preset_err;
+
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
@@ -14,10 +17,9 @@ use crate::lookup::member_lookup;
 use crate::lookup::scopes::AssociatedScopeKind;
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::script_compiler::ScriptCompiler;
-use crate::semantic::preset_err::PresetErr;
+use crate::semantic::preset_reporter::engine::{AvailableKind, EngineOption};
+use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, PresetErr};
 use crate::semantic::resolve::{StaticAccessResult, TypeExprResult};
-
-use super::preset_err::{LookupError, MathError};
 
 // These take ownership because `PresetErr::General` will clone otherwise, which isn't expensive.
 // Ok maybe this should just be a reference.
@@ -229,35 +231,29 @@ pub(crate) fn create_diag_builder_preset(
             }
             LookupError::MemberNotFound {
                 parent_type_id,
-                sp_parent_name_id: sp_parent_ty,
+                sp_parent_name_id,
                 member,
             } => {
-                let ty_name = interner.search(sp_parent_ty.inner);
+                let ty_name = interner.search(sp_parent_name_id.inner);
                 let member_name = interner.search(member);
                 let core_msg = format!("No member `{member_name}` in type `{ty_name}`");
 
-                // Shouuld search available fields and similar name fields
-                //
-                // What about, if one member is similar enough, only suggest, otherwise just print
-                // all fields
-                // Also maybe limit the amount that can be printed at a time
-                let available_members = member_lookup::collect_members(compiler, parent_type_id);
-                let mut available_members_str = String::new();
-                for (i, member_id) in available_members.iter().enumerate() {
-                    let member_name = interner.search(compiler.members[*member_id].name_id());
-                    available_members_str.push_str(&format!("`{member_name}`"));
-                    if i + 1 < available_members.len() {
-                        available_members_str.push_str(&format!(", "));
-                    }
-                }
-
-                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
-                    .add_annotation(
-                        sp_parent_ty.span,
-                        AnnotationKind::Primary,
-                        format!("Is type `{ty_name}`").into(),
-                    )
-                    .add_help(format!("Available members: {available_members_str}"))
+                let builder = SourceDiagnostic::builder(
+                    None,
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    region.path_id,
+                )
+                .add_annotation(
+                    sp_parent_name_id.span,
+                    AnnotationKind::Primary,
+                    format!("Is type `{ty_name}`").into(),
+                );
+                let opts = &[EngineOption::ListAvailable(
+                    parent_type_id,
+                    AvailableKind::Member,
+                )];
+                engine::enrich(compiler, interner, builder, opts)
             }
             LookupError::InvalidSymbolMemberAccess(sp_sym) => {
                 let core_msg = format!("Symbol `{}` cannot use member access", sp_sym.inner);

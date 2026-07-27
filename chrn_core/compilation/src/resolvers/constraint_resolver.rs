@@ -33,12 +33,8 @@ use crate::{
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
     script_compiler::ScriptCompiler,
     semantic::{
-        hir::{
-            hir_concepts::{MemberSymbolKind, OptionAssignmentRoot, SymbolKind, Type},
-            hir_exprs::ExprHir,
-        },
-        preset_err::PresetErr,
-        preset_reporter,
+        hir::hir_concepts::{MemberSymbolKind, OptionAssignmentRoot, SymbolKind, Type},
+        preset_reporter::{self, preset_err::PresetErr},
     },
 };
 
@@ -540,7 +536,7 @@ impl<'a> ConstraintResolver<'a> {
 
                         preset_reporter::report_preset(
                             &self.compiler,
-                        &mut self.summary,
+                            &mut self.summary,
                             preset_err,
                             env.region,
                             self.cfg,
@@ -882,7 +878,7 @@ impl<'a> ConstraintResolver<'a> {
                     for err in preset_errs {
                         preset_reporter::report_preset(
                             &self.compiler,
-                        &mut self.summary,
+                            &mut self.summary,
                             err,
                             env.region,
                             self.cfg,
@@ -903,7 +899,7 @@ impl<'a> ConstraintResolver<'a> {
                     for err in preset_errs {
                         preset_reporter::report_preset(
                             &self.compiler,
-                        &mut self.summary,
+                            &mut self.summary,
                             err,
                             env.region,
                             self.cfg,
@@ -993,7 +989,7 @@ impl<'a> ConstraintResolver<'a> {
                         for err in preset_errs {
                             preset_reporter::report_preset(
                                 &self.compiler,
-                        &mut self.summary,
+                                &mut self.summary,
                                 err,
                                 env.region,
                                 self.cfg,
@@ -1020,7 +1016,7 @@ impl<'a> ConstraintResolver<'a> {
                         for err in preset_errs {
                             preset_reporter::report_preset(
                                 &self.compiler,
-                        &mut self.summary,
+                                &mut self.summary,
                                 err,
                                 env.region,
                                 self.cfg,
@@ -1054,7 +1050,7 @@ impl<'a> ConstraintResolver<'a> {
                     ) {
                         preset_reporter::report_preset(
                             &self.compiler,
-                        &mut self.summary,
+                            &mut self.summary,
                             preset_err,
                             env.region,
                             self.cfg,
@@ -1084,7 +1080,7 @@ impl<'a> ConstraintResolver<'a> {
                     ) {
                         preset_reporter::report_preset(
                             &self.compiler,
-                        &mut self.summary,
+                            &mut self.summary,
                             preset_err,
                             env.region,
                             self.cfg,

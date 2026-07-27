@@ -1,3 +1,12 @@
+// Will be moved eventually. Maybe.
+/// Given a len, determines if it should use a plural s
+#[macro_export]
+macro_rules! s_suffix {
+    ($len:expr) => {
+        if $len == 1 { "" } else { "s" }
+    };
+}
+
 /// Convenience macro which prints the current file of the error and the max loops that were
 /// exceeded.
 ///
