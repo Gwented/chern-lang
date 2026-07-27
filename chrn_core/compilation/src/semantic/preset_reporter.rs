@@ -1,6 +1,7 @@
 mod engine;
 mod engine_concepts;
 pub mod preset_err;
+mod static_enricher;
 
 use crate::lookup::scopes::AssociatedScopeKind;
 use crate::resolvers::resolver_env::ResolverEnv;
@@ -269,22 +270,38 @@ pub(crate) fn create_diag_builder_preset(
         PresetErr::Math(math_err) => match math_err {
             MathError::BinaryOpMismatch { sp_lhs, sp_rhs, op } => {
                 let core_msg = format!(
-                    "The type `{}` cannot apply `{op}` to type `{}`",
-                    sp_lhs.inner, sp_rhs.inner,
+                    "Type `{}` cannot apply `{}` to type `{}`",
+                    sp_lhs.inner.to_fmt(),
+                    op.to_fmt(),
+                    sp_rhs.inner.to_fmt(),
                 );
 
-                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
-                    .add_annotation(sp_lhs.span, AnnotationKind::Primary, None)
-                    .add_annotation(sp_rhs.span, AnnotationKind::Primary, None)
-            }
-            MathError::UnaryOpMismatch {
-                sp_operand: operand,
-                op,
-            } => {
-                let core_msg = format!("Cannot apply `{}` to type `{}`", op, operand.inner);
+                let mut builder = SourceDiagnostic::builder(
+                    None,
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    region.path_id,
+                )
+                .add_annotation(sp_lhs.span, AnnotationKind::Primary, None)
+                .add_annotation(sp_rhs.span, AnnotationKind::Primary, None);
 
-                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
-                    .add_annotation(operand.span, AnnotationKind::Primary, None)
+                static_enricher::enrich_binary_op(builder, sp_lhs.inner, op, sp_rhs.inner)
+            }
+            MathError::UnaryOpMismatch { sp_operand, op } => {
+                let core_msg = format!(
+                    "Cannot apply `{}` to type `{}`",
+                    op.to_fmt(),
+                    sp_operand.inner.to_fmt()
+                );
+
+                let builder = SourceDiagnostic::builder(
+                    None,
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    region.path_id,
+                )
+                .add_annotation(sp_operand.span, AnnotationKind::Primary, None);
+                static_enricher::enrich_unary_op(builder, op, sp_operand.inner)
             }
             //TODO: Link to "ADDRESS ME" elephant
             MathError::DivideByZero { lhs_span, rhs_span } => {

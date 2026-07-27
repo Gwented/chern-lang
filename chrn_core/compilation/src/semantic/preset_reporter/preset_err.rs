@@ -2,9 +2,16 @@ use chrn_utils::{
     id_types::{InternedId, SpannedContainer, TypeId},
     source_map::{source_diagnostic::SourceDiagnosticBuilder, source_span::SourceSpan},
 };
-use lang::{directives::Directive, fmter::Formatted, types::boundaries::TypeBoundaryFlags};
+use lang::{
+    directives::Directive, fmter::Formatted, types::boundaries::TypeBoundaryFlags,
+    values::ValueKind,
+};
 
-use crate::{constraints::ArgConstraint, semantic::hir::hir_concepts::FuncKind};
+use crate::{
+    constraints::ArgConstraint,
+    parser::ast::ast_concepts::{BinaryOp, UnaryOp},
+    semantic::hir::hir_concepts::FuncKind,
+};
 
 // pub struct SemanticError {
 //     pub kind: SemanticErrorKind,
@@ -103,14 +110,14 @@ pub enum PresetErr {
 pub enum MathError {
     /// Spanned lhs, Spanned rhs, Op
     BinaryOpMismatch {
-        sp_lhs: SpannedContainer<Formatted>,
-        sp_rhs: SpannedContainer<Formatted>,
-        op: Formatted,
+        sp_lhs: SpannedContainer<ValueKind>,
+        sp_rhs: SpannedContainer<ValueKind>,
+        op: BinaryOp,
     },
     /// Spanned Operand, operator
     UnaryOpMismatch {
-        sp_operand: SpannedContainer<Formatted>,
-        op: Formatted,
+        sp_operand: SpannedContainer<ValueKind>,
+        op: UnaryOp,
     },
     /// lhs span, rhs span
     DivideByZero {

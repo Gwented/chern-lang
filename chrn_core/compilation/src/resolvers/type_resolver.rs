@@ -92,11 +92,11 @@ impl<'res> TypeResolver<'res> {
     //The issue with this going deeper right now is that if x and y can mutate type `State`, who
     //takes priority? Do they just append to each others properties?
     //The biggest issue is actually that the split between who can implement is an unnecessary
-    //complexity which turns a simple configuration into a question of if the behavior being seen in
+    //complexity which turns a simple config into a question of if the behavior being seen in
     //serialized behavior is because more than one complex declaration configurates at the same time.
     //
     //This probably means that something like, "other::x {}" needs to be allowed, or allow other
-    //modules to define configuration and keep that in mind for the script file/block being compiled.
+    //modules to define config and keep that in mind for the script file/block being compiled.
     // Perhaps, if you re-configure from another module you can override, but not sure.
     //
     // Current idea is just: Only one layer deep of configs, configs are isolates, and maybe
@@ -646,7 +646,7 @@ impl<'res> TypeResolver<'res> {
                             should_break = true;
                             //FIX: This has odd phrasing and pointers
                             // If we get a variable, this is matched, but the error is more so, you
-                            // cannot use a variable in configuration, rather than the member
+                            // cannot use a variable in config, rather than the member
                             // access itself
                             let decl_span =
                                 self.compiler.get_span_from_sym_id(found_sym_id).expect(
@@ -709,7 +709,6 @@ impl<'res> TypeResolver<'res> {
                                 member: abs_inner_cfg.name_id,
                             });
 
-                            // List available members?
                             preset_reporter::create_diag_builder_preset(
                                 &self.compiler,
                                 preset_err,
@@ -732,6 +731,7 @@ impl<'res> TypeResolver<'res> {
                         // TODO: This is reached and should probably result in continue since if
                         // it's unknown that means a previous stage reported it more likely than
                         // not. (Its 100%)
+                        // Um. When is this case met?
                         MemberLookupResult::Unknown(type_id) => {
                             let var = self.compiler.get_var(found_sym_id);
                             let name = self.interner.search(var.name_id);
@@ -1615,10 +1615,10 @@ impl<'res> TypeResolver<'res> {
                         UnaryOpResult::Invalid => {
                             return Err(MathError::UnaryOpMismatch {
                                 sp_operand: SpannedContainer::new(
-                                    const_val.kind().to_fmt(),
+                                    const_val.kind(),
                                     operand_expr.span,
                                 ),
-                                op: op.to_fmt(),
+                                op: *op,
                             })?;
                         }
                     }
@@ -1678,7 +1678,12 @@ impl<'res> TypeResolver<'res> {
                         has_const_val = true;
                         let sp_lhs_const = SpannedContainerRef::new(lhs_const, lhs_expr.span);
                         let sp_rhs_const = SpannedContainerRef::new(rhs_const, rhs_expr.span);
-                        match evaluator::apply_binary_op(sp_lhs_const, *op, sp_rhs_const) {
+                        match evaluator::apply_binary_op(
+                            sp_lhs_const,
+                            *op,
+                            sp_rhs_const,
+                            self.interner,
+                        ) {
                             evaluator::BinaryOpResult::Output(val) => Some(val),
                             evaluator::BinaryOpResult::DivideByZero => {
                                 return Err(MathError::DivideByZero {
@@ -1689,15 +1694,9 @@ impl<'res> TypeResolver<'res> {
                             }
                             evaluator::BinaryOpResult::Invalid => {
                                 return Err(MathError::BinaryOpMismatch {
-                                    sp_lhs: SpannedContainer::new(
-                                        lhs_const.kind().to_fmt(),
-                                        lhs_expr.span,
-                                    ),
-                                    sp_rhs: SpannedContainer::new(
-                                        rhs_const.kind().to_fmt(),
-                                        rhs_expr.span,
-                                    ),
-                                    op: op.to_fmt(),
+                                    sp_lhs: SpannedContainer::new(lhs_const.kind(), lhs_expr.span),
+                                    sp_rhs: SpannedContainer::new(rhs_const.kind(), rhs_expr.span),
+                                    op: *op,
                                 })?;
                             }
                         }
@@ -2771,7 +2770,7 @@ impl<'res> TypeResolver<'res> {
                     (Some(lhs_const), Some(rhs_const)) => {
                         let sp_lhs_const = SpannedContainerRef::new(lhs_const, lhs_expr.span);
                         let sp_rhs_const = SpannedContainerRef::new(rhs_const, rhs_expr.span);
-                        match evaluator::apply_binary_op(sp_lhs_const, *op, sp_rhs_const) {
+                        match evaluator::apply_binary_op(sp_lhs_const, *op, sp_rhs_const, self.interner) {
                             evaluator::BinaryOpResult::Output(val) => Some(val),
                             evaluator::BinaryOpResult::DivideByZero => {
                                 return Err(MathError::DivideByZero {
@@ -2786,15 +2785,9 @@ impl<'res> TypeResolver<'res> {
                                 if !lhs_is_unknown && !rhs_is_unknown =>
                             {
                                 return Err(MathError::BinaryOpMismatch {
-                                    sp_lhs: SpannedContainer::new(
-                                        lhs_const.kind().to_fmt(),
-                                        lhs_expr.span,
-                                    ),
-                                    sp_rhs: SpannedContainer::new(
-                                        rhs_const.kind().to_fmt(),
-                                        rhs_expr.span,
-                                    ),
-                                    op: op.to_fmt(),
+                                    sp_lhs: SpannedContainer::new(lhs_const.kind(), lhs_expr.span),
+                                    sp_rhs: SpannedContainer::new(rhs_const.kind(), rhs_expr.span),
+                                    op: *op,
                                 })?;
                             }
                             _ => None,
@@ -2971,10 +2964,10 @@ impl<'res> TypeResolver<'res> {
                         UnaryOpResult::Invalid if !is_unknown => {
                             return Err(MathError::UnaryOpMismatch {
                                 sp_operand: SpannedContainer::new(
-                                    const_val.kind().to_fmt(),
+                                    const_val.kind(),
                                     operand_expr.span,
                                 ),
-                                op: unary.op.to_fmt(),
+                                op: unary.op,
                             })?;
                         }
                         _ => None,

@@ -416,7 +416,7 @@ pub static DIRECTIVE_DOCS: [Document; 6] = [
 // ── Config Options ────────────────────────────────────────────────────────────
 //
 // Looked up by key name via [`Document::config_option_docs`].
-/// Hover documentation for schema configuration options used in `complex->`.
+/// Hover documentation for schema config options used in `complex->`.
 ///
 /// Indexed by key name via [`Document::config_option_docs`].
 pub static CONFIG_OPTION_DOCS: [Document; 3] = [

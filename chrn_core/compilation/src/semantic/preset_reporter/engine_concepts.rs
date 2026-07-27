@@ -55,10 +55,13 @@ impl EngineOptionBaseBuilder {
     }
 }
 
+// -- ENGINE OPTIONS --
+
 /// Engine options
 #[derive(Debug, Clone)]
 pub(super) enum EngineOption {
-    /// TypeId of parent to list the `AvailableKind` of
+    /// Represents listing available inners within a type, like a function's arguments or members of
+    /// a struct/enum.
     ListAvailable(ListAvailable),
 }
 

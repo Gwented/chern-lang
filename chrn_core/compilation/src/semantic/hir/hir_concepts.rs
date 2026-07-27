@@ -303,7 +303,7 @@ pub enum VariableState {
 }
 
 // TODO: Readiness for skipping during resolution
-/// Intended to represent a configuration block environment that consumes options for a field.
+/// Intended to represent a config block environment that consumes options for a field.
 #[derive(Debug)]
 pub struct ConfigDefRoot {
     /// `SymbolId` of `self`

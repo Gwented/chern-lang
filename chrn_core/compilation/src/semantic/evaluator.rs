@@ -1,4 +1,4 @@
-use chrn_utils::id_types::SpannedContainerRef;
+use chrn_utils::{id_types::SpannedContainerRef, intern::Intern};
 use lang::values::Value;
 
 use crate::parser::ast::ast_concepts::{BinaryOp, UnaryOp};
@@ -143,6 +143,7 @@ pub fn apply_binary_op(
     sp_lhs: SpannedContainerRef<Value>,
     op: BinaryOp,
     sp_rhs: SpannedContainerRef<Value>,
+    interner: &Intern,
 ) -> BinaryOpResult {
     let lhs = sp_lhs.inner;
     let rhs = sp_rhs.inner;
@@ -218,6 +219,14 @@ pub fn apply_binary_op(
                 Value::Char(rhs_inner) => Some(Value::Bool(lhs_inner > rhs_inner)),
                 _ => None,
             },
+            Value::InternedStr(lhs_inner) => match rhs {
+                Value::InternedStr(rhs_inner) => {
+                    let l_str = interner.search(*lhs_inner);
+                    let r_str = interner.search(*rhs_inner);
+                    Some(Value::Bool(l_str > r_str))
+                }
+                _ => None,
+            },
             _ => None,
         },
         BinaryOp::Less => match lhs {
@@ -231,6 +240,14 @@ pub fn apply_binary_op(
             },
             Value::Char(lhs_inner) => match rhs {
                 Value::Char(rhs_inner) => Some(Value::Bool(lhs_inner < rhs_inner)),
+                _ => None,
+            },
+            Value::InternedStr(lhs_inner) => match rhs {
+                Value::InternedStr(rhs_inner) => {
+                    let l_str = interner.search(*lhs_inner);
+                    let r_str = interner.search(*rhs_inner);
+                    Some(Value::Bool(l_str < r_str))
+                }
                 _ => None,
             },
             _ => None,
@@ -248,6 +265,14 @@ pub fn apply_binary_op(
                 Value::Char(rhs_inner) => Some(Value::Bool(lhs_inner >= rhs_inner)),
                 _ => None,
             },
+            Value::InternedStr(lhs_inner) => match rhs {
+                Value::InternedStr(rhs_inner) => {
+                    let l_str = interner.search(*lhs_inner);
+                    let r_str = interner.search(*rhs_inner);
+                    Some(Value::Bool(l_str >= r_str))
+                }
+                _ => None,
+            },
             _ => None,
         },
         BinaryOp::LessOrEq => match lhs {
@@ -261,6 +286,14 @@ pub fn apply_binary_op(
             },
             Value::Char(lhs_inner) => match rhs {
                 Value::Char(rhs_inner) => Some(Value::Bool(lhs_inner <= rhs_inner)),
+                _ => None,
+            },
+            Value::InternedStr(lhs_inner) => match rhs {
+                Value::InternedStr(rhs_inner) => {
+                    let l_str = interner.search(*lhs_inner);
+                    let r_str = interner.search(*rhs_inner);
+                    Some(Value::Bool(l_str <= r_str))
+                }
                 _ => None,
             },
             _ => None,

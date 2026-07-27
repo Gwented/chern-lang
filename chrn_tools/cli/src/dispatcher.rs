@@ -108,7 +108,7 @@ fn exec_check(
                             );
 
                             print_diags!(&rendered_diags);
-                            "Failed to parse configuration file".to_string().into()
+                            "Failed to parse config file".to_string().into()
                         }
                     };
 
@@ -173,7 +173,7 @@ fn exec_check(
                         //TODO: Internally cut error message strings in the parser
                         print_diags!(&rendered_diags);
                         // Seems redundant to have this msg
-                        // "Failed to parse configuration file".to_string().into()
+                        // "Failed to parse config file".to_string().into()
                         None
                     }
                 };
@@ -250,7 +250,7 @@ fn exec_query(
                     );
 
                     print_diags!(&rendered_diags);
-                    let msg = "Failed to parse configuration file".to_string();
+                    let msg = "Failed to parse config file".to_string();
                     return Err(msg.into());
                 }
                 ConfigLoadError::IO(err) => {
@@ -284,7 +284,7 @@ fn exec_query(
                     //TODO: Internally cut error message strings in the parser
                     print_diags!(&rendered_diags);
                     // Seems redundant to have this msg
-                    // "Failed to parse configuration file".to_string().into()
+                    // "Failed to parse config file".to_string().into()
                     None
                 };
 
@@ -412,7 +412,7 @@ fn exec_embed(
                         //TODO: Internally cut error message strings in the parser
                         print_diags!(&rendered_diags);
                         // Seems redundant to have this msg
-                        // "Failed to parse configuration file".to_string().into()
+                        // "Failed to parse config file".to_string().into()
                         "`--check` failed, cannot embed file".to_string().into()
                     };
 

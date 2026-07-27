@@ -307,6 +307,8 @@ Contains("chrn") | Contains(1xF)
 
 - Each section has their own set of allowed other sections to search. Scope searching does not change in any form for searching module imports unless the symbol is explicitly kept private. Every section has access to the core language features by default.
 
+- NOTE: All sections below in their "Searchable sections" portion are in order of compiler search priotization. Some sections allow for prefixing with a section name to target one section.
+
 `neutral`: This section has no keyword and exists until a section is explicitly used.
 
 `neutral` allows for:
@@ -315,7 +317,7 @@ Contains("chrn") | Contains(1xF)
 - Variable declarations
 - [`alias`](#keywords) declarations
 
-Searchable scopes: `neutral`
+Searchable sections: `neutral`
 
 ```chrn
 // Everything above var-> is neutral
@@ -338,7 +340,7 @@ override->
 - Using [conditions](#predicate-keywords) ([[IsWhitespace, Regex("a-zA-Z")]])
 - Using [directives](#directives) (#warn/#octal)
 
-Searchable scopes: `neutral` and `nest`
+Searchable sections: `nest` and `neutral`
 
 ```chrn
 // Given struct Person
@@ -360,7 +362,7 @@ var->
 - Expressing [type boundaries](#predicate-keywords) ([[IsWhitespace, Equals("Hi")]])
 - Using [directives](#directives) (#warn/#octal)
 
-Searchable scopes: `neutral` and `nest`
+Searchable sections: `var`, `nest` and `neutral`
 
 ```chrn
 var->
@@ -382,7 +384,7 @@ nest->
 // Maybe rename to attributes or properties
 `complex`: Define complex rules associated with an already defined type. This is where settings attributes like what casing to look for or default values to assign would be set.
 
-Searchable scopes: `neutral`, `nest` and special case `var`
+Searchable sections: `var`, `nest` and `neutral`
 
 `complex` can have at most two nesting levels. Which is "Thing { inner {} }" where "Thing { inner { inner_inner {} } }" would be an error at inner_inner.
 

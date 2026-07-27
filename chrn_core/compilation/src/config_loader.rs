@@ -409,7 +409,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                 core_msg,
                 self.current_path_id,
             )
-            .add_note("Possibly @def or @end usage".into())
+            .add_note("Possibly missing @def or @end usage".into())
             .build();
             diag_summary.push_diag(diag);
         }

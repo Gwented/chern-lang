@@ -62,7 +62,7 @@ pub struct ScriptCompiler {
     pub members: Arena<MemberSymbolKind, MemberId>,
     /// All variables that were found
     pub variables: Arena<VarDef, VariableId>,
-    /// All user defined configuration. Is considered it's own class instead of a type since it
+    /// All user defined config. Is considered it's own class instead of a type since it
     /// behaves uniquely
     pub cfgs: Arena<ConfigDefRoot, ConfigRootId>,
     /// All directives that were found
@@ -1086,12 +1086,12 @@ impl ScriptCompiler {
     //     self.scopes.push(scope_info);
     //
     //     scope_id
-    //     // Need to load configuration structures with known fields
+    //     // Need to load config structures with known fields
     //     //
     //     // The conceptual idea is, ConfigDef holds config options, which are known, and may have
     //     // different options depending on the type.
     //     //
-    //     // For searching against configuration that's known, we could have, SchemaKind, where it's
+    //     // For searching against config that's known, we could have, SchemaKind, where it's
     //     // kind dictates what options should be accounted for. So, given a target identifier,
     //     // value, and kind of schema, what did we find.
     // }
@@ -2157,7 +2157,7 @@ impl MemoryCost for ScriptCompiler {
 // pub members: Vec<MemberSymbolKind>,
 // /// All variables that were found
 // pub variables: Vec<VarDef>,
-// /// All user defined configuration. Is considered it's own class instead of a type since it
+// /// All user defined config. Is considered it's own class instead of a type since it
 // /// behaves uniquely
 // pub configs: Vec<ConfigDefRoot>,
 // /// All directives that were found

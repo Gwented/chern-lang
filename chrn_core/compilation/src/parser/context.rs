@@ -31,7 +31,7 @@ use super::NestBranch;
 //TODO: Most optimal solution for this is to act off of only section context, so not as granular
 
 //NOTE: The basic exit sets should ONLY have tokens that will ALWAYS be stopped on.
-const C_BASE_EXIT_SET: u64 = token::EOF | token::INVALID | token::KEYWORD;
+const C_BASE_EXIT_SET: u64 = token::EOF | token::INVALID | token::KEYWORD | token::C_CURLY_BRACKET;
 const A_BASE_EXIT_SET: u64 = token::SLIM_ARROW;
 
 const C_STMT_NEUTRAL_SET: u64 = C_BASE_EXIT_SET /*| token::Keyword*/ ;
@@ -489,7 +489,7 @@ impl<'a> ParserContext<'a> {
                         //NOTE: Not sure if this should stick
                         // Also very normal sized message.
                         let note =
-                            "Static access is not permitted within configuration declarations.\n  If this was a module namespace, declare this in it's module of origin.\n  If this was a type namespace, this must be defined inside the configuration itself using available syntax."
+                            "Static access is not permitted within config declarations.\n  If this was a module namespace, declare this in it's module of origin.\n  If this was a type namespace, this must be defined inside the config itself using available syntax."
                                 .to_string();
                         builder.add_note(note)
                     }

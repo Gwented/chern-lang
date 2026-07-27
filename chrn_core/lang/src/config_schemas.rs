@@ -37,7 +37,7 @@ impl ConfigSchema {
     }
 }
 
-/// Represents a configurations options, that are preloaded by the compiler as schemas to follow
+/// Represents a configs options, that are preloaded by the compiler as schemas to follow
 #[derive(Debug)]
 pub struct OptionSchema {
     pub name_id: InternedId,

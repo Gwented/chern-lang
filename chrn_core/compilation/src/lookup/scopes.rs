@@ -43,12 +43,26 @@ pub const SCOPE_OVERRIDE: u8 = 1 << 5;
 pub const SCOPE_LOCAL: u8 = 1 << 6;
 pub const SCOPE_COMPILER: u8 = 1 << 7;
 
-// Bitwise into array of scopes that filters each time a lookup is done?
-pub static SCOPE_CORE_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Core];
+//WARN: Hallucinating semantics a bit. wait.
 
-/// Elements ordered to fit the needs of scope `neutral`
+pub static SCOPE_CORE_ENCODED_SCOPES: [ScopeType; 1] = [ScopeType::Core];
+
+/// Elements ordered to fit the languages rules of section `neutral`
 pub static SCOPE_NEUTRAL_ENCODED_SCOPES: [ScopeType; 2] = [ScopeType::Neutral, ScopeType::Core];
 
+/// Elements ordered to fit the languages rules of section `var`
+pub static SCOPE_VAR_ENCODED_SCOPES: [ScopeType; 3] =
+    [ScopeType::Nest, ScopeType::Neutral, ScopeType::Core];
+
+/// Elements ordered to fit the languages rules of section `nest`
+pub static SCOPE_NEST_ENCODED_SCOPES: [ScopeType; 4] = [
+    ScopeType::Var,
+    ScopeType::Nest,
+    ScopeType::Neutral,
+    ScopeType::Core,
+];
+
+// Doesn't have itself because complex assigns properties for types, nothing more.
 /// Elements ordered to fit the needs of scope `complex`
 pub static SCOPE_COMPLEX_ENCODED_SCOPES: [ScopeType; 4] = [
     ScopeType::Var,
@@ -57,8 +71,17 @@ pub static SCOPE_COMPLEX_ENCODED_SCOPES: [ScopeType; 4] = [
     ScopeType::Core,
 ];
 
+/// Elements ordered to fit the needs of scope `override`
+pub static SCOPE_OVERRIDE_ENCODED_SCOPES: [ScopeType; 5] = [
+    ScopeType::Override,
+    ScopeType::Var,
+    ScopeType::Nest,
+    ScopeType::Neutral,
+    ScopeType::Core,
+];
+
 //WARN: Suspicious accessibility
-pub static SCOPE_LOCAL_ACCESSIBLE: [ScopeType; 1] = [ScopeType::Local];
+pub static SCOPE_LOCAL_ENCODED_SCOPES: [ScopeType; 1] = [ScopeType::Local];
 pub static SCOPE_VAR_ONLY: [ScopeType; 1] = [ScopeType::Var];
 pub static SCOPE_NEST_ONLY: [ScopeType; 1] = [ScopeType::Nest];
 
@@ -506,14 +529,16 @@ impl ScopeType {
     /// `needs_global` purely exists for all scope accessibility reasons
     pub fn accessible_scopes(self) -> &'static [ScopeType] {
         match self {
-            ScopeType::Core => &SCOPE_CORE_ACCESSIBLE,
+            ScopeType::Core => &SCOPE_CORE_ENCODED_SCOPES,
             // Mainly for internal usage, not an actual program recognizable scope
             // Neutral can only access neutral because this section is purely for declaring and
             // using in other sections
             ScopeType::Neutral => &SCOPE_NEUTRAL_ENCODED_SCOPES,
-            ScopeType::Var | ScopeType::Nest | ScopeType::Override => &SCOPE_REST_ACCESSIBLE,
+            ScopeType::Var => &SCOPE_VAR_ENCODED_SCOPES,
+            ScopeType::Override => &SCOPE_OVERRIDE_ENCODED_SCOPES,
+            ScopeType::Nest => &SCOPE_NEST_ENCODED_SCOPES,
             ScopeType::Complex => &SCOPE_COMPLEX_ENCODED_SCOPES,
-            ScopeType::Local => &SCOPE_LOCAL_ACCESSIBLE,
+            ScopeType::Local => &SCOPE_LOCAL_ENCODED_SCOPES,
             // Should be a recognized builtin at this point
             ScopeType::Compiler => &[],
         }

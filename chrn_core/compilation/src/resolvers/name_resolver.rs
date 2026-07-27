@@ -125,7 +125,7 @@ impl NamespaceResolver<'_> {
                     | ScopeLookupPattern::OnlyVar
                     | ScopeLookupPattern::OnlyNest
             ),
-            "Either configuration of `abs_cfg` was done wrong or a core language change did not update this assertion.\nExpected `ScopeLookupPattern::NoRestrictions/OnlyVar`, found {:?}",
+            "Either config of `abs_cfg` was done wrong or a core language change did not update this assertion.\nExpected `ScopeLookupPattern::NoRestrictions/OnlyVar`, found {:?}",
             abs_cfg.lookup_pat
         );
         debug_assert!(matches!(abs_cfg.kind, AbstractConfigKind::Root));

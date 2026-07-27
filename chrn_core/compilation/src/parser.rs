@@ -352,7 +352,7 @@ pub fn parse(
             Token::Invalid(id) => {
                 ctx.advance_tok();
                 let err_str = interner.search(id);
-                let msg = format!("Found invalid token {err_str}");
+                let msg = format!("Invalid token {err_str}");
 
                 ctx.report_verbose(&msg, Branch::Broken, interner);
             }
@@ -464,7 +464,7 @@ fn check_import(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token>
         ctx.advance_tok();
         ctx.expect_id_verbose(
             TokenKind::Id,
-            "Expected an identifier alias for the given import after `as`, found ",
+            "Expected import alias after `as`, found ",
             "",
             Branch::Neutral(NeutralBranch::Import),
             interner,
@@ -483,7 +483,7 @@ fn parse_typedef(
 
     let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
-        "Expected an identifier to define a type, found ",
+        "Expected identifier to define type, found ",
         "",
         // Not exactly true that var is being used, just that the type definition flow already
         // exists, so...
@@ -545,7 +545,7 @@ fn parse_nest_sect(
 
             let name_id = ctx.expect_id_verbose(
                 TokenKind::Id,
-                "Expected an identifier for type struct, found ",
+                "Expected identifier for struct, found ",
                 "",
                 Branch::Section(NestBranch::StructType.into()),
                 interner,
@@ -589,7 +589,7 @@ fn parse_nest_sect(
 
             let name_id = ctx.expect_id_verbose(
                 TokenKind::Id,
-                "Expected an identifier for type enum, found ",
+                "Expected identifier for enum, found ",
                 "",
                 Branch::Section(NestBranch::EnumType.into()),
                 interner,
@@ -777,7 +777,7 @@ fn handle_cfg_metadata(
                 let name_span = ctx.peek_span();
                 let name_id = ctx.expect_id_verbose(
                     TokenKind::Id,
-                    "Expected an identifier to define configuration, found ",
+                    "Expected identifier to define config, found ",
                     "",
                     Branch::Section(SectionBranch::Complex),
                     interner,
@@ -788,7 +788,7 @@ fn handle_cfg_metadata(
                 let name_span = ctx.peek_span();
                 let name_id = ctx.expect_id_verbose(
                     TokenKind::Id,
-                    "Expected an identifier to define configuration, found ",
+                    "Expected identifier to define config, found ",
                     "",
                     Branch::Section(SectionBranch::Complex),
                     interner,
@@ -817,7 +817,7 @@ fn handle_cfg_metadata(
                 let name_span = ctx.peek_span();
                 let name_id = ctx.expect_id_verbose(
                     TokenKind::Id,
-                    "Expected an identifier to define configuration, found ",
+                    "Expected an identifier to define config, found ",
                     "",
                     Branch::Section(SectionBranch::Override),
                     interner,
@@ -828,7 +828,7 @@ fn handle_cfg_metadata(
                 let name_span = ctx.peek_span();
                 let name_id = ctx.expect_id_verbose(
                     TokenKind::Id,
-                    "Expected an identifier to define configuration, found ",
+                    "Expected identifier to define config, found ",
                     "",
                     Branch::Section(SectionBranch::Complex),
                     interner,
@@ -857,7 +857,7 @@ fn parse_option_assignment(
 
     let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
-        "Expected an identifier for config option, found ",
+        "Expected identifier for config option, found ",
         "",
         Branch::Section(SectionBranch::Complex),
         interner,
