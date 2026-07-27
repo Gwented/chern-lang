@@ -1,6 +1,15 @@
 mod engine;
+mod engine_concepts;
 pub mod preset_err;
 
+use crate::lookup::scopes::AssociatedScopeKind;
+use crate::resolvers::resolver_env::ResolverEnv;
+use crate::script_compiler::ScriptCompiler;
+use crate::semantic::preset_reporter::engine_concepts::{
+    AvailableKind, EngineOption, EngineOptionBase, ListAvailable,
+};
+use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, PresetErr};
+use crate::semantic::resolve::{StaticAccessResult, TypeExprResult};
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
@@ -12,14 +21,6 @@ use chrn_utils::{
     source_map::{source_diagnostic::SourceDiagnostic, source_region::SourceRegion},
 };
 use lang::fmter::Formattable;
-
-use crate::lookup::member_lookup;
-use crate::lookup::scopes::AssociatedScopeKind;
-use crate::resolvers::resolver_env::ResolverEnv;
-use crate::script_compiler::ScriptCompiler;
-use crate::semantic::preset_reporter::engine::{AvailableKind, EngineOption};
-use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, PresetErr};
-use crate::semantic::resolve::{StaticAccessResult, TypeExprResult};
 
 // These take ownership because `PresetErr::General` will clone otherwise, which isn't expensive.
 // Ok maybe this should just be a reference.
@@ -72,10 +73,10 @@ pub(crate) fn create_diag_builder_preset(
     match preset_err {
         // Need to know which spans exactly now
         PresetErr::UnsupportedDirective {
-            sp_directive: directive,
+            sp_directive,
             sym_span,
         } => {
-            let directive_boundaries = directive.inner.boundaries().to_fmt_vec();
+            let directive_boundaries = sp_directive.inner.boundaries().to_fmt_vec();
             let mut boundaries_str = String::new();
 
             for (i, constraint) in directive_boundaries.iter().enumerate() {
@@ -89,7 +90,7 @@ pub(crate) fn create_diag_builder_preset(
             let core_msg = format!(
                 "Only types that satisfy {} can use the directive `#{}`",
                 boundaries_str,
-                directive.inner.to_fmt()
+                sp_directive.inner.to_fmt()
             );
 
             SourceDiagnostic::builder(
@@ -99,7 +100,7 @@ pub(crate) fn create_diag_builder_preset(
                 region.path_id,
             )
             .add_annotation(
-                directive.span,
+                sp_directive.span,
                 AnnotationKind::Secondary,
                 "Required by this directive".to_string().into(),
             )
@@ -249,10 +250,14 @@ pub(crate) fn create_diag_builder_preset(
                     AnnotationKind::Primary,
                     format!("Is type `{ty_name}`").into(),
                 );
-                let opts = &[EngineOption::ListAvailable(
-                    parent_type_id,
-                    AvailableKind::Member,
-                )];
+
+                let list_opt = EngineOptionBase::builder(EngineOption::ListAvailable(
+                    ListAvailable::new(parent_type_id, AvailableKind::Member),
+                ))
+                .build();
+
+                let opts = &[list_opt];
+
                 engine::enrich(compiler, interner, builder, opts)
             }
             LookupError::InvalidSymbolMemberAccess(sp_sym) => {

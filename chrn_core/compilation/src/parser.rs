@@ -677,30 +677,39 @@ fn parse_cfg_expr(
         return Err(Token::Poison);
     }
 
-    //TODO: Unit tests
-
     // Catching state1=>state2=>state3 {} syntax SHORTENING (Different)
     //
     // Is ok to advance() since last check ensures that it must be either an arrow or CCurly, but we
     // only care about the arrow here
     let used_arrow = ctx.advance_tok() == Token::NotSlimArrow;
 
-    let mut option_assignments: Vec<AbstractOptionAssignment> = Vec::new();
-    let mut inner_field_cfg: Vec<AbstractConfig> = Vec::new();
+    let mut opt_assignments: Vec<AbstractOptionAssignment> = Vec::new();
+    let mut cfg_members: Vec<AbstractConfig> = Vec::new();
 
     loop {
         if ctx.peek_ahead(1).tok == Token::Assign {
             // for "cases = [snake_case]"
-            let option_assignment = parse_option_assignment(ctx, budget, interner)?;
-            option_assignments.push(option_assignment);
+            match parse_option_assignment(ctx, budget, interner) {
+                //WARN: The attempt to make recovery better doesn't really work since it would
+                //basically need to propagate the fact that it wants to skip looking for
+                //the closing '}' for an invalid config by just breaking for all of them.
+                //So, this may return a should_break.
+                Ok(opt) => opt_assignments.push(opt),
+                // So the parsing details aren't lost
+                Err(_) => break,
+            };
+            // opt_assignments.push(opt_assignment);
         } else if ctx.peek_kind() == TokenKind::Id
-            // "nest/override {}" can be used so we need to catch those semantic identifiers
+            // "nest/override Type {}" can be used so we need to catch those semantic identifiers
             || ctx.peek_tok() == Token::Keyword(Keyword::Override)
             || ctx.peek_tok() == Token::Keyword(Keyword::Nest)
         {
             // for "inner {/*assignments*/}"
-            let abs_cfg = parse_cfg_expr(ctx, budget, false, scope_type, interner)?;
-            inner_field_cfg.push(abs_cfg);
+            match parse_cfg_expr(ctx, budget, false, scope_type, interner) {
+                Ok(abs_cfg) => cfg_members.push(abs_cfg),
+                Err(_) => break,
+            };
+            // cfg_members.push(abs_cfg_member);
         } else {
             // If no consumable token for this branch is seen
             //
@@ -725,8 +734,8 @@ fn parse_cfg_expr(
         name_span,
         kind,
         lookup_pat,
-        option_assignments,
-        inner_field_cfg,
+        opt_assignments,
+        cfg_members,
     ))
 }
 
@@ -1546,9 +1555,22 @@ fn handle_struct_fields(
     interner: &Intern,
 ) -> Result<Vec<AbstractTypeDef>, Token> {
     let mut fields: Vec<AbstractTypeDef> = Vec::new();
+    // Skips since if it failed that probably means it's not a CCurly after
+    //
+    // Example: "struct Point { x: i32, y: i32, z: }"
+    // It failed at z, but a colon is after z. This could also be accounted for by the "recovery"
+    // internally but it doesn't really make a difference here being safer.
+    let mut check_end = true;
 
     while !ctx.peek_tok().kind().is_terminator() && ctx.peek_tok() != Token::CCurlyBracket {
-        let ty = parse_typedef(ctx, budget, interner)?;
+        let ty = match parse_typedef(ctx, budget, interner) {
+            Ok(t) => t,
+            Err(_) => {
+                check_end = false;
+                break;
+            }
+        };
+
         fields.push(ty);
 
         if ctx.peek_tok() == Token::CCurlyBracket {
@@ -1556,13 +1578,15 @@ fn handle_struct_fields(
         }
     }
 
-    ctx.expect_verbose(
-        TokenKind::CCurlyBracket,
-        &format!("Expected field or '}}' to close struct `{struct_name}`, found "),
-        "",
-        Branch::Section(NestBranch::StructType.into()),
-        interner,
-    )?;
+    if check_end {
+        ctx.expect_verbose(
+            TokenKind::CCurlyBracket,
+            &format!("Expected field or '}}' to close struct `{struct_name}`, found "),
+            "",
+            Branch::Section(NestBranch::StructType.into()),
+            interner,
+        )?;
+    }
 
     Ok(fields)
 }
@@ -1575,10 +1599,17 @@ fn handle_enum_variants(
     interner: &Intern,
 ) -> Result<Vec<AbstractVariant>, Token> {
     let mut variants: Vec<AbstractVariant> = Vec::new();
+    let mut check_end = true;
 
     //NOTE: ALSO SUSPICIOUS
     while !ctx.peek_tok().kind().is_terminator() && ctx.peek_tok() != Token::CCurlyBracket {
-        let variant = parse_variant(ctx, budget, interner)?;
+        let variant = match parse_variant(ctx, budget, interner) {
+            Ok(v) => v,
+            Err(_) => {
+                check_end = true;
+                break;
+            }
+        };
         variants.push(variant);
 
         if ctx.peek_tok() == Token::CCurlyBracket {
@@ -1590,13 +1621,15 @@ fn handle_enum_variants(
         }
     }
 
-    ctx.expect_verbose(
-        TokenKind::CCurlyBracket,
-        &format!("Expected variant or '}}' to close enum `{enum_name}`, found "),
-        "",
-        Branch::Section(NestBranch::EnumType.into()),
-        interner,
-    )?;
+    if check_end {
+        ctx.expect_verbose(
+            TokenKind::CCurlyBracket,
+            &format!("Expected variant or '}}' to close enum `{enum_name}`, found "),
+            "",
+            Branch::Section(NestBranch::EnumType.into()),
+            interner,
+        )?;
+    }
 
     Ok(variants)
 }

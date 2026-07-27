@@ -75,7 +75,8 @@ var->
         enum State2 {Medium: i32, state3: State3}
         enum State3 {Low, state1: State1}
         enum StateStable {stable}
-        struct Point {x: Number, y: Number} #scient
+
+        struct Point {x: Number, y: Number }
         struct Number {inner: InnerInnerNumber}
         struct InnerNumber {inner: InnerNumber}
         struct InnerInnerNumber {inner_inner: u32}
