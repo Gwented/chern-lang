@@ -1,7 +1,7 @@
 use chrn_utils::{
     core_error::ScriptError,
-    id_types::{ModuleId, SymbolId},
-    source_map::source_diagnostic::SourceDiagnosticSummary,
+    id_types::{ModuleId, SourceRegionId, SymbolId},
+    source_map::{source_diagnostic::SourceDiagnosticSummary, source_region::SourceRegion},
 };
 use compilation::{
     lexer::{Lexer, lexer_output::LexerOutput, token::SpannedToken},
@@ -81,7 +81,7 @@ pub fn run_all(
         NamespaceResolver::new(&compiler_store.cfg, &compiler_store.interner, compiler);
 
     // Cannot mutate store while looping so ownership is controlled here
-    let mut mod_symbols: Vec<Option<Vec<SymbolId>>> = Vec::new();
+    let mut mod_symbols: Vec<Option<Vec<SymbolId>>> = Vec::with_capacity(mod_len);
     for i in 0..mod_len {
         // If there is no environment to use then it's not fit for resolution
         // This is a dense array so it works fine
@@ -129,13 +129,38 @@ pub fn run_all(
     //TODO: Wrap some of these resolvers into convience functions?
 
     let mut ty_resolver =
-        TypeResolver::new(&compiler_store.cfg, &compiler_store.interner, compiler);
+        TypeResolver::new(&compiler_store.cfg, &mut compiler_store.interner, compiler);
     for i in 0..mod_len {
         // If there is no environment to use then it's not fit for resolution
-        let current_env = match &resolver_envs[i] {
-            Some(env) => env,
+        //WARN: When Rust sees that the resolver env function created environments from compiler
+        //store, it loses borrow checking accuracy so the interner can't be mutable during type
+        //resolution unless we can clearly show that each borrow is NOT connected to the interner.
+        //Will likely just go for each env being module id and pass in the entire store as mutable
+        //by default. Or, just the pieces.
+
+        let i_u32 = i as u32;
+
+        let ast = match &compiler_store.asts[i] {
+            Some(a) => a,
             None => continue,
         };
+
+        let region = match compiler_store.region_arena.get(SourceRegionId::new(i_u32)) {
+            Some(reg) => reg,
+            None => continue,
+        };
+
+        let compilation_syms = match &compiler_store.compilation_syms[i] {
+            Some(syms) => syms,
+            None => continue,
+        };
+
+        let current_env = ResolverEnv::new(ast, region, ModuleId::new(i as u32), compilation_syms);
+
+        // let current_env = match &resolver_envs[i] {
+        //     Some(env) => env,
+        //     None => continue,
+        // };
 
         reporter.merge_summary_safe(ty_resolver.resolve(&current_env));
     }
@@ -143,6 +168,9 @@ pub fn run_all(
     // if reporter.diag_summary().err_count() > 0 {
     //     return Err(ScriptError::Semantic);
     // }
+
+    //TEST:
+    let resolver_envs = create_resolver_envs(compiler, compiler_store);
 
     let mut constraint_resolver =
         ConstraintResolver::new(&compiler_store.cfg, &compiler_store.interner, compiler);

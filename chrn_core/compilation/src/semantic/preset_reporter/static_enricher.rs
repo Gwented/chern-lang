@@ -21,15 +21,15 @@ pub(super) fn enrich_binary_op(
     rhs: ValueKind,
 ) -> SourceDiagnosticBuilder {
     match (lhs, op, rhs) {
-        //TODO: Allow or make a function
-        (ValueKind::InternedStr, BinaryOp::Add, ValueKind::InternedStr) => {
-            builder.add_note("String concatenation is not supported".into())
-        }
-        //TODO: Allow or make a function
+        //TODO: Still make a function for this
+        // (ValueKind::InternedStr, BinaryOp::Add, ValueKind::InternedStr) => {
+        //     builder.add_note("String concatenation is not supported".into())
+        // }
+        //TODO: make a function
         (ValueKind::InternedStr, BinaryOp::Mult, ValueKind::InternedStr) => {
             builder.add_note("String repetition is not supported".into())
         }
-        (ValueKind::Bool, BinaryOp::Add, _) | (_, BinaryOp::Add, ValueKind::Bool) => {
+        (ValueKind::Bool, _, _) | (_, _, ValueKind::Bool) if op.is_arithmetic_op() => {
             builder.add_note("`bool` is not an integer internally".into())
         }
         _ => builder,

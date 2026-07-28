@@ -62,10 +62,9 @@ pub(super) fn mock_single_module_compiler(
     let path_id = PathId::new(0);
     let region_id = SourceRegionId::new(0);
 
-    let source_region =
-        ConfigLoader::new(region_id, text.as_bytes(), path_id, &settings)
-            .load_config()
-            .expect_success();
+    let source_region = ConfigLoader::new(region_id, text.as_bytes(), path_id, &settings)
+        .load_config()
+        .expect_success();
 
     let module = Module::new(
         Default::default(),
@@ -264,7 +263,11 @@ pub(super) fn run_namespace_resolver(
     for env in reg_envs.iter() {
         if let Some(env) = env {
             let (current_mod_symbols, diags) = ns_resolver.resolve(env);
-            assert!(diags.diags.is_empty(), "Namespace resolution failed: {:?}", diags);
+            assert!(
+                diags.diags.is_empty(),
+                "Namespace resolution failed: {:?}",
+                diags
+            );
             mod_symbols.push(Some(current_mod_symbols));
         } else {
             mod_symbols.push(None);
@@ -284,7 +287,11 @@ pub(super) fn run_member_resolver(
     for env in envs.iter() {
         if let Some(env) = env {
             let diags = member_resolver.resolve(env);
-            assert!(diags.diags.is_empty(), "Member resolution failed: {:?}", diags);
+            assert!(
+                diags.diags.is_empty(),
+                "Member resolution failed: {:?}",
+                diags
+            );
         }
     }
 }
@@ -334,7 +341,8 @@ pub(super) fn compile_and_resolve_single_module(text: &str) -> (ScriptCompiler, 
     };
 
     let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner).toks;
+        .tokenize(&mut interner)
+        .toks;
 
     let ast_info = parser::parse(&cfg, region, &toks, &interner).0;
 
@@ -346,10 +354,13 @@ pub(super) fn compile_and_resolve_single_module(text: &str) -> (ScriptCompiler, 
     run_member_resolver(&cfg, &envs, &interner, &mut compiler);
     let env = envs[0].as_ref().expect("Env should exist");
 
-    let ty_summary = TypeResolver::new(&cfg, &interner, &mut compiler).resolve(env);
+    let ty_summary = TypeResolver::new(&cfg, &mut interner, &mut compiler).resolve(env);
     assert!(ty_summary.err_count() == 0, "Type resolution failed");
     let constraint_summary = ConstraintResolver::new(&cfg, &interner, &mut compiler).resolve(env);
-    assert!(constraint_summary.err_count() == 0, "Constraint resolution failed");
+    assert!(
+        constraint_summary.err_count() == 0,
+        "Constraint resolution failed"
+    );
 
     (compiler, interner)
 }
@@ -390,7 +401,8 @@ pub(super) fn type_resolve_single_module(
     };
 
     let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner).toks;
+        .tokenize(&mut interner)
+        .toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -403,7 +415,7 @@ pub(super) fn type_resolve_single_module(
     run_member_resolver(&settings, &envs, &interner, &mut compiler);
     let env = envs[0].as_ref().expect("Env should exist");
 
-    match TypeResolver::new(&settings, &interner, &mut compiler).resolve(env) {
+    match TypeResolver::new(&settings, &mut interner, &mut compiler).resolve(env) {
         summary if summary.err_count() == 0 => Ok((compiler, interner)),
         summary => Err(summary.diags),
     }
@@ -423,7 +435,8 @@ pub(super) fn type_resolve_single_module_keep_state(
     };
 
     let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner).toks;
+        .tokenize(&mut interner)
+        .toks;
 
     let ast_info = parser::parse(&settings, region, &toks, &interner).0;
 
@@ -436,7 +449,7 @@ pub(super) fn type_resolve_single_module_keep_state(
     run_member_resolver(&settings, &envs, &interner, &mut compiler);
     let env = envs[0].as_ref().expect("Env should exist");
 
-    let summary = TypeResolver::new(&settings, &interner, &mut compiler).resolve(env);
+    let summary = TypeResolver::new(&settings, &mut interner, &mut compiler).resolve(env);
     if summary.err_count() == 0 {
         (Ok(()), compiler, interner)
     } else {
@@ -506,7 +519,8 @@ pub(super) fn compile_and_resolve_cross_module(
             }
         };
         let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-            .tokenize(&mut interner).toks;
+            .tokenize(&mut interner)
+            .toks;
         asts.push(Some(parser::parse(&cfg, region, &toks, &interner).0));
     }
 
@@ -518,7 +532,11 @@ pub(super) fn compile_and_resolve_cross_module(
         for env in reg_envs.iter() {
             if let Some(env) = env {
                 let (s, diags) = ns_resolver.resolve(env);
-                assert!(diags.diags.is_empty(), "Namespace resolution failed: {:?}", diags);
+                assert!(
+                    diags.diags.is_empty(),
+                    "Namespace resolution failed: {:?}",
+                    diags
+                );
                 symbols.push(Some(s));
             } else {
                 symbols.push(None);
@@ -531,7 +549,7 @@ pub(super) fn compile_and_resolve_cross_module(
 
     run_member_resolver(&cfg, &resolver_envs, &interner, &mut compiler);
 
-    let mut ty_resolver = TypeResolver::new(&cfg, &interner, &mut compiler);
+    let mut ty_resolver = TypeResolver::new(&cfg, &mut interner, &mut compiler);
     for env in resolver_envs.iter() {
         if let Some(env) = env {
             let summary = ty_resolver.resolve(env);
@@ -596,7 +614,8 @@ pub(super) fn type_resolve_cross_module(
             }
         };
         let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-            .tokenize(&mut interner).toks;
+            .tokenize(&mut interner)
+            .toks;
         asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
     }
 
@@ -608,7 +627,11 @@ pub(super) fn type_resolve_cross_module(
         for env in reg_envs.iter() {
             if let Some(env) = env {
                 let (s, diags) = ns_resolver.resolve(env);
-                assert!(diags.diags.is_empty(), "Namespace resolution failed: {:?}", diags);
+                assert!(
+                    diags.diags.is_empty(),
+                    "Namespace resolution failed: {:?}",
+                    diags
+                );
                 symbols.push(Some(s));
             } else {
                 symbols.push(None);
@@ -623,7 +646,7 @@ pub(super) fn type_resolve_cross_module(
 
     let mut all_diags = Vec::new();
 
-    let mut ty_resolver = TypeResolver::new(&settings, &interner, &mut compiler);
+    let mut ty_resolver = TypeResolver::new(&settings, &mut interner, &mut compiler);
     for env in resolver_envs.iter() {
         if let Some(env) = env {
             let summary = ty_resolver.resolve(env);

@@ -1,5 +1,5 @@
 use super::helpers::*;
-use crate::script_compiler::{CORE_I64, CORE_UNKNOWN};
+use crate::script_compiler::{CORE_I64, CORE_STR, CORE_UNKNOWN};
 use crate::semantic::hir::hir_concepts::{SymbolKind, Type};
 use chrn_utils::id_types::TypeId;
 
@@ -32,7 +32,7 @@ fn type_resolver_simple_test() {
     let envs = vec![Some(res_env)];
     run_member_resolver(&settings, &envs, &interner, &mut compiler);
     let env = envs[0].as_ref().expect("Env should exist");
-    let res = TypeResolver::new(&settings, &interner, &mut compiler).resolve(env);
+    let res = TypeResolver::new(&settings, &mut interner, &mut compiler).resolve(env);
 
     let err = res.diags;
     assert_eq!(
@@ -119,7 +119,7 @@ fn type_resolver_simple_test() {
     let envs = vec![Some(res_env)];
     run_member_resolver(&settings, &envs, &interner, &mut compiler);
     let env = envs[0].as_ref().expect("Env should exist");
-    let res = TypeResolver::new(&settings, &interner, &mut compiler).resolve(env);
+    let res = TypeResolver::new(&settings, &mut interner, &mut compiler).resolve(env);
     dbg!(&res);
 
     assert!(res.err_count() == 0, "Type resolution should succeed");
@@ -214,7 +214,7 @@ fn type_resolver_complex_test() {
     let envs = vec![Some(res_env)];
     run_member_resolver(&settings, &envs, &interner, &mut compiler);
     let env = envs[0].as_ref().expect("Env should exist");
-    let summary = TypeResolver::new(&settings, &interner, &mut compiler).resolve(env);
+    let summary = TypeResolver::new(&settings, &mut interner, &mut compiler).resolve(env);
     assert!(summary.err_count() == 0, "Type resolution failed");
 
     let constant_sym = compiler
@@ -241,5 +241,47 @@ fn type_resolver_complex_test() {
         matches!(val_info.const_val, Some(Value::I64(4))),
         "CONSTANT should have const value Some(I64(4)), got {:?}",
         val_info.const_val
+    );
+}
+
+#[test]
+fn type_resolver_string_concat_basic_test() {
+    let (compiler, interner) = compile_and_resolve_single_module("let X = \"Hello\" + \" World\"");
+
+    let val = value_of(&compiler, &interner, "X");
+    match &val {
+        Value::InternedStr(id) => {
+            assert_eq!(
+                interner.search(*id),
+                "Hello World",
+                "String concat should produce exact value"
+            );
+        }
+        other => panic!("Expected InternedStr, got {:?}", other),
+    }
+}
+
+#[test]
+fn type_resolver_string_concat_type_test() {
+    let (compiler, interner) = compile_and_resolve_single_module("let X = \"Hello\" + \" World\"");
+
+    let name_id = interner
+        .try_search_str("X")
+        .expect("'X' should be interned");
+    let var_def = compiler
+        .variables
+        .iter()
+        .find(|v| v.name_id == name_id)
+        .expect("Variable 'X' not found");
+    let val_id = match &var_def.state {
+        VariableState::Known(val_id) => *val_id,
+        other => panic!("'X' should be Known, got {:?}", other),
+    };
+    let val_info = &compiler.values[val_id];
+
+    assert_eq!(
+        val_info.type_id,
+        TypeId::new(CORE_STR),
+        "String concat result should have str type"
     );
 }

@@ -508,7 +508,10 @@ pub async fn analyze_and_publish_task(
     // resolution's config_errors so they are published through the
     // normal diagnostic pipeline.
     if !cfg_loader_warns.is_empty() {
-        prepared.resolution.config_errors.append_diags(&mut cfg_loader_warns);
+        prepared
+            .resolution
+            .config_errors
+            .append_diags(&mut cfg_loader_warns);
     }
 
     // 3. Insert the prepared state into the cache.  If the same text is already

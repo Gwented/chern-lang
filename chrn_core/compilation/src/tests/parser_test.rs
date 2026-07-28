@@ -1,12 +1,13 @@
 use super::helpers::*;
 use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
-use chrn_utils::id_types::AstId;
 use crate::lexer::token::TokenKind;
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractEnum, AbstractOptionAssignment,
-    AbstractStruct, AbstractTypeDef, AbstractVariant, AbstractVar, BinaryOp, Item, SectionKind, UnaryOp,
+    AbstractStruct, AbstractTypeDef, AbstractVar, AbstractVariant, BinaryOp, Item, SectionKind,
+    UnaryOp,
 };
 use crate::parser::ast::ast_exprs::{Expr, PathSegment, TypeExpr};
+use chrn_utils::id_types::AstId;
 
 // =============================================================================
 // Helpers
@@ -20,9 +21,9 @@ fn parse_text(text: &str) -> (AstInfo, Intern) {
         let module = &_compiler.mods[ModuleId::new(0)];
         get_module_region(&arena, module)
     };
-    let toks =
-        Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-            .tokenize(&mut interner).toks;
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner)
+        .toks;
     let (ast, _diags) = parser::parse(&settings, region, &toks, &interner);
     (ast, interner)
 }
@@ -34,9 +35,9 @@ fn parse_text_with_diags(text: &str) -> (AstInfo, Vec<SourceDiagnostic>, Intern)
         let module = &_compiler.mods[ModuleId::new(0)];
         get_module_region(&arena, module)
     };
-    let toks =
-        Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-            .tokenize(&mut interner).toks;
+    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
+        .tokenize(&mut interner)
+        .toks;
     let (ast, summary) = parser::parse(&settings, region, &toks, &interner);
     (ast, summary.diags, interner)
 }
@@ -119,7 +120,10 @@ fn parse_import() {
     let text = r#"import "./some/path" as foo"#;
     let (ast, _interner) = parse_text(text);
 
-    assert!(ast.items().is_empty(), "import should not produce AST items");
+    assert!(
+        ast.items().is_empty(),
+        "import should not produce AST items"
+    );
     for sect in ast.sections() {
         assert!(sect.is_none());
     }
@@ -130,7 +134,10 @@ fn parse_import_no_as() {
     let text = r#"import "./some/path""#;
     let (ast, _interner) = parse_text(text);
 
-    assert!(ast.items().is_empty(), "import should not produce AST items");
+    assert!(
+        ast.items().is_empty(),
+        "import should not produce AST items"
+    );
     for sect in ast.sections() {
         assert!(sect.is_none());
     }
@@ -309,7 +316,10 @@ fn parse_alias_with_params() {
     // One condition: a > b
     assert_eq!(alias.conds.len(), 1);
     match &alias.conds[0].expr {
-        Expr::BinaryExpr { op: BinaryOp::Greater, .. } => {}
+        Expr::BinaryExpr {
+            op: BinaryOp::Greater,
+            ..
+        } => {}
         other => panic!("expected Greater binary expr, got {other:?}"),
     }
 }
@@ -390,7 +400,10 @@ fn parse_var_typedef_with_conditions() {
     let td = ast.get_typedef(section_items(&ast, SectionKind::Var)[0]);
     assert_eq!(td.conds.len(), 1, "expected one condition");
     match &td.conds[0].expr {
-        Expr::BinaryExpr { op: BinaryOp::Greater, .. } => {}
+        Expr::BinaryExpr {
+            op: BinaryOp::Greater,
+            ..
+        } => {}
         other => panic!("expected Greater binary expr, got {other:?}"),
     }
 }
@@ -1171,7 +1184,10 @@ fn parse_invalid_token_yields_diagnostics() {
 fn parse_missing_expr_yields_diagnostics() {
     let text = "let x = ";
     let (_, diags, _interner) = parse_text_with_diags(text);
-    assert!(!diags.is_empty(), "expected diagnostics for missing expression");
+    assert!(
+        !diags.is_empty(),
+        "expected diagnostics for missing expression"
+    );
     assert_eq!(
         diags[0].level,
         DiagnosticLevel::Error,
@@ -1195,7 +1211,10 @@ fn parse_var_section_missing_arrow_yields_diagnostics() {
 fn parse_nest_missing_struct_enum_yields_diagnostics() {
     let text = "nest->\n    42";
     let (_, diags, _interner) = parse_text_with_diags(text);
-    assert!(!diags.is_empty(), "expected diagnostics for missing struct/enum");
+    assert!(
+        !diags.is_empty(),
+        "expected diagnostics for missing struct/enum"
+    );
     assert_eq!(
         diags[0].level,
         DiagnosticLevel::Error,
@@ -1207,7 +1226,10 @@ fn parse_nest_missing_struct_enum_yields_diagnostics() {
 fn parse_duplicate_section_yields_diagnostics() {
     let text = "var->\n    x: i32\nvar->\n    y: string";
     let (_, diags, _interner) = parse_text_with_diags(text);
-    assert!(!diags.is_empty(), "expected diagnostics for duplicate var section");
+    assert!(
+        !diags.is_empty(),
+        "expected diagnostics for duplicate var section"
+    );
     assert_eq!(
         diags[0].level,
         DiagnosticLevel::Error,
@@ -1329,13 +1351,13 @@ fn parse_full_script_with_all_sections() {
 fn parse_empty_input() {
     let text = "";
     let (ast, diags, _interner) = parse_text_with_diags(text);
-    assert!(diags.is_empty(), "empty input should produce no diagnostics");
+    assert!(
+        diags.is_empty(),
+        "empty input should produce no diagnostics"
+    );
     // All sections should be None
     for (i, sect) in ast.sections().iter().enumerate() {
-        assert!(
-            sect.is_none(),
-            "section {i} should be None for empty input"
-        );
+        assert!(sect.is_none(), "section {i} should be None for empty input");
     }
     assert!(ast.items().is_empty());
 }
@@ -1517,13 +1539,8 @@ fn parse_bind_unclosed_string_yields_diags() {
     let path_id = interner.intern_path(Path::new(""));
     let region_id = SourceRegionId::new(0);
     let text = r#"bind "./some/path"#;
-    let result = ConfigLoader::new(
-        region_id,
-        text.as_bytes(),
-        path_id,
-        &ChrnConfig::default(),
-    )
-    .load_config();
+    let result = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+        .load_config();
     // The config loader should recognize this as broken (unclosed quote).
     match result {
         ConfigLoaderOutput::Broken(_, _) => {} // expected
@@ -1666,7 +1683,10 @@ fn parse_alias_with_empty_conds() {
     let (ast, interner) = parse_text(text);
 
     let alias = ast.get_alias(section_items(&ast, SectionKind::Neutral)[0]);
-    assert!(alias.conds.is_empty(), "empty brackets should parse as empty conds list");
+    assert!(
+        alias.conds.is_empty(),
+        "empty brackets should parse as empty conds list"
+    );
 }
 
 #[test]
@@ -1724,7 +1744,10 @@ fn parse_alias_with_both_conds_and_directives() {
     let alias = ast.get_alias(section_items(&ast, SectionKind::Neutral)[0]);
     assert_eq!(alias.conds.len(), 1);
     assert_eq!(alias.directives.len(), 1);
-    assert_eq!(interner.search(alias.directives[0].sp_name_id.inner), "warn");
+    assert_eq!(
+        interner.search(alias.directives[0].sp_name_id.inner),
+        "warn"
+    );
 }
 
 #[test]

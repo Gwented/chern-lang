@@ -230,7 +230,10 @@ pub fn compute_hover(
                                 }
                                 SymbolKind::Namespace => {
                                     let ns_name = interner.search(sym.name_id);
-                                    match sym.associated_scope.expect("Namespace should have associated scope") {
+                                    match sym
+                                        .associated_scope
+                                        .expect("Namespace should have associated scope")
+                                    {
                                         AssociatedScopeKind::Module(mod_id) => {
                                             let module = &compiler.mods[mod_id];
                                             let mod_name = interner.search(module.name_id);

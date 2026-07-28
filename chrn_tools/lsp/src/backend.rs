@@ -66,8 +66,8 @@ use crate::text::apply_text_change;
 use crate::state::SemanticEntity;
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::core_error::ConfigLoadError;
-use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
 use chrn_utils::intern::Intern;
+use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
 use lang::types::builtins::BuiltinTypeKind as ChBuiltinTypeKind;
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -212,7 +212,7 @@ impl Backend {
             ConfigLoaderOutput::Success(region, summary) => {
                 cfg_loader_warns = summary.diags;
                 region
-            },
+            }
             ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
                 publish_config_load_error(
                     self.client.clone(),
@@ -269,7 +269,10 @@ impl Backend {
         // resolution's config_errors so they are persisted through
         // ensure_analyzed and surface via get_lsp_diagnostics.
         if !cfg_loader_warns.is_empty() {
-            prepared.resolution.config_errors.append_diags(&mut cfg_loader_warns);
+            prepared
+                .resolution
+                .config_errors
+                .append_diags(&mut cfg_loader_warns);
         }
 
         let state_arc = self

@@ -50,7 +50,9 @@ use crate::resolvers::type_resolver::type_context::{
 /// state.
 pub struct TypeResolver<'a> {
     cfg: &'a ChrnConfig,
-    interner: &'a Intern,
+    // WARN: This could be avoided by just making the environments given not take a direct borrow,
+    // but then that adds architectural complexity because given an Option
+    interner: &'a mut Intern,
     compiler: &'a mut ScriptCompiler,
     ty_ctx: TypeContext,
     summary: SourceDiagnosticSummary,
@@ -60,7 +62,7 @@ impl<'res> TypeResolver<'res> {
     /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new(
         cfg: &'res ChrnConfig,
-        interner: &'res Intern,
+        interner: &'res mut Intern,
         compiler: &'res mut ScriptCompiler,
     ) -> TypeResolver<'res> {
         debug_assert_eq!(ResolverState::TYPE, compiler.resolver_state);
@@ -107,7 +109,7 @@ impl<'res> TypeResolver<'res> {
     /// * `env`: The current environment the resolver is operating in. This being passed in
     /// explicitly allows for `TypeResolver` to maintain it's state throughout resolution while
     /// mutating off of given envs.
-    pub fn resolve(&mut self, env: &'res ResolverEnv) -> SourceDiagnosticSummary {
+    pub fn resolve<'env>(&mut self, env: &'env ResolverEnv) -> SourceDiagnosticSummary {
         // Everything skipped is not a factor in this compilation step.
         for sym_id in env.compilation_syms.iter().cloned() {
             match self.compiler.symbols[sym_id].kind {
@@ -412,7 +414,7 @@ impl<'res> TypeResolver<'res> {
     // The lifetime used here is needed so that the vectors that are pushed into during the recursive
     // maintaining of seen identifiers know that their shortest lifetime is more than long enough to
     // where the borrow cheker is satisfied.
-    fn resolve_cfg_root(&mut self, parent_sym_id: SymbolId, env: &'res ResolverEnv) {
+    fn resolve_cfg_root<'env>(&mut self, parent_sym_id: SymbolId, env: &'env ResolverEnv) {
         // Expected to be `OptionAssignmentRoot`
         let mut opt_assignment_roots: Vec<MemberId> = Vec::new();
         // Expected to be `ConfigDefMember`
@@ -477,7 +479,7 @@ impl<'res> TypeResolver<'res> {
         // access as the config root
 
         // Re-used vector to track duplicated identifiers for options across recursive levels
-        let mut seen_opt_vec: Vec<&'res AbstractOptionAssignment> = Vec::new();
+        let mut seen_opt_vec: Vec<&'env AbstractOptionAssignment> = Vec::new();
         for abs_opt in &abs_cfg_root.opt_assignments {
             seen_opt_vec.push(abs_opt);
 
@@ -836,7 +838,7 @@ impl<'res> TypeResolver<'res> {
     ///
     /// This has no failure case because unknown fields have a diagnostic given to them then they're
     /// ignored, meaning there is no real discernment. May change if needed.
-    fn resolve_cfg_member(
+    fn resolve_cfg_member<'env>(
         &mut self,
         // For resolve_expr
         root_parent_sym_id: SymbolId,
@@ -849,10 +851,10 @@ impl<'res> TypeResolver<'res> {
         // being removed.
         // cfg_dfs: &mut Vec<(TypeId, SourceSpan)>,
         //TEST: For identifier tracking right now. Trying out something questionable.
-        seen_cfg_vec: &mut Vec<&'res AbstractConfig>,
-        seen_opt_vec: &mut Vec<&'res AbstractOptionAssignment>,
+        seen_cfg_vec: &mut Vec<&'env AbstractConfig>,
+        seen_opt_vec: &mut Vec<&'env AbstractOptionAssignment>,
         parent_member_id: MemberId,
-        parent_abs_cfg: &'res AbstractConfig,
+        parent_abs_cfg: &'env AbstractConfig,
         scope_type: ScopeType,
         depth: u8,
         env: &ResolverEnv,

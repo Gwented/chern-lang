@@ -132,8 +132,7 @@ fn test_apply_text_change_incremental() {
         range_length: None,
         text: "chrn".to_string(),
     };
-    let result =
-        apply_text_change(existing, &change).expect("incremental replace must succeed");
+    let result = apply_text_change(existing, &change).expect("incremental replace must succeed");
     assert_eq!(result, "hello chrn");
 }
 

@@ -73,7 +73,7 @@ use chrn_utils::id_types::{
     InternedId, ModuleId, SourceRegionId, SpannedContainer, SymbolId, TypeId,
 };
 use chrn_utils::intern::Intern;
-use chrn_utils::source_map::source_diagnostic::{SourceDiagnostic, SourceDiagnosticSummary};
+use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
 
@@ -247,7 +247,7 @@ impl DocumentState {
             imported_uris,
         } = resolution;
 
-        self.config_errors = config_errors;  // now SourceDiagnosticSummary, moved directly
+        self.config_errors = config_errors; // now SourceDiagnosticSummary, moved directly
 
         // Main region has id 0; sub-regions were assigned ids 1..=N during resolution.
         self.region_arena.push(main_region);
@@ -355,7 +355,7 @@ impl DocumentState {
         {
             let mut ns_resolver = NamespaceResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
-            for (mod_idx, env_opt) in registration_envs.iter().take(mod_len).enumerate() {
+            for env_opt in registration_envs.iter().take(mod_len) {
                 let env = match env_opt {
                     Some(e) => e,
                     None => {
@@ -424,7 +424,7 @@ impl DocumentState {
             // `compilation_syms` internally rather than walking the AST.
             let mut member_resolver = MemberResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
-            for (mod_idx, env) in resolver_envs.iter().take(mod_len).enumerate() {
+            for env in resolver_envs.iter().take(mod_len) {
                 let env = match env {
                     Some(e) => e,
                     None => continue,
@@ -460,16 +460,15 @@ impl DocumentState {
             // `compiler.exprs.len()` could be read between iterations to track
             // `main_expr_range`; `build_symbol_map` now filters expressions by
             // the main module's region id instead, which needs no such borrow.
-            let mut type_resolver = TypeResolver::new(&chrn_cfg, &self.interner, &mut compiler);
-            for (mod_idx, env) in resolver_envs.iter().take(mod_len).enumerate() {
+            let mut type_resolver = TypeResolver::new(&chrn_cfg, &mut self.interner, &mut compiler);
+            for env in resolver_envs.iter().take(mod_len) {
                 let env = match env {
                     Some(e) => e,
                     None => continue,
                 };
 
-            let mut ty_summary = type_resolver.resolve(env);
-                if !ty_summary.diags.is_empty()
-                {
+                let mut ty_summary = type_resolver.resolve(env);
+                if !ty_summary.diags.is_empty() {
                     self.ty_errors.append_diags(&mut ty_summary.diags);
                 }
             }
@@ -481,15 +480,14 @@ impl DocumentState {
             let mut constraint_resolver =
                 ConstraintResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
-            for (mod_idx, env) in resolver_envs.iter().take(mod_len).enumerate() {
+            for env in resolver_envs.iter().take(mod_len) {
                 let env = match env {
                     Some(env) => env,
                     None => continue,
                 };
 
-            let mut cn_summary = constraint_resolver.resolve(env);
-                if !cn_summary.diags.is_empty()
-                {
+                let mut cn_summary = constraint_resolver.resolve(env);
+                if !cn_summary.diags.is_empty() {
                     self.cn_errors.append_diags(&mut cn_summary.diags);
                 }
             }
@@ -720,14 +718,23 @@ impl DocumentState {
                             let mut matched = false;
                             match sym.kind {
                                 SymbolKind::Namespace => {
-                                    match sym.associated_scope.expect("Namespace should have associated scope") {
+                                    match sym
+                                        .associated_scope
+                                        .expect("Namespace should have associated scope")
+                                    {
                                         AssociatedScopeKind::Module(mid) => {
-                                            map.push((segments[0].span, SemanticEntity::Module(mid)));
+                                            map.push((
+                                                segments[0].span,
+                                                SemanticEntity::Module(mid),
+                                            ));
                                             current_mod = Some(mid);
                                             matched = true;
                                         }
                                         AssociatedScopeKind::Scope(_) => {
-                                            map.push((segments[0].span, SemanticEntity::Symbol(sid)));
+                                            map.push((
+                                                segments[0].span,
+                                                SemanticEntity::Symbol(sid),
+                                            ));
                                             matched = true;
                                         }
                                     }

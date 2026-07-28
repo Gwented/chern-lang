@@ -143,7 +143,7 @@ pub fn apply_binary_op(
     sp_lhs: SpannedContainerRef<Value>,
     op: BinaryOp,
     sp_rhs: SpannedContainerRef<Value>,
-    interner: &Intern,
+    interner: &mut Intern,
 ) -> BinaryOpResult {
     let lhs = sp_lhs.inner;
     let rhs = sp_rhs.inner;
@@ -157,6 +157,16 @@ pub fn apply_binary_op(
             },
             Value::F64(lhs_inner) => match rhs {
                 Value::F64(rhs_inner) => Some(Value::F64(lhs_inner + rhs_inner)),
+                _ => None,
+            },
+            Value::InternedStr(lhs_inner) => match rhs {
+                Value::InternedStr(rhs_inner) => {
+                    let l_str = interner.search(*lhs_inner);
+                    let r_str = interner.search(*rhs_inner);
+                    let new_str = l_str.to_string() + r_str;
+                    let new_interned_id = interner.intern(&new_str);
+                    Some(Value::InternedStr(new_interned_id))
+                }
                 _ => None,
             },
             _ => None,

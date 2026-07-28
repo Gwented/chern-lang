@@ -4,7 +4,7 @@ use std::{
     hash::{self, Hasher},
     io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
-    ptr, time,
+    ptr,
 };
 
 use chrn_utils::core_error;
@@ -114,39 +114,11 @@ pub(crate) fn write_bytes_front_stream(
         }
 
         stream_writer.write_all(&buffer[..read])?;
-        stream_writer.flush()?;
     }
+    stream_writer.flush()?;
 
     fs::remove_file(dest_path)?;
     fs::rename(stream_file_path, dest_path)?;
 
     Ok(())
 }
-
-// BufferedFileReader, FileReader, BufferedInputStream, InputStream, Scanner, Files (static class)
-// pub(crate) enum FilesError {
-//     /// If a temp file is needed for an act like streaming, but the file changes exceeded
-//     /// `TEMP_FILE_NAME_CREATION_ATTEMPTS`
-//     FailedToCreateTempFile,
-//     IO(std::io::Error),
-// }
-//
-// impl std::fmt::Display for FilesError {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         let out = match self {
-//             FilesError::FailedToCreateTempFile => {
-//                 format!(
-//                     "Failed to create temp file after {MAX_TEMP_FILE_CREATION_ATTEMPTS} attempts."
-//                 )
-//             }
-//             FilesError::IO(e) => e.to_string(),
-//         };
-//         write!(f, "{out}")
-//     }
-// }
-//
-// impl From<std::io::Error> for FilesError {
-//     fn from(err: std::io::Error) -> Self {
-//         FilesError::IO(err)
-//     }
-// }
