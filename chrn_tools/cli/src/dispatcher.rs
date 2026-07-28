@@ -18,7 +18,8 @@ use orchestration::{constructors, orchestrator};
 use crate::{
     args::{CheckCmd, Cli, Commands, EmbedCmd, FmtCmd, GlobalArgs, QueryCmd},
     config::CliConfig,
-    files, presentation, print_diags,
+    files::{self},
+    presentation, print_diags,
     renderer::{
         json_renderer::{self, json_config::JsonRenderConfig},
         render_kind::RenderKind,
@@ -376,7 +377,7 @@ fn exec_embed(
                         );
 
                         print_diags!(&rendered_diags);
-                        let msg = "`--check` failed, cannot embed file".to_string();
+                        let msg = "`--check` failed, did not embed file".to_string();
                         return Err(msg.into());
                     }
                     ConfigLoadError::IO(err) => {
@@ -413,7 +414,7 @@ fn exec_embed(
                         print_diags!(&rendered_diags);
                         // Seems redundant to have this msg
                         // "Failed to parse config file".to_string().into()
-                        "`--check` failed, cannot embed file".to_string().into()
+                        "`--check` failed, did not embed file".to_string().into()
                     };
 
                     return Err(msg_opt);
@@ -488,7 +489,7 @@ fn exec_embed(
     //
     // Both of these mean that there doesn't need to be any insertion of an @def or @end since they
     // are self-contained regions
-    let mut bytes = if region.script_start > 0 || region.serial_start.is_some() {
+    let mut embed_portion = if region.script_start > 0 || region.serial_start.is_some() {
         Cow::Borrowed(&region.src_bytes)
     } else {
         // Wraps the src in @def[bytes]@end
@@ -500,7 +501,7 @@ fn exec_embed(
         Cow::Owned(altered_bytes)
     };
 
-    // Bytes would mutate itself here
+    // Bytes would mutate here
     //
     // Maybe if `--check` was chosen, we actually store the store, then if `Some` store we don't have
     // to run the parser again.
@@ -510,7 +511,13 @@ fn exec_embed(
         todo!();
     }
 
-    match files::write_bytes_front(&dest_path, &bytes) {
+    let res = if embed_cmd.in_memory {
+        files::write_bytes_front(&dest_path, &embed_portion)
+    } else {
+        files::write_bytes_front_stream(&dest_path, &embed_portion)
+    };
+
+    match res {
         Ok(_) => {
             let msg = format!(
                 "Embedded\nsrc: {}\n ↓\ndest: {}",
@@ -519,6 +526,6 @@ fn exec_embed(
             );
             Ok(msg)
         }
-        Err(_) => todo!(),
+        Err(err) => Err(err.to_string().into()),
     }
 }

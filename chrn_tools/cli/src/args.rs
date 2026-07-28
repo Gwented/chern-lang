@@ -1,5 +1,3 @@
-//TODO: ADD RELEVANT COMMANDS
-
 use std::env;
 use std::path::PathBuf;
 
@@ -107,9 +105,13 @@ pub enum Commands {
     Gen(GenCmd),
     #[command(name = "query", alias = "q")]
     Query(QueryCmd),
-    /// Embeds a given script src into a destination. This inserts `@def` and `@end` by default
-    /// after embedding around the region by default. Embedding fails only fails on severe errors
-    /// such as `@def` without `@end`.
+    // DON'T CAREe DIDNT ASK
+    /// Embeds a region src into a destination. This inserts `@def` and `@end` by default
+    /// after embedding the region if not already present in the src file.
+    /// Embedding only fails on region errors such as `@def` without `@end` or exceeding max region
+    /// size. Embedding uses constant memory by creating a file, embedding script into it,
+    /// streaming data from the original file into it,removing the orignal file
+    /// then renaming the new file to be the same as the original.
     #[command(name = "embed", alias = "e")]
     Embed(EmbedCmd),
 }
@@ -124,10 +126,10 @@ pub struct CheckCmd {
     /// Emits developer debug info during check
     #[arg(long = "dbg", default_value_t = false)]
     pub(crate) dbg_mode: bool,
-    /// Emits diagnostics as a JSON document on stderr
+    /// Emits diagnostics as a JSON document in stderr
     #[arg(long = "json", default_value_t = false)]
     pub(crate) json: bool,
-    /// Emits diagnostics as a YAML document on stderr
+    /// Emits diagnostics as a YAML document in stderr
     /// When combined with `--json`, JSON is emitted.
     #[arg(long = "yaml", default_value_t = false)]
     pub(crate) yaml: bool,
@@ -139,20 +141,23 @@ pub struct CheckCmd {
 /// For `embed` cmd
 #[derive(Args)]
 pub struct EmbedCmd {
-    /// Path of file to extract chrn file/block from
+    /// Path of file to extract chrn region from
     pub(crate) src_path: PathBuf,
     /// Path of file to put the extracted chrn file into
     pub(crate) dest_path: PathBuf,
+    /// Changes behavior from streaming to loading all of `dest` in to memory.
+    #[arg(long = "in-memory", default_value_t = false)]
+    pub(crate) in_memory: bool,
     //TODO: Maybe just separate the minify and fmt cmd, like overall.
+    // Ok but what if you could point cli format calls to a different binary through an env var or
+    // something of that particular individual exact kind of conceptual topic?
     /// Formats output with opinionated formatter
     #[arg(long = "fmt", default_value_t = false)]
     pub(crate) fmt: bool,
     /// Formats output to be minified
     #[arg(short = 'm', long = "minify", default_value_t = false)]
     pub(crate) minify: bool,
-    /// By default, no semantics are checked beyond ensuring the region is valid.
-    /// This enforces that the file is a valid chrn file before inserting. Basically a check command
-    /// post-hook.
+    /// Enforces that src is a valid chrn file before inserting.
     #[arg(short = 'c', long = "check", default_value_t = false)]
     pub(crate) check: bool,
 }

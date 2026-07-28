@@ -85,13 +85,6 @@ pub static SCOPE_LOCAL_ENCODED_SCOPES: [ScopeType; 1] = [ScopeType::Local];
 pub static SCOPE_VAR_ONLY: [ScopeType; 1] = [ScopeType::Var];
 pub static SCOPE_NEST_ONLY: [ScopeType; 1] = [ScopeType::Nest];
 
-pub static SCOPE_REST_ACCESSIBLE: [ScopeType; 4] = [
-    ScopeType::Neutral,
-    ScopeType::Nest,
-    ScopeType::Complex,
-    ScopeType::Core,
-];
-
 // Neutral, var, nest, and complex scopes can only access variables from neutral and nest.
 // Override is unsure
 #[derive(Debug)]
