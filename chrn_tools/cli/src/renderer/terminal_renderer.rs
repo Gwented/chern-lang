@@ -17,6 +17,7 @@ use chrn_utils::{
     },
 };
 use common::color;
+use unicode_width::UnicodeWidthStr;
 
 use crate::{
     renderer::terminal_renderer::{
@@ -328,12 +329,7 @@ fn render_line_layout_text(
     // -- FIRST --
     // If the current line is the last line then it may or may not contain a new line as it's eof
     // byte, which needs to be removed if present
-    //WARN: SPANNING IS (INCLUSIVE, EXCLUSIVE) SO THIS NEEDS - 1 TO NOT GO OUT OF BOUNDS
-    let ln_end = if src_str.as_bytes()[ln_span.end - 1] == b'\n' {
-        ln_span.end - 1
-    } else {
-        ln_span.end
-    };
+    let ln_end = layout::visual_ln_end(ln, src_str);
 
     // The line mapping functions used within `chrn_core` ONLY keeps a new line if the line is a
     // single empty line, so this just skips any empty lines.
@@ -362,75 +358,36 @@ fn render_line_layout_text(
     }
 
     // -- THIRD --
-    // For each layer, annotations are placed on the earlier row visually possible without
-    // overlapping with an already placed annotation.
-
-    // Re-used vectors for every row that are cleared
-    //
-    // row_ends[i] tracks the rightmost visual column that has been placed on row i.
-    // A new pointer can share row i if its visual_start >= row_ends[i]
-    let mut row_ends: Vec<usize> = Vec::new();
-    let mut row_strs: Vec<String> = Vec::new();
-
+    // A layer is one printed row. `assign_layers_in_layout` already guaranteed the annotations
+    // sharing a layer don't overlap once labels are counted, so a row is built by walking its
+    // annotations left to right and padding out to each one's start column.
     for infos in &layer_vec {
-        for render_info in infos {
-            let annotation = render_info.annotation;
-            let span = annotation.span.range_exclusive_usize();
+        let mut row = String::new();
+        // Visual column the row has been written up to
+        let mut cursor: usize = 0;
 
-            let ptr_str = style::get_annotation_kind_ptr(annotation.kind);
+        for render_info in infos {
+            let ann = render_info.annotation;
+            let placement = layout::place_annotation(ann, ln, ln_end, src_str);
+
+            let ptr_str = style::get_annotation_kind_ptr(ann.kind);
             let ptr_color = style::get_annotation_kind_ptr_color(
-                annotation.kind,
+                ann.kind,
                 settings.can_color,
                 settings.terminal_type,
             );
 
-            // Process the visual column range of this pointer, accounting for unicode width
-            let clamped_start = span.start.max(ln_span.start);
-            let clamped_end = span.end.min(ln_end);
-            let visual_start = line_mapping::get_chars_width(src_str, ln_span.start, clamped_start);
-            //WARN: CHANGED
-            // let visual_len = line_mapping::get_chars_width(src_str, clamped_start, clamped_end + 1);
-            let visual_len = line_mapping::get_chars_width(src_str, clamped_start, clamped_end);
-            let visual_end = visual_start + visual_len;
+            row.push_str(&" ".repeat(placement.start.saturating_sub(cursor)));
+            row.push_str(&format!("{ptr_color}{}", ptr_str.repeat(placement.ptr_len)));
+            cursor = placement.start.max(cursor) + placement.ptr_len;
 
-            let fmtted_ptrs = format!("{ptr_color}{}", ptr_str.repeat(visual_len));
-
-            // Try first-fit by placing it on the earliest existing row where this pointer
-            // does not visually overlap with already-placed spanning
-            let mut placed = false;
-            for (row_idx, end) in row_ends.iter_mut().enumerate() {
-                if visual_start >= *end {
-                    let spaces = visual_start.saturating_sub(*end);
-                    row_strs[row_idx].push_str(&" ".repeat(spaces));
-                    row_strs[row_idx].push_str(&fmtted_ptrs);
-                    if let Some(label) = &annotation.label {
-                        row_strs[row_idx].push_str(&format!(" {label}"));
-                    }
-                    *end = visual_end;
-                    placed = true;
-                    break;
-                }
-            }
-
-            if !placed {
-                // No existing row has room for this pointer so it starts a new row
-                let mut single = String::new();
-                single.push_str(&" ".repeat(visual_start));
-                single.push_str(&fmtted_ptrs);
-                if let Some(label) = &annotation.label {
-                    single.push_str(&format!(" {label}"));
-                }
-                row_strs.push(single);
-                row_ends.push(visual_end);
+            if let Some(label) = &ann.label {
+                row.push_str(&format!(" {label}"));
+                cursor += 1 + UnicodeWidthStr::width(label.as_str());
             }
         }
 
-        // Allowing re-usage of both vectors
-        row_ends.clear();
-
-        for row in row_strs.drain(..) {
-            all_ptr_rows.push(row);
-        }
+        all_ptr_rows.push(row);
     }
 
     // -- FOURTH --

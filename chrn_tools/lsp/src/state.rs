@@ -45,9 +45,7 @@ use compilation::lookup::scopes::AssociatedScopeKind;
 use compilation::lookup::scopes::ScopeLookupPattern;
 use compilation::lookup::scopes::ScopeType;
 
-use compilation::parser::ast::ast_concepts::{AbstractDecl, AbstractImpl, Item};
-use compilation::semantic::compilation_unit::CompilationUnit;
-use compilation::semantic::hir::hir_impls::{ImplHirKind, ImplMemberKind};
+use compilation::parser::ast::ast_concepts::{AbstractDecl, AbstractImpl, AstInfo, Item};
 use compilation::parser::ast::ast_exprs::Expr;
 use compilation::parser::ast::ast_exprs::PathSegment;
 use compilation::parser::ast::ast_exprs::TypeExpr;
@@ -57,22 +55,27 @@ use compilation::resolvers::name_resolver::NamespaceResolver;
 use compilation::resolvers::resolver_env::{RegistrationEnv, ResolverEnv};
 use compilation::resolvers::type_resolver::TypeResolver;
 use compilation::script_compiler::ScriptCompiler;
+use compilation::semantic::compilation_unit::CompilationUnit;
 use compilation::semantic::hir::hir_concepts::Type;
+use compilation::semantic::hir::hir_exprs::ExprHir;
+use compilation::semantic::hir::hir_impls::{ImplHirKind, ImplMemberKind};
 use compilation::semantic::hir::hir_symbols::MemberSymbolKind;
 use compilation::semantic::hir::hir_symbols::SymbolKind;
 use compilation::semantic::hir::hir_symbols::SymbolOrigin;
 use compilation::semantic::hir::hir_symbols::VariableState;
-use compilation::semantic::hir::hir_exprs::ExprHir;
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::analyser;
 
 use chrn_utils::arena::Arena;
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::id_types::{
-    ImplId, ImplMemberId, InternedId, ModuleId, SourceRegionId, SpannedContainer, SymbolId, TypeId,
+    AstId, ImplId, ImplMemberId, InternedId, ModuleId, SourceRegionId, SpannedContainer, SymbolId,
+    TypeId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
@@ -175,8 +178,12 @@ pub struct DocumentState {
     pub ty_errors: SourceDiagnosticSummary,
     /// Diagnostics from constraint resolution.
     pub cn_errors: SourceDiagnosticSummary,
-    /// Sorted list of `(span, entity)` pairs built after analysis; queried by offset.
+    /// `(span, entity)` pairs built after analysis, sorted by `span.start`; queried
+    /// by offset through [`get_entity_at_offset`](DocumentState::get_entity_at_offset).
     pub symbol_map: Vec<(SourceSpan, SemanticEntity)>,
+    /// Length of the longest span in `symbol_map`.  Bounds how far back
+    /// `get_entity_at_offset` has to scan from its binary-search landing point.
+    max_span_len: u32,
     /// LSP document version counter (used to detect stale analysis results).
     pub version: u64,
 }
@@ -216,6 +223,7 @@ impl DocumentState {
             ty_errors: SourceDiagnosticSummary::default(),
             cn_errors: SourceDiagnosticSummary::default(),
             symbol_map: Vec::new(),
+            max_span_len: 0,
             version,
         }
     }
@@ -512,452 +520,6 @@ impl DocumentState {
 
         let mut map = Vec::new();
 
-        // Helper to collect type references from AST
-        fn collect_type_refs(
-            compiler: &ScriptCompiler,
-            type_expr: &SpannedContainer<TypeExpr>,
-            map: &mut Vec<(SourceSpan, SemanticEntity)>,
-        ) {
-            match &type_expr.inner {
-                TypeExpr::Var(name_id) => {
-                    let interned = *name_id;
-                    if let Some(scopes::SymbolLookupOutput {
-                        found_sym_id: sym_id,
-                        ..
-                    }) = scopes::find_sym_id(
-                        compiler,
-                        AssociatedScopeKind::Module(ModuleId::new(0)),
-                        interned,
-                        ScopeType::Var,
-                        ScopeLookupPattern::NoRestrictions,
-                    ) {
-                        map.push((type_expr.span, SemanticEntity::Symbol(sym_id)));
-                    } else if let Some(scopes::SymbolLookupOutput {
-                        found_sym_id: sym_id,
-                        ..
-                    }) = scopes::find_sym_id(
-                        compiler,
-                        AssociatedScopeKind::Module(ModuleId::new(0)),
-                        interned,
-                        ScopeType::Neutral,
-                        ScopeLookupPattern::NoRestrictions,
-                    ) {
-                        map.push((type_expr.span, SemanticEntity::Symbol(sym_id)));
-                    }
-                }
-                TypeExpr::Path(path) => {
-                    if path.len() == 2 {
-                        let mod_name_part = &path[0];
-                        let sym_name_part = &path[1];
-                        if let PathSegment::Ident(mod_name_id) = mod_name_part.kind
-                            && let Some(found_mod) =
-                                compiler.mods.iter().find(|m| m.name_id == mod_name_id)
-                        {
-                            map.push((
-                                mod_name_part.span,
-                                SemanticEntity::Module(found_mod.mod_id),
-                            ));
-                            if let PathSegment::Ident(sym_name_id) = sym_name_part.kind
-                                && let Some(scopes::SymbolLookupOutput {
-                                    found_sym_id: sym_id,
-                                    ..
-                                }) = scopes::find_sym_id(
-                                    compiler,
-                                    AssociatedScopeKind::Module(found_mod.mod_id),
-                                    sym_name_id,
-                                    ScopeType::Neutral,
-                                    ScopeLookupPattern::NamespaceOnly,
-                                )
-                                .or_else(|| {
-                                    scopes::find_sym_id(
-                                        compiler,
-                                        AssociatedScopeKind::Module(found_mod.mod_id),
-                                        sym_name_id,
-                                        ScopeType::Var,
-                                        ScopeLookupPattern::NamespaceOnly,
-                                    )
-                                })
-                            {
-                                map.push((sym_name_part.span, SemanticEntity::Symbol(sym_id)));
-                            }
-                            return;
-                        }
-                    }
-                    for part in path {
-                        if let PathSegment::Generic(generic) = &part.kind {
-                            for arg in &generic.inputs {
-                                collect_type_refs(compiler, arg, map);
-                            }
-                        }
-                    }
-                }
-                TypeExpr::Generic(generic) => {
-                    for arg in &generic.inputs {
-                        collect_type_refs(compiler, arg, map);
-                    }
-                }
-            }
-        }
-
-        // Helper to collect expression references from AST
-        fn collect_expr_refs(
-            compiler: &ScriptCompiler,
-            expr: &compilation::parser::ast::ast_exprs::SpannedExpr,
-            map: &mut Vec<(SourceSpan, SemanticEntity)>,
-            text: &str,
-            interner: &Intern,
-            script_start: usize,
-        ) {
-            match &expr.expr {
-                Expr::MemberAccess(acc) => {
-                    if let Expr::Var(base_id) = acc.base.expr
-                        && let Some(found_mod) = compiler.mods.iter().find(|m| m.name_id == base_id)
-                    {
-                        map.push((acc.base.span, SemanticEntity::Module(found_mod.mod_id)));
-
-                        // Try to find a precise span for the field name by searching after the dot
-                        let full_span = expr.span;
-                        // The AST's `span` values are relative to the region's
-                        // `src_bytes`.  `text` is the whole document, so add
-                        // `script_start` to shift the offsets into the
-                        // coordinate system the string slice below operates in.
-                        let base_end = (acc.base.span.end as usize) + script_start;
-                        let full_end = (full_span.end as usize) + script_start;
-                        let field_name = interner.search(acc.field);
-
-                        // Look for the field name in the source text between dot and end of expr
-                        let mut field_span = SourceSpan {
-                            region_id: SourceRegionId::new(0),
-                            start: (base_end.saturating_add(1) - script_start) as u32,
-                            end: full_span.end,
-                        };
-
-                        let search_end = full_end.min(text.len());
-                        let search_area = &text[base_end..search_end];
-                        if let Some(dot_idx) = search_area.find('.')
-                            && let Some(name_idx) = search_area[dot_idx + 1..].find(field_name)
-                        {
-                            // The search produced a position in absolute
-                            // coordinates, so subtract `script_start` to keep
-                            // the stored span relative (consistent with the
-                            // rest of `symbol_map`).
-                            let start = base_end + dot_idx + 1 + name_idx;
-                            field_span = SourceSpan {
-                                region_id: SourceRegionId::new(0),
-                                start: (start - script_start) as u32,
-                                end: (start + field_name.len() - script_start) as u32,
-                            };
-                        }
-
-                        if let Some(scopes::SymbolLookupOutput {
-                            found_sym_id: sym_id,
-                            ..
-                        }) = scopes::find_sym_id(
-                            compiler,
-                            AssociatedScopeKind::Module(found_mod.mod_id),
-                            acc.field,
-                            ScopeType::Var,
-                            ScopeLookupPattern::NamespaceOnly,
-                        )
-                        .or_else(|| {
-                            scopes::find_sym_id(
-                                compiler,
-                                AssociatedScopeKind::Module(found_mod.mod_id),
-                                acc.field,
-                                ScopeType::Neutral,
-                                ScopeLookupPattern::NamespaceOnly,
-                            )
-                        }) {
-                            map.push((field_span, SemanticEntity::Symbol(sym_id)));
-                        }
-                    }
-                    collect_expr_refs(compiler, &acc.base, map, text, interner, script_start);
-                }
-                Expr::Default(_, def_expr) => {
-                    collect_expr_refs(compiler, def_expr, map, text, interner, script_start)
-                }
-                Expr::Call(caller, args) => {
-                    collect_expr_refs(compiler, caller, map, text, interner, script_start);
-                    for arg in args {
-                        collect_expr_refs(compiler, arg, map, text, interner, script_start);
-                    }
-                }
-                Expr::Unary(u) => {
-                    collect_expr_refs(compiler, &u.spanned_expr, map, text, interner, script_start)
-                }
-                Expr::BinaryExpr { lhs, rhs, .. } => {
-                    collect_expr_refs(compiler, lhs, map, text, interner, script_start);
-                    collect_expr_refs(compiler, rhs, map, text, interner, script_start);
-                }
-                Expr::StaticAccess(segments) => {
-                    if segments.len() >= 2
-                        && let PathSegment::Ident(name_id) = segments[0].kind
-                    {
-                        let sym_id = scopes::find_sym_id(
-                            compiler,
-                            AssociatedScopeKind::Module(ModuleId::new(0)),
-                            name_id,
-                            ScopeType::Neutral,
-                            ScopeLookupPattern::NoRestrictions,
-                        )
-                        .or_else(|| {
-                            scopes::find_sym_id(
-                                compiler,
-                                AssociatedScopeKind::Module(ModuleId::new(0)),
-                                name_id,
-                                ScopeType::Var,
-                                ScopeLookupPattern::NoRestrictions,
-                            )
-                        });
-
-                        if let Some(scopes::SymbolLookupOutput {
-                            found_sym_id: sid, ..
-                        }) = sym_id
-                            && let Some(sym) = compiler.symbols.get(sid)
-                        {
-                            let mut current_mod: Option<ModuleId> = None;
-                            let mut current_ty: Option<TypeId> = None;
-                            let mut matched = false;
-                            match sym.kind {
-                                SymbolKind::Namespace => {
-                                    match sym
-                                        .associated_scope
-                                        .expect("Namespace should have associated scope")
-                                    {
-                                        AssociatedScopeKind::Module(mid) => {
-                                            map.push((
-                                                segments[0].span,
-                                                SemanticEntity::Module(mid),
-                                            ));
-                                            current_mod = Some(mid);
-                                            matched = true;
-                                        }
-                                        AssociatedScopeKind::Scope(_) => {
-                                            map.push((
-                                                segments[0].span,
-                                                SemanticEntity::Symbol(sid),
-                                            ));
-                                            matched = true;
-                                        }
-                                    }
-                                }
-                                SymbolKind::Type(tid) => {
-                                    map.push((segments[0].span, SemanticEntity::Symbol(sid)));
-                                    current_ty = Some(tid);
-                                    matched = true;
-                                }
-                                SymbolKind::Variable(var_id) => {
-                                    let var = &compiler.variables[var_id];
-                                    if let VariableState::Known(val_id) = var.state
-                                        && let Some(val_info) = compiler.values.get(val_id)
-                                    {
-                                        map.push((segments[0].span, SemanticEntity::Symbol(sid)));
-                                        current_ty = Some(val_info.type_id);
-                                        matched = true;
-                                    }
-                                }
-                                _ => {}
-                            }
-                            if matched {
-                                for seg in &segments[1..] {
-                                    if let PathSegment::Ident(seg_name_id) = seg.kind {
-                                        if let Some(mod_id) = current_mod {
-                                            if let Some(scopes::SymbolLookupOutput {
-                                                found_sym_id: sym_id,
-                                                ..
-                                            }) = scopes::find_sym_id(
-                                                compiler,
-                                                AssociatedScopeKind::Module(mod_id),
-                                                seg_name_id,
-                                                ScopeType::Var,
-                                                ScopeLookupPattern::NamespaceOnly,
-                                            )
-                                            .or_else(|| {
-                                                scopes::find_sym_id(
-                                                    compiler,
-                                                    AssociatedScopeKind::Module(mod_id),
-                                                    seg_name_id,
-                                                    ScopeType::Neutral,
-                                                    ScopeLookupPattern::NamespaceOnly,
-                                                )
-                                            }) {
-                                                if let Some(sym) = compiler.symbols.get(sym_id) {
-                                                    match sym.kind {
-                                                        SymbolKind::Namespace => {
-                                                            match sym.associated_scope.expect("Namespace should have associated scope") {
-                                                                AssociatedScopeKind::Module(mid) => {
-                                                                    map.push((
-                                                                        seg.span,
-                                                                        SemanticEntity::Module(mid),
-                                                                    ));
-                                                                    current_mod = Some(mid);
-                                                                    current_ty = None;
-                                                                }
-                                                                AssociatedScopeKind::Scope(_) => {
-                                                                    map.push((
-                                                                        seg.span,
-                                                                        SemanticEntity::Symbol(sym_id),
-                                                                    ));
-                                                                    current_mod = None;
-                                                                    current_ty = None;
-                                                                }
-                                                            }
-                                                        }
-                                                        SymbolKind::Type(tid) => {
-                                                            map.push((
-                                                                seg.span,
-                                                                SemanticEntity::Symbol(sym_id),
-                                                            ));
-                                                            current_mod = None;
-                                                            current_ty = Some(tid);
-                                                        }
-                                                        SymbolKind::Variable(var_id) => {
-                                                            let var = &compiler.variables[var_id];
-                                                            if let VariableState::Known(val_id) =
-                                                                var.state
-                                                            {
-                                                                map.push((
-                                                                    seg.span,
-                                                                    SemanticEntity::Symbol(sym_id),
-                                                                ));
-                                                                current_mod = None;
-                                                                current_ty = Some(
-                                                                    compiler.values[val_id].type_id,
-                                                                );
-                                                            }
-                                                        }
-                                                        _ => {
-                                                            map.push((
-                                                                seg.span,
-                                                                SemanticEntity::Symbol(sym_id),
-                                                            ));
-                                                            current_mod = None;
-                                                            current_ty = None;
-                                                        }
-                                                    }
-                                                } else {
-                                                    current_mod = None;
-                                                    current_ty = None;
-                                                }
-                                            } else {
-                                                current_mod = None;
-                                                current_ty = None;
-                                            }
-                                        } else if let Some(type_id) = current_ty {
-                                            if let Some(ty_info) = compiler.types.get(type_id) {
-                                                match &ty_info.ty {
-                                                    Type::Struct(sdef) => {
-                                                        let field_idx = sdef
-                                                            .fields
-                                                            .iter()
-                                                            .position(|member_id| {
-                                                                compiler
-                                                                    .sym_members
-                                                                    .get(*member_id)
-                                                                    .and_then(|m| match m {
-                                                                        MemberSymbolKind::Field(
-                                                                            f,
-                                                                        ) => Some(
-                                                                            f.name_id
-                                                                                == seg_name_id,
-                                                                        ),
-                                                                        _ => None,
-                                                                    })
-                                                                    .unwrap_or(false)
-                                                            });
-                                                        if let Some(field_idx) = field_idx {
-                                                            let member_id = sdef.fields[field_idx];
-                                                            let field_type_id = compiler
-                                                                .sym_members
-                                                                .get(member_id)
-                                                                .and_then(|m| match m {
-                                                                    MemberSymbolKind::Field(f) => {
-                                                                        Some(f.type_id)
-                                                                    }
-                                                                    _ => None,
-                                                                });
-                                                            map.push((
-                                                                seg.span,
-                                                                SemanticEntity::Field {
-                                                                    owner_sym_id: sdef.sym_id,
-                                                                    field_idx,
-                                                                },
-                                                            ));
-                                                            current_ty = field_type_id;
-                                                        } else {
-                                                            current_ty = None;
-                                                        }
-                                                    }
-                                                    Type::Enum(edef) => {
-                                                        let v_idx = edef
-                                                                     .variants
-                                                                     .iter()
-                                                                     .position(|member_id| {
-                                                                         compiler.sym_members
-                                                                             .get(*member_id )
-                                                                             .and_then(|m| match m {
-                                                                                 MemberSymbolKind::Variant(v) => Some(v.name_id == seg_name_id),
-                                                                                 _ => None,
-                                                                             })
-                                                                             .unwrap_or(false)
-                                                                     });
-                                                        if let Some(v_idx) = v_idx {
-                                                            let member_id = edef.variants[v_idx];
-                                                            let variant_type_id = compiler
-                                                                .sym_members
-                                                                .get(member_id)
-                                                                .and_then(|m| match m {
-                                                                    MemberSymbolKind::Variant(
-                                                                        v,
-                                                                    ) => v.type_id,
-                                                                    _ => None,
-                                                                });
-                                                            map.push((
-                                                                seg.span,
-                                                                SemanticEntity::Variant {
-                                                                    owner_sym_id: edef.sym_id,
-                                                                    variant_idx: v_idx,
-                                                                },
-                                                            ));
-                                                            current_ty = variant_type_id;
-                                                        } else {
-                                                            current_ty = None;
-                                                        }
-                                                    }
-                                                    _ => {
-                                                        current_ty = None;
-                                                    }
-                                                }
-                                            } else {
-                                                current_ty = None;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        fn collect_cfg_refs(
-            compiler: &ScriptCompiler,
-            cfg: &compilation::parser::ast::ast_concepts::AbstractConfig,
-            map: &mut Vec<(SourceSpan, SemanticEntity)>,
-            text: &str,
-            interner: &Intern,
-            script_start: usize,
-        ) {
-            for opt in &cfg.opt_assignments {
-                collect_expr_refs(compiler, &opt.array_expr, map, text, interner, script_start);
-            }
-            for child in &cfg.cfg_members {
-                collect_cfg_refs(compiler, child, map, text, interner, script_start);
-            }
-        }
-
         // 1. Symbol Definitions
         for (i, sym) in compiler.symbols.iter().enumerate() {
             if matches!(sym.sym_origin, SymbolOrigin::Module(mid) if mid.id == 0)
@@ -1056,7 +618,13 @@ impl DocumentState {
 
         // 3.5. Configuration Definitions
         // Config roots are now stored as Impl compilation units.
-        for comp_unit in self.compilation_syms.first().into_iter().flatten().flatten() {
+        for comp_unit in self
+            .compilation_syms
+            .first()
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
             let impl_id = match comp_unit {
                 CompilationUnit::Impl(impl_id) => impl_id,
                 _ => continue,
@@ -1071,7 +639,9 @@ impl DocumentState {
 
             // Root options
             for &impl_member_id in &cfg_root.opt_assignments {
-                if let ImplMemberKind::OptAssignmentRoot(opt) = &compiler.impl_members[impl_member_id] {
+                if let ImplMemberKind::OptAssignmentRoot(opt) =
+                    &compiler.impl_members[impl_member_id]
+                {
                     map.push((
                         opt.name_span,
                         SemanticEntity::ConfigOption {
@@ -1084,7 +654,8 @@ impl DocumentState {
 
             // Root members
             for &impl_member_id in &cfg_root.cfg_members {
-                if let ImplMemberKind::ConfigDefMember(mem) = &compiler.impl_members[impl_member_id] {
+                if let ImplMemberKind::ConfigDefMember(mem) = &compiler.impl_members[impl_member_id]
+                {
                     map.push((
                         mem.name_span,
                         SemanticEntity::ConfigMember {
@@ -1134,105 +705,52 @@ impl DocumentState {
 
         // 4. Type and Expr References in AST
         if let Some(Some(ast)) = self.asts.first() {
+            let mut collector = RefCollector {
+                compiler,
+                text: &self.text,
+                interner: &self.interner,
+                script_start: self.script_start,
+                map: &mut map,
+            };
             for item in ast.items() {
                 match item {
-                    Item::Decl(AbstractDecl::Var(v)) => {
-                        collect_expr_refs(
-                            compiler,
-                            &v.spanned_expr,
-                            &mut map,
-                            &self.text,
-                            &self.interner,
-                            self.script_start,
-                        );
-                    }
+                    Item::Decl(AbstractDecl::Var(v)) => collector.expr_refs(&v.spanned_expr),
                     Item::Decl(AbstractDecl::TypeDef(def)) => {
-                        collect_type_refs(compiler, &def.sp_ty_expr, &mut map);
+                        collector.type_refs(&def.sp_ty_expr);
                         for cond in &def.conds {
-                            collect_expr_refs(
-                                compiler,
-                                cond,
-                                &mut map,
-                                &self.text,
-                                &self.interner,
-                                self.script_start,
-                            );
+                            collector.expr_refs(cond);
                         }
                     }
                     Item::Decl(AbstractDecl::Struct(s)) => {
                         for cond in &s.glob_conds {
-                            collect_expr_refs(
-                                compiler,
-                                cond,
-                                &mut map,
-                                &self.text,
-                                &self.interner,
-                                self.script_start,
-                            );
+                            collector.expr_refs(cond);
                         }
                         for field in &s.fields {
-                            collect_type_refs(compiler, &field.sp_ty_expr, &mut map);
+                            collector.type_refs(&field.sp_ty_expr);
                             for cond in &field.conds {
-                                collect_expr_refs(
-                                    compiler,
-                                    cond,
-                                    &mut map,
-                                    &self.text,
-                                    &self.interner,
-                                    self.script_start,
-                                );
+                                collector.expr_refs(cond);
                             }
                         }
                     }
                     Item::Decl(AbstractDecl::Enum(e)) => {
                         for cond in &e.glob_conds {
-                            collect_expr_refs(
-                                compiler,
-                                cond,
-                                &mut map,
-                                &self.text,
-                                &self.interner,
-                                self.script_start,
-                            );
+                            collector.expr_refs(cond);
                         }
                         for variant in &e.variants {
                             if let Some(ty) = &variant.sp_ty_expr {
-                                collect_type_refs(compiler, ty, &mut map);
+                                collector.type_refs(ty);
                             }
                             for cond in &variant.conds {
-                                collect_expr_refs(
-                                    compiler,
-                                    cond,
-                                    &mut map,
-                                    &self.text,
-                                    &self.interner,
-                                    self.script_start,
-                                );
+                                collector.expr_refs(cond);
                             }
                         }
                     }
                     Item::Decl(AbstractDecl::Alias(a)) => {
                         for cond in &a.conds {
-                            collect_expr_refs(
-                                compiler,
-                                cond,
-                                &mut map,
-                                &self.text,
-                                &self.interner,
-                                self.script_start,
-                            );
+                            collector.expr_refs(cond);
                         }
                     }
-                    Item::Impl(AbstractImpl::Config(cfg)) => {
-                        collect_cfg_refs(
-                            compiler,
-                            cfg,
-                            &mut map,
-                            &self.text,
-                            &self.interner,
-                            self.script_start,
-                        );
-                    }
+                    Item::Impl(AbstractImpl::Config(cfg)) => collector.cfg_refs(cfg),
                 }
             }
         }
@@ -1261,6 +779,24 @@ impl DocumentState {
             }
         }
 
+        self.set_symbol_map(map);
+    }
+
+    /// Replaces the symbol map, restoring the ordering and span-length bound that
+    /// [`get_entity_at_offset`](Self::get_entity_at_offset) depends on.
+    ///
+    /// Assign through this rather than writing `symbol_map` directly; that field
+    /// is public for iteration (references, rename) only.
+    pub fn set_symbol_map(&mut self, mut map: Vec<(SourceSpan, SemanticEntity)>) {
+        // Sorting by start offset lets the lookup binary-search instead of
+        // scanning the whole map; the longest span bounds how far back from the
+        // landing point a containing span can begin.
+        map.sort_unstable_by_key(|(span, _)| (span.start, span.end));
+        self.max_span_len = map
+            .iter()
+            .map(|(span, _)| span.end.saturating_sub(span.start))
+            .max()
+            .unwrap_or(0);
         self.symbol_map = map;
     }
 
@@ -1276,12 +812,26 @@ impl DocumentState {
     /// it to a relative offset that matches the spans stored in `symbol_map`.
     pub fn get_entity_at_offset(&self, offset: usize) -> Option<&SemanticEntity> {
         let rel_offset = offset.saturating_sub(self.script_start);
+
+        // `symbol_map` is sorted by `span.start`, so every span that can contain
+        // `rel_offset` sits at or before the first entry starting after it, and no
+        // further back than `max_span_len` bytes.  This bounds the scan to the
+        // spans actually overlapping the cursor; it used to walk the entire map on
+        // every call, which the semantic-tokens pass does once per identifier
+        // token — quadratic in file size.
+        let upper = self
+            .symbol_map
+            .partition_point(|(span, _)| (span.start as usize) <= rel_offset);
+        let lowest_start = rel_offset.saturating_sub(self.max_span_len as usize);
+
         // Find the smallest span that contains the offset, as it's the most specific.
         // This prevents broader expressions (like qualified names) from shadowing
         // their more specific components (like the module or field name).
-        self.symbol_map
+        self.symbol_map[..upper]
             .iter()
-            .filter(|(span, _)| rel_offset >= span.start as usize && rel_offset < span.end as usize)
+            .rev()
+            .take_while(|(span, _)| (span.start as usize) >= lowest_start)
+            .filter(|(span, _)| rel_offset < span.end as usize)
             .min_by_key(|(span, _)| span.end.saturating_sub(span.start))
             .map(|(_, entity)| entity)
     }
@@ -1300,70 +850,27 @@ impl DocumentState {
     /// | Member          | `"chrn-member"`     |
     /// | Type checker    | `"chrn-type"`       |
     pub fn get_lsp_diagnostics(&self) -> Vec<tower_lsp::lsp_types::Diagnostic> {
+        let stages: [(&SourceDiagnosticSummary, &str); 6] = [
+            (&self.config_errors, "chrn-config"),
+            (&self.parse_errors, "chrn-parser"),
+            (&self.ns_errors, "chrn-namespace"),
+            (&self.member_errors, "chrn-member"),
+            (&self.ty_errors, "chrn-type"),
+            (&self.cn_errors, "chrn-constraint"),
+        ];
+
         let mut lsp_diags = Vec::new();
         let doc_len = self.text.len();
-
-        if !self.config_errors.diags().is_empty() {
+        for (summary, source) in stages {
             analyser::push_diagnostics(
                 &mut lsp_diags,
-                self.config_errors.diags(),
+                summary.diags(),
                 &self.region_arena,
                 &self.text,
                 doc_len,
-                "chrn-config",
+                source,
             );
         }
-        if !self.parse_errors.diags().is_empty() {
-            analyser::push_diagnostics(
-                &mut lsp_diags,
-                self.parse_errors.diags(),
-                &self.region_arena,
-                &self.text,
-                doc_len,
-                "chrn-parser",
-            );
-        }
-        if !self.ns_errors.diags().is_empty() {
-            analyser::push_diagnostics(
-                &mut lsp_diags,
-                self.ns_errors.diags(),
-                &self.region_arena,
-                &self.text,
-                doc_len,
-                "chrn-namespace",
-            );
-        }
-        if !self.member_errors.diags().is_empty() {
-            analyser::push_diagnostics(
-                &mut lsp_diags,
-                self.member_errors.diags(),
-                &self.region_arena,
-                &self.text,
-                doc_len,
-                "chrn-member",
-            );
-        }
-        if !self.ty_errors.diags().is_empty() {
-            analyser::push_diagnostics(
-                &mut lsp_diags,
-                self.ty_errors.diags(),
-                &self.region_arena,
-                &self.text,
-                doc_len,
-                "chrn-type",
-            );
-        }
-        if !self.cn_errors.diags().is_empty() {
-            analyser::push_diagnostics(
-                &mut lsp_diags,
-                self.cn_errors.diags(),
-                &self.region_arena,
-                &self.text,
-                doc_len,
-                "chrn-constraint",
-            );
-        }
-
         lsp_diags
     }
 
@@ -1415,136 +922,101 @@ impl DocumentState {
             .map(|(id, _, _)| self.interner.search(id).to_string())
     }
 
-    /// Resolves a [`SemanticEntity`] to its definition location.
+    /// Resolves a symbol to the AST it was declared in, its declaration node, and
+    /// the path of the file that AST came from.
+    ///
+    /// Compiler-origin symbols (directives) have `ast_id = None` and return `None`:
+    /// they are built-in names without a user-visible definition site.
+    fn symbol_site(&self, sym_id: SymbolId) -> Option<(&AstInfo, AstId, &Path)> {
+        let compiler = self.compiler.as_ref()?;
+        let sym = compiler.symbols.get(sym_id)?;
+        let ast_id = sym.ast_id?;
+        let owner_id = match sym.sym_origin {
+            SymbolOrigin::Module(mid) => mid.id as usize,
+            SymbolOrigin::Compiler => 0,
+        };
+        let ast = self.asts.get(owner_id)?.as_ref()?;
+        let module = compiler.mods.get(ModuleId::new(owner_id as u32))?;
+        let region = self.region_arena.get(module.region_id?)?;
+        Some((ast, ast_id, self.interner.search_path(region.path_id)))
+    }
+
+    /// Path of the file backing `mod_id`'s source region.
+    fn module_path(&self, mod_id: ModuleId) -> Option<&Path> {
+        let compiler = self.compiler.as_ref()?;
+        let region = self
+            .region_arena
+            .get(compiler.mods.get(mod_id)?.region_id?)?;
+        Some(self.interner.search_path(region.path_id))
+    }
+
+    /// Resolves a [`SemanticEntity`] to its definition site, borrowing the path
+    /// out of the interner instead of allocating it.
     ///
     /// Returns `(file_path, span, owning_symbol_id)` where:
-    /// * `file_path` is the OS path string of the file containing the definition.
+    /// * `file_path` is the path of the file containing the definition.
     /// * `span` is the byte span of the definition name token within that file.
     /// * `owning_symbol_id` is only meaningful for `Field` and `Variant` variants;
     ///   it identifies the struct/enum that owns the member.
     ///
     /// Returns `None` when the definition cannot be located (e.g. builtin module,
     /// missing AST, or unresolved region).
-    pub fn get_definition_location(
+    pub fn definition_site(
         &self,
         entity: &SemanticEntity,
-    ) -> Option<(String, SourceSpan, Option<SymbolId>)> {
-        let compiler = self.compiler.as_ref()?;
+    ) -> Option<(&Path, SourceSpan, Option<SymbolId>)> {
         match entity {
             SemanticEntity::Symbol(sym_id) => {
-                let sym = compiler.symbols.get(*sym_id)?;
-                // Compiler-origin symbols (directives) have ast_id = None, so
-                // they intentionally return no definition location — they are
-                // built-in names without a user-visible definition site.
-                let ast_id = sym.ast_id?;
-                let owner_id = match sym.sym_origin {
-                    SymbolOrigin::Module(mid) => mid.id as usize,
-                    SymbolOrigin::Compiler => 0,
-                };
-                let ast = self.asts.get(owner_id)?.as_ref()?;
-                let span = ast.get_name_span(ast_id);
-                let module = compiler.mods.get(ModuleId::new(owner_id as u32))?;
-                let region = self.region_arena.get(module.region_id?)?;
-                let path = self.interner.search_path(region.path_id);
-                Some((path.to_string_lossy().to_string(), span, None))
+                let (ast, ast_id, path) = self.symbol_site(*sym_id)?;
+                Some((path, ast.get_name_span(ast_id), None))
             }
             SemanticEntity::Field {
                 owner_sym_id,
                 field_idx,
             } => {
-                let sym = compiler.symbols.get(*owner_sym_id)?;
-                let ast_id = sym.ast_id?;
-                let owner_id = match sym.sym_origin {
-                    SymbolOrigin::Module(mid) => mid.id as usize,
-                    SymbolOrigin::Compiler => 0,
-                };
-                let ast = self.asts.get(owner_id)?.as_ref()?;
-                let abs_struct = ast.get_struct(ast_id);
-                let field = abs_struct.fields.get(*field_idx)?;
-                let module = compiler.mods.get(ModuleId::new(owner_id as u32))?;
-                let region = self.region_arena.get(module.region_id?)?;
-                let path = self.interner.search_path(region.path_id);
-                Some((
-                    path.to_string_lossy().to_string(),
-                    field.name_span,
-                    Some(*owner_sym_id),
-                ))
+                let (ast, ast_id, path) = self.symbol_site(*owner_sym_id)?;
+                let field = ast.get_struct(ast_id).fields.get(*field_idx)?;
+                Some((path, field.name_span, Some(*owner_sym_id)))
             }
             SemanticEntity::Variant {
                 owner_sym_id,
                 variant_idx,
             } => {
-                let sym = compiler.symbols.get(*owner_sym_id)?;
-                let ast_id = sym.ast_id?;
-                let owner_id = match sym.sym_origin {
-                    SymbolOrigin::Module(mid) => mid.id as usize,
-                    SymbolOrigin::Compiler => 0,
-                };
-                let ast = self.asts.get(owner_id)?.as_ref()?;
-                let abs_enum = ast.get_enum(ast_id);
-                let variant = abs_enum.variants.get(*variant_idx)?;
-                let module = compiler.mods.get(ModuleId::new(owner_id as u32))?;
-                let region = self.region_arena.get(module.region_id?)?;
-                let path = self.interner.search_path(region.path_id);
-                Some((
-                    path.to_string_lossy().to_string(),
-                    variant.name_span,
-                    Some(*owner_sym_id),
-                ))
+                let (ast, ast_id, path) = self.symbol_site(*owner_sym_id)?;
+                let variant = ast.get_enum(ast_id).variants.get(*variant_idx)?;
+                Some((path, variant.name_span, Some(*owner_sym_id)))
             }
+            // Locals and configs are always declared in the main module.
             SemanticEntity::Local {
                 decl_span,
                 owner_sym_id,
                 ..
-            } => {
-                // For locals, they are defined in module 0 of the current state.
-                // `Arena` does not expose a `first()` method, so access the inner
-                // `items` vec directly.
-                let region = self
-                    .region_arena
-                    .get(compiler.mods.items.first()?.region_id?)?;
-                let path = self.interner.search_path(region.path_id);
-                Some((
-                    path.to_string_lossy().to_string(),
-                    *decl_span,
-                    *owner_sym_id,
-                ))
+            } => Some((
+                self.module_path(ModuleId::new(0))?,
+                *decl_span,
+                *owner_sym_id,
+            )),
+            SemanticEntity::ConfigMember { member_id, .. } => {
+                let compiler = self.compiler.as_ref()?;
+                let name_span = compiler.get_cfg_def_member(*member_id).name_span;
+                Some((self.module_path(ModuleId::new(0))?, name_span, None))
             }
             SemanticEntity::Module(mod_id) => {
-                let region = self
-                    .region_arena
-                    .get(compiler.mods.get(*mod_id)?.region_id?)?;
-                let path = self.interner.search_path(region.path_id);
-                Some((
-                    path.to_string_lossy().to_string(),
-                    SourceSpan::default(),
-                    None,
-                ))
+                Some((self.module_path(*mod_id)?, SourceSpan::default(), None))
             }
-            SemanticEntity::ConfigMember {
-                cfg_root_impl_id,
-                member_id,
-            } => {
-                let cfg_member = compiler.get_cfg_def_member(*member_id);
-                // The ImplHir's scope_origin carries the module info; look up the
-                // module that contains this impl via the compilation_syms mapping.
-                let impl_hir = &compiler.impls[*cfg_root_impl_id];
-                let owner_id = 0; // Configs are always in the main module (module 0)
-                let _ = impl_hir;
-                let module = compiler.mods.get(ModuleId::new(owner_id as u32))?;
-                let region = self.region_arena.get(module.region_id?)?;
-                let path = self.interner.search_path(region.path_id);
-                Some((
-                    path.to_string_lossy().to_string(),
-                    cfg_member.name_span,
-                    None,
-                ))
-            }
-            SemanticEntity::ConfigOption { .. } => {
-                // Schema-defined names have no source declaration to jump to.
-                None
-            }
+            // Schema-defined names have no source declaration to jump to.
+            SemanticEntity::ConfigOption { .. } => None,
         }
+    }
+
+    /// Owning [`String`] form of [`definition_site`](Self::definition_site), for
+    /// callers that need the path beyond the borrow of `self`.
+    pub fn get_definition_location(
+        &self,
+        entity: &SemanticEntity,
+    ) -> Option<(String, SourceSpan, Option<SymbolId>)> {
+        self.definition_site(entity)
+            .map(|(path, span, owner)| (path.to_string_lossy().into_owned(), span, owner))
     }
 
     /// Check if a given byte offset falls within a comment (single or multi).
@@ -1562,7 +1034,7 @@ impl DocumentState {
     /// add `script_start` to obtain absolute file coordinates.
     pub fn find_matching_entities(
         doc_cache: &DocumentCache,
-        def_path: &str,
+        def_path: &Path,
         def_span: SourceSpan,
         def_owner_sym_id: Option<SymbolId>,
     ) -> Vec<(String, Arc<String>, u32, u32, usize)> {
@@ -1580,12 +1052,16 @@ impl DocumentState {
         for (state_uri, state_arc) in states {
             let state = state_arc.read();
             for (span, ent) in &state.symbol_map {
-                if let Some((other_def_path, other_def_span, other_def_owner_sym_id)) =
-                    state.get_definition_location(ent)
-                    && other_def_path == def_path
-                    && other_def_span.start == def_span.start
-                    && other_def_span.end == def_span.end
-                    && other_def_owner_sym_id == def_owner_sym_id
+                // `definition_site` borrows the path out of the interner, so this
+                // runs allocation-free — one `String` per symbol-map entry per
+                // cached document used to be built here just to be compared away.
+                // The two integer fields are checked first because they reject
+                // almost every entry before the path comparison is reached.
+                if let Some((other_path, other_span, other_owner)) = state.definition_site(ent)
+                    && other_span.start == def_span.start
+                    && other_span.end == def_span.end
+                    && other_owner == def_owner_sym_id
+                    && other_path == def_path
                 {
                     results.push((
                         state_uri.clone(),
@@ -1636,11 +1112,12 @@ impl DocumentState {
     }
 }
 
-type CacheEntry = (
-    Arc<String>,
-    Arc<RwLock<DocumentState>>,
-    Arc<std::sync::atomic::AtomicU64>,
-);
+/// `(source text, analysis state, access tick)`.
+///
+/// The tick is a plain `AtomicU64` rather than an `Arc<AtomicU64>`: it is only
+/// ever touched through a borrow of the entry, so the extra allocation and
+/// refcount bought nothing.
+type CacheEntry = (Arc<String>, Arc<RwLock<DocumentState>>, AtomicU64);
 
 /// Internal storage for [`DocumentCache`].
 struct CacheInner {
@@ -1675,7 +1152,7 @@ struct CacheInner {
 pub struct DocumentCache {
     inner: RwLock<CacheInner>,
     max_size: usize,
-    tick: std::sync::atomic::AtomicU64,
+    tick: AtomicU64,
 }
 
 impl std::fmt::Debug for DocumentCache {
@@ -1696,8 +1173,33 @@ impl DocumentCache {
                 dependents: HashMap::new(),
             }),
             max_size,
-            tick: std::sync::atomic::AtomicU64::new(0),
+            tick: AtomicU64::new(0),
         }
+    }
+
+    /// Returns the cached state for `uri` when `text` matches what is stored,
+    /// marking the entry as most recently used.
+    ///
+    /// Shared by the read-lock fast path and the write-lock double check of both
+    /// [`get_or_create`](Self::get_or_create) and [`insert_or_get`](Self::insert_or_get),
+    /// which each used to spell the same comparison out by hand.
+    fn hit(
+        &self,
+        cache: &CacheInner,
+        uri: &str,
+        text: &Arc<String>,
+    ) -> Option<Arc<RwLock<DocumentState>>> {
+        let (cached_text, existing, access_tick) = cache.docs.get(uri)?;
+        if !Arc::ptr_eq(cached_text, text) && **cached_text != **text {
+            return None;
+        }
+        access_tick.store(self.next_tick(), Ordering::Relaxed);
+        Some(Arc::clone(existing))
+    }
+
+    /// Allocates the next monotonic access tick used for LRU ordering.
+    fn next_tick(&self) -> u64 {
+        self.tick.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Returns an existing [`DocumentState`] for `uri` when the source text is
@@ -1717,17 +1219,8 @@ impl DocumentCache {
         version: u64,
     ) -> Arc<RwLock<DocumentState>> {
         // 1. Check existing under read lock first (cheap)
-        {
-            let cache = self.inner.read();
-            if let Some((cached_text, existing, access_tick)) = cache.docs.get(uri)
-                && (Arc::ptr_eq(cached_text, &text) || **cached_text == *text)
-            {
-                access_tick.store(
-                    self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-                    std::sync::atomic::Ordering::Relaxed,
-                );
-                return Arc::clone(existing);
-            }
+        if let Some(existing) = self.hit(&self.inner.read(), uri, &text) {
+            return existing;
         }
 
         // 2. Perform expensive tokenization OUTSIDE any cache lock.
@@ -1752,14 +1245,8 @@ impl DocumentCache {
         let mut cache = self.inner.write();
 
         // Double check after acquiring write lock in case another thread created it
-        if let Some((cached_text, existing, access_tick)) = cache.docs.get(uri)
-            && (Arc::ptr_eq(cached_text, &text) || **cached_text == *text)
-        {
-            access_tick.store(
-                self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-                std::sync::atomic::Ordering::Relaxed,
-            );
-            return Arc::clone(existing);
+        if let Some(existing) = self.hit(&cache, uri, &text) {
+            return existing;
         }
 
         self.evict_if_needed(&mut cache);
@@ -1776,13 +1263,7 @@ impl DocumentCache {
 
         cache.docs.insert(
             uri.to_string(),
-            (
-                text,
-                Arc::clone(&state),
-                Arc::new(std::sync::atomic::AtomicU64::new(
-                    self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-                )),
-            ),
+            (text, Arc::clone(&state), AtomicU64::new(self.next_tick())),
         );
         state
     }
@@ -1800,31 +1281,16 @@ impl DocumentCache {
         state: DocumentState,
     ) -> Arc<RwLock<DocumentState>> {
         // 1. Fast path: exact text already cached
-        {
-            let cache = self.inner.read();
-            if let Some((cached_text, existing, access_tick)) = cache.docs.get(uri)
-                && (Arc::ptr_eq(cached_text, &text) || **cached_text == *text)
-            {
-                access_tick.store(
-                    self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-                    std::sync::atomic::Ordering::Relaxed,
-                );
-                return Arc::clone(existing);
-            }
+        if let Some(existing) = self.hit(&self.inner.read(), uri, &text) {
+            return existing;
         }
 
         // 2. Insert under write lock
         let mut cache = self.inner.write();
 
         // Double-check after acquiring write lock
-        if let Some((cached_text, existing, access_tick)) = cache.docs.get(uri)
-            && (Arc::ptr_eq(cached_text, &text) || **cached_text == *text)
-        {
-            access_tick.store(
-                self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-                std::sync::atomic::Ordering::Relaxed,
-            );
-            return Arc::clone(existing);
+        if let Some(existing) = self.hit(&cache, uri, &text) {
+            return existing;
         }
 
         self.evict_if_needed(&mut cache);
@@ -1836,9 +1302,7 @@ impl DocumentCache {
             (
                 text,
                 Arc::clone(&state_arc),
-                Arc::new(std::sync::atomic::AtomicU64::new(
-                    self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-                )),
+                AtomicU64::new(self.next_tick()),
             ),
         );
 
@@ -1852,12 +1316,7 @@ impl DocumentCache {
             let mut entries: Vec<_> = cache
                 .docs
                 .iter()
-                .map(|(k, (_, _, tick))| {
-                    (
-                        k.to_string(),
-                        tick.load(std::sync::atomic::Ordering::Relaxed),
-                    )
-                })
+                .map(|(k, (_, _, tick))| (k.clone(), tick.load(Ordering::Relaxed)))
                 .collect();
             entries.sort_unstable_by_key(|(_, t)| *t);
             let keys_to_remove: Vec<String> = entries
@@ -1936,10 +1395,7 @@ impl DocumentCache {
     /// Looks up the [`DocumentState`] for `uri`, returning `None` if not cached.
     pub fn get(&self, uri: &str) -> Option<Arc<RwLock<DocumentState>>> {
         self.inner.read().docs.get(uri).map(|(_, state, tick)| {
-            tick.store(
-                self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-                std::sync::atomic::Ordering::Relaxed,
-            );
+            tick.store(self.next_tick(), Ordering::Relaxed);
             Arc::clone(state)
         })
     }
@@ -1947,10 +1403,7 @@ impl DocumentCache {
     /// Looks up only the source text for `uri` without acquiring a state lock.
     pub fn get_text(&self, uri: &str) -> Option<Arc<String>> {
         self.inner.read().docs.get(uri).map(|(text, _, tick)| {
-            tick.store(
-                self.tick.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-                std::sync::atomic::Ordering::Relaxed,
-            );
+            tick.store(self.next_tick(), Ordering::Relaxed);
             Arc::clone(text)
         })
     }
@@ -1981,5 +1434,457 @@ impl DocumentCache {
 impl Default for DocumentCache {
     fn default() -> Self {
         Self::new(50)
+    }
+}
+
+/// Read-only context shared by the AST reference walks that populate
+/// [`DocumentState::symbol_map`].
+///
+/// The walks are mutually recursive and each needed the compiler, the document
+/// text, the interner, the script start, and the output map; threading five
+/// parameters through every call site (and every recursive step) made the call
+/// sites longer than the logic. Bundling them here also documents that
+/// everything except `map` is read-only.
+struct RefCollector<'a> {
+    compiler: &'a ScriptCompiler,
+    /// Whole-document text.  Spans in the AST are relative to the region's
+    /// `src_bytes`, so `script_start` must be added before slicing into this.
+    text: &'a str,
+    interner: &'a Intern,
+    script_start: usize,
+    map: &'a mut Vec<(SourceSpan, SemanticEntity)>,
+}
+
+impl RefCollector<'_> {
+    /// Indexes the symbols named by a type expression (and its generic arguments).
+    fn type_refs(&mut self, type_expr: &SpannedContainer<TypeExpr>) {
+        let compiler = self.compiler;
+        match &type_expr.inner {
+            TypeExpr::Var(name_id) => {
+                let interned = *name_id;
+                if let Some(scopes::SymbolLookupOutput {
+                    found_sym_id: sym_id,
+                    ..
+                }) = scopes::find_sym_id(
+                    compiler,
+                    AssociatedScopeKind::Module(ModuleId::new(0)),
+                    interned,
+                    ScopeType::Var,
+                    ScopeLookupPattern::NoRestrictions,
+                ) {
+                    self.map
+                        .push((type_expr.span, SemanticEntity::Symbol(sym_id)));
+                } else if let Some(scopes::SymbolLookupOutput {
+                    found_sym_id: sym_id,
+                    ..
+                }) = scopes::find_sym_id(
+                    compiler,
+                    AssociatedScopeKind::Module(ModuleId::new(0)),
+                    interned,
+                    ScopeType::Neutral,
+                    ScopeLookupPattern::NoRestrictions,
+                ) {
+                    self.map
+                        .push((type_expr.span, SemanticEntity::Symbol(sym_id)));
+                }
+            }
+            TypeExpr::Path(path) => {
+                if path.len() == 2 {
+                    let mod_name_part = &path[0];
+                    let sym_name_part = &path[1];
+                    if let PathSegment::Ident(mod_name_id) = mod_name_part.kind
+                        && let Some(found_mod) =
+                            compiler.mods.iter().find(|m| m.name_id == mod_name_id)
+                    {
+                        self.map
+                            .push((mod_name_part.span, SemanticEntity::Module(found_mod.mod_id)));
+                        if let PathSegment::Ident(sym_name_id) = sym_name_part.kind
+                            && let Some(scopes::SymbolLookupOutput {
+                                found_sym_id: sym_id,
+                                ..
+                            }) = scopes::find_sym_id(
+                                compiler,
+                                AssociatedScopeKind::Module(found_mod.mod_id),
+                                sym_name_id,
+                                ScopeType::Neutral,
+                                ScopeLookupPattern::NamespaceOnly,
+                            )
+                            .or_else(|| {
+                                scopes::find_sym_id(
+                                    compiler,
+                                    AssociatedScopeKind::Module(found_mod.mod_id),
+                                    sym_name_id,
+                                    ScopeType::Var,
+                                    ScopeLookupPattern::NamespaceOnly,
+                                )
+                            })
+                        {
+                            self.map
+                                .push((sym_name_part.span, SemanticEntity::Symbol(sym_id)));
+                        }
+                        return;
+                    }
+                }
+                for part in path {
+                    if let PathSegment::Generic(generic) = &part.kind {
+                        for arg in &generic.inputs {
+                            self.type_refs(arg);
+                        }
+                    }
+                }
+            }
+            TypeExpr::Generic(generic) => {
+                for arg in &generic.inputs {
+                    self.type_refs(arg);
+                }
+            }
+        }
+    }
+
+    /// Indexes the symbols, modules, fields, and variants named by an expression.
+    fn expr_refs(&mut self, expr: &compilation::parser::ast::ast_exprs::SpannedExpr) {
+        let compiler = self.compiler;
+        let text = self.text;
+        let interner = self.interner;
+        let script_start = self.script_start;
+        match &expr.expr {
+            Expr::MemberAccess(acc) => {
+                if let Expr::Var(base_id) = acc.base.expr
+                    && let Some(found_mod) = compiler.mods.iter().find(|m| m.name_id == base_id)
+                {
+                    self.map
+                        .push((acc.base.span, SemanticEntity::Module(found_mod.mod_id)));
+
+                    // Try to find a precise span for the field name by searching after the dot
+                    let full_span = expr.span;
+                    // The AST's `span` values are relative to the region's
+                    // `src_bytes`.  `text` is the whole document, so add
+                    // `script_start` to shift the offsets into the
+                    // coordinate system the string slice below operates in.
+                    let base_end = (acc.base.span.end as usize) + script_start;
+                    let full_end = (full_span.end as usize) + script_start;
+                    let field_name = interner.search(acc.field);
+
+                    // Look for the field name in the source text between dot and end of expr
+                    let mut field_span = SourceSpan {
+                        region_id: SourceRegionId::new(0),
+                        start: (base_end.saturating_add(1) - script_start) as u32,
+                        end: full_span.end,
+                    };
+
+                    let search_end = full_end.min(text.len());
+                    let search_area = &text[base_end..search_end];
+                    if let Some(dot_idx) = search_area.find('.')
+                        && let Some(name_idx) = search_area[dot_idx + 1..].find(field_name)
+                    {
+                        // The search produced a position in absolute
+                        // coordinates, so subtract `script_start` to keep
+                        // the stored span relative (consistent with the
+                        // rest of `symbol_map`).
+                        let start = base_end + dot_idx + 1 + name_idx;
+                        field_span = SourceSpan {
+                            region_id: SourceRegionId::new(0),
+                            start: (start - script_start) as u32,
+                            end: (start + field_name.len() - script_start) as u32,
+                        };
+                    }
+
+                    if let Some(scopes::SymbolLookupOutput {
+                        found_sym_id: sym_id,
+                        ..
+                    }) = scopes::find_sym_id(
+                        compiler,
+                        AssociatedScopeKind::Module(found_mod.mod_id),
+                        acc.field,
+                        ScopeType::Var,
+                        ScopeLookupPattern::NamespaceOnly,
+                    )
+                    .or_else(|| {
+                        scopes::find_sym_id(
+                            compiler,
+                            AssociatedScopeKind::Module(found_mod.mod_id),
+                            acc.field,
+                            ScopeType::Neutral,
+                            ScopeLookupPattern::NamespaceOnly,
+                        )
+                    }) {
+                        self.map.push((field_span, SemanticEntity::Symbol(sym_id)));
+                    }
+                }
+                self.expr_refs(&acc.base);
+            }
+            Expr::Default(_, def_expr) => self.expr_refs(def_expr),
+            Expr::Call(caller, args) => {
+                self.expr_refs(caller);
+                for arg in args {
+                    self.expr_refs(arg);
+                }
+            }
+            Expr::Unary(u) => self.expr_refs(&u.spanned_expr),
+            Expr::BinaryExpr { lhs, rhs, .. } => {
+                self.expr_refs(lhs);
+                self.expr_refs(rhs);
+            }
+            Expr::StaticAccess(segments) => {
+                if segments.len() >= 2
+                    && let PathSegment::Ident(name_id) = segments[0].kind
+                {
+                    let sym_id = scopes::find_sym_id(
+                        compiler,
+                        AssociatedScopeKind::Module(ModuleId::new(0)),
+                        name_id,
+                        ScopeType::Neutral,
+                        ScopeLookupPattern::NoRestrictions,
+                    )
+                    .or_else(|| {
+                        scopes::find_sym_id(
+                            compiler,
+                            AssociatedScopeKind::Module(ModuleId::new(0)),
+                            name_id,
+                            ScopeType::Var,
+                            ScopeLookupPattern::NoRestrictions,
+                        )
+                    });
+
+                    if let Some(scopes::SymbolLookupOutput {
+                        found_sym_id: sid, ..
+                    }) = sym_id
+                        && let Some(sym) = compiler.symbols.get(sid)
+                    {
+                        let mut current_mod: Option<ModuleId> = None;
+                        let mut current_ty: Option<TypeId> = None;
+                        let mut matched = false;
+                        match sym.kind {
+                            SymbolKind::Namespace => {
+                                match sym
+                                    .associated_scope
+                                    .expect("Namespace should have associated scope")
+                                {
+                                    AssociatedScopeKind::Module(mid) => {
+                                        self.map
+                                            .push((segments[0].span, SemanticEntity::Module(mid)));
+                                        current_mod = Some(mid);
+                                        matched = true;
+                                    }
+                                    AssociatedScopeKind::Scope(_) => {
+                                        self.map
+                                            .push((segments[0].span, SemanticEntity::Symbol(sid)));
+                                        matched = true;
+                                    }
+                                }
+                            }
+                            SymbolKind::Type(tid) => {
+                                self.map
+                                    .push((segments[0].span, SemanticEntity::Symbol(sid)));
+                                current_ty = Some(tid);
+                                matched = true;
+                            }
+                            SymbolKind::Variable(var_id) => {
+                                let var = &compiler.variables[var_id];
+                                if let VariableState::Known(val_id) = var.state
+                                    && let Some(val_info) = compiler.values.get(val_id)
+                                {
+                                    self.map
+                                        .push((segments[0].span, SemanticEntity::Symbol(sid)));
+                                    current_ty = Some(val_info.type_id);
+                                    matched = true;
+                                }
+                            }
+                            _ => {}
+                        }
+                        if matched {
+                            for seg in &segments[1..] {
+                                if let PathSegment::Ident(seg_name_id) = seg.kind {
+                                    if let Some(mod_id) = current_mod {
+                                        if let Some(scopes::SymbolLookupOutput {
+                                            found_sym_id: sym_id,
+                                            ..
+                                        }) = scopes::find_sym_id(
+                                            compiler,
+                                            AssociatedScopeKind::Module(mod_id),
+                                            seg_name_id,
+                                            ScopeType::Var,
+                                            ScopeLookupPattern::NamespaceOnly,
+                                        )
+                                        .or_else(|| {
+                                            scopes::find_sym_id(
+                                                compiler,
+                                                AssociatedScopeKind::Module(mod_id),
+                                                seg_name_id,
+                                                ScopeType::Neutral,
+                                                ScopeLookupPattern::NamespaceOnly,
+                                            )
+                                        }) {
+                                            if let Some(sym) = compiler.symbols.get(sym_id) {
+                                                match sym.kind {
+                                                    SymbolKind::Namespace => {
+                                                        match sym.associated_scope.expect("Namespace should have associated scope") {
+                                                            AssociatedScopeKind::Module(mid) => {
+                                                                self.map.push((
+                                                                    seg.span,
+                                                                    SemanticEntity::Module(mid),
+                                                                ));
+                                                                current_mod = Some(mid);
+                                                                current_ty = None;
+                                                            }
+                                                            AssociatedScopeKind::Scope(_) => {
+                                                                self.map.push((
+                                                                    seg.span,
+                                                                    SemanticEntity::Symbol(sym_id),
+                                                                ));
+                                                                current_mod = None;
+                                                                current_ty = None;
+                                                            }
+                                                        }
+                                                    }
+                                                    SymbolKind::Type(tid) => {
+                                                        self.map.push((
+                                                            seg.span,
+                                                            SemanticEntity::Symbol(sym_id),
+                                                        ));
+                                                        current_mod = None;
+                                                        current_ty = Some(tid);
+                                                    }
+                                                    SymbolKind::Variable(var_id) => {
+                                                        let var = &compiler.variables[var_id];
+                                                        if let VariableState::Known(val_id) =
+                                                            var.state
+                                                        {
+                                                            self.map.push((
+                                                                seg.span,
+                                                                SemanticEntity::Symbol(sym_id),
+                                                            ));
+                                                            current_mod = None;
+                                                            current_ty = Some(
+                                                                compiler.values[val_id].type_id,
+                                                            );
+                                                        }
+                                                    }
+                                                    _ => {
+                                                        self.map.push((
+                                                            seg.span,
+                                                            SemanticEntity::Symbol(sym_id),
+                                                        ));
+                                                        current_mod = None;
+                                                        current_ty = None;
+                                                    }
+                                                }
+                                            } else {
+                                                current_mod = None;
+                                                current_ty = None;
+                                            }
+                                        } else {
+                                            current_mod = None;
+                                            current_ty = None;
+                                        }
+                                    } else if let Some(type_id) = current_ty {
+                                        if let Some(ty_info) = compiler.types.get(type_id) {
+                                            match &ty_info.ty {
+                                                Type::Struct(sdef) => {
+                                                    let field_idx =
+                                                        sdef.fields.iter().position(|member_id| {
+                                                            compiler
+                                                                .sym_members
+                                                                .get(*member_id)
+                                                                .and_then(|m| match m {
+                                                                    MemberSymbolKind::Field(f) => {
+                                                                        Some(
+                                                                            f.name_id
+                                                                                == seg_name_id,
+                                                                        )
+                                                                    }
+                                                                    _ => None,
+                                                                })
+                                                                .unwrap_or(false)
+                                                        });
+                                                    if let Some(field_idx) = field_idx {
+                                                        let member_id = sdef.fields[field_idx];
+                                                        let field_type_id = compiler
+                                                            .sym_members
+                                                            .get(member_id)
+                                                            .and_then(|m| match m {
+                                                                MemberSymbolKind::Field(f) => {
+                                                                    Some(f.type_id)
+                                                                }
+                                                                _ => None,
+                                                            });
+                                                        self.map.push((
+                                                            seg.span,
+                                                            SemanticEntity::Field {
+                                                                owner_sym_id: sdef.sym_id,
+                                                                field_idx,
+                                                            },
+                                                        ));
+                                                        current_ty = field_type_id;
+                                                    } else {
+                                                        current_ty = None;
+                                                    }
+                                                }
+                                                Type::Enum(edef) => {
+                                                    let v_idx = edef.variants.iter().position(
+                                                        |member_id| {
+                                                            compiler
+                                                                .sym_members
+                                                                .get(*member_id)
+                                                                .and_then(|m| match m {
+                                                                    MemberSymbolKind::Variant(
+                                                                        v,
+                                                                    ) => Some(
+                                                                        v.name_id == seg_name_id,
+                                                                    ),
+                                                                    _ => None,
+                                                                })
+                                                                .unwrap_or(false)
+                                                        },
+                                                    );
+                                                    if let Some(v_idx) = v_idx {
+                                                        let member_id = edef.variants[v_idx];
+                                                        let variant_type_id = compiler
+                                                            .sym_members
+                                                            .get(member_id)
+                                                            .and_then(|m| match m {
+                                                                MemberSymbolKind::Variant(v) => {
+                                                                    v.type_id
+                                                                }
+                                                                _ => None,
+                                                            });
+                                                        self.map.push((
+                                                            seg.span,
+                                                            SemanticEntity::Variant {
+                                                                owner_sym_id: edef.sym_id,
+                                                                variant_idx: v_idx,
+                                                            },
+                                                        ));
+                                                        current_ty = variant_type_id;
+                                                    } else {
+                                                        current_ty = None;
+                                                    }
+                                                }
+                                                _ => {
+                                                    current_ty = None;
+                                                }
+                                            }
+                                        } else {
+                                            current_ty = None;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Walks a `complex->` config block and its nested members.
+    fn cfg_refs(&mut self, cfg: &compilation::parser::ast::ast_concepts::AbstractConfig) {
+        for opt in &cfg.opt_assignments {
+            self.expr_refs(&opt.array_expr);
+        }
+        for child in &cfg.cfg_members {
+            self.cfg_refs(child);
+        }
     }
 }

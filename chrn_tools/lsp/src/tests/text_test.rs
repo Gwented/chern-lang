@@ -164,3 +164,51 @@ fn test_apply_text_change_out_of_bounds_returns_err() {
     };
     _ = apply_text_change(existing, &change);
 }
+
+/// `PositionCursor` is an incremental restatement of `offset_to_position`; the two
+/// must agree at every byte boundary, including across multi-byte characters where
+/// UTF-8 length and UTF-16 length diverge.
+#[test]
+fn test_position_cursor_matches_offset_to_position() {
+    let text = "let a = 1\nlet é = \"日本\"\n\nlet c = 3";
+
+    let mut cursor = crate::text::PositionCursor::new(text);
+    for offset in 0..=text.len() {
+        if !text.is_char_boundary(offset) {
+            continue;
+        }
+        assert_eq!(
+            cursor.position_at(offset),
+            crate::text::offset_to_position(text, offset),
+            "cursor diverged at byte offset {offset}"
+        );
+    }
+}
+
+/// Offsets that go backwards, land mid-character, or run past the end must still
+/// produce the same answer as a full scan rather than panicking.
+#[test]
+fn test_position_cursor_handles_out_of_order_offsets() {
+    let text = "aé\nb";
+    let mut cursor = crate::text::PositionCursor::new(text);
+
+    assert_eq!(
+        cursor.position_at(4),
+        crate::text::offset_to_position(text, 4)
+    );
+    assert_eq!(
+        cursor.position_at(1),
+        crate::text::offset_to_position(text, 1),
+        "a backwards offset must fall back to a full scan"
+    );
+    assert_eq!(
+        cursor.position_at(2),
+        crate::text::offset_to_position(text, 2),
+        "offset 2 is inside the two-byte 'é'"
+    );
+    assert_eq!(
+        cursor.position_at(999),
+        crate::text::offset_to_position(text, 999),
+        "past-the-end offsets clamp"
+    );
+}

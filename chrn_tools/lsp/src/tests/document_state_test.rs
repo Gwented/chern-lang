@@ -1,5 +1,49 @@
-use crate::state::{DocumentCache, DocumentState};
+use crate::state::{DocumentCache, DocumentState, SemanticEntity};
+use chrn_utils::id_types::{SourceRegionId, SymbolId};
+use chrn_utils::source_map::source_span::SourceSpan;
 use std::sync::Arc;
+
+/// `get_entity_at_offset` must return the *smallest* span containing the offset,
+/// regardless of the order entries were collected in. The lookup binary-searches a
+/// sorted map, so this also guards the sort/`max_span_len` invariant maintained by
+/// `set_symbol_map`.
+#[test]
+fn test_get_entity_at_offset_picks_smallest_containing_span() {
+    let cache = DocumentCache::new(10);
+    let state_arc = cache.get_or_create(
+        "file:///nested.chrn",
+        Arc::new("let outer = 1".to_string()),
+        0,
+        None,
+        1,
+    );
+    let mut state = state_arc.write();
+
+    let span = |start, end| SourceSpan::new(SourceRegionId::new(0), start, end);
+    let sym = |n| SemanticEntity::Symbol(SymbolId::new(n));
+
+    // Deliberately unsorted, and with the widest span pushed between the others.
+    state.set_symbol_map(vec![
+        (span(4, 9), sym(1)),   // inner
+        (span(0, 13), sym(2)),  // outermost, spans the whole line
+        (span(12, 13), sym(3)), // later, disjoint
+        (span(0, 3), sym(4)),   // earlier, disjoint
+    ]);
+
+    assert_eq!(state.get_entity_at_offset(5), Some(&sym(1)), "inner wins");
+    assert_eq!(state.get_entity_at_offset(1), Some(&sym(4)), "earlier wins");
+    assert_eq!(state.get_entity_at_offset(12), Some(&sym(3)), "later wins");
+    assert_eq!(
+        state.get_entity_at_offset(10),
+        Some(&sym(2)),
+        "only the outermost span covers offset 10"
+    );
+    assert_eq!(
+        state.get_entity_at_offset(13),
+        None,
+        "spans are end-exclusive"
+    );
+}
 
 #[test]
 fn test_get_token_at_offset() {
@@ -135,7 +179,7 @@ fn test_find_matching_entities_propagates_script_start() {
     let results: Vec<(String, Arc<String>, u32, u32, usize)> =
         DocumentState::find_matching_entities(
             &cache,
-            "<no-match>",
+            std::path::Path::new("<no-match>"),
             chrn_utils::source_map::source_span::SourceSpan::new(
                 chrn_utils::id_types::SourceRegionId::new(0),
                 0,

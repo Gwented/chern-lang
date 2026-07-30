@@ -965,7 +965,7 @@ impl<'res> TypeResolver<'res> {
         &mut self,
         // For resolve_expr
         root_parent_impl_id: ImplId,
-        roo_sp_ty_expr: &SpannedContainer<TypeExpr>,
+        root_sp_ty_expr: &SpannedContainer<TypeExpr>,
         // For tracking invalid recursive usage
         // Recursive errors no longer exist at the moment because override can only access known
         // configs like "types" inside of "RUST { types {} }".
@@ -1190,7 +1190,7 @@ impl<'res> TypeResolver<'res> {
             //     }
 
             for abs_cfg_member in &parent_abs_cfg.cfg_members {
-                let AbstractConfigKind::Member(sp_member_name_id, _) = parent_abs_cfg.kind.clone()
+                let AbstractConfigKind::Member(sp_member_name_id, _) = abs_cfg_member.kind.clone()
                 else {
                     unreachable!()
                 };
@@ -1232,7 +1232,7 @@ impl<'res> TypeResolver<'res> {
                         )
                         // Pointing to root
                         .add_annotation(
-                            roo_sp_ty_expr.span,
+                            root_sp_ty_expr.span,
                             AnnotationKind::Secondary,
                             "Root".to_string().into(),
                         )
@@ -1402,7 +1402,7 @@ impl<'res> TypeResolver<'res> {
 
                 let cfg_member_id = self.resolve_cfg_member(
                     root_parent_impl_id,
-                    roo_sp_ty_expr,
+                    root_sp_ty_expr,
                     // cfg_dfs,
                     seen_cfg_vec,
                     seen_opt_vec,

@@ -119,30 +119,42 @@ pub fn compute_rename(
 ) -> Option<WorkspaceEdit> {
     let uri_str = uri.to_string();
     let state_arc = doc_cache.get(&uri_str)?;
-    let state = state_arc.read();
 
-    let byte_offset = position_to_offset(&state.text, position);
+    // Resolve the definition key and any local edits under the read guard, then
+    // drop it: `find_matching_entities` re-reads every cached document including
+    // this one, and `parking_lot`'s `RwLock` is not reentrant (see
+    // `references::compute_references` for the same constraint).
+    let (def_path, def_span, def_owner_sym_id, is_local, local_edits) = {
+        let state = state_arc.read();
 
-    if state.offset_in_comment(byte_offset) {
-        return None;
-    }
+        let byte_offset = position_to_offset(&state.text, position);
+        if state.offset_in_comment(byte_offset) {
+            return None;
+        }
 
-    let entity = state.get_entity_at_offset(byte_offset)?;
+        let entity = state.get_entity_at_offset(byte_offset)?;
 
-    // We don't support renaming modules yet as it usually implies renaming files
-    if matches!(entity, SemanticEntity::Module(_)) {
-        return None;
-    }
+        // We don't support renaming modules yet as it usually implies renaming files
+        if matches!(entity, SemanticEntity::Module(_)) {
+            return None;
+        }
 
-    let (def_path, def_span, def_owner_sym_id) = state.get_definition_location(entity)?;
-    let is_local = matches!(entity, SemanticEntity::Local { .. });
+        let (def_path, def_span, def_owner_sym_id) = state.definition_site(entity)?;
+        let def_path = def_path.to_path_buf();
+        let is_local = matches!(entity, SemanticEntity::Local { .. });
+        let local_edits = if is_local {
+            collect_local_edits(&state, &def_span, def_owner_sym_id, &new_name)
+        } else {
+            Vec::new()
+        };
+        (def_path, def_span, def_owner_sym_id, is_local, local_edits)
+    };
 
     let changes = if is_local {
-        let edits = collect_local_edits(&state, &def_span, def_owner_sym_id, &new_name);
-        if edits.is_empty() {
+        if local_edits.is_empty() {
             HashMap::new()
         } else {
-            [(uri.clone(), edits)].into_iter().collect()
+            [(uri.clone(), local_edits)].into_iter().collect()
         }
     } else {
         let entities =

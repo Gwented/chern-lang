@@ -41,9 +41,7 @@ use compilation::lexer::token::Token as ScriptToken;
 use compilation::lookup::scopes;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::Type;
-use compilation::semantic::hir::hir_symbols::{
-    Symbol, SymbolKind, SymbolOrigin, VariableState,
-};
+use compilation::semantic::hir::hir_symbols::{Symbol, SymbolKind, SymbolOrigin, VariableState};
 use parking_lot::RwLock;
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
@@ -351,12 +349,47 @@ impl Backend {
     /// Ensures the file where a symbol is defined is analyzed and cached,
     /// enabling cross-module operations (rename, references) to find
     /// occurrences in the definition file even when it hasn't been opened.
-    async fn ensure_definition_file_analyzed(&self, def_path_str: &str) {
-        let def_path = std::path::Path::new(def_path_str);
+    async fn ensure_definition_file_analyzed(&self, def_path: &std::path::Path) {
         if let Ok(def_uri) = tower_lsp::lsp_types::Url::from_file_path(def_path)
             && let Ok(text) = tokio::fs::read_to_string(def_path).await
         {
             self.get_analyzed_state(&def_uri, Arc::new(text));
+        }
+    }
+
+    /// Analyzes the file declaring the entity at `pos` when that file is a
+    /// *different* one from `uri`, so the cross-module search that follows can see
+    /// it even if the editor never opened it.
+    ///
+    /// Locals and modules are skipped: locals never cross files, and module
+    /// rename/references are unsupported.
+    async fn preload_definition_file(
+        &self,
+        state_arc: &RwLock<DocumentState>,
+        uri: &tower_lsp::lsp_types::Url,
+        pos: Position,
+    ) {
+        let def_path = {
+            let state = state_arc.read();
+            let byte_offset = crate::text::position_to_offset(&state.text, pos);
+            if state.offset_in_comment(byte_offset) {
+                None
+            } else {
+                state.get_entity_at_offset(byte_offset).and_then(|e| {
+                    if matches!(e, SemanticEntity::Local { .. } | SemanticEntity::Module(_)) {
+                        return None;
+                    }
+                    let (def_path, _, _) = state.definition_site(e)?;
+                    if def_path == std::path::Path::new(uri.path()) {
+                        return None;
+                    }
+                    Some(def_path.to_path_buf())
+                })
+            }
+        };
+
+        if let Some(def_path) = def_path {
+            self.ensure_definition_file_analyzed(&def_path).await;
         }
     }
 }
@@ -398,6 +431,49 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
             scopes::AssociatedScopeKind::Scope(_) => CompletionItemKind::VARIABLE,
         },
         SymbolKind::Directive(_) => CompletionItemKind::KEYWORD,
+    }
+}
+
+/// Accumulates semantic tokens in the delta encoding the LSP protocol requires:
+/// each token's position is expressed relative to the previously emitted one.
+///
+/// Owning the running `(prev_line, prev_start, first)` state here keeps it out of
+/// the emit loop, which previously passed all three plus the output vector as
+/// `&mut` arguments to a seven-parameter helper on every push.
+#[derive(Default)]
+struct DeltaTokens {
+    tokens: Vec<SemanticToken>,
+    prev_line: u32,
+    prev_start: u32,
+    /// `false` until the first token is pushed; the first token is absolute.
+    started: bool,
+}
+
+impl DeltaTokens {
+    /// Appends a token at `start_pos`, delta-encoded against the previous one.
+    ///
+    /// `start_pos` must not precede the previously pushed token.
+    fn push(&mut self, start_pos: Position, length: u32, token_type: u32) {
+        let (delta_line, delta_start) = if !self.started {
+            self.started = true;
+            (start_pos.line, start_pos.character)
+        } else if start_pos.line == self.prev_line {
+            (0, start_pos.character.saturating_sub(self.prev_start))
+        } else {
+            (
+                start_pos.line.saturating_sub(self.prev_line),
+                start_pos.character,
+            )
+        };
+        self.prev_line = start_pos.line;
+        self.prev_start = start_pos.character;
+        self.tokens.push(SemanticToken {
+            delta_line,
+            delta_start,
+            length,
+            token_type,
+            token_modifiers_bitset: 0,
+        });
     }
 }
 
@@ -733,29 +809,7 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let def_path_str = {
-            let state = state_arc.read();
-            let byte_offset = crate::text::position_to_offset(&state.text, pos);
-            if state.offset_in_comment(byte_offset) {
-                None
-            } else {
-                state.get_entity_at_offset(byte_offset).and_then(|e| {
-                    if matches!(e, SemanticEntity::Local { .. } | SemanticEntity::Module(_)) {
-                        return None;
-                    }
-                    let (def_path, _, _) = state.get_definition_location(e)?;
-                    let path = std::path::Path::new(&def_path);
-                    if path == uri.path() {
-                        return None;
-                    }
-                    Some(def_path)
-                })
-            }
-        };
-
-        if let Some(ref def_path_str) = def_path_str {
-            self.ensure_definition_file_analyzed(def_path_str).await;
-        }
+        self.preload_definition_file(&state_arc, &uri, pos).await;
 
         let edit = crate::rename::compute_rename(&uri, pos, new_name, &self.doc_cache);
         Ok(edit)
@@ -775,29 +829,7 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let def_path_str = {
-            let state = state_arc.read();
-            let byte_offset = crate::text::position_to_offset(&state.text, pos);
-            if state.offset_in_comment(byte_offset) {
-                None
-            } else {
-                state.get_entity_at_offset(byte_offset).and_then(|e| {
-                    if matches!(e, SemanticEntity::Local { .. } | SemanticEntity::Module(_)) {
-                        return None;
-                    }
-                    let (def_path, _, _) = state.get_definition_location(e)?;
-                    let path = std::path::Path::new(&def_path);
-                    if path == uri.path() {
-                        return None;
-                    }
-                    Some(def_path)
-                })
-            }
-        };
-
-        if let Some(ref def_path_str) = def_path_str {
-            self.ensure_definition_file_analyzed(def_path_str).await;
-        }
+        self.preload_definition_file(&state_arc, &uri, pos).await;
 
         let refs = crate::references::compute_references(&uri, pos, &self.doc_cache);
         Ok(refs)
@@ -823,43 +855,7 @@ impl LanguageServer for Backend {
 
         let toks_vec = &state.tokens;
 
-        let mut tokens: Vec<SemanticToken> = Vec::new();
-
-        // keep previous token position for delta encoding
-        let mut prev_line: u32 = 0;
-        let mut prev_start: u32 = 0;
-        let mut first = true;
-
-        fn push_semantic_token(
-            tokens: &mut Vec<SemanticToken>,
-            prev_line: &mut u32,
-            prev_start: &mut u32,
-            first: &mut bool,
-            start_pos: Position,
-            length: u32,
-            token_type: u32,
-        ) {
-            let (delta_line, delta_start) = if *first {
-                *first = false;
-                (start_pos.line, start_pos.character)
-            } else if start_pos.line == *prev_line {
-                (0, start_pos.character.saturating_sub(*prev_start))
-            } else {
-                (
-                    start_pos.line.saturating_sub(*prev_line),
-                    start_pos.character,
-                )
-            };
-            *prev_line = start_pos.line;
-            *prev_start = start_pos.character;
-            tokens.push(SemanticToken {
-                delta_line,
-                delta_start,
-                length,
-                token_type,
-                token_modifiers_bitset: 0,
-            });
-        }
+        let mut out = DeltaTokens::default();
 
         // Interleave tokens and comment trivia in strictly increasing file order.
         //
@@ -880,7 +876,13 @@ impl LanguageServer for Backend {
         // the comparison below therefore operates in that relative space.  When
         // emitting LSP positions, we add `script_start` to shift the offsets
         // back into the absolute file coordinate system the client expects.
+        //
+        // Because that merge yields non-decreasing offsets, a single
+        // `PositionCursor` can convert them all in one pass over the document;
+        // calling `offset_to_position` per token rescanned the whole file each
+        // time, which is quadratic in the file size.
         let script_start = state.script_start;
+        let mut cursor = crate::text::PositionCursor::new(&state.text);
         let mut tok_idx = 0;
         let mut triv_idx = 0;
 
@@ -897,24 +899,16 @@ impl LanguageServer for Backend {
                 }
                 let abs_start =
                     crate::text::rel_to_abs_offset(triv.span.start, script_start) as usize;
-                let start_pos = crate::text::offset_to_position(&state.text, abs_start);
+                let start_pos = cursor.position_at(abs_start);
                 let length = triv.span.end.saturating_sub(triv.span.start);
 
-                push_semantic_token(
-                    &mut tokens,
-                    &mut prev_line,
-                    &mut prev_start,
-                    &mut first,
-                    start_pos,
-                    length,
-                    SemanticTokenType::Comment.as_u32(),
-                );
+                out.push(start_pos, length, SemanticTokenType::Comment.as_u32());
             } else if tok_idx < toks_vec.len() {
                 let st = &toks_vec[tok_idx];
                 tok_idx += 1;
                 let span = st.span;
                 let abs_start = crate::text::rel_to_abs_offset(span.start, script_start) as usize;
-                let start_pos = crate::text::offset_to_position(&state.text, abs_start);
+                let start_pos = cursor.position_at(abs_start);
                 let length = span.end.saturating_sub(span.start);
 
                 let token_type: u32 = match st.tok {
@@ -930,9 +924,7 @@ impl LanguageServer for Backend {
                     ScriptToken::Id(id) => {
                         let next_is_paren = tok_idx < toks_vec.len()
                             && matches!(toks_vec[tok_idx].tok, ScriptToken::OParen);
-                        let abs_span_start =
-                            crate::text::rel_to_abs_offset(span.start, script_start) as usize;
-                        let entity = state.get_entity_at_offset(abs_span_start);
+                        let entity = state.get_entity_at_offset(abs_start);
                         if let Some(ty) = classify_id_token(compiler, entity, id.id, next_is_paren)
                         {
                             ty
@@ -979,15 +971,7 @@ impl LanguageServer for Backend {
                     _ => continue,
                 };
 
-                push_semantic_token(
-                    &mut tokens,
-                    &mut prev_line,
-                    &mut prev_start,
-                    &mut first,
-                    start_pos,
-                    length,
-                    token_type,
-                );
+                out.push(start_pos, length, token_type);
             } else {
                 break;
             }
@@ -995,7 +979,7 @@ impl LanguageServer for Backend {
 
         let sem_toks = tower_lsp::lsp_types::SemanticTokens {
             result_id: None,
-            data: tokens,
+            data: out.tokens,
         };
 
         Ok(Some(tower_lsp::lsp_types::SemanticTokensResult::Tokens(

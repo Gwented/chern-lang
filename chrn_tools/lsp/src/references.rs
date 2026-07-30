@@ -111,26 +111,46 @@ pub fn compute_references(
 ) -> Option<Vec<Location>> {
     let uri_str = uri.to_string();
     let state_arc = doc_cache.get(&uri_str)?;
-    let state = state_arc.read();
 
-    let byte_offset = position_to_offset(&state.text, position);
+    // The local search reads `state`; the cross-module search re-reads every
+    // cached document, *including this one*.  `parking_lot`'s `RwLock` is not
+    // reentrant, so holding this guard across `find_matching_entities` deadlocks
+    // as soon as a writer (an analysis task) is queued between the two reads.
+    // Resolve the definition key under the guard, then drop it before searching.
+    let (def_path, def_span, def_owner_sym_id, is_local, local_locations) = {
+        let state = state_arc.read();
 
-    if state.offset_in_comment(byte_offset) {
-        return None;
-    }
+        let byte_offset = position_to_offset(&state.text, position);
+        if state.offset_in_comment(byte_offset) {
+            return None;
+        }
 
-    let entity = state.get_entity_at_offset(byte_offset)?;
+        let entity = state.get_entity_at_offset(byte_offset)?;
 
-    // We don't support references for modules yet
-    if matches!(entity, SemanticEntity::Module(_)) {
-        return None;
-    }
+        // We don't support references for modules yet
+        if matches!(entity, SemanticEntity::Module(_)) {
+            return None;
+        }
 
-    let (def_path, def_span, def_owner_sym_id) = state.get_definition_location(entity)?;
-    let is_local = matches!(entity, SemanticEntity::Local { .. });
+        let (def_path, def_span, def_owner_sym_id) = state.definition_site(entity)?;
+        let def_path = def_path.to_path_buf();
+        let is_local = matches!(entity, SemanticEntity::Local { .. });
+        let local_locations = if is_local {
+            collect_local_occurrences(&state, &def_span, def_owner_sym_id, uri)
+        } else {
+            Vec::new()
+        };
+        (
+            def_path,
+            def_span,
+            def_owner_sym_id,
+            is_local,
+            local_locations,
+        )
+    };
 
     let locations = if is_local {
-        collect_local_occurrences(&state, &def_span, def_owner_sym_id, uri)
+        local_locations
     } else {
         let entities =
             DocumentState::find_matching_entities(doc_cache, &def_path, def_span, def_owner_sym_id);

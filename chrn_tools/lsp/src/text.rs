@@ -67,14 +67,8 @@ pub fn apply_text_change(
     change: &TextDocumentContentChangeEvent,
 ) -> Result<String, String> {
     // If no range is provided, the client replaced the entire document
-    if change.range.is_none() {
+    let Some(range) = change.range else {
         return Ok(change.text.clone());
-    }
-
-    // Extract byte offsets for the range
-    let range = match change.range {
-        Some(r) => r,
-        None => return Ok(change.text.clone()),
     };
 
     let start = position_to_offset(existing, range.start);
@@ -167,6 +161,57 @@ pub fn offset_to_position(text: &str, offset: usize) -> Position {
     }
 
     Position { line, character }
+}
+
+/// Converts a run of non-decreasing byte offsets to LSP [`Position`]s in a single
+/// pass over the text.
+///
+/// [`offset_to_position`] restarts from byte 0 on every call, so converting one
+/// offset per token — what the semantic-tokens pass does — costs O(n²) in the
+/// document length. Callers that visit offsets in non-decreasing order keep a
+/// cursor instead and walk the document once.
+///
+/// Out-of-order or non-char-boundary offsets are still handled correctly: the
+/// cursor falls back to a full scan rather than rejecting them.
+pub struct PositionCursor<'a> {
+    text: &'a str,
+    offset: usize,
+    line: u32,
+    character: u32,
+}
+
+impl<'a> PositionCursor<'a> {
+    pub fn new(text: &'a str) -> Self {
+        PositionCursor {
+            text,
+            offset: 0,
+            line: 0,
+            character: 0,
+        }
+    }
+
+    /// Advances the cursor to `offset` and returns the position there.
+    pub fn position_at(&mut self, offset: usize) -> Position {
+        let target = offset.min(self.text.len());
+        if target < self.offset || !self.text.is_char_boundary(target) {
+            return offset_to_position(self.text, target);
+        }
+
+        for c in self.text[self.offset..target].chars() {
+            if c == '\n' {
+                self.line += 1;
+                self.character = 0;
+            } else {
+                self.character += c.len_utf16() as u32;
+            }
+        }
+        self.offset = target;
+
+        Position {
+            line: self.line,
+            character: self.character,
+        }
+    }
 }
 
 /// Returns the indices of non-redundant ranges from a slice, discarding those that

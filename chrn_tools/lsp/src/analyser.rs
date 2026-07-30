@@ -77,11 +77,7 @@ const MAX_DIAGS_CACHE_SIZE: usize = 100;
 fn evict_cache_if_needed(cache: &mut HashMap<String, u64>) {
     if cache.len() >= MAX_DIAGS_CACHE_SIZE {
         let to_remove = cache.len() - MAX_DIAGS_CACHE_SIZE + 10;
-        let keys_to_remove: Vec<String> = cache
-            .keys()
-            .take(to_remove)
-            .map(|k| k.to_string())
-            .collect();
+        let keys_to_remove: Vec<String> = cache.keys().take(to_remove).cloned().collect();
         for key in keys_to_remove {
             cache.remove(&key);
         }
@@ -628,35 +624,30 @@ async fn publish_if_current(
     }
 }
 
-/// Resolves the source text and `script_start` for a [`SourceDiagnostic`] by
+/// Resolves the `script_start` a [`SourceDiagnostic`]'s spans are relative to, by
 /// looking up the [`SourceRegion`](chrn_utils::source_map::source_region::SourceRegion)
 /// whose `path_id` matches the diagnostic's `path_id`.
 ///
-/// Returns `(text, doc_len, script_start)` where:
-/// * `text` is the raw source bytes of the matching region, decoded as UTF-8.
-/// * `doc_len` is `text.len()`.
-/// * `script_start` is the absolute file byte position of the region's start,
-///   which is added to relative diagnostic spans to put them in absolute
-///   file coordinates before being surfaced to the LSP client.
+/// `script_start` is the absolute file byte position of the region's start, which
+/// is added to relative diagnostic spans to put them in absolute file coordinates
+/// before being surfaced to the LSP client.
 ///
-/// Falls back to `(fallback_text, fallback_doc_len, 0)` if no matching region is
-/// found. This is the case for diagnostics emitted by the compiler intrinsics
-/// (which never correspond to a user file) or for diagnostics whose region has
-/// been evicted from the arena.
-fn resolve_diag_text<'a>(
-    arena: &'a Arena<SourceRegion, SourceRegionId>,
+/// Falls back to `0` if no matching region is found. This is the case for
+/// diagnostics emitted by the compiler intrinsics (which never correspond to a
+/// user file) or for diagnostics whose region has been evicted from the arena.
+fn resolve_diag_script_start(
+    arena: &Arena<SourceRegion, SourceRegionId>,
     diag: &SourceDiagnostic,
-    fallback_text: &'a str,
-    fallback_doc_len: usize,
-) -> (&'a str, usize, usize) {
-    // SAFETY: The arena is built from the same `Intern` instance that produced
-    // the diagnostic's `path_id` (see `DocumentState::ensure_analyzed`).
-    // Therefore `region.path_id == diag.path_id` is a correct comparison.
-    if let Some(region) = arena.items.iter().find(|r| r.path_id == diag.path_id) {
-        let text = std::str::from_utf8(&region.src_bytes).unwrap_or(fallback_text);
-        return (text, region.src_bytes.len(), region.script_start);
-    }
-    (fallback_text, fallback_doc_len, 0)
+) -> usize {
+    // The arena is built from the same `Intern` instance that produced the
+    // diagnostic's `path_id` (see `DocumentState::ensure_analyzed`), so
+    // `region.path_id == diag.path_id` is a correct comparison.
+    arena
+        .items
+        .iter()
+        .find(|r| r.path_id == diag.path_id)
+        .map(|region| region.script_start)
+        .unwrap_or(0)
 }
 
 /// Converts a slice of core [`SourceDiagnostic`] values and appends the resulting LSP
@@ -696,23 +687,15 @@ pub(crate) fn push_diagnostics(
     source: &str,
 ) {
     for core_diag in diags {
-        // Resolve the correct source text for THIS diagnostic. A diagnostic
-        // originating in an imported module has spans in that module's bytes,
-        // not the main document's, so we must look up the matching region.
+        // A diagnostic originating in an imported module has spans relative to
+        // that module's region, so the shift has to come from the region matching
+        // this diagnostic's `path_id`, not from the main document's.
         //
-        // The returned `script_start` is added to the (relative) diagnostic
-        // spans to put them in absolute file coordinates.  After that shift,
-        // `fallback_text` (the whole document) can be used to convert byte
-        // offsets into LSP `Position`s that line up with what the editor shows.
-        let (rel_text, doc_len, script_start) =
-            resolve_diag_text(arena, core_diag, fallback_text, fallback_doc_len);
-
-        // Whether the resolved region is the main document (where
-        // `fallback_text` matches the region's bytes) or a sub-module, the
-        // resulting LSP positions must be in the absolute file coordinate
-        // system.  We always use `fallback_text` for the final `Position`
-        // conversion so the line/column reflects the whole document the
-        // editor is showing, with `script_start` shifting the byte offset.
+        // Whether that region is the main document or a sub-module, the resulting
+        // LSP positions must be in the absolute file coordinate system, so
+        // `fallback_text` (the whole document the editor is showing) is always
+        // what the final `Position` conversion runs against.
+        let script_start = resolve_diag_script_start(arena, core_diag);
         let text = fallback_text;
         let effective_doc_len = fallback_doc_len;
 
@@ -786,10 +769,6 @@ pub(crate) fn push_diagnostics(
                 }
                 AnnotationKind::Note => lsp_types::DiagnosticSeverity::INFORMATION,
             };
-            // `rel_text` and `doc_len` are still part of this scope in case
-            // future variants of the diagnostic pipeline need to look up
-            // other text-shaped fields by relative offset.
-            let _ = (rel_text, doc_len);
             lsp_diags.push(tower_lsp::lsp_types::Diagnostic {
                 range: lsp_types::Range {
                     start: crate::text::offset_to_position(text, ann_start),

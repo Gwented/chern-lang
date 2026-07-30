@@ -8,6 +8,7 @@ use chrn_utils::{
         },
     },
 };
+use unicode_width::UnicodeWidthStr;
 
 /// Groups annotations by the line they appear on, so spans that share a line
 /// can be reasoned about together during layout.
@@ -106,16 +107,81 @@ pub(super) fn find_annotation_lines<'a>(
     (spanned_lines, max_ln_num)
 }
 
+/// Visual column of one annotation on one rendered line.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct AnnotationPlacement {
+    /// First visual column the pointer run occupies.
+    pub(crate) start: usize,
+    /// Visual width of the pointer
+    pub(crate) ptr_len: usize,
+    /// Column just past everything the annotation prints with its label included
+    pub(crate) end: usize,
+}
+
+impl AnnotationPlacement {
+    /// Whether two placements would print over each other on the same row.
+    fn overlaps(self, other: AnnotationPlacement) -> bool {
+        self.start < other.end && other.start < self.end
+    }
+}
+
+/// Byte index the line visually ends at, excluding a trailing newline.
+pub(super) fn visual_ln_end(ln: &Line, src_str: &str) -> usize {
+    let ln_span = ln.ln_span.range_exclusive_usize();
+
+    //WARN: SPANNING IS (INCLUSIVE, EXCLUSIVE) SO THIS NEEDS - 1 TO NOT GO OUT OF BOUNDS
+    if src_str.as_bytes()[ln_span.end - 1] == b'\n' {
+        ln_span.end - 1
+    } else {
+        ln_span.end
+    }
+}
+
+/// Computes the visual columns an annotation claims on `ln`, accounting for unicode width.
+/// `ln_end` is the line's visual end from [`visual_ln_end`].
+///
+/// A label is printed after a single space, and one more trailing column is reserved so a label
+/// never butts directly against whatever gets placed to its right.
+pub(super) fn place_annotation(
+    annotation: &Annotation,
+    ln: &Line,
+    ln_end: usize,
+    src_str: &str,
+) -> AnnotationPlacement {
+    let span = annotation.span.range_exclusive_usize();
+    let ln_start = ln.ln_span.start as usize;
+
+    let clamped_start = span.start.max(ln_start);
+    let clamped_end = span.end.min(ln_end).max(clamped_start);
+
+    let start = line_mapping::get_chars_width(src_str, ln_start, clamped_start);
+    let ptr_len = line_mapping::get_chars_width(src_str, clamped_start, clamped_end);
+
+    let label_width = match &annotation.label {
+        Some(label) => 1 + UnicodeWidthStr::width(label.as_str()) + 1,
+        None => 0,
+    };
+
+    AnnotationPlacement {
+        start,
+        ptr_len,
+        end: start + ptr_len.max(1) + label_width,
+    }
+}
+
 /// Assigns layers to each `RenderInfo` so overlapping annotations don't collide on the
-/// same printed row.
+/// same printed row. A layer is exactly one printed row: annotations sharing a layer are
+/// guaranteed not to overlap, including the columns their labels take up.
+///
+/// Placement is first-fit over the layers, with primaries offered a row first so they keep the
+/// topmost row.
 pub(super) fn assign_layers_in_layout(ln_layout: &mut RenderLineLayout, src_str: &str) {
-    let ln_span = ln_layout.ln.ln_span;
+    let ln = ln_layout.ln;
+    let ln_span = ln.ln_span;
     ln_layout.render_info.retain(|render_info| {
         let ann = render_info.annotation;
         ln_span.contains_part(ann.span.start) || ln_span.contains_part(ann.span.end)
     });
-
-    let mut layer_occupied: Vec<usize> = Vec::new();
 
     ln_layout.render_info.sort_by_key(|r_info| {
         (
@@ -124,58 +190,32 @@ pub(super) fn assign_layers_in_layout(ln_layout: &mut RenderLineLayout, src_str:
         )
     });
 
+    let ln_end = visual_ln_end(ln, src_str);
+    // layers[i] holds every placement already claimed on row i.
+    let mut layers: Vec<Vec<AnnotationPlacement>> = Vec::new();
+
     for render_info in &mut ln_layout.render_info {
-        let annotation = render_info.annotation;
+        let placement = place_annotation(render_info.annotation, ln, ln_end, src_str);
 
-        match annotation.kind {
-            AnnotationKind::Primary => {
-                if layer_occupied.is_empty() {
-                    layer_occupied.push(0);
-                }
-
-                let span = annotation.span.range_exclusive_usize();
-                let ln_start = ln_layout.ln.ln_span.start as usize;
-                let ln_end = ln_layout.ln.ln_span.end as usize;
-                let clamped_start = span.start.max(ln_start);
-                let clamped_end = span.end.min(ln_end);
-                let start = line_mapping::get_chars_width(src_str, ln_start, clamped_start);
-                //WARN: CHANGED
-                // let len = line_mapping::get_chars_width(src_str, clamped_start, clamped_end + 1);
-                let len = line_mapping::get_chars_width(src_str, clamped_start, clamped_end);
-                layer_occupied[0] = layer_occupied[0].max(start + len);
-
-                render_info.layer = 0;
-            }
-            AnnotationKind::Secondary | AnnotationKind::Note | AnnotationKind::Help => {
-                let span = annotation.span.range_exclusive_usize();
-                let ln_start = ln_layout.ln.ln_span.start as usize;
-                let ln_end = ln_layout.ln.ln_span.end as usize;
-                let clamped_start = span.start.max(ln_start);
-                let clamped_end = span.end.min(ln_end);
-                let start = line_mapping::get_chars_width(src_str, ln_start, clamped_start);
-                let len = line_mapping::get_chars_width(src_str, clamped_start, clamped_end);
-                let end = start + len;
-
-                if layer_occupied.is_empty() {
-                    layer_occupied.push(end);
-                } else {
-                    let mut placed = false;
-                    for (layer_idx, occ_end) in layer_occupied.iter_mut().enumerate().skip(1) {
-                        if start >= *occ_end {
-                            render_info.layer = layer_idx as u32;
-                            *occ_end = end;
-                            placed = true;
-                            break;
-                        }
-                    }
-
-                    if !placed {
-                        render_info.layer = layer_occupied.len() as u32;
-                        layer_occupied.push(end);
-                    }
-                }
+        let mut layer_idx_opt = None;
+        for (layer_idx, claimed) in layers.iter().enumerate() {
+            if !claimed.iter().any(|other| placement.overlaps(*other)) {
+                layer_idx_opt = Some(layer_idx);
+                break;
             }
         }
+
+        // Nothing had room so the annotation opens a new row
+        let layer_idx = match layer_idx_opt {
+            Some(layer_idx) => layer_idx,
+            None => {
+                layers.push(Vec::new());
+                layers.len() - 1
+            }
+        };
+
+        layers[layer_idx].push(placement);
+        render_info.layer = layer_idx as u32;
     }
 
     ln_layout
