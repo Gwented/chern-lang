@@ -1,10 +1,7 @@
 use super::helpers::*;
 use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
-use crate::lexer::token::TokenKind;
 use crate::parser::ast::ast_concepts::{
-    AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractEnum, AbstractOptionAssignment,
-    AbstractStruct, AbstractTypeDef, AbstractVar, AbstractVariant, BinaryOp, Item, SectionKind,
-    UnaryOp,
+    AbstractConfig, AbstractConfigKind, AbstractImpl, BinaryOp, Item, SectionKind, UnaryOp,
 };
 use crate::parser::ast::ast_exprs::{Expr, PathSegment, TypeExpr};
 use chrn_utils::id_types::AstId;
@@ -42,10 +39,14 @@ fn parse_text_with_diags(text: &str) -> (AstInfo, Vec<SourceDiagnostic>, Intern)
     (ast, summary.diags, interner)
 }
 
-/// Helper: given `items` from `AstInfo::items()`, find the first item of a
-/// given variant by index and return a reference.
-fn items_from(ast: &AstInfo) -> &[Item] {
-    ast.items()
+fn cfg_name_id(cfg: &AbstractConfig) -> InternedId {
+    match &cfg.kind {
+        AbstractConfigKind::Root(sp) => match &sp.inner {
+            TypeExpr::Var(id) => *id,
+            _ => panic!("expected Var type expr in Root config"),
+        },
+        AbstractConfigKind::Member(sp, _) => sp.inner,
+    }
 }
 
 fn section_items(ast: &AstInfo, kind: SectionKind) -> Vec<AstId> {
@@ -53,48 +54,6 @@ fn section_items(ast: &AstInfo, kind: SectionKind) -> Vec<AstId> {
         .as_ref()
         .map(|s| s.nodes.clone())
         .unwrap_or_default()
-}
-
-fn get_var<'a>(ast: &'a AstInfo, index: usize) -> &'a AbstractVar {
-    match &ast.items()[index] {
-        Item::Var(v) => v,
-        other => panic!("expected Item::Var at index {index}, got {other:?}"),
-    }
-}
-
-fn get_typedef<'a>(ast: &'a AstInfo, index: usize) -> &'a AbstractTypeDef {
-    match &ast.items()[index] {
-        Item::TypeDef(t) => t,
-        other => panic!("expected Item::TypeDef at index {index}, got {other:?}"),
-    }
-}
-
-fn get_alias<'a>(ast: &'a AstInfo, index: usize) -> &'a AbstractAlias {
-    match &ast.items()[index] {
-        Item::Alias(a) => a,
-        other => panic!("expected Item::Alias at index {index}, got {other:?}"),
-    }
-}
-
-fn get_struct<'a>(ast: &'a AstInfo, index: usize) -> &'a AbstractStruct {
-    match &ast.items()[index] {
-        Item::Struct(s) => s,
-        other => panic!("expected Item::Struct at index {index}, got {other:?}"),
-    }
-}
-
-fn get_enum<'a>(ast: &'a AstInfo, index: usize) -> &'a AbstractEnum {
-    match &ast.items()[index] {
-        Item::Enum(e) => e,
-        other => panic!("expected Item::Enum at index {index}, got {other:?}"),
-    }
-}
-
-fn get_cfg<'a>(ast: &'a AstInfo, index: usize) -> &'a AbstractConfig {
-    match &ast.items()[index] {
-        Item::Config(c) => c,
-        other => panic!("expected Item::Config at index {index}, got {other:?}"),
-    }
 }
 
 // =============================================================================
@@ -224,7 +183,7 @@ fn parse_let_float() {
 #[test]
 fn parse_let_bool() {
     let text = "let flag = true";
-    let (ast, interner) = parse_text(text);
+    let (ast, _) = parse_text(text);
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
@@ -431,6 +390,20 @@ fn parse_var_typedef_with_trailing_comma() {
     assert_eq!(interner.search(td.name_id), "x");
 }
 
+#[test]
+fn parse_var_export_typedef() {
+    let text = "var->\n    export x: i32";
+    let (ast, interner) = parse_text(text);
+
+    let td = ast.get_typedef(section_items(&ast, SectionKind::Var)[0]);
+    assert_eq!(interner.search(td.name_id), "x");
+    assert!(!td.is_priv, "export typedef should be public");
+    match &td.sp_ty_expr.inner {
+        TypeExpr::Var(id) => assert_eq!(interner.search(*id), "i32"),
+        other => panic!("expected TypeExpr::Var, got {other:?}"),
+    }
+}
+
 // =============================================================================
 // Nest section tests
 // =============================================================================
@@ -576,11 +549,11 @@ fn parse_complex_config_root() {
 
     let cfg = ast.get_cfg_root(sect.nodes[0]);
     // name_span should cover "MyConfig" (bytes 14..22)
-    assert_eq!(cfg.name_span.start, 14);
-    assert_eq!(cfg.name_span.end, 22);
+    assert_eq!(cfg.kind.name_span().start, 14);
+    assert_eq!(cfg.kind.name_span().end, 22);
 
-    assert_eq!(interner.search(cfg.name_id), "MyConfig");
-    assert!(matches!(cfg.kind, AbstractConfigKind::Root));
+    assert_eq!(interner.search(cfg_name_id(cfg)), "MyConfig");
+    assert!(matches!(cfg.kind, AbstractConfigKind::Root(_)));
     assert_eq!(cfg.opt_assignments.len(), 1);
     assert!(cfg.cfg_members.is_empty());
 
@@ -608,13 +581,13 @@ fn parse_complex_config_var_prefix() {
     let (ast, interner) = parse_text(text);
 
     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
-    assert_eq!(interner.search(cfg.name_id), "MyConfig");
-    assert!(matches!(cfg.kind, AbstractConfigKind::Root));
+    assert_eq!(interner.search(cfg_name_id(cfg)), "MyConfig");
+    assert!(matches!(cfg.kind, AbstractConfigKind::Root(_)));
     // The lookup pattern was changed by the `var` keyword — we can verify it was consumed
     // correctly because the span starts at the name, not at `var`.
     // `var` is at bytes 14..17, then space, then "MyConfig" spans 18..26
-    assert_eq!(cfg.name_span.start, 18);
-    assert_eq!(cfg.name_span.end, 26);
+    assert_eq!(cfg.kind.name_span().start, 18);
+    assert_eq!(cfg.kind.name_span().end, 26);
 }
 
 #[test]
@@ -623,25 +596,27 @@ fn parse_complex_config_nested() {
     let (ast, interner) = parse_text(text);
 
     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
-    assert_eq!(interner.search(cfg.name_id), "Outer");
+    assert_eq!(interner.search(cfg_name_id(cfg)), "Outer");
     assert_eq!(cfg.cfg_members.len(), 1, "expected one inner config");
 
     let inner = &cfg.cfg_members[0];
-    assert_eq!(interner.search(inner.name_id), "inner");
+    assert_eq!(interner.search(cfg_name_id(inner)), "inner");
     assert_eq!(inner.opt_assignments.len(), 1);
     assert_eq!(interner.search(inner.opt_assignments[0].name_id), "opt");
 }
 
-#[test]
-fn parse_complex_config_arrow_syntax() {
-    let text = "complex->\n    MyConfig => option = [1]";
-    let (ast, interner) = parse_text(text);
-
-    let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
-    assert_eq!(interner.search(cfg.name_id), "MyConfig");
-    assert_eq!(cfg.opt_assignments.len(), 1);
-    assert_eq!(interner.search(cfg.opt_assignments[0].name_id), "option");
-}
+// CANNOT CHECK RIGHT NOW SINCE ROOTS CANT USE CONFIGS AND OVERRIDE DOES NOT EXIST YET. THIS WILL BE
+// REPLACED WITH AN OVERRIDE SPECIFIC TEST SINCE THAT CAN USE "=>" DEEPER
+// #[test]
+// fn parse_complex_config_arrow_syntax() {
+//     let text = "complex->\n    MyConfig => option = [1]";
+//     let (ast, interner) = parse_text(text);
+//
+//     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
+//     assert_eq!(interner.search(cfg_name_id(cfg)), "MyConfig");
+//     assert_eq!(cfg.opt_assignments.len(), 1);
+//     assert_eq!(interner.search(cfg.opt_assignments[0].name_id), "option");
+// }
 
 // =============================================================================
 // Expression parsing tests (pratt parser)
@@ -1144,6 +1119,54 @@ fn parse_type_expr_generic_path() {
     }
 }
 
+#[test]
+fn parse_type_expr_path_in_struct_field() {
+    let text = "nest->\n    struct Wrapper { inner: module::Type }";
+    let (ast, interner) = parse_text(text);
+
+    let st = ast.get_struct(section_items(&ast, SectionKind::Nest)[0]);
+    assert_eq!(st.fields.len(), 1);
+    let field = &st.fields[0];
+    assert_eq!(interner.search(field.name_id), "inner");
+    match &field.sp_ty_expr.inner {
+        TypeExpr::Path(path) => {
+            assert_eq!(path.len(), 2);
+            match &path[0].kind {
+                PathSegment::Ident(id) => assert_eq!(interner.search(*id), "module"),
+                other => panic!("expected Ident(module), got {other:?}"),
+            }
+            match &path[1].kind {
+                PathSegment::Ident(id) => assert_eq!(interner.search(*id), "Type"),
+                other => panic!("expected Ident(Type), got {other:?}"),
+            }
+        }
+        other => panic!("expected TypeExpr::Path, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_type_expr_path_in_alias_param() {
+    let text = "alias foo(x: module::Type) = [true]";
+    let (ast, interner) = parse_text(text);
+
+    let alias = ast.get_alias(section_items(&ast, SectionKind::Neutral)[0]);
+    assert_eq!(alias.params.len(), 1);
+    match &alias.params[0].sp_ty_expr.inner {
+        TypeExpr::Path(path) => {
+            assert_eq!(path.len(), 2);
+            match &path[0].kind {
+                PathSegment::Ident(id) => assert_eq!(interner.search(*id), "module"),
+                other => panic!("expected Ident(module), got {other:?}"),
+            }
+            match &path[1].kind {
+                PathSegment::Ident(id) => assert_eq!(interner.search(*id), "Type"),
+                other => panic!("expected Ident(Type), got {other:?}"),
+            }
+        }
+        other => panic!("expected TypeExpr::Path, got {other:?}"),
+    }
+}
+
 // =============================================================================
 // Override section
 // =============================================================================
@@ -1159,8 +1182,8 @@ fn parse_override_config() {
     assert_eq!(sect.nodes.len(), 1);
 
     let cfg = ast.get_cfg_root(sect.nodes[0]);
-    assert_eq!(interner.search(cfg.name_id), "MyCfg");
-    assert!(matches!(cfg.kind, AbstractConfigKind::Root));
+    assert_eq!(interner.search(cfg_name_id(cfg)), "MyCfg");
+    assert!(matches!(cfg.kind, AbstractConfigKind::Root(_)));
     assert_eq!(cfg.opt_assignments.len(), 1);
 }
 
@@ -1337,10 +1360,10 @@ fn parse_full_script_with_all_sections() {
 
     // Verify configs
     let app_cfg = ast.get_cfg_root(complex_sect.nodes[0]);
-    assert_eq!(interner.search(app_cfg.name_id), "App");
+    assert_eq!(interner.search(cfg_name_id(app_cfg)), "App");
 
     let app_override = ast.get_cfg_root(override_sect.nodes[0]);
-    assert_eq!(interner.search(app_override.name_id), "App");
+    assert_eq!(interner.search(cfg_name_id(app_override)), "App");
 }
 
 // =============================================================================
@@ -1497,14 +1520,14 @@ fn parse_complex_member_override_config() {
     let (ast, interner) = parse_text(text);
 
     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
-    assert_eq!(interner.search(cfg.name_id), "Outer");
+    assert_eq!(interner.search(cfg_name_id(cfg)), "Outer");
     assert_eq!(cfg.cfg_members.len(), 1);
 
     let inner = &cfg.cfg_members[0];
-    assert_eq!(interner.search(inner.name_id), "inner");
+    assert_eq!(interner.search(cfg_name_id(inner)), "inner");
     // member inner should have Member kind
     assert!(
-        matches!(inner.kind, AbstractConfigKind::Member(_)),
+        matches!(inner.kind, AbstractConfigKind::Member(..)),
         "inner config should be a Member, got {:?}",
         inner.kind
     );
@@ -1803,7 +1826,10 @@ fn all_spans_are_non_empty() {
 
     let items: &[_] = ast.items();
     for item in items {
-        let span = item.span();
+        let span = match item {
+            Item::Decl(decl) => decl.span(),
+            Item::Impl(AbstractImpl::Config(cfg)) => cfg.kind.name_span(),
+        };
         assert!(
             span.start < span.end,
             "item span should be non-empty: start={}, end={}, item={:?}",

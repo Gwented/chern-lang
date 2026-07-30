@@ -16,6 +16,8 @@ let x = "Che" + "rn"
 // KNOWS both strings are const, there's no reason to make it runtime.
 // let string = "4" + "8"
 
+var->
+    export x: i32
 nest->
     export struct Person {
         // another: core::Person

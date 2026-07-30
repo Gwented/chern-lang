@@ -1,7 +1,7 @@
 use chrn_utils::{
     chrn_config::ChrnConfig,
     err_codes::ErrorCode,
-    id_types::{AstId, ConfigRootId, ScopeId, SymbolId, TypeId, VariableId},
+    id_types::{AstId, ConfigRootId, ImplId, ScopeId, SymbolId, TypeId, VariableId},
     intern::Intern,
     source_map::source_diagnostic::{
         DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSummary, annotations::AnnotationKind,
@@ -11,14 +11,21 @@ use chrn_utils::{
 use crate::{
     lookup::scopes::{Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
     parser::ast::ast_concepts::{
-        AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractEnum, AbstractStruct,
-        AbstractTypeDef, AbstractVar, Item,
+        AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractEnum,
+        AbstractImpl, AbstractStruct, AbstractTypeDef, AbstractVar, Item,
     },
     resolvers::{resolver_env::RegistrationEnv, resolver_state::ResolverState},
     script_compiler::ScriptCompiler,
-    semantic::hir::hir_concepts::{
-        AliasDef, ConfigDefRoot, EnumDef, StructDef, Symbol, SymbolKind, SymbolOrigin, Type,
-        TypeDef, TypeInfo, VarDef, VariableState,
+    semantic::{
+        compilation_unit::CompilationUnit,
+        hir::{
+            hir_concepts::{Type, TypeInfo},
+            hir_impls::{ConfigDefRoot, ImplHir, ImplHirKind},
+            hir_symbols::{
+                AliasDef, EnumDef, StructDef, Symbol, SymbolKind, SymbolOrigin, TypeDef, VarDef,
+                VariableState,
+            },
+        },
     },
 };
 
@@ -62,10 +69,13 @@ impl NamespaceResolver<'_> {
     // Needs the reporter though
     /// Returns the symbols created from the ast nodes within the given module `env` to allow for
     /// module by module compilation at the symbol level.
-    pub fn resolve(&mut self, env: &RegistrationEnv) -> (Vec<SymbolId>, SourceDiagnosticSummary) {
+    pub fn resolve(
+        &mut self,
+        env: &RegistrationEnv,
+    ) -> (Vec<CompilationUnit>, SourceDiagnosticSummary) {
         // Storing all symbols created associated with the current module so that compilation
         // doens't have to depend on the ast to keep a coherent understanding of
-        let mut mod_symbols: Vec<SymbolId> = Vec::new();
+        let mut mod_symbols: Vec<CompilationUnit> = Vec::new();
 
         // Iterates through sections so that it stores the correct scope type assocaited with the
         // current node for it's symbol id that will be created.
@@ -78,24 +88,38 @@ impl NamespaceResolver<'_> {
 
             for ast_id in abs_sect.nodes.iter().cloned() {
                 // Maybe opt into section specific processing
-                let sym_id = match &env.ast_info.items[ast_id] {
-                    Item::TypeDef(abs_typedef) => {
-                        self.register_typedef(abs_typedef, ast_id, scope_type, env)
+                let comp_unit = match &env.ast_info.items[ast_id] {
+                    Item::Decl(abs_decl) => {
+                        let sym_id = match abs_decl {
+                            AbstractDecl::TypeDef(abs_typedef) => {
+                                self.register_typedef(abs_typedef, ast_id, scope_type, env)
+                            }
+                            AbstractDecl::Struct(abs_struct) => {
+                                self.register_struct(abs_struct, ast_id, scope_type, env)
+                            }
+                            AbstractDecl::Enum(abs_enum) => {
+                                self.register_enum(abs_enum, ast_id, scope_type, env)
+                            }
+                            AbstractDecl::Alias(abs_alias) => {
+                                self.register_alias(abs_alias, ast_id, scope_type, env)
+                            }
+                            AbstractDecl::Var(abs_var) => {
+                                self.register_var(abs_var, ast_id, scope_type, env)
+                            }
+                        };
+                        CompilationUnit::Symbol(sym_id)
                     }
-                    Item::Struct(abs_struct) => {
-                        self.register_struct(abs_struct, ast_id, scope_type, env)
-                    }
-                    Item::Enum(abs_enum) => self.register_enum(abs_enum, ast_id, scope_type, env),
-                    Item::Alias(abs_alias) => {
-                        self.register_alias(abs_alias, ast_id, scope_type, env)
-                    }
-                    Item::Var(abs_var) => self.register_var(abs_var, ast_id, scope_type, env),
-                    Item::Config(abs_cfg) => {
-                        self.register_config_root(abs_cfg, ast_id, scope_type, env)
+                    Item::Impl(abs_impl) => {
+                        let impl_id = match abs_impl {
+                            AbstractImpl::Config(abs_cfg) => {
+                                self.register_config_root(abs_cfg, ast_id, scope_type)
+                            }
+                        };
+                        CompilationUnit::Impl(impl_id)
                     }
                 };
 
-                mod_symbols.push(sym_id);
+                mod_symbols.push(comp_unit);
             }
         }
 
@@ -116,8 +140,7 @@ impl NamespaceResolver<'_> {
         abs_cfg: &AbstractConfig,
         ast_id: AstId,
         scope_type: ScopeType,
-        env: &RegistrationEnv,
-    ) -> SymbolId {
+    ) -> ImplId {
         debug_assert!(
             matches!(
                 abs_cfg.lookup_pat,
@@ -128,32 +151,18 @@ impl NamespaceResolver<'_> {
             "Either config of `abs_cfg` was done wrong or a core language change did not update this assertion.\nExpected `ScopeLookupPattern::NoRestrictions/OnlyVar`, found {:?}",
             abs_cfg.lookup_pat
         );
-        debug_assert!(matches!(abs_cfg.kind, AbstractConfigKind::Root));
+        debug_assert!(matches!(abs_cfg.kind, AbstractConfigKind::Root(_)));
 
-        let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
-
-        let sym_id = SymbolId::new(self.compiler.symbols.len() as u32);
+        let impl_id = ImplId::new(self.compiler.impls.len() as u32);
         let cfg_id = ConfigRootId::new(self.compiler.cfgs.len() as u32);
-
-        let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
         // If an original exists, get the key so that it can be reported, otherwise insert it. This
         // is to avoid inserting first and overwriting the last symbol since ergonomically, it
         // probably makes more sense to keep the original for scope searching to fall-back to.
-        let orig_sym_opt = if let Some(original) = table.interned_to_sym.get(&abs_cfg.name_id) {
-            Some(*original)
-        } else {
-            table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
-            None
-        };
 
         // let orig_sym_opt = table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
-        table.ast_to_sym.insert(ast_id, sym_id);
-
         let cfg_def = ConfigDefRoot::new(
-            sym_id,
-            abs_cfg.name_id,
-            abs_cfg.name_span,
+            impl_id,
             cfg_id,
             None,
             abs_cfg.lookup_pat,
@@ -161,25 +170,16 @@ impl NamespaceResolver<'_> {
             Vec::new(),
         );
 
-        let sym = Symbol::new(
-            abs_cfg.name_id,
-            sym_id,
-            Some(ast_id),
-            SymbolOrigin::Module(env.current_mod),
-            true,
-            None,
+        let impl_hir = ImplHir::new(
+            impl_id,
+            ImplHirKind::Config(cfg_id),
             scope_type,
-            SymbolKind::Config(cfg_id),
+            Some(ast_id),
         );
 
         self.compiler.cfgs.push(cfg_def);
-        self.compiler.symbols.push(sym);
-
-        if let Some(orig_sym_id) = orig_sym_opt {
-            self.report_duplicate(orig_sym_id, sym_id, env);
-        }
-
-        sym_id
+        self.compiler.impls.push(impl_hir);
+        impl_id
     }
 
     /// Attaches ast_id to the name_id of it's ast structure.
@@ -229,7 +229,7 @@ impl NamespaceResolver<'_> {
             sym_id,
             Some(ast_id),
             SymbolOrigin::Module(env.current_mod),
-            true,
+            abs_typedef.is_priv,
             None,
             scope_type,
             SymbolKind::Type(type_def_type_id),
@@ -636,8 +636,8 @@ impl NamespaceResolver<'_> {
         let dup_name = self.interner.search(orig_sym.name_id);
         let scope_type = orig_sym.scope_origin;
 
-        let orig_span = env.ast_info.items[orig_ast_id].span();
-        let dup_span = env.ast_info.items[dup_ast_id].span();
+        let orig_span = env.ast_info.get_decl(orig_ast_id).span();
+        let dup_span = env.ast_info.get_decl(dup_ast_id).span();
 
         let core_msg = format!(
             "Duplicate identifier `{dup_name}` in section `{}`",

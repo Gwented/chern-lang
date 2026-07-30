@@ -5,7 +5,8 @@ use chrn_utils::{
     chrn_config::ChrnConfig,
     err_codes::{self, ErrorCode},
     id_types::{
-        ExprId, InternedId, MemberId, SpannedContainer, SpannedContainerRef, SymbolId, TypeId,
+        ExprId, ImplId, InternedId, MemberId, SpannedContainer, SpannedContainerRef, SymbolId,
+        TypeId,
     },
     intern::Intern,
     source_map::{
@@ -33,7 +34,12 @@ use crate::{
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
     script_compiler::ScriptCompiler,
     semantic::{
-        hir::hir_concepts::{MemberSymbolKind, OptionAssignmentRoot, SymbolKind, Type},
+        compilation_unit::CompilationUnit,
+        hir::{
+            hir_concepts::Type,
+            hir_impls::ImplHirKind,
+            hir_symbols::{MemberSymbolKind, SymbolKind},
+        },
         preset_reporter::{self, preset_err::PresetErr},
     },
 };
@@ -66,32 +72,38 @@ impl<'a> ConstraintResolver<'a> {
 
     pub fn resolve(&mut self, env: &ResolverEnv) -> SourceDiagnosticSummary {
         // Everything skipped is not a factor in this compilation step.
-        for sym_id in env.compilation_syms.iter().cloned() {
-            match self.compiler.symbols[sym_id].kind {
-                // This split is more so, users can define these set of symbols, and users cannot
-                // define the unreacables.
-                SymbolKind::Type(type_id) => match &self.compiler.types[type_id].ty {
-                    Type::Struct(_) => self.resolve_struct(sym_id, env),
-                    Type::Enum(_) => self.resolve_enum(sym_id, env),
-                    Type::Alias(_) => self.resolve_alias(sym_id, env),
-                    Type::TypeDef(_) => self.resolve_typedef(sym_id, env),
-                    // Not sure about this right now
-                    // New functions cannot be declared as symbols, only the compiler creates them.
-                    // None of these can be user-defined, but exist internally.
-                    Type::Deferred(_)
-                    | Type::Func(_)
-                    | Type::Boundaries(_)
-                    | Type::Unknown
-                    | Type::BuiltinTypeInfo(_) => {
-                        unreachable!()
+        for comp_unit in env.compilation_syms.iter().cloned() {
+            match comp_unit {
+                CompilationUnit::Symbol(sym_id) => {
+                    match self.compiler.symbols[sym_id].kind {
+                        // This split is more so, users can define these set of symbols, and users cannot
+                        // define the unreacables.
+                        SymbolKind::Type(type_id) => match &self.compiler.types[type_id].ty {
+                            Type::Struct(_) => self.resolve_struct(sym_id, env),
+                            Type::Enum(_) => self.resolve_enum(sym_id, env),
+                            Type::Alias(_) => self.resolve_alias(sym_id, env),
+                            Type::TypeDef(_) => self.resolve_typedef(sym_id, env),
+                            // Not sure about this right now
+                            // New functions cannot be declared as symbols, only the compiler creates them.
+                            // None of these can be user-defined, but exist internally.
+                            Type::Deferred(_)
+                            | Type::Func(_)
+                            | Type::Boundaries(_)
+                            | Type::Unknown
+                            | Type::BuiltinTypeInfo(_) => {
+                                unreachable!()
+                            }
+                        },
+                        // Still uses sym id since their actual ids make it a little more complicated to get
+                        // to their ast id
+                        SymbolKind::Variable(_) => self.resolve_var(sym_id, env),
+                        // Users cannot define these but they exist internally.
+                        SymbolKind::Namespace | SymbolKind::Directive(_) => unreachable!(),
                     }
+                }
+                CompilationUnit::Impl(impl_id) => match self.compiler.impls[impl_id].kind {
+                    ImplHirKind::Config(_) => self.resolve_cfg_root(impl_id, env),
                 },
-                // Still uses sym id since their actual ids make it a little more complicated to get
-                // to their ast id
-                SymbolKind::Variable(_) => self.resolve_var(sym_id, env),
-                SymbolKind::Config(_) => self.resolve_cfg_root(sym_id, env),
-                // Users cannot define these but they exist internally.
-                SymbolKind::Namespace | SymbolKind::Directive(_) => unreachable!(),
             }
         }
 
@@ -122,18 +134,22 @@ impl<'a> ConstraintResolver<'a> {
 
     // The code below is far far worse than all prior because the concept of what a config is and
     // enforces is not 100% done, but the end-behavior exists so the specifics will be sorted later.
-    fn resolve_cfg_root(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
+    fn resolve_cfg_root(&mut self, parent_impl_id: ImplId, env: &ResolverEnv) {
         // let ast_id = self.compiler.symbols[parent_sym_id]
         //     .ast_id
         //     .expect("Should be user symbols only");
         // let abs_cfg_root = env.ast_info.get_cfg_root(ast_id);
 
         // leconstraint_reot module = &self.compiler.mods[env.current_mod];
-        let cfg_root = self.compiler.get_cfg_def_root(parent_sym_id);
+        let cfg_root = self.compiler.get_cfg_def_root(parent_impl_id);
 
-        let Some(linked_sym_id) = cfg_root.linked_sym_id else {
+        let Some(linked_type_id) = cfg_root.linked_type_id else {
             return;
         };
+        let cfg_root_ty_span = self
+            .compiler
+            .get_span_from_type_id(linked_type_id)
+            .expect("NOT DONE YET");
 
         // We may need an invalid and valid marker for cached checks regarding if it was a type id
         // or not.
@@ -144,10 +160,11 @@ impl<'a> ConstraintResolver<'a> {
         //
         // This should probably never change because the odds of linking a symbol id to such a
         // broken config being useful error message wise seems unlikely
-        let linked_type_id = self
-            .compiler
-            .get_type_id_from_sym_id(linked_sym_id)
-            .expect("`TypeResolver` should only give linked sym ids to valid configs");
+        // WARN: REMOVED
+        // let linked_type_id = self
+        //     .compiler
+        //     .get_type_id_from_sym_id(linked_type_id)
+        //     .expect("`TypeResolver` should only give linked sym ids to valid configs");
 
         for opt_root_id in cfg_root.opt_assignments.iter().copied() {
             let opt_root = self.compiler.get_opt_assignment_root(opt_root_id);
@@ -162,7 +179,7 @@ impl<'a> ConstraintResolver<'a> {
             if let Err(preset_err) = self.check_opt(
                 schema,
                 type_name_id,
-                cfg_root.name_span,
+                cfg_root_ty_span,
                 boundaries,
                 &sp_opt_name_id,
                 opt_root.array_expr_id,
@@ -185,7 +202,7 @@ impl<'a> ConstraintResolver<'a> {
         // :( Clone
         for cfg_member_id in cfg_root.cfg_members.clone() {
             //WARN: Suspicious
-            if self.compiler.members[cfg_member_id].is_unknown() {
+            if self.compiler.impl_members[cfg_member_id].is_unknown() {
                 continue;
             }
 
@@ -217,6 +234,7 @@ impl<'a> ConstraintResolver<'a> {
                 if let Err(preset_err) = self.check_opt(
                     schema,
                     member_ty_name_id_opt,
+                    // WARN: Is this the right span?
                     cfg_member.name_span,
                     boundaries,
                     &sp_opt_name_id,
@@ -239,6 +257,8 @@ impl<'a> ConstraintResolver<'a> {
             }
 
             // AAAAAAAAAAAAAHHHHHHHHHHHHHHHHHH
+            // Woah (em-dash) Relax
+            //
             // Recursively resolves inner members
             // self.resolve_cfg_member(cfg_member_id, env);
 

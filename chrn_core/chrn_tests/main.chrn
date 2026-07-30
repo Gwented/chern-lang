@@ -57,7 +57,7 @@ import "../chrn_core/chrn_tests/def.chrn" as defs
 // alias x(y: i32, z: Comparable) =
 var->
     x: State1
-    y: l
+    y: i32
 // Should warn
 // import "../../chrn_core/chrn_tests/core.chrn"
     nest->
@@ -72,7 +72,7 @@ var->
             // p: defs::Person
         }
 
-        enum State1 {stable: i32, state2:  }
+        enum State1 {stable: i32, state2: u32 }
         enum State2 {Medium: i32, state3: State3}
         enum State3 {Low, state1: State1}
         enum StateStable {stable}
@@ -86,7 +86,7 @@ var->
     //
     // IDE should do the "thing: {Thing}" thing where it has the thing in grey
     complex->
-    State1 {state2 {}}
+    State1 {state2 {}} def::x {}/*
         // How can one field depth be enforced while still keeping the concept of generic config usage 
         // to where override-> can use it?
         Point {
@@ -143,6 +143,7 @@ var->
 /*JAVA {
     u8 = types::int
 }*/
+*/
 @end
 
 #OVERRIDE

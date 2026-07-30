@@ -91,6 +91,8 @@ arena_idx_impl_u32!(
     ExprId,
     ModuleId,
     ValueId,
+    ImplId,
+    ImplMemberId
 );
 arena_idx_impl_u16!(ScopeId);
 
@@ -262,5 +264,27 @@ pub struct ValueId {
 impl ValueId {
     pub const fn new(id: u32) -> ValueId {
         ValueId { id }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ImplId {
+    pub id: u32,
+}
+
+impl ImplId {
+    pub const fn new(id: u32) -> ImplId {
+        ImplId { id }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ImplMemberId {
+    pub id: u32,
+}
+
+impl ImplMemberId {
+    pub const fn new(id: u32) -> Self {
+        Self { id }
     }
 }

@@ -22,7 +22,7 @@
 //! Accessor methods on [`Document`] (`keyword_docs`, `builtin_type_docs`, `func_docs`)
 //! index directly into these arrays; an out-of-bounds index will panic at runtime.
 
-use compilation::semantic::hir::hir_concepts::FuncKind;
+use compilation::semantic::hir::hir_symbols::FuncKind;
 use lang::keywords::Keyword;
 use lang::types::builtins::BuiltinTypeKind;
 

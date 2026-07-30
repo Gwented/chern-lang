@@ -17,6 +17,7 @@ use compilation::{
     script_compiler::{
         ScriptCompiler, reporter::Reporter, script_compiler_store::ScriptCompilerStore,
     },
+    semantic::compilation_unit::CompilationUnit,
 };
 
 use crate::script_compiler_cache::ScriptCompilerCache;
@@ -81,7 +82,7 @@ pub fn run_all(
         NamespaceResolver::new(&compiler_store.cfg, &compiler_store.interner, compiler);
 
     // Cannot mutate store while looping so ownership is controlled here
-    let mut mod_symbols: Vec<Option<Vec<SymbolId>>> = Vec::with_capacity(mod_len);
+    let mut mod_symbols: Vec<Option<Vec<CompilationUnit>>> = Vec::with_capacity(mod_len);
     for i in 0..mod_len {
         // If there is no environment to use then it's not fit for resolution
         // This is a dense array so it works fine
@@ -93,9 +94,9 @@ pub fn run_all(
             }
         };
 
-        let (current_mod_symbols, summary) = ns_resolver.resolve(&current_env);
+        let (current_comp_units, summary) = ns_resolver.resolve(&current_env);
         reporter.merge_summary_safe(summary);
-        mod_symbols.push(Some(current_mod_symbols));
+        mod_symbols.push(Some(current_comp_units));
     }
 
     // Ownership transfer

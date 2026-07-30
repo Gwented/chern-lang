@@ -323,7 +323,7 @@ pub(crate) fn resolve_document_modules(
         config_errors.append_diags(&mut finder_summary.diags);
     }
 
-    let main_mod = Module::new(
+    let mut main_mod = Module::new(
         name_id,
         ModuleState::Loading,
         ModuleId::new(0),
@@ -349,6 +349,25 @@ pub(crate) fn resolve_document_modules(
         &mut sub_diags,
         path_id,
     );
+
+    // Mirror the compiler's resolve_module behaviour: after the worklist has
+    // finished, update the main module's own imports from UnresolvedSource
+    // to Source/ErrorSource so that create_module_symbols does not panic.
+    for import in &mut main_mod.imports {
+        if let ImportKind::UnresolvedSource(sp_path_id) = &import.kind {
+            match reserved_mod_ids
+                .iter()
+                .find(|(p, _)| *p == sp_path_id.inner)
+            {
+                Some(&(_, m_id)) => {
+                    import.kind = ImportKind::Source(sp_path_id.clone(), m_id);
+                }
+                None => {
+                    import.kind = ImportKind::ErrorSource(sp_path_id.clone());
+                }
+            }
+        }
+    }
 
     if !sub_diags.is_empty() {
         config_errors.append_diags(&mut sub_diags);
@@ -865,16 +884,26 @@ pub(crate) fn resolve_modules_lsp(
     let mut worklist: VecDeque<(Module, PathId)> = VecDeque::new();
     worklist.push_back((main_mod.clone(), main_path_id));
 
-    while let Some((importer_mod, current_path_id)) = worklist.pop_front() {
-        for import in &importer_mod.imports {
+    while let Some((mut importer_mod, current_path_id)) = worklist.pop_front() {
+        for i in 0..importer_mod.imports.len() {
+            let import = importer_mod.imports[i].clone();
             let ImportKind::UnresolvedSource(sp_path_id) = &import.kind else {
                 continue;
             };
             let path_id = sp_path_id.inner;
             let path_span = sp_path_id.span;
 
-            // If this path was already seen (by any module), skip it.
+            // If this path was already seen (by any module), resolve from
+            // registered IDs and move on (mirrors the compiler's behaviour).
             if seen.contains(&path_id) {
+                match reserved_mod_ids.iter().find(|(p, _)| *p == path_id) {
+                    Some(&(_, m_id)) => {
+                        importer_mod.imports[i].kind = ImportKind::Source(sp_path_id.clone(), m_id);
+                    }
+                    None => {
+                        importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
+                    }
+                }
                 continue;
             }
 
@@ -942,10 +971,12 @@ pub(crate) fn resolve_modules_lsp(
             let src = match source_res {
                 Ok(s) => s,
                 Err(ConfigLoadError::Diagnostic(diag)) => {
+                    importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
                     diags.push(diag);
                     continue;
                 }
                 Err(ConfigLoadError::IO(e)) => {
+                    importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
                     let core_msg = format!("IO error: {}", e);
                     let src_diag = SourceDiagnostic::builder(
                         None,
@@ -994,6 +1025,7 @@ pub(crate) fn resolve_modules_lsp(
                         broken_region
                     }
                     ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
+                        importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
                         match cfg_err {
                             ConfigLoadError::Diagnostic(diag) => {
                                 diags.push(diag);
@@ -1023,6 +1055,7 @@ pub(crate) fn resolve_modules_lsp(
                     if let Some(name_id) = import.alias_id {
                         interner.search(name_id).to_string()
                     } else {
+                        importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
                         let core_msg = format!(
                             "The path \"{}\" does not have a valid UTF-8 file name usable within the program.",
                             path.display()
@@ -1057,6 +1090,11 @@ pub(crate) fn resolve_modules_lsp(
             .collect_imports(interner);
 
             diags.append(&mut finder_summary.diags);
+
+            // Resolve the import in the importer module (mirrors the compiler's
+            // extract_modules behaviour exactly: imports are only set to Source
+            // when the target module is successfully created).
+            importer_mod.imports[i].kind = ImportKind::Source(sp_path_id.clone(), current_mod_id);
 
             let expected_len = reserved_mod_ids.len() - 1;
 

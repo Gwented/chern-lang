@@ -91,7 +91,7 @@ pub(super) fn exec_list_available(
             available_str.push_str(&format!("member{s_suffix}: "));
 
             for (i, member_id) in available_members.iter().enumerate() {
-                let member_name = interner.search(compiler.members[*member_id].name_id());
+                let member_name = interner.search(compiler.sym_members[*member_id].name_id());
                 available_str.push_str(&format!("`{member_name}`"));
                 if i + 1 < available_members.len() {
                     available_str.push_str(", ");

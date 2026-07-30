@@ -108,13 +108,13 @@ impl TextBuilder<'_> {
             let abs_span = self.ast_info.get_name_span(*ast_id);
             self.append_invalid(abs_span, all_text_hirs);
 
-            match item {
-                Item::Var(abs_var) => {
-                    self.fmt_abs_var(abs_var, all_text_hirs);
-                }
-                Item::Alias(abs_alias) => todo!(),
-                _ => unreachable!("Parser broke"),
-            }
+            // match item {
+            //     Item::Var(abs_var) => {
+            //         self.fmt_abs_var(abs_var, all_text_hirs);
+            //     }
+            //     Item::Alias(abs_alias) => todo!(),
+            //     _ => unreachable!("Parser broke"),
+            // }
             dbg!(item);
         }
         // println!("{}", fmtted_script);

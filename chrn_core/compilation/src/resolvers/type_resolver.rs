@@ -5,16 +5,15 @@ pub mod type_context;
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::{
-    AstId, DirectiveId, ExprId, MemberId, ScopeId, SpannedContainer, SpannedContainerRef, SymbolId,
-    TypeId, ValueId, VariableId,
+    AstId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ScopeId,
+    SpannedContainer, SpannedContainerRef, SymbolId, TypeId, ValueId, VariableId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{
     DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSummary,
 };
-use chrn_utils::source_map::source_span::SourceSpan;
-use lang::fmter::{Formattable, Formatted};
+use lang::fmter::Formatted;
 use lang::values::{Value, ValueInfo};
 
 use crate::constraints::ArgConstraint;
@@ -25,33 +24,34 @@ use crate::lookup::scopes::{
 use crate::parser::ast::ast_concepts::{
     AbstractConfig, AbstractConfigKind, AbstractDirective, AbstractOptionAssignment, AbstractParam,
 };
-use crate::parser::ast::ast_exprs::{Expr, PathSegment, SpannedExpr};
+use crate::parser::ast::ast_exprs::{Expr, PathSegment, SpannedExpr, TypeExpr};
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::resolvers::resolver_state::ResolverState;
 use crate::script_compiler::{self, ScriptCompiler};
+use crate::semantic::compilation_unit::CompilationUnit;
 use crate::semantic::evaluator::UnaryOpResult;
-use crate::semantic::hir::hir_concepts::{
-    ConfigDefMember, MemberSymbolKind, OptionAssignmentMember, OptionAssignmentRoot, VariableState,
-};
-use crate::semantic::hir::hir_concepts::{Symbol, SymbolKind, SymbolOrigin, VarDef};
 use crate::semantic::hir::hir_concepts::{Type, TypeInfo};
 use crate::semantic::hir::hir_exprs::{ExprHir, Param, PossibleMember, ResolvedExpr};
+use crate::semantic::hir::hir_impls::{
+    ConfigDefMember, ImplHirKind, ImplMemberKind, OptionAssignmentMember, OptionAssignmentRoot,
+};
+use crate::semantic::hir::hir_symbols::{
+    MemberSymbolKind, Symbol, SymbolKind, SymbolOrigin, VarDef, VariableState,
+};
 use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, PresetErr};
 use crate::semantic::resolve::{StaticAccessResult, TypeExprResult};
 use crate::semantic::{evaluator, inference, preset_reporter, resolve};
 
 use crate::resolvers::type_resolver::type_context::{
-    ParentInfo, ParentState, PendingExpr, PendingSymbol, TypeContext,
+    ParentInfo, ParentState, ParentStateBase, PendingExpr, PendingExprKind, PendingSymbol,
+    StandingExprState, TypeContext,
 };
 
-//TODO: Less complicated injection
 /// Resolves types and builds the rest of any structs, enums, or expressions that can be const
 /// evaluated. Does so by mutating the compiler given, and maintaining context to retain it's last
 /// state.
 pub struct TypeResolver<'a> {
     cfg: &'a ChrnConfig,
-    // WARN: This could be avoided by just making the environments given not take a direct borrow,
-    // but then that adds architectural complexity because given an Option
     interner: &'a mut Intern,
     compiler: &'a mut ScriptCompiler,
     ty_ctx: TypeContext,
@@ -111,32 +111,38 @@ impl<'res> TypeResolver<'res> {
     /// mutating off of given envs.
     pub fn resolve<'env>(&mut self, env: &'env ResolverEnv) -> SourceDiagnosticSummary {
         // Everything skipped is not a factor in this compilation step.
-        for sym_id in env.compilation_syms.iter().cloned() {
-            match self.compiler.symbols[sym_id].kind {
-                // This split is more so, users can define these set of symbols, and users cannot
-                // define the unreacables.
-                SymbolKind::Type(type_id) => match &self.compiler.types[type_id].ty {
-                    Type::Struct(_) => self.resolve_struct(sym_id, env),
-                    Type::Enum(_) => self.resolve_enum(sym_id, env),
-                    Type::Alias(_) => self.resolve_alias(sym_id, env),
-                    Type::TypeDef(_) => self.resolve_typedef(sym_id, env),
-                    // Not sure about this right now
-                    // New functions cannot be declared as symbols, only the compiler creates them.
-                    // None of these can be user-defined, but exist internally.
-                    Type::Deferred(_)
-                    | Type::Func(_)
-                    | Type::Boundaries(_)
-                    | Type::Unknown
-                    | Type::BuiltinTypeInfo(_) => {
-                        unreachable!()
+        for comp_unit in env.compilation_syms.iter().cloned() {
+            match comp_unit {
+                CompilationUnit::Symbol(sym_id) => {
+                    match self.compiler.symbols[sym_id].kind {
+                        // This split is more so, users can define these set of symbols, and users cannot
+                        // define the unreacables.
+                        SymbolKind::Type(type_id) => match &self.compiler.types[type_id].ty {
+                            Type::Struct(_) => self.resolve_struct(sym_id, env),
+                            Type::Enum(_) => self.resolve_enum(sym_id, env),
+                            Type::Alias(_) => self.resolve_alias(sym_id, env),
+                            Type::TypeDef(_) => self.resolve_typedef(sym_id, env),
+                            // Not sure about this right now
+                            // New functions cannot be declared as symbols, only the compiler creates them.
+                            // None of these can be user-defined, but exist internally.
+                            Type::Deferred(_)
+                            | Type::Func(_)
+                            | Type::Boundaries(_)
+                            | Type::Unknown
+                            | Type::BuiltinTypeInfo(_) => {
+                                unreachable!()
+                            }
+                        },
+                        // Still uses sym id since their actual ids make it a little more complicated to get
+                        // to their ast id
+                        SymbolKind::Variable(_) => self.resolve_var(sym_id, env),
+                        // Users cannot define these but they exist internally.
+                        SymbolKind::Namespace | SymbolKind::Directive(_) => unreachable!(),
                     }
+                }
+                CompilationUnit::Impl(impl_id) => match self.compiler.impls[impl_id].kind {
+                    ImplHirKind::Config(_) => self.resolve_cfg_root(impl_id, env),
                 },
-                // Still uses sym id since their actual ids make it a little more complicated to get
-                // to their ast id
-                SymbolKind::Variable(_) => self.resolve_var(sym_id, env),
-                SymbolKind::Config(_) => self.resolve_cfg_root(sym_id, env),
-                // Users cannot define these but they exist internally.
-                SymbolKind::Namespace | SymbolKind::Directive(_) => unreachable!(),
             }
         }
 
@@ -263,19 +269,69 @@ impl<'res> TypeResolver<'res> {
             // the `Resolved` variant.
             for (pending_sym_id, pending_sym) in &self.ty_ctx.sym_queue {
                 for (i, pending_expr) in pending_sym.pending_exprs.iter().enumerate() {
-                    if let ParentState::Resolved(has_resolved_ty, has_const_val) =
-                        pending_expr.parent_state
-                    {
-                        let possible_pending = pending_expr.parent_sym;
-                        if self.ty_ctx.sym_queue.contains_key(&possible_pending) {
-                            // Maybe current resolved can be removed now?
-                            current_resolved_count += 1;
-                            let parent_info =
-                                ParentInfo::new(possible_pending, has_resolved_ty, has_const_val);
+                    match &pending_expr.kind {
+                        // If the pending expr has a parent base that means it can be updated
+                        PendingExprKind::Parent(parent_base) => {
+                            //NOTE: Assuming I'm not hallucinating, this is, on every
+                            // iteration, checking all pending symbols, and if a pending expr inside
+                            // of it is set as resolved, which can only happen in `traverse_expr`,
+                            // it checks if the parent exists inside the symbol queue, if it does
+                            // it alters the parent state to notified so that this loop doesn't
+                            // increment resolved count. It's only changed from `Notified` to `Resolved`
+                            // if  `traverse_expr` change it to `Resolved`. Since `Notified` is ONLY
+                            // set if the `Resolved` state is accounted for, this prevents the loop
+                            // from being infinite.
+                            if let ParentState::Resolved {
+                                has_resolved_ty,
+                                has_const_val,
+                            } = parent_base.state
+                            {
+                                // if it is within sym_queue then we should update it
+                                if self
+                                    .ty_ctx
+                                    .sym_queue
+                                    .contains_key(&parent_base.parent_sym_id)
+                                {
+                                    current_resolved_count += 1;
+                                    let parent_info = ParentInfo::new(
+                                        parent_base.parent_sym_id,
+                                        has_resolved_ty,
+                                        has_const_val,
+                                    );
 
-                            resolved_parents.push((*pending_sym_id, i, parent_info));
+                                    resolved_parents.push((*pending_sym_id, i, parent_info));
+                                }
+                            }
                         }
+                        //TEST:
+                        //Doesn't need to update anything since it's a "Standing" expr which has no
+                        //assignment attached
+                        PendingExprKind::Standing(_) => (),
                     }
+
+                    // -- ORIGINAL --
+                    // if let Some(parent_base) = &pending_expr.kind
+                    //     && let ParentState::Resolved(has_resolved_ty, has_const_val) =
+                    //         parent_base.state
+                    // {
+                    //     // If the pending expr has a parent base that means it can be updated, and
+                    //     // if it is within sym_queue then we should update it
+                    //     if let Some(possible_pending_parent_base) = &pending_expr.kind
+                    //         && self
+                    //             .ty_ctx
+                    //             .sym_queue
+                    //             .contains_key(&possible_pending_parent_base.parent_sym_id)
+                    //     {
+                    //         current_resolved_count += 1;
+                    //         let parent_info = ParentInfo::new(
+                    //             possible_pending_parent_base.parent_sym_id,
+                    //             has_resolved_ty,
+                    //             has_const_val,
+                    //         );
+                    //
+                    //         resolved_parents.push((*pending_sym_id, i, parent_info));
+                    //     }
+                    // -- ORIGINAL --
                 }
             }
 
@@ -287,16 +343,27 @@ impl<'res> TypeResolver<'res> {
             //
             // All are expects since the previous loop only builds up info that guarantees these
             // parts exist.
+            //WARN: As of right now, this **ONLY** accounts for a parent attached pending expr.
+            //If this were to ever need to expand this would probably be delegated to a method of
+            //some sort so that it's a clear encoded operation rather than an inline loop.
             for (pending_sym_id, pending_expr_idx, parent_info) in resolved_parents {
-                // Setting expr to stale
+                // Setting expr to `Notified`
                 let pending_sym = self
                     .ty_ctx
                     .sym_queue
                     .get_mut(&pending_sym_id)
                     .expect("Previous loop failed");
 
-                pending_sym.pending_exprs[pending_expr_idx].parent_state =
-                    ParentState::Notified(parent_info.has_resolved_ty, parent_info.has_const_val);
+                let PendingExprKind::Parent(parent_base) =
+                    &mut pending_sym.pending_exprs[pending_expr_idx].kind
+                else {
+                    unreachable!()
+                };
+
+                parent_base.state = ParentState::Notified {
+                    has_resolved_ty: parent_info.has_resolved_ty,
+                    has_const_val: parent_info.has_const_val,
+                };
 
                 // Allowing for parent to be searched in resolution
                 let parent = self
@@ -414,58 +481,97 @@ impl<'res> TypeResolver<'res> {
     // The lifetime used here is needed so that the vectors that are pushed into during the recursive
     // maintaining of seen identifiers know that their shortest lifetime is more than long enough to
     // where the borrow cheker is satisfied.
-    fn resolve_cfg_root<'env>(&mut self, parent_sym_id: SymbolId, env: &'env ResolverEnv) {
+    fn resolve_cfg_root<'env>(&mut self, parent_impl_id: ImplId, env: &'env ResolverEnv) {
         // Expected to be `OptionAssignmentRoot`
-        let mut opt_assignment_roots: Vec<MemberId> = Vec::new();
+        let mut opt_assignment_roots: Vec<ImplMemberId> = Vec::new();
         // Expected to be `ConfigDefMember`
-        let mut cfg_def_members: Vec<MemberId> = Vec::new();
+        let mut cfg_def_members: Vec<ImplMemberId> = Vec::new();
 
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
-        let ast_id = self.compiler.symbols[parent_sym_id]
+        let ast_id = self.compiler.impls[parent_impl_id]
             .ast_id
-            .expect("Should be user symbols only");
+            .expect("Should be user impls only");
         let abs_cfg_root = env.ast_info.get_cfg_root(ast_id);
-        let scope_type = self.compiler.symbols[parent_sym_id].scope_origin;
+        let scope_type = self.compiler.impls[parent_impl_id].scope_origin;
+
+        let AbstractConfigKind::Root(root_sp_ty_expr) = &abs_cfg_root.kind else {
+            unreachable!()
+        };
+
+        // TODO: Type check now or later or, something
+        let found_type_id = match resolve::resolve_type_expr(
+            self.compiler,
+            associated_scope,
+            &root_sp_ty_expr,
+            scope_type,
+            abs_cfg_root.lookup_pat,
+            env,
+        ) {
+            TypeExprResult::Type(type_id) => Some(type_id),
+            res => {
+                let preset_err = preset_reporter::type_expr_result_to_preset_err(
+                    &self.compiler,
+                    self.interner,
+                    &res,
+                    env,
+                )
+                .expect("Result enforced by `match`");
+
+                preset_reporter::report_preset(
+                    &self.compiler,
+                    &mut self.summary,
+                    preset_err,
+                    env.region,
+                    self.cfg,
+                    self.interner,
+                );
+
+                // todo!("Are you sure");
+                // I'm not sure actually
+                // TypeId::new(script_compiler::CORE_UNKNOWN)
+                None
+            }
+        };
 
         // Checks if the symbol is a valid config consumer later.
         // Returns an `Option` so that the option assignments can still be checked before
         // returning.
-        let found_sym_id_opt = if let Some(SymbolLookupOutput { found_sym_id, .. }) =
-            scopes::find_sym_id(
-                self.compiler,
-                associated_scope,
-                abs_cfg_root.name_id,
-                scope_type,
-                // The config itself chooses it's lookup since it may is `OnlyVar` as specified in
-                // `parser.rs`
-                //
-                // Is `NamespaceOnly` by default since it is using the current module's namespace
-                // specifically since that's what configs are restricted to.
-                abs_cfg_root.lookup_pat,
-            ) {
-            Some(found_sym_id)
-        } else {
-            // Options are checked for validity after this so returning `None` here is fine. But
-            // this still does terminate eventually since a config's member's cannot be sarched
-            // without an actual member holding symbol.
-            let name = self.interner.search(abs_cfg_root.name_id);
-            let core_msg = format!(
-                //TODO: Need to store scope type or some scope metadata or some conversion
-                "Could not find `{name}` in `{:?}` searchable scopes",
-                abs_cfg_root.lookup_pat
-            );
-
-            let src_diag = SourceDiagnostic::builder(
-                ErrorCode::ScopeErr.code().into(),
-                DiagnosticLevel::Error,
-                core_msg,
-                env.region.path_id,
-            )
-            .add_annotation(abs_cfg_root.name_span, AnnotationKind::Primary, None);
-
-            self.summary.push_diag(src_diag.build());
-            None
-        };
+        // let found_sym_id_opt = if let Some(SymbolLookupOutput { found_sym_id, .. }) =
+        //     scopes::find_sym_id(
+        //         self.compiler,
+        //         associated_scope,
+        //         abs_cfg_root.name_id,
+        //         scope_type,
+        //         // The config itself chooses it's lookup since it may is `OnlyVar` as specified in
+        //         // `parser.rs`
+        //         //
+        //         // Is `NamespaceOnly` by default since it is using the current module's namespace
+        //         // specifically since that's what configs are restricted to.
+        //         abs_cfg_root.lookup_pat,
+        //     ) {
+        //     Some(found_sym_id)
+        // } else {
+        //     // Options are checked for validity after this so returning `None` here is fine. But
+        //     // this still does terminate eventually since a config's member's cannot be sarched
+        //     // without an actual member holding symbol.
+        //     let name = self.interner.search(abs_cfg_root.name_id);
+        //     let core_msg = format!(
+        //         //TODO: Need to store scope type or some scope metadata or some conversion
+        //         "Could not find `{name}` in `{:?}` searchable scopes",
+        //         abs_cfg_root.lookup_pat
+        //     );
+        //
+        //     let src_diag = SourceDiagnostic::builder(
+        //         ErrorCode::ScopeErr.code().into(),
+        //         DiagnosticLevel::Error,
+        //         core_msg,
+        //         env.region.path_id,
+        //     )
+        //     .add_annotation(abs_cfg_root.name_span, AnnotationKind::Primary, None);
+        //
+        //     self.summary.push_diag(src_diag.build());
+        //     None
+        // };
 
         // Get schema option then lookup against the actual possibilities
         // Maybe do this in constraints
@@ -484,7 +590,7 @@ impl<'res> TypeResolver<'res> {
             seen_opt_vec.push(abs_opt);
 
             let expr_id = match self.register_expr(
-                parent_sym_id,
+                None,
                 &abs_opt.array_expr,
                 None,
                 associated_scope,
@@ -506,20 +612,20 @@ impl<'res> TypeResolver<'res> {
                 }
             };
 
-            let member_id = MemberId::new(self.compiler.members.len() as u32);
+            let impl_member_id = ImplMemberId::new(self.compiler.impl_members.len() as u32);
             let opt = OptionAssignmentRoot::new(
-                parent_sym_id,
-                member_id,
+                parent_impl_id,
+                impl_member_id,
                 abs_opt.name_id,
                 abs_opt.name_span,
                 expr_id,
             );
 
             self.compiler
-                .members
-                .push(MemberSymbolKind::OptAssignmentRoot(opt));
+                .impl_members
+                .push(ImplMemberKind::OptAssignmentRoot(opt));
 
-            opt_assignment_roots.push(member_id);
+            opt_assignment_roots.push(impl_member_id);
         }
 
         //NOTE: Maybe it's worth using function-specific trait-bounded concepts to where it CAN
@@ -550,7 +656,7 @@ impl<'res> TypeResolver<'res> {
                     env.region.path_id,
                 )
                 .add_annotation(
-                    abs_cfg_root.name_span,
+                    root_sp_ty_expr.span,
                     AnnotationKind::Secondary,
                     "Found inside this config root".to_string().into(),
                 )
@@ -569,43 +675,43 @@ impl<'res> TypeResolver<'res> {
         seen_opt_vec.clear();
 
         // Releasing after checking if the options were valid expressions
-        let found_sym_id = match found_sym_id_opt {
-            Some(sym_id) => sym_id,
+        let found_type_id = match found_type_id {
+            Some(type_id) => type_id,
             None => return,
         };
 
         // Attempts to get type id out of symbol id which is required for lookup
-        let found_type_id = match self.compiler.get_type_id_from_sym_id(found_sym_id) {
-            Some(id) => id,
-            None => {
-                let kind_fmt = SymbolKind::to_fmt(self.compiler, found_sym_id);
-                let core_msg = format!(
-                    "Cannot use symbol `{}` as the root or inner of a config block",
-                    kind_fmt
-                );
-
-                let src_diag = SourceDiagnostic::builder(
-                    ErrorCode::ConfigDeclErr.code().into(),
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    env.region.path_id,
-                )
-                .add_annotation(abs_cfg_root.name_span, AnnotationKind::Primary, None)
-                // Right...var needs to be usable here..$#$*IjdjalndIPOIPO.
-                .add_help("Config roots must be a struct, enum, or from the scope `var`".into());
-                self.summary.push_diag(src_diag.build());
-                // Terminates here because this means that the symbol being looked at can't
-                // actually use config at all
-                return;
-            }
-        };
+        // let found_type_id = match self.compiler.get_type_id_from_sym_id(found_sym_id) {
+        //     Some(id) => id,
+        //     None => {
+        //         let kind_fmt = SymbolKind::to_fmt(self.compiler, found_sym_id);
+        //         let core_msg = format!(
+        //             "Cannot use symbol `{}` as the root or inner of a config block",
+        //             kind_fmt
+        //         );
+        //
+        //         let src_diag = SourceDiagnostic::builder(
+        //             ErrorCode::ConfigDeclErr.code().into(),
+        //             DiagnosticLevel::Error,
+        //             core_msg,
+        //             env.region.path_id,
+        //         )
+        //         .add_annotation(abs_cfg_root.name_span, AnnotationKind::Primary, None)
+        //         // Right...var needs to be usable here..$#$*IjdjalndIPOIPO.
+        //         .add_help("Config roots must be a struct, enum, or from the scope `var`".into());
+        //         self.summary.push_diag(src_diag.build());
+        //         // Terminates here because this means that the symbol being looked at can't
+        //         // actually use config at all
+        //         return;
+        //     }
+        // };
 
         // TEST: Tracks where this current config was positionally so that it can perform an O(1)
         // set_len call which will immediately ignore any other recursive call-site data
         let mut seen_cfg_len = 0;
 
         // Tracking duplicate identifiers for `AbstractConfig`
-        let mut seen_cfg_vec: Vec<&AbstractConfig> = Vec::new();
+        let mut seen_cfg_vec: Vec<SpannedContainer<InternedId>> = Vec::new();
 
         //NOTE: Maybe should be tracked from SymbolId/MemberId instead
         //
@@ -614,10 +720,14 @@ impl<'res> TypeResolver<'res> {
         // If we have Parent {p: parent} and the config is "Parent { p {} }" this is a recursive
         // error because the outer parent already defined what the Parent type should have as set
         // properties, making it a recursive definition of something that was already defined
-        let mut cfg_dfs: Vec<(TypeId, SourceSpan)> = vec![(found_type_id, abs_cfg_root.name_span)];
+        // let mut cfg_dfs: Vec<(TypeId, SourceSpan)> = vec![(found_type_id, sp_ty_expr.span)];
 
         for abs_inner_cfg in &abs_cfg_root.cfg_members {
-            seen_cfg_vec.push(abs_inner_cfg);
+            let AbstractConfigKind::Member(sp_interned_id, _) = abs_inner_cfg.kind.clone() else {
+                unreachable!()
+            };
+
+            seen_cfg_vec.push(sp_interned_id.clone());
             seen_cfg_len += 1;
 
             // This member id is the member id that the member information in the specific config
@@ -629,7 +739,7 @@ impl<'res> TypeResolver<'res> {
                 self.compiler,
                 found_type_id,
                 //TODO: CHANGE THIS
-                abs_inner_cfg.name_id,
+                sp_interned_id.inner,
                 MemberScopeLookupPattern::NoRestrictions,
             ) {
                 // These are split so that the theoretical ok and err paths are able to reduce
@@ -651,12 +761,16 @@ impl<'res> TypeResolver<'res> {
                             // cannot use a variable in config, rather than the member
                             // access itself
                             let decl_span =
-                                self.compiler.get_span_from_sym_id(found_sym_id).expect(
+                                self.compiler.get_span_from_type_id(found_type_id).expect(
                                     "Should have a span since it has members and was searched for",
                                 );
 
-                            let found_sym = &self.compiler.symbols[found_sym_id];
-                            let found_name = self.interner.search(found_sym.name_id);
+                            //FIX:
+                            let found_type_name_id = self
+                                .compiler
+                                .get_name_id_from_type_id(type_id)
+                                .expect("NOT DONE YET");
+                            let found_name = self.interner.search(found_type_name_id);
 
                             let preset_err = PresetErr::Lookup(
                                 LookupError::ImpossibleTypeMemberAccess(SpannedContainer::new(
@@ -673,12 +787,12 @@ impl<'res> TypeResolver<'res> {
                                 self.interner,
                             )
                             .add_annotation(
-                                abs_cfg_root.name_span,
+                                root_sp_ty_expr.span,
                                 AnnotationKind::Secondary,
                                 format!("`{found_name}` used here").into(),
                             )
                             .add_annotation(
-                                abs_inner_cfg.name_span,
+                                sp_interned_id.span,
                                 AnnotationKind::Secondary,
                                 "member searched for".to_string().into(),
                             )
@@ -688,27 +802,34 @@ impl<'res> TypeResolver<'res> {
                         MemberLookupResult::MemberNotFoundInType(type_id) => {
                             let decl_span = self
                                 .compiler
-                                .get_span_from_sym_id(found_sym_id)
+                                .get_span_from_type_id(found_type_id)
                                 .expect("Should have a span since it has members and was searched");
                             let fmtted_ty = Type::to_fmt(self.compiler, type_id);
 
+                            let found_type = &self.compiler.types[found_type_id];
+                            //FIX:
+                            let found_type_name_id = self
+                                .compiler
+                                .get_name_id_from_type_id(type_id)
+                                .expect("NOT DONE YET");
+
                             // Needs to be done otherwise typedefs, given "x: State" will emit the
                             // type as `x` rather than `State`
-                            let name_id =
-                                if abs_cfg_root.lookup_pat == ScopeLookupPattern::NamespaceOnly {
-                                    abs_cfg_root.name_id
-                                } else {
-                                    // TODO: Needs change
-                                    abs_cfg_root.name_id
-                                };
+                            // let name_id =
+                            //     if abs_cfg_root.lookup_pat == ScopeLookupPattern::NamespaceOnly {
+                            //         abs_cfg_root.name_id
+                            //     } else {
+                            //         // TODO: Needs change
+                            //         abs_cfg_root.name_id
+                            //     };
 
                             let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
                                 parent_type_id: type_id,
                                 sp_parent_name_id: SpannedContainer::new(
-                                    name_id,
-                                    abs_cfg_root.name_span,
+                                    found_type_name_id,
+                                    root_sp_ty_expr.span,
                                 ),
-                                member: abs_inner_cfg.name_id,
+                                member: sp_interned_id.inner,
                             });
 
                             preset_reporter::create_diag_builder_preset(
@@ -724,7 +845,7 @@ impl<'res> TypeResolver<'res> {
                                 format!("{} defined here", fmtted_ty).into(),
                             )
                             .add_annotation(
-                                abs_inner_cfg.name_span,
+                                sp_interned_id.span,
                                 AnnotationKind::Secondary,
                                 "Searched for this member".to_string().into(),
                             )
@@ -735,8 +856,8 @@ impl<'res> TypeResolver<'res> {
                         // not. (Its 100%)
                         // Um. When is this case met?
                         MemberLookupResult::Unknown(type_id) => {
-                            let var = self.compiler.get_var(found_sym_id);
-                            let name = self.interner.search(var.name_id);
+                            // let var = self.compiler.get_var(found_sym_id);
+                            // let name = self.interner.search(var.name_id);
 
                             // dbg!(&self.compiler.types[var.type_id ]);
                             todo!("RUST_BACKTRACE=1");
@@ -755,7 +876,8 @@ impl<'res> TypeResolver<'res> {
             };
 
             let cfg_member_id = self.resolve_cfg_member(
-                parent_sym_id,
+                parent_impl_id,
+                root_sp_ty_expr,
                 // &mut cfg_dfs,
                 &mut seen_cfg_vec,
                 &mut seen_opt_vec,
@@ -783,12 +905,12 @@ impl<'res> TypeResolver<'res> {
                 // Since this iteration specifically checks if the current was declared after the
                 // last and the iteration terminates upon the first match, this correctly points at
                 // the original field for all duplicates.
-                .find(|(other_i, cfg)| *other_i < i && current_cfg.name_id == cfg.name_id)
+                .find(|(other_i, cfg)| *other_i < i && current_cfg.inner == cfg.inner)
             {
-                let dup_name = self.interner.search(current_cfg.name_id);
+                let dup_name = self.interner.search(current_cfg.inner);
 
-                let orig_span = original_cfg.name_span;
-                let current_cfg_span = current_cfg.name_span;
+                let orig_span = original_cfg.span;
+                let current_cfg_span = current_cfg.span;
 
                 let core_msg = format!("More than one config member has identifier `{dup_name}`");
 
@@ -800,7 +922,7 @@ impl<'res> TypeResolver<'res> {
                     env.region.path_id,
                 )
                 .add_annotation(
-                    abs_cfg_root.name_span,
+                    root_sp_ty_expr.span,
                     AnnotationKind::Secondary,
                     "Found inside this config root".to_string().into(),
                 )
@@ -816,10 +938,11 @@ impl<'res> TypeResolver<'res> {
             }
         }
 
-        let cfg_root = self.compiler.get_cfg_def_mut(parent_sym_id);
+        let cfg_root = self.compiler.get_cfg_def_mut(parent_impl_id);
 
-        debug_assert!(matches!(abs_cfg_root.kind, AbstractConfigKind::Root));
-        debug_assert_eq!(cfg_root.linked_sym_id, None);
+        debug_assert!(matches!(abs_cfg_root.kind, AbstractConfigKind::Root(_)));
+
+        debug_assert_eq!(cfg_root.linked_type_id, None);
         debug_assert_eq!(cfg_root.opt_assignments.len(), 0);
         debug_assert_eq!(cfg_root.cfg_members.len(), 0);
         debug_assert!(matches!(
@@ -829,7 +952,7 @@ impl<'res> TypeResolver<'res> {
                 | ScopeLookupPattern::OnlyNest
         ));
 
-        cfg_root.linked_sym_id = Some(found_sym_id);
+        cfg_root.linked_type_id = Some(found_type_id);
         cfg_root.opt_assignments = opt_assignment_roots;
         cfg_root.cfg_members = cfg_def_members;
     }
@@ -841,7 +964,8 @@ impl<'res> TypeResolver<'res> {
     fn resolve_cfg_member<'env>(
         &mut self,
         // For resolve_expr
-        root_parent_sym_id: SymbolId,
+        root_parent_impl_id: ImplId,
+        roo_sp_ty_expr: &SpannedContainer<TypeExpr>,
         // For tracking invalid recursive usage
         // Recursive errors no longer exist at the moment because override can only access known
         // configs like "types" inside of "RUST { types {} }".
@@ -851,20 +975,25 @@ impl<'res> TypeResolver<'res> {
         // being removed.
         // cfg_dfs: &mut Vec<(TypeId, SourceSpan)>,
         //TEST: For identifier tracking right now. Trying out something questionable.
-        seen_cfg_vec: &mut Vec<&'env AbstractConfig>,
+        seen_cfg_vec: &mut Vec<SpannedContainer<InternedId>>,
         seen_opt_vec: &mut Vec<&'env AbstractOptionAssignment>,
         parent_member_id: MemberId,
         parent_abs_cfg: &'env AbstractConfig,
         scope_type: ScopeType,
         depth: u8,
         env: &ResolverEnv,
-    ) -> MemberId {
+    ) -> ImplMemberId {
+        let AbstractConfigKind::Member(sp_parent_name_id, meta_kind) = parent_abs_cfg.kind.clone()
+        else {
+            unreachable!()
+        };
+
         // Does this have to be reserved?
         //
         // Reserving spot since this is a recursive function
-        let current_cfg_member_id = MemberId::new(self.compiler.members.len() as u32);
-        self.compiler.members.push(MemberSymbolKind::Unknown {
-            sp_name_id: SpannedContainer::new(parent_abs_cfg.name_id, parent_abs_cfg.name_span),
+        let current_cfg_member_id = ImplMemberId::new(self.compiler.impl_members.len() as u32);
+        self.compiler.impl_members.push(ImplMemberKind::Unknown {
+            sp_name_id: sp_parent_name_id.clone(),
             reserved_member_id: current_cfg_member_id,
         });
 
@@ -880,9 +1009,9 @@ impl<'res> TypeResolver<'res> {
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         // Expected to be `OptionAssignmentMember`
-        let mut opt_assignments: Vec<MemberId> = Vec::new();
+        let mut opt_assignments: Vec<ImplMemberId> = Vec::new();
         // Expected to be `ConfigDefMember`
-        let mut cfg_members: Vec<MemberId> = Vec::new();
+        let mut cfg_members: Vec<ImplMemberId> = Vec::new();
 
         // Get schema option then lookup against the actual possibilities
         // Maybe do this in constraints
@@ -890,7 +1019,7 @@ impl<'res> TypeResolver<'res> {
             seen_opt_vec.push(abs_opt);
 
             let expr_id = match self.register_expr(
-                root_parent_sym_id,
+                None,
                 &abs_opt.array_expr,
                 None,
                 associated_scope,
@@ -913,20 +1042,19 @@ impl<'res> TypeResolver<'res> {
                 }
             };
 
-            let member_id = MemberId::new(self.compiler.members.len() as u32);
+            let impl_member_id = ImplMemberId::new(self.compiler.impl_members.len() as u32);
             let opt = OptionAssignmentMember::new(
                 parent_member_id,
-                member_id,
+                impl_member_id,
                 abs_opt.name_id,
                 abs_opt.name_span,
                 expr_id,
             );
 
             self.compiler
-                .members
-                .push(MemberSymbolKind::OptAssignmentMember(opt));
-
-            opt_assignments.push(member_id);
+                .impl_members
+                .push(ImplMemberKind::OptAssignmentMember(opt));
+            opt_assignments.push(impl_member_id);
         }
 
         //NOTE: Maybe it's worth using function-specific trait-bounded concepts to where it CAN
@@ -957,7 +1085,7 @@ impl<'res> TypeResolver<'res> {
                     env.region.path_id,
                 )
                 .add_annotation(
-                    parent_abs_cfg.name_span,
+                    sp_parent_name_id.span,
                     AnnotationKind::Secondary,
                     "Found inside this config member".to_string().into(),
                 )
@@ -1007,7 +1135,8 @@ impl<'res> TypeResolver<'res> {
         // WARN: This may allow for some transient issues to exist where the thing SHOULD have a
         // type, but a bug happened earlier, which would be ignored from this if let silently
         // because some consumers actually do need this. We'll see.
-        if let Some(parent_type_id) = self.compiler.get_type_id_from_member_id(parent_member_id) {
+        let parent_type_id_opt = self.compiler.get_type_id_from_member_id(parent_member_id);
+        if let Some(parent_type_id) = parent_type_id_opt {
             //     // If recursive then reporting then returning
             //     //
             //     // May change
@@ -1061,12 +1190,13 @@ impl<'res> TypeResolver<'res> {
             //     }
 
             for abs_cfg_member in &parent_abs_cfg.cfg_members {
-                // let AbstractConfigKind::Member(inner_kind) = abs_cfg_member.kind.clone() else {
-                //     panic!("Wrong member assignment");
-                // };
+                let AbstractConfigKind::Member(sp_member_name_id, _) = parent_abs_cfg.kind.clone()
+                else {
+                    unreachable!()
+                };
 
                 seen_cfg_len += 1;
-                seen_cfg_vec.push(abs_cfg_member);
+                seen_cfg_vec.push(sp_member_name_id.clone());
 
                 //Complex
                 let member_id = if scope_type == ScopeType::Complex {
@@ -1087,7 +1217,6 @@ impl<'res> TypeResolver<'res> {
                         // Maybe from the perspective of ownership this could make more sense?
                         let core_msg =
                             "Nesting level of 2 is too deep for a `complex` scope config".into();
-                        let cfg_root = self.compiler.get_cfg_def_root(root_parent_sym_id);
 
                         let builder = SourceDiagnostic::builder(
                             ErrorCode::ConfigDeclErr.code().into(),
@@ -1097,19 +1226,19 @@ impl<'res> TypeResolver<'res> {
                         )
                         // Pointing first nesting point
                         .add_annotation(
-                            parent_abs_cfg.name_span,
+                            sp_parent_name_id.span,
                             AnnotationKind::Secondary,
                             "One level nesting".to_string().into(),
                         )
                         // Pointing to root
                         .add_annotation(
-                            cfg_root.name_span,
+                            roo_sp_ty_expr.span,
                             AnnotationKind::Secondary,
                             "Root".to_string().into(),
                         )
                         // Pointing second nesting point
                         .add_annotation(
-                            abs_cfg_member.name_span,
+                            sp_member_name_id.span,
                             AnnotationKind::Primary,
                             "Two level nesting is too deep".to_string().into(),
                         )
@@ -1129,7 +1258,7 @@ impl<'res> TypeResolver<'res> {
                     match member_lookup::lookup_member(
                         self.compiler,
                         parent_type_id,
-                        abs_cfg_member.name_id,
+                        sp_member_name_id.inner,
                         MemberScopeLookupPattern::NoRestrictions,
                     ) {
                         // These are split so that the theoretical ok and err paths are able to reduce
@@ -1152,10 +1281,8 @@ impl<'res> TypeResolver<'res> {
                                     // NOTE: These cannot be defined earlier because not all lookups have
                                     // the same guarantees
                                     //
-                                    let parent_member_span = self
-                                        .compiler
-                                        .get_span_from_member_id(parent_member_id)
-                                        .expect("NOT DONE YET");
+                                    let parent_member_span =
+                                        self.compiler.get_span_from_member_id(parent_member_id);
 
                                     let preset_err =
                                         PresetErr::Lookup(LookupError::ImpossibleTypeMemberAccess(
@@ -1173,12 +1300,12 @@ impl<'res> TypeResolver<'res> {
                                         self.interner,
                                     )
                                     .add_annotation(
-                                        parent_abs_cfg.name_span,
+                                        sp_parent_name_id.span,
                                         AnnotationKind::Secondary,
                                         format!("Is type `{parent_member_fmtted_ty}`").into(),
                                     )
                                     .add_annotation(
-                                        abs_cfg_member.name_span,
+                                        sp_member_name_id.span,
                                         AnnotationKind::Secondary,
                                         "Impossible member access".to_string().into(),
                                     )
@@ -1211,9 +1338,9 @@ impl<'res> TypeResolver<'res> {
                                             parent_type_id: type_id,
                                             sp_parent_name_id: SpannedContainer::new(
                                                 ty_name_id,
-                                                parent_abs_cfg.name_span,
+                                                sp_parent_name_id.span,
                                             ),
-                                            member: abs_cfg_member.name_id,
+                                            member: sp_member_name_id.inner,
                                         });
 
                                     //TODO: RECURSIVELY TRACKING ENDS UP HERE FIX SHOULD BE APPLIED HERE IF
@@ -1234,7 +1361,7 @@ impl<'res> TypeResolver<'res> {
                                         format!("{} defined here", parent_member_fmtted_ty).into(),
                                     )
                                     .add_annotation(
-                                        abs_cfg_member.name_span,
+                                        sp_member_name_id.span,
                                         AnnotationKind::Secondary,
                                         "Searched for this member".to_string().into(),
                                     )
@@ -1274,7 +1401,8 @@ impl<'res> TypeResolver<'res> {
                 };
 
                 let cfg_member_id = self.resolve_cfg_member(
-                    root_parent_sym_id,
+                    root_parent_impl_id,
+                    roo_sp_ty_expr,
                     // cfg_dfs,
                     seen_cfg_vec,
                     seen_opt_vec,
@@ -1308,12 +1436,12 @@ impl<'res> TypeResolver<'res> {
                 // Since this iteration specifically checks if the current was declared after the
                 // last and the iteration terminates upon the first match, this correctly points at
                 // the original field for all duplicates.
-                .find(|(other_i, cfg)| *other_i < i && current_cfg.name_id == cfg.name_id)
+                .find(|(other_i, cfg)| *other_i < i && current_cfg.inner == cfg.inner)
             {
-                let dup_name = self.interner.search(current_cfg.name_id);
+                let dup_name = self.interner.search(current_cfg.inner);
 
-                let orig_span = original_cfg.name_span;
-                let current_cfg_span = current_cfg.name_span;
+                let orig_span = original_cfg.span;
+                let current_cfg_span = current_cfg.span;
 
                 let core_msg = format!("More than one config member has identifier `{dup_name}`");
 
@@ -1324,7 +1452,7 @@ impl<'res> TypeResolver<'res> {
                     env.region.path_id,
                 )
                 .add_annotation(
-                    parent_abs_cfg.name_span,
+                    sp_parent_name_id.span,
                     AnnotationKind::Secondary,
                     "Found inside this config member".to_string().into(),
                 )
@@ -1341,23 +1469,21 @@ impl<'res> TypeResolver<'res> {
         }
 
         // Final step of assigning the actual config member
-        let AbstractConfigKind::Member(kind) = parent_abs_cfg.kind.clone() else {
-            panic!("Wrong member assignment");
-        };
 
         let cfg_member = ConfigDefMember::new(
-            parent_abs_cfg.name_id,
-            parent_abs_cfg.name_span,
+            sp_parent_name_id.inner,
+            sp_parent_name_id.span,
             current_cfg_member_id,
             parent_member_id,
-            kind,
-            opt_assignments,
+            parent_type_id_opt,
+            meta_kind,
             parent_abs_cfg.lookup_pat,
+            opt_assignments,
             cfg_members,
         );
 
-        self.compiler.members[current_cfg_member_id] =
-            MemberSymbolKind::ConfigDefMember(cfg_member);
+        self.compiler.impl_members[current_cfg_member_id] =
+            ImplMemberKind::ConfigDefMember(cfg_member);
 
         // Always returns a `ConfigDefMember` no matter how broken since diagnostics are already pushed
         current_cfg_member_id
@@ -1380,15 +1506,35 @@ impl<'res> TypeResolver<'res> {
 
         //Suspicious
         for (i, pending_expr) in pending_sym.pending_exprs.iter().enumerate() {
-            // Error being treated the same as a resolved expression since it can't be mutated
-            // further
-            //
-            // If fully resolved or err (impossible to solve) skip
-            if matches!(
-                pending_expr.parent_state,
-                ParentState::Notified(true, true) | ParentState::Error
-            ) {
-                continue;
+            match &pending_expr.kind {
+                PendingExprKind::Parent(parent_base) => {
+                    // Error being treated the same as a resolved expression since it can't be mutated
+                    // further
+                    //
+                    // If fully resolved or err (impossible to solve) skip
+                    if matches!(
+                        parent_base.state,
+                        ParentState::Notified {
+                            has_resolved_ty: true,
+                            has_const_val: true
+                        } | ParentState::Error
+                    ) {
+                        continue;
+                    }
+                }
+                PendingExprKind::Standing(state) => {
+                    // Standing version of same check
+                    if matches!(
+                        //WARN: Make sure I work
+                        state,
+                        StandingExprState::Resolved {
+                            has_resolved_ty: true,
+                            has_const_val: true
+                        } | StandingExprState::Error
+                    ) {
+                        continue;
+                    }
+                }
             }
 
             //WARN: Changed to store the tuple BEFORE the queue iteration since if an earlier part
@@ -1455,10 +1601,7 @@ impl<'res> TypeResolver<'res> {
                 // a cyclic dependency error, the error will exist and emit later, but this
                 // technically still exists and needs to be ignored. Not currently aware of any
                 // direct issues with this. Maybe an Error tag on a pending expression could help?
-                SymbolKind::Type(_)
-                | SymbolKind::Namespace
-                | SymbolKind::Config(_)
-                | SymbolKind::Directive(_) => {
+                SymbolKind::Type(_) | SymbolKind::Namespace | SymbolKind::Directive(_) => {
                     unreachable!("Not possible")
                 }
             }
@@ -1468,26 +1611,64 @@ impl<'res> TypeResolver<'res> {
                 // surrounding it, which test particular types of dependency chains that put more pressure
                 // on the more subject to error parts like the children notifying parents.
                 //
-                // This no guarantee but seemingly fine.
+                // WARN: Check if I work please
                 match self.traverse_expr(user) {
                     Ok((has_resolved_ty, has_const_val)) => {
                         let pending_expr = &mut pending_sym.pending_exprs[i];
 
-                        let has_new_info = match pending_expr.parent_state {
-                            ParentState::Unresolved => true,
-                            // Only value matters here since being resolved previous means there at
-                            // least is a resolved type present.
-                            ParentState::Resolved(_, old_val)
-                            | ParentState::Notified(_, old_val) => has_const_val && !old_val,
-                            ParentState::Error => false,
-                        };
+                        match &mut pending_expr.kind {
+                            PendingExprKind::Parent(parent_base) => {
+                                let has_new_info = match parent_base.state {
+                                    ParentState::Unresolved => true,
+                                    // Only value matters here since being resolved previous means there at
+                                    // least is a resolved type present.
+                                    ParentState::Resolved {
+                                        has_resolved_ty: _,
+                                        has_const_val: old_val,
+                                    }
+                                    | ParentState::Notified {
+                                        has_resolved_ty: _,
+                                        has_const_val: old_val,
+                                    } => {
+                                        // If we found a const and the value wasn't const previously
+                                        // then this is a new const and returns true for new info.
+                                        has_const_val && !old_val
+                                    }
+                                    ParentState::Error => false,
+                                };
 
-                        if has_new_info {
-                            if has_resolved_ty {
-                                pending_expr.parent_state =
-                                    ParentState::Resolved(has_resolved_ty, has_const_val);
+                                // NOTE: Can't remember why resolved type is checked
+                                if has_new_info && has_resolved_ty {
+                                    // Setting as resolved so main loop knows to update the parent
+                                    parent_base.state = ParentState::Resolved {
+                                        has_resolved_ty,
+                                        has_const_val,
+                                    };
+                                }
                             }
-                        }
+                            PendingExprKind::Standing(state) => {
+                                let has_new_info = match &state {
+                                    StandingExprState::Unresolved => true,
+                                    StandingExprState::Resolved {
+                                        has_resolved_ty: _,
+                                        has_const_val: old_val,
+                                        // If we found a const and the value wasn't const previously
+                                        // then this is a new const and returns true for new info.
+                                    } => has_const_val && !old_val,
+                                    StandingExprState::Error => false,
+                                };
+
+                                //WARN: Missing?
+                                if has_new_info {
+                                    // Setting as resolved so it can be removed if needed during
+                                    // initial queue check
+                                    *state = StandingExprState::Resolved {
+                                        has_resolved_ty,
+                                        has_const_val,
+                                    };
+                                }
+                            }
+                        };
                     }
                     // WARN: This case is not hit yet
                     // Reports the error and continues
@@ -1516,20 +1697,76 @@ impl<'res> TypeResolver<'res> {
                 let has_resolved_ty = pending_sym.has_resolved_ty;
                 let has_const_val = pending_sym.has_const_val;
 
-                let has_new_info = match pending_expr.parent_state {
-                    ParentState::Unresolved => true,
-                    // Only value matters here since being resolved previous means there at
-                    // least is a resolved type present.
-                    ParentState::Notified(_, old_val) | ParentState::Resolved(_, old_val) => {
-                        has_const_val && !old_val
+                match &mut pending_expr.kind {
+                    PendingExprKind::Parent(parent_base) => {
+                        let has_new_info = match parent_base.state {
+                            ParentState::Unresolved => true,
+                            // Only value matters here since being resolved previous means there at
+                            // least is a resolved type present.
+                            ParentState::Resolved {
+                                has_resolved_ty: _,
+                                has_const_val: old_val,
+                            }
+                            | ParentState::Notified {
+                                has_resolved_ty: _,
+                                has_const_val: old_val,
+                            } => {
+                                // If we found a const and the value wasn't const previously
+                                // then this is a new const and returns true for new info.
+                                has_const_val && !old_val
+                            }
+                            ParentState::Error => false,
+                        };
+
+                        // NOTE: Can't remember why resolved type is checked
+                        if has_new_info && has_resolved_ty {
+                            // Setting as resolved so main loop knows to update the parent
+                            parent_base.state = ParentState::Resolved {
+                                has_resolved_ty,
+                                has_const_val,
+                            };
+                        }
                     }
-                    ParentState::Error => false,
+                    PendingExprKind::Standing(state) => {
+                        let has_new_info = match state {
+                            StandingExprState::Unresolved => true,
+                            StandingExprState::Resolved {
+                                has_resolved_ty: _,
+                                has_const_val: old_val,
+                                // If we found a const and the value wasn't const previously
+                                // then this is a new const and returns true for new info.
+                            } => has_const_val && !*old_val,
+                            StandingExprState::Error => false,
+                        };
+
+                        //WARN: Missing?
+                        if has_new_info {
+                            // Setting as resolved so it can be removed if needed during
+                            // initial queue check
+                            *state = StandingExprState::Resolved {
+                                has_resolved_ty,
+                                has_const_val,
+                            };
+                        }
+                    }
                 };
 
-                if has_new_info {
-                    pending_expr.parent_state =
-                        ParentState::Resolved(has_resolved_ty, has_const_val);
-                }
+                // -- ORIGINAL --
+                // let has_new_info = match pending_expr.parent_state {
+                //     ParentState::Unresolved => true,
+                //     // Only value matters here since being resolved previous means there at
+                //     // least is a resolved type present.
+                //     ParentState::Notified(_, old_val) | ParentState::Resolved(_, old_val) => {
+                //         has_const_val && !old_val
+                //     }
+                //     ParentState::Error => false,
+                // };
+                //
+                // if has_new_info {
+                //     pending_expr.parent_state =
+                //         ParentState::Resolved(has_resolved_ty, has_const_val);
+                // }
+                // -- ORIGINAL --
 
                 break;
             }
@@ -1828,7 +2065,7 @@ impl<'res> TypeResolver<'res> {
         //NOTE: Pipeline where expressions are always returned, just that some may have
         //unresolved parts, which are put into the queue, not the variable itself.
         let expr_id = match self.register_expr(
-            parent_sym_id,
+            parent_sym_id.into(),
             &abs_var.spanned_expr,
             None,
             associated_scope,
@@ -1925,7 +2162,7 @@ impl<'res> TypeResolver<'res> {
         for spanned_expr in &abs_typedef.conds {
             //FIX: Scope type is a little wrong here since it's a condition
             match self.register_expr(
-                parent_sym_id,
+                parent_sym_id.into(),
                 spanned_expr,
                 None,
                 associated_scope,
@@ -1996,7 +2233,7 @@ impl<'res> TypeResolver<'res> {
 
             for cond in &abs_field.conds {
                 match self.register_expr(
-                    parent_sym_id,
+                    parent_sym_id.into(),
                     &cond,
                     None,
                     associated_scope,
@@ -2039,7 +2276,14 @@ impl<'res> TypeResolver<'res> {
         let mut glob_conds: Vec<ExprId> = Vec::new();
 
         for cond in &abs_struct.glob_conds {
-            match self.register_expr(parent_sym_id, cond, None, associated_scope, scope_type, env) {
+            match self.register_expr(
+                parent_sym_id.into(),
+                cond,
+                None,
+                associated_scope,
+                scope_type,
+                env,
+            ) {
                 Ok(c) => glob_conds.push(c),
                 Err(preset_err) => {
                     preset_reporter::report_preset(
@@ -2092,7 +2336,7 @@ impl<'res> TypeResolver<'res> {
 
             for cond in &abs_variant.conds {
                 let cond_opt = match self.register_expr(
-                    parent_sym_id,
+                    parent_sym_id.into(),
                     &cond,
                     None,
                     associated_scope,
@@ -2140,7 +2384,7 @@ impl<'res> TypeResolver<'res> {
         let mut glob_conds: Vec<ExprId> = Vec::new();
         for cond in &abs_enum.glob_conds {
             let cond_opt = match self.register_expr(
-                parent_sym_id,
+                parent_sym_id.into(),
                 cond,
                 None,
                 associated_scope,
@@ -2329,7 +2573,7 @@ impl<'res> TypeResolver<'res> {
         let mut conds: Vec<ExprId> = Vec::new();
         for spanned_expr in &abs_alias.conds {
             let cond_opt = match self.register_expr(
-                parent_sym_id,
+                parent_sym_id.into(),
                 spanned_expr,
                 Some(local_scope_id),
                 //NOTE: Could this change?
@@ -2397,7 +2641,10 @@ impl<'res> TypeResolver<'res> {
     // Should it be replaced with VariableId?
     fn register_expr(
         &mut self,
-        parent_sym_id: SymbolId,
+        // Is `Option` because not all expressions being registered are attached to variables.
+        // So, in "let x = y" we would want the `SymbolId` of `x` to check for cyclic deps, but if
+        // we were just typeing "[x, y]" there are no cycles because there is no assignment
+        parent_sym_id_opt: Option<SymbolId>,
         spanned_expr: &SpannedExpr,
         // Only usable with something like, alias(x) where x is local, not section local overall
         // like var->
@@ -2442,7 +2689,6 @@ impl<'res> TypeResolver<'res> {
                             // Local scopes can't reach these right now
                             SymbolKind::Type(type_id) => todo!(),
                             SymbolKind::Namespace => todo!(),
-                            SymbolKind::Config(cfg_id) => todo!(),
                             SymbolKind::Directive(directive_id) => todo!(),
                         };
 
@@ -2464,42 +2710,46 @@ impl<'res> TypeResolver<'res> {
                     //WARN: Constant iteration upon seeing any symbol instead of a single check
                     //elsewhere
                     // Code duplication reduction
-                    self.check_cycle(parent_sym_id, found_sym_id, env)?;
+                    //
+                    // If
+                    if let Some(parent_sym_id) = parent_sym_id_opt {
+                        self.check_cycle(parent_sym_id, found_sym_id, env)?;
 
-                    //NOTE: Only the PendingSymbol struct carries the PendingExpr struct, meaning
-                    //there is no way to check for cycles outside of `TypeContext`, so this has to
-                    //pick up the edge case of, "let x = x". Could change.
-                    if found_sym_id == parent_sym_id {
-                        let name = self
-                            .interner
-                            .search(self.compiler.symbols[found_sym_id].name_id);
+                        //NOTE: Only the PendingSymbol struct carries the PendingExpr struct, meaning
+                        //there is no way to check for cycles outside of `TypeContext`, so this has to
+                        //pick up the edge case of, "let x = x". Could change.
+                        if found_sym_id == parent_sym_id {
+                            let name = self
+                                .interner
+                                .search(self.compiler.symbols[found_sym_id].name_id);
 
-                        let core_msg = format!("Cannot declare symbol `{name}` as itself");
+                            let core_msg = format!("Cannot declare symbol `{name}` as itself");
 
-                        let dup_span = spanned_expr.span;
+                            let dup_span = spanned_expr.span;
 
-                        //FIX: Not failable since the exntire expression has to be placed in one module,
-                        // to error to begin with, but should still operate off stored spans
-                        let parent_ast_id = self.compiler.symbols[parent_sym_id]
-                            .ast_id
-                            .expect("Parent must be a valid symbol to get to this point");
+                            //FIX: Not failable since the exntire expression has to be placed in one module,
+                            // to error to begin with, but should still operate off stored spans
+                            let parent_ast_id = self.compiler.symbols[parent_sym_id]
+                                .ast_id
+                                .expect("Should be user symbol");
 
-                        let parent_span = env.ast_info.get_name_span(parent_ast_id);
+                            let parent_span = env.ast_info.get_name_span(parent_ast_id);
 
-                        let src_diag = SourceDiagnostic::builder(
-                            None,
-                            DiagnosticLevel::Error,
-                            core_msg,
-                            env.region.path_id,
-                        )
-                        .add_annotation(parent_span, AnnotationKind::Primary, None)
-                        .add_annotation(
-                            dup_span,
-                            AnnotationKind::Primary,
-                            None,
-                        );
+                            let src_diag = SourceDiagnostic::builder(
+                                None,
+                                DiagnosticLevel::Error,
+                                core_msg,
+                                env.region.path_id,
+                            )
+                            .add_annotation(parent_span, AnnotationKind::Primary, None)
+                            .add_annotation(
+                                dup_span,
+                                AnnotationKind::Primary,
+                                None,
+                            );
 
-                        return Err(PresetErr::General(src_diag));
+                            return Err(PresetErr::General(src_diag));
+                        }
                     }
 
                     let symbol = &self.compiler.symbols[found_sym_id];
@@ -2567,8 +2817,17 @@ impl<'res> TypeResolver<'res> {
 
                                     // The type of the variable is unknown meaning it still needs
                                     // to await
+                                    //WARN:
                                     if let Type::Unknown = ty {
-                                        let pending_expr = PendingExpr::new(expr_id, parent_sym_id);
+                                        let pending_kind = if let Some(id) = parent_sym_id_opt {
+                                            let parent_base =
+                                                ParentStateBase::new(id, ParentState::Unresolved);
+                                            PendingExprKind::Parent(parent_base)
+                                        } else {
+                                            PendingExprKind::Standing(StandingExprState::Unresolved)
+                                        };
+
+                                        let pending_expr = PendingExpr::new(expr_id, pending_kind);
                                         self.ty_ctx.store_pending_expr(found_sym_id, pending_expr);
                                     }
 
@@ -2585,7 +2844,16 @@ impl<'res> TypeResolver<'res> {
                                 VariableState::ReservedTypeSlot(reserved_ty_id) => {
                                     let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
                                     let expr_hir = ExprHir::Var(found_sym_id);
-                                    let pending_expr = PendingExpr::new(expr_id, parent_sym_id);
+
+                                    let pending_kind = if let Some(id) = parent_sym_id_opt {
+                                        let parent_base =
+                                            ParentStateBase::new(id, ParentState::Unresolved);
+                                        PendingExprKind::Parent(parent_base)
+                                    } else {
+                                        PendingExprKind::Standing(StandingExprState::Unresolved)
+                                    };
+
+                                    let pending_expr = PendingExpr::new(expr_id, pending_kind);
 
                                     //NOTE: ONLY THIS POINT SHOULD STORE THE SYMBOL. This is how the
                                     //connection is made so that, y = x + 2, goes from x -> x + 2 -> None
@@ -2636,9 +2904,6 @@ impl<'res> TypeResolver<'res> {
                         // Not possible
                         SymbolKind::Directive(_) => unreachable!("We'll see"),
                         // Config not declarable in neutral sections so this should not be possible
-                        SymbolKind::Config(_) => {
-                            unreachable!("Should be impossible due to sections")
-                        }
                     };
 
                     self.compiler.exprs.push(resolved_expr);
@@ -2734,7 +2999,7 @@ impl<'res> TypeResolver<'res> {
             }
             Expr::BinaryExpr { lhs, op, rhs } => {
                 let lhs_id = self.register_expr(
-                    parent_sym_id,
+                    parent_sym_id_opt,
                     &*lhs,
                     local_scope_id,
                     associated_scope,
@@ -2743,7 +3008,7 @@ impl<'res> TypeResolver<'res> {
                 )?;
 
                 let rhs_id = self.register_expr(
-                    parent_sym_id,
+                    parent_sym_id_opt,
                     &*rhs,
                     local_scope_id,
                     associated_scope,
@@ -2882,7 +3147,7 @@ impl<'res> TypeResolver<'res> {
 
                 //WARN: SUSPICIOUS
                 let default_ident_expr_id = self.register_expr(
-                    parent_sym_id,
+                    parent_sym_id_opt,
                     &ident_expr,
                     local_scope_id,
                     associated_scope,
@@ -2891,7 +3156,7 @@ impl<'res> TypeResolver<'res> {
                 )?;
 
                 let default_val_expr_id = self.register_expr(
-                    parent_sym_id,
+                    parent_sym_id_opt,
                     &spanned_expr,
                     local_scope_id,
                     associated_scope,
@@ -2945,7 +3210,7 @@ impl<'res> TypeResolver<'res> {
             }
             Expr::Unary(unary) => {
                 let operand_id = self.register_expr(
-                    parent_sym_id,
+                    parent_sym_id_opt,
                     &unary.spanned_expr,
                     local_scope_id,
                     associated_scope,
@@ -3051,7 +3316,7 @@ impl<'res> TypeResolver<'res> {
             Expr::Call(caller, arg_exprs) => {
                 // The "Call" in "Call(x, y)"
                 let caller_id = self.register_expr(
-                    parent_sym_id,
+                    parent_sym_id_opt,
                     caller,
                     local_scope_id,
                     associated_scope,
@@ -3064,7 +3329,7 @@ impl<'res> TypeResolver<'res> {
 
                 for sp_expr in arg_exprs {
                     let arg = self.register_expr(
-                        parent_sym_id,
+                        parent_sym_id_opt,
                         sp_expr,
                         local_scope_id,
                         associated_scope,
@@ -3093,7 +3358,7 @@ impl<'res> TypeResolver<'res> {
             }
             Expr::MemberAccess(abs_member_access) => {
                 match self.resolve_member(
-                    parent_sym_id,
+                    parent_sym_id_opt,
                     &abs_member_access.base,
                     local_scope_id,
                     associated_scope,
@@ -3166,7 +3431,7 @@ impl<'res> TypeResolver<'res> {
                 };
 
                 self.register_expr(
-                    parent_sym_id,
+                    parent_sym_id_opt,
                     &inline_expr,
                     local_scope_id,
                     last_scope,
@@ -3183,7 +3448,7 @@ impl<'res> TypeResolver<'res> {
                 for sp_expr in &array_expr.elements {
                     // register as inputs?
                     let expr_id = self.register_expr(
-                        parent_sym_id,
+                        parent_sym_id_opt,
                         sp_expr,
                         local_scope_id,
                         associated_scope,
@@ -3275,7 +3540,7 @@ impl<'res> TypeResolver<'res> {
     // Umm...
     fn resolve_member(
         &mut self,
-        sym_parent: SymbolId,
+        sym_parent: Option<SymbolId>,
         member: &SpannedExpr,
         local_scope: Option<ScopeId>,
         associated_scope: AssociatedScopeKind,
@@ -3393,8 +3658,10 @@ impl<'res> TypeResolver<'res> {
             // Find every symbol that `current` depends on by scanning the pending queue.
             for (sym_id, pending_sym) in &self.ty_ctx.sym_queue {
                 for pending_expr in &pending_sym.pending_exprs {
-                    if pending_expr.parent_sym == current {
-                        stack.push(*sym_id);
+                    if let PendingExprKind::Parent(parent_base) = &pending_expr.kind {
+                        if parent_base.parent_sym_id == current {
+                            stack.push(*sym_id);
+                        }
                     }
                 }
             }

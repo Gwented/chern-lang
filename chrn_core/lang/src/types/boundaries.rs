@@ -6,6 +6,8 @@ use std::fmt::Display;
 //TODO: Name id attachment?
 use bitflags::bitflags;
 
+use chrn_utils::{id_types::InternedId, intern};
+
 use crate::fmter::Formatted;
 
 // Even though an internal implementation of this existed before-hand, the subject to error and pro
@@ -132,6 +134,33 @@ impl TypeDomainFlags {
 impl TypeBoundaryFlags {
     pub const fn runtime() -> TypeBoundaryFlags {
         TypeBoundaryFlags::RUNTIME
+    }
+
+    /// Returns the interned name id if exactly one flag is set, else `None`.
+    pub fn name_id(self) -> Option<InternedId> {
+        if self.bits().count_ones() != 1 {
+            return None;
+        }
+        let id = match self {
+            TypeBoundaryFlags::SIGNED_INTEGER => intern::INTERNED_SIGNED_INTEGER,
+            TypeBoundaryFlags::UNSIGNED_INTEGER => intern::INTERNED_UNSIGNED_INTEGER,
+            TypeBoundaryFlags::FLOAT => intern::INTERNED_FLOAT,
+            TypeBoundaryFlags::BOOL => intern::INTERNED_BOOL,
+            TypeBoundaryFlags::STR => intern::INTERNED_STR,
+            TypeBoundaryFlags::CHAR => intern::INTERNED_CHAR,
+            TypeBoundaryFlags::RUNTIME => intern::INTERNED_RUNTIME,
+            TypeBoundaryFlags::COMPARABLE => intern::INTERNED_COMPARABLE,
+            TypeBoundaryFlags::CHARACTER_MAPPABLE => intern::INTERNED_CHARACTER_MAPPABLE,
+            TypeBoundaryFlags::HAS_LEN => intern::INTERNED_HAS_LEN,
+            TypeBoundaryFlags::INTEGER => intern::INTERNED_INTEGER,
+            TypeBoundaryFlags::NUMERIC => intern::INTERNED_NUMERIC,
+            TypeBoundaryFlags::RANGED => intern::INTERNED_RANGED,
+            TypeBoundaryFlags::COLLECTION => intern::INTERNED_COLLECTION,
+            TypeBoundaryFlags::ORDERED => intern::INTERNED_ORDERED,
+            TypeBoundaryFlags::NIL => intern::INTERNED_NIL,
+            _ => unreachable!("`i_am_a_bug`"),
+        };
+        Some(InternedId::new(id))
     }
 
     /// Expand these constraints into the set of concrete built-in types that

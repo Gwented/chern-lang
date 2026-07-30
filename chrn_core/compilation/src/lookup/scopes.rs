@@ -8,8 +8,9 @@ use lang::fmter::{Formattable, Formatted};
 
 use crate::{
     script_compiler::ScriptCompiler,
-    semantic::hir::hir_concepts::{
-        MemberSymbolKind, Symbol, SymbolKind, Table, Type, VariableState,
+    semantic::hir::{
+        hir_concepts::{Table, Type},
+        hir_symbols::{MemberSymbolKind, Symbol, SymbolKind, VariableState},
     },
 };
 
@@ -218,9 +219,7 @@ pub fn find_type_id(
 
                             return Some(type_id);
                         }
-                        SymbolKind::Namespace
-                        | SymbolKind::Config(_)
-                        | SymbolKind::Directive(_) => return None,
+                        SymbolKind::Namespace | SymbolKind::Directive(_) => return None,
                     }
                 }
             }
@@ -374,7 +373,7 @@ pub fn find_symbols_named_ref<'a>(
                 found_members.append(
                     &mut new_members
                         .iter()
-                        .map(|m_id| &compiler.members[*m_id])
+                        .map(|m_id| &compiler.sym_members[*m_id])
                         .collect(),
                 );
             }
@@ -446,7 +445,7 @@ pub fn find_symbols_named_from_module_ref<'a>(
                     found_members.append(
                         &mut new_members
                             .iter()
-                            .map(|m_id| &compiler.members[*m_id])
+                            .map(|m_id| &compiler.sym_members[*m_id])
                             .collect(),
                     );
                 }

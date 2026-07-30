@@ -63,33 +63,71 @@ impl PendingSymbol {
     }
 }
 
-#[derive(Debug)]
 /// Struct to represent an expr that any amount of other expression are waiting for so that they can
 /// be resolved.
+#[derive(Debug)]
 pub(super) struct PendingExpr {
     pub(super) pending_id: ExprId,
-    pub(super) parent_state: ParentState,
-    pub(super) parent_sym: SymbolId,
+    pub(super) kind: PendingExprKind,
+}
+
+/// Encodes all possible expr kinds that require different handling
+#[derive(Debug)]
+pub(super) enum PendingExprKind {
+    Parent(ParentStateBase),
+    Standing(StandingExprState),
+}
+
+/// Expr that is pending but has no parent ties to update
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub(super) enum StandingExprState {
+    Unresolved,
+    Resolved {
+        has_resolved_ty: bool,
+        has_const_val: bool,
+    },
+    Error,
 }
 
 impl PendingExpr {
-    pub(super) fn new(pending_id: ExprId, parent_sym: SymbolId) -> PendingExpr {
-        PendingExpr {
-            pending_id,
-            parent_state: ParentState::Unresolved,
-            parent_sym,
+    pub(super) fn new(pending_id: ExprId, kind: PendingExprKind) -> PendingExpr {
+        PendingExpr { pending_id, kind }
+    }
+}
+
+/// Parent state intended guide resolution and be changed by the child expression's
+/// themselves
+#[derive(Debug)]
+pub(super) struct ParentStateBase {
+    pub(super) parent_sym_id: SymbolId,
+    pub(super) state: ParentState,
+}
+
+impl ParentStateBase {
+    pub(super) fn new(parent_sym_id: SymbolId, state: ParentState) -> Self {
+        Self {
+            parent_sym_id,
+            state,
         }
     }
 }
 
+// -- HELPERS --
 /// State of parent expression intended guide resolution and be changed by the child expression's
 /// themselves
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum ParentState {
     Unresolved,
     /// has_resolved_ty, has_const_val
-    Resolved(bool, bool),
-    Notified(bool, bool),
+    Resolved {
+        has_resolved_ty: bool,
+        has_const_val: bool,
+    },
+    /// has_resolved_ty, has_const_val
+    Notified {
+        has_resolved_ty: bool,
+        has_const_val: bool,
+    },
     Error,
 }
 

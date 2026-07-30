@@ -35,7 +35,7 @@
 //! string.  It also maintains a forward (`imports`) and reverse (`dependents`) index
 //! of cross-module dependency edges so that editing a shared import file correctly
 //! invalidates all documents that import it.
-use chrn_utils::id_types::MemberId;
+
 use compilation::lexer::Lexer;
 use compilation::lexer::token::SpannedToken;
 use compilation::lexer::token::Token as ScriptToken;
@@ -45,7 +45,9 @@ use compilation::lookup::scopes::AssociatedScopeKind;
 use compilation::lookup::scopes::ScopeLookupPattern;
 use compilation::lookup::scopes::ScopeType;
 
-use compilation::parser::ast::ast_concepts::Item;
+use compilation::parser::ast::ast_concepts::{AbstractDecl, AbstractImpl, Item};
+use compilation::semantic::compilation_unit::CompilationUnit;
+use compilation::semantic::hir::hir_impls::{ImplHirKind, ImplMemberKind};
 use compilation::parser::ast::ast_exprs::Expr;
 use compilation::parser::ast::ast_exprs::PathSegment;
 use compilation::parser::ast::ast_exprs::TypeExpr;
@@ -55,11 +57,11 @@ use compilation::resolvers::name_resolver::NamespaceResolver;
 use compilation::resolvers::resolver_env::{RegistrationEnv, ResolverEnv};
 use compilation::resolvers::type_resolver::TypeResolver;
 use compilation::script_compiler::ScriptCompiler;
-use compilation::semantic::hir::hir_concepts::MemberSymbolKind;
-use compilation::semantic::hir::hir_concepts::SymbolKind;
-use compilation::semantic::hir::hir_concepts::SymbolOrigin;
 use compilation::semantic::hir::hir_concepts::Type;
-use compilation::semantic::hir::hir_concepts::VariableState;
+use compilation::semantic::hir::hir_symbols::MemberSymbolKind;
+use compilation::semantic::hir::hir_symbols::SymbolKind;
+use compilation::semantic::hir::hir_symbols::SymbolOrigin;
+use compilation::semantic::hir::hir_symbols::VariableState;
 use compilation::semantic::hir::hir_exprs::ExprHir;
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -70,7 +72,7 @@ use crate::analyser;
 use chrn_utils::arena::Arena;
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::id_types::{
-    InternedId, ModuleId, SourceRegionId, SpannedContainer, SymbolId, TypeId,
+    ImplId, ImplMemberId, InternedId, ModuleId, SourceRegionId, SpannedContainer, SymbolId, TypeId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
@@ -109,17 +111,17 @@ pub enum SemanticEntity {
     /// A nested config member block (`.fieldName { }`) inside a `complex->` block.
     /// Resolves to a `ConfigDefMember` whose `linked_member_id` points to the actual field.
     ConfigMember {
-        /// `SymbolId` of the `ConfigDefRoot` this member belongs to.
-        cfg_root_sym_id: SymbolId,
-        /// `MemberId` of the `ConfigDefMember` itself.
-        member_id: MemberId,
+        /// `ImplId` of the `ImplHir` (config root) this member belongs to.
+        cfg_root_impl_id: ImplId,
+        /// `ImplMemberId` of the `ConfigDefMember` itself.
+        member_id: ImplMemberId,
     },
     /// An option-assignment key (e.g. `.casing = [...]`) inside a root or member config block.
     ConfigOption {
-        /// `SymbolId` of the enclosing `ConfigDefRoot`.
-        cfg_root_sym_id: SymbolId,
-        /// `MemberId` of the `OptionAssignmentRoot` or `OptionAssignmentMember`.
-        member_id: MemberId,
+        /// `ImplId` of the enclosing `ImplHir`.
+        cfg_root_impl_id: ImplId,
+        /// `ImplMemberId` of the `OptionAssignmentRoot` or `OptionAssignmentMember`.
+        member_id: ImplMemberId,
     },
 }
 
@@ -157,10 +159,10 @@ pub struct DocumentState {
     pub compiler: Option<ScriptCompiler>,
     /// ASTs indexed by module ID; entry `0` is the main module.
     pub asts: Vec<Option<compilation::parser::ast::ast_concepts::AstInfo>>,
-    /// Per-module `SymbolId`s produced by the namespace resolver.  Indexed by
+    /// Per-module `CompilationUnit`s produced by the namespace resolver.  Indexed by
     /// `ModuleId`; `None` means that module was skipped (e.g. failed to parse or
     /// had no region).  Consumed by the later resolver stages via `ResolverEnv`.
-    pub compilation_syms: Vec<Option<Vec<SymbolId>>>,
+    pub compilation_syms: Vec<Option<Vec<CompilationUnit>>>,
     /// Diagnostics from config/import parsing (module discovery phase).
     pub config_errors: SourceDiagnosticSummary,
     /// Diagnostics from the script parser.
@@ -351,7 +353,7 @@ impl DocumentState {
         // emitting a per-module `Vec<SymbolId>` aligned with `ModuleId`.  This
         // means the later resolver stages no longer need to walk the AST to find
         // their targets — they iterate `compilation_syms` instead.
-        let mut compilation_syms: Vec<Option<Vec<SymbolId>>> = Vec::with_capacity(mod_len);
+        let mut compilation_syms: Vec<Option<Vec<CompilationUnit>>> = Vec::with_capacity(mod_len);
         {
             let mut ns_resolver = NamespaceResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
@@ -850,7 +852,7 @@ impl DocumentState {
                                                             .iter()
                                                             .position(|member_id| {
                                                                 compiler
-                                                                    .members
+                                                                    .sym_members
                                                                     .get(*member_id)
                                                                     .and_then(|m| match m {
                                                                         MemberSymbolKind::Field(
@@ -866,7 +868,7 @@ impl DocumentState {
                                                         if let Some(field_idx) = field_idx {
                                                             let member_id = sdef.fields[field_idx];
                                                             let field_type_id = compiler
-                                                                .members
+                                                                .sym_members
                                                                 .get(member_id)
                                                                 .and_then(|m| match m {
                                                                     MemberSymbolKind::Field(f) => {
@@ -891,7 +893,7 @@ impl DocumentState {
                                                                      .variants
                                                                      .iter()
                                                                      .position(|member_id| {
-                                                                         compiler.members
+                                                                         compiler.sym_members
                                                                              .get(*member_id )
                                                                              .and_then(|m| match m {
                                                                                  MemberSymbolKind::Variant(v) => Some(v.name_id == seg_name_id),
@@ -902,7 +904,7 @@ impl DocumentState {
                                                         if let Some(v_idx) = v_idx {
                                                             let member_id = edef.variants[v_idx];
                                                             let variant_type_id = compiler
-                                                                .members
+                                                                .sym_members
                                                                 .get(member_id)
                                                                 .and_then(|m| match m {
                                                                     MemberSymbolKind::Variant(
@@ -1053,74 +1055,77 @@ impl DocumentState {
         }
 
         // 3.5. Configuration Definitions
-        for sym in compiler.symbols.iter() {
-            if let SymbolKind::Config(cfg_id) = sym.kind {
-                if !matches!(sym.sym_origin, SymbolOrigin::Module(mid) if mid.id == 0) {
-                    continue;
+        // Config roots are now stored as Impl compilation units.
+        for comp_unit in self.compilation_syms.first().into_iter().flatten().flatten() {
+            let impl_id = match comp_unit {
+                CompilationUnit::Impl(impl_id) => impl_id,
+                _ => continue,
+            };
+            let impl_hir = &compiler.impls[*impl_id];
+            let cfg_root_id = match &impl_hir.kind {
+                ImplHirKind::Config(cfg_root_id) => cfg_root_id,
+            };
+            let cfg_root = &compiler.cfgs[*cfg_root_id];
+
+            let mut queue: Vec<ImplMemberId> = Vec::new();
+
+            // Root options
+            for &impl_member_id in &cfg_root.opt_assignments {
+                if let ImplMemberKind::OptAssignmentRoot(opt) = &compiler.impl_members[impl_member_id] {
+                    map.push((
+                        opt.name_span,
+                        SemanticEntity::ConfigOption {
+                            cfg_root_impl_id: cfg_root.impl_id,
+                            member_id: impl_member_id,
+                        },
+                    ));
                 }
-                let sym_id = sym.sym_id;
-                let cfg_root = &compiler.cfgs[cfg_id];
+            }
 
-                let mut queue = Vec::new();
-
-                // Root options
-                for &member_id in &cfg_root.opt_assignments {
-                    if let MemberSymbolKind::OptAssignmentRoot(opt) = &compiler.members[member_id] {
-                        map.push((
-                            opt.name_span,
-                            SemanticEntity::ConfigOption {
-                                cfg_root_sym_id: sym_id,
-                                member_id,
-                            },
-                        ));
-                    }
+            // Root members
+            for &impl_member_id in &cfg_root.cfg_members {
+                if let ImplMemberKind::ConfigDefMember(mem) = &compiler.impl_members[impl_member_id] {
+                    map.push((
+                        mem.name_span,
+                        SemanticEntity::ConfigMember {
+                            cfg_root_impl_id: cfg_root.impl_id,
+                            member_id: impl_member_id,
+                        },
+                    ));
+                    queue.push(impl_member_id);
                 }
+            }
 
-                // Root members
-                for &member_id in &cfg_root.cfg_members {
-                    if let MemberSymbolKind::ConfigDefMember(mem) = &compiler.members[member_id] {
-                        map.push((
-                            mem.name_span,
-                            SemanticEntity::ConfigMember {
-                                cfg_root_sym_id: sym_id,
-                                member_id,
-                            },
-                        ));
-                        queue.push(member_id);
-                    }
-                }
-
-                // Traverse nested members
-                while let Some(current_member_id) = queue.pop() {
-                    if let MemberSymbolKind::ConfigDefMember(mem) =
-                        &compiler.members[current_member_id]
-                    {
-                        for &opt_id in &mem.opt_assignments {
-                            if let MemberSymbolKind::OptAssignmentMember(opt) =
-                                &compiler.members[opt_id]
-                            {
-                                map.push((
-                                    opt.name_span,
-                                    SemanticEntity::ConfigOption {
-                                        cfg_root_sym_id: sym_id,
-                                        member_id: opt_id,
-                                    },
-                                ));
-                            }
+            // Traverse nested members
+            while let Some(current_member_id) = queue.pop() {
+                if let ImplMemberKind::ConfigDefMember(mem) =
+                    &compiler.impl_members[current_member_id]
+                {
+                    for &opt_id in &mem.opt_assignments {
+                        if let ImplMemberKind::OptAssignmentMember(opt) =
+                            &compiler.impl_members[opt_id]
+                        {
+                            map.push((
+                                opt.name_span,
+                                SemanticEntity::ConfigOption {
+                                    cfg_root_impl_id: cfg_root.impl_id,
+                                    member_id: opt_id,
+                                },
+                            ));
                         }
-                        for &child_member_id in &mem.cfg_def_members {
-                            if let MemberSymbolKind::ConfigDefMember(child_mem) =
-                                &compiler.members[child_member_id]
-                            {
-                                map.push((
-                                    child_mem.name_span,
-                                    SemanticEntity::ConfigMember {
-                                        cfg_root_sym_id: sym_id,
-                                        member_id: child_member_id,
-                                    },
-                                ));
-                                queue.push(child_member_id);
-                            }
+                    }
+                    for &child_member_id in &mem.cfg_def_members {
+                        if let ImplMemberKind::ConfigDefMember(child_mem) =
+                            &compiler.impl_members[child_member_id]
+                        {
+                            map.push((
+                                child_mem.name_span,
+                                SemanticEntity::ConfigMember {
+                                    cfg_root_impl_id: cfg_root.impl_id,
+                                    member_id: child_member_id,
+                                },
+                            ));
+                            queue.push(child_member_id);
                         }
                     }
                 }
@@ -1131,7 +1136,7 @@ impl DocumentState {
         if let Some(Some(ast)) = self.asts.first() {
             for item in ast.items() {
                 match item {
-                    Item::Var(v) => {
+                    Item::Decl(AbstractDecl::Var(v)) => {
                         collect_expr_refs(
                             compiler,
                             &v.spanned_expr,
@@ -1141,7 +1146,7 @@ impl DocumentState {
                             self.script_start,
                         );
                     }
-                    Item::TypeDef(def) => {
+                    Item::Decl(AbstractDecl::TypeDef(def)) => {
                         collect_type_refs(compiler, &def.sp_ty_expr, &mut map);
                         for cond in &def.conds {
                             collect_expr_refs(
@@ -1154,7 +1159,7 @@ impl DocumentState {
                             );
                         }
                     }
-                    Item::Struct(s) => {
+                    Item::Decl(AbstractDecl::Struct(s)) => {
                         for cond in &s.glob_conds {
                             collect_expr_refs(
                                 compiler,
@@ -1179,7 +1184,7 @@ impl DocumentState {
                             }
                         }
                     }
-                    Item::Enum(e) => {
+                    Item::Decl(AbstractDecl::Enum(e)) => {
                         for cond in &e.glob_conds {
                             collect_expr_refs(
                                 compiler,
@@ -1206,7 +1211,7 @@ impl DocumentState {
                             }
                         }
                     }
-                    Item::Alias(a) => {
+                    Item::Decl(AbstractDecl::Alias(a)) => {
                         for cond in &a.conds {
                             collect_expr_refs(
                                 compiler,
@@ -1218,7 +1223,7 @@ impl DocumentState {
                             );
                         }
                     }
-                    Item::Config(cfg) => {
+                    Item::Impl(AbstractImpl::Config(cfg)) => {
                         collect_cfg_refs(
                             compiler,
                             cfg,
@@ -1517,24 +1522,22 @@ impl DocumentState {
                 ))
             }
             SemanticEntity::ConfigMember {
-                cfg_root_sym_id,
+                cfg_root_impl_id,
                 member_id,
             } => {
-                // A config member is its own construct; reference it by its own
-                // member id rather than by the field/variant it configures.
                 let cfg_member = compiler.get_cfg_def_member(*member_id);
-                let sym = compiler.symbols.get(*cfg_root_sym_id)?;
-                let owner_id = match sym.sym_origin {
-                    SymbolOrigin::Module(mid) => mid.id as usize,
-                    SymbolOrigin::Compiler => 0,
-                };
+                // The ImplHir's scope_origin carries the module info; look up the
+                // module that contains this impl via the compilation_syms mapping.
+                let impl_hir = &compiler.impls[*cfg_root_impl_id];
+                let owner_id = 0; // Configs are always in the main module (module 0)
+                let _ = impl_hir;
                 let module = compiler.mods.get(ModuleId::new(owner_id as u32))?;
                 let region = self.region_arena.get(module.region_id?)?;
                 let path = self.interner.search_path(region.path_id);
                 Some((
                     path.to_string_lossy().to_string(),
                     cfg_member.name_span,
-                    Some(*cfg_root_sym_id),
+                    None,
                 ))
             }
             SemanticEntity::ConfigOption { .. } => {

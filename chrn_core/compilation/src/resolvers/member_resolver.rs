@@ -17,7 +17,12 @@ use crate::{
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
     script_compiler::{self, ScriptCompiler},
     semantic::{
-        hir::hir_concepts::{FieldRepre, MemberSymbolKind, SymbolKind, Type, VariantRepre},
+        compilation_unit::CompilationUnit,
+        hir::{
+            hir_concepts::Type,
+            hir_impls::ImplHirKind,
+            hir_symbols::{FieldRepre, MemberSymbolKind, SymbolKind, VariantRepre},
+        },
         preset_reporter,
         resolve::{self, TypeExprResult},
     },
@@ -69,14 +74,24 @@ impl MemberResolver<'_> {
     pub fn resolve(&mut self, env: &ResolverEnv) -> SourceDiagnosticSummary {
         // Goes through all symbols the current module has and only picks structs and enums to
         // append to.
-        for sym_id in env.compilation_syms {
-            match self.compiler.symbols[*sym_id].kind {
-                SymbolKind::Type(type_id) => match self.compiler.types[type_id].ty {
-                    Type::Struct(_) => self.resolve_struct(*sym_id, env),
-                    Type::Enum(_) => self.resolve_enum(*sym_id, env),
-                    _ => (),
-                },
-                _ => (),
+        for comp_unit in env.compilation_syms.iter().cloned() {
+            match comp_unit {
+                CompilationUnit::Symbol(sym_id) => {
+                    match self.compiler.symbols[sym_id].kind {
+                        // This split is more so, users can define these set of symbols, and users cannot
+                        // define the unreacables.
+                        SymbolKind::Type(type_id) => match &self.compiler.types[type_id].ty {
+                            Type::Struct(_) => self.resolve_struct(sym_id, env),
+                            Type::Enum(_) => self.resolve_enum(sym_id, env),
+                            _ => (),
+                        },
+                        // Still uses sym id since their actual ids make it a little more complicated to get
+                        // to their ast id
+                        // Users cannot define these but they exist internally.
+                        _ => (),
+                    }
+                }
+                CompilationUnit::Impl(impl_id) => (),
             }
         }
 
@@ -146,7 +161,7 @@ impl MemberResolver<'_> {
 
             seen.push(&field_typedef);
 
-            let member_id = MemberId::new(self.compiler.members.len() as u32);
+            let member_id = MemberId::new(self.compiler.sym_members.len() as u32);
 
             // Attempts to get a more accurate parent symbol location, this is not semantically required
             // anywhere. The idea behind this is that say, we had:
@@ -169,7 +184,9 @@ impl MemberResolver<'_> {
                 type_id,
             );
 
-            self.compiler.members.push(MemberSymbolKind::Field(field));
+            self.compiler
+                .sym_members
+                .push(MemberSymbolKind::Field(field));
             fields.push(member_id);
         }
 
@@ -236,7 +253,7 @@ impl MemberResolver<'_> {
         for (i, variant) in abs_enum.variants.iter().enumerate() {
             seen.push(&variant);
 
-            let member_id = MemberId::new(self.compiler.members.len() as u32);
+            let member_id = MemberId::new(self.compiler.sym_members.len() as u32);
             let variant_repre = if let Some(spanned_ty_expr) = &variant.sp_ty_expr {
                 let type_id = match resolve::resolve_type_expr(
                     self.compiler,
@@ -290,7 +307,7 @@ impl MemberResolver<'_> {
             };
 
             self.compiler
-                .members
+                .sym_members
                 .push(MemberSymbolKind::Variant(variant_repre));
 
             variants.push(member_id);

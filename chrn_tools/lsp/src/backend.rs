@@ -40,8 +40,9 @@ use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use compilation::lexer::token::Token as ScriptToken;
 use compilation::lookup::scopes;
 use compilation::script_compiler::ScriptCompiler;
-use compilation::semantic::hir::hir_concepts::{
-    Symbol, SymbolKind, SymbolOrigin, Type, VariableState,
+use compilation::semantic::hir::hir_concepts::Type;
+use compilation::semantic::hir::hir_symbols::{
+    Symbol, SymbolKind, SymbolOrigin, VariableState,
 };
 use parking_lot::RwLock;
 use std::time::Duration;
@@ -396,7 +397,6 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
             scopes::AssociatedScopeKind::Module(_) => CompletionItemKind::MODULE,
             scopes::AssociatedScopeKind::Scope(_) => CompletionItemKind::VARIABLE,
         },
-        SymbolKind::Config(_) => CompletionItemKind::CLASS,
         SymbolKind::Directive(_) => CompletionItemKind::KEYWORD,
     }
 }
@@ -456,9 +456,6 @@ fn classify_id_token(
                         }
                         SymbolKind::Namespace => {
                             return Some(SemanticTokenType::Variable.as_u32());
-                        }
-                        SymbolKind::Config(_) => {
-                            return Some(SemanticTokenType::Class.as_u32());
                         }
                         SymbolKind::Directive(_) => {
                             return Some(SemanticTokenType::Regexp.as_u32());

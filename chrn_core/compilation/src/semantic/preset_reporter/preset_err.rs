@@ -10,7 +10,7 @@ use lang::{
 use crate::{
     constraints::ArgConstraint,
     parser::ast::ast_concepts::{BinaryOp, UnaryOp},
-    semantic::hir::hir_concepts::FuncKind,
+    semantic::hir::hir_symbols::FuncKind,
 };
 
 // pub struct SemanticError {

@@ -20,8 +20,9 @@ use crate::{
     },
     resolvers::resolver_env::ResolverEnv,
     script_compiler::ScriptCompiler,
-    semantic::hir::hir_concepts::{
-        BuiltinTypeInfo, Symbol, SymbolKind, SymbolOrigin, Type, TypeInfo,
+    semantic::hir::{
+        hir_concepts::{BuiltinTypeInfo, Type, TypeInfo},
+        hir_symbols::{Symbol, SymbolKind, SymbolOrigin},
     },
 };
 
@@ -184,9 +185,6 @@ pub fn resolve_type_expr(
                                 kind: Formatted::Directive,
                                 scope_found_in: associated_scope,
                             };
-                        }
-                        SymbolKind::Config(_) => {
-                            unreachable!("Cannot lookup configs at the language level")
                         }
                     }
                 }

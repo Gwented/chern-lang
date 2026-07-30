@@ -41,8 +41,10 @@ use chrn_utils::intern::Intern;
 use compilation::lexer::token::Token as ScriptToken;
 use compilation::lookup::scopes::AssociatedScopeKind;
 use compilation::script_compiler::ScriptCompiler;
-use compilation::semantic::hir::hir_concepts::{
-    self, MemberSymbolKind, SymbolKind, Type, VariableState,
+use compilation::semantic::hir::hir_concepts::Type;
+use compilation::semantic::hir::hir_impls::ImplMemberKind;
+use compilation::semantic::hir::hir_symbols::{
+    MemberSymbolKind, SymbolKind, SymbolOrigin, VariableState,
 };
 use lang::fmter::Formattable;
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
@@ -137,7 +139,7 @@ pub fn compute_hover(
                                     let ty_info = &compiler.types[type_id];
                                     let t = format_type(&ty_info.ty, compiler, interner, false);
                                     match &ty_info.ty {
-                                        hir_concepts::Type::TypeDef(type_def) => {
+                                        Type::TypeDef(type_def) => {
                                             let inner = &compiler.types[type_def.type_id].ty;
                                             let shallow_t = strip_struct_enum_prefix(&format_type(
                                                 inner, compiler, interner, true,
@@ -145,17 +147,13 @@ pub fn compute_hover(
                                             hover_text = format!("**typedef**: {}", shallow_t);
                                         }
                                         _ => {
-                                            if let compilation::semantic::hir::hir_concepts::Type::BuiltinTypeInfo(
-                                                builtin_info,
-                                            ) = &ty_info.ty
+                                            if let Type::BuiltinTypeInfo(builtin_info) = &ty_info.ty
                                             {
-                                                hover_text =
-                                                    Document::builtin_type_docs(builtin_info.ty.kind())
-                                                        .compose();
-                                            } else if let compilation::semantic::hir::hir_concepts::Type::Func(
-                                                func_def,
-                                            ) = &ty_info.ty
-                                            {
+                                                hover_text = Document::builtin_type_docs(
+                                                    builtin_info.ty.kind(),
+                                                )
+                                                .compose();
+                                            } else if let Type::Func(func_def) = &ty_info.ty {
                                                 hover_text =
                                                     Document::func_docs(func_def.kind).compose();
                                             } else {
@@ -174,15 +172,14 @@ pub fn compute_hover(
                                                 let mut final_text = String::new();
                                                 if is_struct_or_enum || is_alias {
                                                     let owner_id = match sym.sym_origin {
-                                                        hir_concepts::SymbolOrigin::Module(mid) => {
-                                                            mid.id
-                                                        }
-                                                        hir_concepts::SymbolOrigin::Compiler => 0,
+                                                        SymbolOrigin::Module(mid) => mid.id,
+                                                        SymbolOrigin::Compiler => 0,
                                                     };
                                                     // The `Arena` is parameterised by `ModuleId`; the
                                                     // primary `Index` impl expects a `ModuleId` by value,
                                                     // so wrap the raw `usize`.
-                                                    let module = &compiler.mods[ModuleId::new(owner_id)];
+                                                    let module =
+                                                        &compiler.mods[ModuleId::new(owner_id)];
                                                     let raw_mod_name =
                                                         interner.search(module.name_id);
                                                     final_text.push_str(&format!(
@@ -244,27 +241,9 @@ pub fn compute_hover(
                                         }
                                     }
                                 }
-                                SymbolKind::Config(cfg_id) => {
-                                    let cfg_root = &compiler.cfgs[cfg_id];
-                                    let name = interner.search(cfg_root.name_id);
-
-                                    let linked_type =
-                                        if let Some(linked_sym_id) = cfg_root.linked_sym_id {
-                                            if let Some(linked_sym) =
-                                                compiler.symbols.get(linked_sym_id)
-                                            {
-                                                interner.search(linked_sym.name_id).to_string()
-                                            } else {
-                                                "Unknown".to_string()
-                                            }
-                                        } else {
-                                            "Unknown".to_string()
-                                        };
-
-                                    hover_text = format!("**Configures** `{}`", name);
-                                }
-                                SymbolKind::Directive(_) => {
+                                SymbolKind::Directive(directive_id) => {
                                     let name = interner.search(sym.name_id);
+                                    let _ = directive_id;
                                     hover_text = Document::directive_docs(name)
                                         .map(|d| d.compose())
                                         .unwrap_or_else(|| format!("`#{}`", name));
@@ -290,8 +269,8 @@ pub fn compute_hover(
                             && let Some(ast_id) = sym.ast_id
                         {
                             let owner_id = match sym.sym_origin {
-                                hir_concepts::SymbolOrigin::Module(mid) => mid.id as usize,
-                                hir_concepts::SymbolOrigin::Compiler => 0,
+                                SymbolOrigin::Module(mid) => mid.id as usize,
+                                SymbolOrigin::Compiler => 0,
                             };
                             if let Some(Some(ast)) = state.asts.get(owner_id) {
                                 let abs_struct = ast.get_struct(ast_id);
@@ -302,7 +281,7 @@ pub fn compute_hover(
                                         && let Type::Struct(sdef) = &compiler.types[tid].ty
                                         && let Some(member_id) = sdef.fields.get(*field_idx)
                                         && let Some(MemberSymbolKind::Field(field_repre)) =
-                                            compiler.members.get(*member_id)
+                                            compiler.sym_members.get(*member_id)
                                     {
                                         let type_str = strip_struct_enum_prefix(&format_type(
                                             &compiler.types[field_repre.type_id].ty,
@@ -328,18 +307,18 @@ pub fn compute_hover(
                             && let Some(ast_id) = sym.ast_id
                         {
                             let owner_id = match sym.sym_origin {
-                                hir_concepts::SymbolOrigin::Module(mid) => mid.id as usize,
-                                hir_concepts::SymbolOrigin::Compiler => 0,
+                                SymbolOrigin::Module(mid) => mid.id as usize,
+                                SymbolOrigin::Compiler => 0,
                             };
                             if let Some(Some(ast)) = state.asts.get(owner_id) {
-                                let abs_enum = ast.get_enum(ast_id);
+                                let abs_enum: &compilation::parser::ast::ast_concepts::AbstractEnum = ast.get_enum(ast_id);
                                 if let Some(variant) = abs_enum.variants.get(*variant_idx) {
                                     let variant_name = interner.search(variant.name_id);
                                     if let SymbolKind::Type(tid) = sym.kind
                                         && let Type::Enum(edef) = &compiler.types[tid].ty
                                         && let Some(member_id) = edef.variants.get(*variant_idx)
                                         && let Some(MemberSymbolKind::Variant(variant_repre)) =
-                                            compiler.members.get(*member_id)
+                                            compiler.sym_members.get(*member_id)
                                     {
                                         if let Some(vty_id) = variant_repre.type_id {
                                             let type_str = strip_struct_enum_prefix(&format_type(
@@ -401,7 +380,7 @@ pub fn compute_hover(
                         let cfg_member = compiler.get_cfg_def_member(*member_id);
                         let name = interner.search(cfg_member.name_id);
                         let tagged = if let Some(MemberSymbolKind::Field(field_repre)) =
-                            compiler.members.get(cfg_member.linked_member_id)
+                            compiler.sym_members.get(cfg_member.linked_member_id)
                         {
                             let type_str = strip_struct_enum_prefix(&format_type(
                                 &compiler.types[field_repre.type_id].ty,
@@ -411,7 +390,7 @@ pub fn compute_hover(
                             ));
                             format!("Configures field **{}**: `{}`", name, type_str)
                         } else if let Some(MemberSymbolKind::Variant(variant_repre)) =
-                            compiler.members.get(cfg_member.linked_member_id)
+                            compiler.sym_members.get(cfg_member.linked_member_id)
                         {
                             if let Some(vty_id) = variant_repre.type_id {
                                 let type_str = strip_struct_enum_prefix(&format_type(
@@ -430,9 +409,9 @@ pub fn compute_hover(
                         hover_text = tagged;
                     }
                     SemanticEntity::ConfigOption { member_id, .. } => {
-                        let name_id = match &compiler.members[*member_id] {
-                            MemberSymbolKind::OptAssignmentRoot(opt) => Some(opt.name_id),
-                            MemberSymbolKind::OptAssignmentMember(opt) => Some(opt.name_id),
+                        let name_id = match &compiler.impl_members[*member_id] {
+                            ImplMemberKind::OptAssignmentRoot(opt) => Some(opt.name_id),
+                            ImplMemberKind::OptAssignmentMember(opt) => Some(opt.name_id),
                             _ => None,
                         };
                         if let Some(name_id) = name_id {
@@ -627,7 +606,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                 let fields: Vec<String> = struct_def
                     .fields
                     .iter()
-                    .filter_map(|member_id| match compiler.members.get(*member_id)? {
+                    .filter_map(|member_id| match compiler.sym_members.get(*member_id)? {
                         MemberSymbolKind::Field(field) => {
                             let field_name = interner.search(field.name_id);
                             let field_ty = &compiler.types[field.type_id].ty;
@@ -659,7 +638,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                 let variants: Vec<String> = enum_def
                     .variants
                     .iter()
-                    .filter_map(|member_id| match compiler.members.get(*member_id)? {
+                    .filter_map(|member_id| match compiler.sym_members.get(*member_id)? {
                         MemberSymbolKind::Variant(v) => {
                             let variant_name = interner.search(v.name_id);
 

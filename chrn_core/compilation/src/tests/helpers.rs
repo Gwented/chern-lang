@@ -210,7 +210,7 @@ pub(super) fn build_resolver_envs<'a>(
     compiler: &ScriptCompiler,
     arena: &'a Arena<SourceRegion, SourceRegionId>,
     asts: &'a [Option<AstInfo>],
-    compilation_syms: &'a [Option<Vec<SymbolId>>],
+    compilation_syms: &'a [Option<Vec<CompilationUnit>>],
 ) -> Vec<Option<ResolverEnv<'a>>> {
     let mut all_envs = Vec::new();
     for i in 0..compiler.mods.len() {
@@ -257,7 +257,7 @@ pub(super) fn run_namespace_resolver(
     interner: &Intern,
     compiler: &mut ScriptCompiler,
     reg_envs: &[Option<RegistrationEnv>],
-) -> Vec<Option<Vec<SymbolId>>> {
+) -> Vec<Option<Vec<CompilationUnit>>> {
     let mut ns_resolver = NamespaceResolver::new(settings, interner, compiler);
     let mut mod_symbols = Vec::new();
     for env in reg_envs.iter() {
@@ -324,7 +324,10 @@ pub(super) use crate::{
         member_resolver::MemberResolver, name_resolver::NamespaceResolver,
         type_resolver::TypeResolver,
     },
-    semantic::hir::hir_concepts::VariableState,
+    semantic::{
+        compilation_unit::CompilationUnit,
+        hir::hir_symbols::VariableState,
+    },
 };
 
 // -- Const dependency test helpers --
@@ -526,7 +529,7 @@ pub(super) fn compile_and_resolve_cross_module(
 
     let reg_envs = build_registration_envs(&compiler, &arena, &asts);
 
-    let compilation_syms: Vec<Option<Vec<SymbolId>>> = {
+    let compilation_syms: Vec<Option<Vec<CompilationUnit>>> = {
         let mut ns_resolver = NamespaceResolver::new(&cfg, &interner, &mut compiler);
         let mut symbols = Vec::new();
         for env in reg_envs.iter() {
@@ -621,7 +624,7 @@ pub(super) fn type_resolve_cross_module(
 
     let reg_envs = build_registration_envs(&compiler, &arena, &asts);
 
-    let compilation_syms: Vec<Option<Vec<SymbolId>>> = {
+    let compilation_syms: Vec<Option<Vec<CompilationUnit>>> = {
         let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
         let mut symbols = Vec::new();
         for env in reg_envs.iter() {

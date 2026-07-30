@@ -9,6 +9,7 @@ use chrn_utils::{
 use crate::{
     lexer::{token::SpannedToken, trivia::Trivia},
     parser::ast::ast_concepts::AstInfo,
+    semantic::compilation_unit::CompilationUnit,
 };
 
 // NOTE:
@@ -37,7 +38,7 @@ pub struct ScriptCompilerStore {
     pub asts: Vec<Option<AstInfo>>,
     /// Symbols specific to a module's compilation
     /// These are `Option` types due to modules being stored in a dense array
-    pub compilation_syms: Vec<Option<Vec<SymbolId>>>,
+    pub compilation_syms: Vec<Option<Vec<CompilationUnit>>>,
 }
 
 impl ScriptCompilerStore {
@@ -48,7 +49,7 @@ impl ScriptCompilerStore {
         toks: Vec<Option<Vec<SpannedToken>>>,
         trivias: Vec<Option<Vec<Trivia>>>,
         asts: Vec<Option<AstInfo>>,
-        compilation_syms: Vec<Option<Vec<SymbolId>>>,
+        compilation_syms: Vec<Option<Vec<CompilationUnit>>>,
     ) -> ScriptCompilerStore {
         ScriptCompilerStore {
             cfg,

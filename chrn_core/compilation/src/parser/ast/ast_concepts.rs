@@ -11,7 +11,7 @@ use lang::{
 use crate::{
     lookup::scopes::{ScopeLookupPattern, ScopeType},
     parser::ast::ast_exprs::{SpannedExpr, TypeExpr},
-    semantic::hir::hir_concepts::ConfigMemberMetadataKind,
+    semantic::hir::hir_impls::ConfigMemberMetadataKind,
 };
 
 // Maybe this type of thing should go into an ast_concepts module?
@@ -58,10 +58,27 @@ impl AstInfo {
         &self.items.items
     }
 
+    pub fn get_decl(&self, ast_id: AstId) -> &AbstractDecl {
+        match &self.items[ast_id] {
+            Item::Decl(abs_decl) => abs_decl,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn get_impl(&self, ast_id: AstId) -> &AbstractImpl {
+        match &self.items[ast_id] {
+            Item::Impl(abs_impl) => abs_impl,
+            Item::Decl(_) => unreachable!(),
+        }
+    }
+
     pub fn get_typedef(&self, ast_id: AstId) -> &AbstractTypeDef {
         match &self.items[ast_id] {
             item => match item {
-                Item::TypeDef(abs_typedef) => abs_typedef,
+                Item::Decl(abs_decl) => match abs_decl {
+                    AbstractDecl::TypeDef(abs_typedef) => abs_typedef,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             },
         }
@@ -70,7 +87,10 @@ impl AstInfo {
     pub fn get_struct(&self, ast_id: AstId) -> &AbstractStruct {
         match &self.items[ast_id] {
             item => match item {
-                Item::Struct(abs_struct) => abs_struct,
+                Item::Decl(abs_decl) => match abs_decl {
+                    AbstractDecl::Struct(abs_struct) => abs_struct,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             },
         }
@@ -79,7 +99,10 @@ impl AstInfo {
     pub fn get_var(&self, ast_id: AstId) -> &AbstractVar {
         match &self.items[ast_id] {
             item => match item {
-                Item::Var(abs_var) => abs_var,
+                Item::Decl(abs_decl) => match abs_decl {
+                    AbstractDecl::Var(abs_var) => abs_var,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             },
         }
@@ -88,7 +111,9 @@ impl AstInfo {
     pub fn get_cfg_root(&self, ast_id: AstId) -> &AbstractConfig {
         match &self.items[ast_id] {
             item => match item {
-                Item::Config(abs_cfg) => abs_cfg,
+                Item::Impl(abs_impl) => match abs_impl {
+                    AbstractImpl::Config(abs_cfg) => abs_cfg,
+                },
                 _ => unreachable!(),
             },
         }
@@ -106,7 +131,10 @@ impl AstInfo {
     pub fn get_enum(&self, ast_id: AstId) -> &AbstractEnum {
         match &self.items[ast_id] {
             item => match item {
-                Item::Enum(abs_enum) => abs_enum,
+                Item::Decl(abs_decl) => match abs_decl {
+                    AbstractDecl::Enum(abs_enum) => abs_enum,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             },
         }
@@ -115,7 +143,10 @@ impl AstInfo {
     pub fn get_alias(&self, ast_id: AstId) -> &AbstractAlias {
         match &self.items[ast_id] {
             item => match item {
-                Item::Alias(abs_alias) => abs_alias,
+                Item::Decl(abs_decl) => match abs_decl {
+                    AbstractDecl::Alias(abs_alias) => abs_alias,
+                    _ => unreachable!(),
+                },
                 _ => unreachable!(),
             },
         }
@@ -123,12 +154,16 @@ impl AstInfo {
 
     pub fn get_name_span(&self, ast_id: AstId) -> SourceSpan {
         match &self.items[ast_id] {
-            Item::TypeDef(abs_typedef) => abs_typedef.name_span,
-            Item::Struct(abs_struct) => abs_struct.name_span,
-            Item::Enum(abs_enum) => abs_enum.name_span,
-            Item::Alias(abs_alias) => abs_alias.name_span,
-            Item::Var(abs_var) => abs_var.name_span,
-            Item::Config(abs_cfg) => abs_cfg.name_span,
+            item => match item {
+                Item::Decl(abs_decl) => match abs_decl {
+                    AbstractDecl::TypeDef(abs_typedef) => abs_typedef.name_span,
+                    AbstractDecl::Struct(abs_struct) => abs_struct.name_span,
+                    AbstractDecl::Enum(abs_enum) => abs_enum.name_span,
+                    AbstractDecl::Alias(abs_alias) => abs_alias.name_span,
+                    AbstractDecl::Var(abs_var) => abs_var.name_span,
+                },
+                _ => unreachable!(),
+            },
         }
     }
 }
@@ -137,27 +172,38 @@ impl AstInfo {
 pub enum Item {
     // Should these have spans? Do we REALLY want      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     // No, we do not.
+    Decl(AbstractDecl),
+    Impl(AbstractImpl),
+}
+
+// Better name...
+#[derive(Debug)]
+pub enum AbstractDecl {
     TypeDef(AbstractTypeDef),
     Struct(AbstractStruct),
     Enum(AbstractEnum),
     Alias(AbstractAlias),
     Var(AbstractVar),
-    Config(AbstractConfig),
-    // Func(AbstractFunc),
 }
 
-impl Item {
+impl AbstractDecl {
     pub fn span(&self) -> SourceSpan {
         match self {
-            Item::TypeDef(abs_typedef) => abs_typedef.name_span,
-            Item::Struct(abs_struct) => abs_struct.name_span,
-            Item::Enum(abs_enum) => abs_enum.name_span,
-            Item::Alias(abs_alias) => abs_alias.name_span,
-            Item::Var(abs_var) => abs_var.name_span,
-            Item::Config(abs_cfg) => abs_cfg.name_span,
+            AbstractDecl::TypeDef(abs_typedef) => abs_typedef.name_span,
+            AbstractDecl::Struct(abs_struct) => abs_struct.name_span,
+            AbstractDecl::Enum(abs_enum) => abs_enum.name_span,
+            AbstractDecl::Alias(abs_alias) => abs_alias.name_span,
+            AbstractDecl::Var(abs_var) => abs_var.name_span,
         }
     }
 }
+
+#[derive(Debug)]
+pub enum AbstractImpl {
+    Config(AbstractConfig),
+}
+
+impl Item {}
 
 #[derive(Debug)]
 pub struct AbstractSection {
@@ -344,6 +390,7 @@ pub struct AbstractTypeDef {
     /// Span for identifer of `self`
     pub name_span: SourceSpan,
     pub sp_ty_expr: SpannedContainer<TypeExpr>,
+    pub is_priv: bool,
     pub conds: Vec<SpannedExpr>,
     pub directives: Vec<AbstractDirective>,
 }
@@ -354,11 +401,13 @@ impl AbstractTypeDef {
         name_span: SourceSpan,
         sp_ty_expr: SpannedContainer<TypeExpr>,
         directives: Vec<AbstractDirective>,
+        is_priv: bool,
         conds: Vec<SpannedExpr>,
     ) -> AbstractTypeDef {
         AbstractTypeDef {
             name_id,
             name_span,
+            is_priv,
             sp_ty_expr,
             directives,
             conds,
@@ -509,9 +558,9 @@ pub struct AbstractConfig {
     // best in regards to accessing and changing fields
     // Could be a "Outer.a { }" where it is defining it's fields config specifically
     /// Name of assumed struct/enum type to configure
-    pub name_id: InternedId,
+    // pub name_id: InternedId,
     /// Span assocaited with name to configure
-    pub name_span: SourceSpan,
+    // pub name_span: SourceSpan,
     //// Config specific to the origin of this metadata. ONLY `ConfigDefMember` can have this.
     pub kind: AbstractConfigKind,
     /// Configuration options for the current parent to apply
@@ -532,16 +581,16 @@ pub enum ConfigMemberNameKind {
 
 impl AbstractConfig {
     pub fn new(
-        name_id: InternedId,
-        name_span: SourceSpan,
+        // name_id: InternedId,
+        // name_span: SourceSpan,
         kind: AbstractConfigKind,
         lookup_pat: ScopeLookupPattern,
         opt_assignments: Vec<AbstractOptionAssignment>,
         cfg_members: Vec<AbstractConfig>,
     ) -> AbstractConfig {
         AbstractConfig {
-            name_id,
-            name_span,
+            // name_id,
+            // name_span,
             kind,
             lookup_pat,
             opt_assignments,
@@ -553,8 +602,25 @@ impl AbstractConfig {
 #[derive(Debug, Clone)]
 pub enum AbstractConfigKind {
     /// Name attached to root
-    Root,
-    Member(ConfigMemberMetadataKind),
+    Root(SpannedContainer<TypeExpr>),
+    /// :(
+    Member(SpannedContainer<InternedId>, ConfigMemberMetadataKind),
+}
+impl AbstractConfigKind {
+    pub fn name_id(&self) -> Option<InternedId> {
+        match self {
+            AbstractConfigKind::Member(sp_interned_id, _) => Some(sp_interned_id.inner),
+            AbstractConfigKind::Root(sp_interned_id) => None,
+        }
+    }
+    pub fn name_span(&self) -> SourceSpan {
+        match self {
+            AbstractConfigKind::Root(sp_interned_id) => sp_interned_id.span,
+            AbstractConfigKind::Member(sp_interned_id, config_member_metadata_kind) => {
+                sp_interned_id.span
+            }
+        }
+    }
 }
 
 //TEST: Might need this if these are genuinely distinctly different types if an origin is

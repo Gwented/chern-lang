@@ -1,5 +1,3 @@
-// TODO: MAYBE eventually change from SipHash
-// What is a hash?
 pub mod reporter;
 pub mod script_compiler_store;
 pub mod script_compiler_summary;
@@ -7,8 +5,8 @@ use chrn_utils::{
     arena::Arena,
     budget::mem_cost::MemoryCost,
     id_types::{
-        ConfigRootId, DirectiveId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SymbolId,
-        TypeId, ValueId, VariableId,
+        ConfigRootId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ModuleId,
+        ScopeId, SymbolId, TypeId, ValueId, VariableId,
     },
     intern, loop_abort,
     source_map::source_span::SourceSpan,
@@ -25,13 +23,16 @@ use crate::{
     modules::{Bind, Import, ImportKind, Module, ModuleState},
     resolvers::resolver_state::ResolverState,
     semantic::hir::{
-        hir_concepts::{
-            AliasDef, BuiltinTypeInfo, ConfigDefMember, ConfigDefRoot, EnumDef, FieldRepre,
-            FuncDef, FuncKind, MemberSymbolKind, OptionAssignmentMember, OptionAssignmentRoot,
-            StructDef, Symbol, SymbolKind, SymbolOrigin, Table, Type, TypeDef, TypeInfo, VarDef,
-            VariableState, VariantRepre,
-        },
+        hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
         hir_exprs::ResolvedExpr,
+        hir_impls::{
+            ConfigDefMember, ConfigDefRoot, ImplHir, ImplHirKind, ImplMemberKind,
+            OptionAssignmentMember, OptionAssignmentRoot,
+        },
+        hir_symbols::{
+            AliasDef, EnumDef, FieldRepre, FuncDef, FuncKind, MemberSymbolKind, StructDef, Symbol,
+            SymbolKind, SymbolOrigin, TypeDef, VarDef, VariableState, VariantRepre,
+        },
     },
 };
 
@@ -56,10 +57,13 @@ pub struct ScriptCompiler {
     pub exprs: Arena<ResolvedExpr, ExprId>,
     /// All symbols that were found
     pub symbols: Arena<Symbol, SymbolId>,
+    pub impls: Arena<ImplHir, ImplId>,
     /// All symbols considered a "member" of another. This is here to serve the same purpose of a
     /// collection that would be considered fields, but more general since the language is small
     /// scale and would likely not benefit much from such a wide variety of collections.
-    pub members: Arena<MemberSymbolKind, MemberId>,
+    pub sym_members: Arena<MemberSymbolKind, MemberId>,
+    /// Impl members
+    pub impl_members: Arena<ImplMemberKind, ImplMemberId>,
     /// All variables that were found
     pub variables: Arena<VarDef, VariableId>,
     /// All user defined config. Is considered it's own class instead of a type since it
@@ -156,8 +160,10 @@ impl ScriptCompiler {
             values: Arena::new(),
             exprs: Arena::new(),
             symbols: Arena::new(),
+            impls: Arena::new(),
+            impl_members: Arena::new(),
             variables: Arena::new(),
-            members: Arena::new(),
+            sym_members: Arena::new(),
             cfgs: Arena::new(),
             scopes: Arena::new(),
             directives: Arena::new(),
@@ -431,20 +437,18 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_cfg_def_root(&self, sym_id: SymbolId) -> &ConfigDefRoot {
-        match &self.symbols[sym_id] {
-            sym_info => match &sym_info.kind {
-                SymbolKind::Config(cfg_id) => &self.cfgs[*cfg_id],
-                _ => unreachable!(),
+    pub(super) fn get_cfg_def_root(&self, impl_id: ImplId) -> &ConfigDefRoot {
+        match &self.impls[impl_id] {
+            impl_hir => match &impl_hir.kind {
+                ImplHirKind::Config(cfg_id) => &self.cfgs[*cfg_id],
             },
         }
     }
 
-    pub(super) fn get_cfg_def_mut(&mut self, sym_id: SymbolId) -> &mut ConfigDefRoot {
-        match &self.symbols[sym_id] {
-            sym_info => match &sym_info.kind {
-                SymbolKind::Config(cfg_id) => &mut self.cfgs[*cfg_id],
-                _ => unreachable!(),
+    pub(super) fn get_cfg_def_mut(&mut self, impl_id: ImplId) -> &mut ConfigDefRoot {
+        match &self.impls[impl_id] {
+            impl_hir => match &impl_hir.kind {
+                ImplHirKind::Config(cfg_id) => &mut self.cfgs[*cfg_id],
             },
         }
     }
@@ -474,19 +478,15 @@ impl ScriptCompiler {
 
     /// Assumes the member symbol given is a field
     pub(super) fn get_field(&self, member_id: MemberId) -> &FieldRepre {
-        match &self.members[member_id] {
+        match &self.sym_members[member_id] {
             MemberSymbolKind::Field(field_repre) => field_repre,
-            MemberSymbolKind::Variant(_)
-            | MemberSymbolKind::OptAssignmentRoot(_)
-            | MemberSymbolKind::ConfigDefMember(_)
-            | MemberSymbolKind::Unknown { .. }
-            | MemberSymbolKind::OptAssignmentMember(_) => unreachable!(),
+            MemberSymbolKind::Variant(_) => unreachable!(),
         }
     }
 
     /// Assumes the member symbol given is a field
     pub(super) fn get_field_mut(&mut self, member_id: MemberId) -> &mut FieldRepre {
-        match &mut self.members[member_id] {
+        match &mut self.sym_members[member_id] {
             MemberSymbolKind::Field(field_repre) => field_repre,
             _ => unreachable!(),
         }
@@ -494,7 +494,7 @@ impl ScriptCompiler {
 
     /// Assumes the member symbol given is a variant
     pub(super) fn get_variant(&self, member_id: MemberId) -> &VariantRepre {
-        match &self.members[member_id] {
+        match &self.sym_members[member_id] {
             MemberSymbolKind::Variant(variant_repre) => variant_repre,
             _ => unreachable!(),
         }
@@ -502,24 +502,24 @@ impl ScriptCompiler {
 
     /// Assumes the member symbol given is a variant
     pub(super) fn get_variant_mut(&mut self, member_id: MemberId) -> &mut VariantRepre {
-        match &mut self.members[member_id] {
+        match &mut self.sym_members[member_id] {
             MemberSymbolKind::Variant(variant_repre) => variant_repre,
             _ => unreachable!(),
         }
     }
 
-    /// Assumes the member symbol given is a field
-    pub fn get_cfg_def_member(&self, member_id: MemberId) -> &ConfigDefMember {
-        match &self.members[member_id] {
-            MemberSymbolKind::ConfigDefMember(cfg_def_member) => cfg_def_member,
+    /// Assumes the impl member given is a config member
+    pub fn get_cfg_def_member(&self, impl_member_id: ImplMemberId) -> &ConfigDefMember {
+        match &self.impl_members[impl_member_id] {
+            ImplMemberKind::ConfigDefMember(cfg_def_member) => cfg_def_member,
             _ => unreachable!(),
         }
     }
 
-    /// Assumes the member symbol given is a field
-    pub(super) fn get_cfg_def_member_mut(&mut self, member_id: MemberId) -> &mut ConfigDefMember {
-        match &mut self.members[member_id] {
-            MemberSymbolKind::ConfigDefMember(cfg_def_member) => cfg_def_member,
+    /// Assumes the impl member given is a config member
+    pub fn get_cfg_def_member_mut(&mut self, impl_member_id: ImplMemberId) -> &mut ConfigDefMember {
+        match &mut self.impl_members[impl_member_id] {
+            ImplMemberKind::ConfigDefMember(cfg_def_member) => cfg_def_member,
             _ => unreachable!(),
         }
     }
@@ -541,9 +541,12 @@ impl ScriptCompiler {
     // }
 
     /// Assumes the member symbol given is a field
-    pub(super) fn get_opt_assignment_root(&self, member_id: MemberId) -> &OptionAssignmentRoot {
-        match &self.members[member_id] {
-            MemberSymbolKind::OptAssignmentRoot(opt_root) => opt_root,
+    pub(super) fn get_opt_assignment_root(
+        &self,
+        impl_member_id: ImplMemberId,
+    ) -> &OptionAssignmentRoot {
+        match &self.impl_members[impl_member_id] {
+            ImplMemberKind::OptAssignmentRoot(opt_root) => opt_root,
             _ => unreachable!(),
         }
     }
@@ -551,18 +554,21 @@ impl ScriptCompiler {
     /// Assumes the member symbol given is a field
     pub(super) fn get_opt_assignment_root_mut(
         &mut self,
-        member_id: MemberId,
+        impl_member_id: ImplMemberId,
     ) -> &mut OptionAssignmentRoot {
-        match &mut self.members[member_id] {
-            MemberSymbolKind::OptAssignmentRoot(opt_root) => opt_root,
+        match &mut self.impl_members[impl_member_id] {
+            ImplMemberKind::OptAssignmentRoot(opt_root) => opt_root,
             _ => unreachable!(),
         }
     }
 
     /// Assumes the member symbol given is a field
-    pub(super) fn get_opt_assignment_member(&self, member_id: MemberId) -> &OptionAssignmentMember {
-        match &self.members[member_id] {
-            MemberSymbolKind::OptAssignmentMember(opt_member) => opt_member,
+    pub(super) fn get_opt_assignment_member(
+        &self,
+        impl_member_id: ImplMemberId,
+    ) -> &OptionAssignmentMember {
+        match &self.impl_members[impl_member_id] {
+            ImplMemberKind::OptAssignmentMember(opt_member) => opt_member,
             _ => unreachable!(),
         }
     }
@@ -570,10 +576,10 @@ impl ScriptCompiler {
     /// Assumes the member symbol given is a field
     pub(super) fn get_opt_assignment_member_mut(
         &mut self,
-        member_id: MemberId,
+        impl_member_id: ImplMemberId,
     ) -> &mut OptionAssignmentMember {
-        match &mut self.members[member_id] {
-            MemberSymbolKind::OptAssignmentMember(opt_member) => opt_member,
+        match &mut self.impl_members[impl_member_id] {
+            ImplMemberKind::OptAssignmentMember(opt_member) => opt_member,
             _ => unreachable!(),
         }
     }
@@ -589,7 +595,7 @@ impl ScriptCompiler {
                     VariableState::ReservedTypeSlot(type_id) => type_id,
                     VariableState::Known(val_id) => self.values[val_id].type_id,
                 },
-                SymbolKind::Namespace | SymbolKind::Config(_) | SymbolKind::Directive(_) => {
+                SymbolKind::Namespace | SymbolKind::Directive(_) => {
                     unreachable!()
                 }
             },
@@ -607,7 +613,7 @@ impl ScriptCompiler {
                     VariableState::Known(val_id) => Some(self.values[val_id].type_id),
                 },
                 // Not a type, just a symbol with a scope
-                SymbolKind::Directive(_) | SymbolKind::Namespace | SymbolKind::Config(_) => None,
+                SymbolKind::Directive(_) | SymbolKind::Namespace => None,
             },
         }
     }
@@ -636,13 +642,9 @@ impl ScriptCompiler {
 
     /// Attempts to get a `TypeId` out of the given `MemberId` if possible
     pub(super) fn get_type_id_from_member_id(&self, member_id: MemberId) -> Option<TypeId> {
-        match &self.members[member_id] {
+        match &self.sym_members[member_id] {
             MemberSymbolKind::Field(field_repre) => Some(field_repre.type_id),
             MemberSymbolKind::Variant(variant_repre) => variant_repre.type_id,
-            MemberSymbolKind::ConfigDefMember(_)
-            | MemberSymbolKind::OptAssignmentRoot(_)
-            | MemberSymbolKind::Unknown { .. }
-            | MemberSymbolKind::OptAssignmentMember(_) => None,
         }
     }
 
@@ -650,21 +652,15 @@ impl ScriptCompiler {
         match &self.symbols[sym_id].kind {
             SymbolKind::Type(type_id) => self.get_span_from_type_id(*type_id),
             SymbolKind::Variable(var_id) => Some(self.variables[*var_id].name_span),
-            SymbolKind::Config(cfg_id) => Some(self.cfgs[*cfg_id].name_span),
+            // SymbolKind::Config(cfg_id) => Some(self.cfgs[*cfg_id].name_span),
             SymbolKind::Namespace | SymbolKind::Directive(_) => None,
         }
     }
 
-    pub(super) fn get_span_from_member_id(&self, member_id: MemberId) -> Option<SourceSpan> {
-        match &self.members[member_id] {
-            MemberSymbolKind::Field(field_repre) => Some(field_repre.name_span),
-            MemberSymbolKind::Variant(variant_repre) => Some(variant_repre.name_span),
-            MemberSymbolKind::OptAssignmentRoot(cfg_opt) => Some(cfg_opt.name_span),
-            MemberSymbolKind::ConfigDefMember(cfg_def_member) => Some(cfg_def_member.name_span),
-            MemberSymbolKind::OptAssignmentMember(opt_assignment_member) => {
-                Some(opt_assignment_member.name_span)
-            }
-            MemberSymbolKind::Unknown { .. } => None,
+    pub(super) fn get_span_from_member_id(&self, member_id: MemberId) -> SourceSpan {
+        match &self.sym_members[member_id] {
+            MemberSymbolKind::Field(field_repre) => field_repre.name_span,
+            MemberSymbolKind::Variant(variant_repre) => variant_repre.name_span,
         }
     }
 
@@ -709,7 +705,8 @@ impl ScriptCompiler {
     }
 
     // TODO: Fix type metadata
-    /// Returns `None` if type is `Unknown`, otherwise returns `Some`
+    /// Returns `None` if type `TypeBoundaryFlags` is found and there's more
+    /// than one boundary encoded, otherwise returns `Some`
     pub(super) fn get_name_id_from_type_id(&self, mut type_id: TypeId) -> Option<InternedId> {
         for _ in 0..chrn_utils::MAX_LOOPS {
             match &self.types[type_id].ty {
@@ -726,13 +723,13 @@ impl ScriptCompiler {
                 Type::Deferred(inner) => type_id = *inner,
                 // Should the return type be String then?
                 // This absolutely can't return a type id
-                Type::Boundaries(boundary_flags) => return None,
+                Type::Boundaries(boundary_flags) => return boundary_flags.name_id(),
                 // Not classifying unknown as a known identifier since it may lead to mis-usage of
                 // the identifier as though it really is the identifier of an actual declared type,
                 // rather than rephrasing for the fact that the type itself is unknown.
                 //
                 // Phrases like "The type `Unknown`" sound wrong because it's not a type it's a state
-                Type::Unknown => return None,
+                Type::Unknown => return Some(InternedId::new(intern::INTERNED_UNKNOWN)),
             }
         }
         loop_abort!()
@@ -1126,25 +1123,25 @@ impl ScriptCompiler {
     }
 
     fn load_override_java_cfg(&mut self, table: &mut Table, override_scope_id: ScopeId) {
-        let name_id = InternedId::new(intern::INTERNED_JAVA_UPPER);
-        let scope_type = ScopeType::Override;
-
-        let sym_id = SymbolId::new(self.symbols.len() as u32);
-        let cfg_root_id = ConfigRootId::new(self.cfgs.len() as u32);
-
-        let java_symbol = Symbol::new(
-            name_id,
-            sym_id,
-            None,
-            SymbolOrigin::Compiler,
-            false,
-            None,
-            scope_type,
-            SymbolKind::Config(cfg_root_id),
-        );
-
-        table.interned_to_sym.insert(name_id, sym_id);
-        self.symbols.push(java_symbol);
+        // let name_id = InternedId::new(intern::INTERNED_JAVA_UPPER);
+        // let scope_type = ScopeType::Override;
+        //
+        // let sym_id = SymbolId::new(self.symbols.len() as u32);
+        // let cfg_root_id = ConfigRootId::new(self.cfgs.len() as u32);
+        //
+        // let java_symbol = Symbol::new(
+        //     name_id,
+        //     sym_id,
+        //     None,
+        //     SymbolOrigin::Compiler,
+        //     false,
+        //     None,
+        //     scope_type,
+        //     ImplHirKind::Config(cfg_root_id),
+        // );
+        //
+        // table.interned_to_sym.insert(name_id, sym_id);
+        // self.symbols.push(java_symbol);
         // self.cfgs.push(val);
 
         todo!()

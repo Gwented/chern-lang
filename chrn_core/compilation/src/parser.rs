@@ -9,9 +9,10 @@ mod parser_state;
 use crate::lexer::token::{SpannedToken, Token, TokenKind};
 use crate::lookup::scopes::{ScopeLookupPattern, ScopeType};
 use crate::parser::ast::ast_concepts::{
-    AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDirective, AbstractEnum,
-    AbstractMemberAccess, AbstractOptionAssignment, AbstractParam, AbstractStruct, AbstractTypeDef,
-    AbstractVar, AbstractVariant, AstInfo, BinaryOp, Item, SectionKind, Unary, UnaryOp,
+    AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractDirective,
+    AbstractEnum, AbstractImpl, AbstractMemberAccess, AbstractOptionAssignment, AbstractParam,
+    AbstractStruct, AbstractTypeDef, AbstractVar, AbstractVariant, AstInfo, BinaryOp, Item,
+    SectionKind, Unary, UnaryOp,
 };
 
 use crate::parser::ast::ast_exprs::{
@@ -21,13 +22,11 @@ use crate::parser::branch::{Branch, NestBranch, NeutralBranch, SectionBranch};
 use crate::parser::context::ParserContext;
 use crate::parser::parser_budget::ParserBudget;
 use crate::parser::parser_state::ParserState;
-use crate::semantic::hir::hir_concepts::{
-    ComplexConfigMemberMetadata, ConfigMemberMetadataKind, OverrideConfigMemberMetadata,
-};
+use crate::semantic::hir::hir_impls::{ComplexConfigMemberMetadata, ConfigMemberMetadataKind};
 use chrn_utils::chrn_config::ChrnConfig;
-use chrn_utils::id_types::{InternedId, SpannedContainer};
+use chrn_utils::id_types::SpannedContainer;
 use chrn_utils::intern::Intern;
-use chrn_utils::source_map::source_diagnostic::{SourceDiagnostic, SourceDiagnosticSummary};
+use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
 use lang::fmter::{Formattable, Formatted};
@@ -104,7 +103,7 @@ pub fn parse(
                     }
 
                     if let Ok(abs_alias) = parse_alias_stmt(&mut ctx, is_priv, &budget, interner) {
-                        let item = Item::Alias(abs_alias);
+                        let item = Item::Decl(AbstractDecl::Alias(abs_alias));
                         ast_info.push_item(SectionKind::Neutral, item);
                     };
                 }
@@ -112,7 +111,7 @@ pub fn parse(
                     ctx.advance_tok();
 
                     if let Ok(abs_var) = parse_let(&mut ctx, is_priv, &budget, interner) {
-                        let item = Item::Var(abs_var);
+                        let item = Item::Decl(AbstractDecl::Var(abs_var));
                         ast_info.push_item(SectionKind::Neutral, item);
                     }
                 }
@@ -174,8 +173,13 @@ pub fn parse(
                             break;
                         }
 
-                        if let Ok(type_def) = parse_typedef(&mut ctx, &budget, interner) {
-                            let item = Item::TypeDef(type_def);
+                        let is_priv = match parse_export(&mut ctx, interner) {
+                            Ok(p) => p,
+                            Err(_) => continue,
+                        };
+
+                        if let Ok(type_def) = parse_typedef(&mut ctx, is_priv, &budget, interner) {
+                            let item = Item::Decl(AbstractDecl::TypeDef(type_def));
                             ast_info.push_item(SectionKind::Var, item);
                         }
                     }
@@ -273,7 +277,8 @@ pub fn parse(
                         if let Ok(abs_cfg) =
                             parse_cfg_expr(&mut ctx, &budget, true, ScopeType::Complex, interner)
                         {
-                            ast_info.push_item(SectionKind::Complex, Item::Config(abs_cfg));
+                            let item = Item::Impl(AbstractImpl::Config(abs_cfg));
+                            ast_info.push_item(SectionKind::Complex, item);
                         }
                     }
                 }
@@ -324,7 +329,8 @@ pub fn parse(
                         if let Ok(abs_cfg) =
                             parse_cfg_expr(&mut ctx, &budget, true, ScopeType::Override, interner)
                         {
-                            ast_info.push_item(SectionKind::Override, Item::Config(abs_cfg));
+                            let item = Item::Impl(AbstractImpl::Config(abs_cfg));
+                            ast_info.push_item(SectionKind::Override, item);
                         }
                     }
                 }
@@ -476,6 +482,7 @@ fn check_import(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token>
 
 fn parse_typedef(
     ctx: &mut ParserContext,
+    is_priv: bool,
     budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<AbstractTypeDef, Token> {
@@ -519,7 +526,7 @@ fn parse_typedef(
         ctx.advance_tok();
     }
 
-    let abs_typedef = AbstractTypeDef::new(name_id, name_span, ty, directives, conds);
+    let abs_typedef = AbstractTypeDef::new(name_id, name_span, ty, directives, is_priv, conds);
 
     Ok(abs_typedef)
 }
@@ -581,7 +588,7 @@ fn parse_nest_sect(
             // Unsure if structures or enums will have fields so just stays for now
             let structure = AbstractStruct::new(name_id, name_span, conds, args, fields, is_priv);
 
-            Item::Struct(structure)
+            Item::Decl(AbstractDecl::Struct(structure))
         }
         //FIX: Make this normal
         Keyword::Enum => {
@@ -628,7 +635,7 @@ fn parse_nest_sect(
                 is_priv,
             );
 
-            Item::Enum(enumeration)
+            Item::Decl(AbstractDecl::Enum(enumeration))
         }
         _ => {
             ctx.report_verbose(
@@ -664,8 +671,7 @@ fn parse_cfg_expr(
     //
     // If the prefix is something like "var x {}" then it for this special case allows for another
     // section to lookup var
-    let (lookup_pat, name_id, name_span, kind) =
-        handle_cfg_metadata(ctx, is_root, scope_type, interner)?;
+    let (lookup_pat, kind) = handle_cfg_metadata(ctx, budget, is_root, scope_type, interner)?;
 
     // Allows for "=>" to notify that
     if ctx.peek_tok() != Token::OCurlyBracket && ctx.peek_tok() != Token::NotSlimArrow {
@@ -682,6 +688,18 @@ fn parse_cfg_expr(
     // Is ok to advance() since last check ensures that it must be either an arrow or CCurly, but we
     // only care about the arrow here
     let used_arrow = ctx.advance_tok() == Token::NotSlimArrow;
+
+    // Needs to not be root for this to work because if we have a root like "Point=>x{}" if
+    // there is "Other {}" after it, it'll see that as a config member, and not a different
+    // config, because the loop is only checking if the next is an identifier.
+    if used_arrow && is_root {
+        ctx.report_verbose(
+            "Config roots must use `{` syntax instead of `=>`",
+            Branch::Section(SectionBranch::Complex),
+            interner,
+        );
+        return Err(Token::Poison);
+    }
 
     let mut opt_assignments: Vec<AbstractOptionAssignment> = Vec::new();
     let mut cfg_members: Vec<AbstractConfig> = Vec::new();
@@ -730,8 +748,6 @@ fn parse_cfg_expr(
 
     // Might have to separate these, parent and member.
     Ok(AbstractConfig::new(
-        name_id,
-        name_span,
         kind,
         lookup_pat,
         opt_assignments,
@@ -746,19 +762,11 @@ fn parse_cfg_expr(
 /// On `Ok`: Returns (ADDRESS ME)
 fn handle_cfg_metadata(
     ctx: &mut ParserContext,
+    budget: &ParserBudget,
     is_root: bool,
     scope_type: ScopeType,
     interner: &Intern,
-) -> Result<
-    // I KNOW THIS LOOKS BAD. WAIT.
-    (
-        ScopeLookupPattern,
-        InternedId,
-        SourceSpan,
-        AbstractConfigKind,
-    ),
-    Token,
-> {
+) -> Result<(ScopeLookupPattern, AbstractConfigKind), Token> {
     //TODO: Collapse these
     match scope_type {
         ScopeType::Complex => {
@@ -774,15 +782,9 @@ fn handle_cfg_metadata(
                     ScopeLookupPattern::NamespaceOnly
                 };
 
-                let name_span = ctx.peek_span();
-                let name_id = ctx.expect_id_verbose(
-                    TokenKind::Id,
-                    "Expected identifier to define config, found ",
-                    "",
-                    Branch::Section(SectionBranch::Complex),
-                    interner,
-                )?;
-                return Ok((pat, name_id, name_span, AbstractConfigKind::Root));
+                let ty_expr = parse_type_expr(ctx, budget, interner)?;
+
+                return Ok((pat, AbstractConfigKind::Root(ty_expr)));
             } else {
                 // If !root
                 let name_span = ctx.peek_span();
@@ -794,11 +796,13 @@ fn handle_cfg_metadata(
                     interner,
                 )?;
 
-                let kind = AbstractConfigKind::Member(ConfigMemberMetadataKind::Complex(
-                    ComplexConfigMemberMetadata::new(),
-                ));
+                let sp_interned_id = SpannedContainer::new(name_id, name_span);
+                let kind = AbstractConfigKind::Member(
+                    sp_interned_id,
+                    ConfigMemberMetadataKind::Complex(ComplexConfigMemberMetadata::new()),
+                );
 
-                return Ok((ScopeLookupPattern::NamespaceOnly, name_id, name_span, kind));
+                return Ok((ScopeLookupPattern::NamespaceOnly, kind));
             }
         }
         ScopeType::Override => {
@@ -814,15 +818,9 @@ fn handle_cfg_metadata(
                     ScopeLookupPattern::NamespaceOnly
                 };
 
-                let name_span = ctx.peek_span();
-                let name_id = ctx.expect_id_verbose(
-                    TokenKind::Id,
-                    "Expected an identifier to define config, found ",
-                    "",
-                    Branch::Section(SectionBranch::Override),
-                    interner,
-                )?;
-                return Ok((pat, name_id, name_span, AbstractConfigKind::Root));
+                let ty_expr = parse_type_expr(ctx, budget, interner)?;
+
+                return Ok((pat, AbstractConfigKind::Root(ty_expr)));
             } else {
                 // If !root
                 let name_span = ctx.peek_span();
@@ -834,11 +832,13 @@ fn handle_cfg_metadata(
                     interner,
                 )?;
 
-                let kind = AbstractConfigKind::Member(ConfigMemberMetadataKind::Override(
-                    OverrideConfigMemberMetadata::new(),
-                ));
+                let sp_interned_id = SpannedContainer::new(name_id, name_span);
+                let kind = AbstractConfigKind::Member(
+                    sp_interned_id,
+                    ConfigMemberMetadataKind::Complex(ComplexConfigMemberMetadata::new()),
+                );
 
-                return Ok((ScopeLookupPattern::NamespaceOnly, name_id, name_span, kind));
+                return Ok((ScopeLookupPattern::NamespaceOnly, kind));
             }
         }
         _ => unreachable!(),
@@ -1563,7 +1563,7 @@ fn handle_struct_fields(
     let mut check_end = true;
 
     while !ctx.peek_tok().kind().is_terminator() && ctx.peek_tok() != Token::CCurlyBracket {
-        let ty = match parse_typedef(ctx, budget, interner) {
+        let ty = match parse_typedef(ctx, false, budget, interner) {
             Ok(t) => t,
             Err(_) => {
                 check_end = false;

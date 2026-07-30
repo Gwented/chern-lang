@@ -3,7 +3,7 @@ use chrn_utils::{
     source_map::source_region::SourceRegion,
 };
 
-use crate::parser::ast::ast_concepts::AstInfo;
+use crate::{parser::ast::ast_concepts::AstInfo, semantic::compilation_unit::CompilationUnit};
 
 /// Represents an environment before any form of symbols regarding compilation have been created.
 /// This is only used for `NameResolver` right now but is still the general environmental state of
@@ -35,12 +35,13 @@ impl RegistrationEnv<'_> {
 /// denoted by it's holding of `compilation_syms`
 ///
 /// This exists so that there is an explicit structure displaying what is and isn't swapped out.
+#[derive(Debug, Clone)]
 pub struct ResolverEnv<'a> {
     // Should be ids
     pub(crate) ast_info: &'a AstInfo,
     pub(crate) region: &'a SourceRegion,
     pub(crate) current_mod: ModuleId,
-    pub(crate) compilation_syms: &'a [SymbolId],
+    pub(crate) compilation_syms: &'a [CompilationUnit],
 }
 
 impl ResolverEnv<'_> {
@@ -48,7 +49,7 @@ impl ResolverEnv<'_> {
         ast_info: &'a AstInfo,
         region: &'a SourceRegion,
         current_mod: ModuleId,
-        compilation_syms: &'a [SymbolId],
+        compilation_syms: &'a [CompilationUnit],
     ) -> ResolverEnv<'a> {
         ResolverEnv {
             ast_info,
