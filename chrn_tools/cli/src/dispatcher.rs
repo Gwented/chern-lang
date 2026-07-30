@@ -4,6 +4,7 @@ use chrn_utils::{
     chrn_config::ChrnConfig,
     core_error::{ConfigLoadError, ScriptError},
     files::file_ops,
+    format_byte_size,
     id_types::SourceRegionId,
     source_map::source_region::SourceRegion,
 };
@@ -16,7 +17,7 @@ use lang::keywords;
 use orchestration::{constructors, orchestrator};
 
 use crate::{
-    args::{CheckCmd, Cli, Commands, EmbedCmd, FmtCmd, GlobalArgs, QueryCmd},
+    args::{CheckCmd, Cli, Commands, DocCmd, EmbedCmd, FmtCmd, GlobalArgs, QueryCmd},
     config::CliConfig,
     files::{self},
     presentation, print_diags,
@@ -35,6 +36,7 @@ pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, Option<String>> {
         Commands::Gen(gen_cmd) => todo!(),
         Commands::Query(query_cmd) => exec_query(&query_cmd, &cli.glob_args, &cli_cfg),
         Commands::Embed(embed_cmd) => exec_embed(&embed_cmd, &cli.glob_args, &cli_cfg),
+        Commands::Doc(doc_cmd) => exec_doc(doc_cmd, &cli.glob_args, cli_cfg),
     }
 }
 
@@ -528,4 +530,17 @@ fn exec_embed(
         }
         Err(err) => Err(err.to_string().into()),
     }
+}
+
+//NOTE: Should this be a separate CLI tool but as an extension?
+//No.
+//Ok :
+fn exec_doc(
+    doc_cmd: &DocCmd,
+    glob_args: &GlobalArgs,
+    cli_cfg: &CliConfig,
+) -> Result<String, Option<String>> {
+    let x = format_byte_size!(2);
+    dbg!(x);
+    todo!()
 }

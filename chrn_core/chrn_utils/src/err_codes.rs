@@ -71,6 +71,7 @@ const IMPORT_ERR: isize = 0009;
 
 // Maybe these should lead to general docs instead of being so granular, where possible. ?
 /// ITS JUST THE WAY WE'RE WAIRED
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ErrorCode {
     // This is so enums remain aligned with the source of truth and error on same numeric value
     /// Config loader originating errors
@@ -109,31 +110,50 @@ impl ErrorCode {
     }
 }
 
-// pub fn err_code_fmter(code: u16) -> String {
-//     // debug_assert!(code < );
-//     // Nothing to see here
-//     let width = get_code_width(code);
-//     let needed_padding = MAX_ERR_CODE_WIDTH - width;
-//
-//     // Avoid unneccessary format! call :(
-//     let zero_padding = "0".repeat(needed_padding as usize);
-//     format!("E{zero_padding}{code}")
-// }
+// Thinking about it this should probably be a to string in some regard
+pub fn fmt_err_code(code: ErrorCode) -> String {
+    let width = get_code_width(code.code());
+    let needed_padding = MAX_ERR_CODE_WIDTH - width;
+    let zero_padding = "0".repeat(needed_padding as usize);
+    format!("E{zero_padding}{}", code.code())
+}
 
 // Doesn't use same helper as module line_mapping to avoid conversion since the function is fairly simple
 /// Is the preferred function for getting number widths to avoid allocating strings just for number sizes
-// pub fn get_code_width(num: u16) -> u16 {
-//     let mut size = 0;
-//     let mut i = num;
-//
-//     while i != 0 {
-//         i /= 10;
-//         size += 1;
-//     }
-//
-//     size
-// }
+pub fn get_code_width(num: u16) -> u16 {
+    let mut size = 0;
+    let mut i = num;
+
+    while i != 0 {
+        i /= 10;
+        size += 1;
+    }
+
+    size
+}
+
+/// Every code that must have a page. Kept alongside [`error_title`], whose exhaustive match makes
+/// a new `ErrorCode` variant a compile error rather than a silently missing page.
+pub const ALL_ERROR_CODES: [ErrorCode; 9] = [
+    ErrorCode::ConfigLoadErr,
+    ErrorCode::CompilerSafetyLimits,
+    ErrorCode::SchemaOptionErr,
+    ErrorCode::ScopeErr,
+    ErrorCode::DirectiveErr,
+    ErrorCode::PrivacyErr,
+    ErrorCode::GenericsErr,
+    ErrorCode::ConfigDeclErr,
+    ErrorCode::ImportErr,
+];
 
 // Suspicious...
+// Not sure this hierarchy is too good, it's like it's hiding tests. Instead of just knowing to grep
+// for err_codes_tests it's semi-random. 2/10 strategy
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+    #[test]
+    fn all_error_codes_aligns_with_question_mark() {
+        assert_eq!(ALL_ERROR_CODES.len(), ErrorCode::ImportErr.code() as usize);
+    }
+}

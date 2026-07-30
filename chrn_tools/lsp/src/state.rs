@@ -1880,6 +1880,11 @@ impl RefCollector<'_> {
 
     /// Walks a `complex->` config block and its nested members.
     fn cfg_refs(&mut self, cfg: &compilation::parser::ast::ast_concepts::AbstractConfig) {
+        use compilation::parser::ast::ast_concepts::AbstractConfigKind;
+
+        if let AbstractConfigKind::Root(sp_ty) = &cfg.kind {
+            self.type_refs(sp_ty);
+        }
         for opt in &cfg.opt_assignments {
             self.expr_refs(&opt.array_expr);
         }

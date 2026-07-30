@@ -562,7 +562,7 @@ impl<'res> TypeResolver<'res> {
         //     );
         //
         //     let src_diag = SourceDiagnostic::builder(
-        //         ErrorCode::ScopeErr.code().into(),
+        //         ErrorCode::ScopeErr.into(),
         //         DiagnosticLevel::Error,
         //         core_msg,
         //         env.region.path_id,
@@ -691,7 +691,7 @@ impl<'res> TypeResolver<'res> {
         //         );
         //
         //         let src_diag = SourceDiagnostic::builder(
-        //             ErrorCode::ConfigDeclErr.code().into(),
+        //             ErrorCode::ConfigDeclErr.into(),
         //             DiagnosticLevel::Error,
         //             core_msg,
         //             env.region.path_id,
@@ -916,7 +916,7 @@ impl<'res> TypeResolver<'res> {
 
                 // Maybe give `None` here..
                 let src_diag = SourceDiagnostic::builder(
-                    ErrorCode::ConfigDeclErr.code().into(),
+                    ErrorCode::ConfigDeclErr.into(),
                     DiagnosticLevel::Error,
                     core_msg,
                     env.region.path_id,
@@ -1153,7 +1153,7 @@ impl<'res> TypeResolver<'res> {
             //
             //         let core_msg = format!("Recursive config of `{type_name}`");
             //         let src_diag = SourceDiagnostic::builder(
-            //             ErrorCode::ConfigDeclErr.code().into(),
+            //             ErrorCode::ConfigDeclErr.into(),
             //             DiagnosticLevel::Error,
             //             core_msg,
             //             env.region.path_id,
@@ -1219,7 +1219,7 @@ impl<'res> TypeResolver<'res> {
                             "Nesting level of 2 is too deep for a `complex` scope config".into();
 
                         let builder = SourceDiagnostic::builder(
-                            ErrorCode::ConfigDeclErr.code().into(),
+                            ErrorCode::ConfigDeclErr.into(),
                             DiagnosticLevel::Error,
                             core_msg,
                             env.region.path_id,
@@ -2928,7 +2928,7 @@ impl<'res> TypeResolver<'res> {
                     let core_msg = format!("`{ident}` not found in module `{mod_name}`{and_local}");
 
                     let src_diag = SourceDiagnostic::builder(
-                        ErrorCode::ScopeErr.code().into(),
+                        ErrorCode::ScopeErr.into(),
                         DiagnosticLevel::Error,
                         core_msg,
                         env.region.path_id,
@@ -3415,7 +3415,7 @@ impl<'res> TypeResolver<'res> {
                         let core_msg = "Generics are only usable in type expressions".to_string();
                         let src_diag = SourceDiagnostic::builder(
                             // Maybe make this `None` since this is more so an obvious quick fix error
-                            ErrorCode::GenericsErr.code().into(),
+                            ErrorCode::GenericsErr.into(),
                             DiagnosticLevel::Error,
                             core_msg,
                             env.region.path_id,

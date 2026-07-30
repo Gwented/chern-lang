@@ -187,7 +187,7 @@ impl ModuleFinder<'_> {
 
             //NOTE: Maybe an error code?
             let src_diag = SourceDiagnostic::builder(
-                ErrorCode::ImportErr.code().into(),
+                ErrorCode::ImportErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
                 self.current_region.path_id,
@@ -207,7 +207,7 @@ impl ModuleFinder<'_> {
                     core_error::form_string_from_io_err(&e, &path_buf).unwrap_or(e.to_string());
 
                 let src_diag = SourceDiagnostic::builder(
-                    ErrorCode::ImportErr.code().into(),
+                    ErrorCode::ImportErr.into(),
                     DiagnosticLevel::Error,
                     core_msg,
                     self.current_region.path_id,
@@ -231,7 +231,7 @@ impl ModuleFinder<'_> {
 
                 //TODO: Aliasing
                 let src_diag = SourceDiagnostic::builder(
-                    ErrorCode::ImportErr.code().into(),
+                    ErrorCode::ImportErr.into(),
                     DiagnosticLevel::Error,
                     core_msg,
                     self.current_region.path_id,

@@ -645,7 +645,7 @@ impl NamespaceResolver<'_> {
         );
 
         let src_diag = SourceDiagnostic::builder(
-            ErrorCode::ScopeErr.code().into(),
+            ErrorCode::ScopeErr.into(),
             DiagnosticLevel::Error,
             core_msg,
             env.region.path_id,

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E0002 chrn</title>
+<link rel="stylesheet" href="../../style.css">
+</head>
+<body>
+<h1>E0002: Compiler safety limit</h1>
+<p>These safety limits exist to ensure security issues are addressed.
+</p>
+<h2>Internal safety limits</h2>
+<ul>
+<li>Max modules = 800 | Accounting for the max region size that means at most 25 Mib can be taken</li>
+<li>Max recursion limit = 1024</li>
+<li>Max region size = 32 Kib</li>
+</ul>
+<p><strong>Note: </strong>None of these limits are final and could be increased (Never decreased)</p>
+<h2>See also</h2>
+<ul>
+<li><a href="../E0001/"><code>E0001</code>: Config load error</a></li>
+</ul>
+</body>
+</html>

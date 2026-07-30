@@ -3,6 +3,7 @@ pub(crate) mod yaml_config;
 
 use chrn_utils::{
     arena::Arena,
+    err_codes,
     id_types::SourceRegionId,
     intern::Intern,
     source_map::{
@@ -159,7 +160,7 @@ fn write_diagnostic(
         push_yaml_str(out, "err_code");
         out.push_str(": ");
         match diag.err_code {
-            Some(code) => push_yaml_str(out, &output_helpers::fmt_err_code(code)),
+            Some(code) => push_yaml_str(out, &err_codes::fmt_err_code(code)),
             None => out.push_str("null"),
         }
         out.push('\n');
@@ -227,7 +228,7 @@ fn write_diagnostic_fields_minify(
     push_yaml_str(out, "err_code");
     out.push_str(": ");
     match diag.err_code {
-        Some(code) => push_yaml_str(out, &output_helpers::fmt_err_code(code)),
+        Some(code) => push_yaml_str(out, &err_codes::fmt_err_code(code)),
         None => out.push_str("null"),
     }
     out.push_str(", ");

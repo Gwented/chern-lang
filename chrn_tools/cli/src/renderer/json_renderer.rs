@@ -3,6 +3,7 @@ pub(crate) mod json_config;
 
 use chrn_utils::{
     arena::Arena,
+    err_codes,
     id_types::SourceRegionId,
     intern::Intern,
     source_map::{
@@ -162,7 +163,7 @@ fn write_diagnostic(
     push_json_str(out, "err_code");
     out.push_str(": ");
     match diag.err_code {
-        Some(code) => push_json_str(out, &output_helpers::fmt_err_code(code)),
+        Some(code) => push_json_str(out, &err_codes::fmt_err_code(code)),
         None => out.push_str("null"),
     }
     out.push(',');

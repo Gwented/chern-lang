@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use chrn_utils::{
-    err_codes,
+    err_codes::{self, ErrorCode},
     source_map::source_diagnostic::{DiagnosticLevel, annotations::AnnotationKind},
 };
 use common::color::{self, TerminalColorType};
@@ -132,14 +132,14 @@ pub(super) fn create_path_header(path: &Path, settings: &TerminalRenderConfig) -
 
 /// Creates a template header with the diagnostic level and msg given
 pub(super) fn create_level_header(
-    err_code_opt: Option<u16>,
+    err_code_opt: Option<ErrorCode>,
     level: DiagnosticLevel,
     msg: &str,
     settings: &TerminalRenderConfig,
 ) -> String {
     let err_code_str = if let Some(code) = err_code_opt {
         // So the brackets are omitted if no code exists
-        let fmtted_code = output_helpers::fmt_err_code(code);
+        let fmtted_code = err_codes::fmt_err_code(code);
         format!("[{fmtted_code}]")
     } else {
         "".into()

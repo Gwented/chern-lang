@@ -4,6 +4,7 @@ pub mod footers;
 // do not detach or mutate this ordering in any form by file found in
 use crate::{
     budget::mem_cost::{self, MemoryCost},
+    err_codes::ErrorCode,
     id_types::PathId,
     source_map::{
         source_diagnostic::annotations::{Annotation, AnnotationKind},
@@ -25,7 +26,7 @@ use crate::{
 /// Diagnostic intended to represent a set of instructions to be rendered.
 #[derive(Debug)]
 pub struct SourceDiagnostic {
-    pub err_code: Option<u16>,
+    pub err_code: Option<ErrorCode>,
     /// Severity of the given diagnostic
     pub level: DiagnosticLevel,
     /// Header message for this diagnostic
@@ -40,7 +41,7 @@ pub struct SourceDiagnostic {
 
 impl SourceDiagnostic {
     pub const fn new(
-        err_code: Option<u16>,
+        err_code: Option<ErrorCode>,
         level: DiagnosticLevel,
         core_msg: String,
         path_id: PathId,
@@ -61,7 +62,7 @@ impl SourceDiagnostic {
 
     /// Creates basic error where the given span is the primary annotation with no extra details
     pub fn basic(
-        err_code: Option<u16>,
+        err_code: Option<ErrorCode>,
         level: DiagnosticLevel,
         core_msg: String,
         path_id: PathId,
@@ -81,7 +82,7 @@ impl SourceDiagnostic {
 
     /// Creates basic error where the given span vector gives all spans a primary level annotation
     pub fn basic_multiple(
-        err_code: Option<u16>,
+        err_code: Option<ErrorCode>,
         level: DiagnosticLevel,
         core_msg: String,
         path_id: PathId,
@@ -105,7 +106,7 @@ impl SourceDiagnostic {
 
     /// Creates basic error where the given span is the primary annotation with no extra details
     pub fn basic_builder(
-        err_code: Option<u16>,
+        err_code: Option<ErrorCode>,
         level: DiagnosticLevel,
         core_msg: String,
         path_id: PathId,
@@ -124,7 +125,7 @@ impl SourceDiagnostic {
     }
 
     pub fn builder(
-        err_code: Option<u16>,
+        err_code: Option<ErrorCode>,
         level: DiagnosticLevel,
         core_msg: String,
         path_id: PathId,
@@ -172,7 +173,7 @@ impl MemoryCost for SourceDiagnostic {
 /// constructor
 #[derive(Debug)]
 pub struct SourceDiagnosticBuilder {
-    err_code: Option<u16>,
+    err_code: Option<ErrorCode>,
     level: DiagnosticLevel,
     core_msg: String,
     path_id: PathId,

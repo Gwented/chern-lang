@@ -338,7 +338,7 @@ impl<'a> ConstraintResolver<'a> {
                         let err_expr_id = array_expr.inputs[err_idx];
                         let err_span = self.compiler.exprs[err_expr_id].span;
                         SourceDiagnostic::builder(
-                            ErrorCode::SchemaOptionErr.code().into(),
+                            ErrorCode::SchemaOptionErr.into(),
                             DiagnosticLevel::Error,
                             core_msg,
                             env.region.path_id,
@@ -366,7 +366,7 @@ impl<'a> ConstraintResolver<'a> {
                         let err_expr_id = array_expr.inputs[err_idx];
                         let err_span = self.compiler.exprs[err_expr_id].span;
                         SourceDiagnostic::builder(
-                            ErrorCode::SchemaOptionErr.code().into(),
+                            ErrorCode::SchemaOptionErr.into(),
                             DiagnosticLevel::Error,
                             core_msg,
                             env.region.path_id,
@@ -410,7 +410,7 @@ impl<'a> ConstraintResolver<'a> {
                         };
 
                         let mut builder = SourceDiagnostic::builder(
-                            ErrorCode::SchemaOptionErr.code().into(),
+                            ErrorCode::SchemaOptionErr.into(),
                             DiagnosticLevel::Error,
                             core_msg,
                             env.region.path_id,
@@ -445,7 +445,7 @@ impl<'a> ConstraintResolver<'a> {
                         // let err_expr_id = array_expr.inputs[err_idx];
                         // let err_span = self.compiler.exprs[err_expr_id].span;
                         SourceDiagnostic::builder(
-                            ErrorCode::SchemaOptionErr.code().into(),
+                            ErrorCode::SchemaOptionErr.into(),
                             DiagnosticLevel::Error,
                             core_msg,
                             env.region.path_id,
@@ -473,7 +473,7 @@ impl<'a> ConstraintResolver<'a> {
                             schema.kind
                         );
                         SourceDiagnostic::builder(
-                            ErrorCode::SchemaOptionErr.code().into(),
+                            ErrorCode::SchemaOptionErr.into(),
                             DiagnosticLevel::Error,
                             core_msg,
                             env.region.path_id,

@@ -325,7 +325,7 @@ pub fn extract_main<R: Read>(
 
             let src_diag =
                 // Would have code explaining that aliases can circumvent invalid utf8 file names
-                SourceDiagnostic::builder(ErrorCode::ImportErr.code().into(), DiagnosticLevel::Error, core_msg, main_path_id)
+                SourceDiagnostic::builder(ErrorCode::ImportErr.into(), DiagnosticLevel::Error, core_msg, main_path_id)
                     .build();
 
             // The error itself does not point to anything so this should be fine to omit
@@ -510,7 +510,7 @@ pub fn extract_modules(
                 let core_msg = format!("Exceeded max module count of {}", chrn_utils::MAX_MODULES);
 
                 let src_diag = SourceDiagnostic::builder(
-                    ErrorCode::CompilerSafetyLimits.code().into(),
+                    ErrorCode::CompilerSafetyLimits.into(),
                     DiagnosticLevel::Error,
                     core_msg,
                     sp_path_id.inner,
@@ -647,7 +647,7 @@ fn resolve_module(
 
                 let src_diag =
                         //TODO: Alias handling
-                        SourceDiagnostic::builder(ErrorCode::ImportErr.code().into(), DiagnosticLevel::Error, core_msg, sp_path_id.inner)
+                        SourceDiagnostic::builder(ErrorCode::ImportErr.into(), DiagnosticLevel::Error, core_msg, sp_path_id.inner)
                             .add_annotation(
                                 sp_path_id.span,
                                 AnnotationKind::Primary,

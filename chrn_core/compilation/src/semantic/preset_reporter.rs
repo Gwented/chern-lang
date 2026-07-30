@@ -95,7 +95,7 @@ pub(crate) fn create_diag_builder_preset(
             );
 
             SourceDiagnostic::builder(
-                ErrorCode::DirectiveErr.code().into(),
+                ErrorCode::DirectiveErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
                 region.path_id,
@@ -112,7 +112,7 @@ pub(crate) fn create_diag_builder_preset(
             let core_msg = format!("Unknown directive `#{err_name}`");
 
             let mut builder = SourceDiagnostic::builder(
-                ErrorCode::DirectiveErr.code().into(),
+                ErrorCode::DirectiveErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
                 region.path_id,
@@ -144,7 +144,7 @@ pub(crate) fn create_diag_builder_preset(
                 sp_directive.inner.to_fmt()
             );
 
-            SourceDiagnostic::builder(ErrorCode::DirectiveErr.code().into(), DiagnosticLevel::Error, core_msg,  region.path_id)
+            SourceDiagnostic::builder(ErrorCode::DirectiveErr.into(), DiagnosticLevel::Error, core_msg,  region.path_id)
                     .add_annotation(sp_directive.span, AnnotationKind::Primary, None)
                     .add_note("This is not allowed since it would overlap with any specifics directives given to a defined type from `nest->`".into())
         }
@@ -183,7 +183,7 @@ pub(crate) fn create_diag_builder_preset(
             );
 
             SourceDiagnostic::builder(
-                ErrorCode::DirectiveErr.code().into(),
+                ErrorCode::DirectiveErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
                 region.path_id,
@@ -478,7 +478,7 @@ pub fn type_expr_result_to_preset_err(
             let core_msg = format!("Type `{sym_name}` is private in module `{current_mod_name}`");
 
             let src_diag = SourceDiagnostic::builder(
-                ErrorCode::PrivacyErr.code().into(),
+                ErrorCode::PrivacyErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
                 env.region.path_id,
@@ -503,7 +503,7 @@ pub fn type_expr_result_to_preset_err(
             let core_msg = format!("`{name}` expects {expected} input(s)");
 
             let src_diag = SourceDiagnostic::builder(
-                ErrorCode::GenericsErr.code().into(),
+                ErrorCode::GenericsErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
                 env.region.path_id,
@@ -517,7 +517,7 @@ pub fn type_expr_result_to_preset_err(
             let core_msg = format!("Unknown generic identifier `{name}`");
 
             let src_diag = SourceDiagnostic::builder(
-                ErrorCode::GenericsErr.code().into(),
+                ErrorCode::GenericsErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
                 env.region.path_id,
@@ -557,7 +557,7 @@ pub fn static_access_result_to_preset_err(
                 );
 
                 SourceDiagnostic::builder(
-                    ErrorCode::ScopeErr.code().into(),
+                    ErrorCode::ScopeErr.into(),
                     DiagnosticLevel::Error,
                     core_msg,
                     env.region.path_id,
@@ -567,7 +567,7 @@ pub fn static_access_result_to_preset_err(
                 let core_msg = format!("Could not find namespace `{current_seg_name}`");
 
                 SourceDiagnostic::builder(
-                    ErrorCode::ScopeErr.code().into(),
+                    ErrorCode::ScopeErr.into(),
                     DiagnosticLevel::Error,
                     core_msg,
                     env.region.path_id,
@@ -582,7 +582,7 @@ pub fn static_access_result_to_preset_err(
             let core_msg = format!("No namespace found in `{namespace_name}`");
 
             let src_diag = SourceDiagnostic::builder(
-                ErrorCode::ScopeErr.code().into(),
+                ErrorCode::ScopeErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
                 env.region.path_id,
@@ -594,7 +594,7 @@ pub fn static_access_result_to_preset_err(
         StaticAccessResult::GenericUsingStaticPath(generic_span) => {
             let core_msg = "Generics cannot contain namespaces".to_string();
             let src_diag = SourceDiagnostic::basic_builder(
-                ErrorCode::GenericsErr.code().into(),
+                ErrorCode::GenericsErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
                 env.region.path_id,

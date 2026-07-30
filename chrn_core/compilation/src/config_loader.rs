@@ -404,7 +404,7 @@ impl<R: Read> ConfigLoader<'_, R> {
             // Sole reason this is here
             let core_msg = "Amount of bytes in file exceeds max of 32KB".into();
             let diag = SourceDiagnostic::builder(
-                ErrorCode::CompilerSafetyLimits.code().into(),
+                ErrorCode::CompilerSafetyLimits.into(),
                 DiagnosticLevel::Warn,
                 core_msg,
                 self.current_path_id,
@@ -442,7 +442,7 @@ impl<R: Read> ConfigLoader<'_, R> {
             let eof_span = SourceSpan::new(self.current_region_id, eof_pos - 1, eof_pos);
 
             let src_diag = SourceDiagnostic::builder(
-                ErrorCode::ConfigLoadErr.code().into(),
+                ErrorCode::ConfigLoadErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
                 self.current_path_id,

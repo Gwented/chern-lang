@@ -90,7 +90,7 @@ var->
     //
     // IDE should do the "thing: {Thing}" thing where it has the thing in grey
     complex->
-    State1 {state2=>l {}} def::x {}/*
+    State1 {state2 {}} def::x {}/*
         // How can one field depth be enforced while still keeping the concept of generic config usage 
         // to where override-> can use it?
         Point {

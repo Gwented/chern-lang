@@ -114,6 +114,23 @@ pub enum Commands {
     /// then renaming the new file to be the same as the original.
     #[command(name = "embed", alias = "e")]
     Embed(EmbedCmd),
+    /// !!
+    #[command(name = "doc", alias = "d")]
+    Doc(DocCmd),
+}
+
+#[derive(Args)]
+pub struct DocCmd {
+    /// Error code of doc to search for.
+    /// Can search as "E0001", "0001" or "1", all are valid.
+    #[arg(name = "ERROR_CODE", conflicts_with = "list_all")]
+    pub(crate) doc_code: Option<String>,
+    /// By default, the output is plain text which this argument changes.
+    /// Values: `terminal`
+    #[arg(long = "output-type", default_value = "terminal")]
+    pub(crate) output_type: String,
+    #[arg(long = "list-all", default_value_t = false)]
+    pub(crate) list_all: bool,
 }
 
 #[derive(Args)]
@@ -141,9 +158,9 @@ pub struct CheckCmd {
 /// For `embed` cmd
 #[derive(Args)]
 pub struct EmbedCmd {
-    /// Path of file to extract chrn region from
+    /// Path of file to extract chrn region from.
     pub(crate) src_path: PathBuf,
-    /// Path of file to put the extracted chrn file into
+    /// Path of file to put the extracted chrn region into.
     pub(crate) dest_path: PathBuf,
     /// Changes behavior from streaming to loading all of `dest` in to memory.
     #[arg(long = "in-memory", default_value_t = false)]
@@ -157,7 +174,7 @@ pub struct EmbedCmd {
     /// Formats output to be minified
     #[arg(short = 'm', long = "minify", default_value_t = false)]
     pub(crate) minify: bool,
-    /// Enforces that src is a valid chrn file before inserting.
+    /// Enforces that src is a valid chrn file before embedding.
     #[arg(short = 'c', long = "check", default_value_t = false)]
     pub(crate) check: bool,
 }
