@@ -1,6 +1,6 @@
 //! Tests for `src/renderers/markdown_renderer.rs`.
 
-use crate::doc_builder::{Document, Inline};
+use crate::doc_builder::{Document, Inline, Video};
 use crate::renderers::markdown_renderer::render;
 
 #[test]
@@ -39,4 +39,21 @@ fn inline_composition() {
         .build();
 
     assert_eq!(render(&doc), "see `i32` now\n");
+}
+
+#[test]
+fn image_renders_as_a_bang_link() {
+    let doc = Document::builder().image("a.png", "a diagram").build();
+
+    assert_eq!(render(&doc), "![a diagram](a.png)\n");
+}
+
+/// Markdown has no video element, so it degrades to a link.
+#[test]
+fn video_degrades_to_a_link() {
+    let doc = Document::builder()
+        .captioned_video(Video::new("clip.mp4", "demo"), "what it does")
+        .build();
+
+    assert_eq!(render(&doc), "[demo](clip.mp4)\n\n*what it does*\n");
 }

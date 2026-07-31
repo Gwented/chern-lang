@@ -4,7 +4,7 @@ use std::path::Path;
 
 use chrn_utils::err_codes::{self, ErrorCode};
 
-use crate::errors::{ErrorDoc, error_title};
+use crate::errors::{ErrorDoc, error_title, index, index_output_path, index_root_href, root_href};
 use crate::renderers::markdown_renderer::MarkdownRenderer;
 
 #[test]
@@ -45,9 +45,50 @@ fn presets_render_sections() {
 }
 
 #[test]
+fn index_links_every_code() {
+    let rendered = index().render(&MarkdownRenderer);
+
+    for code in err_codes::ALL_ERROR_CODES {
+        let label = err_codes::fmt_err_code(code);
+        assert!(
+            rendered.contains(&format!("]({label}/)")),
+            "error index does not link {label}"
+        );
+    }
+}
+
+#[test]
+fn index_hrefs() {
+    assert_eq!(index_root_href(), "errors/");
+    assert_eq!(root_href(ErrorCode::ConfigLoadErr), "errors/E0001/");
+}
+
+#[test]
+fn index_output_path_is_the_errors_directory() {
+    assert_eq!(
+        index_output_path(Path::new("site"), &MarkdownRenderer),
+        Path::new("site/errors/index.md")
+    );
+}
+
+#[test]
 fn output_path_is_per_code_directory() {
     let doc = ErrorDoc::builder(ErrorCode::ImportErr).build();
     let path = doc.output_path(Path::new("site"), &MarkdownRenderer);
 
     assert_eq!(path, Path::new("site/errors/E0009/index.md"));
+}
+
+/// Media presets resolve `site/resources/` for an error page's depth.
+#[test]
+fn media_presets_resolve_resource_hrefs() {
+    let doc = ErrorDoc::builder(ErrorCode::ImportErr)
+        .image("graph.png", "module graph")
+        .clip("email_gmail.mp4", "import demo")
+        .build();
+
+    let rendered = doc.render(&MarkdownRenderer);
+
+    assert!(rendered.contains("![module graph](../../resources/graph.png)"));
+    assert!(rendered.contains("[import demo](../../resources/email_gmail.mp4)"));
 }

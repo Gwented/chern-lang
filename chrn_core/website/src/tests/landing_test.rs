@@ -2,27 +2,28 @@
 
 use std::path::Path;
 
-use chrn_utils::err_codes::{self, ErrorCode};
-
-use crate::landing::{landing, output_path, root_href};
+use crate::landing::{landing, output_path, sections};
 use crate::renderers::markdown_renderer::MarkdownRenderer;
 
 #[test]
-fn links_every_code() {
+fn links_every_section() {
     let rendered = landing().render(&MarkdownRenderer);
 
-    for code in err_codes::ALL_ERROR_CODES {
-        let label = err_codes::fmt_err_code(code);
+    for section in sections() {
         assert!(
-            rendered.contains(&format!("](errors/{label}/)")),
-            "landing page does not link {label}"
+            rendered.contains(&format!("]({})", section.href)),
+            "landing page does not link {}",
+            section.name
         );
     }
 }
 
 #[test]
-fn hrefs_are_root_relative() {
-    assert_eq!(root_href(ErrorCode::ConfigLoadErr), "errors/E0001/");
+fn links_the_error_index_not_individual_codes() {
+    let rendered = landing().render(&MarkdownRenderer);
+
+    assert!(rendered.contains("](errors/)"));
+    assert!(!rendered.contains("errors/E0001/"));
 }
 
 #[test]

@@ -1,5 +1,5 @@
-//! Site generator. Writes a stylesheet, a landing page, and one page per error code under a site
-//! root.
+//! Site generator. Writes a stylesheet, a landing hub, the error-code index, and one page per
+//! error code under a site root.
 //!
 //! `cargo run -p website -- [site_root]` — defaults to `site/`, relative to the invocation.
 //!
@@ -24,14 +24,22 @@ fn main() -> io::Result<()> {
     dbg!(style::STYLESHEET);
     println!("{}", style_path.display());
 
-    let index_renderer =
-        HtmlRenderer::page("chrn error codes").with_stylesheet(style::LANDING_HREF);
-    let index_path = website::landing::output_path(&root, &index_renderer);
+    let landing_renderer = HtmlRenderer::page("chrn").with_stylesheet(style::LANDING_HREF);
+    let landing_path = website::landing::output_path(&root, &landing_renderer);
     write(
-        &index_path,
-        &website::landing::landing().render(&index_renderer),
+        &landing_path,
+        &website::landing::landing().render(&landing_renderer),
     )?;
-    println!("{}", index_path.display());
+    println!("{}", landing_path.display());
+
+    let errors_renderer =
+        HtmlRenderer::page("chrn error codes").with_stylesheet(style::ERRORS_INDEX_HREF);
+    let errors_index_path = website::errors::index_output_path(&root, &errors_renderer);
+    write(
+        &errors_index_path,
+        &website::errors::index().render(&errors_renderer),
+    )?;
+    println!("{}", errors_index_path.display());
 
     for doc in website::pages::all_pages() {
         let renderer = renderer(&doc);

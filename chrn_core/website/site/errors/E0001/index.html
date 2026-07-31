@@ -9,12 +9,6 @@
 <body>
 <h1>E0001: Config load error</h1>
 <p><code>.chrn</code> files go through an initial region loading stage to ensure</p>
-<h2>Covers</h2>
-<ul>
-<li><code>@def</code> with no matching <code>@end</code>.</li>
-<li>A source region over the 32KB limit.</li>
-<li>IO failures reading the config.</li>
-</ul>
 <h2>Valid usage of <code>@def</code> and <code>@end</code></h2>
 <p>@def with @end</p>
 <pre><code class="language-chrn">@def
@@ -24,7 +18,7 @@ var-&gt;
 @end</code></pre>
 <hr>
 <p>Only @end</p>
-<pre><code class="language-chrn">let chrn = "ch" + "ern"
+<pre><code class="language-chrn">let chrn = "ch" + "rn"
 let super_chrn = "super " + chrn
 @end</code></pre>
 <h2>See also</h2>

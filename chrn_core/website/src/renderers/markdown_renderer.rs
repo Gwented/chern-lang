@@ -66,6 +66,26 @@ fn render_node(out: &mut String, node: &Node) {
             out.push_str(href);
             out.push(')');
         }
+        Node::Image { src, alt, title } => {
+            out.push_str("![");
+            out.push_str(alt);
+            out.push_str("](");
+            out.push_str(src);
+            if let Some(title) = title {
+                out.push_str(" \"");
+                out.push_str(title);
+                out.push('"');
+            }
+            out.push(')');
+        }
+        // No video element in markdown. Degrades to a link to the file.
+        Node::Video(video) => {
+            out.push('[');
+            out.push_str(&video.label);
+            out.push_str("](");
+            out.push_str(&video.src);
+            out.push(')');
+        }
         Node::Heading { level, children } => {
             for _ in 0..level.level() {
                 out.push('#');

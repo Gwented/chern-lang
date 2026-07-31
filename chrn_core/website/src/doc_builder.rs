@@ -73,6 +73,56 @@ pub enum ListKind {
     Numbered,
 }
 
+/// A video and how it plays. `controls` defaults on; every other flag defaults off.
+///
+/// Markdown has no video element, so the markdown renderer degrades it to a link to [`Video::src`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Video {
+    /// Href of the file, relative to the emitted page.
+    pub src: String,
+    /// Fallback text. Also the link text in markdown.
+    pub label: String,
+    /// Still shown before playback.
+    pub poster: Option<String>,
+    pub controls: bool,
+    pub autoplay: bool,
+    pub loops: bool,
+    pub muted: bool,
+}
+
+impl Video {
+    pub fn new<S: Into<String>, L: Into<String>>(src: S, label: L) -> Self {
+        Self {
+            src: src.into(),
+            label: label.into(),
+            poster: None,
+            controls: true,
+            autoplay: false,
+            loops: false,
+            muted: false,
+        }
+    }
+
+    pub fn with_poster<S: Into<String>>(mut self, poster: S) -> Self {
+        self.poster = Some(poster.into());
+        self
+    }
+
+    pub const fn with_controls(mut self, controls: bool) -> Self {
+        self.controls = controls;
+        self
+    }
+
+    /// Autoplay, muted, looping, no controls — a silent demo clip.
+    pub const fn looping_clip(mut self) -> Self {
+        self.autoplay = true;
+        self.loops = true;
+        self.muted = true;
+        self.controls = false;
+        self
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Node {
     // -- Inline --
@@ -88,6 +138,13 @@ pub enum Node {
     Link {
         href: String,
         children: Vec<Node>,
+    },
+    /// `alt` is required — a decorative image passes an empty string deliberately.
+    Image {
+        src: String,
+        alt: String,
+        /// Hover text, not a caption.
+        title: Option<String>,
     },
 
     // -- Block --
@@ -108,6 +165,8 @@ pub enum Node {
     },
     /// Horizontal rule / thematic break.
     Rule,
+    /// Block-level video. See [`Video`].
+    Video(Video),
     /// Escape hatch. Emitted verbatim and unescaped by every renderer, so the caller owns its
     /// correctness for whichever backend runs.
     Raw(String),
@@ -123,6 +182,7 @@ impl Node {
                 | Node::CodeBlock { .. }
                 | Node::List { .. }
                 | Node::Rule
+                | Node::Video(_)
                 | Node::Raw(_)
         )
     }
@@ -170,6 +230,31 @@ impl Inline {
         self.nodes.push(Node::Link {
             href: href.into(),
             children: content.into().into_nodes(),
+        });
+        self
+    }
+
+    /// Inline image. `alt` is what a reader gets when the file does not load.
+    pub fn image<S: Into<String>, A: Into<String>>(mut self, src: S, alt: A) -> Self {
+        self.nodes.push(Node::Image {
+            src: src.into(),
+            alt: alt.into(),
+            title: None,
+        });
+        self
+    }
+
+    /// Inline image with hover text.
+    pub fn image_titled<S: Into<String>, A: Into<String>, T: Into<String>>(
+        mut self,
+        src: S,
+        alt: A,
+        title: T,
+    ) -> Self {
+        self.nodes.push(Node::Image {
+            src: src.into(),
+            alt: alt.into(),
+            title: Some(title.into()),
         });
         self
     }
@@ -288,6 +373,32 @@ impl DocumentBuilder {
                 .collect(),
         });
         self
+    }
+
+    /// Image on its own line, wrapped in a paragraph so it sits in the block flow.
+    pub fn image<S: Into<String>, A: Into<String>>(self, src: S, alt: A) -> Self {
+        self.paragraph(Inline::new().image(src, alt))
+    }
+
+    /// Image with a caption paragraph under it.
+    pub fn captioned_image<S: Into<String>, A: Into<String>, I: Into<Inline>>(
+        self,
+        src: S,
+        alt: A,
+        caption: I,
+    ) -> Self {
+        self.image(src, alt)
+            .paragraph(Inline::new().italic(caption))
+    }
+
+    pub fn video(mut self, video: Video) -> Self {
+        self.nodes.push(Node::Video(video));
+        self
+    }
+
+    /// Video with a caption paragraph under it.
+    pub fn captioned_video<I: Into<Inline>>(self, video: Video, caption: I) -> Self {
+        self.video(video).paragraph(Inline::new().italic(caption))
     }
 
     pub fn rule(mut self) -> Self {

@@ -4,3 +4,4 @@ mod html_renderer_test;
 mod landing_test;
 mod markdown_renderer_test;
 mod pages_test;
+mod resources_test;

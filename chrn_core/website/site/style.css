@@ -101,6 +101,27 @@ pre code {
     font-size: 0.875rem;
 }
 
+img, video {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0 0 1.25rem;
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    background: var(--code-bg);
+}
+
+/* An image's own margin carries the spacing; its wrapper paragraph adds none. */
+p:has(img) img {
+    margin-bottom: 0;
+}
+
+/* Caption paragraph following a media block. Images sit inside a paragraph, video does not. */
+p:has(img) + p em, video + p em {
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
 hr {
     height: 0;
     margin: 2.5rem 0;

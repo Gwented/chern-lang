@@ -1,6 +1,6 @@
 //! Tests for `src/renderers/html_renderer.rs`.
 
-use crate::doc_builder::{Document, Inline};
+use crate::doc_builder::{Document, Inline, Video};
 use crate::renderers::Renderer;
 use crate::renderers::html_renderer::{HtmlRenderer, render_fragment};
 
@@ -45,4 +45,37 @@ fn page_mode_wraps_body() {
     assert!(out.contains("<title>E0001</title>"));
     assert!(out.contains("<p><strong>hi</strong></p>"));
     assert!(out.ends_with("</body>\n</html>\n"));
+}
+
+#[test]
+fn image_renders_alt_and_title() {
+    let doc = Document::builder()
+        .paragraph(Inline::new().image_titled("a.png", "a \"tag\"", "hover"))
+        .build();
+
+    assert_eq!(
+        render_fragment(&doc),
+        "<p><img src=\"a.png\" alt=\"a &quot;tag&quot;\" title=\"hover\"></p>\n"
+    );
+}
+
+#[test]
+fn video_emits_flags_and_a_fallback_link() {
+    let doc = Document::builder()
+        .video(Video::new("clip.mp4", "demo").with_poster("clip.png"))
+        .build();
+
+    assert_eq!(
+        render_fragment(&doc),
+        "<video src=\"clip.mp4\" poster=\"clip.png\" controls>\n<a href=\"clip.mp4\">demo</a>\n</video>\n"
+    );
+}
+
+#[test]
+fn looping_clip_drops_controls() {
+    let doc = Document::builder()
+        .video(Video::new("clip.mp4", "demo").looping_clip())
+        .build();
+
+    assert!(render_fragment(&doc).starts_with("<video src=\"clip.mp4\" autoplay loop muted playsinline>"));
 }

@@ -116,6 +116,50 @@ fn render_node(out: &mut String, node: &Node) {
             render_all(out, children);
             out.push_str("</a>");
         }
+        Node::Image { src, alt, title } => {
+            out.push_str("<img src=\"");
+            push_escaped_attr(out, src);
+            out.push_str("\" alt=\"");
+            push_escaped_attr(out, alt);
+            out.push('"');
+            if let Some(title) = title {
+                out.push_str(" title=\"");
+                push_escaped_attr(out, title);
+                out.push('"');
+            }
+            out.push('>');
+        }
+        Node::Video(video) => {
+            out.push_str("<video src=\"");
+            push_escaped_attr(out, &video.src);
+            out.push('"');
+            if let Some(poster) = &video.poster {
+                out.push_str(" poster=\"");
+                push_escaped_attr(out, poster);
+                out.push('"');
+            }
+            for (flag, name) in [
+                (video.controls, "controls"),
+                (video.autoplay, "autoplay"),
+                (video.loops, "loop"),
+                (video.muted, "muted"),
+            ] {
+                if flag {
+                    out.push(' ');
+                    out.push_str(name);
+                }
+            }
+            // Autoplay on mobile needs it, and it is inert elsewhere.
+            if video.autoplay {
+                out.push_str(" playsinline");
+            }
+            // Shown only where <video> is unsupported.
+            out.push_str(">\n<a href=\"");
+            push_escaped_attr(out, &video.src);
+            out.push_str("\">");
+            push_escaped_text(out, &video.label);
+            out.push_str("</a>\n</video>");
+        }
         Node::Heading { level, children } => {
             let tag = format!("h{}", level.level());
             wrap(out, &tag, children);

@@ -10,6 +10,9 @@ pub const FILE_NAME: &str = "style.css";
 /// Stylesheet href from the landing page.
 pub const LANDING_HREF: &str = "style.css";
 
+/// Stylesheet href from `errors/`.
+pub const ERRORS_INDEX_HREF: &str = "../style.css";
+
 /// Stylesheet href from `errors/<label>/`.
 pub const ERROR_PAGE_HREF: &str = "../../style.css";
 

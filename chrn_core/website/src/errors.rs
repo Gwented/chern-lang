@@ -1,15 +1,15 @@
 //! Error-code documentation. Sits on top of [`crate::doc_builder`] and speaks in `chrn` terms:
 //! named sections, `chrn` code blocks, cross-links between error pages.
 //!
-//! Page authors call `.summary(..)`, `.erroneous(..)`, `.see_also(..)` — never a heading level or
-//! a `Node`.
+//! Page authors call `.summary(..)`, `.see_also(..)` — never a heading level or a `Node`.
 
 use std::path::{Path, PathBuf};
 
 use chrn_utils::err_codes::{self, ErrorCode, MAX_ERR_CODE_WIDTH};
 
-use crate::doc_builder::{Document, DocumentBuilder, Inline};
+use crate::doc_builder::{Document, DocumentBuilder, Inline, Video};
 use crate::renderers::Renderer;
+use crate::resources;
 
 /// Directory the generated error pages live under, relative to the site root.
 pub const ERRORS_DIR: &str = "errors";
@@ -35,6 +35,50 @@ pub fn error_title(code: ErrorCode) -> &'static str {
         ErrorCode::ConfigDeclErr => "Config declaration error",
         ErrorCode::ImportErr => "Import error",
     }
+}
+
+/// Href of the error index from the site root.
+pub fn index_root_href() -> String {
+    format!("{ERRORS_DIR}/")
+}
+
+/// Href of an error page from the site root.
+pub fn root_href(code: ErrorCode) -> String {
+    format!("{ERRORS_DIR}/{}/", err_codes::fmt_err_code(code))
+}
+
+/// Href of an error page from the error index.
+pub fn index_href(code: ErrorCode) -> String {
+    format!("{}/", err_codes::fmt_err_code(code))
+}
+
+/// Path of the error index under a site root, e.g. `site/errors/index.html`.
+pub fn index_output_path<R: Renderer>(root: &Path, renderer: &R) -> PathBuf {
+    root.join(ERRORS_DIR)
+        .join(format!("index.{}", renderer.extension()))
+}
+
+/// The error section index: one link per code in [`ALL_ERROR_CODES`] order. Titles come from
+/// [`error_title`], so a new code appears here for free.
+pub fn index() -> Document {
+    let err_code_bullets = err_codes::ALL_ERROR_CODES.into_iter().map(|code| {
+        Inline::new().link(
+            index_href(code),
+            Inline::new()
+                .code(err_codes::fmt_err_code(code))
+                .text(format!(" {}", error_title(code))),
+        )
+    });
+
+    Document::builder()
+        .heading(TITLE_LEVEL, "error codes")
+        .paragraph(
+            Inline::new()
+                .text("Every code the compiler emits. Codes are category-level, so one page covers a range of diagnostics."),
+        )
+        .video(Video::new(format!("../{}/email_gmail.mp4", resources::RESOURCES_DIR), ""))
+        .bullets(err_code_bullets)
+        .build()
 }
 
 /// Language tag attached to a code block. Keeps `"chrn"` from being retyped on every page.
@@ -221,6 +265,53 @@ impl ErrorDocBuilder {
     /// Code block in an explicit language.
     pub fn code_block<S: Into<String>>(mut self, lang: CodeLang, code: S) -> Self {
         self.body = self.body.code_block(lang.tag(), code);
+        self
+    }
+
+    // -- Media --
+    //
+    // `name` is a file in `site/resources/`; the href is resolved for an error page's depth by
+    // [`crate::resources::error_page_href`], so pages never spell `../../`.
+
+    /// Image from `site/resources/`, on its own line.
+    pub fn image<A: Into<String>>(mut self, name: &str, alt: A) -> Self {
+        self.body = self.body.image(resources::error_page_href(name), alt);
+        self
+    }
+
+    /// Image from `site/resources/` with a caption under it.
+    pub fn captioned_image<A: Into<String>, I: Into<Inline>>(
+        mut self,
+        name: &str,
+        alt: A,
+        caption: I,
+    ) -> Self {
+        self.body = self
+            .body
+            .captioned_image(resources::error_page_href(name), alt, caption);
+        self
+    }
+
+    /// Video from `site/resources/`, with controls. `label` is the fallback text.
+    pub fn video<L: Into<String>>(self, name: &str, label: L) -> Self {
+        self.video_with(Video::new(resources::error_page_href(name), label))
+    }
+
+    /// Silent looping clip from `site/resources/` — a demo, not something to sit through.
+    pub fn clip<L: Into<String>>(self, name: &str, label: L) -> Self {
+        self.video_with(Video::new(resources::error_page_href(name), label).looping_clip())
+    }
+
+    /// Pre-built [`Video`], for playback settings the presets don't cover. The caller owns the
+    /// href.
+    pub fn video_with(mut self, video: Video) -> Self {
+        self.body = self.body.video(video);
+        self
+    }
+
+    /// Video with a caption under it.
+    pub fn captioned_video<I: Into<Inline>>(mut self, video: Video, caption: I) -> Self {
+        self.body = self.body.captioned_video(video, caption);
         self
     }
 
