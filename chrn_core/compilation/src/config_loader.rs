@@ -208,7 +208,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                     // Is there a reason for lines_read to be printed if there are multiple quotes?
                     // When are there ever NOT multiple quotes if it's in a serialized file?
                     if self.read_quotes(quote_type).is_err() {
-                        let core_msg = "Unclosed quotes reached end of read limit".into();
+                        let core_msg = "Unclosed quotes reached end of read limit";
 
                         let rel_q_start = (quote_start - script_start) as u32;
                         let q_span =
@@ -391,7 +391,6 @@ impl<R: Read> ConfigLoader<'_, R> {
         }
         // TODO: Assert this...
 
-        dbg!(self.cursor);
         let region = self.create_region(script_start, None, true);
 
         // If the loop was broken because the limit was reached, and there is a byte after the
@@ -403,7 +402,7 @@ impl<R: Read> ConfigLoader<'_, R> {
         // NOTE: Needs direct indexing because peek already reached it's limit
         if self.handle.buffer().get(self.cursor).is_some() {
             // Sole reason this is here
-            let core_msg = "Amount of bytes in file exceeds max of 32KB".into();
+            let core_msg = "Amount of bytes in file exceeds max of 32KB";
             let diag = SourceDiagnostic::builder(
                 ErrorCode::CompilerSafetyLimits.into(),
                 DiagnosticLevel::Warn,
@@ -423,7 +422,7 @@ impl<R: Read> ConfigLoader<'_, R> {
         } else {
             // Case of end <eof> being reached, which means it is within `READ_LIMIT` since it
             // didn't actively reach it
-            let core_msg = "Could not find `@end` after `@def`".into();
+            let core_msg = "Could not find `@end` after `@def`";
 
             let def_span = def_span.expect("@def must exist for this branch to be seen");
             // Explicitly declaring this so the end of the file can be pointed at too
@@ -557,7 +556,7 @@ impl<R: Read> ConfigLoader<'_, R> {
         }
 
         if depth > 0 {
-            let core_msg = "Unclosed multi-line comment".into();
+            let core_msg = "Unclosed multi-line comment";
 
             // To include full multi-line syntax. / + 1 = /*
             let comment_start = comment_start as u32;

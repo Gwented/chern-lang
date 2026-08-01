@@ -124,16 +124,16 @@ impl SourceDiagnostic {
         }
     }
 
-    pub fn builder(
+    pub fn builder<S: Into<String>>(
         err_code: Option<ErrorCode>,
         level: DiagnosticLevel,
-        core_msg: String,
+        core_msg: S,
         path_id: PathId,
     ) -> SourceDiagnosticBuilder {
         SourceDiagnosticBuilder {
             err_code,
             level,
-            core_msg,
+            core_msg: core_msg.into(),
             path_id,
             annotations: Vec::new(),
             help: Vec::new(),

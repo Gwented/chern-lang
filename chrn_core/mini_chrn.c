@@ -26,6 +26,7 @@ MiniChrn new_mini_chrn() {
   return mini;
 }
 
+// Feels like C activates the JAVA MoEs and ints start appearing before my eyes
 const int BUFFER_SIZE = 8192;
 
 typedef struct {

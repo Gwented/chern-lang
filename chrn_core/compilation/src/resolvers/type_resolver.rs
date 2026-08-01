@@ -1013,8 +1013,8 @@ impl<'res> TypeResolver<'res> {
         // Expected to be `ConfigDefMember`
         let mut cfg_members: Vec<ImplMemberId> = Vec::new();
 
-        // Get schema option then lookup against the actual possibilities
-        // Maybe do this in constraints
+        // Whether or not the parent config has a type doesn't matter for options since they only
+        // apply to the current config, so this is fine.
         for abs_opt in &parent_abs_cfg.opt_assignments {
             seen_opt_vec.push(abs_opt);
 
@@ -1137,58 +1137,6 @@ impl<'res> TypeResolver<'res> {
         // because some consumers actually do need this. We'll see.
         let parent_type_id_opt = self.compiler.get_type_id_from_member_id(parent_member_id);
         if let Some(parent_type_id) = parent_type_id_opt {
-            //     // If recursive then reporting then returning
-            //     //
-            //     // May change
-            //     if let Some((_, original_span)) = cfg_dfs.iter().find(|(id, _)| *id == parent_type_id) {
-            //         // Can't fail since this being recursive itself means that the member this is
-            //         // associated with needed to have some sort of inner type to begin with, meaning it
-            //         // was user-defined
-            //         let sym_id = self
-            //             .compiler
-            //             .get_sym_id_from_type_id(parent_type_id)
-            //             .expect("Should only be reached from recursion");
-            //         let sym = &self.compiler.symbols[sym_id];
-            //         let type_name = self.interner.search(sym.name_id);
-            //
-            //         let core_msg = format!("Recursive config of `{type_name}`");
-            //         let src_diag = SourceDiagnostic::builder(
-            //             ErrorCode::ConfigDeclErr.into(),
-            //             DiagnosticLevel::Error,
-            //             core_msg,
-            //             env.region.path_id,
-            //         )
-            //         .add_annotation(
-            //             parent_abs_cfg.name_span,
-            //             AnnotationKind::Primary,
-            //             format!("Recursive `{type_name}` config").into(),
-            //         )
-            //         .add_annotation(
-            //             *original_span,
-            //             AnnotationKind::Secondary,
-            //             format!("Original `{type_name}` config").into(),
-            //         )
-            //         // Um
-            //         .add_note(
-            //             "There can only be one property defining config if the type is recursive"
-            //                 .into(),
-            //         )
-            //         .add_note(
-            //             "The first config of a recursive type applies to all of it's inner recursive versions of innately".into(),
-            //         );
-            //
-            //         self.diags.push(src_diag.build());
-            //         // Returning the `MemberSymbolKind::Unknown` reserved
-            //         return current_cfg_member_id;
-            //     }
-            //
-            //     // Only pushing types that are not built-in
-            //     //
-            //     // This is the only time this Vec is mutated
-            //     if !self.compiler.check_builtin(parent_type_id) {
-            //         cfg_dfs.push((parent_type_id, parent_abs_cfg.name_span));
-            //     }
-
             for abs_cfg_member in &parent_abs_cfg.cfg_members {
                 let AbstractConfigKind::Member(sp_member_name_id, _) = abs_cfg_member.kind.clone()
                 else {
@@ -1216,7 +1164,7 @@ impl<'res> TypeResolver<'res> {
                         // Is this confusing?
                         // Maybe from the perspective of ownership this could make more sense?
                         let core_msg =
-                            "Nesting level of 2 is too deep for a `complex` scope config".into();
+                            "Nesting level of 2 is too deep for a `complex` scope config";
 
                         let builder = SourceDiagnostic::builder(
                             ErrorCode::ConfigDeclErr.into(),
@@ -1418,6 +1366,48 @@ impl<'res> TypeResolver<'res> {
                 // If any cfg was added during the recursive descent, this truncates so that the vector
                 // can be re-used where it left off.
                 seen_cfg_vec.truncate(seen_cfg_len);
+            }
+        // Branch of no type being present within the parent config member.
+        } else {
+            // If this is the case, that means inner config members aren't allowed because a config
+            // member is directly tied to the type's members, but if the type literally doesn't
+            // exist then it cannot have members.
+            //
+            // Not sure what to do with override because override is supposed to act off
+            // intrinsics, which can't be invalid. Type or no type override is the same so it should
+            // probably just delegate to a method.
+            if scope_type == ScopeType::Complex {
+                // Only possible error for a complex semantic section. Members without types can
+                // only use options.
+                if let Some(first) = parent_abs_cfg.cfg_members.first() {
+                    let AbstractConfigKind::Member(sp_member_name_id, _) = first.kind.clone()
+                    else {
+                        unreachable!()
+                    };
+
+                    let core_msg = "Cannot define config members for a type that has no members";
+                    let builder = SourceDiagnostic::builder(
+                        ErrorCode::ConfigDeclErr.into(),
+                        DiagnosticLevel::Error,
+                        core_msg,
+                        env.region.path_id,
+                    )
+                    .add_annotation(
+                        sp_parent_name_id.span,
+                        AnnotationKind::Primary,
+                        "Has no members".to_string().into(),
+                    )
+                    // Also Into<String>?
+                    .add_annotation(
+                        sp_member_name_id.span,
+                        AnnotationKind::Secondary,
+                        // 💀💀
+                        "Can't exist".to_string().into(),
+                    );
+                    self.summary.push_diag(builder.build());
+                }
+            } else {
+                debug_assert_eq!(scope_type, ScopeType::Override);
             }
         }
 

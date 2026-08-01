@@ -19,7 +19,6 @@ let k = "ch" + "rn"
 var->
 nest->
     export struct Person {
-        let: i32
         k: List<i32,>
         // another: core::Person
         // state: State
@@ -31,9 +30,13 @@ nest->
     }
 
     export enum State {
-        Ready: e#let [] #warn
         InProgress
     }
-    enum
+complex->
+    State {
+        InProgress {
+            i = 3
+        }
+    }
 
 

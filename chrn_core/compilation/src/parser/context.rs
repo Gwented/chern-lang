@@ -45,7 +45,7 @@ const C_BRANCH_VAR_SET: u64 = C_BASE_EXIT_SET;
 const A_BRANCH_VAR_SET: u64 = A_BASE_EXIT_SET | token::COLON;
 
 // WARN: NestType should probably be responsible for C_CURLY but maybe not
-const C_BRANCH_TYPE_SET: u64 = C_BASE_EXIT_SET | token::O_BRACKET | token::HASH_SYMBOL;
+const C_BRANCH_TYPE_SET: u64 = C_BASE_EXIT_SET;
 
 const A_BRANCH_TYPE_SET: u64 = A_BASE_EXIT_SET | token::COLON;
 
@@ -88,6 +88,7 @@ impl<'a> ParserContext<'a> {
     }
 
     /// Returns an interned name id on success and the failed token on error.
+    /// Format: {bmsg}{found}{amsg}
     pub(super) fn expect_id_verbose(
         &mut self,
         expected: TokenKind,
@@ -110,7 +111,7 @@ impl<'a> ParserContext<'a> {
             t => parse_fmt::fmt_tok(t, interner),
         };
 
-        let core_msg = format!("(in {})\n{bmsg}{fmtted_tok}{amsg}", initial_evidence.branch);
+        let core_msg = format!("{bmsg}{fmtted_tok}{amsg}");
 
         let (mut builder, situation_opt) = self.create_diag_builder(&found, core_msg);
         // If EOF then override otherwise keep same semantics
@@ -151,6 +152,7 @@ impl<'a> ParserContext<'a> {
     }
 
     /// Returns an interned name id on success and the failed token on error.
+    /// Format: {bmsg}{found}{amsg}
     pub(super) fn expect_kw_verbose(
         &mut self,
         bmsg: &str,
@@ -168,7 +170,7 @@ impl<'a> ParserContext<'a> {
         let fmtted_tok = parse_fmt::fmt_tok(found.tok, interner);
 
         // Well maybe fmt_tok should be a method at this point, or at least an associated function
-        let core_msg = format!("(in {branch})\n{bmsg}{fmtted_tok}{amsg}");
+        let core_msg = format!("{bmsg}{fmtted_tok}{amsg}");
 
         let (mut builder, situation_opt) = self.create_diag_builder(&found, core_msg);
         // If EOF then override otherwise keep same semantics
@@ -203,7 +205,7 @@ impl<'a> ParserContext<'a> {
         let found = self.peek_behind(1);
         let branch = initial_evidence.branch;
 
-        let core_msg = format!("(in {branch})\n{msg}");
+        let core_msg = format!("\n{msg}");
 
         let (mut builder, situation_opt) = self.create_diag_builder(&found, core_msg);
         // If EOF then override otherwise keep same semantics
@@ -224,7 +226,7 @@ impl<'a> ParserContext<'a> {
     }
 
     /// Returns the found token on success and failure.
-    /// Formatting: {amsg}{found}{bmsg}
+    /// Format: {bmsg}{found}{amsg}
     // TODO:  Maybe lazily evaluate since searching the interner by default is a weird performance
     // hit. Probably.
     pub(super) fn expect_verbose(
@@ -241,7 +243,7 @@ impl<'a> ParserContext<'a> {
         if found.tok.kind() != expected {
             let fmtted_tok = parse_fmt::fmt_tok(found.tok, interner);
 
-            let core_msg = format!("(in {branch})\n{bmsg}{fmtted_tok}{amsg}");
+            let core_msg = format!("{bmsg}{fmtted_tok}{amsg}");
 
             let (mut builder, situation_opt) = self.create_diag_builder(&found, core_msg);
             // If EOF then override otherwise keep same semantics
@@ -268,7 +270,7 @@ impl<'a> ParserContext<'a> {
     /// More composable "Expected but found" error.
     /// This must ALWAYS be advanced before usage due to the found token always being assumed to be
     /// the previous token.
-    /// Expected [emsg], found [fmsg]
+    /// Format: "Expected {emsg}, found {fmsg}"
     pub(super) fn report_template(
         &mut self,
         emsg: &str,
@@ -279,7 +281,7 @@ impl<'a> ParserContext<'a> {
         let found = self.peek_behind(1);
         let branch = initial_evidence.branch;
 
-        let core_msg = format!("(in {branch})\nExpected {emsg}, found {fmsg}");
+        let core_msg = format!("Expected {emsg}, found {fmsg}");
 
         let (mut builder, situation_opt) = self.create_diag_builder(&found, core_msg);
         // If EOF then override otherwise keep same semantics
@@ -311,8 +313,7 @@ impl<'a> ParserContext<'a> {
         }
     }
 
-    // AM I TO ASSUME YOU CANNOT READ TEMPO?
-    // Yes. You may.
+    // ()
     fn get_set_from_branch(&self, branch: Branch) -> (u64, u64) {
         match branch {
             Branch::Broken => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
@@ -339,6 +340,9 @@ impl<'a> ParserContext<'a> {
         }
     }
 
+    /// May or may not mutate the given builder if any improvement is found for error message's
+    /// quality. Goes through a mostly semantic check first, then a more literal tree of the stream
+    /// of tokens gone by so that the highest quality message is tried for before returning.
     fn try_assistance(
         &self,
         // Msg to pick if nothing is matched as an error msg
@@ -391,7 +395,7 @@ impl<'a> ParserContext<'a> {
             SemanticSituation::ValueBinding => changed = false,
             SemanticSituation::DirectiveParsing => match evidence.found.tok {
                 Token::Id(id) => {
-                    // NOTE: We can't actually make it here.
+                    // NOTE: We can't actually make it here. At least not reliably
                     let bytes = interner.search(id).as_bytes();
                     let similar = algo::fuzzy_match(bytes, FuzzyMatch::Directive);
 
@@ -412,7 +416,6 @@ impl<'a> ParserContext<'a> {
             SemanticSituation::ArgList => changed = false,
             SemanticSituation::UnclosedDelimiter => changed = false,
             SemanticSituation::MissingStartDelimiter => changed = false,
-            //TODO: Would mean the removal of the "safe" creation and would set a new core msg
             SemanticSituation::ReachedEOF => {
                 let terminator_str: &str = match evidence.found.tok {
                     Token::EOF => "<eof>",
@@ -499,7 +502,6 @@ impl<'a> ParserContext<'a> {
             .map(|t| t.tok.kind())
             .unwrap_or(TokenKind::Poison);
 
-        // This is NOT good
         let builder = match branch {
             Branch::Neutral(neutral_branch) => match neutral_branch {
                 NeutralBranch::Let => match found.tok {
