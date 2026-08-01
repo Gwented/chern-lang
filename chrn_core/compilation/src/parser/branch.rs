@@ -37,6 +37,18 @@ pub(super) enum NeutralBranch {
     Import,
 }
 
+impl From<SectionBranch> for Branch {
+    fn from(branch: SectionBranch) -> Self {
+        Branch::Section(branch)
+    }
+}
+
+impl From<NeutralBranch> for Branch {
+    fn from(branch: NeutralBranch) -> Self {
+        Branch::Neutral(branch)
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum SectionBranch {
     Searching,

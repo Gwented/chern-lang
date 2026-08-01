@@ -80,25 +80,26 @@ impl RenderInfo<'_> {
 /// Given an annotation, finds all source lines it touches and the highest line number
 /// in that view for number width alignment
 pub(super) fn find_annotation_lines<'a>(
-    annotation: &Annotation,
+    ann: &Annotation,
     ln_views: &'a [LineView],
 ) -> (Vec<&'a Line>, u32) {
     let current_ln_view = ln_views
         .iter()
-        .find(|lv| lv.region_id == annotation.span.region_id)
+        .find(|lv| lv.region_id == ann.span.region_id)
         .expect("Should already have mapped the given annotation's ln_view");
 
+    dbg!(ann);
     let mut current_idx = current_ln_view
         .lines
         .iter()
-        .position(|ln| ln.ln_span.contains_part(annotation.span.start))
+        .position(|ln| ln.ln_span.contains_part(ann.span.start))
         .expect("Should already have mapped the given annotation's ln_view");
 
     let mut current_ln = &current_ln_view.lines[current_idx];
     let max_ln_num = *current_ln_view.ln_num_range.end();
 
     let mut spanned_lines = vec![current_ln];
-    while current_ln.ln_span.end < annotation.span.end {
+    while current_ln.ln_span.end < ann.span.end {
         current_idx += 1;
         current_ln = &current_ln_view.lines[current_idx];
         spanned_lines.push(current_ln);

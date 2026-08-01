@@ -391,6 +391,7 @@ impl<R: Read> ConfigLoader<'_, R> {
         }
         // TODO: Assert this...
 
+        dbg!(self.cursor);
         let region = self.create_region(script_start, None, true);
 
         // If the loop was broken because the limit was reached, and there is a byte after the

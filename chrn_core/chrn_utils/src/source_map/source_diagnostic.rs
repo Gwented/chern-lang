@@ -200,13 +200,17 @@ impl SourceDiagnosticBuilder {
         self
     }
 
-    pub fn add_help(mut self, help: String) -> Self {
-        self.help.push(help);
+    pub fn add_help<S: Into<String>>(mut self, help: S) -> Self {
+        self.help.push(help.into());
         self
     }
 
     pub fn add_note(mut self, note: String) -> Self {
         self.notes.push(note);
+        self
+    }
+    pub fn set_error_code(mut self, code: ErrorCode) -> Self {
+        self.err_code = Some(code);
         self
     }
 

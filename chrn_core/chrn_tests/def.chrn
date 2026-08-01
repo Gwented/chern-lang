@@ -5,9 +5,9 @@ export let WRITE = 0b1
 // import "../chrn_core/chrn_tests/other.chrn"
 import "../chrn_core/chrn_tests/nothing.chrn"
 // Maybe this shouldn't be seen as a valid import
-import "../chrn_core/chrn_tests/def.chrn"
+// import l
 
-let x = "Che" + "rn"
+let k = "ch" + "rn"
 
 // if this was something that wanted to be added, that would then mean the compiler store needs to be 
 // mutable, but the environments USE the compiler store, which makes it hard to concat and intern
@@ -17,9 +17,10 @@ let x = "Che" + "rn"
 // let string = "4" + "8"
 
 var->
-    export x: i32
 nest->
     export struct Person {
+        let: i32
+        k: List<i32,>
         // another: core::Person
         // state: State
         // p: str #scient The error emitted by this should be able to place the directive pointers
@@ -27,9 +28,12 @@ nest->
         // p: str #scient The 
         // name: str
         // age: u8
-    } #scient
+    }
 
     export enum State {
-        Ready: str [] #warn
+        Ready: e#let [] #warn
         InProgress
     }
+    enum
+
+

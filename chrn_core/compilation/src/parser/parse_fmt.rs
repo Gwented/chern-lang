@@ -4,10 +4,6 @@ use lang::fmter::Formattable;
 use crate::lexer::token::Token;
 
 /// Helper to reduce boiler-plate of formatting a given token
-///
-/// * type `bool` returns true when an identifier was formatted, false if it was made with a basic
-/// token kind.
-/// So, if `:` was found, it would return false since there is no identifier.
 pub(super) fn fmt_tok(tok: Token, interner: &Intern) -> String {
     let fmtted = match tok {
         Token::Def => "`@def`".to_string(),

@@ -93,7 +93,12 @@ impl Lexer<'_> {
                 // Could be an empty file so needs saturation
                 //WARN: EXCLUSIVE SPANNING. NO LONGER DOES - 1 FOR eof_pos
                 // Ends at current spot since it'll always be last_byte + 1, which matches
-                let eof_pos = self.pos as u32;
+                //BUG: If we are at the start of the file, and we see EOF, subtracting the start by
+                //1 will be a breaking sub, and it won't actually have a feasible span.
+                //Trying something.
+                //Will probably just remove spanning from EOF.
+                let eof_pos = self.src_bytes.len().saturating_sub(1) as u32;
+
                 toks.push(SpannedToken {
                     tok: Token::EOF,
                     //WARN: CHANGED TO + 1

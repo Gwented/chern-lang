@@ -1,8 +1,10 @@
 // Static access help messages
 use chrn_utils::{
     chrn_config::ChrnConfig,
+    err_codes::ErrorCode,
     id_types::InternedId,
     intern::Intern,
+    s_suffix,
     source_map::{
         source_diagnostic::{
             DiagnosticLevel, SourceDiagnostic, SourceDiagnosticBuilder, SourceDiagnosticSummary,
@@ -20,7 +22,10 @@ use lang::{
 
 use crate::{
     lexer::token::{self, SpannedToken, Token, TokenKind},
-    parser::{NeutralBranch, ParserBudget, SectionBranch, branch::Branch, parse_fmt},
+    parser::{
+        Evidence, InitialEvidence, NeutralBranch, SectionBranch, SemanticSituation, branch::Branch,
+        parse_fmt,
+    },
 };
 
 use super::NestBranch;
@@ -88,10 +93,11 @@ impl<'a> ParserContext<'a> {
         expected: TokenKind,
         bmsg: &str,
         amsg: &str,
-        branch: Branch,
+        initial_evidence: InitialEvidence,
         interner: &Intern,
     ) -> Result<InternedId, Token> {
         let found = self.advance();
+        let branch = initial_evidence.branch;
 
         let fmtted_tok = match found.tok {
             Token::Id(id) | Token::Str(id) | Token::Integer(id, _) | Token::Float(id, _) => {
@@ -104,10 +110,21 @@ impl<'a> ParserContext<'a> {
             t => parse_fmt::fmt_tok(t, interner),
         };
 
-        let core_msg = format!("(in {branch})\n{bmsg}{fmtted_tok}{amsg}");
+        let core_msg = format!("(in {})\n{bmsg}{fmtted_tok}{amsg}", initial_evidence.branch);
 
-        let builder = self.create_diag_builder(&found, core_msg);
-        let builder = self.try_assistance(builder, expected, &found, branch, interner);
+        let (mut builder, situation_opt) = self.create_diag_builder(&found, core_msg);
+        // If EOF then override otherwise keep same semantics
+        let situation = situation_opt.unwrap_or(initial_evidence.situation);
+
+        let evidence = Evidence::new(
+            initial_evidence.env,
+            situation,
+            expected,
+            found.clone(),
+            initial_evidence.branch,
+        );
+
+        builder = self.try_assistance(builder, &evidence, interner);
 
         self.summary.push_diag(builder.build());
 
@@ -120,39 +137,17 @@ impl<'a> ParserContext<'a> {
         &mut self,
         found: &SpannedToken,
         core_msg: String,
-    ) -> SourceDiagnosticBuilder {
-        let spans = self.safely_handle_span(&found);
-
-        // A little odd...
-        let terminator_str: &str = match found.tok {
-            Token::EOF => "<eof>",
-            Token::End => "`@end`",
-            _ => "",
-        };
-
-        let (kind, label) = if !terminator_str.is_empty() {
-            (
-                AnnotationKind::Secondary,
-                format!("Token before {terminator_str}").into(),
-            )
-        } else {
-            (AnnotationKind::Primary, None)
-        };
-
-        let mut diag_builder =
+    ) -> (SourceDiagnosticBuilder, Option<SemanticSituation>) {
+        let builder =
             SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, self.region.path_id)
-                .add_annotation(spans[0], kind, label);
+                .add_annotation(found.span, AnnotationKind::Primary, None);
+        let situation_opt = if found.tok.kind().is_terminator() {
+            Some(SemanticSituation::ReachedEOF)
+        } else {
+            None
+        };
 
-        // Meaning EOF error
-        if spans.len() == 2 {
-            diag_builder = diag_builder.add_annotation(
-                spans[1],
-                AnnotationKind::Primary,
-                format!("Unexpected {terminator_str}").into(),
-            );
-        }
-
-        diag_builder
+        (builder, situation_opt)
     }
 
     /// Returns an interned name id on success and the failed token on error.
@@ -160,10 +155,11 @@ impl<'a> ParserContext<'a> {
         &mut self,
         bmsg: &str,
         amsg: &str,
-        branch: Branch,
+        initial_evidence: InitialEvidence,
         interner: &Intern,
     ) -> Result<Keyword, Token> {
         let found = self.advance();
+        let branch = initial_evidence.branch;
 
         if let Token::Keyword(kw) = found.tok {
             return Ok(kw);
@@ -174,9 +170,19 @@ impl<'a> ParserContext<'a> {
         // Well maybe fmt_tok should be a method at this point, or at least an associated function
         let core_msg = format!("(in {branch})\n{bmsg}{fmtted_tok}{amsg}");
 
-        let builder = self.create_diag_builder(&found, core_msg);
+        let (mut builder, situation_opt) = self.create_diag_builder(&found, core_msg);
+        // If EOF then override otherwise keep same semantics
+        let situation = situation_opt.unwrap_or(initial_evidence.situation);
 
-        let builder = self.try_assistance(builder, TokenKind::Keyword, &found, branch, interner);
+        let evidence = Evidence::new(
+            initial_evidence.env,
+            situation,
+            TokenKind::Keyword,
+            found.clone(),
+            initial_evidence.branch,
+        );
+        builder = self.try_assistance(builder, &evidence, interner);
+
         self.summary.push_diag(builder.build());
 
         self.recover(branch);
@@ -188,13 +194,29 @@ impl<'a> ParserContext<'a> {
     /// Intended for basic errors that need little context after
     /// This must ALWAYS be advanced before usage due to the found token always being assumed to be
     /// the previous token.
-    pub(super) fn report_verbose(&mut self, msg: &str, branch: Branch, interner: &Intern) {
+    pub(super) fn report_verbose(
+        &mut self,
+        msg: &str,
+        initial_evidence: InitialEvidence,
+        interner: &Intern,
+    ) {
         let found = self.peek_behind(1);
+        let branch = initial_evidence.branch;
 
         let core_msg = format!("(in {branch})\n{msg}");
 
-        let builder = self.create_diag_builder(&found, core_msg);
-        let builder = self.try_assistance(builder, TokenKind::Poison, &found, branch, interner);
+        let (mut builder, situation_opt) = self.create_diag_builder(&found, core_msg);
+        // If EOF then override otherwise keep same semantics
+        let situation = situation_opt.unwrap_or(initial_evidence.situation);
+
+        let evidence = Evidence::new(
+            initial_evidence.env,
+            situation,
+            TokenKind::Poison,
+            found.clone(),
+            initial_evidence.branch,
+        );
+        builder = self.try_assistance(builder, &evidence, interner);
 
         self.summary.push_diag(builder.build());
 
@@ -202,6 +224,7 @@ impl<'a> ParserContext<'a> {
     }
 
     /// Returns the found token on success and failure.
+    /// Formatting: {amsg}{found}{bmsg}
     // TODO:  Maybe lazily evaluate since searching the interner by default is a weird performance
     // hit. Probably.
     pub(super) fn expect_verbose(
@@ -209,20 +232,31 @@ impl<'a> ParserContext<'a> {
         expected: TokenKind,
         bmsg: &str,
         amsg: &str,
-        branch: Branch,
+        initial_evidence: InitialEvidence,
         interner: &Intern,
     ) -> Result<Token, Token> {
         let found = self.advance();
+        let branch = initial_evidence.branch;
 
         if found.tok.kind() != expected {
             let fmtted_tok = parse_fmt::fmt_tok(found.tok, interner);
 
             let core_msg = format!("(in {branch})\n{bmsg}{fmtted_tok}{amsg}");
 
-            let builder = self.create_diag_builder(&found, core_msg);
-            let builder = self.try_assistance(builder, expected, &found, branch, interner);
-            self.summary.push_diag(builder.build());
+            let (mut builder, situation_opt) = self.create_diag_builder(&found, core_msg);
+            // If EOF then override otherwise keep same semantics
+            let situation = situation_opt.unwrap_or(initial_evidence.situation);
 
+            let evidence = Evidence::new(
+                initial_evidence.env,
+                situation,
+                expected,
+                found.clone(),
+                initial_evidence.branch,
+            );
+            builder = self.try_assistance(builder, &evidence, interner);
+
+            self.summary.push_diag(builder.build());
             self.recover(branch);
 
             return Err(found.tok);
@@ -239,14 +273,26 @@ impl<'a> ParserContext<'a> {
         &mut self,
         emsg: &str,
         fmsg: &str,
-        branch: Branch,
+        initial_evidence: InitialEvidence,
         interner: &Intern,
     ) {
-        let found = &self.peek_behind(1);
+        let found = self.peek_behind(1);
+        let branch = initial_evidence.branch;
 
         let core_msg = format!("(in {branch})\nExpected {emsg}, found {fmsg}");
-        let builder = self.create_diag_builder(&found, core_msg);
-        let builder = self.try_assistance(builder, TokenKind::Poison, &found, branch, interner);
+
+        let (mut builder, situation_opt) = self.create_diag_builder(&found, core_msg);
+        // If EOF then override otherwise keep same semantics
+        let situation = situation_opt.unwrap_or(initial_evidence.situation);
+
+        let evidence = Evidence::new(
+            initial_evidence.env,
+            situation,
+            TokenKind::Poison,
+            found.clone(),
+            initial_evidence.branch,
+        );
+        builder = self.try_assistance(builder, &evidence, interner);
         self.summary.push_diag(builder.build());
 
         self.recover(branch);
@@ -293,8 +339,135 @@ impl<'a> ParserContext<'a> {
         }
     }
 
-    /// Checks available known branching to where a help message can be pushed
     fn try_assistance(
+        &self,
+        // Msg to pick if nothing is matched as an error msg
+        builder: SourceDiagnosticBuilder,
+        evidence: &Evidence,
+        interner: &Intern,
+    ) -> SourceDiagnosticBuilder {
+        let (builder, changed) = self.try_semantic_assistance(builder, evidence, interner);
+
+        if changed {
+            return builder;
+        }
+
+        self.try_tree_assistance(
+            builder,
+            evidence.expected,
+            &evidence.found,
+            evidence.branch,
+            interner,
+        )
+    }
+
+    /// Takes builder, and returns it with a boolean representing if it was altered or not.
+    /// If `true` then it was altered, `false` means nothing was changed
+    ///
+    /// The intention of semantic assistance is to infer intent in how to alter the builder based
+    /// off of mostly semantic, and some tree-related information, rather than just tree information.
+    /// This is to lower instances like, name binding when a keyword was used, which isn't bespoke
+    /// in any form but the tree is so explicit that this can't be done without semantic
+    /// understanding.
+    fn try_semantic_assistance(
+        &self,
+        mut builder: SourceDiagnosticBuilder,
+        evidence: &Evidence,
+        interner: &Intern,
+    ) -> (SourceDiagnosticBuilder, bool) {
+        // True by default since false would be more non-trivial to change
+        let mut changed = true;
+
+        match &evidence.situation {
+            SemanticSituation::IdentBinding => match &evidence.found.tok {
+                Token::Keyword(kw) => {
+                    builder = builder
+                        .add_help(format!("Keyword can be escaped with `e#{}`", kw.to_fmt()));
+                }
+                _ => changed = false,
+            },
+            SemanticSituation::UnexpectedToken => changed = false,
+            SemanticSituation::TypeBinding => changed = false,
+            SemanticSituation::ValueBinding => changed = false,
+            SemanticSituation::DirectiveParsing => match evidence.found.tok {
+                Token::Id(id) => {
+                    // NOTE: We can't actually make it here.
+                    let bytes = interner.search(id).as_bytes();
+                    let similar = algo::fuzzy_match(bytes, FuzzyMatch::Directive);
+
+                    if similar.len() > 0 {
+                        let s_suffix = s_suffix!(similar.len());
+                        let similar_msg = Self::fmt_founds(
+                            &similar,
+                            &format!("Similar directive{s_suffix}:"),
+                            "`",
+                        );
+                        builder = builder.add_help(similar_msg);
+                    } else {
+                        changed = false;
+                    }
+                }
+                _ => changed = false,
+            },
+            SemanticSituation::ArgList => changed = false,
+            SemanticSituation::UnclosedDelimiter => changed = false,
+            SemanticSituation::MissingStartDelimiter => changed = false,
+            //TODO: Would mean the removal of the "safe" creation and would set a new core msg
+            SemanticSituation::ReachedEOF => {
+                let terminator_str: &str = match evidence.found.tok {
+                    Token::EOF => "<eof>",
+                    Token::End => "`@end`",
+                    // Ok but shouldn't this be unreachable?
+                    // Um
+                    _ => "",
+                };
+                //had to fail before EOF, this cannot be reached otherwise.
+                //
+                // Ok then why is there saturating sub?
+                let prev_span = self.toks[self.toks.len().saturating_sub(2)].span;
+
+                builder = SourceDiagnostic::builder(
+                    ErrorCode::ConfigLoadErr.into(),
+                    DiagnosticLevel::Error,
+                    //Yeah, no? No?
+                    builder.build().core_msg,
+                    self.region.path_id,
+                )
+                .add_annotation(
+                    prev_span,
+                    AnnotationKind::Secondary,
+                    format!("Token before {terminator_str}").into(),
+                )
+                .add_annotation(
+                    evidence.found.span,
+                    AnnotationKind::Primary,
+                    format!("Unexpected {terminator_str}").into(),
+                );
+            }
+            SemanticSituation::KeywordBinding => match evidence.found.tok {
+                Token::Id(id) => {
+                    let bytes = interner.search(id).as_bytes();
+                    let similar = algo::fuzzy_match(bytes, FuzzyMatch::KW);
+
+                    if similar.len() > 0 {
+                        let s_suffix = s_suffix!(similar.len());
+                        let similar_msg =
+                            Self::fmt_founds(&similar, &format!("Similar keyword{s_suffix}:"), "`");
+                        builder = builder.add_help(similar_msg);
+                    } else {
+                        changed = false;
+                    }
+                }
+                _ => changed = false,
+            },
+        };
+
+        (builder, changed)
+    }
+
+    ////????????
+    /// Checks available known branching to where a help message can be pushed
+    fn try_tree_assistance(
         &self,
         mut builder: SourceDiagnosticBuilder,
         expected: TokenKind,
@@ -359,7 +532,7 @@ impl<'a> ParserContext<'a> {
                         // Uh huh
                         // Ok
                         if let Some(Some((similar_vec, fmtted_ty))) = similar_opt {
-                            let help = Self::fmt_helps(
+                            let help = Self::fmt_founds(
                                 &similar_vec,
                                 &format!("Found similar {fmtted_ty}"),
                                 "`",
@@ -517,7 +690,7 @@ impl<'a> ParserContext<'a> {
                         let similar_vec = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect);
 
                         if !similar_vec.is_empty() {
-                            let help = Self::fmt_helps(
+                            let help = Self::fmt_founds(
                                 &similar_vec,
                                 &format!("Found similar section"),
                                 "`",
@@ -565,8 +738,11 @@ impl<'a> ParserContext<'a> {
                     let similar_vec = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Directive);
 
                     if !similar_vec.is_empty() {
-                        let help =
-                            Self::fmt_helps(&similar_vec, &format!("Found similar directive"), "`");
+                        let help = Self::fmt_founds(
+                            &similar_vec,
+                            &format!("Found similar directive"),
+                            "`",
+                        );
 
                         builder = builder.add_help(help);
                     }
@@ -578,10 +754,11 @@ impl<'a> ParserContext<'a> {
             _ => builder,
         };
 
-        builder
+        builder.into()
     }
 
-    fn fmt_helps(found: &[&str], header: &str, quote: &str) -> String {
+    // ??????
+    fn fmt_founds(found: &[&str], header: &str, quote: &str) -> String {
         let mut out = format!("{header} ");
         for (i, similar) in found.iter().enumerate() {
             out.push_str(&format!("{quote}{similar}{quote}"));

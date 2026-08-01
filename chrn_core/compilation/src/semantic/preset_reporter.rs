@@ -13,6 +13,7 @@ use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, Prese
 use crate::semantic::resolve::{StaticAccessResult, TypeExprResult};
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
+use chrn_utils::s_suffix;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{
     DiagnosticLevel, SourceDiagnosticBuilder, SourceDiagnosticSink,
@@ -124,7 +125,8 @@ pub(crate) fn create_diag_builder_preset(
 
             //FIX: Every usage of this is very dis-organized
             if !similar_vec.is_empty() {
-                let mut help = format!("Found similar directive ");
+                let s_suffix = s_suffix!(similar_vec.len());
+                let mut help = format!("Similar directive{s_suffix}: ");
                 for (i, similar) in similar_vec.iter().enumerate() {
                     help.push_str(&format!("`{similar}`"));
                     if i + 1 != similar_vec.len() {

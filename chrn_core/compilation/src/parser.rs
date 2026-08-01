@@ -20,6 +20,7 @@ use crate::parser::ast::ast_exprs::{
 };
 use crate::parser::branch::{Branch, NestBranch, NeutralBranch, SectionBranch};
 use crate::parser::context::ParserContext;
+use crate::parser::evidence::{Evidence, InitialEvidence, SemanticEnv, SemanticSituation};
 use crate::parser::parser_budget::ParserBudget;
 use crate::parser::parser_state::ParserState;
 use crate::semantic::hir::hir_impls::{ComplexConfigMemberMetadata, ConfigMemberMetadataKind};
@@ -33,8 +34,8 @@ use lang::fmter::{Formattable, Formatted};
 use lang::keywords::Keyword;
 
 // The CST.
-/// Returns a tuple of `AstInfo` and Diagnostics, where `AstInfo` may or may not be unfinished,
-/// depending on if diagnostics > 0
+/// Returns a tuple of `AstInfo` and `SourceDiagnosticSummary`, where `AstInfo` may or may not be unfinished,
+/// depending on if the summary's error count > 0
 pub fn parse(
     cfg: &ChrnConfig,
     region: &SourceRegion,
@@ -83,7 +84,11 @@ pub fn parse(
                     if state.has_bind() {
                         ctx.report_verbose(
                             "Duplicate bind statement",
-                            Branch::Neutral(NeutralBranch::Searching),
+                            InitialEvidence::new(
+                                SemanticEnv::SearchingNeutral,
+                                SemanticSituation::UnexpectedToken,
+                                Branch::Neutral(NeutralBranch::Searching),
+                            ),
                             interner,
                         );
 
@@ -146,7 +151,11 @@ pub fn parse(
                     if state.has_var() {
                         ctx.report_verbose(
                             "Duplicate `var` section",
-                            Branch::Section(SectionBranch::Searching),
+                            InitialEvidence::new(
+                                SemanticEnv::SearchingSection,
+                                SemanticSituation::UnexpectedToken,
+                                Branch::Section(SectionBranch::Searching),
+                            ),
                             interner,
                         );
 
@@ -162,7 +171,11 @@ pub fn parse(
                         TokenKind::SlimArrow,
                         "Expected '->' after section `var`, found ",
                         "",
-                        Branch::Section(SectionBranch::Searching),
+                        InitialEvidence::new(
+                            SemanticEnv::SearchingSection,
+                            SemanticSituation::UnexpectedToken,
+                            Branch::Section(SectionBranch::Searching),
+                        ),
                         interner,
                     );
 
@@ -199,7 +212,11 @@ pub fn parse(
                     if state.has_nest() {
                         ctx.report_verbose(
                             "Duplicate `nest` section",
-                            Branch::Section(SectionBranch::Searching),
+                            InitialEvidence::new(
+                                SemanticEnv::SearchingSection,
+                                SemanticSituation::UnexpectedToken,
+                                Branch::Section(SectionBranch::Searching),
+                            ),
                             interner,
                         );
                         continue;
@@ -212,7 +229,11 @@ pub fn parse(
                         TokenKind::SlimArrow,
                         "Expected '->' after section `nest`, found ",
                         "",
-                        Branch::Section(SectionBranch::Searching),
+                        InitialEvidence::new(
+                            SemanticEnv::SearchingSection,
+                            SemanticSituation::UnexpectedToken,
+                            Branch::Section(SectionBranch::Searching),
+                        ),
                         interner,
                     );
 
@@ -245,7 +266,11 @@ pub fn parse(
                     if state.has_complex() {
                         ctx.report_verbose(
                             "Duplicate `complex` section",
-                            Branch::Section(SectionBranch::Searching),
+                            InitialEvidence::new(
+                                SemanticEnv::SearchingSection,
+                                SemanticSituation::UnexpectedToken,
+                                Branch::Section(SectionBranch::Searching),
+                            ),
                             interner,
                         );
                         continue;
@@ -258,7 +283,11 @@ pub fn parse(
                         TokenKind::SlimArrow,
                         "Expected '->' after section `complex`, found ",
                         "",
-                        Branch::Section(SectionBranch::Searching),
+                        InitialEvidence::new(
+                            SemanticEnv::SearchingSection,
+                            SemanticSituation::UnexpectedToken,
+                            Branch::Section(SectionBranch::Searching),
+                        ),
                         interner,
                     );
 
@@ -297,7 +326,11 @@ pub fn parse(
                     if state.has_override() {
                         ctx.report_verbose(
                             "Duplicate `override` section",
-                            Branch::Section(SectionBranch::Searching),
+                            InitialEvidence::new(
+                                SemanticEnv::SearchingSection,
+                                SemanticSituation::UnexpectedToken,
+                                Branch::Section(SectionBranch::Searching),
+                            ),
                             interner,
                         );
                         continue;
@@ -310,7 +343,11 @@ pub fn parse(
                         TokenKind::SlimArrow,
                         "Expected '->' after section `override`, found ",
                         "",
-                        Branch::Section(SectionBranch::Searching),
+                        InitialEvidence::new(
+                            SemanticEnv::SearchingSection,
+                            SemanticSituation::UnexpectedToken,
+                            Branch::Section(SectionBranch::Searching),
+                        ),
                         interner,
                     );
                     // Please lint empty sections please emit 40000 warns for slightly misplaced
@@ -342,14 +379,22 @@ pub fn parse(
                         ctx.report_template(
                             "a statement or section",
                             &parse_fmt::fmt_tok(tok, interner),
-                            Branch::Neutral(NeutralBranch::Searching),
+                            InitialEvidence::new(
+                                SemanticEnv::SearchingNeutral,
+                                SemanticSituation::KeywordBinding,
+                                NeutralBranch::Searching.into(),
+                            ),
                             interner,
                         );
                     } else {
                         ctx.report_template(
                             "a section with '->' after",
                             &parse_fmt::fmt_tok(tok, interner),
-                            Branch::Section(SectionBranch::Searching),
+                            InitialEvidence::new(
+                                SemanticEnv::SearchingSection,
+                                SemanticSituation::KeywordBinding,
+                                SectionBranch::Searching.into(),
+                            ),
                             interner,
                         );
                     }
@@ -359,22 +404,41 @@ pub fn parse(
                 ctx.advance_tok();
                 let err_str = interner.search(id);
                 let msg = format!("Invalid token {err_str}");
+                let env = if state.is_neutral() {
+                    SemanticEnv::SearchingNeutral
+                } else {
+                    SemanticEnv::SearchingSection
+                };
 
-                ctx.report_verbose(&msg, Branch::Broken, interner);
+                ctx.report_verbose(
+                    &msg,
+                    InitialEvidence::new(env, SemanticSituation::UnexpectedToken, Branch::Broken),
+                    interner,
+                );
             }
             Token::EOF | Token::End => break,
             //TODO: Neutral routing
             t => {
                 // Interesting name..
-                let allowed_msg = if state.is_neutral() {
-                    "a statement or section"
+                let (branch, allowed_msg) = if state.is_neutral() {
+                    (NeutralBranch::Searching.into(), "a statement or section")
                 } else {
-                    "a section"
+                    (SectionBranch::Searching.into(), "a section")
                 };
 
                 let fmsg = parse_fmt::fmt_tok(t, interner);
                 ctx.advance_tok();
-                ctx.report_template(allowed_msg, &fmsg, Branch::Searching, interner);
+                ctx.report_template(
+                    allowed_msg,
+                    &fmsg,
+                    InitialEvidence::new(
+                        //TODO:
+                        SemanticEnv::SearchingSection,
+                        SemanticSituation::KeywordBinding,
+                        branch,
+                    ),
+                    interner,
+                );
             }
         }
     }
@@ -397,7 +461,12 @@ fn parse_alias_stmt(
         TokenKind::Id,
         "Expected identifier after `alias`, found ",
         "",
-        Branch::Neutral(NeutralBranch::Alias),
+        // Maybe just ask for basic high level information
+        InitialEvidence::new(
+            SemanticEnv::Alias,
+            SemanticSituation::IdentBinding,
+            Branch::Neutral(NeutralBranch::Alias),
+        ),
         interner,
     )?;
 
@@ -405,7 +474,11 @@ fn parse_alias_stmt(
         TokenKind::OParen,
         "Expected parameters to define alias, found ",
         "",
-        Branch::Neutral(NeutralBranch::Alias),
+        InitialEvidence::new(
+            SemanticEnv::SectNeutral,
+            SemanticSituation::MissingStartDelimiter,
+            Branch::Neutral(NeutralBranch::Alias),
+        ),
         interner,
     )?;
 
@@ -415,7 +488,11 @@ fn parse_alias_stmt(
         TokenKind::Assign,
         "Expected '=' to define alias, found ",
         "",
-        Branch::Neutral(NeutralBranch::Alias),
+        InitialEvidence::new(
+            SemanticEnv::SectNeutral,
+            SemanticSituation::UnexpectedToken,
+            Branch::Neutral(NeutralBranch::Alias),
+        ),
         interner,
     )?;
 
@@ -447,9 +524,18 @@ fn check_bind(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token> {
         TokenKind::Str,
         "Expected string literal after `bind`, found ",
         "",
-        Branch::Neutral(NeutralBranch::Bind),
+        InitialEvidence::new(
+            SemanticEnv::Bind,
+            SemanticSituation::ValueBinding,
+            Branch::Neutral(NeutralBranch::Bind),
+        ),
         interner,
     )?;
+    // InitialEvidence::new(
+    //     EvidenceEnv::Alias,
+    //     Situation::NameBinding,
+    //     Branch::Neutral(NeutralBranch::Alias),
+    // ),
 
     Ok(())
 }
@@ -460,7 +546,11 @@ fn check_import(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token>
         TokenKind::Str,
         "Expected string literal path, found ",
         "",
-        Branch::Neutral(NeutralBranch::Import),
+        InitialEvidence::new(
+            SemanticEnv::Import,
+            SemanticSituation::ValueBinding,
+            Branch::Neutral(NeutralBranch::Import),
+        ),
         interner,
     )?;
 
@@ -472,7 +562,11 @@ fn check_import(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token>
             TokenKind::Id,
             "Expected import alias after `as`, found ",
             "",
-            Branch::Neutral(NeutralBranch::Import),
+            InitialEvidence::new(
+                SemanticEnv::Import,
+                SemanticSituation::IdentBinding,
+                Branch::Neutral(NeutralBranch::Import),
+            ),
             interner,
         )?;
     }
@@ -494,7 +588,13 @@ fn parse_typedef(
         "",
         // Not exactly true that var is being used, just that the type definition flow already
         // exists, so...
-        Branch::Section(SectionBranch::Var),
+        InitialEvidence::new(
+            SemanticEnv::SectVar,
+            SemanticSituation::IdentBinding,
+            //TODO: Tag this :)
+            //No
+            Branch::Section(SectionBranch::Var),
+        ),
         interner,
     )?;
 
@@ -502,9 +602,14 @@ fn parse_typedef(
 
     ctx.expect_verbose(
         TokenKind::Colon,
+        //TODO: Not var specific
         &format!("Expected a ':' after `{err_name}` to define a type, found "),
         "",
-        Branch::Section(SectionBranch::Var),
+        InitialEvidence::new(
+            SemanticEnv::SectNeutral,
+            SemanticSituation::UnexpectedToken,
+            Branch::Section(SectionBranch::Var),
+        ),
         interner,
     )?;
 
@@ -522,9 +627,7 @@ fn parse_typedef(
         Vec::new()
     };
 
-    if ctx.peek_kind() == TokenKind::Comma {
-        ctx.advance_tok();
-    }
+    consume_trailing_comma(ctx);
 
     let abs_typedef = AbstractTypeDef::new(name_id, name_span, ty, directives, is_priv, conds);
 
@@ -541,7 +644,11 @@ fn parse_nest_sect(
     let kw = ctx.expect_kw_verbose(
         "Expected `enum` or `struct`, found ",
         "",
-        Branch::Section(NestBranch::NestStart.into()),
+        InitialEvidence::new(
+            SemanticEnv::SectNest,
+            SemanticSituation::KeywordBinding,
+            Branch::Section(NestBranch::NestStart.into()),
+        ),
         interner,
     )?;
 
@@ -554,7 +661,11 @@ fn parse_nest_sect(
                 TokenKind::Id,
                 "Expected identifier for struct, found ",
                 "",
-                Branch::Section(NestBranch::StructType.into()),
+                InitialEvidence::new(
+                    SemanticEnv::SectNest,
+                    SemanticSituation::IdentBinding,
+                    Branch::Section(NestBranch::StructType.into()),
+                ),
                 interner,
             )?;
 
@@ -564,7 +675,11 @@ fn parse_nest_sect(
                 TokenKind::OCurlyBracket,
                 &format!("Expected '{{' to define struct, found "),
                 "",
-                Branch::Section(NestBranch::StructType.into()),
+                InitialEvidence::new(
+                    SemanticEnv::SectNest,
+                    SemanticSituation::UnexpectedToken,
+                    Branch::Section(NestBranch::StructType.into()),
+                ),
                 interner,
             )?;
 
@@ -598,7 +713,11 @@ fn parse_nest_sect(
                 TokenKind::Id,
                 "Expected identifier for enum, found ",
                 "",
-                Branch::Section(NestBranch::EnumType.into()),
+                InitialEvidence::new(
+                    SemanticEnv::SectNest,
+                    SemanticSituation::IdentBinding,
+                    Branch::Section(NestBranch::EnumType.into()),
+                ),
                 interner,
             )?;
 
@@ -608,7 +727,11 @@ fn parse_nest_sect(
                 TokenKind::OCurlyBracket,
                 &format!("Expected '{{' to define enum, found"),
                 "",
-                Branch::Section(NestBranch::EnumType.into()),
+                InitialEvidence::new(
+                    SemanticEnv::SectNest,
+                    SemanticSituation::UnexpectedToken,
+                    Branch::Section(NestBranch::EnumType.into()),
+                ),
                 interner,
             )?;
 
@@ -643,7 +766,11 @@ fn parse_nest_sect(
                     "Expected keyword `enum` or `struct`, found `{}`",
                     kw.to_fmt()
                 ),
-                Branch::Section(NestBranch::NestStart.into()),
+                InitialEvidence::new(
+                    SemanticEnv::SectNest,
+                    SemanticSituation::KeywordBinding,
+                    Branch::Section(NestBranch::NestStart.into()),
+                ),
                 interner,
             );
 
@@ -677,7 +804,11 @@ fn parse_cfg_expr(
     if ctx.peek_tok() != Token::OCurlyBracket && ctx.peek_tok() != Token::NotSlimArrow {
         ctx.report_verbose(
             "Expected '{' block or '=>' to define config, found ",
-            Branch::Section(SectionBranch::Complex),
+            InitialEvidence::new(
+                SemanticEnv::SectNest,
+                SemanticSituation::UnexpectedToken,
+                SectionBranch::Complex.into(),
+            ),
             interner,
         );
         return Err(Token::Poison);
@@ -695,7 +826,12 @@ fn parse_cfg_expr(
     if used_arrow && is_root {
         ctx.report_verbose(
             "Config roots must use `{` syntax instead of `=>`",
-            Branch::Section(SectionBranch::Complex),
+            InitialEvidence::new(
+                //TODO: FIXME
+                SemanticEnv::SectComplex,
+                SemanticSituation::MissingStartDelimiter,
+                SectionBranch::Complex.into(),
+            ),
             interner,
         );
         return Err(Token::Poison);
@@ -734,10 +870,15 @@ fn parse_cfg_expr(
             // To prevent looking for matching "}" when "=>" syntax was used
             if !used_arrow {
                 ctx.expect_verbose(
+                    // Didn't really make a way to skip and that's OK!
                     TokenKind::CCurlyBracket,
-                    "Expected '}' or more declarations, found ",
+                    "Unclosed delimiter '}', found ",
                     "",
-                    Branch::Section(SectionBranch::Complex),
+                    InitialEvidence::new(
+                        SemanticEnv::Config,
+                        SemanticSituation::UnclosedDelimiter,
+                        SectionBranch::Complex.into(),
+                    ),
                     interner,
                 )?;
             }
@@ -792,7 +933,12 @@ fn handle_cfg_metadata(
                     TokenKind::Id,
                     "Expected identifier to define config, found ",
                     "",
-                    Branch::Section(SectionBranch::Complex),
+                    InitialEvidence::new(
+                        SemanticEnv::Config,
+                        SemanticSituation::IdentBinding,
+                        //TODO: Tag
+                        SectionBranch::Complex.into(),
+                    ),
                     interner,
                 )?;
 
@@ -828,7 +974,12 @@ fn handle_cfg_metadata(
                     TokenKind::Id,
                     "Expected identifier to define config, found ",
                     "",
-                    Branch::Section(SectionBranch::Complex),
+                    InitialEvidence::new(
+                        SemanticEnv::Config,
+                        SemanticSituation::IdentBinding,
+                        //TODO: Tag
+                        Branch::Section(SectionBranch::Complex),
+                    ),
                     interner,
                 )?;
 
@@ -859,7 +1010,12 @@ fn parse_option_assignment(
         TokenKind::Id,
         "Expected identifier for config option, found ",
         "",
-        Branch::Section(SectionBranch::Complex),
+        InitialEvidence::new(
+            SemanticEnv::Config,
+            SemanticSituation::IdentBinding,
+            //TODO: Tag
+            SectionBranch::Complex.into(),
+        ),
         interner,
     )?;
 
@@ -867,7 +1023,11 @@ fn parse_option_assignment(
         TokenKind::Assign,
         "Expected '=' to assign value to option, found ",
         "",
-        Branch::Section(SectionBranch::Complex),
+        InitialEvidence::new(
+            SemanticEnv::Config,
+            SemanticSituation::UnexpectedToken,
+            SectionBranch::Complex.into(),
+        ),
         interner,
     )?;
 
@@ -882,10 +1042,7 @@ fn parse_option_assignment(
         SpannedExpr::new(array_expr, span)
     };
 
-    // Allows for trailing comma
-    if ctx.peek_tok() == Token::Comma {
-        ctx.advance_tok();
-    }
+    consume_trailing_comma(ctx);
 
     Ok(AbstractOptionAssignment::new(
         name_id,
@@ -907,7 +1064,12 @@ fn parse_array(
         TokenKind::OBracket,
         "Expected '[' to declare array, found ",
         "",
-        Branch::Expr,
+        InitialEvidence::new(
+            SemanticEnv::Expr,
+            SemanticSituation::MissingStartDelimiter,
+            //TODO: PASS IN
+            SectionBranch::Complex.into(),
+        ),
         interner,
     )?;
 
@@ -927,7 +1089,12 @@ fn parse_array(
             TokenKind::Comma,
             "Expected a comma to separate elements, found ",
             "",
-            Branch::Expr,
+            InitialEvidence::new(
+                SemanticEnv::Expr,
+                SemanticSituation::ArgList,
+                //TODO: PASS IN
+                SectionBranch::Complex.into(),
+            ),
             interner,
         )?;
     }
@@ -939,7 +1106,12 @@ fn parse_array(
         TokenKind::CBracket,
         "Expected ']' to close array, found ",
         "",
-        Branch::Expr,
+        InitialEvidence::new(
+            SemanticEnv::Expr,
+            SemanticSituation::UnclosedDelimiter,
+            //TODO: PASS IN
+            SectionBranch::Complex.into(),
+        ),
         interner,
     )?;
 
@@ -965,7 +1137,12 @@ fn parse_let(
         TokenKind::Id,
         "Expected identifier after `let`, found ",
         "",
-        Branch::Neutral(NeutralBranch::Let),
+        InitialEvidence::new(
+            SemanticEnv::Let,
+            SemanticSituation::IdentBinding,
+            //TODO: Tag
+            Branch::Neutral(NeutralBranch::Let),
+        ),
         interner,
     )?;
 
@@ -973,7 +1150,12 @@ fn parse_let(
         TokenKind::Assign,
         "Expected '=' to declare value, found ",
         "",
-        Branch::Neutral(NeutralBranch::Let),
+        InitialEvidence::new(
+            SemanticEnv::Let,
+            SemanticSituation::ValueBinding,
+            //TODO: PASS IN
+            Branch::Neutral(NeutralBranch::Let),
+        ),
         interner,
     )?;
 
@@ -997,7 +1179,16 @@ fn parse_expr(
             budget.recursion_tracker.limit()
         );
 
-        ctx.report_verbose(&msg, Branch::Type, interner);
+        ctx.report_verbose(
+            &msg,
+            InitialEvidence::new(
+                SemanticEnv::Expr,
+                SemanticSituation::UnexpectedToken,
+                //TODO:
+                SectionBranch::Complex.into(),
+            ),
+            interner,
+        );
         Token::Poison
     })?;
 
@@ -1106,7 +1297,12 @@ fn parse_expr(
                 TokenKind::Id,
                 "Expected a field identifier after '.', found ",
                 "",
-                Branch::Expr,
+                InitialEvidence::new(
+                    SemanticEnv::Expr,
+                    SemanticSituation::IdentBinding,
+                    //TODO: Tag
+                    Branch::Expr,
+                ),
                 interner,
             )?;
 
@@ -1141,7 +1337,16 @@ fn parse_primary(
             budget.recursion_tracker.limit()
         );
 
-        ctx.report_verbose(&msg, Branch::Type, interner);
+        ctx.report_verbose(
+            &msg,
+            InitialEvidence::new(
+                SemanticEnv::Expr,
+                SemanticSituation::UnexpectedToken,
+                //TODO:
+                Branch::Expr,
+            ),
+            interner,
+        );
         Token::Poison
     })?;
     match ctx.peek_tok() {
@@ -1153,7 +1358,12 @@ fn parse_primary(
                 TokenKind::CParen,
                 "Expected ')' to close grouped expression, found ",
                 "",
-                Branch::Expr,
+                InitialEvidence::new(
+                    SemanticEnv::Let,
+                    SemanticSituation::UnclosedDelimiter,
+                    //TODO: PASS IN
+                    Branch::Expr,
+                ),
                 interner,
             )?;
 
@@ -1221,7 +1431,12 @@ fn parse_primary(
 
             ctx.report_verbose(
                 &format!("Expected expression, found {terminator}"),
-                Branch::Type,
+                InitialEvidence::new(
+                    SemanticEnv::Expr,
+                    SemanticSituation::ReachedEOF,
+                    //TODO:
+                    Branch::Expr,
+                ),
                 interner,
             );
 
@@ -1242,7 +1457,16 @@ fn parse_primary(
                 _ => format!("Expected a valid expression, found {fmtted_tok}"),
             };
 
-            ctx.report_verbose(&msg, Branch::Expr, interner);
+            ctx.report_verbose(
+                &msg,
+                InitialEvidence::new(
+                    SemanticEnv::Expr,
+                    SemanticSituation::UnexpectedToken,
+                    //TODO:
+                    Branch::Expr,
+                ),
+                interner,
+            );
             return Err(Token::Poison);
         }
     }
@@ -1279,7 +1503,13 @@ fn parse_call_args(
             TokenKind::Comma,
             "Expected ',' to separate arguments, found ",
             "",
-            Branch::ArgList,
+            InitialEvidence::new(
+                // Arg list isn't really an environment..
+                SemanticEnv::ArgList,
+                SemanticSituation::ArgList,
+                //TODO: PASS IN
+                Branch::Expr,
+            ),
             interner,
         )?;
     }
@@ -1298,7 +1528,16 @@ fn parse_unary(
             budget.recursion_tracker.limit()
         );
 
-        ctx.report_verbose(&msg, Branch::Type, interner);
+        ctx.report_verbose(
+            &msg,
+            InitialEvidence::new(
+                SemanticEnv::Expr,
+                SemanticSituation::UnexpectedToken,
+                //TODO:
+                Branch::Expr,
+            ),
+            interner,
+        );
         Token::Poison
     })?;
     match ctx.peek_tok() {
@@ -1351,7 +1590,16 @@ fn parse_type_expr(
             budget.recursion_tracker.limit()
         );
 
-        ctx.report_verbose(&msg, Branch::Type, interner);
+        ctx.report_verbose(
+            &msg,
+            InitialEvidence::new(
+                SemanticEnv::Expr,
+                SemanticSituation::TypeBinding,
+                //TODO:
+                Branch::Type,
+            ),
+            interner,
+        );
         Token::Poison
     })?;
 
@@ -1405,14 +1653,33 @@ fn parse_type_expr(
 
             let fmt_tok = parse_fmt::fmt_tok(tok, interner);
 
-            ctx.report_template("a type", &fmt_tok, Branch::Type, interner);
+            ctx.report_template(
+                "a type",
+                &fmt_tok,
+                InitialEvidence::new(
+                    //TODO:
+                    SemanticEnv::Type,
+                    SemanticSituation::TypeBinding,
+                    Branch::Type,
+                ),
+                interner,
+            );
 
             Err(Token::Str(id))
         }
         Token::EOF => {
             ctx.advance_tok();
 
-            ctx.report_verbose("Expected a type, found <eof>", Branch::Type, interner);
+            ctx.report_verbose(
+                "Expected a type, found <eof>",
+                InitialEvidence::new(
+                    SemanticEnv::Type,
+                    SemanticSituation::ReachedEOF,
+                    //TODO:
+                    Branch::Type,
+                ),
+                interner,
+            );
             Err(Token::EOF)
         }
         t => {
@@ -1423,7 +1690,17 @@ fn parse_type_expr(
             // having an identifier, not that it can't format it
             let fmt_tok = parse_fmt::fmt_tok(t, interner);
 
-            ctx.report_template("a type", &fmt_tok, Branch::Type, interner);
+            ctx.report_template(
+                "a type",
+                &fmt_tok,
+                InitialEvidence::new(
+                    SemanticEnv::Type,
+                    SemanticSituation::TypeBinding,
+                    //TODO:
+                    Branch::Type,
+                ),
+                interner,
+            );
             //WARN:
             Err(Token::Poison)
         }
@@ -1450,7 +1727,12 @@ fn parse_static_path(
                 TokenKind::Id,
                 "Expected identifier after '::', found ",
                 "",
-                Branch::Type,
+                InitialEvidence::new(
+                    SemanticEnv::Expr,
+                    SemanticSituation::TypeBinding,
+                    //TODO: Tag
+                    Branch::Type,
+                ),
                 interner,
             )?;
 
@@ -1476,7 +1758,12 @@ fn parse_static_path(
                 TokenKind::Id,
                 "Expected identifier after '::', found ",
                 "",
-                Branch::Type,
+                InitialEvidence::new(
+                    SemanticEnv::Expr,
+                    SemanticSituation::TypeBinding,
+                    //TODO: Tag
+                    Branch::Type,
+                ),
                 interner,
             )?;
 
@@ -1494,7 +1781,12 @@ fn parse_static_path(
                 TokenKind::Id,
                 "Expected complete member access, found ",
                 "",
-                Branch::Type,
+                InitialEvidence::new(
+                    SemanticEnv::Expr,
+                    SemanticSituation::TypeBinding,
+                    //TODO: Tag
+                    Branch::Type,
+                ),
                 interner,
             )?;
 
@@ -1519,7 +1811,12 @@ fn parse_generic(
         TokenKind::OAngleBracket,
         "Expected '<' to declare generic, found ",
         "",
-        Branch::Type,
+        InitialEvidence::new(
+            SemanticEnv::Expr,
+            SemanticSituation::MissingStartDelimiter,
+            //TODO: PASS IN
+            Branch::Type,
+        ),
         interner,
     )?;
 
@@ -1528,20 +1825,33 @@ fn parse_generic(
     let input = parse_type_expr(ctx, budget, interner)?;
     inputs.push(input);
 
-    // Doesn't need terminator check since the loop would need to be continued on purpose through
-    // user-intent for this to not just error
-    while ctx.peek_kind() == TokenKind::Comma {
-        ctx.advance_tok();
+    if ctx.peek_tok() == Token::Comma {
+        loop {
+            // To allow for trailing
+            if ctx.peek_tok() == Token::Comma {
+                ctx.advance_tok();
+                break;
+            }
 
-        let other_input = parse_type_expr(ctx, budget, interner)?;
-        inputs.push(other_input);
+            let other_input = parse_type_expr(ctx, budget, interner)?;
+            inputs.push(other_input);
+
+            if ctx.peek_tok() == Token::Comma {
+                ctx.advance_tok();
+            }
+        }
     }
 
     ctx.expect_verbose(
         TokenKind::CAngleBracket,
         "Expected '>' to close generic parameters, found ",
         "",
-        Branch::Type,
+        InitialEvidence::new(
+            SemanticEnv::Expr,
+            SemanticSituation::UnclosedDelimiter,
+            //TODO: PASS IN
+            Branch::Type,
+        ),
         interner,
     )?;
 
@@ -1583,7 +1893,12 @@ fn handle_struct_fields(
             TokenKind::CCurlyBracket,
             &format!("Expected field or '}}' to close struct `{struct_name}`, found "),
             "",
-            Branch::Section(NestBranch::StructType.into()),
+            InitialEvidence::new(
+                SemanticEnv::SectNest,
+                SemanticSituation::UnclosedDelimiter,
+                //TODO: PASS IN
+                Branch::Section(NestBranch::StructType.into()),
+            ),
             interner,
         )?;
     }
@@ -1616,9 +1931,7 @@ fn handle_enum_variants(
             break;
         }
 
-        if ctx.peek_kind() == TokenKind::Comma {
-            ctx.advance_tok();
-        }
+        consume_trailing_comma(ctx);
     }
 
     if check_end {
@@ -1626,7 +1939,12 @@ fn handle_enum_variants(
             TokenKind::CCurlyBracket,
             &format!("Expected variant or '}}' to close enum `{enum_name}`, found "),
             "",
-            Branch::Section(NestBranch::EnumType.into()),
+            InitialEvidence::new(
+                SemanticEnv::SectNest,
+                SemanticSituation::UnclosedDelimiter,
+                //TODO: PASS IN
+                Branch::Section(NestBranch::EnumType.into()),
+            ),
             interner,
         )?;
     }
@@ -1646,7 +1964,12 @@ fn parse_variant(
         TokenKind::Id,
         "Expected identifier for variant, found ",
         "",
-        Branch::Section(NestBranch::EnumType.into()),
+        InitialEvidence::new(
+            SemanticEnv::SectNest,
+            SemanticSituation::IdentBinding,
+            //TODO: Tag
+            Branch::Section(NestBranch::EnumType.into()),
+        ),
         interner,
     )?;
 
@@ -1698,7 +2021,13 @@ fn parse_directive(ctx: &mut ParserContext, interner: &Intern) -> Result<Abstrac
         TokenKind::Id,
         "Unknown directive ",
         "",
-        Branch::Directive,
+        //TODO: Need overall env passing in
+        InitialEvidence::new(
+            SemanticEnv::SectNest,
+            SemanticSituation::DirectiveParsing,
+            //TODO: Tag
+            Branch::Directive,
+        ),
         interner,
     )?;
 
@@ -1729,7 +2058,12 @@ fn parse_alias_decl(
                     TokenKind::Colon,
                     "Expected ':' to define a type or boundary, found ",
                     "",
-                    Branch::Neutral(NeutralBranch::Alias),
+                    InitialEvidence::new(
+                        SemanticEnv::SectNeutral,
+                        SemanticSituation::UnexpectedToken,
+                        //TODO: PASS IN
+                        NeutralBranch::Alias.into(),
+                    ),
                     interner,
                 )?;
 
@@ -1741,8 +2075,17 @@ fn parse_alias_decl(
             _ => {
                 ctx.advance_tok();
 
-                let msg = "Only identifiers can be within alias parameters";
-                ctx.report_verbose(&msg, Branch::Cond, interner);
+                let msg = "Only identifiers can be in alias parameters";
+                ctx.report_verbose(
+                    &msg,
+                    InitialEvidence::new(
+                        SemanticEnv::Alias,
+                        SemanticSituation::IdentBinding,
+                        //TODO:
+                        NeutralBranch::Alias.into(),
+                    ),
+                    interner,
+                );
                 return Err(Token::Poison);
             }
         };
@@ -1757,7 +2100,12 @@ fn parse_alias_decl(
             TokenKind::Comma,
             "Expected ',' to separate arguments, found ",
             "",
-            Branch::ArgList,
+            InitialEvidence::new(
+                SemanticEnv::SectNeutral,
+                SemanticSituation::ArgList,
+                //TODO: PASS IN
+                Branch::ArgList,
+            ),
             interner,
         )?;
     }
@@ -1766,7 +2114,12 @@ fn parse_alias_decl(
         TokenKind::CParen,
         "Expected ')' to close declaration, found ",
         "",
-        Branch::ArgList,
+        InitialEvidence::new(
+            SemanticEnv::SectNeutral,
+            SemanticSituation::UnclosedDelimiter,
+            //TODO: PASS IN
+            Branch::ArgList,
+        ),
         interner,
     )?;
 
@@ -1784,7 +2137,12 @@ fn handle_conds(
         TokenKind::OBracket,
         "Expected a '[' to define conditions, found ",
         "",
-        Branch::Cond,
+        InitialEvidence::new(
+            SemanticEnv::SectNest,
+            SemanticSituation::MissingStartDelimiter,
+            //TODO: PASS IN
+            Branch::Cond,
+        ),
         interner,
     )?;
 
@@ -1805,18 +2163,28 @@ fn handle_conds(
 
         ctx.expect_verbose(
             TokenKind::Comma,
-            "Expected ',' to separate arguments or ']' to close, found ",
+            "Expected ',' to separate arguments, found ",
             "",
-            Branch::Cond,
+            InitialEvidence::new(
+                SemanticEnv::ArgList,
+                SemanticSituation::ArgList,
+                //TODO: PASS IN
+                Branch::ArgList,
+            ),
             interner,
         )?;
     }
 
     _ = ctx.expect_verbose(
         TokenKind::CBracket,
-        "Expected ']' at end of condition, found ",
+        "Unclosed delimiter ']', found ",
         "",
-        Branch::Cond,
+        InitialEvidence::new(
+            SemanticEnv::ArgList,
+            SemanticSituation::UnclosedDelimiter,
+            //TODO: PASS IN
+            Branch::ArgList,
+        ),
         interner,
     );
 
@@ -1838,7 +2206,12 @@ fn parse_export(ctx: &mut ParserContext, interner: &Intern) -> Result<bool, ()> 
 
             ctx.report_verbose(
                 "Cannot apply `export` more than once",
-                Branch::Searching,
+                InitialEvidence::new(
+                    SemanticEnv::SearchingSection,
+                    SemanticSituation::UnexpectedToken,
+                    //TODO:
+                    Branch::Searching,
+                ),
                 interner,
             );
 
@@ -1852,11 +2225,22 @@ fn parse_export(ctx: &mut ParserContext, interner: &Intern) -> Result<bool, ()> 
     Ok(is_priv)
 }
 
+fn consume_trailing_comma(ctx: &mut ParserContext) {
+    if ctx.peek_tok() == Token::Comma {
+        ctx.advance_tok();
+    }
+}
+
 /// Helper for solely reporting export errors
 fn report_export(ctx: &mut ParserContext, fmtted: Formatted, branch: Branch, interner: &Intern) {
     ctx.report_verbose(
         &format!("Cannot use `export` on `{}`", fmtted),
-        branch,
+        InitialEvidence::new(
+            SemanticEnv::SearchingSection,
+            SemanticSituation::UnexpectedToken,
+            //TODO:
+            branch,
+        ),
         interner,
     );
 }

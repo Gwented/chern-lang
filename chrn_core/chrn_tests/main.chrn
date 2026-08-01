@@ -72,6 +72,7 @@ var->
         struct Forb {
             p: def::Person
             root_holder: Runtime
+            k: List<i32,>
             // Breaks reporting since cross module spanning is NOT possible right now
             // p: defs::Person
         }

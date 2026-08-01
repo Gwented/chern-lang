@@ -309,6 +309,8 @@ pub fn form_ln_view(src_bytes: &[u8], span: &SourceSpan) -> LineView {
     let ln_num_range =
         RangeInclusive::new(first_ln_num as u32, lines[lines.len() - 1].ln_num as u32);
 
+    // dbg!(lines);
+    // panic!();
     LineView {
         ln_num_range,
         lines,

@@ -41,7 +41,7 @@ fn lex_tok_test() {
     assert_eq!(toks[1].span.end, 18);
 
     assert_eq!(toks[2].tok, Token::EOF);
-    assert_eq!(toks[2].span.start, 18);
+    assert_eq!(toks[2].span.start, 17);
 }
 
 #[test]
@@ -137,7 +137,7 @@ fn cfg_at_test() {
     assert_eq!(toks[1].span.start, 7);
     assert_eq!(toks[1].span.end, 8);
     assert_eq!(toks[2].tok, Token::EOF);
-    assert_eq!(toks[2].span.start, 9);
+    assert_eq!(toks[2].span.start, 8);
 
     let (_, diags) = parser::parse(&settings, &region, &toks, &interner);
     assert!(
@@ -186,7 +186,7 @@ fn char_literal_test() {
     assert_eq!(toks[0].span.start, 0);
     assert_eq!(toks[0].span.end, 3);
     assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 3);
+    assert_eq!(toks[1].span.start, 2);
 
     // Valid escaped character
     let text = "'\\n'";
@@ -217,7 +217,7 @@ fn char_literal_test() {
     assert_eq!(toks[0].span.start, 0);
     assert_eq!(toks[0].span.end, 4);
     assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 4);
+    assert_eq!(toks[1].span.start, 3);
 
     // Valid hex escape
     let text = "'\\x2F'";
@@ -248,7 +248,7 @@ fn char_literal_test() {
     assert_eq!(toks[0].span.start, 0);
     assert_eq!(toks[0].span.end, 6);
     assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 6);
+    assert_eq!(toks[1].span.start, 5);
 
     // Invalid character
     let text = "'aa'";
@@ -276,7 +276,7 @@ fn char_literal_test() {
     assert_eq!(toks[0].span.start, 0);
     assert_eq!(toks[0].span.end, 4);
     assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 4);
+    assert_eq!(toks[1].span.start, 3);
 
     // Invalid hex escape
     let text = "'\\x2'";
@@ -304,7 +304,7 @@ fn char_literal_test() {
     assert_eq!(toks[0].span.start, 0);
     assert_eq!(toks[0].span.end, 5);
     assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 5);
+    assert_eq!(toks[1].span.start, 4);
 
     // I can't actually read hex
     // Invalid hex digits
@@ -333,7 +333,7 @@ fn char_literal_test() {
     assert_eq!(toks[0].span.start, 0);
     assert_eq!(toks[0].span.end, 7);
     assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 7);
+    assert_eq!(toks[1].span.start, 6);
 
     // Unknown escape
     let text = "'\\q'";
@@ -361,7 +361,7 @@ fn char_literal_test() {
     assert_eq!(toks[0].span.start, 0);
     assert_eq!(toks[0].span.end, 4);
     assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 4);
+    assert_eq!(toks[1].span.start, 3);
 
     // Out of range escape
     let text = "'\\x1Y'";
@@ -389,7 +389,7 @@ fn char_literal_test() {
     assert_eq!(toks[0].span.start, 0);
     assert_eq!(toks[0].span.end, 6);
     assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 6);
+    assert_eq!(toks[1].span.start, 5);
 }
 
 #[test]
@@ -423,7 +423,7 @@ fn lex_notation_test() {
     assert_eq!(toks[0].span.start, 0);
     assert_eq!(toks[0].span.end, 4);
     assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 4);
+    assert_eq!(toks[1].span.start, 3);
 
     // Binary
     let text = "0b1010";
@@ -448,7 +448,7 @@ fn lex_notation_test() {
     assert_eq!(toks[0].span.start, 0);
     assert_eq!(toks[0].span.end, 6);
     assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 6);
+    assert_eq!(toks[1].span.start, 5);
 
     // Octal
     let text = "0o77";
@@ -473,7 +473,7 @@ fn lex_notation_test() {
     assert_eq!(toks[0].span.start, 0);
     assert_eq!(toks[0].span.end, 4);
     assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 4);
+    assert_eq!(toks[1].span.start, 3);
 
     // Decimal
     let text = "42";
@@ -498,7 +498,7 @@ fn lex_notation_test() {
     assert_eq!(toks[0].span.start, 0);
     assert_eq!(toks[0].span.end, 2);
     assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 2);
+    assert_eq!(toks[1].span.start, 1);
 
     // Float with decimal
     let text = "3.14";
@@ -523,7 +523,7 @@ fn lex_notation_test() {
     assert_eq!(toks[0].span.start, 0);
     assert_eq!(toks[0].span.end, 4);
     assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 4);
+    assert_eq!(toks[1].span.start, 3);
 
     // Positive Scientific Notation
     let text = "1e+23";
@@ -548,7 +548,7 @@ fn lex_notation_test() {
     assert_eq!(toks[0].span.start, 0);
     assert_eq!(toks[0].span.end, 5);
     assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 5);
+    assert_eq!(toks[1].span.start, 4);
 
     // Negative Scientific Notation
     let text = "1e-23";
@@ -573,7 +573,7 @@ fn lex_notation_test() {
     assert_eq!(toks[0].span.start, 0);
     assert_eq!(toks[0].span.end, 5);
     assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 5);
+    assert_eq!(toks[1].span.start, 4);
 
     // Underscored Numbers
     let text = "1_000_000";
@@ -598,7 +598,7 @@ fn lex_notation_test() {
     assert_eq!(toks[0].span.start, 0);
     assert_eq!(toks[0].span.end, 9);
     assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 9);
+    assert_eq!(toks[1].span.start, 8);
 
     // Underscored Hex
     let text = "0x_ff_ff";
@@ -623,7 +623,7 @@ fn lex_notation_test() {
     assert_eq!(toks[0].span.start, 0);
     assert_eq!(toks[0].span.end, 8);
     assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 8);
+    assert_eq!(toks[1].span.start, 7);
 }
 
 #[test]

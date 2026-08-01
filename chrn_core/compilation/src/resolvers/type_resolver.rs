@@ -1246,7 +1246,7 @@ impl<'res> TypeResolver<'res> {
                         // It's hard to tell what information to add since we have the type name and
                         // could point out just making a different top level config for it but - !{}}}
                         // Ok maybe that should happen
-                        .add_help("Prefer defining another config root instead".into());
+                        .add_help("Prefer defining another config root instead");
                         self.summary.push_diag(builder.build());
 
                         // Breaks instead of returning so that the present information about the current
