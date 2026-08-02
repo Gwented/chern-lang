@@ -20,7 +20,6 @@ use crate::{
         compilation_unit::CompilationUnit,
         hir::{
             hir_concepts::Type,
-            hir_impls::ImplHirKind,
             hir_symbols::{FieldRepre, MemberSymbolKind, SymbolKind, VariantRepre},
         },
         preset_reporter,
@@ -91,7 +90,7 @@ impl MemberResolver<'_> {
                         _ => (),
                     }
                 }
-                CompilationUnit::Impl(impl_id) => (),
+                CompilationUnit::Impl(_) => (),
             }
         }
 
@@ -107,14 +106,16 @@ impl MemberResolver<'_> {
         let abs_struct = env.ast_info.get_struct(ast_id);
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
-        let mut fields: Vec<MemberId> = Vec::new();
+        let mut fields: Vec<MemberId> = Vec::with_capacity(abs_struct.fields.len());
 
+        //NOTE: Ok maybe just make it a hashet. For no reason in particular.
+        //
         // Tracks duplicate field identifiers
         //
         // This is not a `HashSet` because it is not anticipated that a field of any kind in the
         // majority of scenarios will ever be so large to where a hash system is absolutely needed
         // over a linear scan.
-        let mut seen: Vec<&AbstractTypeDef> = Vec::new();
+        let mut seen: Vec<&AbstractTypeDef> = Vec::with_capacity(abs_struct.fields.len());
 
         //TODO: global condition and argument setting.
         //field arg and cond settings.
@@ -242,10 +243,10 @@ impl MemberResolver<'_> {
             .expect("Should be user symbols only");
         let abs_enum = env.ast_info.get_enum(ast_id);
 
-        let mut variants: Vec<MemberId> = Vec::new();
+        let mut variants: Vec<MemberId> = Vec::with_capacity(abs_enum.variants.len());
 
         // For duplicate variant identifiers
-        let mut seen: Vec<&AbstractVariant> = Vec::new();
+        let mut seen: Vec<&AbstractVariant> = Vec::with_capacity(abs_enum.variants.len());
 
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 

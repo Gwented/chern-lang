@@ -27,6 +27,7 @@ use crate::parser::ast::ast_concepts::{
 use crate::parser::ast::ast_exprs::{Expr, PathSegment, SpannedExpr, TypeExpr};
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::resolvers::resolver_state::ResolverState;
+use crate::resolvers::typechecker;
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::compilation_unit::CompilationUnit;
 use crate::semantic::evaluator::UnaryOpResult;
@@ -678,6 +679,22 @@ impl<'res> TypeResolver<'res> {
         let found_type_id = match found_type_id {
             Some(type_id) => type_id,
             None => return,
+        };
+
+        if !typechecker::check_cfg_root(self.compiler, found_type_id) {
+            let fmtted_ty = Type::to_fmt(self.compiler, found_type_id);
+            let core_msg = format!("Cannot use type `{fmtted_ty}` as a config root");
+
+            let builder = SourceDiagnostic::builder(
+                ErrorCode::ConfigDeclErr.into(),
+                DiagnosticLevel::Error,
+                core_msg,
+                env.region.path_id,
+            )
+            .add_annotation(root_sp_ty_expr.span, AnnotationKind::Primary, None)
+            .add_note("Only user defined types are valid config roots");
+            self.summary.push_diag(builder.build());
+            return;
         };
 
         // Attempts to get type id out of symbol id which is required for lookup

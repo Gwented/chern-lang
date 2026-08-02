@@ -13,7 +13,10 @@ use chrn_utils::{
 };
 use lang::{
     directives::{Directive, TypeDirective},
-    types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
+    types::{
+        boundaries::TypeBoundaryFlags,
+        builtins::{self, BuiltinType},
+    },
     values::ValueInfo,
 };
 
@@ -156,17 +159,18 @@ impl ScriptCompiler {
         let mut compiler = ScriptCompiler {
             bind,
             mods,
-            types: Arena::new(),
+            types: Arena::with_capacity(builtins::BUILTIN_TYPE_ARRAY.len()),
             values: Arena::new(),
             exprs: Arena::new(),
-            symbols: Arena::new(),
+            // Ignore this
+            symbols: Arena::with_capacity(50),
             impls: Arena::new(),
             impl_members: Arena::new(),
             variables: Arena::new(),
             sym_members: Arena::new(),
             cfgs: Arena::new(),
             scopes: Arena::new(),
-            directives: Arena::new(),
+            directives: Arena::with_capacity(DIRECTIVE_UNICODE_IDX),
             //TEST:
             intrinsic_registry,
             resolver_state: ResolverState::NAMESPACE,

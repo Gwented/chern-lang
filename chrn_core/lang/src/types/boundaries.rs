@@ -530,7 +530,6 @@ mod tests {
         assert_eq!(single.to_fmt_lowest(), Formatted::Ranged);
     }
 
-    // Greedy crab.
     #[test]
     fn to_fmt_greedy_highest_picks_most_general() {
         let combo = TypeBoundaryFlags::SIGNED_INTEGER

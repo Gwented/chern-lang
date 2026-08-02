@@ -148,7 +148,7 @@ pub(crate) fn create_diag_builder_preset(
 
             SourceDiagnostic::builder(ErrorCode::DirectiveErr.into(), DiagnosticLevel::Error, core_msg,  region.path_id)
                     .add_annotation(sp_directive.span, AnnotationKind::Primary, None)
-                    .add_note("This is not allowed since it would overlap with any specifics directives given to a defined type from `nest->`".into())
+                    .add_note("This is not allowed since it would overlap with any specifics directives given to a defined type from `nest->`")
         }
         PresetErr::FuncConstraintMismatch {
             constraint,

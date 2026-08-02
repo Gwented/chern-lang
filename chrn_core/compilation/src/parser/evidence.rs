@@ -104,6 +104,7 @@ impl EvidenceBuilder {
 }
 
 // Trying to keep this flat..
+// This is supposed to just be a semantic snippet, in comparison to the literal branching version
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(super) enum SemanticEnv {
     SearchingNeutral,
@@ -139,6 +140,8 @@ pub(super) enum SemanticSituation {
     //?
     /// Expected a type to bind to an identifier, or something of that nature
     TypeBinding,
+    /// Expected a valid value binding given what the context asked for
+    /// For example in "let x = $" it expected a string
     ValueBinding,
     DirectiveParsing,
     ArgList,

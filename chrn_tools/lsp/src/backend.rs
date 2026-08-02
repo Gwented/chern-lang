@@ -41,6 +41,7 @@ use compilation::lexer::token::Token as ScriptToken;
 use compilation::lookup::scopes;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::Type;
+use compilation::semantic::hir::hir_impls::{ImplHirKind, ImplMemberKind};
 use compilation::semantic::hir::hir_symbols::{Symbol, SymbolKind, SymbolOrigin, VariableState};
 use parking_lot::RwLock;
 use std::time::Duration;
@@ -53,7 +54,8 @@ use tower_lsp::lsp_types::{
 };
 use tower_lsp::{Client, LanguageServer, jsonrpc};
 
-use chrn_utils::id_types::ModuleId;
+use chrn_utils::id_types::{ImplMemberId, InternedId, ModuleId, TypeId};
+use lang::config_schemas::{ConfigSchemaKind, get_cfg_schema};
 
 use crate::analyser::analyze_and_publish_task;
 use crate::analyser::resolve_document_modules;
@@ -432,6 +434,279 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
         },
         SymbolKind::Directive(_) => CompletionItemKind::KEYWORD,
     }
+}
+
+pub(crate) struct ConfigCompletionCandidate {
+    pub(crate) open: u32,
+    pub(crate) close: u32,
+    pub(crate) name_start: u32,
+    pub(crate) type_id: Option<TypeId>,
+    pub(crate) is_root: bool,
+    pub(crate) configured_options: Vec<InternedId>,
+    pub(crate) configured_members: Vec<InternedId>,
+}
+
+/// Returns the brace pairs in the script token stream.  Lexer tokens are used rather than raw
+/// characters so braces inside strings and comments cannot affect the nesting calculation.
+fn config_brace_pairs(state: &DocumentState) -> HashMap<u32, u32> {
+    let mut stack = Vec::new();
+    let mut pairs = HashMap::new();
+
+    for token in &state.tokens {
+        match token.tok {
+            ScriptToken::OCurlyBracket => stack.push(token.span.start),
+            ScriptToken::CCurlyBracket => {
+                if let Some(open) = stack.pop() {
+                    pairs.insert(open, token.span.start);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    pairs
+}
+
+fn config_block_bounds(
+    state: &DocumentState,
+    pairs: &HashMap<u32, u32>,
+    name_end: u32,
+) -> Option<(u32, u32)> {
+    let open = state
+        .tokens
+        .iter()
+        .filter(|token| {
+            token.span.start >= name_end && matches!(token.tok, ScriptToken::OCurlyBracket)
+        })
+        .map(|token| token.span.start)
+        .next()?;
+
+    // An incomplete config block has no closing token yet.  Treating the document end as its
+    // boundary keeps completion useful while the user is typing the block.
+    let close = pairs
+        .get(&open)
+        .copied()
+        .unwrap_or_else(|| state.text.len().saturating_sub(state.script_start) as u32);
+
+    Some((open, close))
+}
+
+fn config_type_info(
+    compiler: &ScriptCompiler,
+    mut type_id: TypeId,
+) -> Option<(Vec<(InternedId, CompletionItemKind)>, ConfigSchemaKind)> {
+    for _ in 0..chrn_utils::MAX_LOOPS {
+        match &compiler.types[type_id].ty {
+            Type::Struct(struct_def) => {
+                let members = struct_def
+                    .fields
+                    .iter()
+                    .filter_map(|member_id| match &compiler.sym_members[*member_id] {
+                        compilation::semantic::hir::hir_symbols::MemberSymbolKind::Field(field) => {
+                            Some((field.name_id, CompletionItemKind::FIELD))
+                        }
+                        compilation::semantic::hir::hir_symbols::MemberSymbolKind::Variant(_) => {
+                            None
+                        }
+                    })
+                    .collect();
+                return Some((members, ConfigSchemaKind::Struct));
+            }
+            Type::Enum(enum_def) => {
+                let members = enum_def
+                    .variants
+                    .iter()
+                    .filter_map(|member_id| match &compiler.sym_members[*member_id] {
+                        compilation::semantic::hir::hir_symbols::MemberSymbolKind::Variant(
+                            variant,
+                        ) => Some((variant.name_id, CompletionItemKind::ENUM_MEMBER)),
+                        compilation::semantic::hir::hir_symbols::MemberSymbolKind::Field(_) => None,
+                    })
+                    .collect();
+                return Some((members, ConfigSchemaKind::Enum));
+            }
+            Type::TypeDef(type_def) => type_id = type_def.type_id,
+            Type::Deferred(inner) => type_id = *inner,
+            Type::BuiltinTypeInfo(_)
+            | Type::Func(_)
+            | Type::Alias(_)
+            | Type::Boundaries(_)
+            | Type::Unknown => return None,
+        }
+    }
+
+    None
+}
+
+fn configured_option_names(
+    compiler: &ScriptCompiler,
+    option_ids: &[ImplMemberId],
+) -> Vec<InternedId> {
+    option_ids
+        .iter()
+        .filter_map(|member_id| match &compiler.impl_members[*member_id] {
+            ImplMemberKind::OptAssignmentRoot(option) => Some(option.name_id),
+            ImplMemberKind::OptAssignmentMember(option) => Some(option.name_id),
+            ImplMemberKind::ConfigDefMember(_) | ImplMemberKind::Unknown { .. } => None,
+        })
+        .collect()
+}
+
+fn config_candidate_for_member(
+    compiler: &ScriptCompiler,
+    member_id: ImplMemberId,
+    state: &DocumentState,
+    pairs: &HashMap<u32, u32>,
+    candidates: &mut Vec<ConfigCompletionCandidate>,
+) {
+    let ImplMemberKind::ConfigDefMember(member) = &compiler.impl_members[member_id] else {
+        return;
+    };
+
+    if let Some((open, close)) = config_block_bounds(state, pairs, member.name_span.end) {
+        let configured_members = member
+            .cfg_def_members
+            .iter()
+            .filter_map(|child_id| match &compiler.impl_members[*child_id] {
+                ImplMemberKind::ConfigDefMember(child) => Some(child.name_id),
+                ImplMemberKind::OptAssignmentRoot(_)
+                | ImplMemberKind::OptAssignmentMember(_)
+                | ImplMemberKind::Unknown { .. } => None,
+            })
+            .collect();
+
+        candidates.push(ConfigCompletionCandidate {
+            open,
+            close,
+            name_start: member.name_span.start,
+            type_id: member.linked_member_type_id,
+            is_root: false,
+            configured_options: configured_option_names(compiler, &member.opt_assignments),
+            configured_members,
+        });
+    }
+
+    let children = member.cfg_def_members.clone();
+    for child_id in children {
+        config_candidate_for_member(compiler, child_id, state, pairs, candidates);
+    }
+}
+
+fn config_completion_candidate(
+    state: &DocumentState,
+    compiler: &ScriptCompiler,
+    byte_off: usize,
+) -> Option<ConfigCompletionCandidate> {
+    let pairs = config_brace_pairs(state);
+    let relative_cursor = byte_off.saturating_sub(state.script_start) as u32;
+    let ast = state.asts.first()?.as_ref()?;
+    let main_units = state.compilation_syms.first()?.as_ref()?;
+    let mut candidates = Vec::new();
+
+    for unit in main_units {
+        let compilation::semantic::compilation_unit::CompilationUnit::Impl(impl_id) = unit else {
+            continue;
+        };
+        let impl_hir = &compiler.impls[*impl_id];
+        if impl_hir.scope_origin != scopes::ScopeType::Complex {
+            continue;
+        }
+
+        let ImplHirKind::Config(cfg_root_id) = &impl_hir.kind;
+        let cfg_root = &compiler.cfgs[*cfg_root_id];
+        let Some(ast_id) = impl_hir.ast_id else {
+            continue;
+        };
+        let root_name_span = ast.get_cfg_root(ast_id).kind.name_span();
+        let Some((open, close)) = config_block_bounds(state, &pairs, root_name_span.end) else {
+            continue;
+        };
+
+        candidates.push(ConfigCompletionCandidate {
+            open,
+            close,
+            name_start: root_name_span.start,
+            type_id: cfg_root.linked_type_id,
+            is_root: true,
+            configured_options: configured_option_names(compiler, &cfg_root.opt_assignments),
+            configured_members: cfg_root
+                .cfg_members
+                .iter()
+                .filter_map(|member_id| match &compiler.impl_members[*member_id] {
+                    ImplMemberKind::ConfigDefMember(member) => Some(member.name_id),
+                    ImplMemberKind::OptAssignmentRoot(_)
+                    | ImplMemberKind::OptAssignmentMember(_)
+                    | ImplMemberKind::Unknown { .. } => None,
+                })
+                .collect(),
+        });
+
+        let members = cfg_root.cfg_members.clone();
+        for member_id in members {
+            config_candidate_for_member(compiler, member_id, state, &pairs, &mut candidates);
+        }
+    }
+
+    candidates
+        .into_iter()
+        .filter(|candidate| candidate.open <= relative_cursor && relative_cursor < candidate.close)
+        .max_by_key(|candidate| (candidate.open, candidate.name_start))
+}
+
+pub(crate) fn config_completion_items(
+    state: &DocumentState,
+    compiler: &ScriptCompiler,
+    candidate: ConfigCompletionCandidate,
+    prefix: &str,
+) -> Vec<CompletionItem> {
+    let (members, root_schema_kind) = match candidate.type_id {
+        Some(type_id) => match config_type_info(compiler, type_id) {
+            Some(info) => info,
+            None if !candidate.is_root => (Vec::new(), ConfigSchemaKind::Member),
+            None => return Vec::new(),
+        },
+        None if !candidate.is_root => (Vec::new(), ConfigSchemaKind::Member),
+        None => return Vec::new(),
+    };
+
+    let schema_kind = if candidate.is_root {
+        root_schema_kind
+    } else {
+        ConfigSchemaKind::Member
+    };
+    let configured_members = candidate.configured_members;
+    let configured_options = candidate.configured_options;
+    let mut items = Vec::new();
+
+    for (name_id, kind) in members {
+        if configured_members.contains(&name_id) {
+            continue;
+        }
+        let name = state.interner.search(name_id);
+        if prefix.is_empty() || name.starts_with(prefix) {
+            items.push(CompletionItem {
+                label: name.to_string(),
+                kind: Some(kind),
+                ..Default::default()
+            });
+        }
+    }
+
+    for option in get_cfg_schema(schema_kind).opt_schema {
+        if configured_options.contains(&option.name_id) {
+            continue;
+        }
+        let name = state.interner.search(option.name_id);
+        if prefix.is_empty() || name.starts_with(prefix) {
+            items.push(CompletionItem {
+                label: name.to_string(),
+                kind: Some(CompletionItemKind::PROPERTY),
+                ..Default::default()
+            });
+        }
+    }
+
+    items
 }
 
 /// Accumulates semantic tokens in the delta encoding the LSP protocol requires:
@@ -1198,6 +1473,16 @@ impl LanguageServer for Backend {
                     }
                 }
             }
+            return Ok(Some(CompletionResponse::Array(items)));
+        }
+
+        // Config blocks have a type-dependent namespace.  Handle them before the general
+        // in-scope completion path so a `complex->` block only offers members of its current
+        // struct/enum (plus the options valid for that config schema).
+        if let Some(compiler) = &state.compiler
+            && let Some(candidate) = config_completion_candidate(state, compiler, byte_off)
+        {
+            let items = config_completion_items(state, compiler, candidate, prefix);
             return Ok(Some(CompletionResponse::Array(items)));
         }
 

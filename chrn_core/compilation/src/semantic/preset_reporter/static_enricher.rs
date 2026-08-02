@@ -1,6 +1,7 @@
 // Naming is a bit confusing
 //! Adds help and notes to a `SourceDiagnosticBuilder` in a composable manner that allows for
-//! specific checks.
+//! specific checks. Is "static" because it's based off static information rather than the dynamic
+//! collection of data `engine.rs` participates in.
 //!
 //! Example: If we have " "che" + "rn" ", it can say that string concatenation is not available
 //! rather than emit a basic error that says it can't be applied.
@@ -27,10 +28,10 @@ pub(super) fn enrich_binary_op(
         // }
         //TODO: make a function
         (ValueKind::InternedStr, BinaryOp::Mult, ValueKind::InternedStr) => {
-            builder.add_note("String repetition is not supported".into())
+            builder.add_note("String repetition is not supported")
         }
         (ValueKind::Bool, _, _) | (_, _, ValueKind::Bool) if op.is_arithmetic_op() => {
-            builder.add_note("`bool` is not an integer internally".into())
+            builder.add_note("`bool` is not an integer internally")
         }
         _ => builder,
     }
@@ -43,7 +44,7 @@ pub(super) fn enrich_unary_op(
 ) -> SourceDiagnosticBuilder {
     match (op, operand) {
         (UnaryOp::Not, ValueKind::I64) => {
-            builder.add_note("If this was intended to be `BITNOT` use `~` 🦀".into())
+            builder.add_note("If this was intended to be `BITNOT` use `~` 🦀")
         }
         _ => builder,
     }

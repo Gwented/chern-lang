@@ -48,6 +48,7 @@ pub fn parse(
     let mut state = ParserState::new();
     let budget = ParserBudget::new(
         chrn_utils::MAX_RECURSIVE_DEPTH,
+        //WARN: UNUSED
         chrn_utils::MAX_EXPR_NODES as usize,
     );
     let mut ctx = ParserContext::new(cfg, region, tokens);

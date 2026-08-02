@@ -7,7 +7,7 @@ import "../chrn_core/chrn_tests/nothing.chrn"
 // Maybe this shouldn't be seen as a valid import
 // import l
 
-let k = "ch" + "rn"
+let chrn = "ch" + "rn"
 
 // if this was something that wanted to be added, that would then mean the compiler store needs to be 
 // mutable, but the environments USE the compiler store, which makes it hard to concat and intern
@@ -30,13 +30,15 @@ nest->
     }
 
     export enum State {
+        stating: i32
         InProgress
     }
 complex->
     State {
         InProgress {
-            i = 3
         }
+        stating {}
     }
+    Tuple<i32> {}
 
 

@@ -300,10 +300,11 @@ impl<'a> ParserContext<'a> {
         self.recover(branch);
     }
 
+    /// Where error recovery semantics are handled, given a set associated with a particulra branch.
     fn recover(&mut self, branch: Branch) {
         let (current_targets, next_targets) = self.get_set_from_branch(branch);
 
-        if self.peek_kind() != TokenKind::EOF {
+        if !self.peek_kind().is_terminator() {
             while self.pos < self.toks.len() + 2
                 && (self.peek_kind().to_u64() & current_targets) == 0
                 && (self.peek_ahead(1).tok.kind().to_u64() & next_targets) == 0
