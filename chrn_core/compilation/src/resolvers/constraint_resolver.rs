@@ -1351,6 +1351,8 @@ impl<'a> ConstraintResolver<'a> {
     }
 
     // This should really send signals
+    //
+    //TODO: Make this a loop
     fn check_directive(
         &self,
         type_id: TypeId,

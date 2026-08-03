@@ -27,9 +27,9 @@ nest->
         // age: u8
     } #scient
 
-    export enum State {
-        Ready: str [] #warn
-        InProgress
+    export struct State {
+        Ready: IsEmpty [] #warn
+        InProgress: i32
     }
 @end@defexport let READ = 0b0
 export let WRITE = 0b1

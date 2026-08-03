@@ -39,6 +39,4 @@ complex->
         }
         stating {}
     }
-    Tuple<i32> {}
-
-
+     nothing::Person {}

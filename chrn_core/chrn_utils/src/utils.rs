@@ -1,3 +1,4 @@
+pub mod containers;
 //TEST: IGNORE THIS
 /// Provides methods for a u32 that is split into u16 | u16
 #[derive(Default, Clone, Copy)]
@@ -174,6 +175,7 @@ impl FreezeTrackerU32 {
 
 // Ignore me
 // Ok but wouldn't making this a trait generate behavior instead of requiring a match each time?
+// Mid train thought cut-off
 pub enum SignalTrackerOptions {
     NoEffect,
     Freeze,

@@ -4,6 +4,7 @@
 
 use chrn_utils::{
     chrn_config::ChrnConfig,
+    err_codes::ErrorCode,
     id_types::{AstId, MemberId, SymbolId, TypeId},
     intern::Intern,
     source_map::source_diagnostic::{
@@ -14,7 +15,7 @@ use chrn_utils::{
 use crate::{
     lookup::scopes::{AssociatedScopeKind, ScopeLookupPattern, ScopeType},
     parser::ast::ast_concepts::{AbstractTypeDef, AbstractVariant},
-    resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
+    resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState, typechecker},
     script_compiler::{self, ScriptCompiler},
     semantic::{
         compilation_unit::CompilationUnit,
@@ -131,7 +132,29 @@ impl MemberResolver<'_> {
                 ScopeLookupPattern::NoRestrictions,
                 env,
             ) {
-                TypeExprResult::Type(type_id) => type_id,
+                TypeExprResult::Type(type_id) => {
+                    if !typechecker::check_field_or_variant(&self.compiler.types, type_id) {
+                        let fmtted_ty = Type::to_fmt(self.compiler, type_id);
+                        let core_msg = format!("Cannot use type `{fmtted_ty}` for a field");
+
+                        let builder = SourceDiagnostic::builder(
+                            None,
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            env.region.path_id,
+                        )
+                        .add_annotation(
+                            field_typedef.sp_ty_expr.span,
+                            AnnotationKind::Primary,
+                            None,
+                        );
+
+                        self.summary.push_diag(builder.build());
+                        TypeId::new(script_compiler::CORE_UNKNOWN)
+                    } else {
+                        type_id.into()
+                    }
+                }
                 res => {
                     let preset_err = preset_reporter::type_expr_result_to_preset_err(
                         &self.compiler,
@@ -255,16 +278,37 @@ impl MemberResolver<'_> {
             seen.push(&variant);
 
             let member_id = MemberId::new(self.compiler.sym_members.len() as u32);
-            let variant_repre = if let Some(spanned_ty_expr) = &variant.sp_ty_expr {
+            let variant_repre = if let Some(sp_ty_expr) = &variant.sp_ty_expr {
                 let type_id = match resolve::resolve_type_expr(
                     self.compiler,
                     associated_scope,
-                    &spanned_ty_expr,
+                    &sp_ty_expr,
                     ScopeType::Nest,
                     ScopeLookupPattern::NoRestrictions,
                     env,
                 ) {
-                    TypeExprResult::Type(type_id) => type_id,
+                    TypeExprResult::Type(type_id) => {
+                        if !typechecker::check_field_or_variant(&self.compiler.types, type_id) {
+                            let fmtted_ty = Type::to_fmt(self.compiler, type_id);
+                            let core_msg = format!("Cannot use type `{fmtted_ty}` for a variant");
+
+                            let builder = SourceDiagnostic::builder(
+                                None,
+                                DiagnosticLevel::Error,
+                                core_msg,
+                                env.region.path_id,
+                            )
+                            .add_annotation(
+                                sp_ty_expr.span,
+                                AnnotationKind::Primary,
+                                None,
+                            );
+                            self.summary.push_diag(builder.build());
+                            TypeId::new(script_compiler::CORE_UNKNOWN)
+                        } else {
+                            type_id.into()
+                        }
+                    }
                     res => {
                         let preset_err = preset_reporter::type_expr_result_to_preset_err(
                             &self.compiler,

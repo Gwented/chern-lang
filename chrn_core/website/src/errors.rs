@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use chrn_utils::err_codes::{self, ErrorCode, MAX_ERR_CODE_WIDTH};
+use chrn_utils::err_codes::{self, ErrorCode};
 
 use crate::doc_builder::{Document, DocumentBuilder, Inline, Video};
 use crate::renderers::Renderer;

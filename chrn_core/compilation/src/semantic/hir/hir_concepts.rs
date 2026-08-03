@@ -20,6 +20,7 @@ use lang::{
 use crate::{
     script_compiler::ScriptCompiler,
     semantic::hir::hir_symbols::{AliasDef, EnumDef, FuncDef, StructDef, TypeDef},
+    walk_type_id_deferred,
 };
 
 // This is kind of just a "concept" though
@@ -92,30 +93,28 @@ impl BuiltinTypeInfo {
 }
 
 impl Type {
-    //TEST: Usually uses associated functions
     pub fn kind(compiler: &ScriptCompiler, mut type_id: TypeId) -> TypeKind {
-        for _ in 0..chrn_utils::MAX_LOOPS {
-            match &compiler.types[type_id].ty {
-                Type::BuiltinTypeInfo(builtin_ty) => {
-                    return TypeKind::BuiltinType(builtin_ty.ty.kind());
-                }
-                Type::Struct(_) => return TypeKind::Struct,
-                Type::Enum(_) => return TypeKind::Enum,
-                Type::Func(_) => return TypeKind::Func,
-                Type::Alias(_) => return TypeKind::Alias,
-                Type::TypeDef(_) => return TypeKind::TypeDef,
-                // This is the only issue since it's not a single Formatted.
-                // The next obvious decision should be to do, "Formatted::NumericIntegerRanged", etc.,
-                // where we have 4000 variants which
-                Type::Boundaries(_) => return TypeKind::Boundaries,
-                Type::Unknown => return TypeKind::Unknown,
-                Type::Deferred(inner) => type_id = *inner,
-            }
+        let checked = walk_type_id_deferred!(compiler.types, type_id);
+        match &compiler.types[checked.inner].ty {
+            Type::BuiltinTypeInfo(builtin_ty) => TypeKind::BuiltinType(builtin_ty.ty.kind()),
+            Type::Struct(_) => TypeKind::Struct,
+            Type::Enum(_) => TypeKind::Enum,
+            Type::Func(_) => TypeKind::Func,
+            Type::Alias(_) => TypeKind::Alias,
+            Type::TypeDef(_) => TypeKind::TypeDef,
+            // This is the only issue since it's not a single Formatted.
+            // The next obvious decision should be to do, "Formatted::NumericIntegerRanged", etc.,
+            // where we have 4000 variants which
+            Type::Boundaries(_) => TypeKind::Boundaries,
+            Type::Unknown => TypeKind::Unknown,
+            Type::Deferred(_) => unreachable!(),
         }
-        loop_abort!();
     }
 
+    /// Gets the `TypeBoundaryFlags` associated with the given `TypeId`
     pub fn boundaries(compiler: &ScriptCompiler, mut type_id: TypeId) -> Option<TypeBoundaryFlags> {
+        // Doesn't use walk deferred since typedef itself actually needs to go into it's inner type
+        // for it's boundaries
         for _ in 0..chrn_utils::MAX_LOOPS {
             match &compiler.types[type_id].ty {
                 Type::BuiltinTypeInfo(builtin_ty) => {
@@ -137,27 +136,24 @@ impl Type {
         loop_abort!()
     }
 
+    // so??
     /// The env can't be passed into to_fmt so
     pub fn to_fmt(compiler: &ScriptCompiler, mut type_id: TypeId) -> Formatted {
-        for _ in 0..chrn_utils::MAX_LOOPS {
-            // Could be an Option return where if is_none() look_abort! but probably doesn't matter.
-            // At all.
-            match &compiler.types[type_id].ty {
-                Type::BuiltinTypeInfo(builtin_type) => return builtin_type.ty.kind().to_fmt(),
-                Type::Struct(struct_def) => return struct_def.to_fmt(),
-                Type::Enum(enum_def) => return enum_def.to_fmt(),
-                Type::Func(func_def) => return func_def.to_fmt(),
-                Type::Alias(alias_def) => return alias_def.to_fmt(),
-                Type::TypeDef(type_def) => return type_def.to_fmt(),
-                // This is the only issue since it's not a single Formatted.
-                // The next obvious decision should be to do, "Formatted::NumericIntegerRanged", etc.,
-                // where we have 4000 variants which
-                Type::Boundaries(flags) => return Formatted::Boundaries(*flags),
-                Type::Unknown => return Formatted::Unknown,
-                Type::Deferred(inner) => type_id = *inner,
-            }
+        let checked = walk_type_id_deferred!(&compiler.types, type_id);
+        match &compiler.types[checked.inner].ty {
+            Type::BuiltinTypeInfo(builtin_type) => builtin_type.ty.kind().to_fmt(),
+            Type::Struct(struct_def) => struct_def.to_fmt(),
+            Type::Enum(enum_def) => enum_def.to_fmt(),
+            Type::Func(func_def) => func_def.to_fmt(),
+            Type::Alias(alias_def) => alias_def.to_fmt(),
+            Type::TypeDef(type_def) => type_def.to_fmt(),
+            // This is the only issue since it's not a single Formatted.
+            // The next obvious decision should be to do, "Formatted::NumericIntegerRanged", etc.,
+            // where we have 4000 variants which
+            Type::Boundaries(flags) => Formatted::Boundaries(*flags),
+            Type::Unknown => Formatted::Unknown,
+            Type::Deferred(_) => unreachable!(),
         }
-        loop_abort!()
     }
 }
 

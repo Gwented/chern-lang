@@ -3,6 +3,7 @@ pub mod constraints;
 pub mod cst;
 pub mod lexer;
 pub mod lookup;
+pub mod macros;
 pub mod modules;
 pub mod parser;
 pub mod resolvers;

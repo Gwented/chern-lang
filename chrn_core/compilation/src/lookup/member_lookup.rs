@@ -36,20 +36,18 @@ pub enum MemberLookupResult {
 pub fn collect_members(compiler: &ScriptCompiler, mut current_type_id: TypeId) -> Vec<MemberId> {
     for _ in 0..chrn_utils::MAX_LOOPS {
         match &compiler.types[current_type_id].ty {
-            Type::BuiltinTypeInfo(builtin_type) => todo!(),
             Type::Struct(struct_def) => return struct_def.fields.clone(),
             Type::Enum(enum_def) => return enum_def.variants.clone(),
+            Type::BuiltinTypeInfo(builtin_type) => todo!(),
             // Count members as params or maybe attach a variant?
             Type::Func(func_def) => todo!(),
             Type::Alias(alias_def) => todo!(),
             // Should this?
             Type::TypeDef(type_def) => current_type_id = type_def.type_id,
-            Type::Boundaries(type_constraint_flags) => return Vec::new(),
-            Type::Deferred(inner_type_id) => current_type_id = *inner_type_id,
-            Type::Unknown => return Vec::new(),
+            Type::Deferred(inner) => current_type_id = *inner,
+            Type::Boundaries(_) | Type::Unknown => return Vec::new(),
         }
     }
-
     loop_abort!()
 }
 
@@ -103,7 +101,6 @@ pub fn lookup_member(
             Type::Boundaries(type_constraint_flags) => todo!(),
             // WARN: DANGEROUS
             Type::Deferred(inner_type_id) => current_type_id = *inner_type_id,
-
             Type::Unknown => return MemberLookupResult::Unknown(current_type_id),
         }
     }

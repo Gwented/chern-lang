@@ -37,6 +37,7 @@ use crate::{
             SymbolKind, SymbolOrigin, TypeDef, VarDef, VariableState, VariantRepre,
         },
     },
+    walk_type_id_deferred,
 };
 
 // Should this be in utils?
@@ -624,24 +625,17 @@ impl ScriptCompiler {
 
     /// Attempts to get a `SymbolId` out of a `TypeId`
     pub(super) fn get_sym_id_from_type_id(&self, mut type_id: TypeId) -> Option<SymbolId> {
-        for _ in 0..chrn_utils::MAX_LOOPS {
-            match &self.types[type_id].ty {
-                Type::Struct(struct_def) => return Some(struct_def.sym_id),
-                Type::Enum(enum_def) => return Some(enum_def.sym_id),
-                Type::Func(func_def) => return Some(func_def.sym_id),
-                Type::Alias(alias_def) => return Some(alias_def.sym_id),
-                Type::TypeDef(type_def) => return Some(type_def.sym_id),
-                Type::Deferred(inner) => {
-                    type_id = *inner;
-                    continue;
-                }
-                Type::BuiltinTypeInfo(info) => return Some(info.sym_id),
-                Type::Boundaries(_) | Type::Unknown => {
-                    return None;
-                }
-            }
+        let checked = walk_type_id_deferred!(&self.types, type_id);
+        match &self.types[checked.inner].ty {
+            Type::Struct(struct_def) => struct_def.sym_id.into(),
+            Type::Enum(enum_def) => enum_def.sym_id.into(),
+            Type::Func(func_def) => func_def.sym_id.into(),
+            Type::Alias(alias_def) => alias_def.sym_id.into(),
+            Type::TypeDef(type_def) => type_def.sym_id.into(),
+            Type::BuiltinTypeInfo(info) => Some(info.sym_id),
+            Type::Boundaries(_) | Type::Unknown => None,
+            Type::Deferred(_) => unreachable!(),
         }
-        loop_abort!()
     }
 
     /// Attempts to get a `TypeId` out of the given `MemberId` if possible
@@ -670,73 +664,68 @@ impl ScriptCompiler {
 
     //TODO: Not
     pub(super) fn get_span_from_type_id(&self, mut type_id: TypeId) -> Option<SourceSpan> {
-        // TODO: Ok
-        for _ in 0..chrn_utils::MAX_LOOPS {
-            match &self.types[type_id].ty {
-                Type::BuiltinTypeInfo(builtin_type) => return None,
-                Type::Struct(struct_def) => return Some(struct_def.name_span),
-                Type::Enum(enum_def) => return Some(enum_def.name_span),
-                // Functions can't be declared
-                Type::Alias(alias_def) => return Some(alias_def.name_span),
-                Type::TypeDef(type_def) => return Some(type_def.name_span),
-                Type::Deferred(inner) => type_id = *inner,
-                // Type spanning needs to be reasoned about first
-                Type::Boundaries(boundary_flags) => todo!(),
-                Type::Unknown => todo!("Should still be spanned though"),
-                Type::Func(_) => return None,
-            }
+        let checked = walk_type_id_deferred!(&self.types, type_id);
+        match &self.types[checked.inner].ty {
+            Type::Struct(struct_def) => struct_def.name_span.into(),
+            Type::Enum(enum_def) => enum_def.name_span.into(),
+            // Functions can't be declared
+            Type::Alias(alias_def) => alias_def.name_span.into(),
+            Type::TypeDef(type_def) => type_def.name_span.into(),
+            Type::BuiltinTypeInfo(_) => None,
+            Type::Func(_) => None,
+            // Type spanning needs to be reasoned about first
+            // But still generally is the same as below where you can't just type stray boundaries
+            Type::Boundaries(_) => todo!(),
+            //NOTE: The issue is that if something is unknown, then it must be inside something like
+            //a struct or enum. You can't really just declare an unknown type, since at that point
+            //it wouldn't be seen as a type anyways.
+            Type::Unknown => todo!("Should still be spanned though"),
+            Type::Deferred(_) => unreachable!(),
         }
-        loop_abort!()
     }
 
     /// If the given `TypeId` is a `BuiltinType` returns `true`, `false` otherwise
     pub(super) fn check_builtin(&self, mut type_id: TypeId) -> bool {
-        for _ in 0..chrn_utils::MAX_LOOPS {
-            match &self.types[type_id].ty {
-                Type::BuiltinTypeInfo(_) => return true,
-                Type::Struct(_)
-                | Type::Enum(_)
-                | Type::Func(_)
-                | Type::Alias(_)
-                | Type::TypeDef(_)
-                | Type::Boundaries(_)
-                | Type::Unknown => return false,
-                // Can builtins be deferred to?
-                Type::Deferred(inner) => type_id = *inner,
-            }
+        let checked = walk_type_id_deferred!(&self.types, type_id);
+        match &self.types[checked.inner].ty {
+            Type::BuiltinTypeInfo(_) => true,
+            Type::Struct(_)
+            | Type::Enum(_)
+            | Type::Func(_)
+            | Type::Alias(_)
+            | Type::TypeDef(_)
+            | Type::Boundaries(_)
+            | Type::Unknown => false,
+            // Can builtins be deferred to?
+            Type::Deferred(_) => unreachable!(),
         }
-        loop_abort!()
     }
 
     // TODO: Fix type metadata
     /// Returns `None` if type `TypeBoundaryFlags` is found and there's more
     /// than one boundary encoded, otherwise returns `Some`
     pub(super) fn get_name_id_from_type_id(&self, mut type_id: TypeId) -> Option<InternedId> {
-        for _ in 0..chrn_utils::MAX_LOOPS {
-            match &self.types[type_id].ty {
-                Type::BuiltinTypeInfo(builtin_type) => {
-                    return Some(builtin_type.ty.kind().name_id());
-                }
-                Type::Struct(struct_def) => return Some(self.symbols[struct_def.sym_id].name_id),
-                Type::Enum(enum_def) => return Some(self.symbols[enum_def.sym_id].name_id),
-                // Functions can't be declared
-                Type::Alias(alias_def) => return Some(self.symbols[alias_def.sym_id].name_id),
-                // WARN: Inconsistency
-                Type::TypeDef(type_def) => return Some(type_def.name_id),
-                Type::Func(func) => return Some(func.name_id),
-                Type::Deferred(inner) => type_id = *inner,
-                // Should the return type be String then?
-                // This absolutely can't return a type id
-                Type::Boundaries(boundary_flags) => return boundary_flags.name_id(),
-                // Not classifying unknown as a known identifier since it may lead to mis-usage of
-                // the identifier as though it really is the identifier of an actual declared type,
-                // rather than rephrasing for the fact that the type itself is unknown.
-                //
-                // Phrases like "The type `Unknown`" sound wrong because it's not a type it's a state
-                Type::Unknown => return Some(InternedId::new(intern::INTERNED_UNKNOWN)),
-            }
+        let checked = walk_type_id_deferred!(&self.types, type_id);
+        match &self.types[checked.inner].ty {
+            Type::BuiltinTypeInfo(builtin_type) => builtin_type.ty.kind().name_id().into(),
+            Type::Struct(struct_def) => self.symbols[struct_def.sym_id].name_id.into(),
+            Type::Enum(enum_def) => self.symbols[enum_def.sym_id].name_id.into(),
+            // Functions can't be declared
+            Type::Alias(alias_def) => self.symbols[alias_def.sym_id].name_id.into(),
+            // WARN: Inconsistency
+            Type::TypeDef(type_def) => type_def.name_id.into(),
+            Type::Func(func) => func.name_id.into(),
+            // Should the return type be String then?
+            // This absolutely can't return a type id
+            Type::Boundaries(boundary_flags) => boundary_flags.name_id().into(),
+            // Not classifying unknown as a known identifier since it may lead to mis-usage of
+            // the identifier as though it really is the identifier of an actual declared type,
+            // rather than rephrasing for the fact that the type itself is unknown.
+            //
+            // Phrases like "The type `Unknown`" sound wrong because it's not a type it's a state
+            Type::Unknown => InternedId::new(intern::INTERNED_UNKNOWN).into(),
+            Type::Deferred(_) => unreachable!(),
         }
-        loop_abort!()
     }
 
     pub(super) fn get_owner(&self, sym_id: SymbolId) -> ModuleId {
@@ -867,15 +856,11 @@ impl ScriptCompiler {
     /// Returns `true` if the type is unknown, false otherwise
     pub fn check_unknown(&self, mut type_id: TypeId) -> bool {
         // This limit is semi-random
-        for _ in 0..chrn_utils::MAX_LOOPS {
-            let ty = &self.types[type_id].ty;
-            match ty {
-                Type::Deferred(inner) => type_id = *inner,
-                Type::Unknown => return true,
-                _ => return false,
-            }
+        let checked = walk_type_id_deferred!(&self.types, type_id);
+        match self.types[checked.inner].ty {
+            Type::Unknown => true,
+            _ => false,
         }
-        loop_abort!()
     }
 
     /// Loads all compiler known directives

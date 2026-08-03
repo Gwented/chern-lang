@@ -508,7 +508,7 @@ impl<'res> TypeResolver<'res> {
             abs_cfg_root.lookup_pat,
             env,
         ) {
-            TypeExprResult::Type(type_id) => Some(type_id),
+            TypeExprResult::Type(type_id) => type_id.into(),
             res => {
                 let preset_err = preset_reporter::type_expr_result_to_preset_err(
                     &self.compiler,
@@ -681,7 +681,7 @@ impl<'res> TypeResolver<'res> {
             None => return,
         };
 
-        if !typechecker::check_cfg_root(self.compiler, found_type_id) {
+        if !typechecker::check_cfg_root(&self.compiler.types, found_type_id) {
             let fmtted_ty = Type::to_fmt(self.compiler, found_type_id);
             let core_msg = format!("Cannot use type `{fmtted_ty}` as a config root");
 
@@ -696,32 +696,6 @@ impl<'res> TypeResolver<'res> {
             self.summary.push_diag(builder.build());
             return;
         };
-
-        // Attempts to get type id out of symbol id which is required for lookup
-        // let found_type_id = match self.compiler.get_type_id_from_sym_id(found_sym_id) {
-        //     Some(id) => id,
-        //     None => {
-        //         let kind_fmt = SymbolKind::to_fmt(self.compiler, found_sym_id);
-        //         let core_msg = format!(
-        //             "Cannot use symbol `{}` as the root or inner of a config block",
-        //             kind_fmt
-        //         );
-        //
-        //         let src_diag = SourceDiagnostic::builder(
-        //             ErrorCode::ConfigDeclErr.into(),
-        //             DiagnosticLevel::Error,
-        //             core_msg,
-        //             env.region.path_id,
-        //         )
-        //         .add_annotation(abs_cfg_root.name_span, AnnotationKind::Primary, None)
-        //         // Right...var needs to be usable here..$#$*IjdjalndIPOIPO.
-        //         .add_help("Config roots must be a struct, enum, or from the scope `var`".into());
-        //         self.summary.push_diag(src_diag.build());
-        //         // Terminates here because this means that the symbol being looked at can't
-        //         // actually use config at all
-        //         return;
-        //     }
-        // };
 
         // TEST: Tracks where this current config was positionally so that it can perform an O(1)
         // set_len call which will immediately ignore any other recursive call-site data

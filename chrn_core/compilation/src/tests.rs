@@ -4,6 +4,7 @@ mod constraint_resolver_test;
 mod directives_test;
 mod helpers;
 mod lexer_test;
+mod macros_test;
 mod modules_test;
 mod name_resolver_test;
 mod parser_test;
