@@ -99,7 +99,7 @@ pub struct Scope {
     pub intrinsic_scope: Option<ScopeId>,
     /// Boolean of whether or not the scope is intrinsic
     pub is_intrinsic: bool,
-    /// An `Option` scope that is intrinsically a part of this scope
+    /// Pre-determined list of `SceopType`s that this scope can access.
     pub accessible_scopes: &'static [ScopeType],
 }
 
@@ -219,7 +219,9 @@ pub fn find_type_id(
 
                             return Some(type_id);
                         }
-                        SymbolKind::Namespace | SymbolKind::Directive(_) => return None,
+                        SymbolKind::ExternType
+                        | SymbolKind::Namespace
+                        | SymbolKind::Directive(_) => return None,
                     }
                 }
             }

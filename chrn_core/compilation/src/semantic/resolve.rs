@@ -186,6 +186,11 @@ pub fn resolve_type_expr(
                                 scope_found_in: associated_scope,
                             };
                         }
+                        // NOTE:
+                        // External types are too restricted to their particular scope that this is
+                        // not actually possible. `override` doesn't have access to type expression
+                        // declarations.
+                        SymbolKind::ExternType => unreachable!(),
                     }
                 }
                 None => {

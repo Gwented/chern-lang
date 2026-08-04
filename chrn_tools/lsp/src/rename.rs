@@ -17,12 +17,11 @@
 //! Overlapping/redundant `TextEdit` ranges within each file are removed with
 //! [`crate::text::deduplicate_range_indices`] before the `WorkspaceEdit` is assembled.
 
-use crate::state::{DocumentCache, DocumentState, SemanticEntity};
-use crate::text::{offset_to_position, position_to_offset};
+use crate::state::{DocumentCache, DocumentState, EntityOccurrence, SemanticEntity};
+use crate::text::{LineIndex, position_to_offset};
 use chrn_utils::id_types::SymbolId;
 use chrn_utils::source_map::source_span::SourceSpan;
 use std::collections::HashMap;
-use std::sync::Arc;
 use tower_lsp::lsp_types::{Position, Range, TextEdit, Url, WorkspaceEdit};
 
 /// Collects all occurrences of a local binding in the current file.
@@ -33,6 +32,7 @@ fn collect_local_edits(
     new_name: &str,
 ) -> Vec<TextEdit> {
     let mut edits = Vec::new();
+    let lines = LineIndex::new(&state.text);
     for (span, ent) in &state.symbol_map {
         if let SemanticEntity::Local {
             decl_span,
@@ -48,8 +48,8 @@ fn collect_local_edits(
             let abs_end = crate::text::rel_to_abs_offset(span.end, state.script_start) as usize;
             edits.push(TextEdit {
                 range: Range {
-                    start: offset_to_position(&state.text, abs_start),
-                    end: offset_to_position(&state.text, abs_end),
+                    start: lines.position(abs_start),
+                    end: lines.position(abs_end),
                 },
                 new_text: new_name.to_string(),
             });
@@ -59,40 +59,20 @@ fn collect_local_edits(
 }
 
 /// Converts raw matching-entity tuples into a per-URI map of deduplicated text edits.
-///
-/// Each entity tuple is `(uri, text, span_start, span_end, script_start)`, where
-/// the span endpoints are **relative** to the region's `src_bytes`. The
-/// `script_start` is required to convert the relative spans to absolute LSP
-/// `Position`s.
 fn matching_entities_to_edits(
-    entities: Vec<(String, Arc<String>, u32, u32, usize)>,
+    entities: Vec<EntityOccurrence>,
     new_name: &str,
 ) -> HashMap<Url, Vec<TextEdit>> {
-    let mut by_uri: HashMap<String, Vec<Range>> = HashMap::new();
-    let mut text_map: HashMap<String, Arc<String>> = HashMap::new();
-    for (state_uri, text, start, end, script_start) in &entities {
-        let abs_start = crate::text::rel_to_abs_offset(*start, *script_start) as usize;
-        let abs_end = crate::text::rel_to_abs_offset(*end, *script_start) as usize;
-        let range = Range {
-            start: offset_to_position(text, abs_start),
-            end: offset_to_position(text, abs_end),
-        };
-        by_uri.entry(state_uri.clone()).or_default().push(range);
-        text_map
-            .entry(state_uri.clone())
-            .or_insert_with(|| Arc::clone(text));
-    }
-
     let mut changes = HashMap::new();
-    for (state_uri, ranges) in by_uri {
+    for (state_uri, ranges) in crate::text::occurrences_to_ranges(entities) {
         if let Ok(uri) = Url::parse(&state_uri) {
-            let mut edits = Vec::new();
-            for &i in &crate::text::deduplicate_range_indices(&ranges) {
-                edits.push(TextEdit {
-                    range: ranges[i],
+            let edits = ranges
+                .into_iter()
+                .map(|range| TextEdit {
+                    range,
                     new_text: new_name.to_string(),
-                });
-            }
+                })
+                .collect();
             changes.insert(uri, edits);
         }
     }

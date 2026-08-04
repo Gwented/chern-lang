@@ -6,7 +6,10 @@ use chrn_utils::{
     source_map::source_span::SourceSpan,
 };
 
-use crate::lookup::scopes::{ScopeLookupPattern, ScopeType};
+use crate::{
+    lookup::scopes::{ScopeLookupPattern, ScopeType},
+    parser::ast::ast_concepts::ConfigRootKind,
+};
 
 #[derive(Debug)]
 pub struct ImplHir {
@@ -87,6 +90,8 @@ pub struct ConfigDefRoot {
     /// `ScopeLookupPattern::Namespace/OnlyVar` should be used to search for the symbol associated with
     /// thie config
     pub lookup_pattern: ScopeLookupPattern,
+    ///
+    pub kind: ConfigRootKind,
     /// Expects `ConfigDefMember`
     pub cfg_members: Vec<ImplMemberId>,
 }
@@ -100,17 +105,16 @@ impl ConfigDefRoot {
         cfg_root_id: ConfigRootId,
         linked_type_id: Option<TypeId>,
         lookup_pattern: ScopeLookupPattern,
+        kind: ConfigRootKind,
         opt_assignments: Vec<ImplMemberId>,
         cfg_members: Vec<ImplMemberId>,
     ) -> ConfigDefRoot {
         ConfigDefRoot {
             impl_id,
-            // sp_ty_expr,
-            // name_id,
-            // name_span,
             cfg_root_id,
             lookup_pattern,
             linked_type_id,
+            kind,
             opt_assignments,
             cfg_members,
         }

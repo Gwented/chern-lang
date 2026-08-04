@@ -236,7 +236,7 @@ pub(crate) fn create_diag_builder_preset(
             LookupError::MemberNotFound {
                 parent_type_id,
                 sp_parent_name_id,
-                member,
+                nonexistent_member: member,
             } => {
                 let ty_name = interner.search(sp_parent_name_id.inner);
                 let member_name = interner.search(member);
@@ -435,6 +435,10 @@ pub fn type_expr_result_to_preset_err(
                     let err_mod = &compiler.mods[*mod_id];
                     let err_mod_name = interner.search(err_mod.name_id);
 
+                    //WARN: If we have "var State {}" in complex or override, and it's not in that
+                    //scope solely, this will say that the ENTIRE module does not contain the given
+                    //type, but that's not true. Maybe we need a little more info given or at least
+                    //acknkowledgement of the scope question mark.
                     format!("No type `{err_name}` defined in module `{err_mod_name}`")
                 }
                 //NOTE: Not current symbol exists that has it's own scope except modules

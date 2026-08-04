@@ -14,6 +14,7 @@ pub enum BinaryOpResult {
     DivideByZero,
 }
 
+// Is this the type checker's?
 /// Evaluates if the given unary operation is possible given language rules
 pub fn is_compatible_unary(op: UnaryOp, operand: &Value) -> bool {
     match op {

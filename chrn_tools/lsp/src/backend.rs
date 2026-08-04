@@ -472,14 +472,16 @@ fn config_block_bounds(
     pairs: &HashMap<u32, u32>,
     name_end: u32,
 ) -> Option<(u32, u32)> {
-    let open = state
+    // Tokens are ordered by span, so binary-search to the first one at or after the
+    // name and scan from there.  Every nested config member calls this, and starting
+    // each search at token 0 made the walk quadratic in the token count.
+    let from = state
         .tokens
+        .partition_point(|token| token.span.start < name_end);
+    let open = state.tokens[from..]
         .iter()
-        .filter(|token| {
-            token.span.start >= name_end && matches!(token.tok, ScriptToken::OCurlyBracket)
-        })
-        .map(|token| token.span.start)
-        .next()?;
+        .find(|token| matches!(token.tok, ScriptToken::OCurlyBracket))
+        .map(|token| token.span.start)?;
 
     // An incomplete config block has no closing token yet.  Treating the document end as its
     // boundary keeps completion useful while the user is typing the block.
@@ -586,8 +588,7 @@ fn config_candidate_for_member(
         });
     }
 
-    let children = member.cfg_def_members.clone();
-    for child_id in children {
+    for &child_id in &member.cfg_def_members {
         config_candidate_for_member(compiler, child_id, state, pairs, candidates);
     }
 }
@@ -641,8 +642,7 @@ fn config_completion_candidate(
                 .collect(),
         });
 
-        let members = cfg_root.cfg_members.clone();
-        for member_id in members {
+        for &member_id in &cfg_root.cfg_members {
             config_candidate_for_member(compiler, member_id, state, &pairs, &mut candidates);
         }
     }
@@ -1298,71 +1298,53 @@ impl LanguageServer for Backend {
             }
         };
 
-        if def_target.is_none() {
+        let Some((def_path, def_span, def_script_start)) = def_target else {
             return Ok(None);
-        }
+        };
 
-        let mut links: Vec<LocationLink> = Vec::new();
+        let target_uri = Url::from_file_path(&def_path).unwrap_or_else(|_| uri.clone());
 
-        if let Some((def_path, def_span, def_script_start)) = def_target {
-            let target_uri = match Url::from_file_path(&def_path) {
-                Ok(u) => u,
-                Err(_) => uri.clone(),
-            };
-
-            // We need the text of the target file to convert span to position
-            let target_text = if def_path == uri.path() {
-                let state = state_arc.read();
-                Some(Arc::clone(&state.text))
-            } else {
-                let target_uri_str = target_uri.to_string();
-                let from_cache = self
-                    .doc_cache
-                    .get_text(&target_uri_str)
-                    .or_else(|| self.docs.read().get(&target_uri_str).map(Arc::clone));
-                match from_cache {
-                    Some(t) => Some(t),
-                    None => tokio::fs::read_to_string(&def_path)
-                        .await
-                        .ok()
-                        .map(Arc::new),
-                }
-            };
-
-            if let Some(t_text) = target_text {
-                // `def_span` is relative to the target region's `src_bytes`; add
-                // the target region's `script_start` to put it in absolute file
-                // coordinates before converting to an LSP `Position`.
-                let abs_start =
-                    crate::text::rel_to_abs_offset(def_span.start, def_script_start) as usize;
-                let abs_end =
-                    crate::text::rel_to_abs_offset(def_span.end, def_script_start) as usize;
-                let start_pos = crate::text::offset_to_position(&t_text, abs_start);
-                let end_pos = crate::text::offset_to_position(&t_text, abs_end);
-
-                links.push(LocationLink {
-                    origin_selection_range: Some(Range {
-                        start: pos,
-                        end: pos,
-                    }),
-                    target_uri,
-                    target_range: Range {
-                        start: start_pos,
-                        end: end_pos,
-                    },
-                    target_selection_range: Range {
-                        start: start_pos,
-                        end: end_pos,
-                    },
-                });
-            }
-        }
-
-        if links.is_empty() {
-            Ok(None)
+        // The target file's text is needed to turn the span into a position.
+        let target_text = if def_path == uri.path() {
+            Some(Arc::clone(&state_arc.read().text))
         } else {
-            Ok(Some(GotoDefinitionResponse::Link(links)))
-        }
+            let target_uri_str = target_uri.to_string();
+            match self
+                .doc_cache
+                .get_text(&target_uri_str)
+                .or_else(|| self.docs.read().get(&target_uri_str).map(Arc::clone))
+            {
+                Some(t) => Some(t),
+                None => tokio::fs::read_to_string(&def_path)
+                    .await
+                    .ok()
+                    .map(Arc::new),
+            }
+        };
+
+        let Some(t_text) = target_text else {
+            return Ok(None);
+        };
+
+        // `def_span` is relative to the target region's `src_bytes`; add the target
+        // region's `script_start` to put it in absolute file coordinates before
+        // converting to an LSP `Position`.
+        let abs_start = crate::text::rel_to_abs_offset(def_span.start, def_script_start) as usize;
+        let abs_end = crate::text::rel_to_abs_offset(def_span.end, def_script_start) as usize;
+        let target_range = Range {
+            start: crate::text::offset_to_position(&t_text, abs_start),
+            end: crate::text::offset_to_position(&t_text, abs_end),
+        };
+
+        Ok(Some(GotoDefinitionResponse::Link(vec![LocationLink {
+            origin_selection_range: Some(Range {
+                start: pos,
+                end: pos,
+            }),
+            target_uri,
+            target_range,
+            target_selection_range: target_range,
+        }])))
     }
 
     async fn completion(
@@ -1513,85 +1495,69 @@ impl LanguageServer for Backend {
         ];
 
         let mut items: Vec<CompletionItem> = Vec::new();
-
-        for (label, kind) in SUGGESTIONS.iter() {
+        // Every source below filters on the same prefix and builds the same item.
+        let mut push_item = |label: String, kind: CompletionItemKind| {
             if prefix.is_empty() || label.starts_with(prefix) {
                 items.push(CompletionItem {
-                    label: label.to_string(),
-                    kind: Some(*kind),
+                    label,
+                    kind: Some(kind),
                     ..Default::default()
                 });
             }
+        };
+
+        for (label, kind) in SUGGESTIONS {
+            push_item(label.to_string(), *kind);
         }
 
-        //TODO: Should auto-complete any module that has a src of "None"
-        // Add core library exports (types, functions, and constants from the core module)
-        if let Some(compiler) = &state.compiler
-            && let Some(core_mod) = compiler
+        if let Some(compiler) = &state.compiler {
+            //TODO: Should auto-complete any module that has a src of "None"
+            // Core library exports: types, functions, and constants.
+            if let Some(core_mod) = compiler
                 .mods
                 // `core_mod_id` is already a `ModuleId` — pass it directly.
                 .get(compiler.intrinsic_registry.core_mod_id)
-        {
-            for sym_id in &core_mod.exports {
-                // `sym_id: &SymbolId` — dereference for the typed `Arena::get` call.
-                if let Some(sym) = compiler.symbols.get(*sym_id) {
-                    let name = state.interner.search(sym.name_id);
-                    if prefix.is_empty() || name.starts_with(prefix) {
-                        let kind = symbol_completion_kind(compiler, sym);
-                        items.push(CompletionItem {
-                            label: name.to_string(),
-                            kind: Some(kind),
-                            ..Default::default()
-                        });
+            {
+                for sym_id in &core_mod.exports {
+                    // `sym_id: &SymbolId` — dereference for the typed `Arena::get` call.
+                    if let Some(sym) = compiler.symbols.get(*sym_id) {
+                        push_item(
+                            state.interner.search(sym.name_id).to_string(),
+                            symbol_completion_kind(compiler, sym),
+                        );
                     }
                 }
             }
-        }
 
-        // Add compiler-origin directives (e.g. #warn, #ignore, #scient, etc.)
-        // Read dynamically from the compiler symbol registry instead of hard-coding.
-        if let Some(compiler) = &state.compiler {
+            // Compiler-origin directives (`#warn`, `#ignore`, `#scient`, …), read from
+            // the symbol registry rather than hard-coded.
             // `Arena` is not an iterator; iterate over the inner `items` vec.
             for sym in &compiler.symbols.items {
                 if matches!(sym.kind, SymbolKind::Directive(_)) {
                     let name = state.interner.search(sym.name_id);
-                    let label = format!("#{}", name);
-                    if prefix.is_empty() || label.starts_with(prefix) {
-                        items.push(CompletionItem {
-                            label,
-                            kind: Some(symbol_completion_kind(compiler, sym)),
-                            ..Default::default()
-                        });
-                    }
+                    push_item(
+                        format!("#{}", name),
+                        symbol_completion_kind(compiler, sym),
+                    );
                 }
             }
-        }
 
-        // Add all modules (using already-analyzed compiler state)
-        if let Some(compiler) = &state.compiler {
-            // Index the `Arena` with a typed `ModuleId` (the only impl the
-            // primary `Index` for `Arena` provides).
+            // The current module and everything it imports.
+            // Index the `Arena` with a typed `ModuleId` (the only impl the primary
+            // `Index` for `Arena` provides).
             let current_module = &compiler.mods[ModuleId::new(0)];
-            // `Arena` itself is not iterable; iterate over the inner `items` vec.
             for module in &compiler.mods.items {
-                let name = state.interner.search(module.name_id);
-
                 let is_self = module.mod_id.id == 0;
                 let is_imported = current_module
                     .imports
                     .iter()
                     .any(|i| i.name_id == module.name_id || i.alias_id == Some(module.name_id));
 
-                if !is_imported && !is_self {
-                    continue;
-                }
-
-                if prefix.is_empty() || name.starts_with(prefix) {
-                    items.push(CompletionItem {
-                        label: name.to_string(),
-                        kind: Some(CompletionItemKind::MODULE),
-                        ..Default::default()
-                    });
+                if is_self || is_imported {
+                    push_item(
+                        state.interner.search(module.name_id).to_string(),
+                        CompletionItemKind::MODULE,
+                    );
                 }
             }
         }
@@ -1610,12 +1576,8 @@ impl LanguageServer for Backend {
 
             if let ScriptToken::Id(id) = st.tok {
                 let name = state.interner.search(id);
-                if (prefix.is_empty() || name.starts_with(prefix)) && seen.insert(name) {
-                    items.push(CompletionItem {
-                        label: name.to_string(),
-                        kind: Some(CompletionItemKind::VARIABLE),
-                        ..Default::default()
-                    });
+                if seen.insert(name) {
+                    push_item(name.to_string(), CompletionItemKind::VARIABLE);
                 }
             }
         }

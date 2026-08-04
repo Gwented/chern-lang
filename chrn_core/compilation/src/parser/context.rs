@@ -36,7 +36,7 @@ use super::NestBranch;
 //TODO: Most optimal solution for this is to act off of only section context, so not as granular
 
 //NOTE: The basic exit sets should ONLY have tokens that will ALWAYS be stopped on.
-const C_BASE_EXIT_SET: u64 = token::EOF | token::INVALID | token::KEYWORD | token::C_CURLY_BRACKET;
+const C_BASE_EXIT_SET: u64 = token::EOF | token::INVALID | token::KEYWORD;
 const A_BASE_EXIT_SET: u64 = token::SLIM_ARROW;
 
 const C_STMT_NEUTRAL_SET: u64 = C_BASE_EXIT_SET /*| token::Keyword*/ ;
@@ -134,6 +134,9 @@ impl<'a> ParserContext<'a> {
         Err(found.tok)
     }
 
+    /// Creates basic diagnostic with `AnnotationKind::Primary` using the span of the found token.
+    /// If a occurrence such as EOF is detected as the error, the `SemanticSituation` will be
+    /// returned so that assistance can enhance the error message where needed. It can be ignored.
     pub(super) fn create_diag_builder(
         &mut self,
         found: &SpannedToken,
@@ -196,18 +199,16 @@ impl<'a> ParserContext<'a> {
     /// Intended for basic errors that need little context after
     /// This must ALWAYS be advanced before usage due to the found token always being assumed to be
     /// the previous token.
-    pub(super) fn report_verbose(
+    pub(super) fn report_verbose<S: Into<String>>(
         &mut self,
-        msg: &str,
+        core_msg: S,
         initial_evidence: InitialEvidence,
         interner: &Intern,
     ) {
         let found = self.peek_behind(1);
         let branch = initial_evidence.branch;
 
-        let core_msg = format!("\n{msg}");
-
-        let (mut builder, situation_opt) = self.create_diag_builder(&found, core_msg);
+        let (mut builder, situation_opt) = self.create_diag_builder(&found, core_msg.into());
         // If EOF then override otherwise keep same semantics
         let situation = situation_opt.unwrap_or(initial_evidence.situation);
 
@@ -383,16 +384,17 @@ impl<'a> ParserContext<'a> {
         // True by default since false would be more non-trivial to change
         let mut changed = true;
 
+        // Typed?
         match &evidence.situation {
             SemanticSituation::IdentBinding => match &evidence.found.tok {
                 Token::Keyword(kw) => {
-                    builder = builder
-                        .add_help(format!("Keyword can be escaped with `e#{}`", kw.to_fmt()));
+                    builder = builder.add_help(format!("Can be escaped with `e#{}`", kw.to_fmt()));
                 }
                 _ => changed = false,
             },
             SemanticSituation::UnexpectedToken => changed = false,
             SemanticSituation::TypeBinding => changed = false,
+
             SemanticSituation::ValueBinding => changed = false,
             SemanticSituation::DirectiveParsing => match evidence.found.tok {
                 Token::Id(id) => {

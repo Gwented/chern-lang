@@ -12,7 +12,7 @@ use crate::{
     lookup::scopes::{Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
     parser::ast::ast_concepts::{
         AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractEnum,
-        AbstractImpl, AbstractStruct, AbstractTypeDef, AbstractVar, Item,
+        AbstractImpl, AbstractStruct, AbstractTypeDef, AbstractVar, ConfigRootKind, Item,
     },
     resolvers::{resolver_env::RegistrationEnv, resolver_state::ResolverState},
     script_compiler::ScriptCompiler,
@@ -77,8 +77,8 @@ impl NamespaceResolver<'_> {
         // doens't have to depend on the ast to keep a coherent understanding of
         let mut mod_symbols: Vec<CompilationUnit> = Vec::new();
 
-        // Iterates through sections so that it stores the correct scope type assocaited with the
-        // current node for it's symbol id that will be created.
+        // Iterates through sections so that it stores the correct scope type associated with the
+        // current ast node so it's compilation unit can use said information.
         for abs_sect_opt in &env.ast_info.sections {
             let Some(abs_sect) = abs_sect_opt else {
                 continue;
@@ -112,7 +112,7 @@ impl NamespaceResolver<'_> {
                     Item::Impl(abs_impl) => {
                         let impl_id = match abs_impl {
                             AbstractImpl::Config(abs_cfg) => {
-                                self.register_config_root(abs_cfg, ast_id, scope_type)
+                                self.register_config_root(abs_cfg, ast_id, scope_type, env)
                             }
                         };
                         CompilationUnit::Impl(impl_id)
@@ -140,6 +140,7 @@ impl NamespaceResolver<'_> {
         abs_cfg: &AbstractConfig,
         ast_id: AstId,
         scope_type: ScopeType,
+        env: &RegistrationEnv,
     ) -> ImplId {
         debug_assert!(
             matches!(
@@ -152,6 +153,13 @@ impl NamespaceResolver<'_> {
             abs_cfg.lookup_pat
         );
         debug_assert!(matches!(abs_cfg.kind, AbstractConfigKind::Root(_)));
+        debug_assert!(matches!(
+            scope_type,
+            ScopeType::Complex | ScopeType::Override
+        ));
+
+        // Pushing the scope loads all symbols needed by override
+        _ = self.compiler.push_scope(scope_type, env.current_mod);
 
         let impl_id = ImplId::new(self.compiler.impls.len() as u32);
         let cfg_id = ConfigRootId::new(self.compiler.cfgs.len() as u32);
@@ -160,12 +168,19 @@ impl NamespaceResolver<'_> {
         // is to avoid inserting first and overwriting the last symbol since ergonomically, it
         // probably makes more sense to keep the original for scope searching to fall-back to.
 
+        let kind = if scope_type == ScopeType::Complex {
+            ConfigRootKind::Complex
+        } else {
+            ConfigRootKind::Override
+        };
+
         // let orig_sym_opt = table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
         let cfg_def = ConfigDefRoot::new(
             impl_id,
             cfg_id,
             None,
             abs_cfg.lookup_pat,
+            kind,
             Vec::new(),
             Vec::new(),
         );

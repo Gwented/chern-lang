@@ -1,4 +1,5 @@
 use chrn_utils::{
+    arena::Arena,
     id_types::{InternedId, SymbolId, TypeId},
     loop_abort,
 };
@@ -8,7 +9,11 @@ use lang::{
     values::Value,
 };
 
-use crate::{script_compiler::ScriptCompiler, semantic::hir::hir_concepts::Type};
+use crate::{
+    script_compiler::ScriptCompiler,
+    semantic::hir::hir_concepts::{Type, TypeInfo},
+    walk_type_id_deferred,
+};
 
 /// Result type for schema lookups. This exists due to the fact that there is no `Ok` or `Err`
 /// inherit concept behind whether or not something was found.
@@ -53,27 +58,21 @@ pub enum SchemaResult {
 //TEST: This language construct is still confusing to find the best version of.
 /// Uses `TypeId` to search for if there is a schema available to match contents against
 pub fn get_schema_from_type_id(
-    compiler: &ScriptCompiler,
-    mut current_type_id: TypeId,
+    types: &Arena<TypeInfo, TypeId>,
+    mut type_id: TypeId,
 ) -> Option<&'static ConfigSchema> {
-    for _ in 0..chrn_utils::MAX_LOOPS {
-        match &compiler.types[current_type_id].ty {
-            Type::Struct(_) => {
-                return Some(config_schemas::get_cfg_schema(ConfigSchemaKind::Struct));
-            }
-            Type::Enum(_) => {
-                return Some(config_schemas::get_cfg_schema(ConfigSchemaKind::Enum));
-            }
-            Type::Deferred(type_id) => current_type_id = *type_id,
-            Type::Alias(_)
-            | Type::Boundaries(_)
-            | Type::BuiltinTypeInfo(_)
-            | Type::TypeDef(_)
-            | Type::Func(_)
-            | Type::Unknown => return None,
-        }
+    let checked = walk_type_id_deferred!(&types, type_id);
+    match &types[checked.inner].ty {
+        Type::Struct(_) => config_schemas::get_cfg_schema(ConfigSchemaKind::Struct).into(),
+        Type::Enum(_) => config_schemas::get_cfg_schema(ConfigSchemaKind::Enum).into(),
+        Type::Alias(_)
+        | Type::Boundaries(_)
+        | Type::BuiltinTypeInfo(_)
+        | Type::TypeDef(_)
+        | Type::Func(_)
+        | Type::Unknown => None,
+        Type::Deferred(_) => unreachable!(),
     }
-    loop_abort!()
 }
 
 /// GIVE ME THE RIGHT SCHEMA question_mark

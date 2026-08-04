@@ -581,22 +581,24 @@ pub enum ConfigMemberNameKind {
 
 impl AbstractConfig {
     pub fn new(
-        // name_id: InternedId,
-        // name_span: SourceSpan,
         kind: AbstractConfigKind,
         lookup_pat: ScopeLookupPattern,
         opt_assignments: Vec<AbstractOptionAssignment>,
         cfg_members: Vec<AbstractConfig>,
     ) -> AbstractConfig {
         AbstractConfig {
-            // name_id,
-            // name_span,
             kind,
             lookup_pat,
             opt_assignments,
             cfg_members,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigRootKind {
+    Complex,
+    Override,
 }
 
 #[derive(Debug, Clone)]
@@ -616,9 +618,7 @@ impl AbstractConfigKind {
     pub fn name_span(&self) -> SourceSpan {
         match self {
             AbstractConfigKind::Root(sp_interned_id) => sp_interned_id.span,
-            AbstractConfigKind::Member(sp_interned_id, config_member_metadata_kind) => {
-                sp_interned_id.span
-            }
+            AbstractConfigKind::Member(sp_interned_id, _) => sp_interned_id.span,
         }
     }
 }

@@ -13,26 +13,6 @@ use crate::{
     semantic::hir::hir_symbols::FuncKind,
 };
 
-// pub struct SemanticError {
-//     pub kind: SemanticErrorKind,
-//     pub help: Vec<String>,
-//     pub notes: Vec<String>,
-// }
-//
-// impl SemanticError {
-//     pub fn new(kind: SemanticErrorKind, help: Vec<String>, notes: Vec<String>) -> SemanticError {
-//         SemanticError { kind, help, notes }
-//     }
-//
-//     pub fn from_kind(kind: SemanticErrorKind) -> SemanticError {
-//         SemanticError {
-//             kind,
-//             help: Default::default(),
-//             notes: Default::default(),
-//         }
-//     }
-// }
-
 #[derive(Debug)]
 pub enum PresetErr {
     /// Intended so that diagnostics can be made inline and still align with the same type
@@ -46,6 +26,9 @@ pub enum PresetErr {
     },
     /// Spanned Directive
     UnknownDirective(SpannedContainer<InternedId>),
+    // TypecheckFailed {
+    //     invalid_ty: SpannedContainer<TypeId>,
+    // },
     /// Constraint, amount of incorrect params found, spans
     DirectiveCountMismatch {
         constraint: ArgConstraint,
@@ -134,7 +117,8 @@ pub enum LookupError {
     MemberNotFound {
         parent_type_id: TypeId,
         sp_parent_name_id: SpannedContainer<InternedId>,
-        member: InternedId,
+        /// Member looked up but not found
+        nonexistent_member: InternedId,
     },
     /// Spanned Formatted Symbol
     /// (Symbol with no members is `Formatted` because it's a language level symbol construct, not a

@@ -14,11 +14,7 @@ use crate::{
     constraints::ArgConstraint,
     lookup::scopes::{AssociatedScopeKind, ScopeType},
     script_compiler::ScriptCompiler,
-    semantic::hir::{
-        hir_concepts::Type,
-        hir_exprs::Param,
-        hir_impls::{ConfigDefMember, OptionAssignmentMember, OptionAssignmentRoot},
-    },
+    semantic::hir::{hir_concepts::Type, hir_exprs::Param},
 };
 
 #[derive(Debug)]
@@ -82,10 +78,12 @@ pub enum SymbolKind {
     // /// a stable type id associated with it even if it isn't resolved yet. This is mainly intended
     // /// to isolate this type of state inside of a kind of symbol, rather than polluting type-space.
     // ReservedTypeSlot(TypeId),
-    /// Represents a module symbol
+    /// Represents a namespace of any kind. Can currently be either a module symbol or plain
+    /// namespace.
     Namespace,
     /// Represents a config symbol
     Directive(DirectiveId),
+    ExternType,
 }
 
 impl SymbolKind {
@@ -93,13 +91,14 @@ impl SymbolKind {
     pub fn to_fmt(compiler: &ScriptCompiler, sym_id: SymbolId) -> Formatted {
         let sym = &compiler.symbols[sym_id];
         match &sym.kind {
-            SymbolKind::Type(type_id) => Type::to_fmt(compiler, *type_id),
+            SymbolKind::Type(type_id) => Type::to_fmt(&compiler.types, *type_id),
             SymbolKind::Variable(_) => Formatted::Variable,
             SymbolKind::Namespace => match sym.associated_scope.expect("Is kind namespace") {
                 AssociatedScopeKind::Module(_) => Formatted::Module,
                 AssociatedScopeKind::Scope(_) => Formatted::Namespace,
             },
             SymbolKind::Directive(_) => Formatted::Directive,
+            SymbolKind::ExternType => Formatted::ExternType,
         }
     }
 }

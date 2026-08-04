@@ -134,7 +134,7 @@ impl MemberResolver<'_> {
             ) {
                 TypeExprResult::Type(type_id) => {
                     if !typechecker::check_field_or_variant(&self.compiler.types, type_id) {
-                        let fmtted_ty = Type::to_fmt(self.compiler, type_id);
+                        let fmtted_ty = Type::to_fmt(&self.compiler.types, type_id);
                         let core_msg = format!("Cannot use type `{fmtted_ty}` for a field");
 
                         let builder = SourceDiagnostic::builder(
@@ -230,7 +230,7 @@ impl MemberResolver<'_> {
                 let orig_span = original_field.name_span;
                 let current_field_span = current_field.name_span;
 
-                let core_msg = format!("More than one field has the identifier \"{dup_name}\"");
+                let core_msg = format!("More than one field has identifier `{dup_name}`");
 
                 let src_diag = SourceDiagnostic::builder(
                     None,
@@ -289,7 +289,7 @@ impl MemberResolver<'_> {
                 ) {
                     TypeExprResult::Type(type_id) => {
                         if !typechecker::check_field_or_variant(&self.compiler.types, type_id) {
-                            let fmtted_ty = Type::to_fmt(self.compiler, type_id);
+                            let fmtted_ty = Type::to_fmt(&self.compiler.types, type_id);
                             let core_msg = format!("Cannot use type `{fmtted_ty}` for a variant");
 
                             let builder = SourceDiagnostic::builder(

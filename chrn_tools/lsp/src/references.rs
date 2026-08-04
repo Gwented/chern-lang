@@ -16,11 +16,10 @@
 //! After collecting all candidate [`Location`] values, overlapping/redundant ranges
 //! within each file are removed with [`crate::text::deduplicate_range_indices`].
 
-use crate::state::{DocumentCache, DocumentState, SemanticEntity};
-use crate::text::{offset_to_position, position_to_offset};
+use crate::state::{DocumentCache, DocumentState, EntityOccurrence, SemanticEntity};
+use crate::text::{LineIndex, position_to_offset};
 use chrn_utils::id_types::SymbolId;
 use chrn_utils::source_map::source_span::SourceSpan;
-use std::sync::Arc;
 use tower_lsp::lsp_types::{Location, Position, Range, Url};
 
 /// Finds all symbol-map entries in the current file that share the same
@@ -32,6 +31,7 @@ fn collect_local_occurrences(
     uri: &Url,
 ) -> Vec<Location> {
     let mut results = Vec::new();
+    let lines = LineIndex::new(&state.text);
     for (span, ent) in &state.symbol_map {
         if let SemanticEntity::Local {
             decl_span,
@@ -49,8 +49,8 @@ fn collect_local_occurrences(
             results.push(Location {
                 uri: uri.clone(),
                 range: Range {
-                    start: offset_to_position(&state.text, abs_start),
-                    end: offset_to_position(&state.text, abs_end),
+                    start: lines.position(abs_start),
+                    end: lines.position(abs_end),
                 },
             });
         }
@@ -59,35 +59,14 @@ fn collect_local_occurrences(
 }
 
 /// Converts raw matching-entity tuples into deduplicated [`Location`] values.
-///
-/// Each entity tuple is `(uri, text, span_start, span_end, script_start)`,
-/// where the span endpoints are **relative** to the region's `src_bytes`.
-/// The `script_start` of the region is included so the conversion to LSP
-/// positions can be performed in absolute file coordinates.
-fn matching_entities_to_locations(
-    entities: Vec<(String, Arc<String>, u32, u32, usize)>,
-) -> Vec<Location> {
+fn matching_entities_to_locations(entities: Vec<EntityOccurrence>) -> Vec<Location> {
     let mut results = Vec::new();
-    // Group by URI to deduplicate per file
-    let mut by_uri: std::collections::HashMap<String, Vec<Range>> =
-        std::collections::HashMap::new();
-    for (state_uri, text, start, end, script_start) in entities {
-        let abs_start = crate::text::rel_to_abs_offset(start, script_start) as usize;
-        let abs_end = crate::text::rel_to_abs_offset(end, script_start) as usize;
-        let range = Range {
-            start: offset_to_position(&text, abs_start),
-            end: offset_to_position(&text, abs_end),
-        };
-        by_uri.entry(state_uri).or_default().push(range);
-    }
-    for (state_uri, ranges) in by_uri {
+    for (state_uri, ranges) in crate::text::occurrences_to_ranges(entities) {
         if let Ok(uri) = Url::parse(&state_uri) {
-            for &i in &crate::text::deduplicate_range_indices(&ranges) {
-                results.push(Location {
-                    uri: uri.clone(),
-                    range: ranges[i],
-                });
-            }
+            results.extend(ranges.into_iter().map(|range| Location {
+                uri: uri.clone(),
+                range,
+            }));
         }
     }
     results

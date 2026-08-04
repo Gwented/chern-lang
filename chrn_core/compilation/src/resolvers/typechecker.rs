@@ -16,11 +16,11 @@ use crate::{
 ///
 /// Returns `true` if the type is a valid field or variant candidate, `false` if invalid
 pub fn check_field_or_variant(types: &Arena<TypeInfo, TypeId>, mut type_id: TypeId) -> bool {
-    let type_id = walk_type_id_deferred!(types, type_id);
-    match &types[type_id.inner].ty {
-        Type::Struct(_) | Type::Enum(_) | Type::BuiltinTypeInfo(_) => return true,
+    let checked = walk_type_id_deferred!(types, type_id);
+    match &types[checked.inner].ty {
+        Type::Struct(_) | Type::Enum(_) | Type::BuiltinTypeInfo(_) => true,
         Type::Unknown | Type::Boundaries(_) | Type::Alias(_) | Type::TypeDef(_) | Type::Func(_) => {
-            return false;
+            false
         }
         Type::Deferred(_) => unreachable!(),
     }
@@ -28,8 +28,8 @@ pub fn check_field_or_variant(types: &Arena<TypeInfo, TypeId>, mut type_id: Type
 
 /// Returns `true` if the type is a valid config root candidate, `false` if invalid
 pub fn check_cfg_root(types: &Arena<TypeInfo, TypeId>, mut type_id: TypeId) -> bool {
-    let type_id = walk_type_id_deferred!(types, type_id);
-    match &types[type_id.inner].ty {
+    let checked = walk_type_id_deferred!(types, type_id);
+    match &types[checked.inner].ty {
         Type::TypeDef(_) | Type::Struct(_) | Type::Enum(_) => return true,
         Type::BuiltinTypeInfo(_)
         | Type::Unknown

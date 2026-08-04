@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 
 use chrn_utils::{
+    arena::Arena,
     id_types::{ExprId, MemberId, ModuleId, ScopeId, SpannedContainer, TypeId, ValueId},
     loop_abort,
     source_map::source_span::SourceSpan,
@@ -138,9 +139,9 @@ impl Type {
 
     // so??
     /// The env can't be passed into to_fmt so
-    pub fn to_fmt(compiler: &ScriptCompiler, mut type_id: TypeId) -> Formatted {
-        let checked = walk_type_id_deferred!(&compiler.types, type_id);
-        match &compiler.types[checked.inner].ty {
+    pub fn to_fmt(types: &Arena<TypeInfo, TypeId>, mut type_id: TypeId) -> Formatted {
+        let checked = walk_type_id_deferred!(&types, type_id);
+        match &types[checked.inner].ty {
             Type::BuiltinTypeInfo(builtin_type) => builtin_type.ty.kind().to_fmt(),
             Type::Struct(struct_def) => struct_def.to_fmt(),
             Type::Enum(enum_def) => enum_def.to_fmt(),

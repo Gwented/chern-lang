@@ -624,30 +624,28 @@ async fn publish_if_current(
     }
 }
 
-/// Resolves the `script_start` a [`SourceDiagnostic`]'s spans are relative to, by
-/// looking up the [`SourceRegion`](chrn_utils::source_map::source_region::SourceRegion)
-/// whose `path_id` matches the diagnostic's `path_id`.
+/// Indexes each region's `script_start` by the `path_id` of the file it came from.
 ///
-/// `script_start` is the absolute file byte position of the region's start, which
-/// is added to relative diagnostic spans to put them in absolute file coordinates
-/// before being surfaced to the LSP client.
+/// `script_start` is the absolute file byte position of a region's start, which is
+/// added to that region's relative diagnostic spans to put them in absolute file
+/// coordinates before being surfaced to the LSP client.
 ///
-/// Falls back to `0` if no matching region is found. This is the case for
-/// diagnostics emitted by the compiler intrinsics (which never correspond to a
-/// user file) or for diagnostics whose region has been evicted from the arena.
-fn resolve_diag_script_start(
+/// The arena is built from the same `Intern` instance that produced a diagnostic's
+/// `path_id` (see `DocumentState::ensure_analyzed`), so matching on `path_id` is
+/// correct.  Building the map once per call replaces a linear scan of the arena per
+/// diagnostic; a file importing many modules and emitting many diagnostics paid that
+/// scan for each one.
+///
+/// A diagnostic whose `path_id` is absent falls back to `0`: compiler-intrinsic
+/// diagnostics correspond to no user file, and a region may have been evicted.
+fn region_script_starts(
     arena: &Arena<SourceRegion, SourceRegionId>,
-    diag: &SourceDiagnostic,
-) -> usize {
-    // The arena is built from the same `Intern` instance that produced the
-    // diagnostic's `path_id` (see `DocumentState::ensure_analyzed`), so
-    // `region.path_id == diag.path_id` is a correct comparison.
-    arena
-        .items
-        .iter()
-        .find(|r| r.path_id == diag.path_id)
-        .map(|region| region.script_start)
-        .unwrap_or(0)
+) -> HashMap<PathId, usize> {
+    let mut starts = HashMap::with_capacity(arena.items.len());
+    for region in &arena.items {
+        starts.entry(region.path_id).or_insert(region.script_start);
+    }
+    starts
 }
 
 /// Converts a slice of core [`SourceDiagnostic`] values and appends the resulting LSP
@@ -686,18 +684,26 @@ pub(crate) fn push_diagnostics(
     fallback_doc_len: usize,
     source: &str,
 ) {
+    if diags.is_empty() {
+        return;
+    }
+
+    let script_starts = region_script_starts(arena);
+    // Whether a diagnostic came from the main document or a sub-module, the
+    // resulting LSP positions are in the absolute coordinate system of the
+    // document the editor is showing, so every conversion runs against
+    // `fallback_text` and one line table serves them all.
+    let lines = crate::text::LineIndex::new(fallback_text);
+    let effective_doc_len = fallback_doc_len;
+
     for core_diag in diags {
         // A diagnostic originating in an imported module has spans relative to
         // that module's region, so the shift has to come from the region matching
         // this diagnostic's `path_id`, not from the main document's.
-        //
-        // Whether that region is the main document or a sub-module, the resulting
-        // LSP positions must be in the absolute file coordinate system, so
-        // `fallback_text` (the whole document the editor is showing) is always
-        // what the final `Position` conversion runs against.
-        let script_start = resolve_diag_script_start(arena, core_diag);
-        let text = fallback_text;
-        let effective_doc_len = fallback_doc_len;
+        let script_start = script_starts
+            .get(&core_diag.path_id)
+            .copied()
+            .unwrap_or(0);
 
         let severity = match core_diag.level {
             DiagnosticLevel::Error => lsp_types::DiagnosticSeverity::ERROR,
@@ -723,8 +729,8 @@ pub(crate) fn push_diagnostics(
             (0, 0)
         };
 
-        let start_pos = crate::text::offset_to_position(text, start_byte);
-        let end_pos = crate::text::offset_to_position(text, end_byte);
+        let start_pos = lines.position(start_byte);
+        let end_pos = lines.position(end_byte);
 
         lsp_diags.push(tower_lsp::lsp_types::Diagnostic {
             range: lsp_types::Range {
@@ -771,8 +777,8 @@ pub(crate) fn push_diagnostics(
             };
             lsp_diags.push(tower_lsp::lsp_types::Diagnostic {
                 range: lsp_types::Range {
-                    start: crate::text::offset_to_position(text, ann_start),
-                    end: crate::text::offset_to_position(text, ann_end),
+                    start: lines.position(ann_start),
+                    end: lines.position(ann_end),
                 },
                 severity: Some(ann_sev),
                 source: Some(source.to_string()),

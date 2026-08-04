@@ -109,6 +109,78 @@ fn test_deduplicate_range_indices_identical_keeps_first() {
     assert_eq!(kept[0], 0);
 }
 
+/// Brute-force restatement of the redundancy rule the fast path implements.
+fn dedup_reference(ranges: &[Range]) -> Vec<usize> {
+    let mut result = Vec::new();
+    for i in 0..ranges.len() {
+        let r1 = &ranges[i];
+        let redundant = ranges.iter().enumerate().any(|(j, r2)| {
+            if i == j {
+                return false;
+            }
+            let starts_after_or_at = (r2.start.line, r2.start.character) >= (r1.start.line, r1.start.character);
+            let ends_before_or_at = (r2.end.line, r2.end.character) <= (r1.end.line, r1.end.character);
+            starts_after_or_at
+                && ends_before_or_at
+                && (r1.start != r2.start || r1.end != r2.end || j < i)
+        });
+        if !redundant {
+            result.push(i);
+        }
+    }
+    result
+}
+
+/// The sorted implementation must agree with the pairwise rule on overlapping,
+/// nested, identical, and disjoint inputs alike.
+#[test]
+fn test_deduplicate_range_indices_matches_pairwise_rule() {
+    let r = |sl: u32, sc: u32, el: u32, ec: u32| Range {
+        start: Position::new(sl, sc),
+        end: Position::new(el, ec),
+    };
+    let cases: Vec<Vec<Range>> = vec![
+        vec![],
+        vec![r(0, 0, 0, 5)],
+        vec![r(0, 0, 0, 10), r(0, 2, 0, 5), r(0, 2, 0, 5)],
+        vec![r(0, 0, 0, 5), r(0, 0, 0, 3), r(0, 0, 0, 8)],
+        vec![r(1, 0, 3, 4), r(2, 0, 2, 9), r(3, 0, 3, 4), r(0, 0, 9, 9)],
+        vec![r(0, 0, 0, 4), r(0, 4, 0, 8), r(0, 8, 0, 12)],
+        vec![r(2, 2, 2, 6), r(2, 2, 2, 6), r(2, 2, 2, 6)],
+    ];
+
+    for ranges in cases {
+        assert_eq!(
+            deduplicate_range_indices(&ranges),
+            dedup_reference(&ranges),
+            "diverged on {ranges:?}"
+        );
+    }
+}
+
+/// `LineIndex` is a table-driven restatement of `offset_to_position`; the two must
+/// agree at every byte, including inside multi-byte characters and past the end.
+#[test]
+fn test_line_index_matches_offset_to_position() {
+    let text = "let a = 1\nlet é = \"日本\"\n\nlet c = 3\n";
+    let lines = crate::text::LineIndex::new(text);
+
+    for offset in 0..=text.len() + 5 {
+        assert_eq!(
+            lines.position(offset),
+            crate::text::offset_to_position(text, offset),
+            "line index diverged at byte offset {offset}"
+        );
+    }
+}
+
+#[test]
+fn test_line_index_empty_text() {
+    let lines = crate::text::LineIndex::new("");
+    assert_eq!(lines.position(0), Position::new(0, 0));
+    assert_eq!(lines.position(7), Position::new(0, 0));
+}
+
 #[test]
 fn test_apply_text_change_full_replace() {
     let existing = "hello world";

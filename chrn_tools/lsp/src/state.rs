@@ -325,35 +325,19 @@ impl DocumentState {
         // resolver.  Aligned with `compiler.mods` so the resulting `compilation_syms`
         // can be indexed by `ModuleId` when we later build the `ResolverEnv`s.
         let mod_len = compiler.mods.len();
-        let mut registration_envs: Vec<Option<RegistrationEnv>> = Vec::with_capacity(mod_len);
-        for (mod_idx, ast_info) in all_asts.iter().enumerate().take(mod_len) {
-            let ast_info = match ast_info {
-                Some(a) => a,
-                None => {
-                    registration_envs.push(None);
-                    continue;
-                }
-            };
-            let src_region_id = match compiler.mods[ModuleId::new(mod_idx as u32)].region_id {
-                Some(rid) => rid,
-                None => {
-                    registration_envs.push(None);
-                    continue;
-                }
-            };
-            let region = match self.region_arena.get(src_region_id) {
-                Some(r) => r,
-                None => {
-                    registration_envs.push(None);
-                    continue;
-                }
-            };
-            registration_envs.push(Some(RegistrationEnv::new(
-                ast_info,
-                region,
-                ModuleId::new(mod_idx as u32),
-            )));
-        }
+        let module_inputs = module_inputs(&all_asts, &compiler.mods, &self.region_arena);
+        let registration_envs: Vec<Option<RegistrationEnv>> = module_inputs
+            .iter()
+            .enumerate()
+            .map(|(mod_idx, parts)| {
+                let (ast_info, region) = (*parts)?;
+                Some(RegistrationEnv::new(
+                    ast_info,
+                    region,
+                    ModuleId::new(mod_idx as u32),
+                ))
+            })
+            .collect();
 
         // Namespace resolution: register every top-level item as a `SymbolId` per
         // module.  Mirrors the orchestrator: a single `NamespaceResolver` is
@@ -365,13 +349,10 @@ impl DocumentState {
         {
             let mut ns_resolver = NamespaceResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
-            for env_opt in registration_envs.iter().take(mod_len) {
-                let env = match env_opt {
-                    Some(e) => e,
-                    None => {
-                        compilation_syms.push(None);
-                        continue;
-                    }
+            for env_opt in &registration_envs {
+                let Some(env) = env_opt else {
+                    compilation_syms.push(None);
+                    continue;
                 };
 
                 let (current_mod_symbols, mut ns_summary) = ns_resolver.resolve(env);
@@ -390,56 +371,27 @@ impl DocumentState {
         // the module's `compilation_syms` slice so the resolvers can iterate over
         // symbols rather than ast nodes.
         {
-            let mod_len = compiler.mods.len();
-            let mut resolver_envs: Vec<Option<ResolverEnv>> = Vec::with_capacity(mod_len);
-            for (mod_idx, ast_info) in all_asts.iter().enumerate().take(mod_len) {
-                let ast_info = match ast_info {
-                    Some(a) => a,
-                    None => {
-                        resolver_envs.push(None);
-                        continue;
-                    }
-                };
-                let src_region_id = match compiler.mods[ModuleId::new(mod_idx as u32)].region_id {
-                    Some(rid) => rid,
-                    None => {
-                        resolver_envs.push(None);
-                        continue;
-                    }
-                };
-                let region = match self.region_arena.get(src_region_id) {
-                    Some(r) => r,
-                    None => {
-                        resolver_envs.push(None);
-                        continue;
-                    }
-                };
-                let mod_syms = match compilation_syms[mod_idx].as_ref() {
-                    Some(s) => s,
-                    None => {
-                        resolver_envs.push(None);
-                        continue;
-                    }
-                };
-                resolver_envs.push(Some(ResolverEnv::new(
-                    ast_info,
-                    region,
-                    ModuleId::new(mod_idx as u32),
-                    mod_syms,
-                )));
-            }
+            let resolver_envs: Vec<Option<ResolverEnv>> = module_inputs
+                .iter()
+                .enumerate()
+                .map(|(mod_idx, parts)| {
+                    let (ast_info, region) = (*parts)?;
+                    let mod_syms = compilation_syms[mod_idx].as_ref()?;
+                    Some(ResolverEnv::new(
+                        ast_info,
+                        region,
+                        ModuleId::new(mod_idx as u32),
+                        mod_syms,
+                    ))
+                })
+                .collect();
 
             // Member resolution (fields/variants) for all modules.  A single
             // `MemberResolver` is reused across modules and iterates each env's
             // `compilation_syms` internally rather than walking the AST.
             let mut member_resolver = MemberResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
-            for env in resolver_envs.iter().take(mod_len) {
-                let env = match env {
-                    Some(e) => e,
-                    None => continue,
-                };
-
+            for env in resolver_envs.iter().flatten() {
                 let mut member_summary = member_resolver.resolve(env);
                 if !member_summary.diags.is_empty() {
                     self.member_errors.append_diags(&mut member_summary.diags);
@@ -471,12 +423,7 @@ impl DocumentState {
             // `main_expr_range`; `build_symbol_map` now filters expressions by
             // the main module's region id instead, which needs no such borrow.
             let mut type_resolver = TypeResolver::new(&chrn_cfg, &mut self.interner, &mut compiler);
-            for env in resolver_envs.iter().take(mod_len) {
-                let env = match env {
-                    Some(e) => e,
-                    None => continue,
-                };
-
+            for env in resolver_envs.iter().flatten() {
                 let mut ty_summary = type_resolver.resolve(env);
                 if !ty_summary.diags.is_empty() {
                     self.ty_errors.append_diags(&mut ty_summary.diags);
@@ -490,12 +437,7 @@ impl DocumentState {
             let mut constraint_resolver =
                 ConstraintResolver::new(&chrn_cfg, &self.interner, &mut compiler);
 
-            for env in resolver_envs.iter().take(mod_len) {
-                let env = match env {
-                    Some(env) => env,
-                    None => continue,
-                };
-
+            for env in resolver_envs.iter().flatten() {
                 let mut cn_summary = constraint_resolver.resolve(env);
                 if !cn_summary.diags.is_empty() {
                     self.cn_errors.append_diags(&mut cn_summary.diags);
@@ -630,9 +572,7 @@ impl DocumentState {
                 _ => continue,
             };
             let impl_hir = &compiler.impls[*impl_id];
-            let cfg_root_id = match &impl_hir.kind {
-                ImplHirKind::Config(cfg_root_id) => cfg_root_id,
-            };
+            let ImplHirKind::Config(cfg_root_id) = &impl_hir.kind;
             let cfg_root = &compiler.cfgs[*cfg_root_id];
 
             let mut queue: Vec<ImplMemberId> = Vec::new();
@@ -705,13 +645,13 @@ impl DocumentState {
 
         // 4. Type and Expr References in AST
         if let Some(Some(ast)) = self.asts.first() {
-            let mut collector = RefCollector {
+            let mut collector = RefCollector::new(
                 compiler,
-                text: &self.text,
-                interner: &self.interner,
-                script_start: self.script_start,
-                map: &mut map,
-            };
+                &self.text,
+                &self.interner,
+                self.script_start,
+                &mut map,
+            );
             for item in ast.items() {
                 match item {
                     Item::Decl(AbstractDecl::Var(v)) => collector.expr_refs(&v.spanned_expr),
@@ -1037,7 +977,7 @@ impl DocumentState {
         def_path: &Path,
         def_span: SourceSpan,
         def_owner_sym_id: Option<SymbolId>,
-    ) -> Vec<(String, Arc<String>, u32, u32, usize)> {
+    ) -> Vec<EntityOccurrence> {
         // Collect state Arcs while holding the cache lock, then release it before
         // acquiring any DocumentState locks.  This prevents the lock-order inversion
         // that contributed to the deadlock: a reader holding DocumentCache while
@@ -1052,6 +992,12 @@ impl DocumentState {
         for (state_uri, state_arc) in states {
             let state = state_arc.read();
             for (span, ent) in &state.symbol_map {
+                // `definition_site` walks arenas and, for members, the owning AST
+                // node.  The owner check reads the entity's own fields, so it
+                // rejects whole categories of entry before any of that runs.
+                if !entity_may_define(ent, def_span, def_owner_sym_id) {
+                    continue;
+                }
                 // `definition_site` borrows the path out of the interner, so this
                 // runs allocation-free — one `String` per symbol-map entry per
                 // cached document used to be built here just to be compared away.
@@ -1109,6 +1055,62 @@ impl DocumentState {
         }
 
         false
+    }
+}
+
+/// One occurrence of a symbol found by [`DocumentState::find_matching_entities`]:
+/// `(uri, file text, span start, span end, script start)`.
+///
+/// The span endpoints are **relative** to the region's `src_bytes`; `script_start`
+/// shifts them into the absolute file coordinates an LSP position needs.
+pub type EntityOccurrence = (String, Arc<String>, u32, u32, usize);
+
+/// Pairs each module with the AST and source region its resolvers read, in `ModuleId`
+/// order, with `None` where either is missing.
+///
+/// Both the registration environments and the resolver environments need exactly this
+/// lookup; each used to walk the module list and unwrap the same three `Option`s
+/// itself, in twenty-odd lines apiece.
+fn module_inputs<'a>(
+    asts: &'a [Option<AstInfo>],
+    mods: &Arena<compilation::modules::Module, ModuleId>,
+    regions: &'a Arena<SourceRegion, SourceRegionId>,
+) -> Vec<Option<(&'a AstInfo, &'a SourceRegion)>> {
+    (0..mods.len())
+        .map(|mod_idx| {
+            let ast_info = asts.get(mod_idx)?.as_ref()?;
+            let region_id = mods[ModuleId::new(mod_idx as u32)].region_id?;
+            Some((ast_info, regions.get(region_id)?))
+        })
+        .collect()
+}
+
+/// Whether `entity` could possibly resolve to the definition keyed by `def_span` and
+/// `def_owner_sym_id`, judged from the entity's own fields alone.
+///
+/// A prefilter for [`DocumentState::find_matching_entities`]: the owning symbol that
+/// [`DocumentState::definition_site`] reports is fixed per entity kind, so a mismatch
+/// here rules the entry out without touching the compiler arenas.  Returning `true` is
+/// not a match — the full `definition_site` comparison still decides.
+fn entity_may_define(
+    entity: &SemanticEntity,
+    def_span: SourceSpan,
+    def_owner_sym_id: Option<SymbolId>,
+) -> bool {
+    match entity {
+        // These report no owning symbol, so they can only key a definition that has none.
+        SemanticEntity::Symbol(_)
+        | SemanticEntity::Module(_)
+        | SemanticEntity::ConfigMember { .. } => def_owner_sym_id.is_none(),
+        SemanticEntity::Field { owner_sym_id, .. }
+        | SemanticEntity::Variant { owner_sym_id, .. } => def_owner_sym_id == Some(*owner_sym_id),
+        SemanticEntity::Local {
+            decl_span,
+            owner_sym_id,
+            ..
+        } => *decl_span == def_span && *owner_sym_id == def_owner_sym_id,
+        // Schema-defined names have no definition site at all.
+        SemanticEntity::ConfigOption { .. } => false,
     }
 }
 
@@ -1452,38 +1454,110 @@ struct RefCollector<'a> {
     text: &'a str,
     interner: &'a Intern,
     script_start: usize,
+    /// Module name → id, built once.  The walks resolve a module by name at every
+    /// path and member access; a linear scan of `compiler.mods` per node made that
+    /// cost grow with the import count on every expression in the file.
+    mods_by_name: HashMap<InternedId, ModuleId>,
     map: &'a mut Vec<(SourceSpan, SemanticEntity)>,
+}
+
+/// What resolving one segment of a `::` path leaves the walk pointing at.
+///
+/// The path walk is a state machine over these three cases; before, the same
+/// transitions were written twice — once for the head segment and once, nested five
+/// blocks deep, for the tail — with `current_mod` / `current_ty` / `matched` locals
+/// standing in for the state.
+enum PathCursor {
+    /// The path so far names a module; the next segment is looked up in it.
+    Module(ModuleId),
+    /// The path so far names a value or type; the next segment is a field/variant.
+    Type(TypeId),
+    /// Resolved to something that cannot own further segments, or failed to
+    /// resolve.  Remaining segments are not indexed.
+    Opaque,
+}
+
+impl<'a> RefCollector<'a> {
+    fn new(
+        compiler: &'a ScriptCompiler,
+        text: &'a str,
+        interner: &'a Intern,
+        script_start: usize,
+        map: &'a mut Vec<(SourceSpan, SemanticEntity)>,
+    ) -> Self {
+        // First module wins on a duplicate name, matching the `find` this replaces.
+        let mut mods_by_name = HashMap::with_capacity(compiler.mods.len());
+        for module in &compiler.mods.items {
+            mods_by_name.entry(module.name_id).or_insert(module.mod_id);
+        }
+        RefCollector {
+            compiler,
+            text,
+            interner,
+            script_start,
+            mods_by_name,
+            map,
+        }
+    }
+
+    /// Looks up a module by the name it is referred to under.
+    fn module_named(&self, name_id: InternedId) -> Option<ModuleId> {
+        self.mods_by_name.get(&name_id).copied()
+    }
+
+    /// Resolves `name_id` in `mod_id`'s exported namespace, trying each scope in
+    /// `order` until one hits.
+    ///
+    /// Every path walk needs the same two-scope fallback and differs only in which
+    /// scope it prefers, which is why the order is a parameter rather than fixed.
+    fn lookup_in_module(
+        &self,
+        mod_id: ModuleId,
+        name_id: InternedId,
+        order: [ScopeType; 2],
+    ) -> Option<SymbolId> {
+        self.lookup(mod_id, name_id, order, ScopeLookupPattern::NamespaceOnly)
+    }
+
+    /// Resolves `name_id` as it would be written in the main module, following
+    /// imports and enclosing scopes.
+    fn lookup_visible(&self, name_id: InternedId, order: [ScopeType; 2]) -> Option<SymbolId> {
+        self.lookup(
+            ModuleId::new(0),
+            name_id,
+            order,
+            ScopeLookupPattern::NoRestrictions,
+        )
+    }
+
+    fn lookup(
+        &self,
+        mod_id: ModuleId,
+        name_id: InternedId,
+        order: [ScopeType; 2],
+        pattern: ScopeLookupPattern,
+    ) -> Option<SymbolId> {
+        order.into_iter().find_map(|scope_ty| {
+            scopes::find_sym_id(
+                self.compiler,
+                AssociatedScopeKind::Module(mod_id),
+                name_id,
+                scope_ty,
+                pattern,
+            )
+            .map(|out| out.found_sym_id)
+        })
+    }
 }
 
 impl RefCollector<'_> {
     /// Indexes the symbols named by a type expression (and its generic arguments).
     fn type_refs(&mut self, type_expr: &SpannedContainer<TypeExpr>) {
-        let compiler = self.compiler;
         match &type_expr.inner {
             TypeExpr::Var(name_id) => {
-                let interned = *name_id;
-                if let Some(scopes::SymbolLookupOutput {
-                    found_sym_id: sym_id,
-                    ..
-                }) = scopes::find_sym_id(
-                    compiler,
-                    AssociatedScopeKind::Module(ModuleId::new(0)),
-                    interned,
-                    ScopeType::Var,
-                    ScopeLookupPattern::NoRestrictions,
-                ) {
-                    self.map
-                        .push((type_expr.span, SemanticEntity::Symbol(sym_id)));
-                } else if let Some(scopes::SymbolLookupOutput {
-                    found_sym_id: sym_id,
-                    ..
-                }) = scopes::find_sym_id(
-                    compiler,
-                    AssociatedScopeKind::Module(ModuleId::new(0)),
-                    interned,
-                    ScopeType::Neutral,
-                    ScopeLookupPattern::NoRestrictions,
-                ) {
+                if let Some(sym_id) =
+                    self.lookup_visible(*name_id, [ScopeType::Var, ScopeType::Neutral])
+                {
                     self.map
                         .push((type_expr.span, SemanticEntity::Symbol(sym_id)));
                 }
@@ -1493,31 +1567,16 @@ impl RefCollector<'_> {
                     let mod_name_part = &path[0];
                     let sym_name_part = &path[1];
                     if let PathSegment::Ident(mod_name_id) = mod_name_part.kind
-                        && let Some(found_mod) =
-                            compiler.mods.iter().find(|m| m.name_id == mod_name_id)
+                        && let Some(found_mod) = self.module_named(mod_name_id)
                     {
                         self.map
-                            .push((mod_name_part.span, SemanticEntity::Module(found_mod.mod_id)));
+                            .push((mod_name_part.span, SemanticEntity::Module(found_mod)));
                         if let PathSegment::Ident(sym_name_id) = sym_name_part.kind
-                            && let Some(scopes::SymbolLookupOutput {
-                                found_sym_id: sym_id,
-                                ..
-                            }) = scopes::find_sym_id(
-                                compiler,
-                                AssociatedScopeKind::Module(found_mod.mod_id),
+                            && let Some(sym_id) = self.lookup_in_module(
+                                found_mod,
                                 sym_name_id,
-                                ScopeType::Neutral,
-                                ScopeLookupPattern::NamespaceOnly,
+                                [ScopeType::Neutral, ScopeType::Var],
                             )
-                            .or_else(|| {
-                                scopes::find_sym_id(
-                                    compiler,
-                                    AssociatedScopeKind::Module(found_mod.mod_id),
-                                    sym_name_id,
-                                    ScopeType::Var,
-                                    ScopeLookupPattern::NamespaceOnly,
-                                )
-                            })
                         {
                             self.map
                                 .push((sym_name_part.span, SemanticEntity::Symbol(sym_id)));
@@ -1541,73 +1600,59 @@ impl RefCollector<'_> {
         }
     }
 
+    /// Locates the field name inside `base.field`, given the relative end offsets of
+    /// the base expression and of the whole access.
+    ///
+    /// The AST records no span for the name itself, so it is found in the source text
+    /// after the dot.  Falls back to "everything after the base" when the text does
+    /// not contain the expected shape.  The returned span is relative to the region's
+    /// `src_bytes`, like the rest of `symbol_map`; `self.text` is the whole document,
+    /// so `script_start` shifts between the two.
+    fn member_name_span(&self, base_end: u32, access_end: u32, field: InternedId) -> SourceSpan {
+        let fallback = SourceSpan {
+            region_id: SourceRegionId::new(0),
+            start: base_end.saturating_add(1),
+            end: access_end,
+        };
+
+        let search_start = base_end as usize + self.script_start;
+        let search_end = (access_end as usize + self.script_start).min(self.text.len());
+        let Some(search_area) = self.text.get(search_start..search_end) else {
+            return fallback;
+        };
+
+        let field_name = self.interner.search(field);
+        let Some(dot_idx) = search_area.find('.') else {
+            return fallback;
+        };
+        let Some(name_idx) = search_area[dot_idx + 1..].find(field_name) else {
+            return fallback;
+        };
+
+        let start = search_start + dot_idx + 1 + name_idx;
+        SourceSpan {
+            region_id: SourceRegionId::new(0),
+            start: (start - self.script_start) as u32,
+            end: (start + field_name.len() - self.script_start) as u32,
+        }
+    }
+
     /// Indexes the symbols, modules, fields, and variants named by an expression.
     fn expr_refs(&mut self, expr: &compilation::parser::ast::ast_exprs::SpannedExpr) {
-        let compiler = self.compiler;
-        let text = self.text;
-        let interner = self.interner;
-        let script_start = self.script_start;
         match &expr.expr {
             Expr::MemberAccess(acc) => {
                 if let Expr::Var(base_id) = acc.base.expr
-                    && let Some(found_mod) = compiler.mods.iter().find(|m| m.name_id == base_id)
+                    && let Some(found_mod) = self.module_named(base_id)
                 {
                     self.map
-                        .push((acc.base.span, SemanticEntity::Module(found_mod.mod_id)));
+                        .push((acc.base.span, SemanticEntity::Module(found_mod)));
 
-                    // Try to find a precise span for the field name by searching after the dot
-                    let full_span = expr.span;
-                    // The AST's `span` values are relative to the region's
-                    // `src_bytes`.  `text` is the whole document, so add
-                    // `script_start` to shift the offsets into the
-                    // coordinate system the string slice below operates in.
-                    let base_end = (acc.base.span.end as usize) + script_start;
-                    let full_end = (full_span.end as usize) + script_start;
-                    let field_name = interner.search(acc.field);
-
-                    // Look for the field name in the source text between dot and end of expr
-                    let mut field_span = SourceSpan {
-                        region_id: SourceRegionId::new(0),
-                        start: (base_end.saturating_add(1) - script_start) as u32,
-                        end: full_span.end,
-                    };
-
-                    let search_end = full_end.min(text.len());
-                    let search_area = &text[base_end..search_end];
-                    if let Some(dot_idx) = search_area.find('.')
-                        && let Some(name_idx) = search_area[dot_idx + 1..].find(field_name)
-                    {
-                        // The search produced a position in absolute
-                        // coordinates, so subtract `script_start` to keep
-                        // the stored span relative (consistent with the
-                        // rest of `symbol_map`).
-                        let start = base_end + dot_idx + 1 + name_idx;
-                        field_span = SourceSpan {
-                            region_id: SourceRegionId::new(0),
-                            start: (start - script_start) as u32,
-                            end: (start + field_name.len() - script_start) as u32,
-                        };
-                    }
-
-                    if let Some(scopes::SymbolLookupOutput {
-                        found_sym_id: sym_id,
-                        ..
-                    }) = scopes::find_sym_id(
-                        compiler,
-                        AssociatedScopeKind::Module(found_mod.mod_id),
+                    let field_span = self.member_name_span(acc.base.span.end, expr.span.end, acc.field);
+                    if let Some(sym_id) = self.lookup_in_module(
+                        found_mod,
                         acc.field,
-                        ScopeType::Var,
-                        ScopeLookupPattern::NamespaceOnly,
-                    )
-                    .or_else(|| {
-                        scopes::find_sym_id(
-                            compiler,
-                            AssociatedScopeKind::Module(found_mod.mod_id),
-                            acc.field,
-                            ScopeType::Neutral,
-                            ScopeLookupPattern::NamespaceOnly,
-                        )
-                    }) {
+                        [ScopeType::Var, ScopeType::Neutral],
+                    ) {
                         self.map.push((field_span, SemanticEntity::Symbol(sym_id)));
                     }
                 }
@@ -1625,257 +1670,197 @@ impl RefCollector<'_> {
                 self.expr_refs(lhs);
                 self.expr_refs(rhs);
             }
-            Expr::StaticAccess(segments) => {
-                if segments.len() >= 2
-                    && let PathSegment::Ident(name_id) = segments[0].kind
-                {
-                    let sym_id = scopes::find_sym_id(
-                        compiler,
-                        AssociatedScopeKind::Module(ModuleId::new(0)),
-                        name_id,
-                        ScopeType::Neutral,
-                        ScopeLookupPattern::NoRestrictions,
-                    )
-                    .or_else(|| {
-                        scopes::find_sym_id(
-                            compiler,
-                            AssociatedScopeKind::Module(ModuleId::new(0)),
-                            name_id,
-                            ScopeType::Var,
-                            ScopeLookupPattern::NoRestrictions,
-                        )
-                    });
-
-                    if let Some(scopes::SymbolLookupOutput {
-                        found_sym_id: sid, ..
-                    }) = sym_id
-                        && let Some(sym) = compiler.symbols.get(sid)
-                    {
-                        let mut current_mod: Option<ModuleId> = None;
-                        let mut current_ty: Option<TypeId> = None;
-                        let mut matched = false;
-                        match sym.kind {
-                            SymbolKind::Namespace => {
-                                match sym
-                                    .associated_scope
-                                    .expect("Namespace should have associated scope")
-                                {
-                                    AssociatedScopeKind::Module(mid) => {
-                                        self.map
-                                            .push((segments[0].span, SemanticEntity::Module(mid)));
-                                        current_mod = Some(mid);
-                                        matched = true;
-                                    }
-                                    AssociatedScopeKind::Scope(_) => {
-                                        self.map
-                                            .push((segments[0].span, SemanticEntity::Symbol(sid)));
-                                        matched = true;
-                                    }
-                                }
-                            }
-                            SymbolKind::Type(tid) => {
-                                self.map
-                                    .push((segments[0].span, SemanticEntity::Symbol(sid)));
-                                current_ty = Some(tid);
-                                matched = true;
-                            }
-                            SymbolKind::Variable(var_id) => {
-                                let var = &compiler.variables[var_id];
-                                if let VariableState::Known(val_id) = var.state
-                                    && let Some(val_info) = compiler.values.get(val_id)
-                                {
-                                    self.map
-                                        .push((segments[0].span, SemanticEntity::Symbol(sid)));
-                                    current_ty = Some(val_info.type_id);
-                                    matched = true;
-                                }
-                            }
-                            _ => {}
-                        }
-                        if matched {
-                            for seg in &segments[1..] {
-                                if let PathSegment::Ident(seg_name_id) = seg.kind {
-                                    if let Some(mod_id) = current_mod {
-                                        if let Some(scopes::SymbolLookupOutput {
-                                            found_sym_id: sym_id,
-                                            ..
-                                        }) = scopes::find_sym_id(
-                                            compiler,
-                                            AssociatedScopeKind::Module(mod_id),
-                                            seg_name_id,
-                                            ScopeType::Var,
-                                            ScopeLookupPattern::NamespaceOnly,
-                                        )
-                                        .or_else(|| {
-                                            scopes::find_sym_id(
-                                                compiler,
-                                                AssociatedScopeKind::Module(mod_id),
-                                                seg_name_id,
-                                                ScopeType::Neutral,
-                                                ScopeLookupPattern::NamespaceOnly,
-                                            )
-                                        }) {
-                                            if let Some(sym) = compiler.symbols.get(sym_id) {
-                                                match sym.kind {
-                                                    SymbolKind::Namespace => {
-                                                        match sym.associated_scope.expect("Namespace should have associated scope") {
-                                                            AssociatedScopeKind::Module(mid) => {
-                                                                self.map.push((
-                                                                    seg.span,
-                                                                    SemanticEntity::Module(mid),
-                                                                ));
-                                                                current_mod = Some(mid);
-                                                                current_ty = None;
-                                                            }
-                                                            AssociatedScopeKind::Scope(_) => {
-                                                                self.map.push((
-                                                                    seg.span,
-                                                                    SemanticEntity::Symbol(sym_id),
-                                                                ));
-                                                                current_mod = None;
-                                                                current_ty = None;
-                                                            }
-                                                        }
-                                                    }
-                                                    SymbolKind::Type(tid) => {
-                                                        self.map.push((
-                                                            seg.span,
-                                                            SemanticEntity::Symbol(sym_id),
-                                                        ));
-                                                        current_mod = None;
-                                                        current_ty = Some(tid);
-                                                    }
-                                                    SymbolKind::Variable(var_id) => {
-                                                        let var = &compiler.variables[var_id];
-                                                        if let VariableState::Known(val_id) =
-                                                            var.state
-                                                        {
-                                                            self.map.push((
-                                                                seg.span,
-                                                                SemanticEntity::Symbol(sym_id),
-                                                            ));
-                                                            current_mod = None;
-                                                            current_ty = Some(
-                                                                compiler.values[val_id].type_id,
-                                                            );
-                                                        }
-                                                    }
-                                                    _ => {
-                                                        self.map.push((
-                                                            seg.span,
-                                                            SemanticEntity::Symbol(sym_id),
-                                                        ));
-                                                        current_mod = None;
-                                                        current_ty = None;
-                                                    }
-                                                }
-                                            } else {
-                                                current_mod = None;
-                                                current_ty = None;
-                                            }
-                                        } else {
-                                            current_mod = None;
-                                            current_ty = None;
-                                        }
-                                    } else if let Some(type_id) = current_ty {
-                                        if let Some(ty_info) = compiler.types.get(type_id) {
-                                            match &ty_info.ty {
-                                                Type::Struct(sdef) => {
-                                                    let field_idx =
-                                                        sdef.fields.iter().position(|member_id| {
-                                                            compiler
-                                                                .sym_members
-                                                                .get(*member_id)
-                                                                .and_then(|m| match m {
-                                                                    MemberSymbolKind::Field(f) => {
-                                                                        Some(
-                                                                            f.name_id
-                                                                                == seg_name_id,
-                                                                        )
-                                                                    }
-                                                                    _ => None,
-                                                                })
-                                                                .unwrap_or(false)
-                                                        });
-                                                    if let Some(field_idx) = field_idx {
-                                                        let member_id = sdef.fields[field_idx];
-                                                        let field_type_id = compiler
-                                                            .sym_members
-                                                            .get(member_id)
-                                                            .and_then(|m| match m {
-                                                                MemberSymbolKind::Field(f) => {
-                                                                    Some(f.type_id)
-                                                                }
-                                                                _ => None,
-                                                            });
-                                                        self.map.push((
-                                                            seg.span,
-                                                            SemanticEntity::Field {
-                                                                owner_sym_id: sdef.sym_id,
-                                                                field_idx,
-                                                            },
-                                                        ));
-                                                        current_ty = field_type_id;
-                                                    } else {
-                                                        current_ty = None;
-                                                    }
-                                                }
-                                                Type::Enum(edef) => {
-                                                    let v_idx = edef.variants.iter().position(
-                                                        |member_id| {
-                                                            compiler
-                                                                .sym_members
-                                                                .get(*member_id)
-                                                                .and_then(|m| match m {
-                                                                    MemberSymbolKind::Variant(
-                                                                        v,
-                                                                    ) => Some(
-                                                                        v.name_id == seg_name_id,
-                                                                    ),
-                                                                    _ => None,
-                                                                })
-                                                                .unwrap_or(false)
-                                                        },
-                                                    );
-                                                    if let Some(v_idx) = v_idx {
-                                                        let member_id = edef.variants[v_idx];
-                                                        let variant_type_id = compiler
-                                                            .sym_members
-                                                            .get(member_id)
-                                                            .and_then(|m| match m {
-                                                                MemberSymbolKind::Variant(v) => {
-                                                                    v.type_id
-                                                                }
-                                                                _ => None,
-                                                            });
-                                                        self.map.push((
-                                                            seg.span,
-                                                            SemanticEntity::Variant {
-                                                                owner_sym_id: edef.sym_id,
-                                                                variant_idx: v_idx,
-                                                            },
-                                                        ));
-                                                        current_ty = variant_type_id;
-                                                    } else {
-                                                        current_ty = None;
-                                                    }
-                                                }
-                                                _ => {
-                                                    current_ty = None;
-                                                }
-                                            }
-                                        } else {
-                                            current_ty = None;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            Expr::StaticAccess(segments) => self.static_access_refs(segments),
             _ => {}
         }
+    }
+
+    /// Indexes every segment of a `a::b::c` path, walking left to right and
+    /// resolving each segment against what the previous one named.
+    fn static_access_refs(
+        &mut self,
+        segments: &[compilation::parser::ast::ast_exprs::SpannedPathSegment],
+    ) {
+        if segments.len() < 2 {
+            return;
+        }
+        let PathSegment::Ident(head_name) = segments[0].kind else {
+            return;
+        };
+        let Some(mut cursor) = self.static_access_head(segments[0].span, head_name) else {
+            return;
+        };
+
+        for seg in &segments[1..] {
+            let PathSegment::Ident(name_id) = seg.kind else {
+                continue;
+            };
+            cursor = match cursor {
+                PathCursor::Module(mod_id) => self.segment_in_module(seg.span, name_id, mod_id),
+                PathCursor::Type(type_id) => self.segment_in_type(seg.span, name_id, type_id),
+                PathCursor::Opaque => PathCursor::Opaque,
+            };
+        }
+    }
+
+    /// Resolves the leading segment of a path against the main module's scope.
+    ///
+    /// Returns `None` — indexing nothing at all, including the later segments —
+    /// when the name resolves to something a path cannot start with.
+    fn static_access_head(&mut self, span: SourceSpan, name_id: InternedId) -> Option<PathCursor> {
+        let compiler = self.compiler;
+        let sym_id = self.lookup_visible(name_id, [ScopeType::Neutral, ScopeType::Var])?;
+        let sym = compiler.symbols.get(sym_id)?;
+
+        match sym.kind {
+            SymbolKind::Namespace => Some(self.push_namespace(span, sym_id, sym)),
+            SymbolKind::Type(type_id) => {
+                self.map.push((span, SemanticEntity::Symbol(sym_id)));
+                Some(PathCursor::Type(type_id))
+            }
+            SymbolKind::Variable(var_id) => {
+                let type_id = self.variable_type(var_id)?;
+                self.map.push((span, SemanticEntity::Symbol(sym_id)));
+                Some(PathCursor::Type(type_id))
+            }
+            SymbolKind::Directive(_) => None,
+        }
+    }
+
+    /// Resolves one segment inside the module the path has reached.
+    fn segment_in_module(
+        &mut self,
+        span: SourceSpan,
+        name_id: InternedId,
+        mod_id: ModuleId,
+    ) -> PathCursor {
+        let compiler = self.compiler;
+        let Some(sym_id) =
+            self.lookup_in_module(mod_id, name_id, [ScopeType::Var, ScopeType::Neutral])
+        else {
+            return PathCursor::Opaque;
+        };
+        let Some(sym) = compiler.symbols.get(sym_id) else {
+            return PathCursor::Opaque;
+        };
+
+        match sym.kind {
+            SymbolKind::Namespace => self.push_namespace(span, sym_id, sym),
+            SymbolKind::Type(type_id) => {
+                self.map.push((span, SemanticEntity::Symbol(sym_id)));
+                PathCursor::Type(type_id)
+            }
+            SymbolKind::Variable(var_id) => match self.variable_type(var_id) {
+                Some(type_id) => {
+                    self.map.push((span, SemanticEntity::Symbol(sym_id)));
+                    PathCursor::Type(type_id)
+                }
+                // A variable with no resolved value ends the walk.  The old code
+                // left the module cursor in place here, so the following segment
+                // was looked up in the module as though the variable segment had
+                // not been written.
+                None => PathCursor::Opaque,
+            },
+            _ => {
+                self.map.push((span, SemanticEntity::Symbol(sym_id)));
+                PathCursor::Opaque
+            }
+        }
+    }
+
+    /// Resolves one segment as a field or variant of the type the path has reached.
+    fn segment_in_type(
+        &mut self,
+        span: SourceSpan,
+        name_id: InternedId,
+        type_id: TypeId,
+    ) -> PathCursor {
+        let compiler = self.compiler;
+        let Some(ty_info) = compiler.types.get(type_id) else {
+            return PathCursor::Opaque;
+        };
+
+        let (entity, member_type_id) = match &ty_info.ty {
+            Type::Struct(sdef) => {
+                let Some(field_idx) = sdef.fields.iter().position(|member_id| {
+                    matches!(
+                        compiler.sym_members.get(*member_id),
+                        Some(MemberSymbolKind::Field(f)) if f.name_id == name_id
+                    )
+                }) else {
+                    return PathCursor::Opaque;
+                };
+                let member_type_id = match compiler.sym_members.get(sdef.fields[field_idx]) {
+                    Some(MemberSymbolKind::Field(f)) => Some(f.type_id),
+                    _ => None,
+                };
+                (
+                    SemanticEntity::Field {
+                        owner_sym_id: sdef.sym_id,
+                        field_idx,
+                    },
+                    member_type_id,
+                )
+            }
+            Type::Enum(edef) => {
+                let Some(variant_idx) = edef.variants.iter().position(|member_id| {
+                    matches!(
+                        compiler.sym_members.get(*member_id),
+                        Some(MemberSymbolKind::Variant(v)) if v.name_id == name_id
+                    )
+                }) else {
+                    return PathCursor::Opaque;
+                };
+                let member_type_id = match compiler.sym_members.get(edef.variants[variant_idx]) {
+                    Some(MemberSymbolKind::Variant(v)) => v.type_id,
+                    _ => None,
+                };
+                (
+                    SemanticEntity::Variant {
+                        owner_sym_id: edef.sym_id,
+                        variant_idx,
+                    },
+                    member_type_id,
+                )
+            }
+            _ => return PathCursor::Opaque,
+        };
+
+        self.map.push((span, entity));
+        match member_type_id {
+            Some(type_id) => PathCursor::Type(type_id),
+            None => PathCursor::Opaque,
+        }
+    }
+
+    /// Indexes a namespace segment, which names either a module or a plain scope.
+    fn push_namespace(
+        &mut self,
+        span: SourceSpan,
+        sym_id: SymbolId,
+        sym: &compilation::semantic::hir::hir_symbols::Symbol,
+    ) -> PathCursor {
+        match sym
+            .associated_scope
+            .expect("Namespace should have associated scope")
+        {
+            AssociatedScopeKind::Module(mod_id) => {
+                self.map.push((span, SemanticEntity::Module(mod_id)));
+                PathCursor::Module(mod_id)
+            }
+            AssociatedScopeKind::Scope(_) => {
+                self.map.push((span, SemanticEntity::Symbol(sym_id)));
+                PathCursor::Opaque
+            }
+        }
+    }
+
+    /// The type of a variable whose value is already known, if it has one.
+    fn variable_type(&self, var_id: chrn_utils::id_types::VariableId) -> Option<TypeId> {
+        let VariableState::Known(val_id) = self.compiler.variables[var_id].state else {
+            return None;
+        };
+        Some(self.compiler.values.get(val_id)?.type_id)
     }
 
     /// Walks a `complex->` config block and its nested members.

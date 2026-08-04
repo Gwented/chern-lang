@@ -92,7 +92,8 @@ arena_idx_impl_u32!(
     ModuleId,
     ValueId,
     ImplId,
-    ImplMemberId
+    ImplMemberId,
+    ExternTypeId,
 );
 arena_idx_impl_u16!(ScopeId);
 
@@ -147,6 +148,17 @@ impl PathId {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct TypeId {
     pub id: u32,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ExternTypeId {
+    pub id: u32,
+}
+
+impl ExternTypeId {
+    pub const fn new(id: u32) -> Self {
+        Self { id }
+    }
 }
 
 impl TypeId {

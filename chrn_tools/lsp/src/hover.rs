@@ -118,355 +118,14 @@ pub fn compute_hover(
             (doc.compose(), Some((span_start, span_end)))
         }
         ScriptToken::Id(id) => {
-            let mut hover_text = String::new();
             let compiler = match &state.compiler {
                 Some(c) => c,
                 None => return None,
             };
-            let interner = &state.interner;
-            let interned = id;
-
-            let entity = state.get_entity_at_offset(offset);
-
-            if let Some(entity) = entity {
-                match entity {
-                    SemanticEntity::Symbol(sym_id) => {
-                        // `entity: &SemanticEntity`, so `sym_id: &SymbolId`.  The
-                        // Arena's `get` takes the index by value, so dereference.
-                        if let Some(sym) = compiler.symbols.get(*sym_id) {
-                            match sym.kind {
-                                SymbolKind::Type(type_id) => {
-                                    let ty_info = &compiler.types[type_id];
-                                    let t = format_type(&ty_info.ty, compiler, interner, false);
-                                    match &ty_info.ty {
-                                        Type::TypeDef(type_def) => {
-                                            let inner = &compiler.types[type_def.type_id].ty;
-                                            let shallow_t = strip_struct_enum_prefix(&format_type(
-                                                inner, compiler, interner, true,
-                                            ));
-                                            hover_text = format!("**typedef**: {}", shallow_t);
-                                        }
-                                        _ => {
-                                            if let Type::BuiltinTypeInfo(builtin_info) = &ty_info.ty
-                                            {
-                                                hover_text = Document::builtin_type_docs(
-                                                    builtin_info.ty.kind(),
-                                                )
-                                                .compose();
-                                            } else if let Type::Func(func_def) = &ty_info.ty {
-                                                hover_text =
-                                                    Document::func_docs(func_def.kind).compose();
-                                            } else {
-                                                let is_struct_or_enum = t.starts_with("struct ")
-                                                    || t.starts_with("enum ");
-                                                let is_alias = t.starts_with("alias ");
-
-                                                let export_prefix = if !sym.is_priv
-                                                    && (is_struct_or_enum || is_alias)
-                                                {
-                                                    "export "
-                                                } else {
-                                                    ""
-                                                };
-
-                                                let mut final_text = String::new();
-                                                if is_struct_or_enum || is_alias {
-                                                    let owner_id = match sym.sym_origin {
-                                                        SymbolOrigin::Module(mid) => mid.id,
-                                                        SymbolOrigin::Compiler => 0,
-                                                    };
-                                                    // The `Arena` is parameterised by `ModuleId`; the
-                                                    // primary `Index` impl expects a `ModuleId` by value,
-                                                    // so wrap the raw `usize`.
-                                                    let module =
-                                                        &compiler.mods[ModuleId::new(owner_id)];
-                                                    let raw_mod_name =
-                                                        interner.search(module.name_id);
-                                                    final_text.push_str(&format!(
-                                                        "module **{}**\n\n",
-                                                        raw_mod_name
-                                                    ));
-                                                    final_text.push_str(&format!(
-                                                        "{}{}",
-                                                        export_prefix, t
-                                                    ));
-                                                } else {
-                                                    final_text.push_str(&format!("type: {}", t));
-                                                }
-                                                hover_text = final_text;
-                                            }
-                                        }
-                                    }
-                                }
-                                SymbolKind::Variable(var_id) => {
-                                    let var = &compiler.variables[var_id];
-                                    match var.state {
-                                        VariableState::Known(val_id) => {
-                                            let val_info = &compiler.values[val_id];
-                                            let ty_info = &compiler.types[val_info.type_id];
-
-                                            let var_name = interner.search(sym.name_id);
-                                            let type_str = strip_struct_enum_prefix(&format_type(
-                                                &ty_info.ty,
-                                                compiler,
-                                                interner,
-                                                true,
-                                            ));
-                                            let val_str = match &val_info.const_val {
-                                                Some(v) => format_value(v, interner),
-                                                None => "unknown".to_string(),
-                                            };
-
-                                            hover_text =
-                                                format!("{}: {} = {}", var_name, type_str, val_str);
-                                        }
-                                        VariableState::ReservedTypeSlot(_) => {
-                                            hover_text = "Unknown".to_string();
-                                        }
-                                    }
-                                }
-                                SymbolKind::Namespace => {
-                                    let ns_name = interner.search(sym.name_id);
-                                    match sym
-                                        .associated_scope
-                                        .expect("Namespace should have associated scope")
-                                    {
-                                        AssociatedScopeKind::Module(mod_id) => {
-                                            let module = &compiler.mods[mod_id];
-                                            let mod_name = interner.search(module.name_id);
-                                            hover_text = format!("module **{}**", mod_name);
-                                        }
-                                        AssociatedScopeKind::Scope(_) => {
-                                            hover_text = format!("namespace **{}**", ns_name);
-                                        }
-                                    }
-                                }
-                                SymbolKind::Directive(directive_id) => {
-                                    let name = interner.search(sym.name_id);
-                                    let _ = directive_id;
-                                    hover_text = Document::directive_docs(name)
-                                        .map(|d| d.compose())
-                                        .unwrap_or_else(|| format!("`#{}`", name));
-                                }
-                            }
-
-                            if !hover_text.is_empty() {
-                                let privacy = if sym.is_priv { "private" } else { "public" };
-                                hover_text.push_str(&format!(
-                                    "\n\n{}\n\n{} | **Scope:** {}",
-                                    document::HOVER_DASHES,
-                                    privacy,
-                                    sym.scope_origin
-                                ));
-                            }
-                        }
-                    }
-                    SemanticEntity::Field {
-                        owner_sym_id,
-                        field_idx,
-                    } => {
-                        if let Some(sym) = compiler.symbols.get(*owner_sym_id)
-                            && let Some(ast_id) = sym.ast_id
-                        {
-                            let owner_id = match sym.sym_origin {
-                                SymbolOrigin::Module(mid) => mid.id as usize,
-                                SymbolOrigin::Compiler => 0,
-                            };
-                            if let Some(Some(ast)) = state.asts.get(owner_id) {
-                                let abs_struct = ast.get_struct(ast_id);
-                                if let Some(field) = abs_struct.fields.get(*field_idx) {
-                                    let field_name = interner.search(field.name_id);
-                                    // We need the resolved type from the compiler, not just AST
-                                    if let SymbolKind::Type(tid) = sym.kind
-                                        && let Type::Struct(sdef) = &compiler.types[tid].ty
-                                        && let Some(member_id) = sdef.fields.get(*field_idx)
-                                        && let Some(MemberSymbolKind::Field(field_repre)) =
-                                            compiler.sym_members.get(*member_id)
-                                    {
-                                        let type_str = strip_struct_enum_prefix(&format_type(
-                                            &compiler.types[field_repre.type_id].ty,
-                                            compiler,
-                                            interner,
-                                            true,
-                                        ));
-                                        hover_text = format!("{}: {}", field_name, type_str);
-                                    }
-                                    if hover_text.is_empty() {
-                                        // Fallback to name-only if type resolution failed
-                                        hover_text = format!("{}: Unknown", field_name);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    SemanticEntity::Variant {
-                        owner_sym_id,
-                        variant_idx,
-                    } => {
-                        if let Some(sym) = compiler.symbols.get(*owner_sym_id)
-                            && let Some(ast_id) = sym.ast_id
-                        {
-                            let owner_id = match sym.sym_origin {
-                                SymbolOrigin::Module(mid) => mid.id as usize,
-                                SymbolOrigin::Compiler => 0,
-                            };
-                            if let Some(Some(ast)) = state.asts.get(owner_id) {
-                                let abs_enum: &compilation::parser::ast::ast_concepts::AbstractEnum = ast.get_enum(ast_id);
-                                if let Some(variant) = abs_enum.variants.get(*variant_idx) {
-                                    let variant_name = interner.search(variant.name_id);
-                                    if let SymbolKind::Type(tid) = sym.kind
-                                        && let Type::Enum(edef) = &compiler.types[tid].ty
-                                        && let Some(member_id) = edef.variants.get(*variant_idx)
-                                        && let Some(MemberSymbolKind::Variant(variant_repre)) =
-                                            compiler.sym_members.get(*member_id)
-                                    {
-                                        if let Some(vty_id) = variant_repre.type_id {
-                                            let type_str = strip_struct_enum_prefix(&format_type(
-                                                &compiler.types[vty_id].ty,
-                                                compiler,
-                                                interner,
-                                                true,
-                                            ));
-                                            hover_text = format!("{}: {}", variant_name, type_str);
-                                        } else {
-                                            hover_text = variant_name.to_string();
-                                        }
-                                    }
-                                    if hover_text.is_empty() {
-                                        hover_text = variant_name.to_string();
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    SemanticEntity::Module(mod_id) => {
-                        // `entity: &SemanticEntity` so `mod_id: &ModuleId`.  Dereference
-                        // to pass the typed `ModuleId` to the `Arena` index operator.
-                        let module = &compiler.mods[*mod_id];
-                        let mod_name = interner.search(module.name_id);
-                        let mod_path = if let Some(region_id) = module.region_id {
-                            if let Some(region) = state.region_arena.get(region_id) {
-                                interner.search_path(region.path_id).display().to_string()
-                            } else {
-                                "<builtin>".to_string()
-                            }
-                        } else {
-                            "<builtin>".to_string()
-                        };
-
-                        let alias_prefix = compiler.mods[ModuleId::new(0)]
-                            .imports
-                            .iter()
-                            .find_map(|i| {
-                                i.alias_id
-                                    .filter(|a| *a == interned)
-                                    .map(|a| format!("alias **{}** | ", interner.search(a)))
-                            })
-                            .unwrap_or_default();
-
-                        hover_text = format!(
-                            "{}module **{}**\n{}\npath: `{}`",
-                            alias_prefix,
-                            mod_name,
-                            document::HOVER_DASHES,
-                            mod_path
-                        );
-                    }
-                    SemanticEntity::Local { name_id, .. } => {
-                        let name = interner.search(*name_id);
-                        hover_text = format!("{name}: (param)");
-                    }
-                    SemanticEntity::ConfigMember { member_id, .. } => {
-                        let cfg_member = compiler.get_cfg_def_member(*member_id);
-                        let name = interner.search(cfg_member.name_id);
-                        let tagged = if let Some(MemberSymbolKind::Field(field_repre)) =
-                            compiler.sym_members.get(cfg_member.linked_member_id)
-                        {
-                            let type_str = strip_struct_enum_prefix(&format_type(
-                                &compiler.types[field_repre.type_id].ty,
-                                compiler,
-                                interner,
-                                true,
-                            ));
-                            format!("Configures field **{}**: `{}`", name, type_str)
-                        } else if let Some(MemberSymbolKind::Variant(variant_repre)) =
-                            compiler.sym_members.get(cfg_member.linked_member_id)
-                        {
-                            if let Some(vty_id) = variant_repre.type_id {
-                                let type_str = strip_struct_enum_prefix(&format_type(
-                                    &compiler.types[vty_id].ty,
-                                    compiler,
-                                    interner,
-                                    true,
-                                ));
-                                format!("Configures variant **{}**: `{}`", name, type_str)
-                            } else {
-                                format!("Configures variant **{}**", name)
-                            }
-                        } else {
-                            format!("Configures **{}**: Unknown", name)
-                        };
-                        hover_text = tagged;
-                    }
-                    SemanticEntity::ConfigOption { member_id, .. } => {
-                        let name_id = match &compiler.impl_members[*member_id] {
-                            ImplMemberKind::OptAssignmentRoot(opt) => Some(opt.name_id),
-                            ImplMemberKind::OptAssignmentMember(opt) => Some(opt.name_id),
-                            _ => None,
-                        };
-                        if let Some(name_id) = name_id {
-                            let name = interner.search(name_id);
-                            if let Some(doc) = document::Document::config_option_docs(name) {
-                                hover_text = doc.compose();
-                            } else {
-                                hover_text = format!("**{}**\n\nUnknown option", name);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Fallback to name-based lookup for modules or builtins
-            if hover_text.is_empty()
-                && let Some(module) = compiler.mods.iter().find(|m| m.name_id == interned)
-            {
-                let raw_mod_name = interner.search(module.name_id);
-                let mod_path = if let Some(region_id) = module.region_id {
-                    if let Some(region) = state.region_arena.get(region_id) {
-                        interner.search_path(region.path_id).display().to_string()
-                    } else {
-                        "<builtin>".to_string()
-                    }
-                } else {
-                    "<builtin>".to_string()
-                };
-
-                let alias_prefix = compiler.mods[ModuleId::new(0)]
-                    .imports
-                    .iter()
-                    .find_map(|i| {
-                        i.alias_id
-                            .filter(|a| *a == interned)
-                            .map(|a| format!("alias **{}** | ", interner.search(a)))
-                    })
-                    .unwrap_or_default();
-
-                hover_text = format!(
-                    "{}module **{}**\n{}\npath: `{}`",
-                    alias_prefix,
-                    raw_mod_name,
-                    document::HOVER_DASHES,
-                    mod_path
-                );
-            }
-
-            if hover_text.is_empty()
-                && let Some(kind) = BuiltinTypeKind::try_from_interned_id(id.id)
-            {
-                hover_text = Document::builtin_type_docs(kind).compose();
-            }
-
-            (hover_text, Some((span_start, span_end)))
+            (
+                identifier_hover(state, compiler, id, offset),
+                Some((span_start, span_end)),
+            )
         }
         ScriptToken::Str(id) => {
             let s = state.interner.search(id);
@@ -531,6 +190,341 @@ pub fn compute_hover(
         }),
     };
     Some(hover)
+}
+
+/// Hover text for an identifier token.
+///
+/// The semantic entity at the cursor answers first; when it produces nothing, the
+/// name itself is matched against the module list and then the builtin types.
+fn identifier_hover(
+    state: &crate::state::DocumentState,
+    compiler: &ScriptCompiler,
+    id: chrn_utils::id_types::InternedId,
+    offset: usize,
+) -> String {
+    let mut hover_text = state
+        .get_entity_at_offset(offset)
+        .map(|entity| entity_hover(state, compiler, entity, id))
+        .unwrap_or_default();
+
+    if hover_text.is_empty()
+        && let Some(module) = compiler.mods.iter().find(|m| m.name_id == id)
+    {
+        hover_text = module_hover(state, compiler, module, id);
+    }
+
+    if hover_text.is_empty()
+        && let Some(kind) = BuiltinTypeKind::try_from_interned_id(id.id)
+    {
+        hover_text = Document::builtin_type_docs(kind).compose();
+    }
+
+    hover_text
+}
+
+/// Dispatches on what the cursor is sitting on.  An empty string means "nothing to
+/// say", which lets the caller fall through to its name-based fallbacks.
+fn entity_hover(
+    state: &crate::state::DocumentState,
+    compiler: &ScriptCompiler,
+    entity: &SemanticEntity,
+    id: chrn_utils::id_types::InternedId,
+) -> String {
+    match entity {
+        SemanticEntity::Symbol(sym_id) => symbol_hover(state, compiler, *sym_id),
+        SemanticEntity::Field {
+            owner_sym_id,
+            field_idx,
+        } => field_hover(state, compiler, *owner_sym_id, *field_idx),
+        SemanticEntity::Variant {
+            owner_sym_id,
+            variant_idx,
+        } => variant_hover(state, compiler, *owner_sym_id, *variant_idx),
+        SemanticEntity::Module(mod_id) => {
+            module_hover(state, compiler, &compiler.mods[*mod_id], id)
+        }
+        SemanticEntity::Local { name_id, .. } => {
+            format!("{}: (param)", state.interner.search(*name_id))
+        }
+        SemanticEntity::ConfigMember { member_id, .. } => {
+            config_member_hover(state, compiler, *member_id)
+        }
+        SemanticEntity::ConfigOption { member_id, .. } => {
+            config_option_hover(state, compiler, *member_id)
+        }
+    }
+}
+
+/// Hover for a named symbol, with the shared privacy/scope footer appended.
+fn symbol_hover(
+    state: &crate::state::DocumentState,
+    compiler: &ScriptCompiler,
+    sym_id: chrn_utils::id_types::SymbolId,
+) -> String {
+    let Some(sym) = compiler.symbols.get(sym_id) else {
+        return String::new();
+    };
+    let interner = &state.interner;
+
+    let mut hover_text = match sym.kind {
+        SymbolKind::Type(type_id) => type_symbol_hover(compiler, interner, sym, type_id),
+        SymbolKind::Variable(var_id) => match compiler.variables[var_id].state {
+            VariableState::Known(val_id) => {
+                let val_info = &compiler.values[val_id];
+                let type_str = strip_struct_enum_prefix(&format_type(
+                    &compiler.types[val_info.type_id].ty,
+                    compiler,
+                    interner,
+                    true,
+                ));
+                let val_str = match &val_info.const_val {
+                    Some(v) => format_value(v, interner),
+                    None => "unknown".to_string(),
+                };
+                format!("{}: {} = {}", interner.search(sym.name_id), type_str, val_str)
+            }
+            VariableState::ReservedTypeSlot(_) => "Unknown".to_string(),
+        },
+        SymbolKind::Namespace => match sym
+            .associated_scope
+            .expect("Namespace should have associated scope")
+        {
+            AssociatedScopeKind::Module(mod_id) => {
+                format!("module **{}**", interner.search(compiler.mods[mod_id].name_id))
+            }
+            AssociatedScopeKind::Scope(_) => {
+                format!("namespace **{}**", interner.search(sym.name_id))
+            }
+        },
+        SymbolKind::Directive(_) => {
+            let name = interner.search(sym.name_id);
+            Document::directive_docs(name)
+                .map(|d| d.compose())
+                .unwrap_or_else(|| format!("`#{}`", name))
+        }
+    };
+
+    if !hover_text.is_empty() {
+        let privacy = if sym.is_priv { "private" } else { "public" };
+        hover_text.push_str(&format!(
+            "\n\n{}\n\n{} | **Scope:** {}",
+            document::HOVER_DASHES,
+            privacy,
+            sym.scope_origin
+        ));
+    }
+    hover_text
+}
+
+/// Hover body for a symbol that names a type.
+fn type_symbol_hover(
+    compiler: &ScriptCompiler,
+    interner: &Intern,
+    sym: &compilation::semantic::hir::hir_symbols::Symbol,
+    type_id: chrn_utils::id_types::TypeId,
+) -> String {
+    let ty_info = &compiler.types[type_id];
+    match &ty_info.ty {
+        Type::TypeDef(type_def) => {
+            let inner = &compiler.types[type_def.type_id].ty;
+            let shallow = strip_struct_enum_prefix(&format_type(inner, compiler, interner, true));
+            format!("**typedef**: {}", shallow)
+        }
+        Type::BuiltinTypeInfo(builtin_info) => {
+            Document::builtin_type_docs(builtin_info.ty.kind()).compose()
+        }
+        Type::Func(func_def) => Document::func_docs(func_def.kind).compose(),
+        _ => {
+            let t = format_type(&ty_info.ty, compiler, interner, false);
+            let is_named_decl = t.starts_with("struct ")
+                || t.starts_with("enum ")
+                || t.starts_with("alias ");
+            if !is_named_decl {
+                return format!("type: {}", t);
+            }
+
+            let owner_id = match sym.sym_origin {
+                SymbolOrigin::Module(mid) => mid.id,
+                SymbolOrigin::Compiler => 0,
+            };
+            let export_prefix = if sym.is_priv { "" } else { "export " };
+            format!(
+                "module **{}**\n\n{}{}",
+                interner.search(compiler.mods[ModuleId::new(owner_id)].name_id),
+                export_prefix,
+                t
+            )
+        }
+    }
+}
+
+/// Hover for a struct field: `name: Type`, from the resolved HIR when available.
+fn field_hover(
+    state: &crate::state::DocumentState,
+    compiler: &ScriptCompiler,
+    owner_sym_id: chrn_utils::id_types::SymbolId,
+    field_idx: usize,
+) -> String {
+    let Some((sym, ast)) = owner_decl(state, compiler, owner_sym_id) else {
+        return String::new();
+    };
+    let ast_id = sym.ast_id.expect("owner_decl checked the ast id");
+    let Some(field) = ast.get_struct(ast_id).fields.get(field_idx) else {
+        return String::new();
+    };
+    let field_name = state.interner.search(field.name_id);
+
+    if let SymbolKind::Type(tid) = sym.kind
+        && let Type::Struct(sdef) = &compiler.types[tid].ty
+        && let Some(member_id) = sdef.fields.get(field_idx)
+        && let Some(MemberSymbolKind::Field(field_repre)) = compiler.sym_members.get(*member_id)
+    {
+        let type_str = strip_struct_enum_prefix(&format_type(
+            &compiler.types[field_repre.type_id].ty,
+            compiler,
+            &state.interner,
+            true,
+        ));
+        return format!("{}: {}", field_name, type_str);
+    }
+
+    // Type resolution failed; the name alone is still worth showing.
+    format!("{}: Unknown", field_name)
+}
+
+/// Hover for an enum variant: `name: Type`, or just the name when it carries no type.
+fn variant_hover(
+    state: &crate::state::DocumentState,
+    compiler: &ScriptCompiler,
+    owner_sym_id: chrn_utils::id_types::SymbolId,
+    variant_idx: usize,
+) -> String {
+    let Some((sym, ast)) = owner_decl(state, compiler, owner_sym_id) else {
+        return String::new();
+    };
+    let ast_id = sym.ast_id.expect("owner_decl checked the ast id");
+    let Some(variant) = ast.get_enum(ast_id).variants.get(variant_idx) else {
+        return String::new();
+    };
+    let variant_name = state.interner.search(variant.name_id);
+
+    if let SymbolKind::Type(tid) = sym.kind
+        && let Type::Enum(edef) = &compiler.types[tid].ty
+        && let Some(member_id) = edef.variants.get(variant_idx)
+        && let Some(MemberSymbolKind::Variant(variant_repre)) = compiler.sym_members.get(*member_id)
+        && let Some(vty_id) = variant_repre.type_id
+    {
+        let type_str = strip_struct_enum_prefix(&format_type(
+            &compiler.types[vty_id].ty,
+            compiler,
+            &state.interner,
+            true,
+        ));
+        return format!("{}: {}", variant_name, type_str);
+    }
+
+    variant_name.to_string()
+}
+
+/// The symbol owning a member plus the AST of the module that declared it.
+fn owner_decl<'a>(
+    state: &'a crate::state::DocumentState,
+    compiler: &'a ScriptCompiler,
+    owner_sym_id: chrn_utils::id_types::SymbolId,
+) -> Option<(
+    &'a compilation::semantic::hir::hir_symbols::Symbol,
+    &'a compilation::parser::ast::ast_concepts::AstInfo,
+)> {
+    let sym = compiler.symbols.get(owner_sym_id)?;
+    sym.ast_id?;
+    let owner_id = match sym.sym_origin {
+        SymbolOrigin::Module(mid) => mid.id as usize,
+        SymbolOrigin::Compiler => 0,
+    };
+    let ast = state.asts.get(owner_id)?.as_ref()?;
+    Some((sym, ast))
+}
+
+/// Hover for a module reference: its name, the alias it was imported under, and the
+/// file it came from.
+fn module_hover(
+    state: &crate::state::DocumentState,
+    compiler: &ScriptCompiler,
+    module: &compilation::modules::Module,
+    referenced_as: chrn_utils::id_types::InternedId,
+) -> String {
+    let interner = &state.interner;
+    let mod_path = module
+        .region_id
+        .and_then(|region_id| state.region_arena.get(region_id))
+        .map(|region| interner.search_path(region.path_id).display().to_string())
+        .unwrap_or_else(|| "<builtin>".to_string());
+
+    let alias_prefix = compiler.mods[ModuleId::new(0)]
+        .imports
+        .iter()
+        .find_map(|i| {
+            i.alias_id
+                .filter(|a| *a == referenced_as)
+                .map(|a| format!("alias **{}** | ", interner.search(a)))
+        })
+        .unwrap_or_default();
+
+    format!(
+        "{}module **{}**\n{}\npath: `{}`",
+        alias_prefix,
+        interner.search(module.name_id),
+        document::HOVER_DASHES,
+        mod_path
+    )
+}
+
+/// Hover for a `complex->` member block, naming the field or variant it configures.
+fn config_member_hover(
+    state: &crate::state::DocumentState,
+    compiler: &ScriptCompiler,
+    member_id: chrn_utils::id_types::ImplMemberId,
+) -> String {
+    let cfg_member = compiler.get_cfg_def_member(member_id);
+    let name = state.interner.search(cfg_member.name_id);
+    let type_of = |type_id| {
+        strip_struct_enum_prefix(&format_type(
+            &compiler.types[type_id].ty,
+            compiler,
+            &state.interner,
+            true,
+        ))
+    };
+
+    match compiler.sym_members.get(cfg_member.linked_member_id) {
+        Some(MemberSymbolKind::Field(field_repre)) => format!(
+            "Configures field **{}**: `{}`",
+            name,
+            type_of(field_repre.type_id)
+        ),
+        Some(MemberSymbolKind::Variant(variant_repre)) => match variant_repre.type_id {
+            Some(vty_id) => format!("Configures variant **{}**: `{}`", name, type_of(vty_id)),
+            None => format!("Configures variant **{}**", name),
+        },
+        None => format!("Configures **{}**: Unknown", name),
+    }
+}
+
+/// Hover for an option assignment key inside a config block.
+fn config_option_hover(
+    state: &crate::state::DocumentState,
+    compiler: &ScriptCompiler,
+    member_id: chrn_utils::id_types::ImplMemberId,
+) -> String {
+    let name_id = match &compiler.impl_members[member_id] {
+        ImplMemberKind::OptAssignmentRoot(opt) => opt.name_id,
+        ImplMemberKind::OptAssignmentMember(opt) => opt.name_id,
+        _ => return String::new(),
+    };
+    let name = state.interner.search(name_id);
+    document::Document::config_option_docs(name)
+        .map(|doc| doc.compose())
+        .unwrap_or_else(|| format!("**{}**\n\nUnknown option", name))
 }
 
 /// Formats a HIR [`Type`] as a human-readable string.

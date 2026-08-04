@@ -1,3 +1,4 @@
+//TODO: Evidence info is very unfinished
 pub mod ast;
 mod branch;
 mod context;
@@ -23,7 +24,9 @@ use crate::parser::context::ParserContext;
 use crate::parser::evidence::{Evidence, InitialEvidence, SemanticEnv, SemanticSituation};
 use crate::parser::parser_budget::ParserBudget;
 use crate::parser::parser_state::ParserState;
-use crate::semantic::hir::hir_impls::{ComplexConfigMemberMetadata, ConfigMemberMetadataKind};
+use crate::semantic::hir::hir_impls::{
+    ComplexConfigMemberMetadata, ConfigMemberMetadataKind, OverrideConfigMemberMetadata,
+};
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::id_types::SpannedContainer;
 use chrn_utils::intern::Intern;
@@ -803,8 +806,15 @@ fn parse_cfg_expr(
 
     // Allows for "=>" to notify that
     if ctx.peek_tok() != Token::OCurlyBracket && ctx.peek_tok() != Token::NotSlimArrow {
+        let (or_msg, member_msg) = if is_root {
+            ("", "")
+        } else {
+            (" or '=>'", " member")
+        };
+        // Ok what about options buddy?
+        // No.
         ctx.report_verbose(
-            "Expected '{' block or '=>' to define config, found ",
+            format!("Use a '{{' block{or_msg} to define config{member_msg}"),
             InitialEvidence::new(
                 SemanticEnv::SectNest,
                 SemanticSituation::UnexpectedToken,
@@ -826,7 +836,7 @@ fn parse_cfg_expr(
     // config, because the loop is only checking if the next is an identifier.
     if used_arrow && is_root {
         ctx.report_verbose(
-            "Config roots must use `{` syntax instead of `=>`",
+            "Config roots must use `{` syntax",
             InitialEvidence::new(
                 //TODO: FIXME
                 SemanticEnv::SectComplex,
@@ -979,7 +989,7 @@ fn handle_cfg_metadata(
                         SemanticEnv::Config,
                         SemanticSituation::IdentBinding,
                         //TODO: Tag
-                        Branch::Section(SectionBranch::Complex),
+                        Branch::Section(SectionBranch::Override),
                     ),
                     interner,
                 )?;
@@ -987,7 +997,7 @@ fn handle_cfg_metadata(
                 let sp_interned_id = SpannedContainer::new(name_id, name_span);
                 let kind = AbstractConfigKind::Member(
                     sp_interned_id,
-                    ConfigMemberMetadataKind::Complex(ComplexConfigMemberMetadata::new()),
+                    ConfigMemberMetadataKind::Override(OverrideConfigMemberMetadata::new()),
                 );
 
                 return Ok((ScopeLookupPattern::NamespaceOnly, kind));
@@ -2078,7 +2088,7 @@ fn parse_alias_decl(
 
                 let msg = "Only identifiers can be in alias parameters";
                 ctx.report_verbose(
-                    &msg,
+                    msg,
                     InitialEvidence::new(
                         SemanticEnv::Alias,
                         SemanticSituation::IdentBinding,

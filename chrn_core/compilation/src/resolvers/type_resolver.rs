@@ -36,9 +36,7 @@ use crate::semantic::hir::hir_exprs::{ExprHir, Param, PossibleMember, ResolvedEx
 use crate::semantic::hir::hir_impls::{
     ConfigDefMember, ImplHirKind, ImplMemberKind, OptionAssignmentMember, OptionAssignmentRoot,
 };
-use crate::semantic::hir::hir_symbols::{
-    MemberSymbolKind, Symbol, SymbolKind, SymbolOrigin, VarDef, VariableState,
-};
+use crate::semantic::hir::hir_symbols::{Symbol, SymbolKind, SymbolOrigin, VarDef, VariableState};
 use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, PresetErr};
 use crate::semantic::resolve::{StaticAccessResult, TypeExprResult};
 use crate::semantic::{evaluator, inference, preset_reporter, resolve};
@@ -138,7 +136,9 @@ impl<'res> TypeResolver<'res> {
                         // to their ast id
                         SymbolKind::Variable(_) => self.resolve_var(sym_id, env),
                         // Users cannot define these but they exist internally.
-                        SymbolKind::Namespace | SymbolKind::Directive(_) => unreachable!(),
+                        SymbolKind::ExternType
+                        | SymbolKind::Namespace
+                        | SymbolKind::Directive(_) => unreachable!(),
                     }
                 }
                 CompilationUnit::Impl(impl_id) => match self.compiler.impls[impl_id].kind {
@@ -625,7 +625,6 @@ impl<'res> TypeResolver<'res> {
             self.compiler
                 .impl_members
                 .push(ImplMemberKind::OptAssignmentRoot(opt));
-
             opt_assignment_roots.push(impl_member_id);
         }
 
@@ -676,13 +675,14 @@ impl<'res> TypeResolver<'res> {
         seen_opt_vec.clear();
 
         // Releasing after checking if the options were valid expressions
+        // This returns because members cannot exist in any form without a valid type.
         let found_type_id = match found_type_id {
             Some(type_id) => type_id,
             None => return,
         };
 
         if !typechecker::check_cfg_root(&self.compiler.types, found_type_id) {
-            let fmtted_ty = Type::to_fmt(self.compiler, found_type_id);
+            let fmtted_ty = Type::to_fmt(&self.compiler.types, found_type_id);
             let core_msg = format!("Cannot use type `{fmtted_ty}` as a config root");
 
             let builder = SourceDiagnostic::builder(
@@ -765,7 +765,7 @@ impl<'res> TypeResolver<'res> {
 
                             let preset_err = PresetErr::Lookup(
                                 LookupError::ImpossibleTypeMemberAccess(SpannedContainer::new(
-                                    Type::to_fmt(self.compiler, type_id),
+                                    Type::to_fmt(&self.compiler.types, type_id),
                                     decl_span,
                                 )),
                             );
@@ -795,7 +795,7 @@ impl<'res> TypeResolver<'res> {
                                 .compiler
                                 .get_span_from_type_id(found_type_id)
                                 .expect("Should have a span since it has members and was searched");
-                            let fmtted_ty = Type::to_fmt(self.compiler, type_id);
+                            let fmtted_ty = Type::to_fmt(&self.compiler.types, type_id);
 
                             let found_type = &self.compiler.types[found_type_id];
                             //FIX:
@@ -820,7 +820,7 @@ impl<'res> TypeResolver<'res> {
                                     found_type_name_id,
                                     root_sp_ty_expr.span,
                                 ),
-                                member: sp_interned_id.inner,
+                                nonexistent_member: sp_interned_id.inner,
                             });
 
                             preset_reporter::create_diag_builder_preset(
@@ -1210,7 +1210,7 @@ impl<'res> TypeResolver<'res> {
                             let mut should_break = false;
 
                             let parent_member_fmtted_ty =
-                                Type::to_fmt(self.compiler, parent_type_id);
+                                Type::to_fmt(&self.compiler.types, parent_type_id);
 
                             //WARN: COMPLEX SPAN ROUTING FOR ALL OF THESE SO COULD NEED ALTERING
                             let src_diag = match lookup_res {
@@ -1226,7 +1226,7 @@ impl<'res> TypeResolver<'res> {
                                     let preset_err =
                                         PresetErr::Lookup(LookupError::ImpossibleTypeMemberAccess(
                                             SpannedContainer::new(
-                                                Type::to_fmt(self.compiler, type_id),
+                                                Type::to_fmt(&self.compiler.types, type_id),
                                                 parent_member_span,
                                             ),
                                         ));
@@ -1279,7 +1279,7 @@ impl<'res> TypeResolver<'res> {
                                                 ty_name_id,
                                                 sp_parent_name_id.span,
                                             ),
-                                            member: sp_member_name_id.inner,
+                                            nonexistent_member: sp_member_name_id.inner,
                                         });
 
                                     //TODO: RECURSIVELY TRACKING ENDS UP HERE FIX SHOULD BE APPLIED HERE IF
@@ -1578,11 +1578,19 @@ impl<'res> TypeResolver<'res> {
                         inner_val.const_val = const_val_opt;
                     }
                 }
+                // - NOT SURE WHAT THIS WAS RELATED TO -
                 // NOTE: Since expressions are initialized as `ReservedTypeSlot`, if there is say,
                 // a cyclic dependency error, the error will exist and emit later, but this
                 // technically still exists and needs to be ignored. Not currently aware of any
                 // direct issues with this. Maybe an Error tag on a pending expression could help?
-                SymbolKind::Type(_) | SymbolKind::Namespace | SymbolKind::Directive(_) => {
+                // - NOT SURE WHAT THIS WAS RELATED TO -
+                //
+                // These are unreachable because their symbols are never delayed in resolution.
+                // Only expressions have a complex instantiation process.
+                SymbolKind::ExternType
+                | SymbolKind::Type(_)
+                | SymbolKind::Namespace
+                | SymbolKind::Directive(_) => {
                     unreachable!("Not possible")
                 }
             }
@@ -2671,6 +2679,7 @@ impl<'res> TypeResolver<'res> {
                             SymbolKind::Type(type_id) => todo!(),
                             SymbolKind::Namespace => todo!(),
                             SymbolKind::Directive(directive_id) => todo!(),
+                            SymbolKind::ExternType => todo!(),
                         };
 
                         self.compiler.exprs.push(expr);
@@ -2884,7 +2893,8 @@ impl<'res> TypeResolver<'res> {
                         }
                         // Not possible
                         SymbolKind::Directive(_) => unreachable!("We'll see"),
-                        // Config not declarable in neutral sections so this should not be possible
+                        // FIXME: There may need to be an expr result specifically for an extern type.
+                        SymbolKind::ExternType => todo!(),
                     };
 
                     self.compiler.exprs.push(resolved_expr);

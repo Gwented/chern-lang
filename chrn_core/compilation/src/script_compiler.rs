@@ -8,7 +8,7 @@ use chrn_utils::{
         ConfigRootId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ModuleId,
         ScopeId, SymbolId, TypeId, ValueId, VariableId,
     },
-    intern, loop_abort,
+    intern,
     source_map::source_span::SourceSpan,
 };
 use lang::{
@@ -600,7 +600,7 @@ impl ScriptCompiler {
                     VariableState::ReservedTypeSlot(type_id) => type_id,
                     VariableState::Known(val_id) => self.values[val_id].type_id,
                 },
-                SymbolKind::Namespace | SymbolKind::Directive(_) => {
+                SymbolKind::ExternType | SymbolKind::Namespace | SymbolKind::Directive(_) => {
                     unreachable!()
                 }
             },
@@ -618,7 +618,7 @@ impl ScriptCompiler {
                     VariableState::Known(val_id) => Some(self.values[val_id].type_id),
                 },
                 // Not a type, just a symbol with a scope
-                SymbolKind::Directive(_) | SymbolKind::Namespace => None,
+                SymbolKind::ExternType | SymbolKind::Directive(_) | SymbolKind::Namespace => None,
             },
         }
     }
@@ -651,7 +651,7 @@ impl ScriptCompiler {
             SymbolKind::Type(type_id) => self.get_span_from_type_id(*type_id),
             SymbolKind::Variable(var_id) => Some(self.variables[*var_id].name_span),
             // SymbolKind::Config(cfg_id) => Some(self.cfgs[*cfg_id].name_span),
-            SymbolKind::Namespace | SymbolKind::Directive(_) => None,
+            SymbolKind::ExternType | SymbolKind::Namespace | SymbolKind::Directive(_) => None,
         }
     }
 
@@ -1093,45 +1093,129 @@ impl ScriptCompiler {
 
     /// Creates scope with the constants needed for an `override` section to function then returns
     /// it's `ScopeId`
+    ///
+    /// The idea behind this is that the `impl` for JAVA, and all other symbols are customized on
+    /// the user-end. By default, these symbols are just namespaces that have content inside, like
+    /// "types" and their own specific java::int and so on.
     fn load_override_symbols(&mut self) -> ScopeId {
+        //NOTE: Just in case this is called without knowledge of if the override scope exists.
+        if let Some(inner) = self.intrinsic_registry.override_scope_id {
+            return inner;
+        }
+
         // IS it from core? The semantics are getting a little lost
         //
         // Saying it's not from core for now because !
-        // let core_mod_id = self.intrinsic_registry.core_mod_id;
+        let core_mod_id = self.intrinsic_registry.core_mod_id;
         let scope_type = ScopeType::Override;
-        let override_scope_id = ScopeId::new(self.scopes.len() as u16);
 
         // Override intrisic scope's table which holes stuff like "RUST" and "JAVA" namespaces
-        let mut table = Table::new();
-        self.load_override_java_cfg(&mut table, override_scope_id);
-        let scope = Scope::with_table(override_scope_id, scope_type, None, true, table);
+        let mut override_table = Table::new();
+        self.load_java_override(&mut override_table);
+
+        // -- FINAL --
+        // Pushing the intrinsic scope
+        let override_scope_id = ScopeId::new(self.scopes.len() as u16);
+        let scope = Scope::with_table(override_scope_id, scope_type, None, true, override_table);
+        self.scopes.push(ScopeInfo::new(scope, None, core_mod_id));
 
         todo!("We want to return you");
 
         override_scope_id
     }
 
-    fn load_override_java_cfg(&mut self, table: &mut Table, override_scope_id: ScopeId) {
-        // let name_id = InternedId::new(intern::INTERNED_JAVA_UPPER);
-        // let scope_type = ScopeType::Override;
-        //
-        // let sym_id = SymbolId::new(self.symbols.len() as u32);
-        // let cfg_root_id = ConfigRootId::new(self.cfgs.len() as u32);
-        //
-        // let java_symbol = Symbol::new(
-        //     name_id,
-        //     sym_id,
-        //     None,
-        //     SymbolOrigin::Compiler,
-        //     false,
-        //     None,
-        //     scope_type,
-        //     ImplHirKind::Config(cfg_root_id),
-        // );
-        //
-        // table.interned_to_sym.insert(name_id, sym_id);
-        // self.symbols.push(java_symbol);
-        // self.cfgs.push(val);
+    /// Adds `JAVA` symbol to override intrinsic scope, then uses the `JAVA` namespace to allow for
+    /// configs to be made of it.
+    fn load_java_override(&mut self, override_table: &mut Table) {
+        let scope_type = ScopeType::Override;
+        let core_mod_id = self.intrinsic_registry.core_mod_id;
+
+        let name_id = InternedId::new(intern::INTERNED_JAVA_UPPER);
+        let java_sym_id = SymbolId::new(self.symbols.len() as u32);
+
+        let java_scope_id = ScopeId::new(self.scopes.len() as u16);
+        let associated_scope = AssociatedScopeKind::Scope(java_scope_id);
+        //TODO: with_capacity
+
+        let java_sym = Symbol::new(
+            name_id,
+            java_sym_id,
+            None,
+            SymbolOrigin::Compiler,
+            false,
+            associated_scope.into(),
+            scope_type,
+            SymbolKind::Namespace,
+        );
+
+        // `JAVA` being put inside intrinsic scope
+        override_table.interned_to_sym.insert(name_id, java_sym_id);
+        self.symbols.push(java_sym);
+
+        // Putting the namespace associated with `JAVA` in as a registered scope
+        let scope_info = Scope::new(java_scope_id, scope_type, true, None);
+        self.scopes
+            .push(ScopeInfo::new(scope_info, java_sym_id.into(), core_mod_id));
+
+        // loading what would be "Java { types {} }"
+        // Have to use the id here because something like "types" has a scope id it needs to
+        // register itself, which would conflicts with the current scopes.len() len len
+        self.load_java_override_types(java_scope_id);
+
+        // -- FINAL --
+
+        todo!()
+    }
+
+    // What if we had a "java" lower which had the same scope ids as the `JAVA` scope, but was only
+    // accessible inside of the "types" namespace? Not sure how best to simulate behavior like
+    // "self::thing" without inserting in that nature.
+    /// Loading the "types" namespace portion of `JAVA`
+    fn load_java_override_types(&mut self, java_scope_id: ScopeId) {
+        let scope_type = ScopeType::Override;
+
+        let types_name_id = InternedId::new(intern::INTERNED_TYPES_LOWER);
+        let types_sym_id = SymbolId::new(self.types.len() as u32);
+        let types_scope_id = ScopeId::new(self.scopes.len() as u16);
+
+        let associated_scope = AssociatedScopeKind::Scope(types_scope_id);
+        //TODO: with_capacity
+        let mut types_table = Table::new();
+
+        let types_sym = Symbol::new(
+            types_name_id,
+            types_sym_id,
+            None,
+            SymbolOrigin::Compiler,
+            false,
+            associated_scope.into(),
+            scope_type,
+            SymbolKind::Namespace,
+        );
+
+        self.symbols.push(types_sym);
+
+        // Adding "JAVA::types"
+        let java_table = &mut self.scopes[java_scope_id].scope.table;
+        java_table
+            .interned_to_sym
+            .insert(types_name_id, types_sym_id);
+
+        let sym_id = SymbolId::new(self.symbols.len() as u32);
+        let name_id = InternedId::new(intern::INTERNED_INT);
+
+        let sym = Symbol::new(
+            name_id,
+            sym_id,
+            None,
+            SymbolOrigin::Compiler,
+            true,
+            None,
+            ScopeType::Compiler,
+            SymbolKind::Namespace,
+        );
+
+        // types_table.interned_to_sym.insert(k, v);
 
         todo!()
     }

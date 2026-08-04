@@ -20,6 +20,8 @@
 //! tokenises identifiers and directives such as `@def`, `#warn`, and `var->`.
 
 use chrn_utils::source_map::source_span::SourceSpan;
+use std::collections::HashMap;
+use std::sync::Arc;
 use tower_lsp::lsp_types::Position;
 use tower_lsp::lsp_types::Range;
 use tower_lsp::lsp_types::TextDocumentContentChangeEvent;
@@ -228,34 +230,143 @@ impl<'a> PositionCursor<'a> {
 /// # Returns
 /// A `Vec<usize>` of the indices from `ranges` that are **not** redundant, preserving
 /// the original order.
+///
+/// # Complexity
+/// `O(n log n)`.  Sorting by `(start asc, end desc)` puts every range that can be
+/// contained in `ranges[i]` into the suffix after `i`, so a suffix minimum over the
+/// end positions answers "does a contained range exist" in constant time per entry.
+/// The pairwise scan this replaces was quadratic, and a rename touching a symbol used
+/// a few hundred times ran it on every affected file.
 pub fn deduplicate_range_indices(ranges: &[Range]) -> Vec<usize> {
+    let key = |p: Position| (p.line, p.character);
+    let mut order: Vec<usize> = (0..ranges.len()).collect();
+    order.sort_unstable_by_key(|&i| {
+        let r = ranges[i];
+        // End descending, so equal-start ranges that are contained sort later.
+        (key(r.start), std::cmp::Reverse(key(r.end)), i)
+    });
+
+    // `suffix_min[p]` is the smallest end position among `order[p..]`.
+    let mut suffix_min: Vec<(u32, u32)> = vec![(u32::MAX, u32::MAX); order.len() + 1];
+    for p in (0..order.len()).rev() {
+        suffix_min[p] = suffix_min[p + 1].min(key(ranges[order[p]].end));
+    }
+
     let mut result = Vec::new();
-    for i in 0..ranges.len() {
-        let r1 = &ranges[i];
-        let mut is_redundant = false;
-        for (j, r2) in ranges.iter().enumerate() {
-            if i == j {
-                continue;
-            }
-
-            let starts_after_or_at = r2.start.line > r1.start.line
-                || (r2.start.line == r1.start.line && r2.start.character >= r1.start.character);
-            let ends_before_or_at = r2.end.line < r1.end.line
-                || (r2.end.line == r1.end.line && r2.end.character <= r1.end.character);
-
-            if starts_after_or_at
-                && ends_before_or_at
-                && (r1.start != r2.start || r1.end != r2.end || j < i)
-            {
-                is_redundant = true;
-                break;
-            }
+    let mut p = 0;
+    while p < order.len() {
+        // Identical ranges sort adjacently; only the first of the group survives.
+        let group = ranges[order[p]];
+        let mut group_end = p + 1;
+        while group_end < order.len() && ranges[order[group_end]] == group {
+            group_end += 1;
         }
-        if !is_redundant {
-            result.push(i);
+
+        // Anything after the group starts at or after `group.start`, so a smaller
+        // or equal end position means a strictly contained range exists.
+        if suffix_min[group_end] > key(group.end) {
+            result.push(order[p]);
+        }
+        p = group_end;
+    }
+
+    result.sort_unstable();
+    result
+}
+
+/// Byte-offset → [`Position`] conversion backed by a precomputed line table.
+///
+/// [`offset_to_position`] rescans the document from byte 0 on every call, so a
+/// caller converting many offsets over the same text — diagnostics, references,
+/// rename edits — costs `O(offsets × document)`.  Building the table once makes
+/// each conversion `O(log lines + line length)` and, unlike [`PositionCursor`],
+/// imposes no ordering requirement on the offsets.
+pub struct LineIndex<'a> {
+    text: &'a str,
+    /// Byte offset of the start of each line; always begins with `0`.
+    line_starts: Vec<usize>,
+}
+
+impl<'a> LineIndex<'a> {
+    pub fn new(text: &'a str) -> Self {
+        let mut line_starts = vec![0];
+        line_starts.extend(
+            text.bytes()
+                .enumerate()
+                .filter(|&(_, b)| b == b'\n')
+                .map(|(i, _)| i + 1),
+        );
+        LineIndex { text, line_starts }
+    }
+
+    /// Converts an absolute byte offset to an LSP position, clamping past-the-end
+    /// offsets and rounding offsets inside a character up to its end — the same
+    /// behaviour as [`offset_to_position`].
+    pub fn position(&self, offset: usize) -> Position {
+        let mut target = offset.min(self.text.len());
+        while !self.text.is_char_boundary(target) {
+            target += 1;
+        }
+
+        let line = self.line_starts.partition_point(|&start| start <= target) - 1;
+        let character = self.text[self.line_starts[line]..target]
+            .chars()
+            .map(|c| c.len_utf16() as u32)
+            .sum();
+
+        Position {
+            line: line as u32,
+            character,
         }
     }
-    result
+}
+
+/// Groups the occurrence tuples produced by
+/// [`DocumentState::find_matching_entities`](crate::state::DocumentState::find_matching_entities)
+/// by URI and converts them into deduplicated LSP ranges.
+///
+/// Each tuple is `(uri, text, rel_start, rel_end, script_start)`, where the span
+/// endpoints are **relative** to the region's `src_bytes`, so `script_start` shifts
+/// them into the absolute file coordinates an LSP `Position` needs.
+///
+/// One [`LineIndex`] is built per file rather than rescanning the document for every
+/// occurrence. Shared by [`references`](crate::references) and [`rename`](crate::rename),
+/// which spelled the same grouping out separately.
+pub fn occurrences_to_ranges(
+    entities: Vec<crate::state::EntityOccurrence>,
+) -> Vec<(String, Vec<Range>)> {
+    /// A file's text and the absolute byte spans to convert against it.
+    type FileSpans = (Arc<String>, Vec<(usize, usize)>);
+
+    let mut by_uri: HashMap<String, FileSpans> = HashMap::new();
+    for (state_uri, text, start, end, script_start) in entities {
+        let abs_start = rel_to_abs_offset(start, script_start) as usize;
+        let abs_end = rel_to_abs_offset(end, script_start) as usize;
+        by_uri
+            .entry(state_uri)
+            .or_insert_with(|| (text, Vec::new()))
+            .1
+            .push((abs_start, abs_end));
+    }
+
+    by_uri
+        .into_iter()
+        .map(|(state_uri, (text, offsets))| {
+            let lines = LineIndex::new(&text);
+            let ranges: Vec<Range> = offsets
+                .into_iter()
+                .map(|(start, end)| Range {
+                    start: lines.position(start),
+                    end: lines.position(end),
+                })
+                .collect();
+            let kept = deduplicate_range_indices(&ranges)
+                .into_iter()
+                .map(|i| ranges[i])
+                .collect();
+            (state_uri, kept)
+        })
+        .collect()
 }
 
 /// Converts a relative byte offset (within a region's `src_bytes`) to the

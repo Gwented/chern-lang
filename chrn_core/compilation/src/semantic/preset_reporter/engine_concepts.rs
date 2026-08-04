@@ -27,8 +27,8 @@ impl EngineOptionBase {
 
 /// Convenience builder for `EngineOptionBase`
 pub(super) struct EngineOptionBaseBuilder {
-    pub(super) opt: EngineOption,
-    pub(super) on_failure: Option<Box<EngineOptionBaseBuilder>>,
+    opt: EngineOption,
+    on_failure: Option<Box<EngineOptionBaseBuilder>>,
 }
 
 impl EngineOptionBaseBuilder {

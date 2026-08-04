@@ -98,7 +98,9 @@ impl<'a> ConstraintResolver<'a> {
                         // to their ast id
                         SymbolKind::Variable(_) => self.resolve_var(sym_id, env),
                         // Users cannot define these but they exist internally.
-                        SymbolKind::Namespace | SymbolKind::Directive(_) => unreachable!(),
+                        SymbolKind::ExternType
+                        | SymbolKind::Namespace
+                        | SymbolKind::Directive(_) => unreachable!(),
                     }
                 }
                 CompilationUnit::Impl(impl_id) => match self.compiler.impls[impl_id].kind {
@@ -168,8 +170,9 @@ impl<'a> ConstraintResolver<'a> {
 
         for opt_root_id in cfg_root.opt_assignments.iter().copied() {
             let opt_root = self.compiler.get_opt_assignment_root(opt_root_id);
-            let schema = schema_lookup::get_schema_from_type_id(self.compiler, linked_type_id)
-                .expect("`TypeResolver` should only give linked sym ids to valid configs");
+            let schema =
+                schema_lookup::get_schema_from_type_id(&self.compiler.types, linked_type_id)
+                    .expect("`TypeResolver` should only give linked sym ids to valid configs");
 
             let sp_opt_name_id = SpannedContainer::new(opt_root.name_id, opt_root.name_span);
             let boundaries = Type::boundaries(self.compiler, linked_type_id);
