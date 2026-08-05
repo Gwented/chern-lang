@@ -101,6 +101,88 @@ pub const INTERNED_TYPES_LOWER: u32 = 77;
 // MAKE THE MACRO PLEASE
 // What macro. What is a macro? What is hygiene?
 
+/// Every compiler known interned string, paired with its id. Order must match the ids.
+pub const PRELOADED_STRINGS: [(&str, u32); INTERNER_PRELOAD_SIZE] = [
+    ("self", INTERNED_SELF),
+    ("struct", INTERNED_STRUCT),
+    ("enum", INTERNED_ENUM),
+    ("import", INTERNED_IMPORT),
+    ("export", INTERNED_EXPORT),
+    ("bind", INTERNED_BIND),
+    ("alias", INTERNED_ALIAS),
+    ("let", INTERNED_LET),
+    ("change", INTERNED_CHANGE),
+    ("as", INTERNED_AS),
+    ("var", INTERNED_VAR),
+    ("nest", INTERNED_NEST),
+    ("complex", INTERNED_COMPLEX),
+    ("override", INTERNED_OVERRIDE),
+    ("true", INTERNED_TRUE),
+    ("false", INTERNED_FALSE),
+    ("IsEmpty", INTERNED_IS_EMPTY),
+    ("IsWhitespace", INTERNED_IS_WHITESPACE),
+    ("Range", INTERNED_RANGE),
+    ("StartsW", INTERNED_STARTSW),
+    ("EndsW", INTERNED_ENDSW),
+    ("Contains", INTERNED_CONTAINS),
+    ("Equals", INTERNED_EQUALS),
+    ("i8", INTERNED_I8),
+    ("u8", INTERNED_U8),
+    ("i16", INTERNED_I16),
+    ("u16", INTERNED_U16),
+    ("f16", INTERNED_F16),
+    ("i32", INTERNED_I32),
+    ("u32", INTERNED_U32),
+    ("f32", INTERNED_F32),
+    ("i64", INTERNED_I64),
+    ("u64", INTERNED_U64),
+    ("f64", INTERNED_F64),
+    ("i128", INTERNED_I128),
+    ("u128", INTERNED_U128),
+    ("f128", INTERNED_F128),
+    ("sized", INTERNED_SIZED),
+    ("unsized", INTERNED_UNSIZED),
+    ("bool", INTERNED_BOOL),
+    ("nil", INTERNED_NIL),
+    ("char", INTERNED_CHAR),
+    ("str", INTERNED_STR),
+    ("BigInt", INTERNED_BIGINT),
+    ("BigFloat", INTERNED_BIGFLOAT),
+    ("List", INTERNED_LIST),
+    ("Set", INTERNED_SET),
+    ("Map", INTERNED_MAP),
+    ("Tuple", INTERNED_TUPLE),
+    ("Runtime", INTERNED_RUNTIME),
+    ("core", INTERNED_CORE),
+    ("in", INTERNED_IN),
+    ("Ranged", INTERNED_RANGED),
+    ("CharacterMappable", INTERNED_CHARACTER_MAPPABLE),
+    ("Collection", INTERNED_COLLECTION),
+    ("HasLen", INTERNED_HAS_LEN),
+    ("Integer", INTERNED_INTEGER),
+    ("Numeric", INTERNED_NUMERIC),
+    ("SignedInteger", INTERNED_SIGNED_INTEGER),
+    ("UnsignedInteger", INTERNED_UNSIGNED_INTEGER),
+    ("Float", INTERNED_FLOAT),
+    ("Ordered", INTERNED_ORDERED),
+    ("Comparable", INTERNED_COMPARABLE),
+    ("JAVA", INTERNED_JAVA_UPPER),
+    ("default_val", INTERNED_DEFAULT_VAL),
+    ("warn", INTERNED_WARN),
+    ("ignore", INTERNED_IGNORE),
+    ("scient", INTERNED_SCIENT),
+    ("hex", INTERNED_HEX),
+    ("bin", INTERNED_BIN),
+    ("octal", INTERNED_OCTAL),
+    ("idents", INTERNED_IDENTS),
+    ("cases", INTERNED_CASES),
+    ("java", INTERNED_JAVA_LOWER),
+    ("int", INTERNED_INT),
+    ("unicode", INTERNED_UNICODE),
+    ("Unknown", INTERNED_UNKNOWN),
+    ("types", INTERNED_TYPES_LOWER),
+];
+
 /// Simple interner used for the chrn language
 #[derive(Debug)]
 pub struct Intern {
@@ -127,237 +209,21 @@ impl Intern {
             pos: 0,
         };
 
-        // Pre-loading every language special string literals which includes keywords and types.
-        interner.id_map.insert("self".to_string(), INTERNED_SELF);
-        interner.stored_strs.push("self".to_string());
-        interner
-            .id_map
-            .insert("struct".to_string(), INTERNED_STRUCT);
-        interner.stored_strs.push("struct".to_string());
-        interner.id_map.insert("enum".to_string(), INTERNED_ENUM);
-        interner.stored_strs.push("enum".to_string());
-        interner
-            .id_map
-            .insert("import".to_string(), INTERNED_IMPORT);
-        interner.stored_strs.push("import".to_string());
-        interner
-            .id_map
-            .insert("export".to_string(), INTERNED_EXPORT);
-        interner.stored_strs.push("export".to_string());
-        interner.id_map.insert("bind".to_string(), INTERNED_BIND);
-        interner.stored_strs.push("bind".to_string());
-        interner.id_map.insert("alias".to_string(), INTERNED_ALIAS);
-        interner.stored_strs.push("alias".to_string());
-        interner.id_map.insert("let".to_string(), INTERNED_LET);
-        interner.stored_strs.push("let".to_string());
-        interner
-            .id_map
-            .insert("change".to_string(), INTERNED_CHANGE);
-        interner.stored_strs.push("change".to_string());
-        interner.id_map.insert("as".to_string(), INTERNED_AS);
-        interner.stored_strs.push("as".to_string());
-        interner.id_map.insert("var".to_string(), INTERNED_VAR);
-        interner.stored_strs.push("var".to_string());
-        interner.id_map.insert("nest".to_string(), INTERNED_NEST);
-        interner.stored_strs.push("nest".to_string());
-        interner
-            .id_map
-            .insert("complex".to_string(), INTERNED_COMPLEX);
-        interner.stored_strs.push("complex".to_string());
-        interner
-            .id_map
-            .insert("override".to_string(), INTERNED_OVERRIDE);
-        interner.stored_strs.push("override".to_string());
-        interner.id_map.insert("true".to_string(), INTERNED_TRUE);
-        interner.stored_strs.push("true".to_string());
-        interner.id_map.insert("false".to_string(), INTERNED_FALSE);
-        interner.stored_strs.push("false".to_string());
-        interner
-            .id_map
-            .insert("IsEmpty".to_string(), INTERNED_IS_EMPTY);
-        interner.stored_strs.push("IsEmpty".to_string());
-        interner
-            .id_map
-            .insert("IsWhitespace".to_string(), INTERNED_IS_WHITESPACE);
-        interner.stored_strs.push("IsWhitespace".to_string());
-        interner.id_map.insert("Range".to_string(), INTERNED_RANGE);
-        interner.stored_strs.push("Range".to_string());
-        interner
-            .id_map
-            .insert("StartsW".to_string(), INTERNED_STARTSW);
-        interner.stored_strs.push("StartsW".to_string());
-        interner.id_map.insert("EndsW".to_string(), INTERNED_ENDSW);
-        interner.stored_strs.push("EndsW".to_string());
-        interner
-            .id_map
-            .insert("Contains".to_string(), INTERNED_CONTAINS);
-        interner.stored_strs.push("Contains".to_string());
-        interner
-            .id_map
-            .insert("Equals".to_string(), INTERNED_EQUALS);
-        interner.stored_strs.push("Equals".to_string());
-        interner.id_map.insert("i8".to_string(), INTERNED_I8);
-        interner.stored_strs.push("i8".to_string());
-        interner.id_map.insert("u8".to_string(), INTERNED_U8);
-        interner.stored_strs.push("u8".to_string());
-        interner.id_map.insert("i16".to_string(), INTERNED_I16);
-        interner.stored_strs.push("i16".to_string());
-        interner.id_map.insert("u16".to_string(), INTERNED_U16);
-        interner.stored_strs.push("u16".to_string());
-
-        interner.id_map.insert("f16".to_string(), INTERNED_F16);
-        interner.stored_strs.push("f16".to_string());
-
-        interner.id_map.insert("i32".to_string(), INTERNED_I32);
-        interner.stored_strs.push("i32".to_string());
-        interner.id_map.insert("u32".to_string(), INTERNED_U32);
-        interner.stored_strs.push("u32".to_string());
-        interner.id_map.insert("f32".to_string(), INTERNED_F32);
-        interner.stored_strs.push("f32".to_string());
-        interner.id_map.insert("i64".to_string(), INTERNED_I64);
-        interner.stored_strs.push("i64".to_string());
-        interner.id_map.insert("u64".to_string(), INTERNED_U64);
-        interner.stored_strs.push("u64".to_string());
-        interner.id_map.insert("f64".to_string(), INTERNED_F64);
-        interner.stored_strs.push("f64".to_string());
-        interner.id_map.insert("i128".to_string(), INTERNED_I128);
-        interner.stored_strs.push("i128".to_string());
-        interner.id_map.insert("u128".to_string(), INTERNED_U128);
-        interner.stored_strs.push("u128".to_string());
-        interner.id_map.insert("f128".to_string(), INTERNED_F128);
-        interner.stored_strs.push("f128".to_string());
-        interner.id_map.insert("sized".to_string(), INTERNED_SIZED);
-        interner.stored_strs.push("sized".to_string());
-        interner
-            .id_map
-            .insert("unsized".to_string(), INTERNED_UNSIZED);
-        interner.stored_strs.push("unsized".to_string());
-        interner.id_map.insert("bool".to_string(), INTERNED_BOOL);
-        interner.stored_strs.push("bool".to_string());
-        interner.id_map.insert("nil".to_string(), INTERNED_NIL);
-        interner.stored_strs.push("nil".to_string());
-        interner.id_map.insert("char".to_string(), INTERNED_CHAR);
-        interner.stored_strs.push("char".to_string());
-        interner.id_map.insert("str".to_string(), INTERNED_STR);
-        interner.stored_strs.push("str".to_string());
-        interner
-            .id_map
-            .insert("BigInt".to_string(), INTERNED_BIGINT);
-        interner.stored_strs.push("BigInt".to_string());
-        interner
-            .id_map
-            .insert("BigFloat".to_string(), INTERNED_BIGFLOAT);
-        interner.stored_strs.push("BigFloat".to_string());
-        interner.id_map.insert("List".to_string(), INTERNED_LIST);
-        interner.stored_strs.push("List".to_string());
-        interner.id_map.insert("Set".to_string(), INTERNED_SET);
-        interner.stored_strs.push("Set".to_string());
-        interner.id_map.insert("Map".to_string(), INTERNED_MAP);
-        interner.stored_strs.push("Map".to_string());
-        interner.id_map.insert("Tuple".to_string(), INTERNED_TUPLE);
-        interner.stored_strs.push("Tuple".to_string());
-        interner
-            .id_map
-            .insert("Runtime".to_string(), INTERNED_RUNTIME);
-        interner.stored_strs.push("Runtime".to_string());
-        interner.id_map.insert("core".to_string(), INTERNED_CORE);
-        interner.stored_strs.push("core".to_string());
-        interner.id_map.insert("in".to_string(), INTERNED_IN);
-        interner.stored_strs.push("in".to_string());
-        interner
-            .id_map
-            .insert("Ranged".to_string(), INTERNED_RANGED);
-        interner.stored_strs.push("Ranged".to_string());
-        interner
-            .id_map
-            .insert("CharacterMappable".to_string(), INTERNED_CHARACTER_MAPPABLE);
-        interner.stored_strs.push("CharacterMappable".to_string());
-        interner
-            .id_map
-            .insert("Collection".to_string(), INTERNED_COLLECTION);
-        interner.stored_strs.push("Collection".to_string());
-        interner
-            .id_map
-            .insert("HasLen".to_string(), INTERNED_HAS_LEN);
-        interner.stored_strs.push("HasLen".to_string());
-        interner
-            .id_map
-            .insert("Integer".to_string(), INTERNED_INTEGER);
-        interner.stored_strs.push("Integer".to_string());
-        interner
-            .id_map
-            .insert("Numeric".to_string(), INTERNED_NUMERIC);
-        interner.stored_strs.push("Numeric".to_string());
-        interner
-            .id_map
-            .insert("SignedInteger".to_string(), INTERNED_SIGNED_INTEGER);
-        interner.stored_strs.push("SignedInteger".to_string());
-        interner
-            .id_map
-            .insert("UnsignedInteger".to_string(), INTERNED_UNSIGNED_INTEGER);
-        interner.stored_strs.push("UnsignedInteger".to_string());
-        interner.id_map.insert("Float".to_string(), INTERNED_FLOAT);
-        interner.stored_strs.push("Float".to_string());
-        interner
-            .id_map
-            .insert("Ordered".to_string(), INTERNED_ORDERED);
-        interner.stored_strs.push("Ordered".to_string());
-        interner
-            .id_map
-            .insert("Comparable".to_string(), INTERNED_COMPARABLE);
-        interner.stored_strs.push("Comparable".to_string());
-        interner
-            .id_map
-            .insert("JAVA".to_string(), INTERNED_JAVA_UPPER);
-        interner.stored_strs.push("JAVA".to_string());
-        interner
-            .id_map
-            .insert("default_val".to_string(), INTERNED_DEFAULT_VAL);
-        interner.stored_strs.push("default_val".to_string());
-        interner.id_map.insert("warn".to_string(), INTERNED_WARN);
-        interner.stored_strs.push("warn".to_string());
-        interner
-            .id_map
-            .insert("ignore".to_string(), INTERNED_IGNORE);
-        interner.stored_strs.push("ignore".to_string());
-        interner
-            .id_map
-            .insert("scient".to_string(), INTERNED_SCIENT);
-        interner.stored_strs.push("scient".to_string());
-        interner.id_map.insert("hex".to_string(), INTERNED_HEX);
-        interner.stored_strs.push("hex".to_string());
-        interner.id_map.insert("bin".to_string(), INTERNED_BIN);
-        interner.stored_strs.push("bin".to_string());
-        interner.id_map.insert("octal".to_string(), INTERNED_OCTAL);
-        interner.stored_strs.push("octal".to_string());
-        interner
-            .id_map
-            .insert("idents".to_string(), INTERNED_IDENTS);
-        interner.stored_strs.push("idents".to_string());
-        interner.id_map.insert("cases".to_string(), INTERNED_CASES);
-        interner.stored_strs.push("cases".to_string());
-        interner
-            .id_map
-            .insert("java".to_string(), INTERNED_JAVA_LOWER);
-        interner.stored_strs.push("java".to_string());
-        interner.id_map.insert("int".to_string(), INTERNED_INT);
-        interner.stored_strs.push("int".to_string());
-        interner
-            .id_map
-            .insert("unicode".to_string(), INTERNED_UNICODE);
-        interner.stored_strs.push("unicode".to_string());
-        interner
-            .id_map
-            .insert("Unknown".to_string(), INTERNED_UNICODE);
-        interner.stored_strs.push("Unknown".to_string());
-        interner
-            .id_map
-            .insert("types".to_string(), INTERNED_TYPES_LOWER);
-        interner.stored_strs.push("types".to_string());
+        // Pre-loading every language required string literal
+        for (s, id) in PRELOADED_STRINGS {
+            interner.register(s, id);
+        }
 
         interner.pos = interner.stored_strs.len();
 
         interner
+    }
+
+    /// Internal helper used for registering compiler known interned strings
+    fn register(&mut self, s: &str, id: u32) {
+        debug_assert_eq!(self.stored_strs.len() as u32, id);
+        self.id_map.insert(s.to_string(), id);
+        self.stored_strs.push(s.to_string());
     }
 
     pub fn intern(&mut self, s: &str) -> InternedId {

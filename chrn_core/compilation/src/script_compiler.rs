@@ -47,10 +47,6 @@ pub struct ScriptCompiler {
     // Maybe the module should keep it's bind info rather than give it to the compiler so that the
     // information isn't lossy and contextual
     pub bind: Option<Bind>,
-    /// Module name to module id mapping to index module array. import `as` aliases are also stored here
-    // This feels out of place
-    // Can this be removed? Probably.
-    // pub mod_map: HashMap<PathId, ModuleId>,
     /// All modules found during compilation
     pub mods: Arena<Module, ModuleId>,
     /// Type table which contains every module's stored types
@@ -108,13 +104,66 @@ pub const CORE_BOOL: u32 = 19;
 pub const CORE_BIGINT: u32 = 20;
 pub const CORE_BIGFLOAT: u32 = 21;
 pub const CORE_RUNTIME: u32 = 22;
+// This particular type has no identifier because it's not a real type beyond being a signifier.
 pub const CORE_UNKNOWN: u32 = 23;
 // pub const CORE_CHARACTER_MAPPABLE: u32 = 24;
-// pub const CORE_LIST: u32 = 23;
-// pub const CORE_SET: u32 = 24;
-// pub const CORE_MAP: u32 = 25;
-// pub const CORE_TUPLE: u32 = 26;
-// Called idx but is u32...
+
+/// Every core builtin type, paired with its interned name and the `TypeId` it must have.
+/// `load_core_types` loads them sequentially.
+pub const CORE_BUILTIN_TYPES: [(u32, BuiltinType, u32); CORE_UNKNOWN as usize] = [
+    (intern::INTERNED_I8, BuiltinType::I8, CORE_I8),
+    (intern::INTERNED_U8, BuiltinType::U8, CORE_U8),
+    (intern::INTERNED_I16, BuiltinType::I16, CORE_I16),
+    (intern::INTERNED_U16, BuiltinType::U16, CORE_U16),
+    (intern::INTERNED_F16, BuiltinType::F16, CORE_F16),
+    (intern::INTERNED_I32, BuiltinType::I32, CORE_I32),
+    (intern::INTERNED_U32, BuiltinType::U32, CORE_U32),
+    (intern::INTERNED_F32, BuiltinType::F32, CORE_F32),
+    (intern::INTERNED_I64, BuiltinType::I64, CORE_I64),
+    (intern::INTERNED_U64, BuiltinType::U64, CORE_U64),
+    (intern::INTERNED_F64, BuiltinType::F64, CORE_F64),
+    (intern::INTERNED_I128, BuiltinType::I128, CORE_I128),
+    (intern::INTERNED_U128, BuiltinType::U128, CORE_U128),
+    (intern::INTERNED_F128, BuiltinType::F128, CORE_F128),
+    (intern::INTERNED_SIZED, BuiltinType::Sized, CORE_SIZED),
+    (intern::INTERNED_UNSIZED, BuiltinType::Unsized, CORE_UNSIZED),
+    (intern::INTERNED_STR, BuiltinType::Str, CORE_STR),
+    (intern::INTERNED_CHAR, BuiltinType::Char, CORE_CHAR),
+    (intern::INTERNED_NIL, BuiltinType::Nil, CORE_NIL),
+    (intern::INTERNED_BOOL, BuiltinType::Bool, CORE_BOOL),
+    (intern::INTERNED_BIGINT, BuiltinType::BigInt, CORE_BIGINT),
+    (
+        intern::INTERNED_BIGFLOAT,
+        BuiltinType::BigFloat,
+        CORE_BIGFLOAT,
+    ),
+    (intern::INTERNED_RUNTIME, BuiltinType::Runtime, CORE_RUNTIME),
+];
+
+/// Every core boundary type, paired with its interned name. Loaded after `CORE_BUILTIN_TYPES` and
+/// the unknown type, so these have no `CORE_*` constants.
+pub const CORE_BOUNDARIES: [(u32, TypeBoundaryFlags); 11] = [
+    (intern::INTERNED_RANGED, TypeBoundaryFlags::RANGED),
+    (
+        intern::INTERNED_CHARACTER_MAPPABLE,
+        TypeBoundaryFlags::CHARACTER_MAPPABLE,
+    ),
+    (intern::INTERNED_COLLECTION, TypeBoundaryFlags::COLLECTION),
+    (intern::INTERNED_HAS_LEN, TypeBoundaryFlags::HAS_LEN),
+    (intern::INTERNED_INTEGER, TypeBoundaryFlags::INTEGER),
+    (intern::INTERNED_NUMERIC, TypeBoundaryFlags::NUMERIC),
+    (
+        intern::INTERNED_SIGNED_INTEGER,
+        TypeBoundaryFlags::SIGNED_INTEGER,
+    ),
+    (
+        intern::INTERNED_UNSIGNED_INTEGER,
+        TypeBoundaryFlags::UNSIGNED_INTEGER,
+    ),
+    (intern::INTERNED_FLOAT, TypeBoundaryFlags::FLOAT),
+    (intern::INTERNED_ORDERED, TypeBoundaryFlags::ORDERED),
+    (intern::INTERNED_COMPARABLE, TypeBoundaryFlags::COMPARABLE),
+];
 
 // --  DIRECTIVE CONSTANTS --
 pub const DIRECTIVE_WARN_IDX: usize = 0;
@@ -125,6 +174,8 @@ pub const DIRECTIVE_BIN_IDX: usize = 4;
 pub const DIRECTIVE_OCTAL_IDX: usize = 5;
 pub const DIRECTIVE_UNICODE_IDX: usize = 6;
 
+// Ok maybe put this somewhere else bestie
+// NOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
 pub fn directive_to_id(directive: &Directive) -> DirectiveId {
     let idx = match directive {
         Directive::Warn => DIRECTIVE_WARN_IDX,
@@ -152,25 +203,25 @@ impl ScriptCompiler {
     //to anything, similar to the interner's constants.
     /// Loads core library and builds script specific compiler with parameters given
     pub fn init(bind: Option<Bind>, mods: Arena<Module, ModuleId>) -> ScriptCompiler {
-        // dbg!(&mods[ModuleId::new(0)]);
-        //TEST:
         let core_mod_id = ModuleId::new(mods.len() as u32);
         let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None);
 
         let mut compiler = ScriptCompiler {
             bind,
             mods,
-            types: Arena::with_capacity(builtins::BUILTIN_TYPE_ARRAY.len()),
+            // + 1 for `Type::Unknown` since it's not in either array
+            types: Arena::with_capacity(CORE_BUILTIN_TYPES.len() + CORE_BOUNDARIES.len() + 1),
             values: Arena::new(),
             exprs: Arena::new(),
             // Ignore this
-            symbols: Arena::with_capacity(50),
+            symbols: Arena::with_capacity(60),
             impls: Arena::new(),
             impl_members: Arena::new(),
             variables: Arena::new(),
             sym_members: Arena::new(),
             cfgs: Arena::new(),
-            scopes: Arena::new(),
+            // ignore this
+            scopes: Arena::with_capacity(10),
             directives: Arena::with_capacity(DIRECTIVE_UNICODE_IDX),
             //TEST:
             intrinsic_registry,
@@ -697,6 +748,8 @@ impl ScriptCompiler {
             | Type::Boundaries(_)
             | Type::Unknown => false,
             // Can builtins be deferred to?
+            // I believe so yes.
+            // Thank you
             Type::Deferred(_) => unreachable!(),
         }
     }
@@ -824,7 +877,7 @@ impl ScriptCompiler {
             None,
         );
 
-        Self::load_core_types(compiler, &core_mod, &mut table);
+        Self::load_core_types(compiler, core_mod.mod_id, &mut table);
         Self::load_core_funcs(compiler, &core_mod, &mut table);
         // Self::load_complex_constants(compiler, &mut core_mod, &mut table);
         // Self::load_override_constants(compiler, &mut core_mod, &mut table);
@@ -1013,83 +1066,6 @@ impl ScriptCompiler {
         compiler.symbols.push(sym);
         compiler.directives.push(directive);
     }
-
-    //TODO: There is an issue with how scopes are consumed right now which makes giving specific
-    //scopes known constants difficult. Since there is no one source of data for a section to get
-    //it's constants, it isn't possible to make it so if we are in a `complex->` section, it shows
-    //language specific constants like RUST or JAVA which all for specifying behavior. All
-    //scopes are locally owned and don't separate what declared can be used for all other scopes,
-    //and which are just local.
-    //
-    // There should be more percise access level rules to where a variable declaration will allow
-    // all other scopes to use it, but also have where it's declaration occurred be tied to it,
-    // while also allowing for a section like `complex` to show the `RUST` constant only in it's
-    // own scope.
-    //
-    // This would probably require pre-loading section symbols on-demand to where their
-    // associated_scope is immediately attached to all the resolver stages. So maybe a
-    // ScopeType::Global is needed.
-    //
-    // First lets focus on how pre-loading would work
-    //
-    // Ok what about, if not found in normal scope, search intrinsic, where now scopes carry
-    // Option<ScopeId's> which allow for their intrinsics to be searched
-    // /// Creates scope with the constants needed for a `complex` section to function then returns
-    // /// it's `ScopeId`
-    // fn load_complex_constants(&mut self) -> ScopeId {
-    //     // IS it from core? The semantics are getting a little lost
-    //     let core_mod_id = self.intrinsic_registry.core_mod_id;
-    //     let scope_type = ScopeType::Complex;
-    //
-    //     let mut table = Table::new();
-    //
-    //     let default_val_name_id = InternedId::new(intern::INTERNED_DEFAULT_VALUE);
-    //
-    //     let opt_schema = OptionSchema::new(default_val_name_id, None);
-    //     let field_opt_schemas = vec![opt_schema];
-    //
-    //     // table.interned_to_sym.insert(default_val_name_id, sym_id);
-    //
-    //     let cfg_schema = ConfigSchema::new(ConfigSchemaKind::Field, field_opt_schemas);
-    //
-    //     // let cfg_id = ConfigId::new(self.configs.len() as u32);
-    //     // let sym = Symbol::new(
-    //     //     default_val_name_id,
-    //     //     sym_id,
-    //     //     None,
-    //     //     core_mod_id,
-    //     //     false,
-    //     //     None,
-    //     //     scope_type,
-    //     //     SymbolKind::Config(cfg_id),
-    //     // );
-    //
-    //     self.configs.push(cfg_schema);
-    //
-    //     let scope_id = ScopeId::new(self.scopes.len());
-    //     let scope = Scope::with_table(scope_id, scope_type, None, true, table);
-    //     let scope_info = ScopeInfo::new(scope, None, core_mod_id);
-    //     self.scopes.push(scope_info);
-    //
-    //     scope_id
-    //     // Need to load config structures with known fields
-    //     //
-    //     // The conceptual idea is, ConfigDef holds config options, which are known, and may have
-    //     // different options depending on the type.
-    //     //
-    //     // For searching against config that's known, we could have, SchemaKind, where it's
-    //     // kind dictates what options should be accounted for. So, given a target identifier,
-    //     // value, and kind of schema, what did we find.
-    // }
-
-    // const fn configs(kind: ConfigSchemaKind) -> &'static ConfigSchema {
-    //     match kind {
-    //         ConfigSchemaKind::Struct => lang::schemas::,
-    //         ConfigSchemaKind::Enum => todo!(),
-    //         ConfigSchemaKind::Field => todo!(),
-    //     }
-    //
-    // }
 
     /// Creates scope with the constants needed for an `override` section to function then returns
     /// it's `ScopeId`
@@ -1481,491 +1457,47 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(interned_id, sym_id);
     }
 
+    // Make &mut self?
     // --- Beep
     /// Helper to load all of core's types
-    fn load_core_types(compiler: &mut ScriptCompiler, core_mod: &Module, table: &mut Table) {
-        let core_mod_id = core_mod.mod_id;
-
+    fn load_core_types(compiler: &mut ScriptCompiler, core_mod_id: ModuleId, table: &mut Table) {
         // -- Concrete types --
+        for (interned, ty, core_id) in CORE_BUILTIN_TYPES {
+            debug_assert_eq!(compiler.types.len() as u32, core_id);
+            let interned_id = InternedId::new(interned);
+            Self::register_builtin(compiler, interned_id, ty, table, core_mod_id);
+        }
 
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_I8);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::I8)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_U8);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::U8)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_I16);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::I16)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_U16);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::U16)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_F16);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::F16)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_I32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::I32)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_U32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::U32)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_F32);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::F32)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_I64);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::I64)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_U64);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::U64)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_F64);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::F64)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_I128);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::I128)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_U128);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::U128)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_F128);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::F128)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_SIZED);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::Sized)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_UNSIZED);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::Unsized)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_STR);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::Str)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_CHAR);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::Char)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_NIL);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::Nil)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_BOOL);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::Bool)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_BIGINT);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::BigInt)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_BIGFLOAT);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::BigFloat)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_RUNTIME);
-        compiler.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::Runtime)),
-            core_mod_id,
-        ));
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
+        debug_assert_eq!(compiler.types.len() as u32, CORE_UNKNOWN);
+        // Is a special cookie because you're not supposed to be able to instantiate an `Unknown`
+        // type on purpose. This is just a compiler internal type.
         compiler
             .types
             .push(TypeInfo::new(Type::Unknown, core_mod_id));
 
-        // -- Type constraints --
+        // -- Boundaries --
+        for (interned, flags) in CORE_BOUNDARIES {
+            let interned_id = InternedId::new(interned);
+            Self::register_boundary(compiler, interned_id, flags, table, core_mod_id);
+        }
+    }
+
+    fn register_builtin(
+        compiler: &mut ScriptCompiler,
+        name_id: InternedId,
+        builtin_ty: BuiltinType,
+        table: &mut Table,
+        core_mod_id: ModuleId,
+    ) {
         let type_id = TypeId::new(compiler.types.len() as u32);
+        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
+
         compiler.types.push(TypeInfo::new(
-            Type::Boundaries(TypeBoundaryFlags::RANGED),
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, builtin_ty)),
             core_mod_id,
         ));
-
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_RANGED);
-        let symbol = Symbol::new(
-            interned_id,
+        let sym = Symbol::new(
+            name_id,
             sym_id,
             None,
             SymbolOrigin::Module(core_mod_id),
@@ -1975,19 +1507,26 @@ impl ScriptCompiler {
             SymbolKind::Type(type_id),
         );
 
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
+        compiler.symbols.push(sym);
+        table.interned_to_sym.insert(name_id, sym_id);
+    }
 
+    /// Registers a single core boundary type and its symbol
+    fn register_boundary(
+        compiler: &mut ScriptCompiler,
+        name_id: InternedId,
+        flags: TypeBoundaryFlags,
+        table: &mut Table,
+        core_mod_id: ModuleId,
+    ) {
         let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::Boundaries(TypeBoundaryFlags::CHARACTER_MAPPABLE),
-            core_mod_id,
-        ));
-
         let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_CHARACTER_MAPPABLE);
-        let symbol = Symbol::new(
-            interned_id,
+
+        compiler
+            .types
+            .push(TypeInfo::new(Type::Boundaries(flags), core_mod_id));
+        let sym = Symbol::new(
+            name_id,
             sym_id,
             None,
             SymbolOrigin::Module(core_mod_id),
@@ -1997,207 +1536,8 @@ impl ScriptCompiler {
             SymbolKind::Type(type_id),
         );
 
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::Boundaries(TypeBoundaryFlags::COLLECTION),
-            core_mod_id,
-        ));
-
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_COLLECTION);
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::Boundaries(TypeBoundaryFlags::HAS_LEN),
-            core_mod_id,
-        ));
-
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_HAS_LEN);
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::Boundaries(TypeBoundaryFlags::INTEGER),
-            core_mod_id,
-        ));
-
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_INTEGER);
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        // Numeric
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::Boundaries(TypeBoundaryFlags::NUMERIC),
-            core_mod_id,
-        ));
-
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_NUMERIC);
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::Boundaries(TypeBoundaryFlags::SIGNED_INTEGER),
-            core_mod_id,
-        ));
-
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_SIGNED_INTEGER);
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::Boundaries(TypeBoundaryFlags::UNSIGNED_INTEGER),
-            core_mod_id,
-        ));
-
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_UNSIGNED_INTEGER);
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::Boundaries(TypeBoundaryFlags::FLOAT),
-            core_mod_id,
-        ));
-
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_FLOAT);
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::Boundaries(TypeBoundaryFlags::ORDERED),
-            core_mod_id,
-        ));
-
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_ORDERED);
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
-
-        let type_id = TypeId::new(compiler.types.len() as u32);
-        compiler.types.push(TypeInfo::new(
-            Type::Boundaries(TypeBoundaryFlags::COMPARABLE),
-            core_mod_id,
-        ));
-
-        let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-        let interned_id = InternedId::new(intern::INTERNED_COMPARABLE);
-        let symbol = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-
-        compiler.symbols.push(symbol);
-        table.interned_to_sym.insert(interned_id, sym_id);
+        compiler.symbols.push(sym);
+        table.interned_to_sym.insert(name_id, sym_id);
     }
 }
 
@@ -2206,35 +1546,6 @@ impl MemoryCost for ScriptCompiler {
         let bind_cost = size_of::<Bind>();
         let mod_metadata_cost = todo!();
         // dbg!(mod_metadata_cost);
-        usize::MAX;
         todo!()
     }
 }
-
-// /// All modules found during compilation
-// pub mods: Vec<Module>,
-// /// Type table which contains every module's stored types
-// pub types: Vec<TypeInfo>,
-// /// All values that were cached
-// pub values: Vec<ValueInfo>,
-// /// All expressions that were found
-// pub exprs: Vec<ResolvedExpr>,
-// /// All symbols that were found
-// pub symbols: Vec<Symbol>,
-// /// All symbols considered a "member" of another. This is here to serve the same purpose of a
-// /// collection that would be considered fields, but more general since the language is small
-// /// scale and would likely not benefit much from such a wide variety of collections.
-// pub members: Vec<MemberSymbolKind>,
-// /// All variables that were found
-// pub variables: Vec<VarDef>,
-// /// All user defined config. Is considered it's own class instead of a type since it
-// /// behaves uniquely
-// pub configs: Vec<ConfigDefRoot>,
-// /// All directives that were found
-// pub directives: Vec<Directive>,
-// /// Scope arena
-// pub scopes: Vec<ScopeInfo>,
-// /// Information regarding intrinsic data such as core's `ModuleId`
-// pub intrinsic_registry: IntrinsicRegistry,
-// /// The current stage the compiler is in
-// pub resolver_state: ResolverState,
