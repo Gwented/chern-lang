@@ -1,6 +1,10 @@
+mod helpers;
 pub mod reporter;
 pub mod script_compiler_store;
 pub mod script_compiler_summary;
+
+use std::collections::VecDeque;
+
 use chrn_utils::{
     arena::Arena,
     budget::mem_cost::MemoryCost,
@@ -13,10 +17,7 @@ use chrn_utils::{
 };
 use lang::{
     directives::{Directive, TypeDirective},
-    types::{
-        boundaries::TypeBoundaryFlags,
-        builtins::{self, BuiltinType},
-    },
+    types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
     values::ValueInfo,
 };
 
@@ -25,6 +26,10 @@ use crate::{
     lookup::scopes::{self, AssociatedScopeKind, IntrinsicRegistry, Scope, ScopeInfo, ScopeType},
     modules::{Bind, Import, ImportKind, Module, ModuleState},
     resolvers::resolver_state::ResolverState,
+    script_compiler::{
+        extern_helpers::{ExternFrame, ExternNamespace},
+        helpers::extern_helpers::{self, ExternKind},
+    },
     semantic::hir::{
         hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
         hir_exprs::ResolvedExpr,
@@ -57,6 +62,7 @@ pub struct ScriptCompiler {
     pub exprs: Arena<ResolvedExpr, ExprId>,
     /// All symbols that were found
     pub symbols: Arena<Symbol, SymbolId>,
+    /// impls!
     pub impls: Arena<ImplHir, ImplId>,
     /// All symbols considered a "member" of another. This is here to serve the same purpose of a
     /// collection that would be considered fields, but more general since the language is small
@@ -110,7 +116,7 @@ pub const CORE_UNKNOWN: u32 = 23;
 
 /// Every core builtin type, paired with its interned name and the `TypeId` it must have.
 /// `load_core_types` loads them sequentially.
-pub const CORE_BUILTIN_TYPES: [(u32, BuiltinType, u32); CORE_UNKNOWN as usize] = [
+pub static CORE_BUILTIN_TYPES: [(u32, BuiltinType, u32); CORE_UNKNOWN as usize] = [
     (intern::INTERNED_I8, BuiltinType::I8, CORE_I8),
     (intern::INTERNED_U8, BuiltinType::U8, CORE_U8),
     (intern::INTERNED_I16, BuiltinType::I16, CORE_I16),
@@ -142,7 +148,7 @@ pub const CORE_BUILTIN_TYPES: [(u32, BuiltinType, u32); CORE_UNKNOWN as usize] =
 
 /// Every core boundary type, paired with its interned name. Loaded after `CORE_BUILTIN_TYPES` and
 /// the unknown type, so these have no `CORE_*` constants.
-pub const CORE_BOUNDARIES: [(u32, TypeBoundaryFlags); 11] = [
+pub static CORE_BOUNDARIES: [(u32, TypeBoundaryFlags); 11] = [
     (intern::INTERNED_RANGED, TypeBoundaryFlags::RANGED),
     (
         intern::INTERNED_CHARACTER_MAPPABLE,
@@ -176,6 +182,7 @@ pub const DIRECTIVE_UNICODE_IDX: usize = 6;
 
 // Ok maybe put this somewhere else bestie
 // NOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
+// Ok :3
 pub fn directive_to_id(directive: &Directive) -> DirectiveId {
     let idx = match directive {
         Directive::Warn => DIRECTIVE_WARN_IDX,
@@ -227,7 +234,6 @@ impl ScriptCompiler {
             intrinsic_registry,
             resolver_state: ResolverState::NAMESPACE,
         };
-
         // Should this lazy load the section intrinsics though?
         // Yuppy
         Self::load_core(&mut compiler);
@@ -645,7 +651,7 @@ impl ScriptCompiler {
     /// the `SymbolKind` is unknown.
     pub(super) fn extract_type_id(&self, sym_id: SymbolId) -> TypeId {
         match &self.symbols[sym_id] {
-            sym_info => match &sym_info.kind {
+            sym => match &sym.kind {
                 SymbolKind::Type(type_id) => *type_id,
                 SymbolKind::Variable(var_id) => match self.variables[*var_id].state {
                     VariableState::ReservedTypeSlot(type_id) => type_id,
@@ -829,15 +835,7 @@ impl ScriptCompiler {
         // Beep
         let intrinsic_scope_opt: Option<ScopeId> = match scope_type {
             // Lazy
-            ScopeType::Override => {
-                if let Some(scope_id) = self.intrinsic_registry.override_scope_id {
-                    Some(scope_id)
-                } else {
-                    let scope_id = Some(self.load_override_symbols());
-                    self.intrinsic_registry.override_scope_id = scope_id;
-                    scope_id
-                }
-            }
+            ScopeType::Override => self.load_override_symbols().into(),
             ScopeType::Local
             | ScopeType::Neutral
             | ScopeType::Var
@@ -878,9 +876,7 @@ impl ScriptCompiler {
         );
 
         Self::load_core_types(compiler, core_mod.mod_id, &mut table);
-        Self::load_core_funcs(compiler, &core_mod, &mut table);
-        // Self::load_complex_constants(compiler, &mut core_mod, &mut table);
-        // Self::load_override_constants(compiler, &mut core_mod, &mut table);
+        Self::load_core_funcs(compiler, core_mod.mod_id, &mut table);
 
         // Exporting all created symbols from core
         for sym_id in table.interned_to_sym.values().copied() {
@@ -909,7 +905,7 @@ impl ScriptCompiler {
     /// Returns `true` if the type is unknown, false otherwise
     pub fn check_unknown(&self, mut type_id: TypeId) -> bool {
         // This limit is semi-random
-        let checked = walk_type_id_deferred!(&self.types, type_id);
+        let checked = walk_type_id_deferred!(self.types, type_id);
         match self.types[checked.inner].ty {
             Type::Unknown => true,
             _ => false,
@@ -1073,6 +1069,8 @@ impl ScriptCompiler {
     /// The idea behind this is that the `impl` for JAVA, and all other symbols are customized on
     /// the user-end. By default, these symbols are just namespaces that have content inside, like
     /// "types" and their own specific java::int and so on.
+    ///
+    /// If the override instrinsic `ScopeId` already exists then this will just return that scope id.
     fn load_override_symbols(&mut self) -> ScopeId {
         //NOTE: Just in case this is called without knowledge of if the override scope exists.
         if let Some(inner) = self.intrinsic_registry.override_scope_id {
@@ -1083,65 +1081,141 @@ impl ScriptCompiler {
         //
         // Saying it's not from core for now because !
         let core_mod_id = self.intrinsic_registry.core_mod_id;
-        let scope_type = ScopeType::Override;
+        let scope_id = ScopeId::new(self.scopes.len() as u16);
 
         // Override intrisic scope's table which holes stuff like "RUST" and "JAVA" namespaces
-        let mut override_table = Table::new();
-        self.load_java_override(&mut override_table);
+        let scope = Scope::new(scope_id, ScopeType::Override, true, None);
+        self.scopes.push(ScopeInfo::new(scope, None, core_mod_id));
+
+        self.register_all_extern_namespaces(scope_id);
+        // self.load_java_namespace(&mut override_table);
 
         // -- FINAL --
         // Pushing the intrinsic scope
-        let override_scope_id = ScopeId::new(self.scopes.len() as u16);
-        let scope = Scope::with_table(override_scope_id, scope_type, None, true, override_table);
-        self.scopes.push(ScopeInfo::new(scope, None, core_mod_id));
+        // let override_scope_id = ScopeId::new(self.scopes.len() as u16);
+        // let scope = Scope::with_table(override_scope_id, scope_type, None, true, override_table);
+        // self.scopes.push(ScopeInfo::new(scope, None, core_mod_id));
 
-        todo!("We want to return you");
+        // ????
 
-        override_scope_id
+        scope_id
     }
 
-    /// Adds `JAVA` symbol to override intrinsic scope, then uses the `JAVA` namespace to allow for
-    /// configs to be made of it.
-    fn load_java_override(&mut self, override_table: &mut Table) {
-        let scope_type = ScopeType::Override;
-        let core_mod_id = self.intrinsic_registry.core_mod_id;
+    /// Entry point to the recursive registeration of all `override` external type namespace symbols
+    fn register_all_extern_namespaces(&mut self, current_scope_id: ScopeId) {
+        // iterative version was a bit verbose..
+        // let mut stack: Vec<ExternFrame> = Vec::with_capacity(10);
 
-        let name_id = InternedId::new(intern::INTERNED_JAVA_UPPER);
-        let java_sym_id = SymbolId::new(self.symbols.len() as u32);
-
-        let java_scope_id = ScopeId::new(self.scopes.len() as u16);
-        let associated_scope = AssociatedScopeKind::Scope(java_scope_id);
-        //TODO: with_capacity
-
-        let java_sym = Symbol::new(
-            name_id,
-            java_sym_id,
-            None,
-            SymbolOrigin::Compiler,
-            false,
-            associated_scope.into(),
-            scope_type,
-            SymbolKind::Namespace,
-        );
-
-        // `JAVA` being put inside intrinsic scope
-        override_table.interned_to_sym.insert(name_id, java_sym_id);
-        self.symbols.push(java_sym);
-
-        // Putting the namespace associated with `JAVA` in as a registered scope
-        let scope_info = Scope::new(java_scope_id, scope_type, true, None);
-        self.scopes
-            .push(ScopeInfo::new(scope_info, java_sym_id.into(), core_mod_id));
-
-        // loading what would be "Java { types {} }"
-        // Have to use the id here because something like "types" has a scope id it needs to
-        // register itself, which would conflicts with the current scopes.len() len len
-        self.load_java_override_types(java_scope_id);
-
-        // -- FINAL --
-
-        todo!()
+        for extern_kinds in extern_helpers::ALL_EXTERN_NAMESPACES {
+            self.register_extern_namespace(current_scope_id, extern_kinds);
+        }
     }
+
+    fn register_extern_namespace(
+        &mut self,
+        current_scope_id: ScopeId,
+        extern_kinds: &[ExternKind],
+    ) {
+        for kind in extern_kinds {
+            match kind {
+                ExternKind::Namespace(extern_namespace) => {
+                    // Creating namespace as a symbol with the identifier associated first.
+                    let sym_id = SymbolId::new(self.symbols.len() as u32);
+                    let scope_id = ScopeId::new(self.scopes.len() as u16);
+
+                    let sym = Symbol::new(
+                        extern_namespace.name_id,
+                        sym_id,
+                        None,
+                        SymbolOrigin::Compiler,
+                        true,
+                        AssociatedScopeKind::Scope(scope_id).into(),
+                        ScopeType::Compiler,
+                        SymbolKind::Namespace,
+                    );
+
+                    let current_table = &mut self.scopes[current_scope_id].scope.table;
+                    self.symbols.push(sym);
+                    current_table
+                        .interned_to_sym
+                        .insert(extern_namespace.name_id, sym_id);
+
+                    // Pushing it's scope so that future scope instantiations are aligned with len()
+                    let scope = Scope::new(scope_id, ScopeType::Compiler, true, None);
+                    self.scopes.push(ScopeInfo::new(
+                        scope,
+                        sym_id.into(),
+                        self.intrinsic_registry.core_mod_id,
+                    ));
+
+                    self.register_extern_namespace(scope_id, extern_namespace.syms);
+                }
+                ExternKind::Symbol(interned_id) => {
+                    let sym_id = SymbolId::new(self.symbols.len() as u32);
+                    let sym = Symbol::new(
+                        *interned_id,
+                        sym_id,
+                        None,
+                        SymbolOrigin::Compiler,
+                        true,
+                        None,
+                        ScopeType::Compiler,
+                        SymbolKind::ExternType,
+                    );
+
+                    let current_table = &mut self.scopes[current_scope_id].scope.table;
+                    self.symbols.push(sym);
+                    current_table.interned_to_sym.insert(*interned_id, sym_id);
+                }
+            }
+        }
+    }
+
+    // /// Adds `JAVA` symbol to override intrinsic scope, then uses the `JAVA` namespace to allow for
+    // /// configs to be made of it.
+    // fn load_java_namespace(&mut self, override_table: &mut Table) {
+    //     let scope_type = ScopeType::Override;
+    //     let core_mod_id = self.intrinsic_registry.core_mod_id;
+    //
+    //     let name_id = InternedId::new(intern::INTERNED_JAVA_UPPER);
+    //     let java_sym_id = SymbolId::new(self.symbols.len() as u32);
+    //
+    //     let java_scope_id = ScopeId::new(self.scopes.len() as u16);
+    //     let associated_scope = AssociatedScopeKind::Scope(java_scope_id);
+    //     //TODO: with_capacity
+    //
+    //     // needs: name_id,
+    //     // easy need: core_mod_id
+    //
+    //     let java_sym = Symbol::new(
+    //         name_id,
+    //         java_sym_id,
+    //         None,
+    //         SymbolOrigin::Compiler,
+    //         false,
+    //         associated_scope.into(),
+    //         scope_type,
+    //         SymbolKind::Namespace,
+    //     );
+    //
+    //     // `JAVA` being put inside intrinsic scope
+    //     override_table.interned_to_sym.insert(name_id, java_sym_id);
+    //     self.symbols.push(java_sym);
+    //
+    //     // Putting the namespace associated with `JAVA` in as a registered scope
+    //     let scope_info = Scope::new(java_scope_id, scope_type, true, None);
+    //     self.scopes
+    //         .push(ScopeInfo::new(scope_info, java_sym_id.into(), core_mod_id));
+    //
+    //     // loading what would be "Java { types {} }"
+    //     // Have to use the id here because something like "types" has a scope id it needs to
+    //     // register itself, which would conflicts with the current scopes.len() len len
+    //     self.load_java_override_types(java_scope_id);
+    //
+    //     // -- FINAL --
+    //
+    //     todo!()
+    // }
 
     // What if we had a "java" lower which had the same scope ids as the `JAVA` scope, but was only
     // accessible inside of the "types" namespace? Not sure how best to simulate behavior like
@@ -1188,18 +1262,17 @@ impl ScriptCompiler {
             true,
             None,
             ScopeType::Compiler,
-            SymbolKind::Namespace,
+            SymbolKind::ExternType,
         );
 
-        // types_table.interned_to_sym.insert(k, v);
+        types_table.interned_to_sym.insert(name_id, sym_id);
+        self.symbols.push(sym);
 
         todo!()
     }
 
     /// Helper to load all of core's functions and predicates
-    fn load_core_funcs(compiler: &mut ScriptCompiler, core_mod: &Module, table: &mut Table) {
-        let core_mod_id = core_mod.mod_id;
-
+    fn load_core_funcs(compiler: &mut ScriptCompiler, core_mod_id: ModuleId, table: &mut Table) {
         // IsEmpty
         let type_id = TypeId::new(compiler.types.len() as u32);
         let is_empty_flags = TypeBoundaryFlags::COLLECTION;
@@ -1462,7 +1535,7 @@ impl ScriptCompiler {
     /// Helper to load all of core's types
     fn load_core_types(compiler: &mut ScriptCompiler, core_mod_id: ModuleId, table: &mut Table) {
         // -- Concrete types --
-        for (interned, ty, core_id) in CORE_BUILTIN_TYPES {
+        for (interned, ty, core_id) in CORE_BUILTIN_TYPES.iter().cloned() {
             debug_assert_eq!(compiler.types.len() as u32, core_id);
             let interned_id = InternedId::new(interned);
             Self::register_builtin(compiler, interned_id, ty, table, core_mod_id);
@@ -1482,6 +1555,7 @@ impl ScriptCompiler {
         }
     }
 
+    /// Registers a single core builtin-type and pushes it
     fn register_builtin(
         compiler: &mut ScriptCompiler,
         name_id: InternedId,
@@ -1511,7 +1585,7 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(name_id, sym_id);
     }
 
-    /// Registers a single core boundary type and its symbol
+    /// Registers a single core boundary type and pushes it
     fn register_boundary(
         compiler: &mut ScriptCompiler,
         name_id: InternedId,

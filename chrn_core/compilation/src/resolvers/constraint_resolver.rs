@@ -145,7 +145,7 @@ impl<'a> ConstraintResolver<'a> {
         // leconstraint_reot module = &self.compiler.mods[env.current_mod];
         let cfg_root = self.compiler.get_cfg_def_root(parent_impl_id);
 
-        let Some(linked_type_id) = cfg_root.linked_type_id else {
+        let Some(linked_type_id) = cfg_root.linked_sym_id else {
             return;
         };
         let cfg_root_ty_span = self

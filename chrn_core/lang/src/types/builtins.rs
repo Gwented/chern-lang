@@ -14,7 +14,7 @@ pub static BUILTIN_TYPE_ARRAY: [&str; 27] = [
     "Set", "Tuple", "Runtime",
 ];
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BuiltinType {
     I8,
     U8,

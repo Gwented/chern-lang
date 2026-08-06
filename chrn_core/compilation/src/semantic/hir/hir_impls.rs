@@ -8,7 +8,7 @@ use chrn_utils::{
 
 use crate::{
     lookup::scopes::{ScopeLookupPattern, ScopeType},
-    parser::ast::ast_concepts::ConfigRootKind,
+    parser::ast::{ast_concepts::ConfigRootKind, ast_exprs::TypeExpr},
 };
 
 #[derive(Debug)]
@@ -83,7 +83,8 @@ pub struct ConfigDefRoot {
     /// During name resolution, we can't actually lookup the symbol since it may or may not be
     /// registered, so it's Option since it actually is `None` at some point, and could remain
     /// `None` if in a later stage it doesn't have it's target symbol found.
-    pub linked_type_id: Option<TypeId>,
+    //NOTE: Can only be either a type id or namespace. So maybe um...um....!
+    pub linked_sym_id: Option<TypeId>,
     /// Expects `OptionAssignmentRoot`
     pub opt_assignments: Vec<ImplMemberId>,
     /// Lookup pattern that needs to be used to properly discern if
@@ -103,7 +104,7 @@ impl ConfigDefRoot {
         // name_id: InternedId,
         // name_span: SourceSpan,
         cfg_root_id: ConfigRootId,
-        linked_type_id: Option<TypeId>,
+        linked_sym_id: Option<TypeId>,
         lookup_pattern: ScopeLookupPattern,
         kind: ConfigRootKind,
         opt_assignments: Vec<ImplMemberId>,
@@ -113,7 +114,7 @@ impl ConfigDefRoot {
             impl_id,
             cfg_root_id,
             lookup_pattern,
-            linked_type_id,
+            linked_sym_id,
             kind,
             opt_assignments,
             cfg_members,
@@ -180,10 +181,20 @@ impl ConfigDefMember {
 }
 
 // Maybe embed this into lookup instead?
-// #[derive(Debug, Clone)]
-// pub enum ConfigRootMetadataKind {
-//     Override,
-// }
+#[derive(Debug, Clone)]
+pub enum ConfigRootMetadataKind {
+    Complex(SpannedContainer<TypeExpr>),
+    /// Name span
+    Override(SourceSpan),
+}
+
+// Oh my.
+/// In `override`, it has the choice between directly interacting with a global namespace like "JAVA"
+/// or with a user defined type.
+pub enum OverrideConfigRootMetadataKind {
+    Namespace(SpannedContainer<InternedId>),
+    Type(SpannedContainer<TypeExpr>),
+}
 
 /// For allowing one config to hold different metadata depending on the context
 #[derive(Debug, Clone)]
@@ -191,6 +202,7 @@ pub enum ConfigMemberMetadataKind {
     Complex(ComplexConfigMemberMetadata),
     Override(OverrideConfigMemberMetadata),
 }
+
 impl ConfigMemberMetadataKind {
     /// Returns `true` if complex variant, false otherwise
     /// `override` section

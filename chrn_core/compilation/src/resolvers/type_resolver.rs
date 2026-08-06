@@ -499,7 +499,61 @@ impl<'res> TypeResolver<'res> {
             unreachable!()
         };
 
-        // TODO: Type check now or later or, something
+        // TODO: Complex can only take in type expressions and lookup types.
+        // Override can do the same type lookup, while also being able to use it's intrinsic
+        // namespaces like PYTHON.
+        // This means that this config handling neds to encode accounting for the scope type in
+        // regards to which can actually consume what.
+        match scope_type {
+            ScopeType::Complex => {}
+            ScopeType::Override => {}
+            // No other scope types can hold configs. If this is reached than this is an internal error.
+            _ => unreachable!(),
+        }
+
+        let res = match &root_sp_ty_expr.inner {
+            TypeExpr::Var(interned_id) => {
+                if let Some(SymbolLookupOutput { found_sym_id, .. }) = scopes::find_sym_id(
+                    self.compiler,
+                    associated_scope,
+                    *interned_id,
+                    scope_type,
+                    abs_cfg_root.lookup_pat,
+                ) {
+                    match &self.compiler.symbols[found_sym_id].kind {
+                        SymbolKind::Type(type_id) => todo!(),
+                        SymbolKind::Variable(variable_id) => todo!(),
+                        SymbolKind::Namespace => todo!(),
+                        SymbolKind::Directive(directive_id) => todo!(),
+                        SymbolKind::ExternType => todo!(),
+                    }
+                    todo!()
+                } else {
+                    false
+                };
+            }
+            TypeExpr::Path(sp_path_segs) => {
+                match resolve::resolve_static_access(
+                    self.compiler,
+                    sp_path_segs,
+                    associated_scope,
+                    scope_type,
+                    false,
+                ) {
+                    StaticAccessResult::Scope(associated_scope_kind) => todo!(),
+                    StaticAccessResult::SymNotFound {
+                        current_seg,
+                        prev_seg,
+                    } => todo!(),
+                    StaticAccessResult::NoNamespace(spanned_container) => todo!(),
+                    StaticAccessResult::GenericUsingStaticPath(source_span) => todo!(),
+                };
+                todo!()
+            }
+            // Ignore this
+            TypeExpr::Generic(_) => todo!(),
+        };
+
         let found_type_id = match resolve::resolve_type_expr(
             self.compiler,
             associated_scope,
@@ -533,6 +587,7 @@ impl<'res> TypeResolver<'res> {
                 None
             }
         };
+        //TODO: Lookup symbol instead.
 
         // Checks if the symbol is a valid config consumer later.
         // Returns an `Option` so that the option assignments can still be checked before
@@ -933,7 +988,7 @@ impl<'res> TypeResolver<'res> {
 
         debug_assert!(matches!(abs_cfg_root.kind, AbstractConfigKind::Root(_)));
 
-        debug_assert_eq!(cfg_root.linked_type_id, None);
+        debug_assert_eq!(cfg_root.linked_sym_id, None);
         debug_assert_eq!(cfg_root.opt_assignments.len(), 0);
         debug_assert_eq!(cfg_root.cfg_members.len(), 0);
         debug_assert!(matches!(
@@ -943,7 +998,7 @@ impl<'res> TypeResolver<'res> {
                 | ScopeLookupPattern::OnlyNest
         ));
 
-        cfg_root.linked_type_id = Some(found_type_id);
+        cfg_root.linked_sym_id = Some(found_type_id);
         cfg_root.opt_assignments = opt_assignment_roots;
         cfg_root.cfg_members = cfg_def_members;
     }

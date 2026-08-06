@@ -34,12 +34,12 @@ nest->
         InProgress
     }
 complex->
-    State {
+    /*State {
         InProgress {}
         stating {}
-    }
+    }*/
     // nothing::Person {}
-// override->
-// State {stating {k {}}}
-// JAVA {}
+override->
+JAVA {}
+// State=> {stating {k {}}}
 // var State {}

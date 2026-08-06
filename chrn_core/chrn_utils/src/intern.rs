@@ -102,7 +102,7 @@ pub const INTERNED_TYPES_LOWER: u32 = 77;
 // What macro. What is a macro? What is hygiene?
 
 /// Every compiler known interned string, paired with its id. Order must match the ids.
-pub const PRELOADED_STRINGS: [(&str, u32); INTERNER_PRELOAD_SIZE] = [
+pub static PRELOADED_STRINGS: [(&str, u32); INTERNER_PRELOAD_SIZE] = [
     ("self", INTERNED_SELF),
     ("struct", INTERNED_STRUCT),
     ("enum", INTERNED_ENUM),

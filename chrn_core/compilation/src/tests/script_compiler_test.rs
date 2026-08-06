@@ -19,7 +19,7 @@ fn core_builtin_type_id_alignment() {
     let compiler = core_only_compiler();
     let interner = Intern::init();
 
-    for (interned, builtin_ty, core_id) in CORE_BUILTIN_TYPES {
+    for (interned, builtin_ty, core_id) in CORE_BUILTIN_TYPES.iter().cloned() {
         let type_info: &TypeInfo = &compiler.types[TypeId::new(core_id)];
 
         let Type::BuiltinTypeInfo(info) = &type_info.ty else {
