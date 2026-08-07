@@ -12,7 +12,8 @@ use lang::{
 
 use crate::{
     lookup::scopes::{
-        self, AssociatedScopeKind, ScopeLookupPattern, ScopeType, SymbolLookupOutput,
+        self, AssociatedScopeKind, LookupPreference, ScopeLookupPattern, ScopeType,
+        SymbolLookupOutput,
     },
     parser::ast::{
         ast_concepts::AbstractDirective,
@@ -127,12 +128,14 @@ pub fn resolve_type_expr(
         TypeExpr::Var(name_id) => {
             let sp_name = SpannedContainer::new(*name_id, sp_ty_expr.span);
 
+            //NOTE: Should encode that, it prefers a namespace over a type,
             match scopes::find_sym_id(
                 compiler,
                 associated_scope,
                 *name_id,
                 scope_type,
                 lookup_pattern,
+                LookupPreference::Type,
             ) {
                 Some(SymbolLookupOutput { found_sym_id, .. }) => {
                     let found_sym = &compiler.symbols[found_sym_id];
@@ -404,6 +407,7 @@ pub fn resolve_type_expr(
                 env,
             )
         }
+        TypeExpr::MultiAssign(abs_multi_assign) => todo!(),
     }
 }
 
@@ -433,6 +437,7 @@ pub fn resolve_static_access(
                     *interned_id,
                     scope_type,
                     ScopeLookupPattern::NamespaceOnly,
+                    LookupPreference::None,
                 ) {
                     let sym = &compiler.symbols[found_sym_id];
                     match sym.associated_scope {

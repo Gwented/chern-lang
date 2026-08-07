@@ -5,7 +5,7 @@ use chrn_utils::{
 
 use crate::{
     lexer::token::Notation,
-    parser::ast::ast_concepts::{AbstractMemberAccess, BinaryOp, Unary},
+    parser::ast::ast_concepts::{AbstractMemberAccess, AbstractMultiAssign, BinaryOp, Unary},
 };
 
 #[derive(Debug)]
@@ -89,6 +89,7 @@ pub enum TypeExpr {
     Var(InternedId),
     Path(Vec<SpannedPathSegment>),
     Generic(Generic),
+    MultiAssign(AbstractMultiAssign),
 }
 
 #[derive(Debug, Clone)]

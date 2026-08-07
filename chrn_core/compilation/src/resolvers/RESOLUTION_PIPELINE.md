@@ -1,5 +1,7 @@
 1. NameResolver
 Goal: Registering all symbol namespaces.
+Semantics: 
+- When a duplicate identifier is seen, the original identifier is kept, an error is emitted, and the symbol with the duplicate identifier is still processed as a compilation unit.
 
 2. MemberResolver:
 Goal: Appends fields/variants and resolves their type.

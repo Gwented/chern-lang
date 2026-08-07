@@ -652,7 +652,7 @@ fn resolve_module(
                                 sp_path_id.span,
                                 AnnotationKind::Primary,
                                 None,
-                            ).add_note("Using 'as' for an import alias with a valid UTF-8 name circumvents this error")
+                            ).add_note("Using `as` for an import alias with a valid UTF-8 name circumvents this error")
                             .build();
 
                 summary.push_diag(src_diag);

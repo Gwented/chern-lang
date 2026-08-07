@@ -25,10 +25,10 @@ fn scope_simple_test() {
 
     let module = &compiler.mods[ModuleId::new(0)];
 
-    assert_eq!(module.scopes.len(), 2);
+    assert_eq!(module.scopes.len(), 3);
     assert_eq!(
         compiler.get_scope(module.scopes[1]).scope.scope_type,
-        ScopeType::Neutral
+        ScopeType::Compiler
     );
 
     // -- VAR --
@@ -211,17 +211,17 @@ fn scope_simple_test() {
 
     //TODO: Override and Complex
     let module = &compiler.mods[ModuleId::new(0)];
-    assert_eq!(module.scopes.len(), 4);
+    assert_eq!(module.scopes.len(), 5);
     assert_eq!(
         compiler.get_scope(module.scopes[1]).scope.scope_type,
-        ScopeType::Neutral
+        ScopeType::Compiler
     );
     assert_eq!(
         compiler.get_scope(module.scopes[2]).scope.scope_type,
-        ScopeType::Var
+        ScopeType::Neutral
     );
     assert_eq!(
         compiler.get_scope(module.scopes[3]).scope.scope_type,
-        ScopeType::Nest
+        ScopeType::Var
     );
 }

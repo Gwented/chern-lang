@@ -19,7 +19,7 @@ use lang::values::{Value, ValueInfo};
 use crate::constraints::ArgConstraint;
 use crate::lookup::member_lookup::{self, MemberLookupResult, MemberScopeLookupPattern};
 use crate::lookup::scopes::{
-    self, AssociatedScopeKind, ScopeLookupPattern, ScopeType, SymbolLookupOutput,
+    self, AssociatedScopeKind, LookupPreference, ScopeLookupPattern, ScopeType, SymbolLookupOutput,
 };
 use crate::parser::ast::ast_concepts::{
     AbstractConfig, AbstractConfigKind, AbstractDirective, AbstractOptionAssignment, AbstractParam,
@@ -309,30 +309,6 @@ impl<'res> TypeResolver<'res> {
                         //assignment attached
                         PendingExprKind::Standing(_) => (),
                     }
-
-                    // -- ORIGINAL --
-                    // if let Some(parent_base) = &pending_expr.kind
-                    //     && let ParentState::Resolved(has_resolved_ty, has_const_val) =
-                    //         parent_base.state
-                    // {
-                    //     // If the pending expr has a parent base that means it can be updated, and
-                    //     // if it is within sym_queue then we should update it
-                    //     if let Some(possible_pending_parent_base) = &pending_expr.kind
-                    //         && self
-                    //             .ty_ctx
-                    //             .sym_queue
-                    //             .contains_key(&possible_pending_parent_base.parent_sym_id)
-                    //     {
-                    //         current_resolved_count += 1;
-                    //         let parent_info = ParentInfo::new(
-                    //             possible_pending_parent_base.parent_sym_id,
-                    //             has_resolved_ty,
-                    //             has_const_val,
-                    //         );
-                    //
-                    //         resolved_parents.push((*pending_sym_id, i, parent_info));
-                    //     }
-                    // -- ORIGINAL --
                 }
             }
 
@@ -511,48 +487,48 @@ impl<'res> TypeResolver<'res> {
             _ => unreachable!(),
         }
 
-        let res = match &root_sp_ty_expr.inner {
-            TypeExpr::Var(interned_id) => {
-                if let Some(SymbolLookupOutput { found_sym_id, .. }) = scopes::find_sym_id(
-                    self.compiler,
-                    associated_scope,
-                    *interned_id,
-                    scope_type,
-                    abs_cfg_root.lookup_pat,
-                ) {
-                    match &self.compiler.symbols[found_sym_id].kind {
-                        SymbolKind::Type(type_id) => todo!(),
-                        SymbolKind::Variable(variable_id) => todo!(),
-                        SymbolKind::Namespace => todo!(),
-                        SymbolKind::Directive(directive_id) => todo!(),
-                        SymbolKind::ExternType => todo!(),
-                    }
-                    todo!()
-                } else {
-                    false
-                };
-            }
-            TypeExpr::Path(sp_path_segs) => {
-                match resolve::resolve_static_access(
-                    self.compiler,
-                    sp_path_segs,
-                    associated_scope,
-                    scope_type,
-                    false,
-                ) {
-                    StaticAccessResult::Scope(associated_scope_kind) => todo!(),
-                    StaticAccessResult::SymNotFound {
-                        current_seg,
-                        prev_seg,
-                    } => todo!(),
-                    StaticAccessResult::NoNamespace(spanned_container) => todo!(),
-                    StaticAccessResult::GenericUsingStaticPath(source_span) => todo!(),
-                };
-                todo!()
-            }
-            // Ignore this
-            TypeExpr::Generic(_) => todo!(),
-        };
+        // let res = match &root_sp_ty_expr.inner {
+        //     TypeExpr::Var(interned_id) => {
+        //         if let Some(SymbolLookupOutput { found_sym_id, .. }) = scopes::find_sym_id(
+        //             self.compiler,
+        //             associated_scope,
+        //             *interned_id,
+        //             scope_type,
+        //             abs_cfg_root.lookup_pat,
+        //         ) {
+        //             match &self.compiler.symbols[found_sym_id].kind {
+        //                 SymbolKind::Type(type_id) => todo!(),
+        //                 SymbolKind::Variable(variable_id) => todo!(),
+        //                 SymbolKind::Namespace => todo!(),
+        //                 SymbolKind::Directive(directive_id) => todo!(),
+        //                 SymbolKind::ExternType => todo!(),
+        //             }
+        //             todo!()
+        //         } else {
+        //             false
+        //         };
+        //     }
+        //     TypeExpr::Path(sp_path_segs) => {
+        //         match resolve::resolve_static_access(
+        //             self.compiler,
+        //             sp_path_segs,
+        //             associated_scope,
+        //             scope_type,
+        //             false,
+        //         ) {
+        //             StaticAccessResult::Scope(associated_scope_kind) => todo!(),
+        //             StaticAccessResult::SymNotFound {
+        //                 current_seg,
+        //                 prev_seg,
+        //             } => todo!(),
+        //             StaticAccessResult::NoNamespace(spanned_container) => todo!(),
+        //             StaticAccessResult::GenericUsingStaticPath(source_span) => todo!(),
+        //         };
+        //         todo!()
+        //     }
+        //     // Ignore this
+        //     TypeExpr::Generic(_) => todo!(),
+        // };
 
         let found_type_id = match resolve::resolve_type_expr(
             self.compiler,
@@ -998,7 +974,7 @@ impl<'res> TypeResolver<'res> {
                 | ScopeLookupPattern::OnlyNest
         ));
 
-        cfg_root.linked_sym_id = Some(found_type_id);
+        cfg_root.linked_sym_id = Some(todo!());
         cfg_root.opt_assignments = opt_assignment_roots;
         cfg_root.cfg_members = cfg_def_members;
     }
@@ -2139,6 +2115,7 @@ impl<'res> TypeResolver<'res> {
         let has_resolved_ty = !self.compiler.check_unknown(expr.type_id);
         let has_const_val = val.const_val.is_some();
 
+        // The top expr is given as the value innately for the variable.
         let val_id = expr.val_id;
 
         // Sets the symbol's value to be the last expression's value so that later, if it's
@@ -2751,6 +2728,7 @@ impl<'res> TypeResolver<'res> {
                     scope_type,
                     // Should this be no restrictions?
                     ScopeLookupPattern::NoRestrictions,
+                    LookupPreference::None,
                 ) {
                     //WARN: Constant iteration upon seeing any symbol instead of a single check
                     //elsewhere
@@ -2957,9 +2935,6 @@ impl<'res> TypeResolver<'res> {
                     Ok(expr_id)
                 } else {
                     let ident = self.interner.search(*name_id);
-                    // if ident == "_" {
-                    //     panic!("hi");
-                    // }
 
                     // SemanticError needs centralization
                     let module = &self.compiler.mods[env.current_mod];
@@ -3624,6 +3599,7 @@ impl<'res> TypeResolver<'res> {
                 name_id,
                 scope_type,
                 ScopeLookupPattern::NoRestrictions,
+                LookupPreference::None,
             ) {
                 todo!();
                 // let type_id = self.compiler.symbols[sym_id ];

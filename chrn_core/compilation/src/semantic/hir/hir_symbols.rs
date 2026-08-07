@@ -101,6 +101,44 @@ impl SymbolKind {
             SymbolKind::ExternType => Formatted::ExternType,
         }
     }
+    pub fn to_flat(&self) -> SymbolKindFlat {
+        match self {
+            SymbolKind::Type(_) => SymbolKindFlat::Type,
+            SymbolKind::Variable(_) => SymbolKindFlat::Variable,
+            SymbolKind::Namespace => SymbolKindFlat::Namespace,
+            SymbolKind::Directive(_) => SymbolKindFlat::Directive,
+            SymbolKind::ExternType => SymbolKindFlat::ExternType,
+        }
+    }
+}
+
+/// Flat representation of `SymbolKind`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SymbolKindFlat {
+    Type,
+    Variable,
+    Namespace,
+    Directive,
+    ExternType,
+}
+
+impl SymbolKindFlat {
+    // Need bit suffix to avoid namespace collision
+    pub const TYPE_BITS: u16 = 1 << 1;
+    pub const VARIABLE_BITS: u16 = 1 << 2;
+    pub const NAMESPACE_BITS: u16 = 1 << 3;
+    pub const DIRECTIVE_BITS: u16 = 1 << 4;
+    pub const EXTERN_TYPE_BITS: u16 = 1 << 5;
+
+    pub fn to_bits(self) -> u16 {
+        match self {
+            SymbolKindFlat::Type => Self::TYPE_BITS,
+            SymbolKindFlat::Variable => Self::VARIABLE_BITS,
+            SymbolKindFlat::Namespace => Self::NAMESPACE_BITS,
+            SymbolKindFlat::Directive => Self::DIRECTIVE_BITS,
+            SymbolKindFlat::ExternType => Self::EXTERN_TYPE_BITS,
+        }
+    }
 }
 
 #[derive(Debug)]

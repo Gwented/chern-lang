@@ -7,7 +7,8 @@ export let WRITE = 0b1
 // Maybe this shouldn't be seen as a valid import
 // import l
 
-let chrn = "ch" + "rn"
+let core = "ch" + "rn"
+let i32 = 3
 
 // if this was something that wanted to be added, that would then mean the compiler store needs to be 
 // mutable, but the environments USE the compiler store, which makes it hard to concat and intern
@@ -17,6 +18,7 @@ let chrn = "ch" + "rn"
 // let string = "4" + "8"
 
 var->
+    x: i32
 nest->
     export struct Person {
         k: List<i32,>
@@ -40,6 +42,10 @@ complex->
     }*/
     // nothing::Person {}
 override->
-JAVA {}
+JAVA {
+    types {
+        i32, u8, u32 = java::int
+    }
+}
 // State=> {stating {k {}}}
 // var State {}

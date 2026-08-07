@@ -7,13 +7,13 @@ mod parse_fmt;
 mod parser_budget;
 mod parser_state;
 
-use crate::lexer::token::{SpannedToken, Token, TokenKind};
+use crate::lexer::token::{self, SpannedToken, Token, TokenKind};
 use crate::lookup::scopes::{ScopeLookupPattern, ScopeType};
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractDirective,
-    AbstractEnum, AbstractImpl, AbstractMemberAccess, AbstractOptionAssignment, AbstractParam,
-    AbstractStruct, AbstractTypeDef, AbstractVar, AbstractVariant, AstInfo, BinaryOp, Item,
-    SectionKind, Unary, UnaryOp,
+    AbstractEnum, AbstractImpl, AbstractMemberAccess, AbstractMultiAssign,
+    AbstractOptionAssignment, AbstractParam, AbstractStruct, AbstractTypeDef, AbstractVar,
+    AbstractVariant, AstInfo, BinaryOp, Item, SectionKind, Unary, UnaryOp,
 };
 
 use crate::parser::ast::ast_exprs::{
@@ -452,7 +452,7 @@ pub fn parse(
     (ast_info, ctx.summary)
 }
 
-//FIXME: These sets may be misaligned
+//FIXME: These sets are misaligned
 fn parse_alias_stmt(
     ctx: &mut ParserContext,
     is_priv: bool,
@@ -535,11 +535,6 @@ fn check_bind(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token> {
         ),
         interner,
     )?;
-    // InitialEvidence::new(
-    //     EvidenceEnv::Alias,
-    //     Situation::NameBinding,
-    //     Branch::Neutral(NeutralBranch::Alias),
-    // ),
 
     Ok(())
 }
@@ -825,7 +820,7 @@ fn parse_cfg_expr(
         return Err(Token::Poison);
     }
 
-    // Catching state1=>state2=>state3 {} syntax SHORTENING (Different)
+    // Catching state1{state2=>state3 {}} syntax SHORTENING
     //
     // Is ok to advance() since last check ensures that it must be either an arrow or CCurly, but we
     // only care about the arrow here
@@ -851,8 +846,10 @@ fn parse_cfg_expr(
     let mut opt_assignments: Vec<AbstractOptionAssignment> = Vec::new();
     let mut cfg_members: Vec<AbstractConfig> = Vec::new();
 
+    //WARN: This is getting suspicious..
     loop {
         if ctx.peek_ahead(1).tok == Token::Assign {
+            // Option parsing.
             // for "cases = [snake_case]"
             match parse_option_assignment(ctx, budget, interner) {
                 //WARN: The attempt to make recovery better doesn't really work since it would
@@ -863,10 +860,9 @@ fn parse_cfg_expr(
                 // So the parsing details aren't lost
                 Err(_) => break,
             };
-            // opt_assignments.push(opt_assignment);
         } else if ctx.peek_kind() == TokenKind::Id
-            // "nest/override Type {}" can be used so we need to catch those semantic identifiers
-            || ctx.peek_tok() == Token::Keyword(Keyword::Override)
+            // "var/nest Type {}" can be used so we need to catch those semantic identifiers
+            || ctx.peek_tok() == Token::Keyword(Keyword::Var)
             || ctx.peek_tok() == Token::Keyword(Keyword::Nest)
         {
             // for "inner {/*assignments*/}"
@@ -874,7 +870,6 @@ fn parse_cfg_expr(
                 Ok(abs_cfg) => cfg_members.push(abs_cfg),
                 Err(_) => break,
             };
-            // cfg_members.push(abs_cfg_member);
         } else {
             // If no consumable token for this branch is seen
             //
@@ -1458,15 +1453,7 @@ fn parse_primary(
 
             let fmtted_tok = parse_fmt::fmt_tok(t, interner);
 
-            let msg = match t {
-                Token::Invalid(_) => {
-                    format!("Expected a valid expression, found invalid {fmtted_tok}")
-                }
-                Token::Keyword(_) => {
-                    format!("Expected a valid expression, found keyword {fmtted_tok}",)
-                }
-                _ => format!("Expected a valid expression, found {fmtted_tok}"),
-            };
+            let msg = format!("Expected a valid expression, found {fmtted_tok}");
 
             ctx.report_verbose(
                 &msg,
@@ -1586,7 +1573,6 @@ fn parse_unary(
     }
 }
 
-// ENFORCE TYPE NAMING FOR GENERICS AT LEAST
 /// Recursive function for parsing all type expressions
 fn parse_type_expr(
     ctx: &mut ParserContext,
@@ -1604,7 +1590,7 @@ fn parse_type_expr(
         ctx.report_verbose(
             &msg,
             InitialEvidence::new(
-                SemanticEnv::Expr,
+                SemanticEnv::Type,
                 SemanticSituation::TypeBinding,
                 //TODO:
                 Branch::Type,
@@ -1644,7 +1630,7 @@ fn parse_type_expr(
                 Ok(spanned_ty_expr)
             }
         }
-        Token::Id(_) if ctx.peek_ahead(1).tok.kind() == TokenKind::StaticAccess => {
+        Token::Id(_) if ctx.peek_ahead(1).tok == Token::StaticAccess => {
             let start = ctx.peek_span().start;
             let ty_path = parse_static_path(ctx, budget, interner)?;
             let end = ctx.peek_behind(1).span.end;
@@ -1718,6 +1704,61 @@ fn parse_type_expr(
     }
 }
 
+// Might make this a general expression consumer rather than only type expr
+/// Expects to be placed one after the `change` keyword.
+fn parse_change(
+    ctx: &mut ParserContext,
+    budget: &ParserBudget,
+    interner: &Intern,
+) -> Result<TypeExpr, Token> {
+    // Do not mind this
+    parse_multi_assign_type(ctx, budget, interner)
+}
+
+/// For parsing multi-assign which looks like "TypeExpr, TypeExpr = TypeExpr"
+/// Only currently used for `override`.
+///
+/// Given: "i32, u32 = python::str" this starts at "i32".
+fn parse_multi_assign_type(
+    ctx: &mut ParserContext,
+    budget: &ParserBudget,
+    interner: &Intern,
+) -> Result<TypeExpr, Token> {
+    let mut to_assign = Vec::new();
+
+    while ctx.peek_tok() != Token::Assign {
+        if ctx.peek_tok() == Token::Comma {
+            break;
+        }
+
+        let ty_expr = parse_type_expr(ctx, budget, interner)?;
+        to_assign.push(ty_expr);
+
+        if ctx.peek_tok() == Token::Comma {
+            ctx.advance_tok();
+        }
+    }
+
+    ctx.expect_verbose(
+        TokenKind::Assign,
+        "Expected '=' to assign, found ",
+        "",
+        InitialEvidence::new(
+            SemanticEnv::Type,
+            SemanticSituation::ValueBinding,
+            Branch::Type,
+        ),
+        interner,
+    )?;
+
+    let assign_to = parse_type_expr(ctx, budget, interner)?;
+
+    Ok(TypeExpr::MultiAssign(AbstractMultiAssign::new(
+        to_assign,
+        Box::new(assign_to),
+    )))
+}
+
 /// Parses a `::` separated static access path into a list of `SpannedPathSegment`s.
 /// Handles both plain identifiers and generic segments, and is shared between expression
 /// and type-expression contexts.
@@ -1770,7 +1811,7 @@ fn parse_static_path(
                 "Expected identifier after '::', found ",
                 "",
                 InitialEvidence::new(
-                    SemanticEnv::Expr,
+                    SemanticEnv::Type,
                     SemanticSituation::TypeBinding,
                     //TODO: Tag
                     Branch::Type,
@@ -1784,16 +1825,16 @@ fn parse_static_path(
             static_path.push(segment);
         }
 
-        // If there's no dot then that means that the current token must be an identifier that is
+        // If there's no `::` then that means that the current token must be an identifier that is
         // the field to access
         if !is_static_access {
             let span = ctx.peek_span();
             let final_ident = ctx.expect_id_verbose(
                 TokenKind::Id,
-                "Expected complete member access, found ",
+                "Expected complete static access, found ",
                 "",
                 InitialEvidence::new(
-                    SemanticEnv::Expr,
+                    SemanticEnv::Type,
                     SemanticSituation::TypeBinding,
                     //TODO: Tag
                     Branch::Type,

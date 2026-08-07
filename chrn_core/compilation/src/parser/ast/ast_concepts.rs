@@ -203,8 +203,6 @@ pub enum AbstractImpl {
     Config(AbstractConfig),
 }
 
-impl Item {}
-
 #[derive(Debug)]
 pub struct AbstractSection {
     pub(crate) nodes: Vec<AstId>,
@@ -798,6 +796,29 @@ impl Formattable for UnaryOp {
             UnaryOp::Not => Formatted::ExclamationPoint,
             UnaryOp::Negate => Formatted::Hyphen,
             UnaryOp::BitNot => Formatted::OpBitNot,
+        }
+    }
+}
+
+/// TypeExpr: "TypeExpr, TypeExpr, TypeExpr = TypeExpr"
+/// or: "i32, u32 = java::int"
+#[derive(Debug, Clone)]
+pub struct AbstractMultiAssign {
+    // Need better terms
+    /// -> (i32, u32, u8) = java::int
+    to_assign: Vec<SpannedContainer<TypeExpr>>,
+    /// i32, u32, u8 = (java::int) <-
+    assigned_to: Box<SpannedContainer<TypeExpr>>,
+}
+
+impl AbstractMultiAssign {
+    pub fn new(
+        to_assign: Vec<SpannedContainer<TypeExpr>>,
+        assigned_to: Box<SpannedContainer<TypeExpr>>,
+    ) -> Self {
+        Self {
+            to_assign,
+            assigned_to,
         }
     }
 }

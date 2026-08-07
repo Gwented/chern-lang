@@ -275,13 +275,13 @@ impl ScriptCompiler {
                 SymbolOrigin::Module(current_mod_id),
                 true,
                 Some(AssociatedScopeKind::Module(current_mod_id)),
-                ScopeType::Neutral,
+                ScopeType::Compiler,
                 SymbolKind::Namespace,
             );
 
             // Module symbols go into the neutral scope because, uh
             // Um
-            let scope_id = compiler.push_scope(ScopeType::Neutral, current_mod_id);
+            let scope_id = compiler.push_scope(ScopeType::Compiler, current_mod_id);
             let scope = &mut compiler.get_scope_mut(scope_id).scope;
             scope
                 .table
@@ -315,13 +315,13 @@ impl ScriptCompiler {
                     SymbolOrigin::Module(current_mod_id),
                     true,
                     Some(AssociatedScopeKind::Module(mod_id)),
-                    ScopeType::Neutral,
+                    ScopeType::Compiler,
                     SymbolKind::Namespace,
                 );
 
                 // Module symbols go into the neutral scope because, uh
                 // Um
-                let scope_id = compiler.push_scope(ScopeType::Neutral, current_mod_id);
+                let scope_id = compiler.push_scope(ScopeType::Compiler, current_mod_id);
 
                 let scope = &mut compiler.get_scope_mut(scope_id).scope;
                 scope
@@ -343,7 +343,7 @@ impl ScriptCompiler {
                         SymbolOrigin::Module(current_mod_id),
                         true,
                         Some(AssociatedScopeKind::Module(mod_id)),
-                        ScopeType::Neutral,
+                        ScopeType::Compiler,
                         SymbolKind::Namespace,
                     );
 

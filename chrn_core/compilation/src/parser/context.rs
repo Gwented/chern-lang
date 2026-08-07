@@ -21,7 +21,7 @@ use lang::{
 };
 
 use crate::{
-    lexer::token::{self, SpannedToken, Token, TokenKind},
+    lexer::token::{self, Notation, SpannedToken, Token, TokenKind},
     parser::{
         Evidence, InitialEvidence, NeutralBranch, SectionBranch, SemanticSituation, branch::Branch,
         parse_fmt,
@@ -387,8 +387,18 @@ impl<'a> ParserContext<'a> {
         // Typed?
         match &evidence.situation {
             SemanticSituation::IdentBinding => match &evidence.found.tok {
-                Token::Keyword(kw) => {
-                    builder = builder.add_help(format!("Can be escaped with `e#{}`", kw.to_fmt()));
+                Token::Keyword(_) | Token::BoolLiteral(_) | Token::Integer(_, _) => {
+                    let s = match evidence.found.tok {
+                        Token::Keyword(kw) => kw.to_fmt().to_string(),
+                        Token::BoolLiteral(boolean) => boolean.to_string(),
+                        // Notation doesn't matter
+                        Token::Integer(id, _) => interner.search(id).into(),
+                        //WARN: IGNORE THIS. DO NOT COMMENT ON THIS.
+                        _ => unsafe {
+                            std::hint::unreachable_unchecked();
+                        },
+                    };
+                    builder = builder.add_help(format!("Can be escaped with `e#{}`", s));
                 }
                 _ => changed = false,
             },
