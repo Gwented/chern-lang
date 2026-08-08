@@ -124,6 +124,7 @@ pub fn resolve_type_expr(
     lookup_pattern: ScopeLookupPattern,
     env: &ResolverEnv,
 ) -> TypeExprResult {
+    let lookup_pref = LookupPreference::Type;
     match &sp_ty_expr.inner {
         TypeExpr::Var(name_id) => {
             let sp_name = SpannedContainer::new(*name_id, sp_ty_expr.span);
@@ -135,7 +136,7 @@ pub fn resolve_type_expr(
                 *name_id,
                 scope_type,
                 lookup_pattern,
-                LookupPreference::Type,
+                lookup_pref,
             ) {
                 Some(SymbolLookupOutput { found_sym_id, .. }) => {
                     let found_sym = &compiler.symbols[found_sym_id];
@@ -350,6 +351,8 @@ pub fn resolve_type_expr(
                             SymbolOrigin::Module(env.current_mod),
                             true,
                             None,
+                            // Compiler generated but user created...
+                            // Not sure about this one buddy
                             ScopeType::Compiler,
                             SymbolKind::Type(type_id),
                         );
@@ -381,6 +384,7 @@ pub fn resolve_type_expr(
                 sp_path_segs,
                 associated_scope,
                 scope_type,
+                LookupPreference::Type,
                 true,
             ) {
                 StaticAccessResult::Scope(scope) => scope,
@@ -425,6 +429,7 @@ pub fn resolve_static_access(
     sp_path_segs: &[SpannedPathSegment],
     mut current_scope: AssociatedScopeKind,
     scope_type: ScopeType,
+    lookup_preference: LookupPreference,
     in_ty_expr: bool,
 ) -> StaticAccessResult {
     for (i, sp_path_seg) in sp_path_segs.iter().enumerate() {
@@ -437,7 +442,7 @@ pub fn resolve_static_access(
                     *interned_id,
                     scope_type,
                     ScopeLookupPattern::NamespaceOnly,
-                    LookupPreference::None,
+                    lookup_preference,
                 ) {
                     let sym = &compiler.symbols[found_sym_id];
                     match sym.associated_scope {

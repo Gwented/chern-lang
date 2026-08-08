@@ -49,7 +49,8 @@ pub const SCOPE_COMPILER: u8 = 1 << 7;
 pub static SCOPE_CORE_ENCODED_SCOPES: [ScopeType; 1] = [ScopeType::Core];
 
 /// Elements ordered to fit the languages rules of section `neutral`
-pub static SCOPE_NEUTRAL_ENCODED_SCOPES: [ScopeType; 2] = [ScopeType::Neutral, ScopeType::Core];
+pub static SCOPE_NEUTRAL_ENCODED_SCOPES: [ScopeType; 3] =
+    [ScopeType::Neutral, ScopeType::Compiler, ScopeType::Core];
 
 /// Elements ordered to fit the languages rules of section `var`
 pub static SCOPE_VAR_ENCODED_SCOPES: [ScopeType; 4] = [
@@ -205,37 +206,41 @@ pub fn find_type_id(
         ScopeLookupPattern::OnlyVar => &SCOPE_VAR_ONLY,
         ScopeLookupPattern::OnlyNest => &SCOPE_NEST_ONLY,
     };
-    // I don't think this can fail. Should maybe expect for clarity.
-    //     let scope = &compiler.scopes[scope_id.id].scope;
     // Loops over all allowed scopes and checks their individual namespaces
+
+    let mut default_return: Option<TypeId> = None;
 
     for allowed_scope_type in accessible_scopes.iter().copied() {
         // In this scenario the scope may or may not exist since this could be used from
         // another module
         if let Some(scope_info) = find_scope(compiler, allowed_scope_type, current_mod.mod_id) {
-            for current_sym_id in scope_info.scope.table.interned_to_sym.values() {
-                let current_sym = &compiler.symbols[*current_sym_id];
-                if current_sym.name_id == target_name_id {
-                    match &compiler.symbols[*current_sym_id].kind {
-                        SymbolKind::Type(type_id) => return Some(*type_id),
-                        SymbolKind::Variable(var_id) => {
-                            let type_id = match compiler.variables[*var_id].state {
-                                VariableState::ReservedTypeSlot(type_id) => type_id,
-                                VariableState::Known(val_id) => compiler.values[val_id].type_id,
-                            };
+            //NOTE: Make sure I work
+            if let Some(current_sym_id) = scope_info
+                .scope
+                .table
+                .interned_to_sym
+                .get(&target_name_id)
+                .copied()
+            {
+                match &compiler.symbols[current_sym_id].kind {
+                    SymbolKind::Type(type_id) => return Some(*type_id),
+                    SymbolKind::Variable(var_id) => {
+                        let type_id = match compiler.variables[*var_id].state {
+                            VariableState::ReservedTypeSlot(type_id) => type_id,
+                            VariableState::Known(val_id) => compiler.values[val_id].type_id,
+                        };
 
-                            return Some(type_id);
-                        }
-                        SymbolKind::ExternType
-                        | SymbolKind::Namespace
-                        | SymbolKind::Directive(_) => return None,
+                        return Some(type_id);
+                    }
+                    SymbolKind::ExternType | SymbolKind::Namespace | SymbolKind::Directive(_) => {
+                        return None;
                     }
                 }
             }
         }
     }
 
-    None
+    default_return
 }
 
 /// Searches the given module for the given `ScopeType` by iterating through it's scopes
@@ -277,7 +282,6 @@ pub fn find_sym_id(
 ) -> Option<SymbolLookupOutput> {
     // Avoiding vector allocations right now so it can just use a pointer offset instead based off
     // of hard-coded truths but will probably just, not do that.
-    //TEST:
     match associated_scope {
         AssociatedScopeKind::Module(mod_id) => {
             let current_mod = &compiler.mods[mod_id];
@@ -301,8 +305,8 @@ pub fn find_sym_id(
             //     panic!();
             // }
 
-            // If a preferred is given, the first symbol found that is not preferred is stored so
-            // that it can be returned if the preferred symbol was never found.
+            // If a preferred is given, the most recent same ident symbol found that is not
+            // preferred is stored so that it can be returned if the preferred symbol was never found.
             // Compromise!
             let mut default_return: Option<SymbolLookupOutput> = None;
 
@@ -326,6 +330,7 @@ pub fn find_sym_id(
                             continue;
                         };
 
+                        // Preferred symbol found
                         return default_return;
                     }
 
@@ -342,13 +347,25 @@ pub fn find_sym_id(
                         // an intrinsic scope for override, this disallows that search because
                         // complex should not allow override intrinsic symbols to be used inside complex.
                         if scope_type == *allowed_scope_type {
-                            if let Some(sym_id) =
-                                intrinsic_scope.table.interned_to_sym.get(&target_name_id)
+                            if let Some(sym_id) = intrinsic_scope
+                                .table
+                                .interned_to_sym
+                                .get(&target_name_id)
+                                .copied()
                             {
-                                return Some(SymbolLookupOutput::new(
-                                    *sym_id,
+                                //WARN: This is a bit dangerous since it kinda depends on preference
+                                //managers having this exact code.
+                                let flat = compiler.symbols[sym_id].kind.to_flat();
+                                default_return = Some(SymbolLookupOutput::new(
+                                    sym_id,
                                     scope_info.scope.scope_id,
                                 ));
+
+                                if !lookup_preference.is_preferred(flat) {
+                                    continue;
+                                }
+
+                                return default_return;
                             }
                         }
                     }
@@ -608,7 +625,7 @@ impl ScopeType {
 
 // Maybe Only(ScopeType)
 /// This enum is intended to disallow core defined values from being searched for when syntax such
-/// as "main.i32" is used. i32 is not owned by main, but innately main is attached to core, meaning
+/// as "main::i32" is used. i32 is not owned by main, but innately main is attached to core, meaning
 /// without the explicit noting of whether we are searching a singular module's namespace it would
 /// innately allow for main.i32 to be interpreted the same as if just i32 was written, which is
 /// wrong since the namespace "main" owns no such thing.
@@ -678,6 +695,33 @@ impl IntrinsicRegistry {
     }
 }
 
+// #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+// pub struct LookupPreferenceFlags {
+//     /// If `None`, no preference is accounted for, approves the first symbol it finds.
+//     flags: Option<u16>,
+// }
+//
+// // This is more like a general purpose set of flags since it doesn't really matter if flat kinds are
+// // used or not
+// impl LookupPreferenceFlags {
+//     pub fn new(flags: Option<u16>) -> Self {
+//         Self { flags }
+//     }
+//
+//     pub fn is_none(self) -> bool {
+//         self.flags.is_none()
+//     }
+//
+//     pub fn is_preferred(self, kind: SymbolKindFlat) -> bool {
+//         if let Some(flags) = self.flags {
+//             flags & kind.to_bits() != 0
+//         } else {
+//             true
+//         }
+//     }
+// }
+
+// TODO: Make bit-wise. In override we lookup with the intention of a namespace OR type.
 /// The type of lookup outcome to prefer.
 /// For example, if there is a module symbol called "module" and a variable "let module = 4",
 /// in the scenario of "module::Type" if it sees the variable first, it stores it but tries to
@@ -688,6 +732,8 @@ pub enum LookupPreference {
     None,
     /// e
     Type,
+    Variable,
+    Namespace,
 }
 
 // Ok but what if it was bit-wise and `SymbolKind` had a to_bits and we instead made sets
@@ -696,16 +742,22 @@ impl LookupPreference {
     pub fn is_none(self) -> bool {
         self == LookupPreference::None
     }
+    /// Checks if the given `SymbolKindFlat` is preferred by `self`
     pub fn is_preferred(self, kind: SymbolKindFlat) -> bool {
         match self {
             // Nothing is preferred so all are valid
             LookupPreference::None => true,
             LookupPreference::Type => match kind {
                 SymbolKindFlat::Type => true,
-                SymbolKindFlat::Variable
-                | SymbolKindFlat::Namespace
-                | SymbolKindFlat::Directive
-                | SymbolKindFlat::ExternType => false,
+                _ => false,
+            },
+            LookupPreference::Variable => match kind {
+                SymbolKindFlat::Variable => true,
+                _ => false,
+            },
+            LookupPreference::Namespace => match kind {
+                SymbolKindFlat::Namespace => true,
+                _ => false,
             },
         }
     }

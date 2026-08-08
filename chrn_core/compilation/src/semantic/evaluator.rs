@@ -42,74 +42,48 @@ pub fn is_compatible_unary(op: UnaryOp, operand: &Value) -> bool {
 }
 
 /// Evaluates if the given binary operation is possible given language rules
+///
+/// Mirrors `apply_binary_op`: an operand pair accepted here has a matching arm there, and one
+/// rejected here has none. Both sides must be updated together.
 pub fn is_compatible_binary(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
-    match lhs {
-        Value::I64(_) => match op {
-            BinaryOp::Add
-            | BinaryOp::Sub
-            | BinaryOp::Mult
-            | BinaryOp::Div
-            | BinaryOp::Greater
-            | BinaryOp::Less
-            | BinaryOp::GreaterOrEq
-            | BinaryOp::LessOrEq
-            | BinaryOp::Mod
-            | BinaryOp::EqTo
-            | BinaryOp::BitOr
-            | BinaryOp::BitAnd
-            | BinaryOp::BitRightShift
-            | BinaryOp::BitLeftShift
-            | BinaryOp::BitXor
-            | BinaryOp::NotEq => match rhs {
-                Value::I64(_) => true,
-                _ => false,
-            },
-            BinaryOp::And | BinaryOp::Or => false,
-        },
-        Value::F64(_) => match op {
-            BinaryOp::Add
-            | BinaryOp::Sub
-            | BinaryOp::Mult
-            | BinaryOp::Div
-            | BinaryOp::Greater
-            | BinaryOp::Less
-            | BinaryOp::GreaterOrEq
-            | BinaryOp::LessOrEq
-            | BinaryOp::Mod
-            | BinaryOp::EqTo
-            | BinaryOp::NotEq => match rhs {
-                Value::F64(_) => true,
-                _ => false,
-            },
-            _ => false,
-        },
-        Value::Bool(_) => {
-            if op.is_bool_op() && rhs.is_bool() {
-                true
-            } else {
-                false
-            }
+    if let Value::RuntimeStr(_) = lhs {
+        unreachable!("Impossible to reach at compile time")
+    }
+
+    match op {
+        BinaryOp::Add => matches!(
+            (lhs, rhs),
+            (Value::I64(_), Value::I64(_))
+                | (Value::F64(_), Value::F64(_))
+                | (Value::InternedStr(_), Value::InternedStr(_))
+        ),
+        BinaryOp::Sub | BinaryOp::Mult | BinaryOp::Div | BinaryOp::Mod => matches!(
+            (lhs, rhs),
+            (Value::I64(_), Value::I64(_)) | (Value::F64(_), Value::F64(_))
+        ),
+        BinaryOp::Greater | BinaryOp::Less | BinaryOp::GreaterOrEq | BinaryOp::LessOrEq => {
+            matches!(
+                (lhs, rhs),
+                (Value::I64(_), Value::I64(_))
+                    | (Value::F64(_), Value::F64(_))
+                    | (Value::Char(_), Value::Char(_))
+                    | (Value::InternedStr(_), Value::InternedStr(_))
+            )
         }
-        Value::Char(_) => false,
-        Value::InternedStr(_) => match op {
-            BinaryOp::EqTo => match rhs {
-                Value::InternedStr(_) => true,
-                _ => false,
-            },
-            BinaryOp::NotEq => match rhs {
-                Value::InternedStr(_) => true,
-                _ => false,
-            },
-            // Not right now
-            // BinaryOp::Add => todo!(),
-            // BinaryOp::Greater => todo!(),
-            // BinaryOp::Less => todo!(),
-            // BinaryOp::GreaterOrEq => todo!(),
-            // BinaryOp::LessOrEq => todo!(),
-            _ => false,
-        },
-        Value::Array(_) | Value::Func(_) | Value::Tuple(_) | Value::Unknown => false,
-        Value::RuntimeStr(_) => unreachable!("Impossible to reach at compile time"),
+        BinaryOp::And | BinaryOp::Or => matches!((lhs, rhs), (Value::Bool(_), Value::Bool(_))),
+        BinaryOp::EqTo | BinaryOp::NotEq => matches!(
+            (lhs, rhs),
+            (Value::I64(_), Value::I64(_))
+                | (Value::F64(_), Value::F64(_))
+                | (Value::Bool(_), Value::Bool(_))
+                | (Value::Char(_), Value::Char(_))
+                | (Value::InternedStr(_), Value::InternedStr(_))
+        ),
+        BinaryOp::BitOr
+        | BinaryOp::BitAnd
+        | BinaryOp::BitRightShift
+        | BinaryOp::BitLeftShift
+        | BinaryOp::BitXor => matches!((lhs, rhs), (Value::I64(_), Value::I64(_))),
     }
 }
 
@@ -349,6 +323,10 @@ pub fn apply_binary_op(
             },
             Value::Char(lhs_inner) => match rhs {
                 Value::Char(rhs_inner) => Some(Value::Bool(lhs_inner == rhs_inner)),
+                _ => None,
+            },
+            Value::InternedStr(lhs_inner) => match rhs {
+                Value::InternedStr(rhs_inner) => Some(Value::Bool(lhs_inner == rhs_inner)),
                 _ => None,
             },
             _ => None,

@@ -2674,6 +2674,7 @@ impl<'res> TypeResolver<'res> {
         scope_type: ScopeType,
         env: &ResolverEnv,
     ) -> Result<ExprId, PresetErr> {
+        let lookup_preference = LookupPreference::Variable;
         match &spanned_expr.expr {
             Expr::Var(name_id) => {
                 if let Some(scope_id) = local_scope_id {
@@ -2728,7 +2729,7 @@ impl<'res> TypeResolver<'res> {
                     scope_type,
                     // Should this be no restrictions?
                     ScopeLookupPattern::NoRestrictions,
-                    LookupPreference::None,
+                    lookup_preference,
                 ) {
                     //WARN: Constant iteration upon seeing any symbol instead of a single check
                     //elsewhere
@@ -3407,6 +3408,7 @@ impl<'res> TypeResolver<'res> {
                     spanned_segments,
                     associated_scope,
                     scope_type,
+                    lookup_preference,
                     false,
                 ) {
                     StaticAccessResult::Scope(associated_scope) => associated_scope,
@@ -3568,6 +3570,7 @@ impl<'res> TypeResolver<'res> {
         scope_type: ScopeType,
         env: &ResolverEnv,
     ) -> Result<PossibleMember, PresetErr> {
+        let lookup_preference = LookupPreference::Variable;
         let res = self.register_expr(
             sym_parent,
             member,
@@ -3599,7 +3602,7 @@ impl<'res> TypeResolver<'res> {
                 name_id,
                 scope_type,
                 ScopeLookupPattern::NoRestrictions,
-                LookupPreference::None,
+                lookup_preference,
             ) {
                 todo!();
                 // let type_id = self.compiler.symbols[sym_id ];
