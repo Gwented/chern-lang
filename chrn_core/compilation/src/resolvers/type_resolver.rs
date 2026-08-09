@@ -19,7 +19,8 @@ use lang::values::{Value, ValueInfo};
 use crate::constraints::ArgConstraint;
 use crate::lookup::member_lookup::{self, MemberLookupResult, MemberScopeLookupPattern};
 use crate::lookup::scopes::{
-    self, AssociatedScopeKind, LookupPreference, ScopeLookupPattern, ScopeType, SymbolLookupOutput,
+    self, AssociatedScopeKind, LookupPreferenceFlags, ScopeLookupPattern, ScopeType,
+    SymbolLookupOutput,
 };
 use crate::parser::ast::ast_concepts::{
     AbstractConfig, AbstractConfigKind, AbstractDirective, AbstractOptionAssignment, AbstractParam,
@@ -488,6 +489,7 @@ impl<'res> TypeResolver<'res> {
         // I LOVE SPENDING AN INCONSIDERABLE AMOUNT OF TIME ON SEMANTIC QUESTIONS. JUST WRITE. THE.
         // CODE.
         // Ok :(
+        //TODO: Ensure the preference is um...uh..bitwise yes!
         match scope_type {
             ScopeType::Complex => {}
             ScopeType::Override => {}
@@ -2682,7 +2684,7 @@ impl<'res> TypeResolver<'res> {
         scope_type: ScopeType,
         env: &ResolverEnv,
     ) -> Result<ExprId, PresetErr> {
-        let lookup_preference = LookupPreference::Variable;
+        let lookup_preference = LookupPreferenceFlags::new(LookupPreferenceFlags::VARIABLE.into());
         match &spanned_expr.expr {
             Expr::Var(name_id) => {
                 if let Some(scope_id) = local_scope_id {
@@ -3578,7 +3580,7 @@ impl<'res> TypeResolver<'res> {
         scope_type: ScopeType,
         env: &ResolverEnv,
     ) -> Result<PossibleMember, PresetErr> {
-        let lookup_preference = LookupPreference::Variable;
+        let lookup_preference = LookupPreferenceFlags::new(LookupPreferenceFlags::VARIABLE.into());
         let res = self.register_expr(
             sym_parent,
             member,

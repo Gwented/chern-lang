@@ -277,7 +277,7 @@ pub fn find_sym_id(
     target_name_id: InternedId,
     scope_type: ScopeType,
     lookup_pat: ScopeLookupPattern,
-    lookup_preference: LookupPreference,
+    lookup_preference: LookupPreferenceFlags,
     // Named struct maybe
 ) -> Option<SymbolLookupOutput> {
     // Avoiding vector allocations right now so it can just use a pointer offset instead based off
@@ -695,70 +695,98 @@ impl IntrinsicRegistry {
     }
 }
 
-// #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-// pub struct LookupPreferenceFlags {
-//     /// If `None`, no preference is accounted for, approves the first symbol it finds.
-//     flags: Option<u16>,
-// }
-//
-// // This is more like a general purpose set of flags since it doesn't really matter if flat kinds are
-// // used or not
-// impl LookupPreferenceFlags {
-//     pub fn new(flags: Option<u16>) -> Self {
-//         Self { flags }
-//     }
-//
-//     pub fn is_none(self) -> bool {
-//         self.flags.is_none()
-//     }
-//
-//     pub fn is_preferred(self, kind: SymbolKindFlat) -> bool {
-//         if let Some(flags) = self.flags {
-//             flags & kind.to_bits() != 0
-//         } else {
-//             true
-//         }
-//     }
-// }
-
-// TODO: Make bit-wise. In override we lookup with the intention of a namespace OR type.
-/// The type of lookup outcome to prefer.
-/// For example, if there is a module symbol called "module" and a variable "let module = 4",
-/// in the scenario of "module::Type" if it sees the variable first, it stores it but tries to
-/// search for the preferred type first, if not found, it will return the variable.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum LookupPreference {
-    /// No preference is accounted for, returns the first symbol it finds.
-    None,
-    /// e
-    Type,
-    Variable,
-    Namespace,
+pub struct LookupPreferenceFlags {
+    /// If `None`, no preference is accounted for meaning all preference checks are `true`
+    flags: Option<u16>,
 }
 
-// Ok but what if it was bit-wise and `SymbolKind` had a to_bits and we instead made sets
-// Please we haven't even used it yet
-impl LookupPreference {
-    pub fn is_none(self) -> bool {
-        self == LookupPreference::None
+// This is more like a general purpose set of flags since it doesn't really matter if flat kinds are
+// used or not
+impl LookupPreferenceFlags {
+    // pub const NONE: u16 = 1 << 0;
+    pub const TYPE: u16 = 1 << 0;
+    pub const VARIABLE: u16 = 1 << 1;
+    pub const NAMESPACE: u16 = 1 << 2;
+    pub const DIRECTIVE: u16 = 1 << 3;
+    pub const EXTERN_TYPE: u16 = 1 << 4;
+
+    pub fn new(flags: Option<u16>) -> Self {
+        Self { flags }
     }
-    /// Checks if the given `SymbolKindFlat` is preferred by `self`
+
+    /// Creates lookup preference with no preferred options
+    pub fn none() -> LookupPreferenceFlags {
+        LookupPreferenceFlags::new(None)
+    }
+
+    pub fn is_none(self) -> bool {
+        self.flags.is_none()
+    }
+
+    /// Checks if the `SymbolKindFlat` converted to a valid set of bits for `LookupPreferenceFlags`
+    /// is contained within `self`
     pub fn is_preferred(self, kind: SymbolKindFlat) -> bool {
-        match self {
-            // Nothing is preferred so all are valid
-            LookupPreference::None => true,
-            LookupPreference::Type => match kind {
-                SymbolKindFlat::Type => true,
-                _ => false,
-            },
-            LookupPreference::Variable => match kind {
-                SymbolKindFlat::Variable => true,
-                _ => false,
-            },
-            LookupPreference::Namespace => match kind {
-                SymbolKindFlat::Namespace => true,
-                _ => false,
-            },
+        if let Some(flags) = self.flags {
+            flags & flat_sym_kind_to_preferred_bits(kind) != 0
+        } else {
+            // No options chosen. Anything attempted to be matched to a `None` preference succeeds.
+            true
         }
     }
 }
+
+/// Local function to turn `SymbolKindFlat` into a preferred option.
+/// This exists because the `to_bits()` from flat symbols are just direct mappings, meaning there is
+/// no signifying bit usable to say "No options selected", hence the explicit translation layer here.
+const fn flat_sym_kind_to_preferred_bits(kind: SymbolKindFlat) -> u16 {
+    match kind {
+        SymbolKindFlat::Type => LookupPreferenceFlags::TYPE,
+        SymbolKindFlat::Variable => LookupPreferenceFlags::VARIABLE,
+        SymbolKindFlat::Namespace => LookupPreferenceFlags::NAMESPACE,
+        SymbolKindFlat::Directive => LookupPreferenceFlags::DIRECTIVE,
+        SymbolKindFlat::ExternType => LookupPreferenceFlags::EXTERN_TYPE,
+    }
+}
+
+// // TODO: Make bit-wise. In override we lookup with the intention of a namespace OR type.
+// /// The type of lookup outcome to prefer.
+// /// For example, if there is a module symbol called "module" and a variable "let module = 4",
+// /// in the scenario of "module::Type" if it sees the variable first, it stores it but tries to
+// /// search for the preferred type first, if not found, it will return the variable.
+// #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+// pub enum LookupPreference {
+//     /// No preference is accounted for, returns the first symbol it finds.
+//     None,
+//     /// e
+//     Type,
+//     Variable,
+//     Namespace,
+// }
+//
+// // Ok but what if it was bit-wise and `SymbolKind` had a to_bits and we instead made sets
+// // Please we haven't even used it yet
+// impl LookupPreference {
+//     pub fn is_none(self) -> bool {
+//         self == LookupPreference::None
+//     }
+//     /// Checks if the given `SymbolKindFlat` is preferred by `self`
+//     pub fn is_preferred(self, kind: SymbolKindFlat) -> bool {
+//         match self {
+//             // Nothing is preferred so all are valid
+//             LookupPreference::None => true,
+//             LookupPreference::Type => match kind {
+//                 SymbolKindFlat::Type => true,
+//                 _ => false,
+//             },
+//             LookupPreference::Variable => match kind {
+//                 SymbolKindFlat::Variable => true,
+//                 _ => false,
+//             },
+//             LookupPreference::Namespace => match kind {
+//                 SymbolKindFlat::Namespace => true,
+//                 _ => false,
+//             },
+//         }
+//     }
+// }

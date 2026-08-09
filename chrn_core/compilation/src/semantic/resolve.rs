@@ -12,7 +12,7 @@ use lang::{
 
 use crate::{
     lookup::scopes::{
-        self, AssociatedScopeKind, LookupPreference, ScopeLookupPattern, ScopeType,
+        self, AssociatedScopeKind, LookupPreferenceFlags, ScopeLookupPattern, ScopeType,
         SymbolLookupOutput,
     },
     parser::ast::{
@@ -124,7 +124,7 @@ pub fn resolve_type_expr(
     lookup_pattern: ScopeLookupPattern,
     env: &ResolverEnv,
 ) -> TypeExprResult {
-    let lookup_pref = LookupPreference::Type;
+    let lookup_pref = LookupPreferenceFlags::new(LookupPreferenceFlags::TYPE.into());
     match &sp_ty_expr.inner {
         TypeExpr::Var(name_id) => {
             let sp_name = SpannedContainer::new(*name_id, sp_ty_expr.span);
@@ -384,7 +384,7 @@ pub fn resolve_type_expr(
                 sp_path_segs,
                 associated_scope,
                 scope_type,
-                LookupPreference::Type,
+                LookupPreferenceFlags::new(LookupPreferenceFlags::TYPE.into()),
                 true,
             ) {
                 StaticAccessResult::Scope(scope) => scope,
@@ -429,7 +429,7 @@ pub fn resolve_static_access(
     sp_path_segs: &[SpannedPathSegment],
     mut current_scope: AssociatedScopeKind,
     scope_type: ScopeType,
-    lookup_preference: LookupPreference,
+    lookup_preference: LookupPreferenceFlags,
     in_ty_expr: bool,
 ) -> StaticAccessResult {
     for (i, sp_path_seg) in sp_path_segs.iter().enumerate() {

@@ -7,8 +7,7 @@ use chrn_utils::{
 use crate::script_compiler::script_compiler_summary::ScriptCompilerSummary;
 
 // Summary owns reporter or reporter owns summary? eagle emoji.
-/// This exists in case other methods or fields are considered, but is just a Vec<Diagnostic>
-/// wrapper as of right now
+/// Diagnostic and summary holder for compiler activity
 #[derive(Debug, Default)]
 pub struct Reporter {
     /// Stored diagnostics
