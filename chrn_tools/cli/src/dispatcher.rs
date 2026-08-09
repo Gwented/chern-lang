@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 
 use chrn_utils::{
+    byte_formatter,
     chrn_config::ChrnConfig,
     core_error::{ConfigLoadError, ScriptError},
     files::file_ops,
-    format_byte_size,
     id_types::SourceRegionId,
     source_map::source_region::SourceRegion,
 };
@@ -31,11 +31,11 @@ use crate::{
 
 pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, Option<String>> {
     match &cli.command {
-        Commands::Check(check_cmd) => exec_check(&check_cmd, &cli.glob_args, &cli_cfg),
-        Commands::Fmt(fmt_cmd) => exec_fmt(&fmt_cmd, &cli_cfg),
+        Commands::Check(check_cmd) => exec_check(check_cmd, &cli.glob_args, &cli_cfg),
+        Commands::Fmt(fmt_cmd) => exec_fmt(fmt_cmd, &cli_cfg),
         Commands::Gen(gen_cmd) => todo!(),
-        Commands::Query(query_cmd) => exec_query(&query_cmd, &cli.glob_args, &cli_cfg),
-        Commands::Embed(embed_cmd) => exec_embed(&embed_cmd, &cli.glob_args, &cli_cfg),
+        Commands::Query(query_cmd) => exec_query(query_cmd, &cli.glob_args, &cli_cfg),
+        Commands::Embed(embed_cmd) => exec_embed(embed_cmd, &cli.glob_args, &cli_cfg),
         Commands::Doc(doc_cmd) => exec_doc(doc_cmd, &cli.glob_args, cli_cfg),
     }
 }
@@ -540,7 +540,7 @@ fn exec_doc(
     glob_args: &GlobalArgs,
     cli_cfg: &CliConfig,
 ) -> Result<String, Option<String>> {
-    let x = format_byte_size!(2);
+    let x = byte_formatter!(2);
     dbg!(x);
     todo!()
 }

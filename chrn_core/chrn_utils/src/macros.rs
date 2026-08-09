@@ -11,7 +11,7 @@ macro_rules! s_suffix {
 /// Given a size in bytes, formats it into a human-readable string with the unit suffix to at most a
 /// GB
 #[macro_export]
-macro_rules! format_byte_size {
+macro_rules! byte_formatter {
     ($size:expr) => {{
         let size = $size as f64;
         const KB: f64 = 1024.0;

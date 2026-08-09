@@ -478,8 +478,16 @@ impl<'res> TypeResolver<'res> {
         // TODO: Complex can only take in type expressions and lookup types.
         // Override can do the same type lookup, while also being able to use it's intrinsic
         // namespaces like PYTHON.
-        // This means that this config handling neds to encode accounting for the scope type in
+        // This means that this config handling needs to encode accounting for the scope type in
         // regards to which can actually consume what.
+        //
+        // The current idea is to on override, search for the symbol with a preference of namspace OR
+        // type, and for complex search for only namespace. But the difficult part is that one wants
+        // a type id, one wants a symbol, so should it be a kind? Should the type id retrieval be
+        // derived from config kind and extracted through known methods, or just keep TypeId?
+        // I LOVE SPENDING AN INCONSIDERABLE AMOUNT OF TIME ON SEMANTIC QUESTIONS. JUST WRITE. THE.
+        // CODE.
+        // Ok :(
         match scope_type {
             ScopeType::Complex => {}
             ScopeType::Override => {}

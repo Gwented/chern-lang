@@ -23,8 +23,8 @@ pub(crate) fn make_canon(path: &Path) -> Result<PathBuf, String> {
 //lot of memory possibly.
 /// Writes `to_write` into the file `dest` at the front.
 ///
-/// Loads all of `dest` into memory, appends all the data into `to_write`, then writes all of it
-/// into the file.
+/// Loads all of `dest` into memory, appends to `to_write`, then writes all of it
+/// into `dest`.
 pub(crate) fn write_bytes_front(dest: &Path, to_write: &[u8]) -> Result<(), io::Error> {
     let mut new_data = to_write.to_vec();
     let mut file = fs::File::open(dest)?;
@@ -32,7 +32,6 @@ pub(crate) fn write_bytes_front(dest: &Path, to_write: &[u8]) -> Result<(), io::
 
     let mut new_file = fs::File::create(dest)?;
     new_file.write_all(&new_data)?;
-    new_file.flush()?;
     Ok(())
 }
 
@@ -99,13 +98,15 @@ pub(crate) fn write_bytes_front_stream(
     // 32KB is probably fine?
     let mut stream_writer = BufWriter::with_capacity(32768, stream_file);
 
-    // Writing given bytes to front of duplicate before streaming into file
+    // Writing given bytes to duplicate before streaming into file
     stream_writer.write_all(front_bytes)?;
 
     let dest_file = fs::File::open(dest_path)?;
     let mut dest_reader = BufReader::new(dest_file);
 
     let mut buffer = [0u8; 32768];
+    // Ok but what about security what what if the the file has has ! an excessive amount?
+    // Ok but how about no
     loop {
         let read = dest_reader.read(&mut buffer)?;
 

@@ -151,11 +151,28 @@ pub(super) fn place_annotation(
     let span = annotation.span.range_exclusive_usize();
     let ln_start = ln.ln_span.start as usize;
 
-    let clamped_start = span.start.max(ln_start);
-    let clamped_end = span.end.min(ln_end).max(clamped_start);
+    // A span can cover several lines, so what it claims on this one is the span intersected with
+    // the line. The first line of a multi-line span ends before the span does, and the last
+    // line starts after it began.
+    let ann_start = span.start.max(ln_start);
+    let ann_end = span.end.min(ln_end);
 
-    let start = line_mapping::get_chars_width(src_str, ln_start, clamped_start);
-    let ptr_len = line_mapping::get_chars_width(src_str, clamped_start, clamped_end);
+    // Guaranteed by the `retain` in `assign_layers_in_layout`, which only keeps annotations with
+    // an endpoint on this line. `ann_end < ann_start` means a caller handed the renderer an
+    // inverted span or a line it does not belong to.
+    debug_assert!(
+        ann_start <= ann_end,
+        "annotation {:?} does not intersect line {} ({ln_start}..{ln_end})",
+        annotation.span,
+        ln.ln_num
+    );
+
+    let start = line_mapping::get_chars_width(src_str, ln_start, ann_start);
+
+    // A span sitting entirely inside the trailing newline that `visual_ln_end` strips (every
+    // `<eof>` pointer) intersects the line at zero width. It still gets one column so the pointer
+    // is drawn just past the line's text, and so `end` describes what the row builder prints.
+    let ptr_len = line_mapping::get_chars_width(src_str, ann_start, ann_end).max(1);
 
     let label_width = match &annotation.label {
         Some(label) => 1 + UnicodeWidthStr::width(label.as_str()) + 1,
@@ -165,7 +182,7 @@ pub(super) fn place_annotation(
     AnnotationPlacement {
         start,
         ptr_len,
-        end: start + ptr_len.max(1) + label_width,
+        end: start + ptr_len + label_width,
     }
 }
 

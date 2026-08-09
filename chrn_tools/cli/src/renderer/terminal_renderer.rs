@@ -2,6 +2,8 @@
 pub(super) mod layout;
 pub(super) mod style;
 pub(crate) mod terminal_config;
+#[cfg(test)]
+mod tests;
 
 use std::borrow::Cow;
 
@@ -377,9 +379,19 @@ fn render_line_layout_text(
                 settings.terminal_type,
             );
 
-            row.push_str(&" ".repeat(placement.start.saturating_sub(cursor)));
+            // `assign_layers_in_layout` only shares a layer between annotations whose placements
+            // don't overlap, and re-sorts by span start, so each one starts at or past where the
+            // previous left the cursor. A failure here is a layer assignment bug, not a column
+            // that needs correcting.
+            debug_assert!(
+                placement.start >= cursor,
+                "layer {} placed {placement:?} behind cursor {cursor}",
+                render_info.layer
+            );
+
+            row.push_str(&" ".repeat(placement.start - cursor));
             row.push_str(&format!("{ptr_color}{}", ptr_str.repeat(placement.ptr_len)));
-            cursor = placement.start.max(cursor) + placement.ptr_len;
+            cursor = placement.start + placement.ptr_len;
 
             if let Some(label) = &ann.label {
                 row.push_str(&format!(" {label}"));
