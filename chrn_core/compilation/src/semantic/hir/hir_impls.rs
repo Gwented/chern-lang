@@ -67,59 +67,59 @@ impl ImplMemberKind {
 // TODO: Readiness for skipping during resolution
 /// Intended to represent a config block environment that consumes options for a field.
 #[derive(Debug)]
-pub struct ConfigDefRoot {
+pub struct ConfigRoot {
     /// `ImplId` of `self`
     pub impl_id: ImplId,
-    // pub sp_ty_expr: SpannedContainer<TypeExpr>,
-    //NOTE: ConfigDefRoot cannot be made from a keyword so it always has a name_id.
-    //
-    // /// Is a name id instead of symbol id since `NameResolver` merely registers names, with no
-    // /// knowledge of symbol specifics. A dependency system may be used in the future.
-    // pub name_id: InternedId,
-    // // This is not a `SpannedContainer` because it may become an Option
-    // pub name_span: SourceSpan,
     /// ConfigId of `self`
     pub cfg_root_id: ConfigRootId,
     /// During name resolution, we can't actually lookup the symbol since it may or may not be
     /// registered, so it's Option since it actually is `None` at some point, and could remain
     /// `None` if in a later stage it doesn't have it's target symbol found.
     //NOTE: Can only be either a type id or namespace. So maybe um...um....!
-    pub linked_sym_id: Option<TypeId>,
+    pub linked_root_val: Option<ConfigRootValueKind>,
     /// Expects `OptionAssignmentRoot`
     pub opt_assignments: Vec<ImplMemberId>,
     /// Lookup pattern that needs to be used to properly discern if
     /// `ScopeLookupPattern::Namespace/OnlyVar` should be used to search for the symbol associated with
     /// thie config
-    pub lookup_pattern: ScopeLookupPattern,
-    ///
+    pub lookup_pat: ScopeLookupPattern,
+    /// ISOLATE
     pub kind: ConfigRootKind,
     /// Expects `ConfigDefMember`
     pub cfg_members: Vec<ImplMemberId>,
 }
 
-impl ConfigDefRoot {
+impl ConfigRoot {
     pub fn new(
         impl_id: ImplId,
         // sp_ty_expr: SpannedContainer<TypeExpr>,
         // name_id: InternedId,
         // name_span: SourceSpan,
         cfg_root_id: ConfigRootId,
-        linked_sym_id: Option<TypeId>,
-        lookup_pattern: ScopeLookupPattern,
+        linked_root_val: Option<ConfigRootValueKind>,
+        lookup_pat: ScopeLookupPattern,
         kind: ConfigRootKind,
         opt_assignments: Vec<ImplMemberId>,
         cfg_members: Vec<ImplMemberId>,
-    ) -> ConfigDefRoot {
-        ConfigDefRoot {
+    ) -> ConfigRoot {
+        ConfigRoot {
             impl_id,
             cfg_root_id,
-            lookup_pattern,
-            linked_sym_id,
+            lookup_pat,
+            linked_root_val,
             kind,
             opt_assignments,
             cfg_members,
         }
     }
+}
+
+// KindKind
+/// Valid values for a config def root to have
+#[derive(Debug, Clone, Copy)]
+pub enum ConfigRootValueKind {
+    Namespace(SymbolId),
+    Type(TypeId),
 }
 
 /// The member inside of a `ConfigDef` or `ConfigDefMember` which is the same structure,
@@ -146,10 +146,13 @@ pub struct ConfigDefMember {
     // These configs are supposed to be usable by override too so maybe this becomes an enum where
     // it exposes metadata depending on override or not.
     pub metadata: ConfigMemberMetadataKind,
+    //NOTE: Members use `ScopeLookupPattern::NamespaceOnly` only but this is kept here for now
+    //because it may be used in the future (was used in the past)
+    //
     /// Lookup pattern that needs to be used to properly discern if
     /// `ScopeLookupPattern::Namespace/OnlyVar` should be used to search for the member associacted with
     /// this config member
-    pub lookup_pattern: ScopeLookupPattern,
+    pub lookup_pat: ScopeLookupPattern,
     /// Members this member holds
     pub cfg_def_members: Vec<ImplMemberId>,
 }
@@ -162,7 +165,7 @@ impl ConfigDefMember {
         linked_member_id: MemberId,
         linked_member_type_id: Option<TypeId>,
         metadata: ConfigMemberMetadataKind,
-        lookup_pattern: ScopeLookupPattern,
+        lookup_pat: ScopeLookupPattern,
         opt_assignments: Vec<ImplMemberId>,
         cfg_def_members: Vec<ImplMemberId>,
     ) -> ConfigDefMember {
@@ -174,7 +177,7 @@ impl ConfigDefMember {
             name_span,
             metadata,
             opt_assignments,
-            lookup_pattern,
+            lookup_pat,
             cfg_def_members,
         }
     }

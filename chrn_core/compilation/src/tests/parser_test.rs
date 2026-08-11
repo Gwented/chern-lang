@@ -41,11 +41,18 @@ fn parse_text_with_diags(text: &str) -> (AstInfo, Vec<SourceDiagnostic>, Intern)
 
 fn cfg_name_id(cfg: &AbstractConfig) -> InternedId {
     match &cfg.kind {
-        AbstractConfigKind::Root(sp) => match &sp.inner {
-            TypeExpr::Var(id) => *id,
+        AbstractConfigKind::Root(path) => match &path[0].inner {
+            PathSegment::Ident(id) => *id,
             _ => panic!("expected Var type expr in Root config"),
         },
         AbstractConfigKind::Member(sp, _) => sp.inner,
+    }
+}
+
+fn cfg_name_span(cfg: &AbstractConfig) -> SourceSpan {
+    match &cfg.kind {
+        AbstractConfigKind::Root(path) => path[0].span,
+        AbstractConfigKind::Member(name, _) => name.span,
     }
 }
 
@@ -549,8 +556,8 @@ fn parse_complex_config_root() {
 
     let cfg = ast.get_cfg_root(sect.nodes[0]);
     // name_span should cover "MyConfig" (bytes 14..22)
-    assert_eq!(cfg.kind.name_span().start, 14);
-    assert_eq!(cfg.kind.name_span().end, 22);
+    assert_eq!(cfg_name_span(cfg).start, 14);
+    assert_eq!(cfg_name_span(cfg).end, 22);
 
     assert_eq!(interner.search(cfg_name_id(cfg)), "MyConfig");
     assert!(matches!(cfg.kind, AbstractConfigKind::Root(_)));
@@ -586,8 +593,8 @@ fn parse_complex_config_var_prefix() {
     // The lookup pattern was changed by the `var` keyword — we can verify it was consumed
     // correctly because the span starts at the name, not at `var`.
     // `var` is at bytes 14..17, then space, then "MyConfig" spans 18..26
-    assert_eq!(cfg.kind.name_span().start, 18);
-    assert_eq!(cfg.kind.name_span().end, 26);
+    assert_eq!(cfg_name_span(cfg).start, 18);
+    assert_eq!(cfg_name_span(cfg).end, 26);
 }
 
 #[test]
@@ -905,11 +912,11 @@ fn parse_expr_static_access() {
     match &var.spanned_expr.expr {
         Expr::StaticAccess(path) => {
             assert_eq!(path.len(), 2);
-            match &path[0].kind {
+            match &path[0].inner {
                 PathSegment::Ident(id) => assert_eq!(interner.search(*id), "module"),
                 other => panic!("expected Ident(module), got {other:?}"),
             }
-            match &path[1].kind {
+            match &path[1].inner {
                 PathSegment::Ident(id) => assert_eq!(interner.search(*id), "Type"),
                 other => panic!("expected Ident(Type), got {other:?}"),
             }
@@ -928,12 +935,12 @@ fn parse_expr_static_access_with_generics() {
         Expr::StaticAccess(path) => {
             assert_eq!(path.len(), 2);
             // First segment: "ns"
-            match &path[0].kind {
+            match &path[0].inner {
                 PathSegment::Ident(id) => assert_eq!(interner.search(*id), "ns"),
                 other => panic!("expected Ident(ns), got {other:?}"),
             }
             // Second segment: List<i32>
-            match &path[1].kind {
+            match &path[1].inner {
                 PathSegment::Generic(g) => {
                     assert_eq!(interner.search(g.base), "List");
                     assert_eq!(g.inputs.len(), 1);
@@ -1075,11 +1082,11 @@ fn parse_type_expr_path() {
     match &td.sp_ty_expr.inner {
         TypeExpr::Path(path) => {
             assert_eq!(path.len(), 2);
-            match &path[0].kind {
+            match &path[0].inner {
                 PathSegment::Ident(id) => assert_eq!(interner.search(*id), "module"),
                 other => panic!("expected Ident(module), got {other:?}"),
             }
-            match &path[1].kind {
+            match &path[1].inner {
                 PathSegment::Ident(id) => assert_eq!(interner.search(*id), "Type"),
                 other => panic!("expected Ident(Type), got {other:?}"),
             }
@@ -1098,12 +1105,12 @@ fn parse_type_expr_generic_path() {
         TypeExpr::Path(path) => {
             assert_eq!(path.len(), 2);
             // First: Ident(module)
-            match &path[0].kind {
+            match &path[0].inner {
                 PathSegment::Ident(id) => assert_eq!(interner.search(*id), "module"),
                 other => panic!("expected Ident(module), got {other:?}"),
             }
             // Second: Generic(List, [i32])
-            match &path[1].kind {
+            match &path[1].inner {
                 PathSegment::Generic(g) => {
                     assert_eq!(interner.search(g.base), "List");
                     assert_eq!(g.inputs.len(), 1);
@@ -1131,11 +1138,11 @@ fn parse_type_expr_path_in_struct_field() {
     match &field.sp_ty_expr.inner {
         TypeExpr::Path(path) => {
             assert_eq!(path.len(), 2);
-            match &path[0].kind {
+            match &path[0].inner {
                 PathSegment::Ident(id) => assert_eq!(interner.search(*id), "module"),
                 other => panic!("expected Ident(module), got {other:?}"),
             }
-            match &path[1].kind {
+            match &path[1].inner {
                 PathSegment::Ident(id) => assert_eq!(interner.search(*id), "Type"),
                 other => panic!("expected Ident(Type), got {other:?}"),
             }
@@ -1154,11 +1161,11 @@ fn parse_type_expr_path_in_alias_param() {
     match &alias.params[0].sp_ty_expr.inner {
         TypeExpr::Path(path) => {
             assert_eq!(path.len(), 2);
-            match &path[0].kind {
+            match &path[0].inner {
                 PathSegment::Ident(id) => assert_eq!(interner.search(*id), "module"),
                 other => panic!("expected Ident(module), got {other:?}"),
             }
-            match &path[1].kind {
+            match &path[1].inner {
                 PathSegment::Ident(id) => assert_eq!(interner.search(*id), "Type"),
                 other => panic!("expected Ident(Type), got {other:?}"),
             }
@@ -1828,7 +1835,7 @@ fn all_spans_are_non_empty() {
     for item in items {
         let span = match item {
             Item::Decl(decl) => decl.span(),
-            Item::Impl(AbstractImpl::Config(cfg)) => cfg.kind.name_span(),
+            Item::Impl(AbstractImpl::Config(cfg)) => cfg_name_span(cfg),
         };
         assert!(
             span.start < span.end,

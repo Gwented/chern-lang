@@ -1,7 +1,7 @@
 use chrn_utils::{
     id_types::{
-        AstId, ConfigRootId, DirectiveId, ExprId, InternedId, MemberId, ModuleId, ScopeId,
-        SpannedContainer, SymbolId, TypeId, ValueId, VariableId,
+        AstId, DirectiveId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SpannedContainer,
+        SymbolId, TypeId, ValueId, VariableId,
     },
     source_map::source_span::SourceSpan,
 };

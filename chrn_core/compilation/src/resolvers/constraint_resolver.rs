@@ -145,12 +145,12 @@ impl<'a> ConstraintResolver<'a> {
         // leconstraint_reot module = &self.compiler.mods[env.current_mod];
         let cfg_root = self.compiler.get_cfg_def_root(parent_impl_id);
 
-        let Some(linked_type_id) = cfg_root.linked_sym_id else {
+        let Some(linked_type_id) = cfg_root.linked_root_val else {
             return;
         };
         let cfg_root_ty_span = self
             .compiler
-            .get_span_from_type_id(linked_type_id)
+            .get_span_from_type_id(todo!())
             .expect("NOT DONE YET");
 
         // We may need an invalid and valid marker for cached checks regarding if it was a type id
@@ -170,13 +170,12 @@ impl<'a> ConstraintResolver<'a> {
 
         for opt_root_id in cfg_root.opt_assignments.iter().copied() {
             let opt_root = self.compiler.get_opt_assignment_root(opt_root_id);
-            let schema =
-                schema_lookup::get_schema_from_type_id(&self.compiler.types, linked_type_id)
-                    .expect("`TypeResolver` should only give linked sym ids to valid configs");
+            let schema = schema_lookup::get_schema_from_type_id(&self.compiler.types, todo!())
+                .expect("`TypeResolver` should only give linked sym ids to valid configs");
 
             let sp_opt_name_id = SpannedContainer::new(opt_root.name_id, opt_root.name_span);
-            let boundaries = Type::boundaries(self.compiler, linked_type_id);
-            let type_name_id = self.compiler.get_name_id_from_type_id(linked_type_id);
+            let boundaries = Type::boundaries(self.compiler, todo!());
+            let type_name_id = self.compiler.get_name_id_from_type_id(todo!());
 
             // let ty_name_id = self.compiler.get_span_from_type_id(linked_type_id).unwrap();
             if let Err(preset_err) = self.check_opt(

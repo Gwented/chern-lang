@@ -4,7 +4,6 @@
 
 use chrn_utils::{
     chrn_config::ChrnConfig,
-    err_codes::ErrorCode,
     id_types::{AstId, MemberId, SymbolId, TypeId},
     intern::Intern,
     source_map::source_diagnostic::{
@@ -24,7 +23,7 @@ use crate::{
             hir_symbols::{FieldRepre, MemberSymbolKind, SymbolKind, VariantRepre},
         },
         preset_reporter,
-        resolve::{self, TypeExprResult},
+        resolution::{self, resolution_concepts::TypeExprResult},
     },
 };
 
@@ -124,7 +123,7 @@ impl MemberResolver<'_> {
 
         // Checking if there are duplicate name ids within the same struct along with resolution
         for field_typedef in &abs_struct.fields {
-            let type_id = match resolve::resolve_type_expr(
+            let type_id = match resolution::resolve_type_expr(
                 self.compiler,
                 associated_scope,
                 &field_typedef.sp_ty_expr,
@@ -279,7 +278,7 @@ impl MemberResolver<'_> {
 
             let member_id = MemberId::new(self.compiler.sym_members.len() as u32);
             let variant_repre = if let Some(sp_ty_expr) = &variant.sp_ty_expr {
-                let type_id = match resolve::resolve_type_expr(
+                let type_id = match resolution::resolve_type_expr(
                     self.compiler,
                     associated_scope,
                     &sp_ty_expr,

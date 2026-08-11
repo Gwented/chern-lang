@@ -20,7 +20,7 @@ use crate::{
         compilation_unit::CompilationUnit,
         hir::{
             hir_concepts::{Type, TypeInfo},
-            hir_impls::{ConfigDefRoot, ImplHir, ImplHirKind},
+            hir_impls::{ConfigRoot, ImplHir, ImplHirKind},
             hir_symbols::{
                 AliasDef, EnumDef, StructDef, Symbol, SymbolKind, SymbolOrigin, TypeDef, VarDef,
                 VariableState,
@@ -175,7 +175,7 @@ impl NamespaceResolver<'_> {
         };
 
         // let orig_sym_opt = table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
-        let cfg_def = ConfigDefRoot::new(
+        let cfg_def = ConfigRoot::new(
             impl_id,
             cfg_id,
             None,

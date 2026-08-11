@@ -13,6 +13,7 @@ use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{
     DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSummary,
 };
+use chrn_utils::source_map::source_span::{self, SourceSpan};
 use lang::fmter::Formatted;
 use lang::values::{Value, ValueInfo};
 
@@ -35,12 +36,16 @@ use crate::semantic::evaluator::UnaryOpResult;
 use crate::semantic::hir::hir_concepts::{Type, TypeInfo};
 use crate::semantic::hir::hir_exprs::{ExprHir, Param, PossibleMember, ResolvedExpr};
 use crate::semantic::hir::hir_impls::{
-    ConfigDefMember, ImplHirKind, ImplMemberKind, OptionAssignmentMember, OptionAssignmentRoot,
+    ConfigDefMember, ConfigRootValueKind, ImplHirKind, ImplMemberKind, OptionAssignmentMember,
+    OptionAssignmentRoot,
 };
 use crate::semantic::hir::hir_symbols::{Symbol, SymbolKind, SymbolOrigin, VarDef, VariableState};
 use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, PresetErr};
-use crate::semantic::resolve::{StaticAccessResult, TypeExprResult};
-use crate::semantic::{evaluator, inference, preset_reporter, resolve};
+use crate::semantic::resolution::resolution_concepts::{
+    StaticAccessOption, StaticAccessResult, TypeExprResult,
+};
+use crate::semantic::resolution::resolution_helpers;
+use crate::semantic::{evaluator, inference, preset_reporter, resolution};
 
 use crate::resolvers::type_resolver::type_context::{
     ParentInfo, ParentState, ParentStateBase, PendingExpr, PendingExprKind, PendingSymbol,
@@ -465,14 +470,16 @@ impl<'res> TypeResolver<'res> {
         // Expected to be `ConfigDefMember`
         let mut cfg_def_members: Vec<ImplMemberId> = Vec::new();
 
-        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
+        let initial_scope = AssociatedScopeKind::Module(env.current_mod);
         let ast_id = self.compiler.impls[parent_impl_id]
             .ast_id
             .expect("Should be user impls only");
         let abs_cfg_root = env.ast_info.get_cfg_root(ast_id);
-        let scope_type = self.compiler.impls[parent_impl_id].scope_origin;
 
-        let AbstractConfigKind::Root(root_sp_ty_expr) = &abs_cfg_root.kind else {
+        let scope_type = self.compiler.impls[parent_impl_id].scope_origin;
+        let lookup_pat = abs_cfg_root.lookup_pat;
+
+        let AbstractConfigKind::Root(sp_path_segs) = &abs_cfg_root.kind else {
             unreachable!()
         };
 
@@ -489,131 +496,178 @@ impl<'res> TypeResolver<'res> {
         // I LOVE SPENDING AN INCONSIDERABLE AMOUNT OF TIME ON SEMANTIC QUESTIONS. JUST WRITE. THE.
         // CODE.
         // Ok :(
-        //TODO: Ensure the preference is um...uh..bitwise yes!
-        match scope_type {
-            ScopeType::Complex => {}
-            ScopeType::Override => {}
-            // No other scope types can hold configs. If this is reached than this is an internal error.
+
+        //TODO: We need to get the scoping, given the pathing, and then search for the symbol id in
+        //the given scope.
+        let (lookup_pref, static_access_opt) = match scope_type {
+            ScopeType::Complex => {
+                // Only can act upon types in this section
+                let pref = LookupPreferenceFlags::new(LookupPreferenceFlags::TYPE.into());
+                (pref, StaticAccessOption::Type)
+            }
+            ScopeType::Override => {
+                // Can use types and namespaces
+                let pref = LookupPreferenceFlags::new(
+                    (LookupPreferenceFlags::TYPE | LookupPreferenceFlags::NAMESPACE).into(),
+                );
+                (pref, StaticAccessOption::None)
+            }
             _ => unreachable!(),
-        }
+        };
 
-        // let res = match &root_sp_ty_expr.inner {
-        //     TypeExpr::Var(interned_id) => {
-        //         if let Some(SymbolLookupOutput { found_sym_id, .. }) = scopes::find_sym_id(
-        //             self.compiler,
-        //             associated_scope,
-        //             *interned_id,
-        //             scope_type,
-        //             abs_cfg_root.lookup_pat,
-        //         ) {
-        //             match &self.compiler.symbols[found_sym_id].kind {
-        //                 SymbolKind::Type(type_id) => todo!(),
-        //                 SymbolKind::Variable(variable_id) => todo!(),
-        //                 SymbolKind::Namespace => todo!(),
-        //                 SymbolKind::Directive(directive_id) => todo!(),
-        //                 SymbolKind::ExternType => todo!(),
-        //             }
-        //             todo!()
-        //         } else {
-        //             false
-        //         };
-        //     }
-        //     TypeExpr::Path(sp_path_segs) => {
-        //         match resolve::resolve_static_access(
-        //             self.compiler,
-        //             sp_path_segs,
-        //             associated_scope,
-        //             scope_type,
-        //             false,
-        //         ) {
-        //             StaticAccessResult::Scope(associated_scope_kind) => todo!(),
-        //             StaticAccessResult::SymNotFound {
-        //                 current_seg,
-        //                 prev_seg,
-        //             } => todo!(),
-        //             StaticAccessResult::NoNamespace(spanned_container) => todo!(),
-        //             StaticAccessResult::GenericUsingStaticPath(source_span) => todo!(),
-        //         };
-        //         todo!()
-        //     }
-        //     // Ignore this
-        //     TypeExpr::Generic(_) => todo!(),
-        // };
-
-        let found_type_id = match resolve::resolve_type_expr(
+        let last_scope = match resolution_helpers::resolve_static_access_ret_preset(
             self.compiler,
-            associated_scope,
-            &root_sp_ty_expr,
+            sp_path_segs,
+            initial_scope,
             scope_type,
-            abs_cfg_root.lookup_pat,
+            lookup_pref,
+            static_access_opt,
+            self.interner,
             env,
         ) {
-            TypeExprResult::Type(type_id) => type_id.into(),
-            res => {
-                let preset_err = preset_reporter::type_expr_result_to_preset_err(
-                    &self.compiler,
-                    self.interner,
-                    &res,
-                    env,
-                )
-                .expect("Result enforced by `match`");
-
+            Ok(scope) => scope,
+            Err(preset_err) => {
                 preset_reporter::report_preset(
-                    &self.compiler,
+                    self.compiler,
                     &mut self.summary,
                     preset_err,
                     env.region,
                     self.cfg,
                     self.interner,
                 );
-
-                // todo!("Are you sure");
-                // I'm not sure actually
-                // TypeId::new(script_compiler::CORE_UNKNOWN)
-                None
+                // No valid symbol exists so nothing can actually be done here. Could typecheck the
+                // options since they're always valid to check but not now.
+                return;
             }
         };
-        //TODO: Lookup symbol instead.
 
-        // Checks if the symbol is a valid config consumer later.
-        // Returns an `Option` so that the option assignments can still be checked before
-        // returning.
-        // let found_sym_id_opt = if let Some(SymbolLookupOutput { found_sym_id, .. }) =
-        //     scopes::find_sym_id(
-        //         self.compiler,
-        //         associated_scope,
-        //         abs_cfg_root.name_id,
-        //         scope_type,
-        //         // The config itself chooses it's lookup since it may is `OnlyVar` as specified in
-        //         // `parser.rs`
-        //         //
-        //         // Is `NamespaceOnly` by default since it is using the current module's namespace
-        //         // specifically since that's what configs are restricted to.
-        //         abs_cfg_root.lookup_pat,
-        //     ) {
-        //     Some(found_sym_id)
-        // } else {
-        //     // Options are checked for validity after this so returning `None` here is fine. But
-        //     // this still does terminate eventually since a config's member's cannot be sarched
-        //     // without an actual member holding symbol.
-        //     let name = self.interner.search(abs_cfg_root.name_id);
-        //     let core_msg = format!(
-        //         //TODO: Need to store scope type or some scope metadata or some conversion
-        //         "Could not find `{name}` in `{:?}` searchable scopes",
-        //         abs_cfg_root.lookup_pat
-        //     );
+        // Getting last segment to search in the static path
+        let last_seg = &sp_path_segs[sp_path_segs.len() - 1];
+
+        // Is `Option` so the option exprs can be validated before exiting since those don't care
+        // about whether or not the symbol or type id valid
         //
-        //     let src_diag = SourceDiagnostic::builder(
-        //         ErrorCode::ScopeErr.into(),
-        //         DiagnosticLevel::Error,
-        //         core_msg,
-        //         env.region.path_id,
-        //     )
-        //     .add_annotation(abs_cfg_root.name_span, AnnotationKind::Primary, None);
-        //
-        //     self.summary.push_diag(src_diag.build());
-        //     None
-        // };
+        // Is mutable so that if the typecheck fails, it can be set to `None`, which then allows for
+        // the same return signal to be used on failure.
+
+        let mut root_val_opt = match scope_type {
+            ScopeType::Complex => {
+                //WARN: This hurts.
+
+                //Make this a helper? Might be going too far making a type expr specific static
+                //access helper
+                let type_id_res = match &last_seg.inner {
+                    PathSegment::Ident(interned_id) => {
+                        let inline_ty_expr =
+                            SpannedContainer::new(TypeExpr::Var(*interned_id), last_seg.span);
+                        resolution_helpers::resolve_type_expr_ret_preset(
+                            self.compiler,
+                            last_scope,
+                            &inline_ty_expr,
+                            scope_type,
+                            lookup_pat,
+                            self.interner,
+                            env,
+                        )
+                    }
+                    PathSegment::Generic(generic) => {
+                        resolution_helpers::resolve_generic_ret_preset(
+                            self.compiler,
+                            generic,
+                            last_scope,
+                            //WARN: No this is not covering the entire generic.
+                            last_seg.span,
+                            scope_type,
+                            self.interner,
+                            env,
+                        )
+                    }
+                };
+
+                match type_id_res {
+                    Ok(type_id) => ConfigRootValueKind::Type(type_id).into(),
+                    Err(preset_err) => {
+                        preset_reporter::report_preset(
+                            self.compiler,
+                            &mut self.summary,
+                            preset_err,
+                            env.region,
+                            self.cfg,
+                            self.interner,
+                        );
+                        None
+                    }
+                }
+            }
+            // Check if it's a namespace or type (that's contextually valid)
+            ScopeType::Override => {
+                // Could be generic so can't go by scopes::find_sym_id
+                match &last_seg.inner {
+                    PathSegment::Ident(interned_id) => {
+                        //TODO: This preset err for this maybe
+                        match scopes::find_sym_id(
+                            self.compiler,
+                            last_scope,
+                            *interned_id,
+                            scope_type,
+                            lookup_pat,
+                            lookup_pref,
+                        ) {
+                            Some(SymbolLookupOutput { found_sym_id, .. }) => {
+                                let sym = &self.compiler.symbols[found_sym_id];
+                                match sym.kind {
+                                    SymbolKind::Type(type_id) => {
+                                        ConfigRootValueKind::Type(type_id).into()
+                                    }
+                                    //WARN: This is a lie. This is just so it gets typechecked
+                                    //later. May just remove this specific config root value kind,
+                                    //or at least not use a specific "namespace" name in the case of
+                                    //more symbols.
+                                    _ => ConfigRootValueKind::Namespace(found_sym_id).into(),
+                                }
+                            }
+                            None => {
+                                let lookup_err = LookupError::SymbolNotFound {
+                                    sp_invalid_name_id: SpannedContainer::new(
+                                        *interned_id,
+                                        last_seg.span,
+                                    ),
+                                    scope_searched: last_scope,
+                                };
+                                preset_reporter::report_preset(
+                                    self.compiler,
+                                    &mut self.summary,
+                                    lookup_err.into(),
+                                    env.region,
+                                    self.cfg,
+                                    self.interner,
+                                );
+                                None
+                            }
+                        }
+                    }
+                    //FIXME: systemd process that plays mildly annoying audio every 30 minutes until
+                    //the CST is made
+                    PathSegment::Generic(_) => {
+                        let builder = SourceDiagnostic::builder(
+                            ErrorCode::GenericsErr.into(),
+                            DiagnosticLevel::Error,
+                            "Config root must be a user defined type",
+                            env.region.path_id,
+                        )
+                        .add_annotation(
+                            last_seg.span,
+                            AnnotationKind::Primary,
+                            None,
+                        );
+                        self.summary.push_diag(builder.build());
+                        None
+                    }
+                }
+            }
+            // No other scope types can hold configs. If this is reached than this is an internal error.
+            _ => unreachable!(),
+        };
 
         // Get schema option then lookup against the actual possibilities
         // Maybe do this in constraints
@@ -635,7 +689,7 @@ impl<'res> TypeResolver<'res> {
                 None,
                 &abs_opt.array_expr,
                 None,
-                associated_scope,
+                last_scope,
                 scope_type,
                 env,
             ) {
@@ -690,6 +744,11 @@ impl<'res> TypeResolver<'res> {
 
                 let core_msg = format!("Duplicate option `{dup_name}`");
 
+                // WARN: Suspicious
+                let spans: Vec<SourceSpan> = sp_path_segs.iter().map(|s| s.span).collect();
+                let sp_path_span = source_span::merge_spans(&spans)
+                    .expect("Path segments require at least one span");
+
                 let src_diag = SourceDiagnostic::builder(
                     None,
                     DiagnosticLevel::Error,
@@ -697,7 +756,7 @@ impl<'res> TypeResolver<'res> {
                     env.region.path_id,
                 )
                 .add_annotation(
-                    root_sp_ty_expr.span,
+                    sp_path_span,
                     AnnotationKind::Secondary,
                     "Found inside this config root".to_string().into(),
                 )
@@ -715,26 +774,42 @@ impl<'res> TypeResolver<'res> {
         // Clearing for cfg members to use for their options
         seen_opt_vec.clear();
 
+        // Symbol namespace is valid by default but the type isn't typechecked above (for
+        // composition reasons) so this needs to do so.
+        if let Some(ConfigRootValueKind::Type(type_id)) = root_val_opt {
+            // Suspicious workaround required but ok for now
+            let sym_id = self
+                .compiler
+                .get_sym_id_from_type_id(type_id)
+                .expect("Earlier in-method match enforces the sym id exists");
+
+            if !typechecker::check_cfg_root(&self.compiler, sym_id) {
+                let fmtted_ty = Type::to_fmt(&self.compiler.types, type_id);
+                let core_msg = format!("Cannot use type `{fmtted_ty}` as a config root");
+
+                let spans: Vec<SourceSpan> = sp_path_segs.iter().map(|s| s.span).collect();
+                let sp_path_span = source_span::merge_spans(&spans)
+                    .expect("Path segments require at least one span");
+
+                let builder = SourceDiagnostic::builder(
+                    ErrorCode::ConfigDeclErr.into(),
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    env.region.path_id,
+                )
+                .add_annotation(sp_path_span, AnnotationKind::Primary, None)
+                .add_note("Only user defined types are valid config roots");
+                self.summary.push_diag(builder.build());
+
+                // Failed so it should be marked as not found to follow suit in return
+                root_val_opt = None;
+            };
+            // Passed typecheck so it does not leave
+        }
+
         // Releasing after checking if the options were valid expressions
         // This returns because members cannot exist in any form without a valid type.
-        let found_type_id = match found_type_id {
-            Some(type_id) => type_id,
-            None => return,
-        };
-
-        if !typechecker::check_cfg_root(&self.compiler.types, found_type_id) {
-            let fmtted_ty = Type::to_fmt(&self.compiler.types, found_type_id);
-            let core_msg = format!("Cannot use type `{fmtted_ty}` as a config root");
-
-            let builder = SourceDiagnostic::builder(
-                ErrorCode::ConfigDeclErr.into(),
-                DiagnosticLevel::Error,
-                core_msg,
-                env.region.path_id,
-            )
-            .add_annotation(root_sp_ty_expr.span, AnnotationKind::Primary, None)
-            .add_note("Only user defined types are valid config roots");
-            self.summary.push_diag(builder.build());
+        let Some(root_val) = root_val_opt else {
             return;
         };
 
@@ -769,7 +844,8 @@ impl<'res> TypeResolver<'res> {
             // that will be created inside the recursive resolution method.
             let member_id = match member_lookup::lookup_member(
                 self.compiler,
-                found_type_id,
+                todo!(),
+                // found_type_id,
                 //TODO: CHANGE THIS
                 sp_interned_id.inner,
                 MemberScopeLookupPattern::NoRestrictions,
@@ -792,10 +868,9 @@ impl<'res> TypeResolver<'res> {
                             // If we get a variable, this is matched, but the error is more so, you
                             // cannot use a variable in config, rather than the member
                             // access itself
-                            let decl_span =
-                                self.compiler.get_span_from_type_id(found_type_id).expect(
-                                    "Should have a span since it has members and was searched for",
-                                );
+                            let decl_span = self.compiler.get_span_from_type_id(todo!()).expect(
+                                "Should have a span since it has members and was searched for",
+                            );
 
                             //FIX:
                             let found_type_name_id = self
@@ -811,6 +886,12 @@ impl<'res> TypeResolver<'res> {
                                 )),
                             );
 
+                            // 4th paste. 4th paste.
+                            let spans: Vec<SourceSpan> =
+                                sp_path_segs.iter().map(|s| s.span).collect();
+                            let sp_path_span = source_span::merge_spans(&spans)
+                                .expect("Path segments require at least one span");
+
                             preset_reporter::create_diag_builder_preset(
                                 &self.compiler,
                                 preset_err,
@@ -819,7 +900,7 @@ impl<'res> TypeResolver<'res> {
                                 self.interner,
                             )
                             .add_annotation(
-                                root_sp_ty_expr.span,
+                                sp_path_span,
                                 AnnotationKind::Secondary,
                                 format!("`{found_name}` used here").into(),
                             )
@@ -834,16 +915,21 @@ impl<'res> TypeResolver<'res> {
                         MemberLookupResult::MemberNotFoundInType(type_id) => {
                             let decl_span = self
                                 .compiler
-                                .get_span_from_type_id(found_type_id)
+                                .get_span_from_type_id(todo!())
                                 .expect("Should have a span since it has members and was searched");
                             let fmtted_ty = Type::to_fmt(&self.compiler.types, type_id);
 
-                            let found_type = &self.compiler.types[found_type_id];
+                            let found_type = &self.compiler.types[todo!()];
                             //FIX:
                             let found_type_name_id = self
                                 .compiler
                                 .get_name_id_from_type_id(type_id)
                                 .expect("NOT DONE YET");
+
+                            let spans: Vec<SourceSpan> =
+                                sp_path_segs.iter().map(|s| s.span).collect();
+                            let sp_path_span = source_span::merge_spans(&spans)
+                                .expect("Path segments require at least one span");
 
                             // Needs to be done otherwise typedefs, given "x: State" will emit the
                             // type as `x` rather than `State`
@@ -859,7 +945,7 @@ impl<'res> TypeResolver<'res> {
                                 parent_type_id: type_id,
                                 sp_parent_name_id: SpannedContainer::new(
                                     found_type_name_id,
-                                    root_sp_ty_expr.span,
+                                    sp_path_span,
                                 ),
                                 nonexistent_member: sp_interned_id.inner,
                             });
@@ -909,7 +995,8 @@ impl<'res> TypeResolver<'res> {
 
             let cfg_member_id = self.resolve_cfg_member(
                 parent_impl_id,
-                root_sp_ty_expr,
+                todo!(),
+                // sp_path_segs,
                 // &mut cfg_dfs,
                 &mut seen_cfg_vec,
                 &mut seen_opt_vec,
@@ -946,6 +1033,10 @@ impl<'res> TypeResolver<'res> {
 
                 let core_msg = format!("More than one config member has identifier `{dup_name}`");
 
+                let spans: Vec<SourceSpan> = sp_path_segs.iter().map(|s| s.span).collect();
+                let sp_path_span = source_span::merge_spans(&spans)
+                    .expect("Path segments require at least one span");
+
                 // Maybe give `None` here..
                 let src_diag = SourceDiagnostic::builder(
                     ErrorCode::ConfigDeclErr.into(),
@@ -954,7 +1045,7 @@ impl<'res> TypeResolver<'res> {
                     env.region.path_id,
                 )
                 .add_annotation(
-                    root_sp_ty_expr.span,
+                    sp_path_span,
                     AnnotationKind::Secondary,
                     "Found inside this config root".to_string().into(),
                 )
@@ -972,19 +1063,17 @@ impl<'res> TypeResolver<'res> {
 
         let cfg_root = self.compiler.get_cfg_def_mut(parent_impl_id);
 
-        debug_assert!(matches!(abs_cfg_root.kind, AbstractConfigKind::Root(_)));
-
-        debug_assert_eq!(cfg_root.linked_sym_id, None);
+        debug_assert!(matches!(cfg_root.linked_root_val, None));
         debug_assert_eq!(cfg_root.opt_assignments.len(), 0);
         debug_assert_eq!(cfg_root.cfg_members.len(), 0);
         debug_assert!(matches!(
-            cfg_root.lookup_pattern,
+            cfg_root.lookup_pat,
             ScopeLookupPattern::NamespaceOnly
                 | ScopeLookupPattern::OnlyVar
                 | ScopeLookupPattern::OnlyNest
         ));
 
-        cfg_root.linked_sym_id = Some(todo!());
+        cfg_root.linked_root_val = Some(root_val);
         cfg_root.opt_assignments = opt_assignment_roots;
         cfg_root.cfg_members = cfg_def_members;
     }
@@ -2158,24 +2247,17 @@ impl<'res> TypeResolver<'res> {
         let scope_type = self.compiler.symbols[parent_sym_id].scope_origin;
 
         //TODO: typecheck here?
-        let type_id = match resolve::resolve_type_expr(
+        let type_id = match resolution_helpers::resolve_type_expr_ret_preset(
             &mut self.compiler,
             AssociatedScopeKind::Module(env.current_mod),
             &abs_typedef.sp_ty_expr,
             scope_type,
             ScopeLookupPattern::NoRestrictions,
+            self.interner,
             env,
         ) {
-            TypeExprResult::Type(type_id) => type_id,
-            res => {
-                let preset_err = preset_reporter::type_expr_result_to_preset_err(
-                    &self.compiler,
-                    self.interner,
-                    &res,
-                    env,
-                )
-                .expect("Result enforced by `match`");
-
+            Ok(type_id) => type_id,
+            Err(preset_err) => {
                 preset_reporter::report_preset(
                     &self.compiler,
                     &mut self.summary,
@@ -2184,7 +2266,6 @@ impl<'res> TypeResolver<'res> {
                     self.cfg,
                     self.interner,
                 );
-
                 TypeId::new(script_compiler::CORE_UNKNOWN)
             }
         };
@@ -2480,24 +2561,17 @@ impl<'res> TypeResolver<'res> {
             let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
             let val_id = ValueId::new(self.compiler.values.len() as u32);
 
-            let type_id = match resolve::resolve_type_expr(
+            let type_id = match resolution_helpers::resolve_type_expr_ret_preset(
                 self.compiler,
                 AssociatedScopeKind::Module(env.current_mod),
                 &abs_param.sp_ty_expr,
                 scope_type,
                 ScopeLookupPattern::NoRestrictions,
+                self.interner,
                 env,
             ) {
-                TypeExprResult::Type(type_id) => type_id,
-                res => {
-                    let preset_err = preset_reporter::type_expr_result_to_preset_err(
-                        &self.compiler,
-                        self.interner,
-                        &res,
-                        env,
-                    )
-                    .expect("Result enforced by `match`");
-
+                Ok(type_id) => type_id,
+                Err(preset_err) => {
                     preset_reporter::report_preset(
                         &self.compiler,
                         &mut self.summary,
@@ -2506,7 +2580,6 @@ impl<'res> TypeResolver<'res> {
                         self.cfg,
                         self.interner,
                     );
-
                     TypeId::new(script_compiler::CORE_UNKNOWN)
                 }
             };
@@ -2674,7 +2747,7 @@ impl<'res> TypeResolver<'res> {
         &mut self,
         // Is `Option` because not all expressions being registered are attached to variables.
         // So, in "let x = y" we would want the `SymbolId` of `x` to check for cyclic deps, but if
-        // we were just typeing "[x, y]" there are no cycles because there is no assignment
+        // we were just typing "[x, y]" there are no cycles because there is no assignment
         parent_sym_id_opt: Option<SymbolId>,
         spanned_expr: &SpannedExpr,
         // Only usable with something like, alias(x) where x is local, not section local overall
@@ -2684,7 +2757,7 @@ impl<'res> TypeResolver<'res> {
         scope_type: ScopeType,
         env: &ResolverEnv,
     ) -> Result<ExprId, PresetErr> {
-        let lookup_preference = LookupPreferenceFlags::new(LookupPreferenceFlags::VARIABLE.into());
+        let lookup_pref = LookupPreferenceFlags::new(LookupPreferenceFlags::VARIABLE.into());
         match &spanned_expr.expr {
             Expr::Var(name_id) => {
                 if let Some(scope_id) = local_scope_id {
@@ -2739,7 +2812,7 @@ impl<'res> TypeResolver<'res> {
                     scope_type,
                     // Should this be no restrictions?
                     ScopeLookupPattern::NoRestrictions,
-                    lookup_preference,
+                    lookup_pref,
                 ) {
                     //WARN: Constant iteration upon seeing any symbol instead of a single check
                     //elsewhere
@@ -3413,25 +3486,16 @@ impl<'res> TypeResolver<'res> {
                 }
             }
             Expr::StaticAccess(spanned_segments) => {
-                let last_scope = match resolve::resolve_static_access(
+                let last_scope = resolution_helpers::resolve_static_access_ret_preset(
                     self.compiler,
                     spanned_segments,
                     associated_scope,
                     scope_type,
-                    lookup_preference,
-                    false,
-                ) {
-                    StaticAccessResult::Scope(associated_scope) => associated_scope,
-                    res => {
-                        let preset_err = preset_reporter::static_access_result_to_preset_err(
-                            self.interner,
-                            &res,
-                            env,
-                        )
-                        .expect("Result enforced by `match`");
-                        return Err(preset_err);
-                    }
-                };
+                    lookup_pref,
+                    StaticAccessOption::Val,
+                    self.interner,
+                    env,
+                )?;
 
                 let last_seg = &spanned_segments[spanned_segments.len() - 1];
 
@@ -3440,7 +3504,7 @@ impl<'res> TypeResolver<'res> {
                 // in a generic "Expr" would be an insanely large amount of possibilites for
                 // something that is enforced at parse-time, making it more confusing. But,
                 // creating inline expressions is also confusing so, not sure.
-                let inline_expr = match &last_seg.kind {
+                let inline_expr = match &last_seg.inner {
                     PathSegment::Ident(interned_id) => {
                         SpannedExpr::new(Expr::Var(*interned_id), last_seg.span)
                     }
@@ -3580,7 +3644,7 @@ impl<'res> TypeResolver<'res> {
         scope_type: ScopeType,
         env: &ResolverEnv,
     ) -> Result<PossibleMember, PresetErr> {
-        let lookup_preference = LookupPreferenceFlags::new(LookupPreferenceFlags::VARIABLE.into());
+        let lookup_pref = LookupPreferenceFlags::new(LookupPreferenceFlags::VARIABLE.into());
         let res = self.register_expr(
             sym_parent,
             member,
@@ -3612,7 +3676,7 @@ impl<'res> TypeResolver<'res> {
                 name_id,
                 scope_type,
                 ScopeLookupPattern::NoRestrictions,
-                lookup_preference,
+                lookup_pref,
             ) {
                 todo!();
                 // let type_id = self.compiler.symbols[sym_id ];
@@ -3718,7 +3782,7 @@ impl<'res> TypeResolver<'res> {
         let mut preset_errs = Vec::new();
 
         for abs_directive in abs_directives {
-            match resolve::resolve_directive(abs_directive) {
+            match resolution::resolve_directive(abs_directive) {
                 Some(dir) => {
                     let directive_id = script_compiler::directive_to_id(&dir);
                     let sp_directive_id =

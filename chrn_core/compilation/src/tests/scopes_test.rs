@@ -183,7 +183,7 @@ fn scope_simple_test() {
 }
 
 #[test]
-fn scope_lookup_preference_found_test() {
+fn scope_lookup_pref_found_test() {
     // From `var` the scope order is Nest -> Neutral -> Compiler -> Core, so the struct is
     // seen before the variable.
     let text = "
@@ -238,7 +238,7 @@ fn scope_lookup_preference_found_test() {
 }
 
 #[test]
-fn scope_lookup_preference_fallback_test() {
+fn scope_lookup_pref_fallback_test() {
     // Only a type named `Thing` exists, so a variable preference can't be satisfied and the
     // lookup falls back to the non-preferred symbol it did find.
     let text = "

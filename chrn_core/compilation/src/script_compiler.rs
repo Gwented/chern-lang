@@ -34,7 +34,7 @@ use crate::{
         hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
         hir_exprs::ResolvedExpr,
         hir_impls::{
-            ConfigDefMember, ConfigDefRoot, ImplHir, ImplHirKind, ImplMemberKind,
+            ConfigDefMember, ConfigRoot, ImplHir, ImplHirKind, ImplMemberKind,
             OptionAssignmentMember, OptionAssignmentRoot,
         },
         hir_symbols::{
@@ -74,7 +74,7 @@ pub struct ScriptCompiler {
     pub variables: Arena<VarDef, VariableId>,
     /// All user defined config. Is considered it's own class instead of a type since it
     /// behaves uniquely
-    pub cfgs: Arena<ConfigDefRoot, ConfigRootId>,
+    pub cfgs: Arena<ConfigRoot, ConfigRootId>,
     /// All directives that were found
     pub directives: Arena<Directive, DirectiveId>,
     /// Scope arena
@@ -499,7 +499,7 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_cfg_def_root(&self, impl_id: ImplId) -> &ConfigDefRoot {
+    pub(super) fn get_cfg_def_root(&self, impl_id: ImplId) -> &ConfigRoot {
         match &self.impls[impl_id] {
             impl_hir => match &impl_hir.kind {
                 ImplHirKind::Config(cfg_id) => &self.cfgs[*cfg_id],
@@ -507,7 +507,7 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_cfg_def_mut(&mut self, impl_id: ImplId) -> &mut ConfigDefRoot {
+    pub(super) fn get_cfg_def_mut(&mut self, impl_id: ImplId) -> &mut ConfigRoot {
         match &self.impls[impl_id] {
             impl_hir => match &impl_hir.kind {
                 ImplHirKind::Config(cfg_id) => &mut self.cfgs[*cfg_id],

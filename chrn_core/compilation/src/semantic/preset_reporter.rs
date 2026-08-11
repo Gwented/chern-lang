@@ -6,13 +6,15 @@ mod static_enricher;
 use crate::lookup::scopes::AssociatedScopeKind;
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::script_compiler::ScriptCompiler;
+use crate::semantic::hir::hir_symbols::SymbolKind;
 use crate::semantic::preset_reporter::engine_concepts::{
     AvailableKind, EngineOption, EngineOptionBase, ListAvailable,
 };
 use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, PresetErr};
-use crate::semantic::resolve::{StaticAccessResult, TypeExprResult};
+use crate::semantic::resolution::resolution_concepts::{StaticAccessResult, TypeExprResult};
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
+use chrn_utils::id_types::SpannedContainer;
 use chrn_utils::s_suffix;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{
@@ -64,7 +66,7 @@ pub(crate) fn report_preset_vec<S: SourceDiagnosticSink>(
     }
 }
 
-/// Creates `SourceDiagnostic` with the preset associated with it's `SemanticError`
+/// Creates `SourceDiagnosticBuilder` with the preset associated with it's `PresetErr`
 pub(crate) fn create_diag_builder_preset(
     compiler: &ScriptCompiler,
     preset_err: PresetErr,
@@ -268,6 +270,110 @@ pub(crate) fn create_diag_builder_preset(
                 SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
                     .add_annotation(sp_sym.span, AnnotationKind::Primary, None)
             }
+            LookupError::SymbolNotFound {
+                sp_invalid_name_id,
+                scope_searched,
+            } => {
+                let err_name = interner.search(sp_invalid_name_id.inner);
+                let core_msg = match scope_searched {
+                    AssociatedScopeKind::Module(mod_id) => {
+                        let err_mod = &compiler.mods[mod_id];
+                        let err_mod_name = interner.search(err_mod.name_id);
+
+                        //WARN: If we have "var State {}" in complex or override, and it's not in that
+                        //scope solely, this will say that the ENTIRE module does not contain the given
+                        //type, but that's not true. Maybe we need a little more info given or at least
+                        //acknkowledgement of the scope question mark.
+                        format!("No type `{err_name}` defined in module `{err_mod_name}`")
+                    }
+                    //NOTE: Not current symbol exists that has it's own scope except modules
+                    AssociatedScopeKind::Scope(scope_id) => {
+                        let scope_info = &compiler.scopes[scope_id];
+
+                        // Expects since if the current associated scope is from a symbol, that means
+                        // the previous stack frame was extracted from a symbol's namespace directly
+                        //
+                        // WARN: Is this expectable?
+                        let sym_owner = scope_info.sym_owner.expect("!");
+
+                        let sym_name_id = compiler.symbols[sym_owner].name_id;
+                        let sym_name = interner.search(sym_name_id);
+
+                        format!("Namespace `{sym_name}` does not contain `{err_name}`")
+                    }
+                };
+
+                let builder = SourceDiagnostic::builder(
+                    ErrorCode::ScopeErr.into(),
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    region.path_id,
+                )
+                .add_annotation(
+                    sp_invalid_name_id.span,
+                    AnnotationKind::Primary,
+                    None,
+                );
+
+                builder
+            }
+            LookupError::NotAType {
+                invalid_sym_id,
+                // Contains spanned name id of the above symbol, but that can be extracted, but it
+                // reduces operations from the preset, but !
+                sp_invalid_name_id,
+                scope_found_in,
+            } => {
+                let kind = SymbolKind::to_fmt(compiler, invalid_sym_id);
+                let name = interner.search(sp_invalid_name_id.inner);
+
+                let core_msg = format!("`{name}` is a {kind} not a type");
+
+                //WARN: Should probably have an error code
+                let builder = SourceDiagnostic::builder(
+                    None,
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    region.path_id,
+                )
+                .add_annotation(
+                    sp_invalid_name_id.span,
+                    AnnotationKind::Primary,
+                    None,
+                );
+                builder
+            }
+            LookupError::PrivateTypeAccess {
+                sp_found_type_id,
+                found_sym_id,
+                current_mod_id,
+            } => {
+                //TEST: Leaving it to compiler to consume the information since the presets are now
+                //far more semantically inclined.
+                let module = &compiler.mods[current_mod_id];
+                let mod_name = interner.search(module.name_id);
+
+                let sym = &compiler.symbols[found_sym_id];
+                let sym_name = interner.search(sym.name_id);
+
+                let core_msg = format!("Type `{sym_name}` is private in module `{mod_name}`");
+
+                let builder = SourceDiagnostic::builder(
+                    ErrorCode::PrivacyErr.into(),
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    region.path_id,
+                )
+                .add_annotation(sp_found_type_id.span, AnnotationKind::Primary, None)
+                // Redundant?
+                // If it can be exported isn't checked because private type access means it's not
+                // intrinsic, not intrinsic means it's user, user means it can be exported.
+                .add_help(format!(
+                    "Consider using `export` on `{sym_name}` if that was intended"
+                ));
+
+                builder
+            }
         },
         PresetErr::Math(math_err) => match math_err {
             MathError::BinaryOpMismatch { sp_lhs, sp_rhs, op } => {
@@ -278,7 +384,7 @@ pub(crate) fn create_diag_builder_preset(
                     sp_rhs.inner.to_fmt(),
                 );
 
-                let mut builder = SourceDiagnostic::builder(
+                let builder = SourceDiagnostic::builder(
                     None,
                     DiagnosticLevel::Error,
                     core_msg,
@@ -407,27 +513,21 @@ pub fn type_expr_result_to_preset_err(
     interner: &Intern,
     res: &TypeExprResult,
     env: &ResolverEnv,
-    // Should this just return the builder?
 ) -> Option<PresetErr> {
     match res {
         TypeExprResult::Type(_) => None,
         TypeExprResult::NotAType {
-            sp_name_id, kind, ..
-        } => {
-            let name = interner.search(sp_name_id.inner);
-            //WARN: I don't know about this msg
-            let core_msg = format!("`{name}` is a {kind} not a type");
-
-            let src_diag = SourceDiagnostic::basic_builder(
-                None,
-                DiagnosticLevel::Error,
-                core_msg,
-                env.region.path_id,
-                sp_name_id.span,
-            );
-
-            Some(PresetErr::General(src_diag))
-        }
+            found_sym_id,
+            sp_name_id,
+            scope_found_in,
+        } => Some(
+            LookupError::NotAType {
+                invalid_sym_id: *found_sym_id,
+                sp_invalid_name_id: sp_name_id.clone(),
+                scope_found_in: *scope_found_in,
+            }
+            .into(),
+        ),
         TypeExprResult::SymbolNotFound(sp_name_id, associated) => {
             let err_name = interner.search(sp_name_id.inner);
             let core_msg = match associated {
@@ -469,34 +569,17 @@ pub fn type_expr_result_to_preset_err(
             Some(PresetErr::General(src_diag))
         }
         TypeExprResult::PrivateTypeAccess {
+            sp_found_type_id,
             found_sym_id,
-            current_mod,
-            ty_expr_span,
-            ..
-        } => {
-            // Um...
-            let current_mod = &compiler.mods[*current_mod];
-            let current_mod_name = interner.search(current_mod.name_id);
-
-            let sym = &compiler.symbols[*found_sym_id];
-            let sym_name = interner.search(sym.name_id);
-
-            let core_msg = format!("Type `{sym_name}` is private in module `{current_mod_name}`");
-
-            let src_diag = SourceDiagnostic::builder(
-                ErrorCode::PrivacyErr.into(),
-                DiagnosticLevel::Error,
-                core_msg,
-                env.region.path_id,
-            )
-            .add_annotation(*ty_expr_span, AnnotationKind::Primary, None)
-            // Redundant?
-            .add_help(format!(
-                "Consider using `export` on `{sym_name}` if that was intended"
-            ));
-
-            Some(PresetErr::General(src_diag))
-        }
+            current_mod_id,
+        } => Some(
+            LookupError::PrivateTypeAccess {
+                sp_found_type_id: sp_found_type_id.clone(),
+                found_sym_id: *found_sym_id,
+                current_mod_id: *current_mod_id,
+            }
+            .into(),
+        ),
         TypeExprResult::InvalidGenericArgCount {
             // Could make this kind specific but $#)%@^*)
             base,

@@ -10,7 +10,7 @@ use lang::{
 
 use crate::{
     lookup::scopes::{ScopeLookupPattern, ScopeType},
-    parser::ast::ast_exprs::{SpannedExpr, TypeExpr},
+    parser::ast::ast_exprs::{PathSegment, SpannedExpr, TypeExpr},
     semantic::hir::hir_impls::ConfigMemberMetadataKind,
 };
 
@@ -602,23 +602,9 @@ pub enum ConfigRootKind {
 #[derive(Debug, Clone)]
 pub enum AbstractConfigKind {
     /// Name attached to root
-    Root(SpannedContainer<TypeExpr>),
+    Root(Vec<SpannedContainer<PathSegment>>),
     /// :(
     Member(SpannedContainer<InternedId>, ConfigMemberMetadataKind),
-}
-impl AbstractConfigKind {
-    pub fn name_id(&self) -> Option<InternedId> {
-        match self {
-            AbstractConfigKind::Member(sp_interned_id, _) => Some(sp_interned_id.inner),
-            AbstractConfigKind::Root(sp_interned_id) => None,
-        }
-    }
-    pub fn name_span(&self) -> SourceSpan {
-        match self {
-            AbstractConfigKind::Root(sp_interned_id) => sp_interned_id.span,
-            AbstractConfigKind::Member(sp_interned_id, _) => sp_interned_id.span,
-        }
-    }
 }
 
 //TEST: Might need this if these are genuinely distinctly different types if an origin is

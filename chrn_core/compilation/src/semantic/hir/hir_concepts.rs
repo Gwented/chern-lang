@@ -8,7 +8,6 @@ use chrn_utils::{
     arena::Arena,
     id_types::{ExprId, MemberId, ModuleId, ScopeId, SpannedContainer, TypeId, ValueId},
     loop_abort,
-    source_map::source_span::SourceSpan,
 };
 use lang::{
     fmter::{Formattable, Formatted},

@@ -241,6 +241,7 @@ pub enum DiagnosticLevel {
 
 // Budget?
 // I feel like we really want budget here
+// We'll just keep a higher abstraction for budget handling for now
 /// Generic structure for providing a reporting summary
 #[derive(Debug, Default)]
 pub struct SourceDiagnosticSummary {

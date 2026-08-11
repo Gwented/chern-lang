@@ -277,7 +277,7 @@ pub fn find_sym_id(
     target_name_id: InternedId,
     scope_type: ScopeType,
     lookup_pat: ScopeLookupPattern,
-    lookup_preference: LookupPreferenceFlags,
+    lookup_pref: LookupPreferenceFlags,
     // Named struct maybe
 ) -> Option<SymbolLookupOutput> {
     // Avoiding vector allocations right now so it can just use a pointer offset instead based off
@@ -326,7 +326,7 @@ pub fn find_sym_id(
 
                         // Only looping again if not matched
                         let flat = compiler.symbols[sym_id].kind.to_flat();
-                        if !lookup_preference.is_preferred(flat) {
+                        if !lookup_pref.is_preferred(flat) {
                             continue;
                         };
 
@@ -361,7 +361,7 @@ pub fn find_sym_id(
                                     scope_info.scope.scope_id,
                                 ));
 
-                                if !lookup_preference.is_preferred(flat) {
+                                if !lookup_pref.is_preferred(flat) {
                                     continue;
                                 }
 
@@ -704,7 +704,6 @@ pub struct LookupPreferenceFlags {
 // This is more like a general purpose set of flags since it doesn't really matter if flat kinds are
 // used or not
 impl LookupPreferenceFlags {
-    // pub const NONE: u16 = 1 << 0;
     pub const TYPE: u16 = 1 << 0;
     pub const VARIABLE: u16 = 1 << 1;
     pub const NAMESPACE: u16 = 1 << 2;

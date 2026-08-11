@@ -25,8 +25,8 @@ impl SpannedExpr {
 #[derive(Debug)]
 pub enum Expr {
     Var(InternedId),
-    /// \`::\`
-    StaticAccess(Vec<SpannedPathSegment>),
+    /// `::`
+    StaticAccess(Vec<SpannedContainer<PathSegment>>),
     Bool(bool),
     /// Variable name, along with optional default type
     Default(Box<SpannedExpr>, Box<SpannedExpr>),
@@ -87,27 +87,15 @@ impl ArrayExpr {
 #[derive(Debug, Clone)]
 pub enum TypeExpr {
     Var(InternedId),
-    Path(Vec<SpannedPathSegment>),
-    Generic(Generic),
+    Path(Vec<SpannedContainer<PathSegment>>),
+    Generic(AbstractGeneric),
     MultiAssign(AbstractMultiAssign),
-}
-
-#[derive(Debug, Clone)]
-pub struct SpannedPathSegment {
-    pub kind: PathSegment,
-    pub span: SourceSpan,
-}
-
-impl SpannedPathSegment {
-    pub fn new(kind: PathSegment, span: SourceSpan) -> Self {
-        SpannedPathSegment { kind, span }
-    }
 }
 
 #[derive(Debug, Clone)]
 pub enum PathSegment {
     Ident(InternedId),
-    Generic(Generic),
+    Generic(AbstractGeneric),
 }
 
 // impl PathSegment {
@@ -120,14 +108,14 @@ pub enum PathSegment {
 // }
 
 #[derive(Debug, Clone)]
-pub struct Generic {
+pub struct AbstractGeneric {
     pub base: InternedId,
     // Change to tuple or something alike since max 2?
     pub inputs: Vec<SpannedContainer<TypeExpr>>,
 }
 
-impl Generic {
-    pub fn new(base: InternedId, inputs: Vec<SpannedContainer<TypeExpr>>) -> Generic {
-        Generic { base, inputs }
+impl AbstractGeneric {
+    pub fn new(base: InternedId, inputs: Vec<SpannedContainer<TypeExpr>>) -> AbstractGeneric {
+        AbstractGeneric { base, inputs }
     }
 }

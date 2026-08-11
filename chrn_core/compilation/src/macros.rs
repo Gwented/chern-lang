@@ -5,6 +5,8 @@
 ///
 /// If `chrn_utils::MAX_LOOPS` is exceeded will panic, otherwise will return a `Checked<TypeId>`
 /// which guarantees that deferred is unreachable, and that the type id is not corrupted.
+///
+/// A panic from this means that an internal developer error occurred while assigning deferred types.
 #[macro_export]
 macro_rules! walk_type_id_deferred {
     ($type_arena:expr, $type_id:ident) => {{

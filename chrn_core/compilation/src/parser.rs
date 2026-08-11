@@ -17,7 +17,7 @@ use crate::parser::ast::ast_concepts::{
 };
 
 use crate::parser::ast::ast_exprs::{
-    ArrayExpr, Expr, Generic, PathSegment, SpannedExpr, SpannedPathSegment, TypeExpr,
+    AbstractGeneric, ArrayExpr, Expr, PathSegment, SpannedExpr, TypeExpr,
 };
 use crate::parser::branch::{Branch, NestBranch, NeutralBranch, SectionBranch};
 use crate::parser::context::ParserContext;
@@ -794,9 +794,8 @@ fn parse_cfg_expr(
 ) -> Result<AbstractConfig, Token> {
     let _guard = budget.increase_depth();
     // Oh wow this looks great
-    //
-    // If the prefix is something like "var x {}" then it for this special case allows for another
-    // section to lookup var
+    // This was sarcasm!
+
     let (lookup_pat, kind) = handle_cfg_metadata(ctx, budget, is_root, scope_type, interner)?;
 
     // Allows for "=>" to notify that
@@ -902,6 +901,39 @@ fn parse_cfg_expr(
     ))
 }
 
+/// Handles a scenario where what is about to be parsed could be an expr or type expr later in
+/// resolution, so it's kept in it's current form.
+fn parse_ambiguous_expr(
+    ctx: &mut ParserContext,
+    budget: &ParserBudget,
+    // It's only one depth so just reflecting it with one T/F state
+    interner: &Intern,
+) -> Result<Vec<SpannedContainer<PathSegment>>, Token> {
+    if ctx.peek_ahead(1).tok != Token::StaticAccess {
+        let name_span = ctx.peek_span();
+        let name_id = ctx.expect_id_verbose(
+            TokenKind::Id,
+            "Expected identifier, found ",
+            "",
+            InitialEvidence::new(
+                SemanticEnv::Expr,
+                SemanticSituation::IdentBinding,
+                Branch::Expr,
+                //TODO: Ok.
+            ),
+            interner,
+        )?;
+
+        let sp_path_seg = vec![SpannedContainer::new(
+            PathSegment::Ident(name_id),
+            name_span,
+        )];
+        return Ok(sp_path_seg);
+    }
+
+    parse_static_path(ctx, budget, interner)
+}
+
 /// Helper for handling metadata for the different semantic versions of a config.
 /// The config can be, a root, complex( with name or with semantic override meaning ),
 /// override (Not done yet)
@@ -929,7 +961,9 @@ fn handle_cfg_metadata(
                     ScopeLookupPattern::NamespaceOnly
                 };
 
-                let ty_expr = parse_type_expr(ctx, budget, interner)?;
+                // TEST: Generically parsing as a segment so that semantically the resolver can
+                // decide to resolve as ty or expr
+                let ty_expr = parse_ambiguous_expr(ctx, budget, interner)?;
 
                 return Ok((pat, AbstractConfigKind::Root(ty_expr)));
             } else {
@@ -958,6 +992,7 @@ fn handle_cfg_metadata(
             }
         }
         ScopeType::Override => {
+            //TODO: Root stuff
             if is_root {
                 // Only keywords valid for root usage
                 let pat = if ctx.peek_tok() == Token::Keyword(Keyword::Var) {
@@ -970,9 +1005,10 @@ fn handle_cfg_metadata(
                     ScopeLookupPattern::NamespaceOnly
                 };
 
-                let ty_expr = parse_type_expr(ctx, budget, interner)?;
+                // Ambig. Ok. I see.
+                let ambig_expr = parse_ambiguous_expr(ctx, budget, interner)?;
 
-                return Ok((pat, AbstractConfigKind::Root(ty_expr)));
+                return Ok((pat, AbstractConfigKind::Root(ambig_expr)));
             } else {
                 // If !root
                 let name_span = ctx.peek_span();
@@ -1605,7 +1641,7 @@ fn parse_type_expr(
             let start = ctx.advance_span().start;
 
             let args = parse_generic(ctx, budget, interner)?;
-            let generic = Generic::new(name_id, args);
+            let generic = AbstractGeneric::new(name_id, args);
 
             let end = ctx.peek_behind(1).span.end;
             let span = SourceSpan::new(ctx.region.region_id, start, end);
@@ -1613,8 +1649,7 @@ fn parse_type_expr(
             if ctx.peek_tok() == Token::StaticAccess {
                 ctx.advance_tok();
 
-                let mut ty_path =
-                    vec![SpannedPathSegment::new(PathSegment::Generic(generic), span)];
+                let mut ty_path = vec![SpannedContainer::new(PathSegment::Generic(generic), span)];
                 let mut rest = parse_static_path(ctx, budget, interner)?;
 
                 ty_path.append(&mut rest);
@@ -1766,8 +1801,8 @@ fn parse_static_path(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
     interner: &Intern,
-) -> Result<Vec<SpannedPathSegment>, Token> {
-    let mut static_path: Vec<SpannedPathSegment> = Vec::new();
+) -> Result<Vec<SpannedContainer<PathSegment>>, Token> {
+    let mut static_path: Vec<SpannedContainer<PathSegment>> = Vec::new();
 
     loop {
         let is_generic = ctx.peek_ahead(1).tok == Token::OAngleBracket;
@@ -1791,10 +1826,10 @@ fn parse_static_path(
             let args = parse_generic(ctx, budget, interner)?;
             let end = ctx.peek_behind(1).span.end;
 
-            let generic = Generic::new(base_id, args);
+            let generic = AbstractGeneric::new(base_id, args);
 
             let span = SourceSpan::new(ctx.region.region_id, start, end);
-            let segment = SpannedPathSegment::new(PathSegment::Generic(generic), span);
+            let segment = SpannedContainer::new(PathSegment::Generic(generic), span);
 
             static_path.push(segment);
 
@@ -1803,7 +1838,7 @@ fn parse_static_path(
             } else {
                 break;
             }
-        // This is just the normal case of an identifier after a dot
+        // This is just the normal case of an identifier after static access
         } else if is_static_access {
             let span = ctx.peek_span();
             let name_id = ctx.expect_id_verbose(
@@ -1821,7 +1856,7 @@ fn parse_static_path(
 
             ctx.advance_tok();
 
-            let segment = SpannedPathSegment::new(PathSegment::Ident(name_id), span);
+            let segment = SpannedContainer::new(PathSegment::Ident(name_id), span);
             static_path.push(segment);
         }
 
@@ -1842,7 +1877,7 @@ fn parse_static_path(
                 interner,
             )?;
 
-            let segment = SpannedPathSegment::new(PathSegment::Ident(final_ident), span);
+            let segment = SpannedContainer::new(PathSegment::Ident(final_ident), span);
             static_path.push(segment);
             break;
         }

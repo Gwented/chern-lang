@@ -109,7 +109,7 @@ impl SourceSpan {
 // Maybe option maybe not
 /// Takes in an array of spans and merges all of them together. Expects that there is at least 1 span
 /// present.
-//TODO: Should just return option span
+#[inline]
 pub fn merge_spans(spans: &[SourceSpan]) -> Option<SourceSpan> {
     let mut full_span = *spans.get(0)?;
 

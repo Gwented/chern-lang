@@ -1,5 +1,5 @@
 use chrn_utils::{
-    id_types::{InternedId, SpannedContainer, TypeId},
+    id_types::{InternedId, ModuleId, SpannedContainer, SymbolId, TypeId},
     source_map::{source_diagnostic::SourceDiagnosticBuilder, source_span::SourceSpan},
 };
 use lang::{
@@ -9,6 +9,7 @@ use lang::{
 
 use crate::{
     constraints::ArgConstraint,
+    lookup::scopes::AssociatedScopeKind,
     parser::ast::ast_concepts::{BinaryOp, UnaryOp},
     semantic::hir::hir_symbols::FuncKind,
 };
@@ -109,8 +110,27 @@ pub enum MathError {
     },
 }
 
+// MemberLookupError, SymbolLookupError?
 #[derive(Debug)]
-pub enum LookupError {
+pub(crate) enum LookupError {
+    /// Search context was given an identifier and scope, but the identifier does not exist in the
+    /// given scope.
+    SymbolNotFound {
+        sp_invalid_name_id: SpannedContainer<InternedId>,
+        scope_searched: AssociatedScopeKind,
+    },
+    /// Search context was expecting a type but found a non-type
+    NotAType {
+        invalid_sym_id: SymbolId,
+        sp_invalid_name_id: SpannedContainer<InternedId>,
+        scope_found_in: AssociatedScopeKind,
+    },
+    /// Search context found a type, but it isn't accessible from `current_mod_id`
+    PrivateTypeAccess {
+        sp_found_type_id: SpannedContainer<TypeId>,
+        found_sym_id: SymbolId,
+        current_mod_id: ModuleId,
+    },
     /// Spanned Type that is impossible to member access
     ImpossibleTypeMemberAccess(SpannedContainer<Formatted>),
     /// Spanned type's identifier which has no members, Identifier of member looked up
