@@ -91,7 +91,7 @@ impl ChrnConfigLogger {
         }
     }
 
-    /// Prints msg with [Err] header
+    /// Prints msg with [ERR] header
     pub fn log_err<F, T>(&self, f: F)
     where
         F: FnOnce() -> T,

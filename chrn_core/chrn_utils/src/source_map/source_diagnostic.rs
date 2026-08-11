@@ -266,23 +266,6 @@ impl SourceDiagnosticSummary {
         }
     }
 
-    /// Internally checks the kind of the diagnostic before pushing to keep count
-    pub fn push_diag(&mut self, diag: SourceDiagnostic) {
-        match diag.level {
-            DiagnosticLevel::Error => self.increment_err(),
-            DiagnosticLevel::Warn => self.increment_warn(),
-            // We don't emit these and may remove them as top-level kinds
-            DiagnosticLevel::Help | DiagnosticLevel::Note => (),
-        };
-        self.diags.push(diag);
-    }
-
-    pub fn append_diags(&mut self, diags: &mut Vec<SourceDiagnostic>) {
-        for diag in diags.iter() {
-            self.increment_from_level(diag.level);
-        }
-        self.diags.append(diags);
-    }
     // Boolean on whether or not to accept the terminality?
     /// Terminalness does NOT carry over because summaries operate under a different context.
     /// If that is desired then externally do so.
@@ -355,26 +338,37 @@ impl SourceDiagnosticSummary {
 // Beautiful
 /// Allows for sink implementors to push or append while performing internal computations if needed.
 pub trait SourceDiagnosticSink {
-    fn push_diagnostic(&mut self, diag: SourceDiagnostic);
-    fn append_diagnostics(&mut self, diags: &mut Vec<SourceDiagnostic>);
+    fn push_diag(&mut self, diag: SourceDiagnostic);
+    fn append_diags(&mut self, diags: &mut Vec<SourceDiagnostic>);
 }
 
 impl SourceDiagnosticSink for SourceDiagnosticSummary {
-    fn push_diagnostic(&mut self, diag: SourceDiagnostic) {
-        self.push_diag(diag);
+    /// Internally checks the kind of the diagnostic before pushing to keep count
+    fn push_diag(&mut self, diag: SourceDiagnostic) {
+        match diag.level {
+            DiagnosticLevel::Error => self.increment_err(),
+            DiagnosticLevel::Warn => self.increment_warn(),
+            // We don't emit these and may remove them as top-level kinds
+            DiagnosticLevel::Help | DiagnosticLevel::Note => (),
+        };
+        self.diags.push(diag);
     }
 
-    fn append_diagnostics(&mut self, diags: &mut Vec<SourceDiagnostic>) {
-        self.append_diags(diags);
+    /// Internally checks the kind of the diagnostic before appending to keep count
+    fn append_diags(&mut self, diags: &mut Vec<SourceDiagnostic>) {
+        for diag in diags.iter() {
+            self.increment_from_level(diag.level);
+        }
+        self.diags.append(diags);
     }
 }
 
 impl SourceDiagnosticSink for Vec<SourceDiagnostic> {
-    fn push_diagnostic(&mut self, diag: SourceDiagnostic) {
+    fn push_diag(&mut self, diag: SourceDiagnostic) {
         self.push(diag);
     }
 
-    fn append_diagnostics(&mut self, diags: &mut Vec<SourceDiagnostic>) {
+    fn append_diags(&mut self, diags: &mut Vec<SourceDiagnostic>) {
         self.append(diags);
     }
 }

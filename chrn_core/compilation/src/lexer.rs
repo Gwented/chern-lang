@@ -275,13 +275,13 @@ impl Lexer<'_> {
                                 self.pos as u32,
                                 // WARN: EXCLUSVIE SPANNING: NO LONGER USES - 1 ON
                                 // ANNOTATION_CLAUSE_SIZE
-                                (self.pos + keywords::ANNOTATION_CLAUSE_SIZE) as u32,
+                                (self.pos + keywords::REGION_CLAUSE_SIZE) as u32,
                             ),
                             leading_trivia_indices: self.trivia_start_idx as u32
                                 ..self.trivia_end_idx as u32,
                         });
 
-                        self.skip(keywords::ANNOTATION_CLAUSE_SIZE);
+                        self.skip(keywords::REGION_CLAUSE_SIZE);
                     } else if self.is_def_end() {
                         // in_def = false;
 
@@ -292,7 +292,7 @@ impl Lexer<'_> {
                                 self.pos as u32,
                                 // WARN: EXCLUSVIE SPANNING: NO LONGER USES - 1 ON
                                 // ANNOTATION_CLAUSE_SIZE
-                                (self.pos + keywords::ANNOTATION_CLAUSE_SIZE) as u32,
+                                (self.pos + keywords::REGION_CLAUSE_SIZE) as u32,
                             ),
                             leading_trivia_indices: self.trivia_start_idx as u32
                                 ..self.trivia_end_idx as u32,
@@ -1017,7 +1017,7 @@ impl Lexer<'_> {
             return false;
         }
 
-        let possible_start = &self.src_bytes[self.pos..self.pos + keywords::ANNOTATION_CLAUSE_SIZE];
+        let possible_start = &self.src_bytes[self.pos..self.pos + keywords::REGION_CLAUSE_SIZE];
 
         if possible_start == "@def".as_bytes() {
             return true;

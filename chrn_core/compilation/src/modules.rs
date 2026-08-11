@@ -22,7 +22,8 @@ use chrn_utils::{
     intern::{self, Intern},
     source_map::{
         source_diagnostic::{
-            DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSummary, annotations::AnnotationKind,
+            DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
+            annotations::AnnotationKind,
         },
         source_region::SourceRegion,
         source_span::SourceSpan,

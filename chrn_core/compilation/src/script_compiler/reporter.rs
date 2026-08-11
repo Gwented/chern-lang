@@ -1,7 +1,9 @@
 // REPORTER IS BACK 🦅🦅🦅🦅🦅𐔌
 use chrn_utils::{
     budget::mem_budget::{BudgetResult, MemoryBudget},
-    source_map::source_diagnostic::{SourceDiagnostic, SourceDiagnosticSummary},
+    source_map::source_diagnostic::{
+        SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
+    },
 };
 
 use crate::script_compiler::script_compiler_summary::ScriptCompilerSummary;

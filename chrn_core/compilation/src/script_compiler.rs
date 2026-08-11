@@ -800,7 +800,7 @@ impl ScriptCompiler {
     /// This method exists along with extract_scope_id due to cross module namespace checking not
     /// innately confirming whether or not it contains a particular `ScopeType`
     pub fn get_scope_id(&self, scope_type: ScopeType, owner: ModuleId) -> Option<ScopeId> {
-        scopes::find_scope(self, scope_type, owner).map(|s| s.scope.scope_id)
+        scopes::find_scope_in_mod(self, scope_type, owner).map(|s| s.scope.scope_id)
     }
 
     /// Get's the `ScopeId` assuming that the scope already exists. Panics otherwise.
@@ -808,7 +808,7 @@ impl ScriptCompiler {
     /// This exists because if the current module has something like a typedef in the semantic stage,
     /// that means the parser itself already checked if it was legal grammar-wise.
     pub fn extract_scope_id(&self, scope_type: ScopeType, owner_id: ModuleId) -> ScopeId {
-        scopes::find_scope(self, scope_type, owner_id)
+        scopes::find_scope_in_mod(self, scope_type, owner_id)
             .expect("Either misuage of function, semantic broke, parser broke, or modules broke")
             .scope
             .scope_id
@@ -827,11 +827,10 @@ impl ScriptCompiler {
     /// Pushes new scope with given scope type and returns the `ScopeId`. If the scope already
     /// exists then it returns the existent `ScopeId`.
     pub fn push_scope(&mut self, scope_type: ScopeType, owner_id: ModuleId) -> ScopeId {
-        if let Some(scope_info) = scopes::find_scope(self, scope_type, owner_id) {
+        if let Some(scope_info) = scopes::find_scope_in_mod(self, scope_type, owner_id) {
             return scope_info.scope.scope_id;
         }
 
-        let scope_id = ScopeId::new(self.scopes.len() as u16);
         // Beep
         let intrinsic_scope_opt: Option<ScopeId> = match scope_type {
             // Lazy
@@ -845,10 +844,12 @@ impl ScriptCompiler {
             | ScopeType::Core => None,
         };
 
+        let scope_id = ScopeId::new(self.scopes.len() as u16);
         let scope = Scope::new(scope_id, scope_type, false, intrinsic_scope_opt);
         let scope_info = ScopeInfo::new(scope, None, owner_id);
         self.scopes.push(scope_info);
 
+        // Giving module the scope id so that it can have it searched in `scopes::` operations
         let owner_mod = &mut self.mods[owner_id];
         owner_mod.scopes.push(scope_id);
         // owner_mod.held_scopes |= scope_type.to_u8();
@@ -1088,7 +1089,6 @@ impl ScriptCompiler {
         self.scopes.push(ScopeInfo::new(scope, None, core_mod_id));
 
         self.register_all_extern_namespaces(scope_id);
-        // self.load_java_namespace(&mut override_table);
 
         // -- FINAL --
         // Pushing the intrinsic scope
@@ -1106,11 +1106,13 @@ impl ScriptCompiler {
         // iterative version was a bit verbose..
         // let mut stack: Vec<ExternFrame> = Vec::with_capacity(10);
 
-        for extern_kinds in extern_helpers::ALL_EXTERN_NAMESPACES {
-            self.register_extern_namespace(current_scope_id, extern_kinds);
+        for extern_kind in extern_helpers::ALL_EXTERN_NAMESPACES {
+            self.register_extern_namespace(current_scope_id, extern_kind);
         }
     }
 
+    /// Uses dataset from `extern_helpers.rs` of all `ExternType` intrinsics to push scopes and
+    /// symbols recursively
     fn register_extern_namespace(
         &mut self,
         current_scope_id: ScopeId,
@@ -1134,14 +1136,17 @@ impl ScriptCompiler {
                         SymbolKind::Namespace,
                     );
 
+                    // Putting the found namespace into the current table's scope before recursively
+                    // descending into new scope
                     let current_table = &mut self.scopes[current_scope_id].scope.table;
                     self.symbols.push(sym);
                     current_table
                         .interned_to_sym
                         .insert(extern_namespace.name_id, sym_id);
 
-                    // Pushing it's scope so that future scope instantiations are aligned with len()
                     let scope = Scope::new(scope_id, ScopeType::Compiler, true, None);
+
+                    // Pushing it's scope so that future scope instantiations are aligned with len()
                     self.scopes.push(ScopeInfo::new(
                         scope,
                         sym_id.into(),

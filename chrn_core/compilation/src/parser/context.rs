@@ -7,8 +7,8 @@ use chrn_utils::{
     s_suffix,
     source_map::{
         source_diagnostic::{
-            DiagnosticLevel, SourceDiagnostic, SourceDiagnosticBuilder, SourceDiagnosticSummary,
-            annotations::AnnotationKind,
+            DiagnosticLevel, SourceDiagnostic, SourceDiagnosticBuilder, SourceDiagnosticSink,
+            SourceDiagnosticSummary, annotations::AnnotationKind,
         },
         source_region::SourceRegion,
         source_span::SourceSpan,
@@ -437,10 +437,10 @@ impl<'a> ParserContext<'a> {
                     // Um
                     _ => "",
                 };
-                //had to fail before EOF, this cannot be reached otherwise.
-                //
-                // Ok then why is there saturating sub?
-                let prev_span = self.toks[self.toks.len().saturating_sub(2)].span;
+
+                // For a `ReachedEOF` error that must first be a token that didn't expect eof,
+                // meaning this is impossible to fail since it requires a token before it.
+                let prev_span = self.toks[self.toks.len() - 2].span;
 
                 builder = SourceDiagnostic::builder(
                     ErrorCode::ConfigLoadErr.into(),
@@ -467,6 +467,8 @@ impl<'a> ParserContext<'a> {
 
                     if similar.len() > 0 {
                         let s_suffix = s_suffix!(similar.len());
+                        //TODO: Scope reasoning to not recommend specific KW if invalid in the
+                        //particular scope
                         let similar_msg =
                             Self::fmt_founds(&similar, &format!("Similar keyword{s_suffix}:"), "`");
                         builder = builder.add_help(similar_msg);

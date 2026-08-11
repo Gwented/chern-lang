@@ -802,7 +802,7 @@ impl DocumentState {
         let mut lsp_diags = Vec::new();
         let doc_len = self.text.len();
         for (summary, source) in stages {
-            analyser::push_diagnostics(
+            analyser::push_diagnostic(
                 &mut lsp_diags,
                 summary.diags(),
                 &self.region_arena,

@@ -15,7 +15,7 @@
 //! * [`config_load_error_to_diagnostics`] — converts a [`ConfigLoadError`] into LSP
 //!   diagnostics so editors can underline the problematic region in the config header.
 //!
-//! * [`push_diagnostics`] — converts a slice of core [`SourceDiagnostic`] values into
+//! * [`push_diagnostic`] — converts a slice of core [`SourceDiagnostic`] values into
 //!   LSP diagnostics and appends them to an existing list.
 //!
 //! * [`resolve_modules_lsp`] — recursively resolves imported modules, using the
@@ -676,7 +676,7 @@ fn region_script_starts(
 /// * `fallback_text`    — Main document text, used when no matching region is found.
 /// * `fallback_doc_len` — Length of the main document, used to clamp spans safely.
 /// * `source`           — Value for the LSP `source` field (e.g. `"chrn-parser"`).
-pub(crate) fn push_diagnostics(
+pub(crate) fn push_diagnostic(
     lsp_diags: &mut Vec<tower_lsp::lsp_types::Diagnostic>,
     diags: &[SourceDiagnostic],
     arena: &Arena<SourceRegion, SourceRegionId>,

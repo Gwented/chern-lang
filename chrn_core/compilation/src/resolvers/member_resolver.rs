@@ -7,7 +7,8 @@ use chrn_utils::{
     id_types::{AstId, MemberId, SymbolId, TypeId},
     intern::Intern,
     source_map::source_diagnostic::{
-        DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSummary, annotations::AnnotationKind,
+        DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
+        annotations::AnnotationKind,
     },
 };
 

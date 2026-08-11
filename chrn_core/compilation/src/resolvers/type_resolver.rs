@@ -5,22 +5,22 @@ pub mod type_context;
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::{
-    AstId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ScopeId,
+    AstId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ModuleId, ScopeId,
     SpannedContainer, SpannedContainerRef, SymbolId, TypeId, ValueId, VariableId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{
-    DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSummary,
+    DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
 };
 use chrn_utils::source_map::source_span::{self, SourceSpan};
 use lang::fmter::Formatted;
 use lang::values::{Value, ValueInfo};
 
 use crate::constraints::ArgConstraint;
-use crate::lookup::member_lookup::{self, MemberLookupResult, MemberScopeLookupPattern};
+use crate::lookup::member_lookup::{self, MemberLookupPattern, MemberLookupResult};
 use crate::lookup::scopes::{
-    self, AssociatedScopeKind, LookupPreferenceFlags, ScopeLookupPattern, ScopeType,
+    self, AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, ScopeType,
     SymbolLookupOutput,
 };
 use crate::parser::ast::ast_concepts::{
@@ -231,7 +231,9 @@ impl<'res> TypeResolver<'res> {
             self.ty_ctx.needs_check = false;
             // Giving ownership to a variable since the traversal chosen needs mutation while
             // traversing
-            let mut pending_syms: Vec<(SymbolId, PendingSymbol)> = Vec::new();
+            let mut pending_syms: Vec<(SymbolId, PendingSymbol)> =
+                Vec::with_capacity(self.ty_ctx.sym_queue.len());
+
             pending_syms.extend(self.ty_ctx.sym_queue.drain());
 
             let mut removable_syms: Vec<SymbolId> = Vec::new();
@@ -465,11 +467,6 @@ impl<'res> TypeResolver<'res> {
     // maintaining of seen identifiers know that their shortest lifetime is more than long enough to
     // where the borrow cheker is satisfied.
     fn resolve_cfg_root<'env>(&mut self, parent_impl_id: ImplId, env: &'env ResolverEnv) {
-        // Expected to be `OptionAssignmentRoot`
-        let mut opt_assignment_roots: Vec<ImplMemberId> = Vec::new();
-        // Expected to be `ConfigDefMember`
-        let mut cfg_def_members: Vec<ImplMemberId> = Vec::new();
-
         let initial_scope = AssociatedScopeKind::Module(env.current_mod);
         let ast_id = self.compiler.impls[parent_impl_id]
             .ast_id
@@ -502,13 +499,14 @@ impl<'res> TypeResolver<'res> {
         let (lookup_pref, static_access_opt) = match scope_type {
             ScopeType::Complex => {
                 // Only can act upon types in this section
-                let pref = LookupPreferenceFlags::new(LookupPreferenceFlags::TYPE.into());
+                let pref = ScopeLookupPreferenceFlags::new(ScopeLookupPreferenceFlags::TYPE.into());
                 (pref, StaticAccessOption::Type)
             }
             ScopeType::Override => {
                 // Can use types and namespaces
-                let pref = LookupPreferenceFlags::new(
-                    (LookupPreferenceFlags::TYPE | LookupPreferenceFlags::NAMESPACE).into(),
+                let pref = ScopeLookupPreferenceFlags::new(
+                    (ScopeLookupPreferenceFlags::TYPE | ScopeLookupPreferenceFlags::NAMESPACE)
+                        .into(),
                 );
                 (pref, StaticAccessOption::None)
             }
@@ -550,6 +548,7 @@ impl<'res> TypeResolver<'res> {
         // Is mutable so that if the typecheck fails, it can be set to `None`, which then allows for
         // the same return signal to be used on failure.
 
+        // NOTE: As method?
         let mut root_val_opt = match scope_type {
             ScopeType::Complex => {
                 //WARN: This hurts.
@@ -605,6 +604,9 @@ impl<'res> TypeResolver<'res> {
                 match &last_seg.inner {
                     PathSegment::Ident(interned_id) => {
                         //TODO: This preset err for this maybe
+                        // Java uppser is being searched here, maybe because the previous is java
+                        // upper itself, and it's basically asking, is java upper in java upper,
+                        // given that we are inside java upper?
                         match scopes::find_sym_id(
                             self.compiler,
                             last_scope,
@@ -642,12 +644,12 @@ impl<'res> TypeResolver<'res> {
                                     self.cfg,
                                     self.interner,
                                 );
+                                // dbg!(&self.summary.diags()[self.summary.diags().len() - 1]);
+                                // return;
                                 None
                             }
                         }
                     }
-                    //FIXME: systemd process that plays mildly annoying audio every 30 minutes until
-                    //the CST is made
                     PathSegment::Generic(_) => {
                         let builder = SourceDiagnostic::builder(
                             ErrorCode::GenericsErr.into(),
@@ -668,6 +670,23 @@ impl<'res> TypeResolver<'res> {
             // No other scope types can hold configs. If this is reached than this is an internal error.
             _ => unreachable!(),
         };
+        // let ConfigRootValueKind::Namespace(sym_id) = root_val_opt.unwrap() else {
+        //     unreachable!()
+        // };
+        // let sym = &self.compiler.symbols[sym_id];
+        // dbg!(sym);
+        // dbg!(self.interner.search(sym.name_id));
+        // let scope = &self.compiler.scopes[ScopeId::new(7)].scope;
+        // dbg!(scope);
+        // panic!();
+
+        // Expected to be `OptionAssignmentRoot`
+        let mut opt_assignment_roots: Vec<ImplMemberId> =
+            Vec::with_capacity(abs_cfg_root.opt_assignments.len());
+
+        // Expected to be `ConfigDefMember`
+        let mut cfg_def_members: Vec<ImplMemberId> =
+            Vec::with_capacity(abs_cfg_root.cfg_members.len());
 
         // Get schema option then lookup against the actual possibilities
         // Maybe do this in constraints
@@ -681,7 +700,9 @@ impl<'res> TypeResolver<'res> {
         // access as the config root
 
         // Re-used vector to track duplicated identifiers for options across recursive levels
-        let mut seen_opt_vec: Vec<&'env AbstractOptionAssignment> = Vec::new();
+        let mut seen_opt_vec: Vec<&'env AbstractOptionAssignment> =
+            Vec::with_capacity(abs_cfg_root.opt_assignments.len());
+
         for abs_opt in &abs_cfg_root.opt_assignments {
             seen_opt_vec.push(abs_opt);
 
@@ -830,11 +851,11 @@ impl<'res> TypeResolver<'res> {
         // let mut cfg_dfs: Vec<(TypeId, SourceSpan)> = vec![(found_type_id, sp_ty_expr.span)];
 
         for abs_inner_cfg in &abs_cfg_root.cfg_members {
-            let AbstractConfigKind::Member(sp_interned_id, _) = abs_inner_cfg.kind.clone() else {
+            let AbstractConfigKind::Member(sp_memb_name_id, _) = abs_inner_cfg.kind.clone() else {
                 unreachable!()
             };
 
-            seen_cfg_vec.push(sp_interned_id.clone());
+            seen_cfg_vec.push(sp_memb_name_id.clone());
             seen_cfg_len += 1;
 
             // This member id is the member id that the member information in the specific config
@@ -842,17 +863,20 @@ impl<'res> TypeResolver<'res> {
             //
             // This is **NOT** used beyond being assigned as the parent origin, for the `ConfigDefMember`
             // that will be created inside the recursive resolution method.
-            let member_id = match member_lookup::lookup_member(
+            let scope = &self.compiler.scopes[ScopeId::new(7)].scope;
+            self.lookup_cfg_member(root_val, sp_memb_name_id, last_seg.span, scope_type, env);
+            panic!();
+            let member_id = match member_lookup::lookup_type_member(
                 self.compiler,
                 todo!(),
                 // found_type_id,
                 //TODO: CHANGE THIS
-                sp_interned_id.inner,
-                MemberScopeLookupPattern::NoRestrictions,
+                sp_memb_name_id.inner,
+                MemberLookupPattern::NoRestrictions,
             ) {
                 // These are split so that the theoretical ok and err paths are able to reduce
                 // boilerplate where needed
-                MemberLookupResult::Found(mem_id) => mem_id,
+                MemberLookupResult::Found(memb_id) => memb_id,
                 lookup_res => {
                     // In case the lookup error points to an issue with the actual symbol we found
                     // rather than the member not existing or some non-terminal lookup error
@@ -905,7 +929,7 @@ impl<'res> TypeResolver<'res> {
                                 format!("`{found_name}` used here").into(),
                             )
                             .add_annotation(
-                                sp_interned_id.span,
+                                sp_memb_name_id.span,
                                 AnnotationKind::Secondary,
                                 "member searched for".to_string().into(),
                             )
@@ -947,7 +971,7 @@ impl<'res> TypeResolver<'res> {
                                     found_type_name_id,
                                     sp_path_span,
                                 ),
-                                nonexistent_member: sp_interned_id.inner,
+                                sp_not_found: sp_memb_name_id.inner,
                             });
 
                             preset_reporter::create_diag_builder_preset(
@@ -963,7 +987,7 @@ impl<'res> TypeResolver<'res> {
                                 format!("{} defined here", fmtted_ty).into(),
                             )
                             .add_annotation(
-                                sp_interned_id.span,
+                                sp_memb_name_id.span,
                                 AnnotationKind::Secondary,
                                 "Searched for this member".to_string().into(),
                             )
@@ -1078,6 +1102,181 @@ impl<'res> TypeResolver<'res> {
         cfg_root.cfg_members = cfg_def_members;
     }
 
+    /// Handles looking up a config member's id, given the `ScopeType` context
+    fn lookup_cfg_member(
+        &self,
+        root_val: ConfigRootValueKind,
+        sp_memb_name_id: SpannedContainer<InternedId>,
+        root_seg_span: SourceSpan,
+        scope_type: ScopeType,
+        env: &ResolverEnv,
+        // Right is PresetErr, should break,
+    ) -> Result<MemberId, (PresetErr, bool)> {
+        match root_val {
+            // Only override can reach both the type id and sym id version
+            ConfigRootValueKind::Namespace(sym_id) => {
+                let namespace = self.compiler.symbols[sym_id]
+                    .associated_scope
+                    .expect("Confirmed by match");
+
+                match scopes::find_sym_id(
+                    self.compiler,
+                    namespace,
+                    sp_memb_name_id.inner,
+                    scope_type,
+                    ScopeLookupPattern::NamespaceOnly,
+                    ScopeLookupPreferenceFlags::new(ScopeLookupPreferenceFlags::NAMESPACE.into()),
+                ) {
+                    Some(_) => todo!(),
+                    None => todo!(),
+                };
+                todo!()
+            }
+            // Complex can only reach this type id version
+            ConfigRootValueKind::Type(type_id) => {
+                match member_lookup::lookup_type_member(
+                    self.compiler,
+                    type_id,
+                    // found_type_id,
+                    //TODO: CHANGE THIS
+                    sp_memb_name_id.inner,
+                    MemberLookupPattern::NoRestrictions,
+                ) {
+                    // These are split so that the theoretical ok and err paths are able to reduce
+                    // boilerplate where needed
+                    MemberLookupResult::Found(memb_id) => Ok(memb_id),
+                    lookup_res => {
+                        // In case the lookup error points to an issue with the actual symbol we found
+                        // rather than the member not existing or some non-terminal lookup error
+                        //
+                        // This is done because the validity of the symbol isn't checked before we
+                        // actually lookup it's members
+                        let mut should_break = false;
+
+                        let src_diag = match lookup_res {
+                            MemberLookupResult::ImpossibleTypeMemberAccess(type_id) => {
+                                should_break = true;
+                                //FIX: This has odd phrasing and pointers
+                                // If we get a variable, this is matched, but the error is more so, you
+                                // cannot use a variable in config, rather than the member
+                                // access itself
+                                let decl_span = self.compiler.get_span_from_type_id(todo!()).expect(
+                                "Should have a span since it has members and was searched for",
+                            );
+
+                                //FIX:
+                                let found_type_name_id = self
+                                    .compiler
+                                    .get_name_id_from_type_id(type_id)
+                                    .expect("NOT DONE YET");
+                                let found_name = self.interner.search(found_type_name_id);
+
+                                let preset_err = PresetErr::Lookup(
+                                    LookupError::ImpossibleTypeMemberAccess(SpannedContainer::new(
+                                        Type::to_fmt(&self.compiler.types, type_id),
+                                        decl_span,
+                                    )),
+                                );
+
+                                preset_reporter::create_diag_builder_preset(
+                                &self.compiler,
+                                preset_err,
+                                env.region,
+                                self.cfg,
+                                self.interner,
+                            )
+                            .add_annotation(
+                                root_seg_span,
+                                AnnotationKind::Secondary,
+                                format!("`{found_name}` used here").into(),
+                            )
+                            .add_annotation(
+                                sp_memb_name_id.span,
+                                AnnotationKind::Secondary,
+                                "member searched for".to_string().into(),
+                            )
+                            .add_help(format!("If this was meant to reference a `var` defined variable, prefix with \"var {found_name}\""))
+                            .build()
+                            }
+                            MemberLookupResult::MemberNotFoundInType(type_id) => {
+                                let decl_span =
+                                    self.compiler.get_span_from_type_id(todo!()).expect(
+                                        "Should have a span since it has members and was searched",
+                                    );
+                                let fmtted_ty = Type::to_fmt(&self.compiler.types, type_id);
+
+                                let found_type = &self.compiler.types[todo!()];
+                                //FIX:
+                                let found_type_name_id = self
+                                    .compiler
+                                    .get_name_id_from_type_id(type_id)
+                                    .expect("NOT DONE YET");
+
+                                // Needs to be done otherwise typedefs, given "x: State" will emit the
+                                // type as `x` rather than `State`
+                                // let name_id =
+                                //     if abs_cfg_root.lookup_pat == ScopeLookupPattern::NamespaceOnly {
+                                //         abs_cfg_root.name_id
+                                //     } else {
+                                //         // TODO: Needs change
+                                //         abs_cfg_root.name_id
+                                //     };
+
+                                let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
+                                    parent_type_id: type_id,
+                                    sp_parent_name_id: SpannedContainer::new(
+                                        found_type_name_id,
+                                        root_seg_span,
+                                    ),
+                                    sp_not_found: sp_memb_name_id.inner,
+                                });
+
+                                preset_reporter::create_diag_builder_preset(
+                                    &self.compiler,
+                                    preset_err,
+                                    env.region,
+                                    self.cfg,
+                                    self.interner,
+                                )
+                                .add_annotation(
+                                    decl_span,
+                                    AnnotationKind::Secondary,
+                                    format!("{} defined here", fmtted_ty).into(),
+                                )
+                                .add_annotation(
+                                    sp_memb_name_id.span,
+                                    AnnotationKind::Secondary,
+                                    "Searched for this member".to_string().into(),
+                                )
+                                .build()
+                            }
+                            // TODO: This is reached and should probably result in continue since if
+                            // it's unknown that means a previous stage reported it more likely than
+                            // not. (Its 100%)
+                            // Um. When is this case met?
+                            MemberLookupResult::Unknown(type_id) => {
+                                // let var = self.compiler.get_var(found_sym_id);
+                                // let name = self.interner.search(var.name_id);
+
+                                // dbg!(&self.compiler.types[var.type_id ]);
+                                todo!("RUST_BACKTRACE=1");
+                            }
+                            MemberLookupResult::Found(_) => unreachable!(),
+                        };
+
+                        // self.summary.push_diag(src_diag);
+                        //
+                        // if should_break {
+                        //     break;
+                        // }
+                        //
+                        // continue;
+                    }
+                }
+            }
+        }
+    }
+
     /// Method that recursively resolves `ConfigDefMember` and `OptionAssignmentMember`
     ///
     /// This has no failure case because unknown fields have a diagnostic given to them then they're
@@ -1130,9 +1329,11 @@ impl<'res> TypeResolver<'res> {
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         // Expected to be `OptionAssignmentMember`
-        let mut opt_assignments: Vec<ImplMemberId> = Vec::new();
+        let mut opt_assignments: Vec<ImplMemberId> =
+            Vec::with_capacity(parent_abs_cfg.opt_assignments.len());
         // Expected to be `ConfigDefMember`
-        let mut cfg_members: Vec<ImplMemberId> = Vec::new();
+        let mut cfg_members: Vec<ImplMemberId> =
+            Vec::with_capacity(parent_abs_cfg.cfg_members.len());
 
         // Whether or not the parent config has a type doesn't matter for options since they only
         // apply to the current config, so this is fine.
@@ -1225,24 +1426,6 @@ impl<'res> TypeResolver<'res> {
         // Clearing for cfg members to use for their options
         seen_opt_vec.clear();
 
-        // match &parent_abs_cfg.kind {
-        //     AbstractConfigKind::Member(cfg_meta_kind) => match cfg_meta_kind {
-        //         ConfigMemberMetadataKind::Complex(complex_meta) => {
-        //             todo!("Delegate me if needed")
-        //         }
-        //         ConfigMemberMetadataKind::Override(override_meta) => {
-        //             todo!("Route me")
-        //         }
-        //     },
-        //     // We are in a member context so this would only be reached if the parser itself
-        //     // wrongfully assigned a root, as a member.
-        //     //
-        //     // This is a property associated with the fact that the root, and config members from
-        //     // complex and override all encode themselves into one singular ast structure. Which may
-        //     // change.
-        //     AbstractConfigKind::Root(_) => unreachable!(),
-        // }
-
         // len() to truncate from `seen_cfg_member`
         let mut seen_cfg_len = seen_cfg_vec.len();
         // So that it knows where to start slicing up to len
@@ -1324,11 +1507,11 @@ impl<'res> TypeResolver<'res> {
                     }
                     // -- DEPTH HANDLING END --
 
-                    match member_lookup::lookup_member(
+                    match member_lookup::lookup_type_member(
                         self.compiler,
                         parent_type_id,
                         sp_member_name_id.inner,
-                        MemberScopeLookupPattern::NoRestrictions,
+                        MemberLookupPattern::NoRestrictions,
                     ) {
                         // These are split so that the theoretical ok and err paths are able to reduce
                         // boilerplate where needed
@@ -1409,7 +1592,7 @@ impl<'res> TypeResolver<'res> {
                                                 ty_name_id,
                                                 sp_parent_name_id.span,
                                             ),
-                                            nonexistent_member: sp_member_name_id.inner,
+                                            sp_not_found: sp_member_name_id.inner,
                                         });
 
                                     //TODO: RECURSIVELY TRACKING ENDS UP HERE FIX SHOULD BE APPLIED HERE IF
@@ -1465,7 +1648,6 @@ impl<'res> TypeResolver<'res> {
                         }
                     }
                 } else {
-                    debug_assert_eq!(scope_type, ScopeType::Override);
                     panic!("We'll see");
                 };
 
@@ -2130,7 +2312,7 @@ impl<'res> TypeResolver<'res> {
                 if !has_const_val && found_const_vals == array_len {
                     has_const_val = true;
 
-                    let mut values: Vec<Value> = Vec::new();
+                    let mut values: Vec<Value> = Vec::with_capacity(expr_ids.len());
                     for expr_id in expr_ids {
                         let val_id = &self.compiler.exprs[*expr_id].val_id;
                         // Is cloned so that the value can be owned in memory by the array itself.
@@ -2270,7 +2452,7 @@ impl<'res> TypeResolver<'res> {
             }
         };
 
-        let mut conds: Vec<ExprId> = Vec::new();
+        let mut conds: Vec<ExprId> = Vec::with_capacity(abs_typedef.conds.len());
         for spanned_expr in &abs_typedef.conds {
             //FIX: Scope type is a little wrong here since it's a condition
             match self.register_expr(
@@ -2341,7 +2523,7 @@ impl<'res> TypeResolver<'res> {
 
         for (i, current_member_id) in fields.iter().enumerate() {
             let abs_field = &abs_struct.fields[i];
-            let mut conds: Vec<ExprId> = Vec::new();
+            let mut conds: Vec<ExprId> = Vec::with_capacity(abs_field.conds.len());
 
             for cond in &abs_field.conds {
                 match self.register_expr(
@@ -2385,7 +2567,7 @@ impl<'res> TypeResolver<'res> {
             field.directives = directives;
         }
 
-        let mut glob_conds: Vec<ExprId> = Vec::new();
+        let mut glob_conds: Vec<ExprId> = Vec::with_capacity(abs_struct.glob_conds.len());
 
         for cond in &abs_struct.glob_conds {
             match self.register_expr(
@@ -2444,7 +2626,7 @@ impl<'res> TypeResolver<'res> {
 
         for (i, current_member_id) in variants.iter().enumerate() {
             let abs_variant = &abs_enum.variants[i];
-            let mut conds: Vec<ExprId> = Vec::new();
+            let mut conds: Vec<ExprId> = Vec::with_capacity(abs_variant.conds.len());
 
             for cond in &abs_variant.conds {
                 let cond_opt = match self.register_expr(
@@ -2493,7 +2675,7 @@ impl<'res> TypeResolver<'res> {
             variant.directives = directives;
         }
 
-        let mut glob_conds: Vec<ExprId> = Vec::new();
+        let mut glob_conds: Vec<ExprId> = Vec::with_capacity(abs_enum.glob_conds.len());
         for cond in &abs_enum.glob_conds {
             let cond_opt = match self.register_expr(
                 parent_sym_id.into(),
@@ -2549,8 +2731,8 @@ impl<'res> TypeResolver<'res> {
         let local_scope_id = self.compiler.get_alias(parent_sym_id).local_scope_id;
         let scope_type = self.compiler.symbols[parent_sym_id].scope_origin;
 
-        let mut params: Vec<Param> = Vec::new();
-        let mut seen_params: Vec<&AbstractParam> = Vec::new();
+        let mut params: Vec<Param> = Vec::with_capacity(abs_alias.params.len());
+        let mut seen_params: Vec<&AbstractParam> = Vec::with_capacity(abs_alias.params.len());
 
         // Just a bit crowded in here..
         // WARN: Ok this just looks like an inlined function now
@@ -2674,7 +2856,7 @@ impl<'res> TypeResolver<'res> {
             }
         }
 
-        let mut conds: Vec<ExprId> = Vec::new();
+        let mut conds: Vec<ExprId> = Vec::with_capacity(abs_alias.conds.len());
         for spanned_expr in &abs_alias.conds {
             let cond_opt = match self.register_expr(
                 parent_sym_id.into(),
@@ -2757,7 +2939,8 @@ impl<'res> TypeResolver<'res> {
         scope_type: ScopeType,
         env: &ResolverEnv,
     ) -> Result<ExprId, PresetErr> {
-        let lookup_pref = LookupPreferenceFlags::new(LookupPreferenceFlags::VARIABLE.into());
+        let lookup_pref =
+            ScopeLookupPreferenceFlags::new(ScopeLookupPreferenceFlags::VARIABLE.into());
         match &spanned_expr.expr {
             Expr::Var(name_id) => {
                 if let Some(scope_id) = local_scope_id {
@@ -3020,7 +3203,6 @@ impl<'res> TypeResolver<'res> {
                 } else {
                     let ident = self.interner.search(*name_id);
 
-                    // SemanticError needs centralization
                     let module = &self.compiler.mods[env.current_mod];
                     let mod_name = self.interner.search(module.name_id);
 
@@ -3127,9 +3309,10 @@ impl<'res> TypeResolver<'res> {
                 let lhs_is_unknown = self.compiler.check_unknown(lhs_expr.type_id);
                 let rhs_is_unknown = self.compiler.check_unknown(rhs_expr.type_id);
 
+                // Can't look at the word "clean" the same again.
+
                 // Composing this so it can be matched cleanly for if const eval can be performed
                 let lhs_val_opt = self.compiler.values[lhs_expr.val_id].const_val.as_ref();
-
                 let rhs_val_opt = self.compiler.values[rhs_expr.val_id].const_val.as_ref();
 
                 // This just checks if both are const, not if they were comptaible in the first
@@ -3142,7 +3325,12 @@ impl<'res> TypeResolver<'res> {
                     (Some(lhs_const), Some(rhs_const)) => {
                         let sp_lhs_const = SpannedContainerRef::new(lhs_const, lhs_expr.span);
                         let sp_rhs_const = SpannedContainerRef::new(rhs_const, rhs_expr.span);
-                        match evaluator::apply_binary_op(sp_lhs_const, *op, sp_rhs_const, self.interner) {
+                        match evaluator::apply_binary_op(
+                            sp_lhs_const,
+                            *op,
+                            sp_rhs_const,
+                            self.interner,
+                        ) {
                             evaluator::BinaryOpResult::Output(val) => Some(val),
                             evaluator::BinaryOpResult::DivideByZero => {
                                 return Err(MathError::DivideByZero {
@@ -3151,9 +3339,9 @@ impl<'res> TypeResolver<'res> {
                                 }
                                 .into());
                             }
+                            // If either are unknown then that would mean it can't confidentally
+                            // say the resolution failed since neither have definitive values yet.
                             evaluator::BinaryOpResult::Invalid
-                                // If either are unknown then that would mean it can't confidentally
-                                // say the resolution failed since neither have definitive values yet.
                                 if !lhs_is_unknown && !rhs_is_unknown =>
                             {
                                 return Err(MathError::BinaryOpMismatch {
@@ -3195,6 +3383,8 @@ impl<'res> TypeResolver<'res> {
                     )
                 };
 
+                // NOTE: Defer location
+                //
                 // If a type was inferred then we will use that, otherwise unknown is allocated
                 //
                 // This is allocated so that it can become `Deferred` where possible
@@ -3356,6 +3546,7 @@ impl<'res> TypeResolver<'res> {
                     operand: operand_id,
                 };
 
+                //NOTE: Defer location
                 let type_id = if const_val_opt.is_some() {
                     operand_expr.type_id
                 } else {
@@ -3382,41 +3573,26 @@ impl<'res> TypeResolver<'res> {
 
                 Ok(unary_expr_id)
             }
+            // What were we doing here?????
+            // Also maybe bring back value pre-allocation
             Expr::Bool(boolean) => {
                 //FIX:
                 let type_id = TypeId::new(script_compiler::CORE_BOOL);
-                if *boolean == true {
-                    let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
-                    let val_id = ValueId::new(self.compiler.values.len() as u32);
 
-                    let val = Value::Bool(true);
-                    let val_info = ValueInfo::new(type_id, expr_id, Some(val));
+                let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
+                let val_id = ValueId::new(self.compiler.values.len() as u32);
 
-                    let expr_hir = ExprHir::Val(val_id);
-                    let resolved_expr =
-                        ResolvedExpr::new(type_id, expr_hir, val_id, spanned_expr.span, vec![]);
+                let val = Value::Bool(*boolean);
+                let val_info = ValueInfo::new(type_id, expr_id, Some(val));
 
-                    self.compiler.exprs.push(resolved_expr);
-                    self.compiler.values.push(val_info);
+                let expr_hir = ExprHir::Val(val_id);
+                let resolved_expr =
+                    ResolvedExpr::new(type_id, expr_hir, val_id, spanned_expr.span, vec![]);
 
-                    Ok(expr_id)
-                } else {
-                    let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
-                    let val_id = ValueId::new(self.compiler.values.len() as u32);
+                self.compiler.exprs.push(resolved_expr);
+                self.compiler.values.push(val_info);
 
-                    // Generics can only be thest types so this can stay for now
-                    let val = Value::Bool(false);
-                    let val_info = ValueInfo::new(type_id, expr_id, Some(val));
-
-                    let expr_hir = ExprHir::Val(val_id);
-                    let resolved_expr =
-                        ResolvedExpr::new(type_id, expr_hir, val_id, spanned_expr.span, vec![]);
-
-                    self.compiler.exprs.push(resolved_expr);
-                    self.compiler.values.push(val_info);
-
-                    Ok(expr_id)
-                }
+                Ok(expr_id)
             }
             Expr::Call(caller, arg_exprs) => {
                 // The "Call" in "Call(x, y)"
@@ -3430,7 +3606,7 @@ impl<'res> TypeResolver<'res> {
                 )?;
                 //WARN: Does this need something?
                 let type_id = self.compiler.exprs[caller_id].type_id;
-                let mut call_args: Vec<ExprId> = Vec::new();
+                let mut call_args: Vec<ExprId> = Vec::with_capacity(arg_exprs.len());
 
                 for sp_expr in arg_exprs {
                     let arg = self.register_expr(
@@ -3537,7 +3713,7 @@ impl<'res> TypeResolver<'res> {
                 )
             }
             Expr::Array(array_expr) => {
-                let mut array: Vec<ExprId> = Vec::new();
+                let mut array: Vec<ExprId> = Vec::with_capacity(array_expr.elements.len());
 
                 let mut found_const_vals = 0;
                 let mut type_id_opt = None;
@@ -3593,7 +3769,7 @@ impl<'res> TypeResolver<'res> {
                 };
 
                 let const_val_opt = if found_const_vals == array.len() {
-                    let mut values: Vec<Value> = Vec::new();
+                    let mut values: Vec<Value> = Vec::with_capacity(array_expr.elements.len());
 
                     for expr_id in &array {
                         let expr = &self.compiler.exprs[*expr_id];
@@ -3644,7 +3820,8 @@ impl<'res> TypeResolver<'res> {
         scope_type: ScopeType,
         env: &ResolverEnv,
     ) -> Result<PossibleMember, PresetErr> {
-        let lookup_pref = LookupPreferenceFlags::new(LookupPreferenceFlags::VARIABLE.into());
+        let lookup_pref =
+            ScopeLookupPreferenceFlags::new(ScopeLookupPreferenceFlags::VARIABLE.into());
         let res = self.register_expr(
             sym_parent,
             member,
@@ -3778,7 +3955,7 @@ impl<'res> TypeResolver<'res> {
         abs_directives: &[AbstractDirective],
         env: &ResolverEnv,
     ) -> (Vec<SpannedContainer<DirectiveId>>, Vec<PresetErr>) {
-        let mut directive_ids = Vec::new();
+        let mut directive_ids = Vec::with_capacity(abs_directives.len());
         let mut preset_errs = Vec::new();
 
         for abs_directive in abs_directives {

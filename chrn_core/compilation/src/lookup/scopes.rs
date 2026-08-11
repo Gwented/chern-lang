@@ -44,7 +44,8 @@ pub const SCOPE_OVERRIDE: u8 = 1 << 5;
 pub const SCOPE_LOCAL: u8 = 1 << 6;
 pub const SCOPE_COMPILER: u8 = 1 << 7;
 
-//WARN: Hallucinating semantics a bit. wait.
+//NOTE: These must always end with Core so that the "- 1" semantics work when `NamespaceOnly` is picked.
+//Question mark
 
 pub static SCOPE_CORE_ENCODED_SCOPES: [ScopeType; 1] = [ScopeType::Core];
 
@@ -213,7 +214,9 @@ pub fn find_type_id(
     for allowed_scope_type in accessible_scopes.iter().copied() {
         // In this scenario the scope may or may not exist since this could be used from
         // another module
-        if let Some(scope_info) = find_scope(compiler, allowed_scope_type, current_mod.mod_id) {
+        if let Some(scope_info) =
+            find_scope_in_mod(compiler, allowed_scope_type, current_mod.mod_id)
+        {
             //NOTE: Make sure I work
             if let Some(current_sym_id) = scope_info
                 .scope
@@ -245,7 +248,7 @@ pub fn find_type_id(
 
 /// Searches the given module for the given `ScopeType` by iterating through it's scopes
 /// and returns `Some` if it's found, `None` otherwise.
-pub fn find_scope(
+pub fn find_scope_in_mod(
     compiler: &ScriptCompiler,
     target: ScopeType,
     owner_id: ModuleId,
@@ -277,7 +280,7 @@ pub fn find_sym_id(
     target_name_id: InternedId,
     scope_type: ScopeType,
     lookup_pat: ScopeLookupPattern,
-    lookup_pref: LookupPreferenceFlags,
+    lookup_pref: ScopeLookupPreferenceFlags,
     // Named struct maybe
 ) -> Option<SymbolLookupOutput> {
     // Avoiding vector allocations right now so it can just use a pointer offset instead based off
@@ -299,19 +302,13 @@ pub fn find_sym_id(
                 ScopeLookupPattern::OnlyNest => &SCOPE_NEST_ONLY,
             };
 
-            // `another` failed here
-            // if target_name_id.id == 50 {
-            //     dbg!(lookup_pattern, associated_scope, accessible_scopes);
-            //     panic!();
-            // }
-
             // If a preferred is given, the most recent same ident symbol found that is not
             // preferred is stored so that it can be returned if the preferred symbol was never found.
             // Compromise!
             let mut default_return: Option<SymbolLookupOutput> = None;
 
             for allowed_scope_type in accessible_scopes {
-                if let Some(scope_info) = find_scope(compiler, *allowed_scope_type, mod_id) {
+                if let Some(scope_info) = find_scope_in_mod(compiler, *allowed_scope_type, mod_id) {
                     // Found a symbol in the particular scope under the given identifier
                     if let Some(sym_id) = scope_info
                         .scope
@@ -333,6 +330,11 @@ pub fn find_sym_id(
                         // Preferred symbol found
                         return default_return;
                     }
+                    // if scope_type == ScopeType::Override {
+                    //     dbg!(target_name_id);
+                    //     dbg!(&scope_info.scope);
+                    //     panic!();
+                    // }
 
                     //TODO: Make sure this works as intended
                     if let Some(intrinsic_scope_id) = scope_info.scope.intrinsic_scope {
@@ -397,6 +399,17 @@ pub fn find_sym_id(
     // `another` failed here
 
     None
+}
+
+/// Returns `Vec<ScopeType>` of all scope types inside the current module
+pub fn collect_mod_scope_types(compiler: &ScriptCompiler, owner_id: ModuleId) -> Vec<ScopeType> {
+    // There are O(ScopeType) different scopes allowed in a module so having this be iterative costs nothing
+    let module = &compiler.mods[owner_id];
+    module
+        .scopes
+        .iter()
+        .map(|s_id| compiler.scopes[*s_id].scope.scope_type)
+        .collect()
 }
 
 /// Finds all symbols under the given string identifier and returns their symbol ids
@@ -696,14 +709,14 @@ impl IntrinsicRegistry {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct LookupPreferenceFlags {
+pub struct ScopeLookupPreferenceFlags {
     /// If `None`, no preference is accounted for meaning all preference checks are `true`
     flags: Option<u16>,
 }
 
 // This is more like a general purpose set of flags since it doesn't really matter if flat kinds are
 // used or not
-impl LookupPreferenceFlags {
+impl ScopeLookupPreferenceFlags {
     pub const TYPE: u16 = 1 << 0;
     pub const VARIABLE: u16 = 1 << 1;
     pub const NAMESPACE: u16 = 1 << 2;
@@ -715,8 +728,8 @@ impl LookupPreferenceFlags {
     }
 
     /// Creates lookup preference with no preferred options
-    pub fn none() -> LookupPreferenceFlags {
-        LookupPreferenceFlags::new(None)
+    pub fn none() -> ScopeLookupPreferenceFlags {
+        ScopeLookupPreferenceFlags::new(None)
     }
 
     pub fn is_none(self) -> bool {
@@ -740,52 +753,10 @@ impl LookupPreferenceFlags {
 /// no signifying bit usable to say "No options selected", hence the explicit translation layer here.
 const fn flat_sym_kind_to_preferred_bits(kind: SymbolKindFlat) -> u16 {
     match kind {
-        SymbolKindFlat::Type => LookupPreferenceFlags::TYPE,
-        SymbolKindFlat::Variable => LookupPreferenceFlags::VARIABLE,
-        SymbolKindFlat::Namespace => LookupPreferenceFlags::NAMESPACE,
-        SymbolKindFlat::Directive => LookupPreferenceFlags::DIRECTIVE,
-        SymbolKindFlat::ExternType => LookupPreferenceFlags::EXTERN_TYPE,
+        SymbolKindFlat::Type => ScopeLookupPreferenceFlags::TYPE,
+        SymbolKindFlat::Variable => ScopeLookupPreferenceFlags::VARIABLE,
+        SymbolKindFlat::Namespace => ScopeLookupPreferenceFlags::NAMESPACE,
+        SymbolKindFlat::Directive => ScopeLookupPreferenceFlags::DIRECTIVE,
+        SymbolKindFlat::ExternType => ScopeLookupPreferenceFlags::EXTERN_TYPE,
     }
 }
-
-// // TODO: Make bit-wise. In override we lookup with the intention of a namespace OR type.
-// /// The type of lookup outcome to prefer.
-// /// For example, if there is a module symbol called "module" and a variable "let module = 4",
-// /// in the scenario of "module::Type" if it sees the variable first, it stores it but tries to
-// /// search for the preferred type first, if not found, it will return the variable.
-// #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-// pub enum LookupPreference {
-//     /// No preference is accounted for, returns the first symbol it finds.
-//     None,
-//     /// e
-//     Type,
-//     Variable,
-//     Namespace,
-// }
-//
-// // Ok but what if it was bit-wise and `SymbolKind` had a to_bits and we instead made sets
-// // Please we haven't even used it yet
-// impl LookupPreference {
-//     pub fn is_none(self) -> bool {
-//         self == LookupPreference::None
-//     }
-//     /// Checks if the given `SymbolKindFlat` is preferred by `self`
-//     pub fn is_preferred(self, kind: SymbolKindFlat) -> bool {
-//         match self {
-//             // Nothing is preferred so all are valid
-//             LookupPreference::None => true,
-//             LookupPreference::Type => match kind {
-//                 SymbolKindFlat::Type => true,
-//                 _ => false,
-//             },
-//             LookupPreference::Variable => match kind {
-//                 SymbolKindFlat::Variable => true,
-//                 _ => false,
-//             },
-//             LookupPreference::Namespace => match kind {
-//                 SymbolKindFlat::Namespace => true,
-//                 _ => false,
-//             },
-//         }
-//     }
-// }

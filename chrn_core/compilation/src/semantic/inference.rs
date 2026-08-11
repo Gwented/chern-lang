@@ -49,7 +49,6 @@ pub(crate) fn infer_type_from_binary_op(
     match op {
         // Maybe this can still point to unknown?
         BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mult | BinaryOp::Div | BinaryOp::Mod => {
-            // Makes new reserved type which represents unknown
             if lhs_is_unknown && rhs_is_unknown {
                 None
             } else if rhs_is_unknown {

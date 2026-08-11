@@ -16,7 +16,7 @@ use lang::{
 
 use crate::{
     lookup::scopes::{
-        self, AssociatedScopeKind, LookupPreferenceFlags, ScopeLookupPattern, ScopeType,
+        self, AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, ScopeType,
         SymbolLookupOutput,
     },
     parser::ast::{
@@ -49,7 +49,7 @@ pub fn resolve_type_expr(
     lookup_pattern: ScopeLookupPattern,
     env: &ResolverEnv,
 ) -> TypeExprResult {
-    let lookup_pref = LookupPreferenceFlags::new(LookupPreferenceFlags::TYPE.into());
+    let lookup_pref = ScopeLookupPreferenceFlags::new(ScopeLookupPreferenceFlags::TYPE.into());
     match &sp_ty_expr.inner {
         TypeExpr::Var(name_id) => {
             let sp_name_id = SpannedContainer::new(*name_id, sp_ty_expr.span);
@@ -139,7 +139,7 @@ pub fn resolve_type_expr(
                 sp_path_segs,
                 associated_scope,
                 scope_type,
-                LookupPreferenceFlags::new(LookupPreferenceFlags::TYPE.into()),
+                ScopeLookupPreferenceFlags::new(ScopeLookupPreferenceFlags::TYPE.into()),
                 StaticAccessOption::Type,
             ) {
                 StaticAccessResult::Scope(scope) => scope,
@@ -383,7 +383,7 @@ pub fn resolve_static_access(
     sp_path_segs: &[SpannedContainer<PathSegment>],
     mut current_scope: AssociatedScopeKind,
     scope_type: ScopeType,
-    lookup_pref: LookupPreferenceFlags,
+    lookup_pref: ScopeLookupPreferenceFlags,
     opt: StaticAccessOption,
 ) -> StaticAccessResult {
     //TEST: If the path segment len == 1 this will not do anything because this is not actually
@@ -468,7 +468,7 @@ pub(crate) fn resolve_ambiguous_access(
     sp_path_segs: &[SpannedContainer<PathSegment>],
     associated_scope: AssociatedScopeKind,
     scope_type: ScopeType,
-    lookup_pref: LookupPreferenceFlags,
+    lookup_pref: ScopeLookupPreferenceFlags,
     static_access_opt: StaticAccessOption,
 ) -> Result<AmbiguousAccessOutput, PresetErr> {
     // Soooooo do we return EVERYTHING or...?

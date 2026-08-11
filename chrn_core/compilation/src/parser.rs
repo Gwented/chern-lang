@@ -7,7 +7,7 @@ mod parse_fmt;
 mod parser_budget;
 mod parser_state;
 
-use crate::lexer::token::{self, SpannedToken, Token, TokenKind};
+use crate::lexer::token::{SpannedToken, Token, TokenKind};
 use crate::lookup::scopes::{ScopeLookupPattern, ScopeType};
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractDirective,
@@ -526,7 +526,7 @@ fn parse_alias_stmt(
 fn check_bind(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token> {
     ctx.expect_id_verbose(
         TokenKind::Str,
-        "Expected string literal after `bind`, found ",
+        "Expected string literal path after `bind`, found ",
         "",
         InitialEvidence::new(
             SemanticEnv::Bind,
@@ -602,7 +602,7 @@ fn parse_typedef(
     ctx.expect_verbose(
         TokenKind::Colon,
         //TODO: Not var specific
-        &format!("Expected a ':' after `{err_name}` to define a type, found "),
+        &format!("Expected ':' after `{err_name}` to define a type, found "),
         "",
         InitialEvidence::new(
             SemanticEnv::SectNeutral,
@@ -906,10 +906,36 @@ fn parse_cfg_expr(
 fn parse_ambiguous_expr(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
-    // It's only one depth so just reflecting it with one T/F state
     interner: &Intern,
 ) -> Result<Vec<SpannedContainer<PathSegment>>, Token> {
-    if ctx.peek_ahead(1).tok != Token::StaticAccess {
+    let has_static_access = ctx.peek_ahead(1).tok == Token::StaticAccess;
+    let is_generic = ctx.peek_ahead(1).tok == Token::OAngleBracket;
+    // If has OAngle with no static then assumed generic
+
+    if !has_static_access && is_generic {
+        let start = ctx.peek_span().start;
+        let name_id = ctx.expect_id_verbose(
+            TokenKind::Id,
+            "Expected for generic, found ",
+            "",
+            InitialEvidence::new(
+                SemanticEnv::Expr,
+                SemanticSituation::IdentBinding,
+                Branch::Expr,
+                //TODO: Ok.
+            ),
+            interner,
+        )?;
+
+        let inputs = parse_generic_inputs(ctx, budget, interner)?;
+        let end = ctx.peek_behind(1).span.end;
+
+        let span = SourceSpan::new(ctx.region.region_id, start, end);
+        let generic = AbstractGeneric::new(name_id, inputs);
+
+        let sp_path_seg = vec![SpannedContainer::new(PathSegment::Generic(generic), span)];
+        return Ok(sp_path_seg);
+    } else if has_static_access {
         let name_span = ctx.peek_span();
         let name_id = ctx.expect_id_verbose(
             TokenKind::Id,
@@ -1513,39 +1539,20 @@ fn parse_call_args(
 ) -> Result<Vec<SpannedExpr>, Token> {
     let mut args: Vec<SpannedExpr> = Vec::new();
 
-    if ctx.peek_kind() == TokenKind::CParen {
+    if ctx.peek_tok() == Token::CParen {
         ctx.advance_tok();
         return Ok(args);
     }
 
-    loop {
+    // Why did it take this long just to turn an expect into an if and get emergent trailing commas
+    // Ok.
+    while ctx.peek_tok() != Token::CParen {
         let arg = parse_expr(ctx, 0, budget, interner)?;
         args.push(arg);
 
-        if ctx.peek_tok() == Token::CParen {
+        if ctx.peek_tok() == Token::Comma {
             ctx.advance_tok();
-            break;
         }
-
-        if ctx.peek_tok() == Token::Comma && ctx.peek_ahead(1).tok == Token::CParen {
-            ctx.advance_tok();
-            ctx.advance_tok();
-            break;
-        }
-
-        ctx.expect_verbose(
-            TokenKind::Comma,
-            "Expected ',' to separate arguments, found ",
-            "",
-            InitialEvidence::new(
-                // Arg list isn't really an environment..
-                SemanticEnv::ArgList,
-                SemanticSituation::ArgList,
-                //TODO: PASS IN
-                Branch::Expr,
-            ),
-            interner,
-        )?;
     }
 
     Ok(args)
@@ -1640,7 +1647,7 @@ fn parse_type_expr(
         Token::Id(name_id) if ctx.peek_ahead(1).tok.kind() == TokenKind::OAngleBracket => {
             let start = ctx.advance_span().start;
 
-            let args = parse_generic(ctx, budget, interner)?;
+            let args = parse_generic_inputs(ctx, budget, interner)?;
             let generic = AbstractGeneric::new(name_id, args);
 
             let end = ctx.peek_behind(1).span.end;
@@ -1823,7 +1830,7 @@ fn parse_static_path(
                 interner,
             )?;
 
-            let args = parse_generic(ctx, budget, interner)?;
+            let args = parse_generic_inputs(ctx, budget, interner)?;
             let end = ctx.peek_behind(1).span.end;
 
             let generic = AbstractGeneric::new(base_id, args);
@@ -1887,8 +1894,10 @@ fn parse_static_path(
 }
 
 /// Parses assuming that within "List<i32>" the "List" part was skipped, which would leave <i32>
-/// to be handled
-fn parse_generic(
+/// to be handled.
+///
+/// Returns the generics inputs.
+fn parse_generic_inputs(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
     interner: &Intern,
@@ -1907,19 +1916,14 @@ fn parse_generic(
         interner,
     )?;
 
-    let mut inputs: Vec<SpannedContainer<TypeExpr>> = Vec::new();
+    let mut inputs: Vec<SpannedContainer<TypeExpr>> = Vec::with_capacity(1);
 
     let input = parse_type_expr(ctx, budget, interner)?;
     inputs.push(input);
 
     if ctx.peek_tok() == Token::Comma {
-        loop {
-            // To allow for trailing
-            if ctx.peek_tok() == Token::Comma {
-                ctx.advance_tok();
-                break;
-            }
-
+        ctx.advance_tok();
+        while ctx.peek_tok() != Token::CAngleBracket {
             let other_input = parse_type_expr(ctx, budget, interner)?;
             inputs.push(other_input);
 
@@ -2312,6 +2316,7 @@ fn parse_export(ctx: &mut ParserContext, interner: &Intern) -> Result<bool, ()> 
     Ok(is_priv)
 }
 
+/// Consumes trailing comma if present, otherwise does nothing
 fn consume_trailing_comma(ctx: &mut ParserContext) {
     if ctx.peek_tok() == Token::Comma {
         ctx.advance_tok();

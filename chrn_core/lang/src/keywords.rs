@@ -5,10 +5,10 @@ use chrn_utils::{id_types::InternedId, intern};
 use crate::fmter::{self, Formattable, Formatted};
 
 /// Size in bytes for `@def` and `@end`
-pub const ANNOTATION_CLAUSE_SIZE: usize = 4;
+pub const REGION_CLAUSE_SIZE: usize = 4;
 
-pub const DEF_CLAUSE_BYTES: &[u8; 4] = b"@def";
-pub const END_CLAUSE_BYTES: &[u8; 4] = b"@end";
+pub const DEF_CLAUSE_STR: &str = "@def";
+pub const END_CLAUSE_STR: &str = "@end";
 
 // To add a keyword, it must be added as a Keyword enum. The interner must intern it's identifier.
 /// All keywords for `chrn`
@@ -16,17 +16,6 @@ pub static KEYWORDS_ARRAY: [&str; 14] = [
     "struct", "enum", "import", "export", "bind", "alias", "let", "change", "as", "in", "var",
     "nest", "complex", "override",
 ];
-//FIX: not keywords but known identifiers
-// Functions
-// "Range",
-// "StartsW",
-// "EndsW",
-// "Contains",
-// "Equals",
-// "Nat" // 37
-// "Real" // 38
-// "Complex" // 39
-// "Prime" // 40
 
 // Keep a compact enum for code that prefers typed keyword identifiers.
 // I think I don't know I am new to thinking does anyone have beginner thoughts?

@@ -1,11 +1,13 @@
-//! Module graph building parser that understands just enough to do it's job
+//! Module graph building parser that understands just enough to get `Bind` and `Import`
 use std::{ffi::OsStr, path::PathBuf, str::FromStr};
 
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::SpannedContainer;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
-use chrn_utils::source_map::source_diagnostic::{DiagnosticLevel, SourceDiagnosticSummary};
+use chrn_utils::source_map::source_diagnostic::{
+    DiagnosticLevel, SourceDiagnosticSink, SourceDiagnosticSummary,
+};
 use chrn_utils::{
     core_error::{self},
     id_types::InternedId,
@@ -41,7 +43,6 @@ impl ModuleFinder<'_> {
     pub fn new<'a>(
         src_bytes: &'a [u8],
         cfg: &'a ChrnConfig,
-        // reserved_mod_ids: &'a mut Vec<(PathId, ModuleId)>,
         current_region: &'a SourceRegion,
         script_start: usize,
         serial_start: Option<usize>,
@@ -51,7 +52,6 @@ impl ModuleFinder<'_> {
             cfg,
             current_region,
             summary: SourceDiagnosticSummary::default(),
-            // reserved_mod_ids,
             pos: 0,
             script_start,
             // If there is no serial start then it's a script file not a script block with @def ->
@@ -104,9 +104,9 @@ impl ModuleFinder<'_> {
                         // Start should always be valid
                         || self.pos == 0
                         // Same as checking for start of file
-                        || (self.pos == keywords::ANNOTATION_CLAUSE_SIZE
+                        || (self.pos == keywords::REGION_CLAUSE_SIZE
                             // Is + 1 because we haven't actually advanced
-                        && &self.src_bytes[0..keywords::ANNOTATION_CLAUSE_SIZE]
+                        && &self.src_bytes[0..keywords::REGION_CLAUSE_SIZE]
                             == b"@def");
 
                     if can_check {
@@ -254,19 +254,6 @@ impl ModuleFinder<'_> {
         };
 
         let import_kind = ImportKind::UnresolvedSource(SpannedContainer::new(path_id, path_span));
-
-        // let mod_id =
-        //     // If there exists a module attached to the path seen, the import being viewed has
-        //     // already been processed and should maintain the same module id
-        //     if let Some((_, inner_mod_id)) = self.reserved_mod_ids.iter().find(|(p_id, _)| *p_id == path_id) {
-        //         *inner_mod_id
-        //     } else {
-        //     // First time seeing this path, so a new key = PathId, Value = ModuleId relationship is
-        //     // made
-        //         let new_mod_id = ModuleId::new(self.reserved_mod_ids.len() as u32);
-        //         self.reserved_mod_ids.push((path_id, new_mod_id));
-        //         new_mod_id
-        //     };
         let import = Import::new(name_id, import_kind, alias_id);
 
         self.cfg.logger().log_dbg(|| {
@@ -301,7 +288,7 @@ impl ModuleFinder<'_> {
             // }
             //TODO: Do not. Enforce. UTF-8. !
             match str::from_utf8(slice) {
-                // To my knowledge, a valid UTF-8 string cannot fail conversion to a path,
+                // A valid UTF-8 string cannot fail conversion to a path,
                 // therefore this is infallable as said by the return type, which fits whatever
                 // type utilized with the From<T> conversion.
                 Ok(s) => return Ok(PathBuf::from_str(&s).expect("Infallable")),
@@ -387,8 +374,6 @@ impl ModuleFinder<'_> {
         // WHY WAS THIS UNWRAP FOR SO LONG
         let path_buf = self.create_pathbuf(&self.src_bytes[start_cursor..end_cursor])?;
 
-        //WARN: WRONG PATH NAME
-        // Please..
         let bind_path = match path_buf.canonicalize() {
             Ok(p) => p,
             Err(e) => {

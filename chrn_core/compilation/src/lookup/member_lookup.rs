@@ -3,9 +3,12 @@ use chrn_utils::{
     loop_abort,
 };
 
-use crate::{script_compiler::ScriptCompiler, semantic::hir::hir_concepts::Type};
+use crate::{
+    script_compiler::ScriptCompiler,
+    semantic::hir::{hir_concepts::Type, hir_symbols::SymbolKind},
+};
 
-pub enum MemberScopeLookupPattern {
+pub enum MemberLookupPattern {
     DotMember,
     StaticMember,
     NoRestrictions,
@@ -38,17 +41,41 @@ pub fn collect_members(compiler: &ScriptCompiler, mut current_type_id: TypeId) -
         match &compiler.types[current_type_id].ty {
             Type::Struct(struct_def) => return struct_def.fields.clone(),
             Type::Enum(enum_def) => return enum_def.variants.clone(),
-            Type::BuiltinTypeInfo(builtin_type) => todo!(),
             // Count members as params or maybe attach a variant?
-            Type::Func(func_def) => todo!(),
-            Type::Alias(alias_def) => todo!(),
             // Should this?
             Type::TypeDef(type_def) => current_type_id = type_def.type_id,
             Type::Deferred(inner) => current_type_id = *inner,
-            Type::Boundaries(_) | Type::Unknown => return Vec::new(),
+            Type::Func(_)
+            | Type::Alias(_)
+            | Type::BuiltinTypeInfo(_)
+            | Type::Boundaries(_)
+            | Type::Unknown => {
+                return Vec::new();
+            }
         }
     }
     loop_abort!()
+}
+
+//TEST:
+pub fn lookup_sym_member(
+    compiler: &ScriptCompiler,
+    mut current_sym_id: SymbolId,
+    target_name_id: InternedId,
+    lookup_pat: MemberLookupPattern,
+) -> MemberLookupResult {
+    match compiler.symbols[current_sym_id].kind {
+        SymbolKind::Type(type_id) => {
+            lookup_type_member(compiler, type_id, target_name_id, lookup_pat)
+        }
+        SymbolKind::Variable(var_id) => todo!(),
+        // Namespaces don't have members, but they do have members, just static ones. Or are those
+        // members? Maybe those are just parts of the scope not actually members.
+        // If only we had some sort of, scope lookup.
+        SymbolKind::Namespace => todo!(),
+        SymbolKind::Directive(directive_id) => todo!(),
+        SymbolKind::ExternType => todo!(),
+    }
 }
 
 // Naming has a little collision since member runtime lookup has the same name as this,
@@ -58,11 +85,11 @@ pub fn collect_members(compiler: &ScriptCompiler, mut current_type_id: TypeId) -
 // see
 // TODO: Lookup patterns
 /// Look for the identifier given as a member for the given `TypeId`
-pub fn lookup_member(
+pub fn lookup_type_member(
     compiler: &ScriptCompiler,
     mut current_type_id: TypeId,
     target_name_id: InternedId,
-    lookup_pattern: MemberScopeLookupPattern,
+    lookup_pat: MemberLookupPattern,
 ) -> MemberLookupResult {
     // Should probably have own `IncompatibleMemberLookup` result
     for _ in 0..chrn_utils::MAX_LOOPS {
@@ -104,6 +131,5 @@ pub fn lookup_member(
             Type::Unknown => return MemberLookupResult::Unknown(current_type_id),
         }
     }
-
     loop_abort!()
 }

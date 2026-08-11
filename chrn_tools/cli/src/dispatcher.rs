@@ -490,16 +490,16 @@ fn exec_embed(
     // that means there exists at least an `@end`.
     //
     // Both of these mean that there doesn't need to be any insertion of an @def or @end since they
-    // are self-contained regions
+    // are already self-contained regions
     let mut embed_portion = if region.script_start > 0 || region.serial_start.is_some() {
         Cow::Borrowed(&region.src_bytes)
     } else {
         // Wraps the src in @def[bytes]@end
-        let def_end_size = keywords::ANNOTATION_CLAUSE_SIZE * 2;
+        let def_end_size = keywords::REGION_CLAUSE_SIZE * 2;
         let mut altered_bytes = Vec::with_capacity(region.src_bytes.len() + def_end_size);
-        altered_bytes.extend_from_slice(keywords::DEF_CLAUSE_BYTES);
+        altered_bytes.extend_from_slice(keywords::DEF_CLAUSE_STR.as_bytes());
         altered_bytes.extend_from_slice(&region.src_bytes);
-        altered_bytes.extend_from_slice(keywords::END_CLAUSE_BYTES);
+        altered_bytes.extend_from_slice(keywords::END_CLAUSE_STR.as_bytes());
         Cow::Owned(altered_bytes)
     };
 

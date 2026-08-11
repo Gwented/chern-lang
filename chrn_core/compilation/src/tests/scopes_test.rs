@@ -1,6 +1,6 @@
 use super::helpers::*;
 use crate::lookup::scopes::{
-    AssociatedScopeKind, LookupPreferenceFlags, ScopeLookupPattern, find_sym_id,
+    AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, find_sym_id,
 };
 use crate::semantic::hir::hir_symbols::SymbolKind;
 use chrn_utils::id_types::ScopeId;
@@ -203,7 +203,7 @@ fn scope_lookup_pref_found_test() {
         thing_id,
         ScopeType::Var,
         ScopeLookupPattern::NoRestrictions,
-        LookupPreferenceFlags::new(LookupPreferenceFlags::VARIABLE.into()),
+        ScopeLookupPreferenceFlags::new(ScopeLookupPreferenceFlags::VARIABLE.into()),
     )
     .expect("Symbol should be found");
 
@@ -223,7 +223,7 @@ fn scope_lookup_pref_found_test() {
         thing_id,
         ScopeType::Var,
         ScopeLookupPattern::NoRestrictions,
-        LookupPreferenceFlags::new(LookupPreferenceFlags::TYPE.into()),
+        ScopeLookupPreferenceFlags::new(ScopeLookupPreferenceFlags::TYPE.into()),
     )
     .expect("Symbol should be found");
 
@@ -255,7 +255,7 @@ fn scope_lookup_pref_fallback_test() {
         thing_id,
         ScopeType::Nest,
         ScopeLookupPattern::NoRestrictions,
-        LookupPreferenceFlags::new(LookupPreferenceFlags::VARIABLE.into()),
+        ScopeLookupPreferenceFlags::new(ScopeLookupPreferenceFlags::VARIABLE.into()),
     )
     .expect("Fallback should return the non-preferred symbol");
 
@@ -278,7 +278,7 @@ fn scope_lookup_pref_fallback_test() {
         thing_id,
         ScopeType::Neutral,
         ScopeLookupPattern::NoRestrictions,
-        LookupPreferenceFlags::new(LookupPreferenceFlags::TYPE.into()),
+        ScopeLookupPreferenceFlags::new(ScopeLookupPreferenceFlags::TYPE.into()),
     )
     .expect("Fallback should return the non-preferred symbol");
 
@@ -307,7 +307,7 @@ fn scope_lookup_no_preference_test() {
         thing_id,
         ScopeType::Var,
         ScopeLookupPattern::NoRestrictions,
-        LookupPreferenceFlags::none(),
+        ScopeLookupPreferenceFlags::none(),
     )
     .expect("Symbol should be found");
 

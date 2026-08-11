@@ -1,9 +1,13 @@
 //! Intended to hold external type instantiation helpers
 pub mod java_helpers;
 use chrn_utils::id_types::{InternedId, ScopeId};
+// Explain more buddy
+
+//NOTE: The "entry" naming is because the recursive loop goes off of only scope id and extern kinds,
+//which loops just find for all representations, but the entry itself must also follow this ruling.
 
 /// All known namespaces for external types like for "c::unsinged_long_long_int" and "java::int"
-pub static ALL_EXTERN_NAMESPACES: [&[ExternKind]; 1] = [&java_helpers::JAVA_NAMESPACE];
+pub static ALL_EXTERN_NAMESPACES: [&[ExternKind]; 1] = [&java_helpers::JAVA_NAMESPACE_ENTRY];
 
 // -- Things --
 pub enum ExternKind {

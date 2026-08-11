@@ -1,4 +1,4 @@
-use crate::analyser::{config_load_error_to_diagnostics, push_diagnostics};
+use crate::analyser::{config_load_error_to_diagnostics, push_diagnostic};
 use chrn_utils::arena::Arena;
 use chrn_utils::core_error::ConfigLoadError;
 use chrn_utils::id_types::{PathId, SourceRegionId};
@@ -107,7 +107,7 @@ fn test_config_load_error_to_diagnostics_secondary_annotation_shifted() {
 }
 
 #[test]
-fn test_push_diagnostics_relative_to_absolute_via_region() {
+fn test_push_diagnostic_relative_to_absolute_via_region() {
     let full_text = "@def\nlet x = 1\n";
     let main_region = SourceRegion::new(
         1,
@@ -136,7 +136,7 @@ fn test_push_diagnostics_relative_to_absolute_via_region() {
     .build();
 
     let mut lsp_diags: Vec<tower_lsp::lsp_types::Diagnostic> = Vec::new();
-    push_diagnostics(
+    push_diagnostic(
         &mut lsp_diags,
         std::slice::from_ref(&diag),
         &arena,
@@ -150,7 +150,7 @@ fn test_push_diagnostics_relative_to_absolute_via_region() {
     assert_eq!(
         d.range.start,
         Position::new(1, 0),
-        "push_diagnostics must shift the relative span by script_start"
+        "push_diagnostic must shift the relative span by script_start"
     );
     assert_eq!(d.range.end, Position::new(1, 1));
     assert_eq!(d.message, "type check failed");
@@ -158,7 +158,7 @@ fn test_push_diagnostics_relative_to_absolute_via_region() {
 }
 
 #[test]
-fn test_push_diagnostics_import_error_uses_importing_module_region() {
+fn test_push_diagnostic_import_error_uses_importing_module_region() {
     let full_text = "@def\nimport \"missing\"\n";
     let main_region = SourceRegion::new(
         1,
@@ -197,7 +197,7 @@ fn test_push_diagnostics_import_error_uses_importing_module_region() {
     .build();
 
     let mut lsp_diags: Vec<tower_lsp::lsp_types::Diagnostic> = Vec::new();
-    push_diagnostics(
+    push_diagnostic(
         &mut lsp_diags,
         std::slice::from_ref(&diag),
         &arena,
@@ -219,7 +219,7 @@ fn test_push_diagnostics_import_error_uses_importing_module_region() {
 }
 
 #[test]
-fn test_push_diagnostics_no_matching_region_uses_fallback() {
+fn test_push_diagnostic_no_matching_region_uses_fallback() {
     let full_text = "let x = 1\n";
     let main_region = SourceRegion::new(
         1,
@@ -248,7 +248,7 @@ fn test_push_diagnostics_no_matching_region_uses_fallback() {
     .build();
 
     let mut lsp_diags: Vec<tower_lsp::lsp_types::Diagnostic> = Vec::new();
-    push_diagnostics(
+    push_diagnostic(
         &mut lsp_diags,
         std::slice::from_ref(&diag),
         &arena,

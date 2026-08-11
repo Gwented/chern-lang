@@ -18,7 +18,8 @@ use chrn_utils::{
     id_types::{PathId, SourceRegionId},
     source_map::{
         source_diagnostic::{
-            DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSummary, annotations::AnnotationKind,
+            DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
+            annotations::AnnotationKind,
         },
         source_region::SourceRegion,
         source_span::SourceSpan,
@@ -26,7 +27,7 @@ use chrn_utils::{
     utils::FreezeTrackerU32,
 };
 
-use lang::keywords::ANNOTATION_CLAUSE_SIZE;
+use lang::keywords::REGION_CLAUSE_SIZE;
 
 use crate::config_loader::config_loader_summary::ConfigLoaderSummary;
 /// Can read 32KB before stopping if no `@def` or EOF is found
@@ -276,7 +277,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                     // does not have at most one extra byte
                     let can_check =
                         // DID THE - 1 FIX?
-                        self.cursor + (ANNOTATION_CLAUSE_SIZE - 1) < self.handle.buffer().len();
+                        self.cursor + (REGION_CLAUSE_SIZE - 1) < self.handle.buffer().len();
 
                     // OLD BEHAVIOR THAT MAY BE RE-APPLIED
                     // If `@def` was seen, there is enough space to check, and `@end` aligns with
@@ -289,13 +290,13 @@ impl<R: Read> ConfigLoader<'_, R> {
                     // Probably should not be allowed since the behavior from this is fairly
                     // non-deterministic unless someone is actively counting bytes
                     if can_check
-                        && &self.handle.buffer()[self.cursor..self.cursor + ANNOTATION_CLAUSE_SIZE]
+                        && &self.handle.buffer()[self.cursor..self.cursor + REGION_CLAUSE_SIZE]
                             == b"@end"
                     {
                         // Starts exactly 1 byte after "@end"
                         // This variable being set is proof there was a script block, but not proof
                         // there's serial data
-                        let serial_start = self.cursor + ANNOTATION_CLAUSE_SIZE;
+                        let serial_start = self.cursor + REGION_CLAUSE_SIZE;
                         // dbg!(str::from_utf8(
                         //     &self.handle.buffer()[script_start..serial_start]
                         // ));
@@ -335,7 +336,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                         // Since we are at "@" if we want to read "@def"/"@end" it's an
                         // (inclusive, exclusive) spanning operation since "@def".len() + 4 would be
                         // 1 above the actual length
-                        && &self.handle.buffer()[self.cursor..self.cursor + ANNOTATION_CLAUSE_SIZE]
+                        && &self.handle.buffer()[self.cursor..self.cursor + REGION_CLAUSE_SIZE]
                             == b"@def"
                     {
                         requires_end = true;
@@ -362,7 +363,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                         //
                         // Skips "@def" to the byte after it. This is safe since it will
                         // return  `None` which avoids over-indexing being a possibility
-                        self.skip_unchecked(ANNOTATION_CLAUSE_SIZE);
+                        self.skip_unchecked(REGION_CLAUSE_SIZE);
 
                         //WARN: This needs to be relative since only regions are used
                         // This is safe to hard-code because the condition itself only allows for

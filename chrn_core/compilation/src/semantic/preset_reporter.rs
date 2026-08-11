@@ -14,7 +14,6 @@ use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, Prese
 use crate::semantic::resolution::resolution_concepts::{StaticAccessResult, TypeExprResult};
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
-use chrn_utils::id_types::SpannedContainer;
 use chrn_utils::s_suffix;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{
@@ -42,7 +41,7 @@ pub(crate) fn report_preset<S: SourceDiagnosticSink>(
     interner: &Intern,
 ) {
     let diag_builder = create_diag_builder_preset(compiler, preset_err, region, cfg, interner);
-    sink.push_diagnostic(diag_builder.build());
+    sink.push_diag(diag_builder.build());
 }
 
 // The s is like that on purpose
@@ -62,7 +61,7 @@ pub(crate) fn report_preset_vec<S: SourceDiagnosticSink>(
 ) {
     for preset in preset_errs {
         let diag_builder = create_diag_builder_preset(compiler, preset, region, cfg, interner);
-        sink.push_diagnostic(diag_builder.build());
+        sink.push_diag(diag_builder.build());
     }
 }
 
@@ -238,7 +237,7 @@ pub(crate) fn create_diag_builder_preset(
             LookupError::MemberNotFound {
                 parent_type_id,
                 sp_parent_name_id,
-                nonexistent_member: member,
+                sp_not_found: member,
             } => {
                 let ty_name = interner.search(sp_parent_name_id.inner);
                 let member_name = interner.search(member);
@@ -284,7 +283,7 @@ pub(crate) fn create_diag_builder_preset(
                         //scope solely, this will say that the ENTIRE module does not contain the given
                         //type, but that's not true. Maybe we need a little more info given or at least
                         //acknkowledgement of the scope question mark.
-                        format!("No type `{err_name}` defined in module `{err_mod_name}`")
+                        format!("No symbol `{err_name}` defined in module `{err_mod_name}`")
                     }
                     //NOTE: Not current symbol exists that has it's own scope except modules
                     AssociatedScopeKind::Scope(scope_id) => {

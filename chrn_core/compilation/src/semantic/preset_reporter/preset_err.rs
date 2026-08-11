@@ -138,7 +138,7 @@ pub(crate) enum LookupError {
         parent_type_id: TypeId,
         sp_parent_name_id: SpannedContainer<InternedId>,
         /// Member looked up but not found
-        nonexistent_member: InternedId,
+        sp_not_found: InternedId,
     },
     /// Spanned Formatted Symbol
     /// (Symbol with no members is `Formatted` because it's a language level symbol construct, not a

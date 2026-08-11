@@ -6,7 +6,7 @@ use chrn_utils::{
 
 use crate::{
     lookup::scopes::{
-        self, AssociatedScopeKind, LookupPreferenceFlags, ScopeLookupPattern, ScopeType,
+        self, AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, ScopeType,
         SymbolLookupOutput,
     },
     parser::ast::ast_exprs::{AbstractGeneric, PathSegment, TypeExpr},
@@ -55,7 +55,7 @@ pub(crate) fn resolve_static_access_ret_preset(
     sp_path_segs: &[SpannedContainer<PathSegment>],
     current_scope: AssociatedScopeKind,
     scope_type: ScopeType,
-    lookup_pref: LookupPreferenceFlags,
+    lookup_pref: ScopeLookupPreferenceFlags,
     opt: StaticAccessOption,
     interner: &Intern,
     env: &ResolverEnv,
@@ -114,7 +114,7 @@ pub(crate) fn resolve_static_access_to_sym_id_with_preset(
     sp_path_segs: &[SpannedContainer<PathSegment>],
     starting_scope: AssociatedScopeKind,
     scope_type: ScopeType,
-    lookup_pref: LookupPreferenceFlags,
+    lookup_pref: ScopeLookupPreferenceFlags,
     opt: StaticAccessOption,
     interner: &Intern,
     env: &ResolverEnv,

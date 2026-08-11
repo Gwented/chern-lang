@@ -7,8 +7,8 @@ export let WRITE = 0b1
 // Maybe this shouldn't be seen as a valid import
 // import l
 
-let core = "ch" + "rn"
-let a = core == "chrn"
+// let core = "ch" + "rn"
+// let a = core == "chrn"
 
 // if this was something that wanted to be added, that would then mean the compiler store needs to be 
 // mutable, but the environments USE the compiler store, which makes it hard to concat and intern
@@ -26,7 +26,7 @@ nest->
         // state: State
         // p: str #scient The error emitted by this should be able to place the directive pointers
                           // directly under #scient. Too greedy. Feed them less.
-        // p: str #scient The 
+        // p: str #scient The
         // name: str
         // age: u8
     }
@@ -36,6 +36,7 @@ nest->
         InProgress
     }
 complex->
+// Map<i32, u32> {}
     /*State {
         InProgress {}
         stating {}
