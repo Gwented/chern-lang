@@ -2,7 +2,7 @@ use std::cmp;
 
 use crate::{
     directives,
-    fmter::{Formattable, Formatted},
+    fmter::{ChrnClassifiable, ChrnClassifier},
     keywords,
     types::builtins,
 };
@@ -17,14 +17,14 @@ pub enum FuzzyMatch {
     Directive,
 }
 
-impl Formattable for FuzzyMatch {
-    fn to_fmt(&self) -> crate::fmter::Formatted {
+impl ChrnClassifiable for FuzzyMatch {
+    fn to_fmt(&self) -> crate::fmter::ChrnClassifier {
         match self {
-            FuzzyMatch::KW => Formatted::KW,
-            FuzzyMatch::Type => Formatted::Type,
-            FuzzyMatch::Sect => Formatted::AbstractSection,
-            FuzzyMatch::Stmt => Formatted::Stmt,
-            FuzzyMatch::Directive => Formatted::Directive,
+            FuzzyMatch::KW => ChrnClassifier::KW,
+            FuzzyMatch::Type => ChrnClassifier::Type,
+            FuzzyMatch::Sect => ChrnClassifier::AbstractSection,
+            FuzzyMatch::Stmt => ChrnClassifier::Stmt,
+            FuzzyMatch::Directive => ChrnClassifier::Directive,
         }
     }
 }
@@ -34,7 +34,10 @@ impl Formattable for FuzzyMatch {
 ///
 /// Returns an `Option` in comparison to `fuzzy_match` because the target's string `Formatted`
 /// version may or may not be relevant to return
-pub fn fuzzy_match_with_fmtted(given: &[u8], target: FuzzyMatch) -> Option<(Vec<&str>, Formatted)> {
+pub fn fuzzy_match_with_fmtted(
+    given: &[u8],
+    target: FuzzyMatch,
+) -> Option<(Vec<&str>, ChrnClassifier)> {
     Some((fuzzy_match(given, target), target.to_fmt()))
 }
 

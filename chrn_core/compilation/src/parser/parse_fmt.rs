@@ -1,5 +1,5 @@
 use chrn_utils::intern::Intern;
-use lang::fmter::Formattable;
+use lang::fmter::ChrnClassifiable;
 
 use crate::lexer::token::Token;
 

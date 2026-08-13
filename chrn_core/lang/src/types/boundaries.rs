@@ -8,7 +8,7 @@ use bitflags::bitflags;
 
 use chrn_utils::{id_types::InternedId, intern};
 
-use crate::fmter::Formatted;
+use crate::fmter::ChrnClassifier;
 
 // Even though an internal implementation of this existed before-hand, the subject to error and pro
 // of learning bitflags outweighs the )@$)#835j435jl yes
@@ -107,24 +107,24 @@ impl TypeDomainFlags {
             | TypeDomainFlags::CHARACTER_MAPPABLE_DOMAIN.bits(),
     );
 
-    pub fn to_fmt(self) -> Formatted {
+    pub fn to_fmt(self) -> ChrnClassifier {
         match self {
-            TypeDomainFlags::SIGNED_INTEGER => Formatted::SignedInteger,
-            TypeDomainFlags::UNSIGNED_INTEGER => Formatted::UnsignedInteger,
-            TypeDomainFlags::FLOAT => Formatted::Float,
-            TypeDomainFlags::BOOL => Formatted::Bool,
-            TypeDomainFlags::STR => Formatted::Str,
-            TypeDomainFlags::CHAR => Formatted::Char,
-            TypeDomainFlags::RUNTIME => Formatted::Runtime,
-            TypeDomainFlags::COMPARABLE => Formatted::Comparable,
-            TypeDomainFlags::CHARACTER_MAPPABLE => Formatted::CharacterMappable,
-            TypeDomainFlags::HAS_LEN => Formatted::HasLen,
-            TypeDomainFlags::INTEGER => Formatted::Integer,
-            TypeDomainFlags::NUMERIC => Formatted::Numeric,
-            TypeDomainFlags::RANGED => Formatted::Ranged,
-            TypeDomainFlags::COLLECTION => Formatted::Collection,
-            TypeDomainFlags::ORDERED => Formatted::Ordered,
-            TypeDomainFlags::NIL => Formatted::Nil,
+            TypeDomainFlags::SIGNED_INTEGER => ChrnClassifier::SignedInteger,
+            TypeDomainFlags::UNSIGNED_INTEGER => ChrnClassifier::UnsignedInteger,
+            TypeDomainFlags::FLOAT => ChrnClassifier::Float,
+            TypeDomainFlags::BOOL => ChrnClassifier::Bool,
+            TypeDomainFlags::STR => ChrnClassifier::Str,
+            TypeDomainFlags::CHAR => ChrnClassifier::Char,
+            TypeDomainFlags::RUNTIME => ChrnClassifier::Runtime,
+            TypeDomainFlags::COMPARABLE => ChrnClassifier::Comparable,
+            TypeDomainFlags::CHARACTER_MAPPABLE => ChrnClassifier::CharacterMappable,
+            TypeDomainFlags::HAS_LEN => ChrnClassifier::HasLen,
+            TypeDomainFlags::INTEGER => ChrnClassifier::Integer,
+            TypeDomainFlags::NUMERIC => ChrnClassifier::Numeric,
+            TypeDomainFlags::RANGED => ChrnClassifier::Ranged,
+            TypeDomainFlags::COLLECTION => ChrnClassifier::Collection,
+            TypeDomainFlags::ORDERED => ChrnClassifier::Ordered,
+            TypeDomainFlags::NIL => ChrnClassifier::Nil,
             // This is a bug
             _ => unreachable!("`not_a_bug`"),
         }
@@ -244,27 +244,27 @@ impl TypeBoundaryFlags {
     /// Using `Comparable` for example, it's domain is Numeric + CharacterMappable + Bool.
     /// `Numeric` has 5 encoded, `CharacterMappable` has 2 encoded, `Bool` has 1 encoded, meaning `Bool`
     /// would be chosen.
-    pub fn to_fmt_lowest(self) -> Formatted {
+    pub fn to_fmt_lowest(self) -> ChrnClassifier {
         self.iter()
             .map(|flag| (flag, flag.single_domain().bits().count_ones()))
             .min_by_key(|(_, count)| *count)
             .map(|(flag, _)| match flag {
-                TypeBoundaryFlags::SIGNED_INTEGER => Formatted::SignedInteger,
-                TypeBoundaryFlags::UNSIGNED_INTEGER => Formatted::UnsignedInteger,
-                TypeBoundaryFlags::FLOAT => Formatted::Float,
-                TypeBoundaryFlags::BOOL => Formatted::Bool,
-                TypeBoundaryFlags::STR => Formatted::Str,
-                TypeBoundaryFlags::CHAR => Formatted::Char,
-                TypeBoundaryFlags::RUNTIME => Formatted::Runtime,
-                TypeBoundaryFlags::COMPARABLE => Formatted::Comparable,
-                TypeBoundaryFlags::CHARACTER_MAPPABLE => Formatted::CharacterMappable,
-                TypeBoundaryFlags::HAS_LEN => Formatted::HasLen,
-                TypeBoundaryFlags::INTEGER => Formatted::Integer,
-                TypeBoundaryFlags::NUMERIC => Formatted::Numeric,
-                TypeBoundaryFlags::RANGED => Formatted::Ranged,
-                TypeBoundaryFlags::COLLECTION => Formatted::Collection,
-                TypeBoundaryFlags::ORDERED => Formatted::Ordered,
-                TypeBoundaryFlags::NIL => Formatted::Nil,
+                TypeBoundaryFlags::SIGNED_INTEGER => ChrnClassifier::SignedInteger,
+                TypeBoundaryFlags::UNSIGNED_INTEGER => ChrnClassifier::UnsignedInteger,
+                TypeBoundaryFlags::FLOAT => ChrnClassifier::Float,
+                TypeBoundaryFlags::BOOL => ChrnClassifier::Bool,
+                TypeBoundaryFlags::STR => ChrnClassifier::Str,
+                TypeBoundaryFlags::CHAR => ChrnClassifier::Char,
+                TypeBoundaryFlags::RUNTIME => ChrnClassifier::Runtime,
+                TypeBoundaryFlags::COMPARABLE => ChrnClassifier::Comparable,
+                TypeBoundaryFlags::CHARACTER_MAPPABLE => ChrnClassifier::CharacterMappable,
+                TypeBoundaryFlags::HAS_LEN => ChrnClassifier::HasLen,
+                TypeBoundaryFlags::INTEGER => ChrnClassifier::Integer,
+                TypeBoundaryFlags::NUMERIC => ChrnClassifier::Numeric,
+                TypeBoundaryFlags::RANGED => ChrnClassifier::Ranged,
+                TypeBoundaryFlags::COLLECTION => ChrnClassifier::Collection,
+                TypeBoundaryFlags::ORDERED => ChrnClassifier::Ordered,
+                TypeBoundaryFlags::NIL => ChrnClassifier::Nil,
                 _ => unreachable!("`i_am_a_bug`"),
             })
             .expect("`i_am_a_bug`")
@@ -275,52 +275,52 @@ impl TypeBoundaryFlags {
     /// Using `Comparable` for example, it's domain is Numeric + CharacterMappable + Bool.
     /// `Numeric` has 5 encoded, `CharacterMappable` has 2 encoded, bool has 1 encoded, meaning
     /// `Numeric` would be chosen.
-    pub fn to_fmt_highest(self) -> Formatted {
+    pub fn to_fmt_highest(self) -> ChrnClassifier {
         self.iter()
             .map(|flag| (flag, flag.single_domain().bits().count_ones()))
             .max_by_key(|(_, count)| *count)
             .map(|(flag, _)| match flag {
-                TypeBoundaryFlags::SIGNED_INTEGER => Formatted::SignedInteger,
-                TypeBoundaryFlags::UNSIGNED_INTEGER => Formatted::UnsignedInteger,
-                TypeBoundaryFlags::FLOAT => Formatted::Float,
-                TypeBoundaryFlags::BOOL => Formatted::Bool,
-                TypeBoundaryFlags::STR => Formatted::Str,
-                TypeBoundaryFlags::CHAR => Formatted::Char,
-                TypeBoundaryFlags::RUNTIME => Formatted::Runtime,
-                TypeBoundaryFlags::COMPARABLE => Formatted::Comparable,
-                TypeBoundaryFlags::CHARACTER_MAPPABLE => Formatted::CharacterMappable,
-                TypeBoundaryFlags::HAS_LEN => Formatted::HasLen,
-                TypeBoundaryFlags::INTEGER => Formatted::Integer,
-                TypeBoundaryFlags::NUMERIC => Formatted::Numeric,
-                TypeBoundaryFlags::RANGED => Formatted::Ranged,
-                TypeBoundaryFlags::COLLECTION => Formatted::Collection,
-                TypeBoundaryFlags::ORDERED => Formatted::Ordered,
-                TypeBoundaryFlags::NIL => Formatted::Nil,
+                TypeBoundaryFlags::SIGNED_INTEGER => ChrnClassifier::SignedInteger,
+                TypeBoundaryFlags::UNSIGNED_INTEGER => ChrnClassifier::UnsignedInteger,
+                TypeBoundaryFlags::FLOAT => ChrnClassifier::Float,
+                TypeBoundaryFlags::BOOL => ChrnClassifier::Bool,
+                TypeBoundaryFlags::STR => ChrnClassifier::Str,
+                TypeBoundaryFlags::CHAR => ChrnClassifier::Char,
+                TypeBoundaryFlags::RUNTIME => ChrnClassifier::Runtime,
+                TypeBoundaryFlags::COMPARABLE => ChrnClassifier::Comparable,
+                TypeBoundaryFlags::CHARACTER_MAPPABLE => ChrnClassifier::CharacterMappable,
+                TypeBoundaryFlags::HAS_LEN => ChrnClassifier::HasLen,
+                TypeBoundaryFlags::INTEGER => ChrnClassifier::Integer,
+                TypeBoundaryFlags::NUMERIC => ChrnClassifier::Numeric,
+                TypeBoundaryFlags::RANGED => ChrnClassifier::Ranged,
+                TypeBoundaryFlags::COLLECTION => ChrnClassifier::Collection,
+                TypeBoundaryFlags::ORDERED => ChrnClassifier::Ordered,
+                TypeBoundaryFlags::NIL => ChrnClassifier::Nil,
                 _ => unreachable!("`i_am_a_bug`"),
             })
             .expect("`i_am_a_bug`")
     }
 
     /// Convert each set flag into `Formatted`
-    pub fn to_fmt_vec(self) -> Vec<Formatted> {
+    pub fn to_fmt_vec(self) -> Vec<ChrnClassifier> {
         self.iter()
             .map(|flag| match flag {
-                TypeBoundaryFlags::SIGNED_INTEGER => Formatted::SignedInteger,
-                TypeBoundaryFlags::UNSIGNED_INTEGER => Formatted::UnsignedInteger,
-                TypeBoundaryFlags::FLOAT => Formatted::Float,
-                TypeBoundaryFlags::BOOL => Formatted::Bool,
-                TypeBoundaryFlags::STR => Formatted::Str,
-                TypeBoundaryFlags::CHAR => Formatted::Char,
-                TypeBoundaryFlags::RUNTIME => Formatted::Runtime,
-                TypeBoundaryFlags::COMPARABLE => Formatted::Comparable,
-                TypeBoundaryFlags::CHARACTER_MAPPABLE => Formatted::CharacterMappable,
-                TypeBoundaryFlags::HAS_LEN => Formatted::HasLen,
-                TypeBoundaryFlags::INTEGER => Formatted::Integer,
-                TypeBoundaryFlags::NUMERIC => Formatted::Numeric,
-                TypeBoundaryFlags::RANGED => Formatted::Ranged,
-                TypeBoundaryFlags::COLLECTION => Formatted::Collection,
-                TypeBoundaryFlags::ORDERED => Formatted::Ordered,
-                TypeBoundaryFlags::NIL => Formatted::Nil,
+                TypeBoundaryFlags::SIGNED_INTEGER => ChrnClassifier::SignedInteger,
+                TypeBoundaryFlags::UNSIGNED_INTEGER => ChrnClassifier::UnsignedInteger,
+                TypeBoundaryFlags::FLOAT => ChrnClassifier::Float,
+                TypeBoundaryFlags::BOOL => ChrnClassifier::Bool,
+                TypeBoundaryFlags::STR => ChrnClassifier::Str,
+                TypeBoundaryFlags::CHAR => ChrnClassifier::Char,
+                TypeBoundaryFlags::RUNTIME => ChrnClassifier::Runtime,
+                TypeBoundaryFlags::COMPARABLE => ChrnClassifier::Comparable,
+                TypeBoundaryFlags::CHARACTER_MAPPABLE => ChrnClassifier::CharacterMappable,
+                TypeBoundaryFlags::HAS_LEN => ChrnClassifier::HasLen,
+                TypeBoundaryFlags::INTEGER => ChrnClassifier::Integer,
+                TypeBoundaryFlags::NUMERIC => ChrnClassifier::Numeric,
+                TypeBoundaryFlags::RANGED => ChrnClassifier::Ranged,
+                TypeBoundaryFlags::COLLECTION => ChrnClassifier::Collection,
+                TypeBoundaryFlags::ORDERED => ChrnClassifier::Ordered,
+                TypeBoundaryFlags::NIL => ChrnClassifier::Nil,
                 _ => unreachable!("`i_am_a_bug`"),
             })
             .collect()
@@ -521,13 +521,13 @@ mod tests {
         let combo = TypeBoundaryFlags::SIGNED_INTEGER
             | TypeBoundaryFlags::NUMERIC
             | TypeBoundaryFlags::RANGED;
-        assert_eq!(combo.to_fmt_lowest(), Formatted::SignedInteger);
+        assert_eq!(combo.to_fmt_lowest(), ChrnClassifier::SignedInteger);
 
         let numeric_only = TypeBoundaryFlags::NUMERIC | TypeBoundaryFlags::RANGED;
-        assert_eq!(numeric_only.to_fmt_lowest(), Formatted::Numeric);
+        assert_eq!(numeric_only.to_fmt_lowest(), ChrnClassifier::Numeric);
 
         let single = TypeBoundaryFlags::RANGED;
-        assert_eq!(single.to_fmt_lowest(), Formatted::Ranged);
+        assert_eq!(single.to_fmt_lowest(), ChrnClassifier::Ranged);
     }
 
     #[test]
@@ -535,13 +535,13 @@ mod tests {
         let combo = TypeBoundaryFlags::SIGNED_INTEGER
             | TypeBoundaryFlags::NUMERIC
             | TypeBoundaryFlags::RANGED;
-        assert_eq!(combo.to_fmt_highest(), Formatted::Ranged);
+        assert_eq!(combo.to_fmt_highest(), ChrnClassifier::Ranged);
 
         let numeric_only = TypeBoundaryFlags::NUMERIC | TypeBoundaryFlags::RANGED;
-        assert_eq!(numeric_only.to_fmt_highest(), Formatted::Ranged);
+        assert_eq!(numeric_only.to_fmt_highest(), ChrnClassifier::Ranged);
 
         let single = TypeBoundaryFlags::SIGNED_INTEGER;
-        assert_eq!(single.to_fmt_highest(), Formatted::SignedInteger);
+        assert_eq!(single.to_fmt_highest(), ChrnClassifier::SignedInteger);
     }
 
     #[test]
@@ -549,12 +549,12 @@ mod tests {
         let flags = TypeBoundaryFlags::INTEGER | TypeBoundaryFlags::SIGNED_INTEGER;
         assert_eq!(
             flags.to_fmt_vec(),
-            vec![Formatted::SignedInteger, Formatted::Integer]
+            vec![ChrnClassifier::SignedInteger, ChrnClassifier::Integer]
         );
 
         assert_eq!(
             TypeBoundaryFlags::NUMERIC.to_fmt_vec(),
-            vec![Formatted::Numeric]
+            vec![ChrnClassifier::Numeric]
         );
     }
 }

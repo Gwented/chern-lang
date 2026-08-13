@@ -1,3 +1,4 @@
+pub mod checker_helpers;
 pub mod compilation_unit;
 pub(crate) mod evaluator;
 pub mod hir;

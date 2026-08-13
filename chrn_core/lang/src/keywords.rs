@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 
 use chrn_utils::{id_types::InternedId, intern};
 
-use crate::fmter::{self, Formattable, Formatted};
+use crate::fmter::{self, ChrnClassifiable, ChrnClassifier};
 
 /// Size in bytes for `@def` and `@end`
 pub const REGION_CLAUSE_SIZE: usize = 4;
@@ -37,23 +37,23 @@ pub enum Keyword {
     In = 13,
 }
 
-impl Formattable for Keyword {
-    fn to_fmt(&self) -> fmter::Formatted {
+impl ChrnClassifiable for Keyword {
+    fn to_fmt(&self) -> fmter::ChrnClassifier {
         match self {
-            Keyword::Struct => Formatted::Struct,
-            Keyword::Enum => Formatted::Enum,
-            Keyword::Import => Formatted::Import,
-            Keyword::Export => Formatted::Export,
-            Keyword::Bind => Formatted::Bind,
-            Keyword::Alias => Formatted::Alias,
-            Keyword::Let => Formatted::Let,
-            Keyword::Change => Formatted::Change,
-            Keyword::Var => Formatted::SectVar,
-            Keyword::Nest => Formatted::SectNest,
-            Keyword::Complex => Formatted::SectComplex,
-            Keyword::Override => Formatted::SectOverride,
-            Keyword::As => Formatted::As,
-            Keyword::In => Formatted::In,
+            Keyword::Struct => ChrnClassifier::Struct,
+            Keyword::Enum => ChrnClassifier::Enum,
+            Keyword::Import => ChrnClassifier::Import,
+            Keyword::Export => ChrnClassifier::Export,
+            Keyword::Bind => ChrnClassifier::Bind,
+            Keyword::Alias => ChrnClassifier::Alias,
+            Keyword::Let => ChrnClassifier::Let,
+            Keyword::Change => ChrnClassifier::Change,
+            Keyword::Var => ChrnClassifier::SectVar,
+            Keyword::Nest => ChrnClassifier::SectNest,
+            Keyword::Complex => ChrnClassifier::SectComplex,
+            Keyword::Override => ChrnClassifier::SectOverride,
+            Keyword::As => ChrnClassifier::As,
+            Keyword::In => ChrnClassifier::In,
         }
     }
 }

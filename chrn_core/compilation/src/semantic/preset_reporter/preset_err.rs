@@ -3,7 +3,7 @@ use chrn_utils::{
     source_map::{source_diagnostic::SourceDiagnosticBuilder, source_span::SourceSpan},
 };
 use lang::{
-    directives::Directive, fmter::Formatted, types::boundaries::TypeBoundaryFlags,
+    directives::Directive, fmter::ChrnClassifier, types::boundaries::TypeBoundaryFlags,
     values::ValueKind,
 };
 
@@ -22,7 +22,7 @@ pub enum PresetErr {
     Lookup(LookupError),
     FuncConstraintMismatch {
         constraint: ArgConstraint,
-        fmtted_ty: Formatted,
+        fmtted_ty: ChrnClassifier,
         spans: Vec<SourceSpan>,
     },
     /// Spanned Directive
@@ -39,8 +39,16 @@ pub enum PresetErr {
     /// Constraint, Incorrect type found, spans
     TypeBoundaryMismatch {
         given_constraints: TypeBoundaryFlags,
-        found_ty: Formatted,
+        found_ty: ChrnClassifier,
         spans: Vec<SourceSpan>,
+    },
+    /// Duplicate identiiers were found
+    DuplicateIdents {
+        sp_original: SpannedContainer<InternedId>,
+        sp_dup: SpannedContainer<InternedId>,
+        /// What the duplicate actually was.
+        /// Like if it should output "duplicate field/variant/parameter" etsy
+        classifier: ChrnClassifier,
     },
     /// Currently inferred constraints, Conflicting other constraints, spans
     TypeBoundaryBoundConflict {
@@ -64,7 +72,7 @@ pub enum PresetErr {
     /// (Parent declaration span, Spanned directive failed at, Type span failed at)
     //TODO: Combine
     CircularDirective {
-        sp_fmtted_parent: SpannedContainer<Formatted>,
+        sp_fmtted_parent: SpannedContainer<ChrnClassifier>,
         // Actual parent name
         // SpannedContainer<InternedId>,
         sp_directive: SpannedContainer<Directive>,
@@ -74,7 +82,7 @@ pub enum PresetErr {
     //WARN: This technically shouldn't exist since BigInt/BigFloat would exist
     NumericOverflow {
         sp_num: SpannedContainer<InternedId>,
-        fmtted_ty: Formatted,
+        fmtted_ty: ChrnClassifier,
     },
     //TODO: Maybe option name id?
     UndefinedMember(SourceSpan),
@@ -132,7 +140,7 @@ pub(crate) enum LookupError {
         current_mod_id: ModuleId,
     },
     /// Spanned Type that is impossible to member access
-    ImpossibleTypeMemberAccess(SpannedContainer<Formatted>),
+    ImpossibleTypeMemberAccess(SpannedContainer<ChrnClassifier>),
     /// Spanned type's identifier which has no members, Identifier of member looked up
     MemberNotFound {
         parent_type_id: TypeId,
@@ -143,7 +151,7 @@ pub(crate) enum LookupError {
     /// Spanned Formatted Symbol
     /// (Symbol with no members is `Formatted` because it's a language level symbol construct, not a
     /// possibly user defined structure)
-    InvalidSymbolMemberAccess(SpannedContainer<Formatted>),
+    InvalidSymbolMemberAccess(SpannedContainer<ChrnClassifier>),
 }
 
 #[derive(Debug)]
@@ -151,7 +159,7 @@ pub enum FuncConstraints {
     /// Constraint, found type, function kind, spans
     FuncConstraintMismatch {
         constraint: ArgConstraint,
-        fmtted_ty: Formatted,
+        fmtted_ty: ChrnClassifier,
         func_kind: FuncKind,
         spans: Vec<SourceSpan>,
     },

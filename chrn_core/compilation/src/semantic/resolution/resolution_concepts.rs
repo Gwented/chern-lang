@@ -5,7 +5,7 @@ use chrn_utils::{
     id_types::{ExprId, InternedId, ModuleId, SpannedContainer, SymbolId, TypeId},
     source_map::source_span::SourceSpan,
 };
-use lang::fmter::Formatted;
+use lang::fmter::ChrnClassifier;
 
 use crate::lookup::scopes::AssociatedScopeKind;
 

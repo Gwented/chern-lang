@@ -36,7 +36,7 @@ use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
-use lang::fmter::{Formattable, Formatted};
+use lang::fmter::{ChrnClassifiable, ChrnClassifier};
 use lang::keywords::Keyword;
 
 // The CST.
@@ -80,7 +80,7 @@ pub fn parse(
                     if !is_priv {
                         report_export(
                             &mut ctx,
-                            Formatted::Bind,
+                            ChrnClassifier::Bind,
                             Branch::Neutral(NeutralBranch::Searching),
                             interner,
                         );
@@ -131,7 +131,7 @@ pub fn parse(
                     if !is_priv {
                         report_export(
                             &mut ctx,
-                            Formatted::Import,
+                            ChrnClassifier::Import,
                             Branch::Neutral(NeutralBranch::Searching),
                             interner,
                         );
@@ -145,7 +145,7 @@ pub fn parse(
                     if !is_priv {
                         report_export(
                             &mut ctx,
-                            Formatted::SectVar,
+                            ChrnClassifier::SectVar,
                             Branch::Section(SectionBranch::Searching),
                             interner,
                         );
@@ -208,7 +208,7 @@ pub fn parse(
                     if !is_priv {
                         report_export(
                             &mut ctx,
-                            Formatted::SectNest,
+                            ChrnClassifier::SectNest,
                             Branch::Section(SectionBranch::Searching),
                             interner,
                         );
@@ -263,7 +263,12 @@ pub fn parse(
                 }
                 Keyword::Complex => {
                     if !is_priv {
-                        report_export(&mut ctx, Formatted::SectNest, Branch::Searching, interner);
+                        report_export(
+                            &mut ctx,
+                            ChrnClassifier::SectNest,
+                            Branch::Searching,
+                            interner,
+                        );
                     }
 
                     ctx.advance_tok();
@@ -322,7 +327,7 @@ pub fn parse(
                     if !is_priv {
                         report_export(
                             &mut ctx,
-                            Formatted::SectComplex,
+                            ChrnClassifier::SectComplex,
                             Branch::Section(SectionBranch::Searching),
                             interner,
                         );
@@ -2337,7 +2342,12 @@ fn consume_trailing_comma(ctx: &mut ParserContext) {
 }
 
 /// Helper for solely reporting export errors
-fn report_export(ctx: &mut ParserContext, fmtted: Formatted, branch: Branch, interner: &Intern) {
+fn report_export(
+    ctx: &mut ParserContext,
+    fmtted: ChrnClassifier,
+    branch: Branch,
+    interner: &Intern,
+) {
     ctx.report_verbose(
         &format!("Cannot use `export` on `{}`", fmtted),
         InitialEvidence::new(

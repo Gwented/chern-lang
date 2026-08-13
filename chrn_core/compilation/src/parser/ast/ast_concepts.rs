@@ -4,7 +4,7 @@ use chrn_utils::{
     source_map::source_span::SourceSpan,
 };
 use lang::{
-    fmter::{Formattable, Formatted},
+    fmter::{ChrnClassifiable, ChrnClassifier},
     types::boundaries::TypeBoundaryFlags,
 };
 
@@ -242,14 +242,14 @@ impl SectionKind {
     }
 }
 
-impl Formattable for SectionKind {
-    fn to_fmt(&self) -> Formatted {
+impl ChrnClassifiable for SectionKind {
+    fn to_fmt(&self) -> ChrnClassifier {
         match self {
-            SectionKind::Neutral => Formatted::SectNeutral,
-            SectionKind::Var => Formatted::SectVar,
-            SectionKind::Nest => Formatted::SectNest,
-            SectionKind::Override => Formatted::SectOverride,
-            SectionKind::Complex => Formatted::SectComplex,
+            SectionKind::Neutral => ChrnClassifier::SectNeutral,
+            SectionKind::Var => ChrnClassifier::SectVar,
+            SectionKind::Nest => ChrnClassifier::SectNest,
+            SectionKind::Override => ChrnClassifier::SectOverride,
+            SectionKind::Complex => ChrnClassifier::SectComplex,
         }
     }
 }
@@ -324,27 +324,27 @@ impl BinaryOp {
     }
 }
 
-impl Formattable for BinaryOp {
-    fn to_fmt(&self) -> Formatted {
+impl ChrnClassifiable for BinaryOp {
+    fn to_fmt(&self) -> ChrnClassifier {
         match self {
-            BinaryOp::Add => Formatted::OpAdd,
-            BinaryOp::Sub => Formatted::Hyphen,
-            BinaryOp::Mult => Formatted::OpMult,
-            BinaryOp::Div => Formatted::OpDivide,
-            BinaryOp::Greater => Formatted::OpGreater,
-            BinaryOp::Less => Formatted::OpLess,
-            BinaryOp::GreaterOrEq => Formatted::OpGreaterOrEq,
-            BinaryOp::LessOrEq => Formatted::OpLessOrEq,
-            BinaryOp::Mod => Formatted::OpMod,
-            BinaryOp::And => Formatted::OpAnd,
-            BinaryOp::Or => Formatted::OpOr,
-            BinaryOp::EqTo => Formatted::OpEqualTo,
-            BinaryOp::NotEq => Formatted::OpNotEq,
-            BinaryOp::BitOr => Formatted::OpBitOr,
-            BinaryOp::BitAnd => Formatted::OpBitAnd,
-            BinaryOp::BitRightShift => Formatted::OpBitRightShift,
-            BinaryOp::BitLeftShift => Formatted::OpBitLeftShift,
-            BinaryOp::BitXor => Formatted::OpBitXor,
+            BinaryOp::Add => ChrnClassifier::OpAdd,
+            BinaryOp::Sub => ChrnClassifier::Hyphen,
+            BinaryOp::Mult => ChrnClassifier::OpMult,
+            BinaryOp::Div => ChrnClassifier::OpDivide,
+            BinaryOp::Greater => ChrnClassifier::OpGreater,
+            BinaryOp::Less => ChrnClassifier::OpLess,
+            BinaryOp::GreaterOrEq => ChrnClassifier::OpGreaterOrEq,
+            BinaryOp::LessOrEq => ChrnClassifier::OpLessOrEq,
+            BinaryOp::Mod => ChrnClassifier::OpMod,
+            BinaryOp::And => ChrnClassifier::OpAnd,
+            BinaryOp::Or => ChrnClassifier::OpOr,
+            BinaryOp::EqTo => ChrnClassifier::OpEqualTo,
+            BinaryOp::NotEq => ChrnClassifier::OpNotEq,
+            BinaryOp::BitOr => ChrnClassifier::OpBitOr,
+            BinaryOp::BitAnd => ChrnClassifier::OpBitAnd,
+            BinaryOp::BitRightShift => ChrnClassifier::OpBitRightShift,
+            BinaryOp::BitLeftShift => ChrnClassifier::OpBitLeftShift,
+            BinaryOp::BitXor => ChrnClassifier::OpBitXor,
         }
     }
 }
@@ -758,12 +758,12 @@ impl UnaryOp {
     }
 }
 
-impl Formattable for UnaryOp {
-    fn to_fmt(&self) -> Formatted {
+impl ChrnClassifiable for UnaryOp {
+    fn to_fmt(&self) -> ChrnClassifier {
         match self {
-            UnaryOp::Not => Formatted::ExclamationPoint,
-            UnaryOp::Negate => Formatted::Hyphen,
-            UnaryOp::BitNot => Formatted::OpBitNot,
+            UnaryOp::Not => ChrnClassifier::ExclamationPoint,
+            UnaryOp::Negate => ChrnClassifier::Hyphen,
+            UnaryOp::BitNot => ChrnClassifier::OpBitNot,
         }
     }
 }

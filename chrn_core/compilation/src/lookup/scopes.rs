@@ -4,7 +4,7 @@ use chrn_utils::{
     id_types::{InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId},
     intern::Intern,
 };
-use lang::fmter::{Formattable, Formatted};
+use lang::fmter::{ChrnClassifiable, ChrnClassifier};
 
 use crate::{
     script_compiler::ScriptCompiler,
@@ -685,11 +685,11 @@ pub enum AssociatedScopeKind {
     Scope(ScopeId),
 }
 
-impl Formattable for AssociatedScopeKind {
-    fn to_fmt(&self) -> lang::fmter::Formatted {
+impl ChrnClassifiable for AssociatedScopeKind {
+    fn to_fmt(&self) -> lang::fmter::ChrnClassifier {
         match self {
-            AssociatedScopeKind::Module(_) => Formatted::Module,
-            AssociatedScopeKind::Scope(_) => Formatted::Namespace,
+            AssociatedScopeKind::Module(_) => ChrnClassifier::Module,
+            AssociatedScopeKind::Scope(_) => ChrnClassifier::Namespace,
         }
     }
 }

@@ -2,6 +2,8 @@
 // No
 pub mod type_context;
 
+use std::collections::HashSet;
+
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::{
@@ -14,7 +16,7 @@ use chrn_utils::source_map::source_diagnostic::{
     DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
 };
 use chrn_utils::source_map::source_span::{self, SourceSpan};
-use lang::fmter::Formatted;
+use lang::fmter::ChrnClassifier;
 use lang::values::{Value, ValueInfo};
 
 use crate::constraints::ArgConstraint;
@@ -32,6 +34,7 @@ use crate::resolvers::resolver_env::ResolverEnv;
 use crate::resolvers::resolver_state::ResolverState;
 use crate::resolvers::typechecker;
 use crate::script_compiler::{self, ScriptCompiler};
+use crate::semantic::checker_helpers::{DuplicateIdentResult, DuplicateTracker};
 use crate::semantic::compilation_unit::CompilationUnit;
 use crate::semantic::evaluator::UnaryOpResult;
 use crate::semantic::hir::hir_concepts::{Type, TypeInfo};
@@ -45,7 +48,7 @@ use crate::semantic::resolution::resolution_concepts::{
     StaticAccessOption, StaticAccessResult, TypeExprResult,
 };
 use crate::semantic::resolution::resolution_helpers;
-use crate::semantic::{evaluator, inference, preset_reporter, resolution};
+use crate::semantic::{checker_helpers, evaluator, inference, preset_reporter, resolution};
 
 use crate::resolvers::type_resolver::type_context::{
     ParentInfo, ParentState, ParentStateBase, PendingExpr, PendingExprKind, PendingSymbol,
@@ -115,6 +118,10 @@ impl<'res> TypeResolver<'res> {
     /// explicitly allows for `TypeResolver` to maintain it's state throughout resolution while
     /// mutating off of given envs.
     pub fn resolve<'env>(&mut self, env: &'env ResolverEnv) -> SourceDiagnosticSummary {
+        // Re-used hashet when identifiers are checked, like for configs, alias params, etc.
+        let mut ident_tracker: DuplicateTracker<SpannedContainer<InternedId>> =
+            DuplicateTracker::with_capacities(4, 4);
+
         // Everything skipped is not a factor in this compilation step.
         for comp_unit in env.compilation_syms.iter().cloned() {
             match comp_unit {
@@ -125,7 +132,7 @@ impl<'res> TypeResolver<'res> {
                         SymbolKind::Type(type_id) => match &self.compiler.types[type_id].ty {
                             Type::Struct(_) => self.resolve_struct(sym_id, env),
                             Type::Enum(_) => self.resolve_enum(sym_id, env),
-                            Type::Alias(_) => self.resolve_alias(sym_id, env),
+                            Type::Alias(_) => self.resolve_alias(sym_id, &mut ident_tracker, env),
                             Type::TypeDef(_) => self.resolve_typedef(sym_id, env),
                             // Not sure about this right now
                             // New functions cannot be declared as symbols, only the compiler creates them.
@@ -151,6 +158,7 @@ impl<'res> TypeResolver<'res> {
                     ImplHirKind::Config(_) => self.resolve_cfg_root(impl_id, env),
                 },
             }
+            ident_tracker.clear();
         }
 
         //NOTE: TRYING TO COMPRESS THE EXPLANATION BELOW.
@@ -552,7 +560,6 @@ impl<'res> TypeResolver<'res> {
                     last_seg,
                     last_scope,
                     lookup_pat,
-                    lookup_pref,
                     env,
                 );
             }
@@ -1059,7 +1066,7 @@ impl<'res> TypeResolver<'res> {
             // This is **NOT** used beyond being assigned as the parent origin, for the `ConfigDefMember`
             // that will be created inside the recursive resolution method.
             // let scope = &self.compiler.scopes[ScopeId::new(7)].scope;
-            panic!();
+            todo!();
             let member_id = match member_lookup::lookup_member(
                 self.compiler,
                 todo!(),
@@ -1229,55 +1236,44 @@ impl<'res> TypeResolver<'res> {
             seen_cfg_vec.truncate(seen_cfg_len);
         }
 
-        //NOTE: Maybe it's worth using function-specific trait-bounded concepts to where it CAN
-        // generically examine it's defined name id where it simply reports back the duplicate found
-        // and the caller still reports it since spans and messages vary.
-        for (i, current_cfg) in seen_cfg_vec.iter().enumerate() {
-            // Since this root cfg's made `seen_cfg_vec` it does not need any deeper checks
-            if let Some((_, original_cfg)) = seen_cfg_vec
-                .iter()
-                .enumerate()
-                // If the other index was declared after the current index and they have the same identifier
-                //
-                // Since this iteration specifically checks if the current was declared after the
-                // last and the iteration terminates upon the first match, this correctly points at
-                // the original field for all duplicates.
-                .find(|(other_i, cfg)| *other_i < i && current_cfg.inner == cfg.inner)
-            {
-                let dup_name = self.interner.search(current_cfg.inner);
+        if let DuplicateIdentResult::Duplicate {
+            sp_original,
+            sp_dup,
+        } = checker_helpers::check_duplicate_ident(&seen_cfg_vec)
+        {
+            let dup_name = self.interner.search(sp_original.inner);
 
-                let orig_span = original_cfg.span;
-                let current_cfg_span = current_cfg.span;
+            let orig_span = sp_original.span;
+            let current_cfg_span = sp_dup.span;
 
-                let core_msg = format!("More than one config member has identifier `{dup_name}`");
+            let core_msg = format!("More than one config member has identifier `{dup_name}`");
 
-                let spans: Vec<SourceSpan> = sp_path_segs.iter().map(|s| s.span).collect();
-                let sp_path_span = source_span::merge_spans(&spans)
-                    .expect("Path segments require at least one span");
+            let spans: Vec<SourceSpan> = sp_path_segs.iter().map(|s| s.span).collect();
+            let sp_path_span =
+                source_span::merge_spans(&spans).expect("Path segments require at least one span");
 
-                // Maybe give `None` here..
-                let src_diag = SourceDiagnostic::builder(
-                    ErrorCode::ConfigDeclErr.into(),
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    env.region.path_id,
-                )
-                .add_annotation(
-                    sp_path_span,
-                    AnnotationKind::Secondary,
-                    "Found inside this config root".to_string().into(),
-                )
-                .add_annotation(
-                    orig_span,
-                    AnnotationKind::Secondary,
-                    format!("Original usage of `{dup_name}` here").into(),
-                )
-                .add_annotation(current_cfg_span, AnnotationKind::Primary, None)
-                .build();
+            // Maybe give `None` here..
+            let src_diag = SourceDiagnostic::builder(
+                ErrorCode::ConfigDeclErr.into(),
+                DiagnosticLevel::Error,
+                core_msg,
+                env.region.path_id,
+            )
+            .add_annotation(
+                sp_path_span,
+                AnnotationKind::Secondary,
+                "Found inside this config root".to_string().into(),
+            )
+            .add_annotation(
+                orig_span,
+                AnnotationKind::Secondary,
+                format!("Original usage of `{dup_name}` here").into(),
+            )
+            .add_annotation(current_cfg_span, AnnotationKind::Primary, None)
+            .build();
 
-                self.summary.push_diag(src_diag);
-            }
-        }
+            self.summary.push_diag(src_diag);
+        };
 
         todo!("Hi members");
 
@@ -1307,7 +1303,6 @@ impl<'res> TypeResolver<'res> {
         last_seg: &SpannedContainer<PathSegment>,
         last_scope: AssociatedScopeKind,
         lookup_pat: ScopeLookupPattern,
-        lookup_pref: ScopeLookupPreferenceFlags,
         env: &'env ResolverEnv,
     ) {
         let scope_type = ScopeType::Complex;
@@ -1535,7 +1530,7 @@ impl<'res> TypeResolver<'res> {
             // This is **NOT** used beyond being assigned as the parent origin, for the `ConfigDefMember`
             // that will be created inside the recursive resolution method.
             // let scope = &self.compiler.scopes[ScopeId::new(7)].scope;
-            todo!();
+
             let member_id = match member_lookup::lookup_member(
                 self.compiler,
                 todo!(),
@@ -1773,6 +1768,9 @@ impl<'res> TypeResolver<'res> {
         cfg_complex.common.cfg_members = cfg_def_members;
         todo!()
     }
+
+    fn lookup_cfg_member() {}
+
     /// Method that recursively resolves `ConfigDefMember` and `OptionAssignmentMember`
     ///
     /// This has no failure case because unknown fields have a diagnostic given to them then they're
@@ -3220,7 +3218,12 @@ impl<'res> TypeResolver<'res> {
         enum_def.glob_directives = glob_directives;
     }
 
-    fn resolve_alias(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
+    fn resolve_alias(
+        &mut self,
+        parent_sym_id: SymbolId,
+        ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedId>>,
+        env: &ResolverEnv,
+    ) {
         let ast_id = self.compiler.symbols[parent_sym_id]
             .ast_id
             .expect("Should be user symbols only");
@@ -3230,12 +3233,12 @@ impl<'res> TypeResolver<'res> {
         let scope_type = self.compiler.symbols[parent_sym_id].scope_origin;
 
         let mut params: Vec<Param> = Vec::with_capacity(abs_alias.params.len());
-        let mut seen_params: Vec<&AbstractParam> = Vec::with_capacity(abs_alias.params.len());
 
         // Just a bit crowded in here..
         // WARN: Ok this just looks like an inlined function now
         for (i, abs_param) in abs_alias.params.iter().enumerate() {
-            seen_params.push(abs_param);
+            let sp_name_id = SpannedContainer::new(abs_param.name_id, abs_param.name_span);
+            ident_tracker.insert_or_store(sp_name_id);
 
             //TODO: SHOULD THIS BE A VARIABLE?
             let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
@@ -3311,47 +3314,26 @@ impl<'res> TypeResolver<'res> {
             params.push(param);
         }
 
-        //TODO: Will do something about this duplication.
-        for (i, current_param) in seen_params.iter().enumerate() {
-            if let Some((_, original_param)) = seen_params
-                .iter()
-                .enumerate()
-                // If the other index was declared after the current index and they have the same identifier
-                //
-                // Since this iteration specifically checks if the current was declared after the
-                // last and the iteration terminates upon the first match, this correctly points at
-                // the original field for all duplicates.
-                .find(|(other_i, f)| *other_i < i && current_param.name_id == f.name_id)
-            {
-                let dup_name = self.interner.search(current_param.name_id);
+        for found in ident_tracker.found_dups.drain(..) {
+            let preset_err = PresetErr::DuplicateIdents {
+                sp_original: found.original,
+                sp_dup: found.dup,
+                classifier: ChrnClassifier::Parameter,
+            };
 
-                let orig_span = original_param.name_span;
-                let current_param_span = current_param.name_span;
-
-                // Preset error?
-                let core_msg = format!("More than one variant has identifier \"{dup_name}\"");
-
-                let src_diag = SourceDiagnostic::builder(
-                    None,
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    env.region.path_id,
-                )
-                .add_annotation(
-                    abs_alias.name_span,
-                    AnnotationKind::Secondary,
-                    "Found inside this alias".to_string().into(),
-                )
-                .add_annotation(
-                    orig_span,
-                    AnnotationKind::Secondary,
-                    format!("Original usage of `{dup_name}` here").into(),
-                )
-                .add_annotation(current_param_span, AnnotationKind::Primary, None)
-                .build();
-
-                self.summary.push_diag(src_diag);
-            }
+            let builder = preset_reporter::create_diag_builder_preset(
+                self.compiler,
+                preset_err,
+                env.region,
+                self.cfg,
+                self.interner,
+            )
+            .add_annotation(
+                abs_alias.name_span,
+                AnnotationKind::Secondary,
+                "Found inside this alias".to_string().into(),
+            );
+            self.summary.push_diag(builder.build());
         }
 
         let mut conds: Vec<ExprId> = Vec::with_capacity(abs_alias.conds.len());
@@ -3753,7 +3735,7 @@ impl<'res> TypeResolver<'res> {
                 } else {
                     Err(PresetErr::NumericOverflow {
                         sp_num: SpannedContainer::new(*name_id, spanned_expr.span),
-                        fmtted_ty: Formatted::Integer,
+                        fmtted_ty: ChrnClassifier::Integer,
                     })
                 }
             }
@@ -3778,7 +3760,7 @@ impl<'res> TypeResolver<'res> {
                 } else {
                     Err(PresetErr::NumericOverflow {
                         sp_num: SpannedContainer::new(*name_id, spanned_expr.span),
-                        fmtted_ty: Formatted::Float,
+                        fmtted_ty: ChrnClassifier::Float,
                     })
                 }
             }

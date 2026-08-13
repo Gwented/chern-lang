@@ -16,7 +16,7 @@ use chrn_utils::{
 };
 use lang::{
     algo::{self, FuzzyMatch},
-    fmter::Formattable,
+    fmter::ChrnClassifiable,
     keywords::Keyword,
 };
 

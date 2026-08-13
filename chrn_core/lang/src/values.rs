@@ -4,7 +4,7 @@
 use chrn_utils::id_types::{ExprId, InternedId, SymbolId, TypeId};
 
 use crate::{
-    fmter::{Formattable, Formatted},
+    fmter::{ChrnClassifiable, ChrnClassifier},
     types::boundaries::TypeBoundaryFlags,
 };
 // TODO: Should probably be in compilation
@@ -109,18 +109,18 @@ impl ValueKind {
     }
 }
 
-impl Formattable for ValueKind {
-    fn to_fmt(&self) -> Formatted {
+impl ChrnClassifiable for ValueKind {
+    fn to_fmt(&self) -> ChrnClassifier {
         match self {
-            ValueKind::I64 => Formatted::I64,
-            ValueKind::F64 => Formatted::F64,
-            ValueKind::Char => Formatted::Char,
-            ValueKind::Tuple => Formatted::Tuple,
-            ValueKind::Bool => Formatted::Bool,
-            ValueKind::InternedStr | ValueKind::RuntimeStr => Formatted::Str,
-            ValueKind::Unknown => Formatted::Unknown,
-            ValueKind::Array => Formatted::Array,
-            ValueKind::Func => Formatted::Func,
+            ValueKind::I64 => ChrnClassifier::I64,
+            ValueKind::F64 => ChrnClassifier::F64,
+            ValueKind::Char => ChrnClassifier::Char,
+            ValueKind::Tuple => ChrnClassifier::Tuple,
+            ValueKind::Bool => ChrnClassifier::Bool,
+            ValueKind::InternedStr | ValueKind::RuntimeStr => ChrnClassifier::Str,
+            ValueKind::Unknown => ChrnClassifier::Unknown,
+            ValueKind::Array => ChrnClassifier::Array,
+            ValueKind::Func => ChrnClassifier::Func,
         }
     }
 }

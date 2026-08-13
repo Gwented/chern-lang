@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use chrn_utils::{id_types::TypeId, source_map::source_span::SourceSpan};
-use lang::{fmter::Formattable, types::boundaries::TypeBoundaryFlags};
+use lang::{fmter::ChrnClassifiable, types::boundaries::TypeBoundaryFlags};
 
 use crate::{
     script_compiler::ScriptCompiler,

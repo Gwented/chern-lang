@@ -10,7 +10,7 @@ use chrn_utils::{
     loop_abort,
 };
 use lang::{
-    fmter::{Formattable, Formatted},
+    fmter::{ChrnClassifiable, ChrnClassifier},
     types::{
         boundaries::TypeBoundaryFlags,
         builtins::{BuiltinType, BuiltinTypeKind},
@@ -138,7 +138,7 @@ impl Type {
 
     // so??
     /// The env can't be passed into to_fmt so
-    pub fn to_fmt(types: &Arena<TypeInfo, TypeId>, mut type_id: TypeId) -> Formatted {
+    pub fn to_fmt(types: &Arena<TypeInfo, TypeId>, mut type_id: TypeId) -> ChrnClassifier {
         let checked = walk_type_id_deferred!(&types, type_id);
         match &types[checked.inner].ty {
             Type::BuiltinTypeInfo(builtin_type) => builtin_type.ty.kind().to_fmt(),
@@ -150,8 +150,8 @@ impl Type {
             // This is the only issue since it's not a single Formatted.
             // The next obvious decision should be to do, "Formatted::NumericIntegerRanged", etc.,
             // where we have 4000 variants which
-            Type::Boundaries(flags) => Formatted::Boundaries(*flags),
-            Type::Unknown => Formatted::Unknown,
+            Type::Boundaries(flags) => ChrnClassifier::Boundaries(*flags),
+            Type::Unknown => ChrnClassifier::Unknown,
             Type::Deferred(_) => unreachable!(),
         }
     }

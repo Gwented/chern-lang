@@ -18,10 +18,10 @@ export let WRITE = 0b1
 // let string = "4" + "8"
 
 var->
-    x: core
 nest->
     export struct Person {
         k: List<i32,>
+        k: i32
         // another: core::Person
         // state: State
         // p: str #scient The error emitted by this should be able to place the directive pointers
@@ -35,7 +35,7 @@ nest->
         stating: i32
         InProgress
     }
-complex->
+/*complex->
 State {
     stating {
         idents = "2"
@@ -43,18 +43,18 @@ State {
         // found `f64`" Still is a little verbose
         default_val = 4
     }
-}
+}*/
 // Map<i32, u32> {}
     /*State {
         InProgress {}
         stating {}
     }*/
     // nothing::Person {}
-override->
+/*override->
 JAVA {
     types {
         change i32, = u32::MAX
     }
 }
 // State=> {stating {k {}}}
-// var State {}
+// var State {}*/

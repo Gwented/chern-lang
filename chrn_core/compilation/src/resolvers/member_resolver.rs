@@ -2,15 +2,18 @@
 //Seeing if members having a specific stage will help reduce the complexity of type resolution
 //which is stacking infinitely (Infinitely as in the infinite sign here -> 🍔)
 
+use std::collections::HashSet;
+
 use chrn_utils::{
     chrn_config::ChrnConfig,
-    id_types::{AstId, MemberId, SymbolId, TypeId},
+    id_types::{AstId, InternedId, MemberId, SpannedContainer, SymbolId, TypeId},
     intern::Intern,
     source_map::source_diagnostic::{
         DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
         annotations::AnnotationKind,
     },
 };
+use lang::fmter::ChrnClassifier;
 
 use crate::{
     lookup::scopes::{AssociatedScopeKind, ScopeLookupPattern, ScopeType},
@@ -18,12 +21,13 @@ use crate::{
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState, typechecker},
     script_compiler::{self, ScriptCompiler},
     semantic::{
+        checker_helpers::DuplicateTracker,
         compilation_unit::CompilationUnit,
         hir::{
             hir_concepts::Type,
             hir_symbols::{FieldRepre, MemberSymbolKind, SymbolKind, VariantRepre},
         },
-        preset_reporter,
+        preset_reporter::{self, preset_err::PresetErr},
         resolution::{self, resolution_concepts::TypeExprResult},
     },
 };
@@ -37,7 +41,7 @@ use crate::{
 ///
 /// Intended to allow for future stages to assume all inner parts of data have been processed.
 pub struct MemberResolver<'a> {
-    settings: &'a ChrnConfig,
+    cfg: &'a ChrnConfig,
     interner: &'a Intern,
     compiler: &'a mut ScriptCompiler,
     summary: SourceDiagnosticSummary,
@@ -46,14 +50,14 @@ pub struct MemberResolver<'a> {
 impl MemberResolver<'_> {
     /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new<'a>(
-        settings: &'a ChrnConfig,
+        cfg: &'a ChrnConfig,
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,
     ) -> MemberResolver<'a> {
         debug_assert_eq!(ResolverState::MEMBER, compiler.resolver_state);
         compiler.resolver_state.advance();
         MemberResolver {
-            settings,
+            cfg,
             interner,
             compiler,
             summary: SourceDiagnosticSummary::default(),
@@ -72,6 +76,10 @@ impl MemberResolver<'_> {
     /// If diagnostics > 0 then an error occured
     // Would options be ok here?
     pub fn resolve(&mut self, env: &ResolverEnv) -> SourceDiagnosticSummary {
+        // Re-used hashet when identifiers are checked for members.
+        let mut ident_tracker: DuplicateTracker<SpannedContainer<InternedId>> =
+            DuplicateTracker::with_capacities(4, 4);
+
         // Goes through all symbols the current module has and only picks structs and enums to
         // append to.
         for comp_unit in env.compilation_syms.iter().cloned() {
@@ -81,8 +89,8 @@ impl MemberResolver<'_> {
                         // This split is more so, users can define these set of symbols, and users cannot
                         // define the unreacables.
                         SymbolKind::Type(type_id) => match &self.compiler.types[type_id].ty {
-                            Type::Struct(_) => self.resolve_struct(sym_id, env),
-                            Type::Enum(_) => self.resolve_enum(sym_id, env),
+                            Type::Struct(_) => self.resolve_struct(sym_id, &mut ident_tracker, env),
+                            Type::Enum(_) => self.resolve_enum(sym_id, &mut ident_tracker, env),
                             _ => (),
                         },
                         // Still uses sym id since their actual ids make it a little more complicated to get
@@ -93,6 +101,7 @@ impl MemberResolver<'_> {
                 }
                 CompilationUnit::Impl(_) => (),
             }
+            ident_tracker.clear();
         }
 
         let mut summary = SourceDiagnosticSummary::default();
@@ -100,7 +109,12 @@ impl MemberResolver<'_> {
         summary
     }
 
-    fn resolve_struct(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
+    fn resolve_struct(
+        &mut self,
+        parent_sym_id: SymbolId,
+        ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedId>>,
+        env: &ResolverEnv,
+    ) {
         let ast_id = self.compiler.symbols[parent_sym_id]
             .ast_id
             .expect("Should be user symbols only");
@@ -108,15 +122,6 @@ impl MemberResolver<'_> {
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         let mut fields: Vec<MemberId> = Vec::with_capacity(abs_struct.fields.len());
-
-        //NOTE: Ok maybe just make it a hashet. For no reason in particular.
-        //
-        // Tracks duplicate field identifiers
-        //
-        // This is not a `HashSet` because it is not anticipated that a field of any kind in the
-        // majority of scenarios will ever be so large to where a hash system is absolutely needed
-        // over a linear scan.
-        let mut seen: Vec<&AbstractTypeDef> = Vec::with_capacity(abs_struct.fields.len());
 
         //TODO: global condition and argument setting.
         //field arg and cond settings.
@@ -170,7 +175,7 @@ impl MemberResolver<'_> {
                         &mut self.summary,
                         preset_err,
                         env.region,
-                        self.settings,
+                        self.cfg,
                         self.interner,
                     );
 
@@ -183,7 +188,8 @@ impl MemberResolver<'_> {
                 }
             };
 
-            seen.push(&field_typedef);
+            let sp_name_id = SpannedContainer::new(field_typedef.name_id, field_typedef.name_span);
+            ident_tracker.insert_or_store(sp_name_id);
 
             let member_id = MemberId::new(self.compiler.sym_members.len() as u32);
 
@@ -214,45 +220,26 @@ impl MemberResolver<'_> {
             fields.push(member_id);
         }
 
-        for (i, current_field) in seen.iter().enumerate() {
-            if let Some((_, original_field)) = seen
-                .iter()
-                .enumerate()
-                // If the other index was declared after the current index and they have the same identifier
-                //
-                // Since this iteration specifically checks if the current was declared after the
-                // last and the iteration terminates upon the first match, this correctly points at
-                // the original field for all duplicates.
-                .find(|(other_i, f)| *other_i < i && current_field.name_id == f.name_id)
-            {
-                let dup_name = self.interner.search(current_field.name_id);
+        for found in ident_tracker.found_dups.drain(..) {
+            let preset_err = PresetErr::DuplicateIdents {
+                sp_original: found.original,
+                sp_dup: found.dup,
+                classifier: ChrnClassifier::Field,
+            };
 
-                let orig_span = original_field.name_span;
-                let current_field_span = current_field.name_span;
-
-                let core_msg = format!("More than one field has identifier `{dup_name}`");
-
-                let src_diag = SourceDiagnostic::builder(
-                    None,
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    env.region.path_id,
-                )
-                .add_annotation(
-                    abs_struct.name_span,
-                    AnnotationKind::Secondary,
-                    "Found inside this struct".to_string().into(),
-                )
-                .add_annotation(
-                    orig_span,
-                    AnnotationKind::Secondary,
-                    format!("Original usage of `{dup_name}` here").into(),
-                )
-                .add_annotation(current_field_span, AnnotationKind::Primary, None)
-                .build();
-
-                self.summary.push_diag(src_diag);
-            }
+            let builder = preset_reporter::create_diag_builder_preset(
+                self.compiler,
+                preset_err,
+                env.region,
+                self.cfg,
+                self.interner,
+            )
+            .add_annotation(
+                abs_struct.name_span,
+                AnnotationKind::Secondary,
+                "Found inside this struct".to_string().into(),
+            );
+            self.summary.push_diag(builder.build());
         }
 
         let struct_def = self.compiler.get_struct_mut(parent_sym_id);
@@ -260,7 +247,12 @@ impl MemberResolver<'_> {
         struct_def.fields.append(&mut fields);
     }
 
-    fn resolve_enum(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
+    fn resolve_enum(
+        &mut self,
+        parent_sym_id: SymbolId,
+        ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedId>>,
+        env: &ResolverEnv,
+    ) {
         let ast_id = self.compiler.symbols[parent_sym_id]
             .ast_id
             .expect("Should be user symbols only");
@@ -268,14 +260,12 @@ impl MemberResolver<'_> {
 
         let mut variants: Vec<MemberId> = Vec::with_capacity(abs_enum.variants.len());
 
-        // For duplicate variant identifiers
-        let mut seen: Vec<&AbstractVariant> = Vec::with_capacity(abs_enum.variants.len());
-
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         // Checking if there are duplicate name ids within the same enum
         for (i, variant) in abs_enum.variants.iter().enumerate() {
-            seen.push(&variant);
+            let sp_name_id = SpannedContainer::new(variant.name_id, variant.name_span);
+            ident_tracker.insert_or_store(sp_name_id);
 
             let member_id = MemberId::new(self.compiler.sym_members.len() as u32);
             let variant_repre = if let Some(sp_ty_expr) = &variant.sp_ty_expr {
@@ -323,7 +313,7 @@ impl MemberResolver<'_> {
                             &mut self.summary,
                             preset_err,
                             env.region,
-                            self.settings,
+                            self.cfg,
                             self.interner,
                         );
 
@@ -358,46 +348,26 @@ impl MemberResolver<'_> {
             variants.push(member_id);
         }
 
-        for (i, current_variant) in seen.iter().enumerate() {
-            if let Some((_, original_variant)) = seen
-                .iter()
-                .enumerate()
-                // If the other index was declared after the current index and they have the same identifier
-                //
-                // Since this iteration specifically checks if the current was declared after the
-                // last and the iteration terminates upon the first match, this correctly points at
-                // the original field for all duplicates.
-                .find(|(other_i, f)| *other_i < i && current_variant.name_id == f.name_id)
-            {
-                let dup_name = self.interner.search(current_variant.name_id);
+        for found in ident_tracker.found_dups.drain(..) {
+            let preset_err = PresetErr::DuplicateIdents {
+                sp_original: found.original,
+                sp_dup: found.dup,
+                classifier: ChrnClassifier::Variant,
+            };
 
-                let orig_span = original_variant.name_span;
-                let current_field_span = current_variant.name_span;
-
-                // Preset error?
-                let core_msg = format!("More than one variant has the identifier \"{dup_name}\"");
-
-                let src_diag = SourceDiagnostic::builder(
-                    None,
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    env.region.path_id,
-                )
-                .add_annotation(
-                    abs_enum.name_span,
-                    AnnotationKind::Secondary,
-                    "Found inside this enum".to_string().into(),
-                )
-                .add_annotation(
-                    orig_span,
-                    AnnotationKind::Secondary,
-                    format!("Original usage of identifier `{dup_name}` here").into(),
-                )
-                .add_annotation(current_field_span, AnnotationKind::Primary, None)
-                .build();
-
-                self.summary.push_diag(src_diag);
-            }
+            let builder = preset_reporter::create_diag_builder_preset(
+                self.compiler,
+                preset_err,
+                env.region,
+                self.cfg,
+                self.interner,
+            )
+            .add_annotation(
+                abs_enum.name_span,
+                AnnotationKind::Secondary,
+                "Found inside this enum".to_string().into(),
+            );
+            self.summary.push_diag(builder.build());
         }
 
         let enum_def = self.compiler.get_enum_mut(parent_sym_id);

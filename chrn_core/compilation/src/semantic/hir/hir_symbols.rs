@@ -6,7 +6,7 @@ use chrn_utils::{
     source_map::source_span::SourceSpan,
 };
 use lang::{
-    fmter::{Formattable, Formatted},
+    fmter::{ChrnClassifiable, ChrnClassifier},
     types::boundaries::TypeBoundaryFlags,
 };
 
@@ -88,17 +88,17 @@ pub enum SymbolKind {
 
 impl SymbolKind {
     // This is getting obscure now...
-    pub fn to_fmt(compiler: &ScriptCompiler, sym_id: SymbolId) -> Formatted {
+    pub fn to_fmt(compiler: &ScriptCompiler, sym_id: SymbolId) -> ChrnClassifier {
         let sym = &compiler.symbols[sym_id];
         match &sym.kind {
             SymbolKind::Type(type_id) => Type::to_fmt(&compiler.types, *type_id),
-            SymbolKind::Variable(_) => Formatted::Variable,
+            SymbolKind::Variable(_) => ChrnClassifier::Variable,
             SymbolKind::Namespace => match sym.associated_scope.expect("Is kind namespace") {
-                AssociatedScopeKind::Module(_) => Formatted::Module,
-                AssociatedScopeKind::Scope(_) => Formatted::Namespace,
+                AssociatedScopeKind::Module(_) => ChrnClassifier::Module,
+                AssociatedScopeKind::Scope(_) => ChrnClassifier::Namespace,
             },
-            SymbolKind::Directive(_) => Formatted::Directive,
-            SymbolKind::ExternType => Formatted::ExternType,
+            SymbolKind::Directive(_) => ChrnClassifier::Directive,
+            SymbolKind::ExternType => ChrnClassifier::ExternType,
         }
     }
     pub fn to_flat(&self) -> SymbolKindFlat {
@@ -271,9 +271,9 @@ impl StructDef {
     }
 }
 
-impl Formattable for StructDef {
-    fn to_fmt(&self) -> Formatted {
-        Formatted::Struct
+impl ChrnClassifiable for StructDef {
+    fn to_fmt(&self) -> ChrnClassifier {
+        ChrnClassifier::Struct
     }
 }
 
@@ -308,9 +308,9 @@ impl EnumDef {
     }
 }
 
-impl Formattable for EnumDef {
-    fn to_fmt(&self) -> Formatted {
-        Formatted::Enum
+impl ChrnClassifiable for EnumDef {
+    fn to_fmt(&self) -> ChrnClassifier {
+        ChrnClassifier::Enum
     }
 }
 
@@ -401,9 +401,9 @@ impl TypeDef {
     }
 }
 
-impl Formattable for TypeDef {
-    fn to_fmt(&self) -> Formatted {
-        Formatted::TypeDef
+impl ChrnClassifiable for TypeDef {
+    fn to_fmt(&self) -> ChrnClassifier {
+        ChrnClassifier::TypeDef
     }
 }
 
@@ -451,9 +451,9 @@ impl FuncDef {
     }
 }
 
-impl Formattable for FuncDef {
-    fn to_fmt(&self) -> Formatted {
-        Formatted::Func
+impl ChrnClassifiable for FuncDef {
+    fn to_fmt(&self) -> ChrnClassifier {
+        ChrnClassifier::Func
     }
 }
 
@@ -530,9 +530,9 @@ impl AliasDef {
     }
 }
 
-impl Formattable for AliasDef {
-    fn to_fmt(&self) -> Formatted {
-        Formatted::Alias
+impl ChrnClassifiable for AliasDef {
+    fn to_fmt(&self) -> ChrnClassifier {
+        ChrnClassifier::Alias
     }
 }
 
@@ -547,16 +547,16 @@ pub enum FuncKind {
     Equals,
 }
 
-impl Formattable for FuncKind {
-    fn to_fmt(&self) -> Formatted {
+impl ChrnClassifiable for FuncKind {
+    fn to_fmt(&self) -> ChrnClassifier {
         match self {
-            FuncKind::Contains => Formatted::FuncContains,
-            FuncKind::IsWhitespace => Formatted::IsWhitespace,
-            FuncKind::Range => Formatted::FuncRange,
-            FuncKind::StartsW => Formatted::FuncStartsW,
-            FuncKind::EndsW => Formatted::FuncEndsW,
-            FuncKind::Equals => Formatted::FuncEquals,
-            FuncKind::IsEmpty => Formatted::IsEmpty,
+            FuncKind::Contains => ChrnClassifier::FuncContains,
+            FuncKind::IsWhitespace => ChrnClassifier::IsWhitespace,
+            FuncKind::Range => ChrnClassifier::FuncRange,
+            FuncKind::StartsW => ChrnClassifier::FuncStartsW,
+            FuncKind::EndsW => ChrnClassifier::FuncEndsW,
+            FuncKind::Equals => ChrnClassifier::FuncEquals,
+            FuncKind::IsEmpty => ChrnClassifier::IsEmpty,
         }
     }
 }

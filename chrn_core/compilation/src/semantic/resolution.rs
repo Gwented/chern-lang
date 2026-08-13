@@ -8,9 +8,9 @@ use chrn_utils::{
     intern,
     source_map::source_span::SourceSpan,
 };
-use lang::{directives::Directive, fmter::Formatted};
+use lang::{directives::Directive, fmter::ChrnClassifier};
 use lang::{
-    fmter::Formattable,
+    fmter::ChrnClassifiable,
     types::builtins::{BuiltinType, BuiltinTypeKind},
 };
 

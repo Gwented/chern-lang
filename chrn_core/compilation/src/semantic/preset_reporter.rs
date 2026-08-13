@@ -6,6 +6,7 @@ mod static_enricher;
 use crate::lookup::scopes::AssociatedScopeKind;
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::script_compiler::ScriptCompiler;
+use crate::semantic::checker_helpers::DuplicateFound;
 use crate::semantic::hir::hir_symbols::SymbolKind;
 use crate::semantic::preset_reporter::engine_concepts::{
     AvailableKind, EngineOption, EngineOptionBase, ListAvailable,
@@ -14,6 +15,7 @@ use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, Prese
 use crate::semantic::resolution::resolution_concepts::{StaticAccessResult, TypeExprResult};
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
+use chrn_utils::id_types::{InternedId, SpannedContainer};
 use chrn_utils::s_suffix;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{
@@ -23,7 +25,7 @@ use chrn_utils::{
     intern::Intern,
     source_map::{source_diagnostic::SourceDiagnostic, source_region::SourceRegion},
 };
-use lang::fmter::Formattable;
+use lang::fmter::ChrnClassifiable;
 
 // These take ownership because `PresetErr::General` will clone otherwise, which isn't expensive.
 // Ok maybe this should just be a reference.
@@ -65,7 +67,7 @@ pub(crate) fn report_preset_vec<S: SourceDiagnosticSink>(
     }
 }
 
-/// Creates `SourceDiagnosticBuilder` with the preset associated with it's `PresetErr`
+/// Runs all checks associated with the given `PresetErr`, then returns its `SourceDiagnosticBuilder`
 pub(crate) fn create_diag_builder_preset(
     compiler: &ScriptCompiler,
     preset_err: PresetErr,
@@ -489,6 +491,34 @@ pub(crate) fn create_diag_builder_preset(
             );
 
             todo!()
+        }
+        PresetErr::DuplicateIdents {
+            sp_original,
+            sp_dup,
+            classifier,
+        } => {
+            let dup_name = interner.search(sp_original.inner);
+
+            let core_msg = format!("Duplicate {classifier} identifier `{dup_name}`");
+
+            // Maybe give `None` here..
+            SourceDiagnostic::builder(
+                // ScopeErr?
+                None,
+                DiagnosticLevel::Error,
+                core_msg,
+                region.path_id,
+            )
+            .add_annotation(
+                sp_dup.span,
+                AnnotationKind::Primary,
+                "Duplicate".to_string().into(),
+            )
+            .add_annotation(
+                sp_original.span,
+                AnnotationKind::Secondary,
+                "Original".to_string().into(),
+            )
         }
     }
 }

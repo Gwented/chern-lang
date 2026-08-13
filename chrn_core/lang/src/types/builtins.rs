@@ -4,7 +4,7 @@ use chrn_utils::{
 };
 
 use crate::{
-    fmter::{Formattable, Formatted},
+    fmter::{ChrnClassifiable, ChrnClassifier},
     types::boundaries::TypeBoundaryFlags,
 };
 
@@ -143,36 +143,36 @@ pub enum BuiltinTypeKind {
     Runtime,
 }
 
-impl Formattable for BuiltinTypeKind {
-    fn to_fmt(&self) -> Formatted {
+impl ChrnClassifiable for BuiltinTypeKind {
+    fn to_fmt(&self) -> ChrnClassifier {
         match self {
-            BuiltinTypeKind::I8 => Formatted::I8,
-            BuiltinTypeKind::U8 => Formatted::U8,
-            BuiltinTypeKind::I16 => Formatted::I16,
-            BuiltinTypeKind::U16 => Formatted::U16,
-            BuiltinTypeKind::F16 => Formatted::F16,
-            BuiltinTypeKind::I32 => Formatted::I32,
-            BuiltinTypeKind::U32 => Formatted::U32,
-            BuiltinTypeKind::F32 => Formatted::F32,
-            BuiltinTypeKind::I64 => Formatted::I64,
-            BuiltinTypeKind::U64 => Formatted::U64,
-            BuiltinTypeKind::F64 => Formatted::F64,
-            BuiltinTypeKind::I128 => Formatted::I128,
-            BuiltinTypeKind::U128 => Formatted::U128,
-            BuiltinTypeKind::F128 => Formatted::F128,
-            BuiltinTypeKind::Sized => Formatted::Sized,
-            BuiltinTypeKind::Unsized => Formatted::Unsized,
-            BuiltinTypeKind::Str => Formatted::Str,
-            BuiltinTypeKind::Char => Formatted::Char,
-            BuiltinTypeKind::Nil => Formatted::Nil,
-            BuiltinTypeKind::Bool => Formatted::Bool,
-            BuiltinTypeKind::BigInt => Formatted::BigInt,
-            BuiltinTypeKind::BigFloat => Formatted::BigFloat,
-            BuiltinTypeKind::List => Formatted::List,
-            BuiltinTypeKind::Set => Formatted::Set,
-            BuiltinTypeKind::Map => Formatted::Map,
-            BuiltinTypeKind::Runtime => Formatted::Runtime,
-            BuiltinTypeKind::Tuple => Formatted::Tuple,
+            BuiltinTypeKind::I8 => ChrnClassifier::I8,
+            BuiltinTypeKind::U8 => ChrnClassifier::U8,
+            BuiltinTypeKind::I16 => ChrnClassifier::I16,
+            BuiltinTypeKind::U16 => ChrnClassifier::U16,
+            BuiltinTypeKind::F16 => ChrnClassifier::F16,
+            BuiltinTypeKind::I32 => ChrnClassifier::I32,
+            BuiltinTypeKind::U32 => ChrnClassifier::U32,
+            BuiltinTypeKind::F32 => ChrnClassifier::F32,
+            BuiltinTypeKind::I64 => ChrnClassifier::I64,
+            BuiltinTypeKind::U64 => ChrnClassifier::U64,
+            BuiltinTypeKind::F64 => ChrnClassifier::F64,
+            BuiltinTypeKind::I128 => ChrnClassifier::I128,
+            BuiltinTypeKind::U128 => ChrnClassifier::U128,
+            BuiltinTypeKind::F128 => ChrnClassifier::F128,
+            BuiltinTypeKind::Sized => ChrnClassifier::Sized,
+            BuiltinTypeKind::Unsized => ChrnClassifier::Unsized,
+            BuiltinTypeKind::Str => ChrnClassifier::Str,
+            BuiltinTypeKind::Char => ChrnClassifier::Char,
+            BuiltinTypeKind::Nil => ChrnClassifier::Nil,
+            BuiltinTypeKind::Bool => ChrnClassifier::Bool,
+            BuiltinTypeKind::BigInt => ChrnClassifier::BigInt,
+            BuiltinTypeKind::BigFloat => ChrnClassifier::BigFloat,
+            BuiltinTypeKind::List => ChrnClassifier::List,
+            BuiltinTypeKind::Set => ChrnClassifier::Set,
+            BuiltinTypeKind::Map => ChrnClassifier::Map,
+            BuiltinTypeKind::Runtime => ChrnClassifier::Runtime,
+            BuiltinTypeKind::Tuple => ChrnClassifier::Tuple,
         }
     }
 }

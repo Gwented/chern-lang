@@ -20,7 +20,7 @@ use chrn_utils::{
 use lang::{
     config_schemas::{self, ConfigSchema, ConfigSchemaKind},
     directives::Directive,
-    fmter::Formatted,
+    fmter::ChrnClassifier,
     types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
     values::Value,
 };
@@ -1382,7 +1382,7 @@ impl<'a> ConstraintResolver<'a> {
                         if spanned_directive.inner.has_restrictions() {
                             return Err(Some(PresetErr::CircularDirective {
                                 sp_fmtted_parent: SpannedContainer::new(
-                                    Formatted::Struct,
+                                    ChrnClassifier::Struct,
                                     struct_def.name_span,
                                 ),
                                 sp_directive: spanned_directive.into_owned(),
@@ -1424,7 +1424,7 @@ impl<'a> ConstraintResolver<'a> {
                             if spanned_directive.inner.has_restrictions() {
                                 return Err(Some(PresetErr::CircularDirective {
                                     sp_fmtted_parent: SpannedContainer::new(
-                                        Formatted::Enum,
+                                        ChrnClassifier::Enum,
                                         enum_def.name_span,
                                     ),
                                     sp_directive: spanned_directive.into_owned(),
@@ -1489,7 +1489,7 @@ impl<'a> ConstraintResolver<'a> {
                                 if spanned_directive.inner.has_restrictions() {
                                     return Err(Some(PresetErr::CircularDirective {
                                         sp_fmtted_parent: SpannedContainer::new(
-                                            Formatted::Tuple,
+                                            ChrnClassifier::Tuple,
                                             parent_span,
                                         ),
                                         sp_directive: spanned_directive.into_owned(),
