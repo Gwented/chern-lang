@@ -144,9 +144,9 @@ impl<'a> ConstraintResolver<'a> {
         // let abs_cfg_root = env.ast_info.get_cfg_root(ast_id);
 
         // leconstraint_reot module = &self.compiler.mods[env.current_mod];
-        let cfg_root = self.compiler.get_cfg_def_root(parent_impl_id);
+        let cfg_root = self.compiler.get_cfg_root_override_mut(todo!());
 
-        let Some(linked_type_id) = cfg_root.linked_root_val else {
+        let Some(linked_type_id) = cfg_root.linked_sym_id else {
             return;
         };
         let cfg_root_ty_span = self
@@ -203,76 +203,77 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         // :( Clone
-        for cfg_member_id in cfg_root.cfg_members.clone() {
-            //WARN: Suspicious
-            if self.compiler.impl_members[cfg_member_id].is_unknown() {
-                continue;
-            }
-
-            let cfg_member = self.compiler.get_cfg_def_member(cfg_member_id);
-            //NOTE: The somewhat dangerous part of this staying `Option` is that it IS a real
-            //reflection of the fact that for something like a variant, there COULD be no boundary
-            //set, but it could also hide silent bugs, just like in the recursive resolution of
-            //option members.
-            let boundaries =
-                MemberSymbolKind::boundaries(self.compiler, cfg_member.linked_member_id);
-
-            //TODO: Given the scope type, should react differently to depths of members.
-            //Or, maybe `TypeResolver` can just do this? This actually isn't that hard to check.
-            for opt_member_id in cfg_member.opt_assignments.iter().copied() {
-                // Variant and field specific schemas?
-                let opt_member = self.compiler.get_opt_assignment_member(opt_member_id);
-                let schema = config_schemas::get_cfg_schema(ConfigSchemaKind::Member);
-                // let schema = schema_lookup::get_schema_from_type_id(self.compiler, linked_type_id)
-                //     .expect("`TypeResolver` should only give linked sym ids to valid configs");
-                let sp_opt_name_id =
-                    SpannedContainer::new(opt_member.name_id, opt_member.name_span);
-                //FIX:
-                let member_ty_name_id_opt = self
-                    .compiler
-                    .get_type_id_from_member_id(cfg_member.linked_member_id)
-                    .map(|id| self.compiler.get_name_id_from_type_id(id))
-                    .flatten();
-
-                if let Err(preset_err) = self.check_opt(
-                    schema,
-                    member_ty_name_id_opt,
-                    // WARN: Is this the right span?
-                    cfg_member.name_span,
-                    boundaries,
-                    &sp_opt_name_id,
-                    opt_member.array_expr_id,
-                    env,
-                ) {
-                    // Maybe return ONE more present? Just 2? A small slice?
-                    // No
-                    // Slice as in [Option<PresetErr>;2]
-                    // Ok sure
-                    preset_reporter::report_preset(
-                        &self.compiler,
-                        &mut self.summary,
-                        preset_err,
-                        env.region,
-                        self.cfg,
-                        self.interner,
-                    );
-                };
-            }
-
-            // AAAAAAAAAAAAAHHHHHHHHHHHHHHHHHH
-            // Woah (em-dash) Relax
-            //
-            // Recursively resolves inner members
-            // self.resolve_cfg_member(cfg_member_id, env);
-
-            // for thing in cfg_member.cfg_def_members.iter().cloned() {
-            //     let mem = self.compiler.get_cfg_def_member(thing);
-            //     dbg!(self.interner.search(mem.name_id));
-            //     dbg!(mem);
-            //     dbg!(thing);
-            //     todo!("Ok");
-            // }
-        }
+        todo!();
+        // for cfg_member_id in cfg_root.cfg_members.clone() {
+        //     //WARN: Suspicious
+        //     if self.compiler.impl_members[cfg_member_id].is_unknown() {
+        //         continue;
+        //     }
+        //
+        //     let cfg_member = self.compiler.get_cfg_def_member(cfg_member_id);
+        //     //NOTE: The somewhat dangerous part of this staying `Option` is that it IS a real
+        //     //reflection of the fact that for something like a variant, there COULD be no boundary
+        //     //set, but it could also hide silent bugs, just like in the recursive resolution of
+        //     //option members.
+        //     let boundaries =
+        //         MemberSymbolKind::boundaries(self.compiler, cfg_member.linked_member_id);
+        //
+        //     //TODO: Given the scope type, should react differently to depths of members.
+        //     //Or, maybe `TypeResolver` can just do this? This actually isn't that hard to check.
+        //     for opt_member_id in cfg_member.opt_assignments.iter().copied() {
+        //         // Variant and field specific schemas?
+        //         let opt_member = self.compiler.get_opt_assignment_member(opt_member_id);
+        //         let schema = config_schemas::get_cfg_schema(ConfigSchemaKind::Member);
+        //         // let schema = schema_lookup::get_schema_from_type_id(self.compiler, linked_type_id)
+        //         //     .expect("`TypeResolver` should only give linked sym ids to valid configs");
+        //         let sp_opt_name_id =
+        //             SpannedContainer::new(opt_member.name_id, opt_member.name_span);
+        //         //FIX:
+        //         let member_ty_name_id_opt = self
+        //             .compiler
+        //             .get_type_id_from_member_id(cfg_member.linked_member_id)
+        //             .map(|id| self.compiler.get_name_id_from_type_id(id))
+        //             .flatten();
+        //
+        //         if let Err(preset_err) = self.check_opt(
+        //             schema,
+        //             member_ty_name_id_opt,
+        //             // WARN: Is this the right span?
+        //             cfg_member.name_span,
+        //             boundaries,
+        //             &sp_opt_name_id,
+        //             opt_member.array_expr_id,
+        //             env,
+        //         ) {
+        //             // Maybe return ONE more present? Just 2? A small slice?
+        //             // No
+        //             // Slice as in [Option<PresetErr>;2]
+        //             // Ok sure
+        //             preset_reporter::report_preset(
+        //                 &self.compiler,
+        //                 &mut self.summary,
+        //                 preset_err,
+        //                 env.region,
+        //                 self.cfg,
+        //                 self.interner,
+        //             );
+        //         };
+        //     }
+        //
+        //     // AAAAAAAAAAAAAHHHHHHHHHHHHHHHHHH
+        //     // Woah (em-dash) Relax
+        //     //
+        //     // Recursively resolves inner members
+        //     // self.resolve_cfg_member(cfg_member_id, env);
+        //
+        //     // for thing in cfg_member.cfg_def_members.iter().cloned() {
+        //     //     let mem = self.compiler.get_cfg_def_member(thing);
+        //     //     dbg!(self.interner.search(mem.name_id));
+        //     //     dbg!(mem);
+        //     //     dbg!(thing);
+        //     //     todo!("Ok");
+        //     // }
+        // }
         // todo!("Recursively check inner cfg members");
     }
 

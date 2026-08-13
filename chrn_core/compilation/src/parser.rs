@@ -11,13 +11,16 @@ use crate::lexer::token::{SpannedToken, Token, TokenKind};
 use crate::lookup::scopes::{ScopeLookupPattern, ScopeType};
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractDirective,
-    AbstractEnum, AbstractImpl, AbstractMemberAccess, AbstractMultiAssign,
-    AbstractOptionAssignment, AbstractParam, AbstractStruct, AbstractTypeDef, AbstractVar,
-    AbstractVariant, AstInfo, BinaryOp, Item, SectionKind, Unary, UnaryOp,
+    AbstractEnum, AbstractImpl, AbstractMemberAccess, AbstractParam, AbstractStruct,
+    AbstractTypeDef, AbstractVar, AbstractVariant, AstInfo, BinaryOp, Item, SectionKind, Unary,
+    UnaryOp,
 };
 
 use crate::parser::ast::ast_exprs::{
-    AbstractGeneric, ArrayExpr, Expr, PathSegment, SpannedExpr, TypeExpr,
+    AbstractGeneric, ArrayExpr, AstExpr, PathSegment, SpannedExpr, TypeExpr,
+};
+use crate::parser::ast::ast_stmts::{
+    AbstractOptionAssignment, AbstractStmt, AbstractTypeMultiAssign,
 };
 use crate::parser::branch::{Branch, NestBranch, NeutralBranch, SectionBranch};
 use crate::parser::context::ParserContext;
@@ -792,23 +795,38 @@ fn parse_cfg_expr(
     scope_type: ScopeType,
     interner: &Intern,
 ) -> Result<AbstractConfig, Token> {
-    let _guard = budget.increase_depth();
-    // Oh wow this looks great
-    // This was sarcasm!
+    let _guard = budget.increase_depth().map_err(|_| {
+        let msg = format!(
+            "Reached max recursive depth of {}",
+            budget.recursion_tracker.limit()
+        );
+
+        ctx.report_verbose(
+            &msg,
+            InitialEvidence::new(
+                SemanticEnv::SectComplex,
+                SemanticSituation::UnexpectedToken,
+                //TODO:
+                SectionBranch::Complex.into(),
+            ),
+            interner,
+        );
+        Token::Poison
+    })?;
 
     let (lookup_pat, kind) = handle_cfg_metadata(ctx, budget, is_root, scope_type, interner)?;
 
     // Allows for "=>" to notify that
     if ctx.peek_tok() != Token::OCurlyBracket && ctx.peek_tok() != Token::NotSlimArrow {
-        let (or_msg, member_msg) = if is_root {
-            ("", "")
+        let (or_msg, type_msg) = if is_root {
+            ("", "root")
         } else {
-            (" or '=>'", " member")
+            (" or '=>'", "member")
         };
         // Ok what about options buddy?
         // No.
         ctx.report_verbose(
-            format!("Use a '{{' block{or_msg} to define config{member_msg}"),
+            format!("Use a '{{' block{or_msg} to define config {type_msg}"),
             InitialEvidence::new(
                 SemanticEnv::SectNest,
                 SemanticSituation::UnexpectedToken,
@@ -842,23 +860,25 @@ fn parse_cfg_expr(
         return Err(Token::Poison);
     }
 
-    let mut opt_assignments: Vec<AbstractOptionAssignment> = Vec::new();
+    let mut stmts: Vec<AbstractStmt> = Vec::new();
     let mut cfg_members: Vec<AbstractConfig> = Vec::new();
 
     //WARN: This is getting suspicious..
+    // Looking really bad..
     loop {
+        if scope_type == ScopeType::Override && ctx.peek_tok() == Token::Keyword(Keyword::Change) {
+            ctx.advance_tok();
+            let multi_assign = parse_change(ctx, budget, interner)?;
+            stmts.push(AbstractStmt::MultiAssignType(multi_assign));
+            continue;
+        }
+
         if ctx.peek_ahead(1).tok == Token::Assign {
             // Option parsing.
             // for "cases = [snake_case]"
-            match parse_option_assignment(ctx, budget, interner) {
-                //WARN: The attempt to make recovery better doesn't really work since it would
-                //basically need to propagate the fact that it wants to skip looking for
-                //the closing '}' for an invalid config by just breaking for all of them.
-                //So, this may return a should_break.
-                Ok(opt) => opt_assignments.push(opt),
-                // So the parsing details aren't lost
-                Err(_) => break,
-            };
+            let opt = parse_option_assignment(ctx, budget, interner)?;
+            stmts.push(AbstractStmt::OptAssignment(opt));
+            // Should this just be earlier? It's own separate earlier if?
         } else if ctx.peek_kind() == TokenKind::Id
             // "var/nest Type {}" can be used so we need to catch those semantic identifiers
             || ctx.peek_tok() == Token::Keyword(Keyword::Var)
@@ -893,12 +913,7 @@ fn parse_cfg_expr(
     }
 
     // Might have to separate these, parent and member.
-    Ok(AbstractConfig::new(
-        kind,
-        lookup_pat,
-        opt_assignments,
-        cfg_members,
-    ))
+    Ok(AbstractConfig::new(kind, lookup_pat, stmts, cfg_members))
 }
 
 /// Handles a scenario where what is about to be parsed could be an expr or type expr later in
@@ -916,7 +931,7 @@ fn parse_ambiguous_expr(
         let start = ctx.peek_span().start;
         let name_id = ctx.expect_id_verbose(
             TokenKind::Id,
-            "Expected for generic, found ",
+            "Expected identifier for generic, found ",
             "",
             InitialEvidence::new(
                 SemanticEnv::Expr,
@@ -1105,7 +1120,7 @@ fn parse_option_assignment(
         // Assumes it's a single value assignment if no OBracket is present
         let only_element = parse_expr(ctx, 0, budget, interner)?;
         let span = only_element.span;
-        let array_expr = Expr::Array(ArrayExpr::new(vec![only_element]));
+        let array_expr = AstExpr::Array(ArrayExpr::new(vec![only_element]));
 
         SpannedExpr::new(array_expr, span)
     };
@@ -1185,7 +1200,7 @@ fn parse_array(
 
     let array_expr = ArrayExpr::new(elements);
 
-    Ok(SpannedExpr::new(Expr::Array(array_expr), span))
+    Ok(SpannedExpr::new(AstExpr::Array(array_expr), span))
 }
 
 //TODO:
@@ -1292,7 +1307,7 @@ fn parse_expr(
             let span = SourceSpan::new(ctx.region.region_id, start, end);
 
             lhs = SpannedExpr::new(
-                Expr::BinaryExpr {
+                AstExpr::BinaryExpr {
                     op,
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
@@ -1310,7 +1325,7 @@ fn parse_expr(
 
             let span = SourceSpan::new(ctx.region.region_id, lhs.span.start, rhs.span.end);
             lhs = SpannedExpr::new(
-                Expr::BinaryExpr {
+                AstExpr::BinaryExpr {
                     op,
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
@@ -1333,7 +1348,7 @@ fn parse_expr(
                 ctx.peek_behind(1).span.end,
             );
 
-            lhs = SpannedExpr::new(Expr::Call(Box::new(lhs), args), span);
+            lhs = SpannedExpr::new(AstExpr::Call(Box::new(lhs), args), span);
         } else if ctx.peek_kind() == TokenKind::Id && ctx.peek_ahead(1).tok == Token::OParen {
             let bp = 100;
             if bp < min_bp {
@@ -1350,7 +1365,7 @@ fn parse_expr(
                 ctx.peek_behind(1).span.end,
             );
 
-            lhs = SpannedExpr::new(Expr::Call(Box::new(lhs), args), span);
+            lhs = SpannedExpr::new(AstExpr::Call(Box::new(lhs), args), span);
         } else if ctx.peek_tok() == Token::Dot && ctx.peek_ahead(1).tok.kind() == TokenKind::Id {
             // Handles cases like field access
             let bp = 100;
@@ -1381,7 +1396,7 @@ fn parse_expr(
             );
 
             lhs = SpannedExpr::new(
-                Expr::MemberAccess(AbstractMemberAccess::new(Box::new(lhs), field_id)),
+                AstExpr::MemberAccess(AbstractMemberAccess::new(Box::new(lhs), field_id)),
                 span,
             );
         } else {
@@ -1424,10 +1439,10 @@ fn parse_primary(
 
             ctx.expect_verbose(
                 TokenKind::CParen,
-                "Expected ')' to close grouped expression, found ",
+                "Unclosed ')' close expression, found ",
                 "",
                 InitialEvidence::new(
-                    SemanticEnv::Let,
+                    SemanticEnv::Expr,
                     SemanticSituation::UnclosedDelimiter,
                     //TODO: PASS IN
                     Branch::Expr,
@@ -1440,7 +1455,7 @@ fn parse_primary(
         Token::Id(name_id) if ctx.peek_ahead(1).tok == Token::Assign => {
             let ident_span = ctx.advance_span();
 
-            let ident_expr = SpannedExpr::new(Expr::Var(name_id), ident_span);
+            let ident_expr = SpannedExpr::new(AstExpr::Var(name_id), ident_span);
 
             ctx.advance_tok();
 
@@ -1452,7 +1467,7 @@ fn parse_primary(
                 ctx.peek_behind(1).span.end,
             );
 
-            let default = Expr::Default(Box::new(ident_expr), Box::new(expr));
+            let default = AstExpr::Default(Box::new(ident_expr), Box::new(expr));
 
             Ok(SpannedExpr::new(default, span))
         }
@@ -1462,35 +1477,35 @@ fn parse_primary(
             let end = ctx.peek_behind(1).span.end;
 
             let static_span = SourceSpan::new(ctx.region.region_id, start, end);
-            let sp_expr = SpannedExpr::new(Expr::StaticAccess(access_path), static_span);
+            let sp_expr = SpannedExpr::new(AstExpr::StaticAccess(access_path), static_span);
 
             Ok(sp_expr)
         }
         Token::BoolLiteral(boolean) => {
             let span = ctx.advance_span();
-            Ok(SpannedExpr::new(Expr::Bool(boolean), span))
+            Ok(SpannedExpr::new(AstExpr::Bool(boolean), span))
         }
         Token::Id(name_id) => {
             let span = ctx.advance_span();
-            Ok(SpannedExpr::new(Expr::Var(name_id), span))
+            Ok(SpannedExpr::new(AstExpr::Var(name_id), span))
         }
         Token::Integer(name_id, notation) => {
             let span = ctx.advance_span();
-            Ok(SpannedExpr::new(Expr::Integer(name_id, notation), span))
+            Ok(SpannedExpr::new(AstExpr::Integer(name_id, notation), span))
         }
         Token::Float(name_id, notation) => {
             let span = ctx.advance_span();
 
-            Ok(SpannedExpr::new(Expr::Float(name_id, notation), span))
+            Ok(SpannedExpr::new(AstExpr::Float(name_id, notation), span))
         }
         Token::Str(name_id) => {
             let span = ctx.advance_span();
-            Ok(SpannedExpr::new(Expr::Str(name_id), span))
+            Ok(SpannedExpr::new(AstExpr::Str(name_id), span))
         }
         Token::Char(ch) => {
             let span = ctx.advance_span();
 
-            Ok(SpannedExpr::new(Expr::Char(ch), span))
+            Ok(SpannedExpr::new(AstExpr::Char(ch), span))
         }
         t if t.kind().is_terminator() => {
             ctx.advance_tok();
@@ -1590,7 +1605,7 @@ fn parse_unary(
             let span = SourceSpan::new(ctx.region.region_id, start, expr.span.end);
             let unary = Unary::new(UnaryOp::Negate, Box::new(expr));
 
-            Ok(SpannedExpr::new(Expr::Unary(unary), span))
+            Ok(SpannedExpr::new(AstExpr::Unary(unary), span))
         }
         Token::ExclamationPoint => {
             let start = ctx.advance_span().start;
@@ -1600,7 +1615,7 @@ fn parse_unary(
 
             let unary = Unary::new(UnaryOp::Not, Box::new(expr));
 
-            Ok(SpannedExpr::new(Expr::Unary(unary), span))
+            Ok(SpannedExpr::new(AstExpr::Unary(unary), span))
         }
         Token::Tilde => {
             let start = ctx.advance_span().start;
@@ -1610,7 +1625,7 @@ fn parse_unary(
 
             let unary = Unary::new(UnaryOp::BitNot, Box::new(expr));
 
-            Ok(SpannedExpr::new(Expr::Unary(unary), span))
+            Ok(SpannedExpr::new(AstExpr::Unary(unary), span))
         }
         _ => parse_primary(ctx, budget, interner),
     }
@@ -1752,7 +1767,7 @@ fn parse_change(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
     interner: &Intern,
-) -> Result<TypeExpr, Token> {
+) -> Result<AbstractTypeMultiAssign, Token> {
     // Do not mind this
     parse_multi_assign_type(ctx, budget, interner)
 }
@@ -1765,7 +1780,7 @@ fn parse_multi_assign_type(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
     interner: &Intern,
-) -> Result<TypeExpr, Token> {
+) -> Result<AbstractTypeMultiAssign, Token> {
     let mut to_assign = Vec::new();
 
     while ctx.peek_tok() != Token::Assign {
@@ -1794,11 +1809,9 @@ fn parse_multi_assign_type(
     )?;
 
     let assign_to = parse_type_expr(ctx, budget, interner)?;
+    consume_trailing_comma(ctx);
 
-    Ok(TypeExpr::MultiAssign(AbstractMultiAssign::new(
-        to_assign,
-        Box::new(assign_to),
-    )))
+    Ok(AbstractTypeMultiAssign::new(to_assign, assign_to))
 }
 
 /// Parses a `::` separated static access path into a list of `SpannedPathSegment`s.

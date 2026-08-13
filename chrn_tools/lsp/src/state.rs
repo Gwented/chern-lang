@@ -1640,8 +1640,8 @@ impl RefCollector<'_> {
     /// Indexes the symbols, modules, fields, and variants named by an expression.
     fn expr_refs(&mut self, expr: &compilation::parser::ast::ast_exprs::SpannedExpr) {
         match &expr.expr {
-            Expr::MemberAccess(acc) => {
-                if let Expr::Var(base_id) = acc.base.expr
+            AstExprMemberAccess(acc) => {
+                if let AstExprVar(base_id) = acc.base.expr
                     && let Some(found_mod) = self.module_named(base_id)
                 {
                     self.map
@@ -1658,19 +1658,19 @@ impl RefCollector<'_> {
                 }
                 self.expr_refs(&acc.base);
             }
-            Expr::Default(_, def_expr) => self.expr_refs(def_expr),
-            Expr::Call(caller, args) => {
+            AstExprDefault(_, def_expr) => self.expr_refs(def_expr),
+            AstExprCall(caller, args) => {
                 self.expr_refs(caller);
                 for arg in args {
                     self.expr_refs(arg);
                 }
             }
-            Expr::Unary(u) => self.expr_refs(&u.spanned_expr),
-            Expr::BinaryExpr { lhs, rhs, .. } => {
+            AstExprUnary(u) => self.expr_refs(&u.spanned_expr),
+            AstExprBinaryExpr { lhs, rhs, .. } => {
                 self.expr_refs(lhs);
                 self.expr_refs(rhs);
             }
-            Expr::StaticAccess(segments) => self.static_access_refs(segments),
+            AstExprStaticAccess(segments) => self.static_access_refs(segments),
             _ => {}
         }
     }

@@ -324,10 +324,7 @@ pub(super) use crate::{
         member_resolver::MemberResolver, name_resolver::NamespaceResolver,
         type_resolver::TypeResolver,
     },
-    semantic::{
-        compilation_unit::CompilationUnit,
-        hir::hir_symbols::VariableState,
-    },
+    semantic::{compilation_unit::CompilationUnit, hir::hir_symbols::VariableState},
 };
 
 // -- Const dependency test helpers --

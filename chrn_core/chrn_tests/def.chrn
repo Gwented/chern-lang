@@ -36,6 +36,14 @@ nest->
         InProgress
     }
 complex->
+State {
+    stating {
+        idents = "2"
+        // Err msg here is a bit much. Could just say "Index `0` expects `i32` from config member/root,
+        // found `f64`" Still is a little verbose
+        default_val = 4
+    }
+}
 // Map<i32, u32> {}
     /*State {
         InProgress {}
@@ -45,7 +53,7 @@ complex->
 override->
 JAVA {
     types {
-        // i32, u8, u32 = java::int
+        change i32, = u32::MAX
     }
 }
 // State=> {stating {k {}}}

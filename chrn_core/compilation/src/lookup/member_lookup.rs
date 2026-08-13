@@ -57,27 +57,6 @@ pub fn collect_members(compiler: &ScriptCompiler, mut current_type_id: TypeId) -
     loop_abort!()
 }
 
-//TEST:
-pub fn lookup_sym_member(
-    compiler: &ScriptCompiler,
-    mut current_sym_id: SymbolId,
-    target_name_id: InternedId,
-    lookup_pat: MemberLookupPattern,
-) -> MemberLookupResult {
-    match compiler.symbols[current_sym_id].kind {
-        SymbolKind::Type(type_id) => {
-            lookup_type_member(compiler, type_id, target_name_id, lookup_pat)
-        }
-        SymbolKind::Variable(var_id) => todo!(),
-        // Namespaces don't have members, but they do have members, just static ones. Or are those
-        // members? Maybe those are just parts of the scope not actually members.
-        // If only we had some sort of, scope lookup.
-        SymbolKind::Namespace => todo!(),
-        SymbolKind::Directive(directive_id) => todo!(),
-        SymbolKind::ExternType => todo!(),
-    }
-}
-
 // Naming has a little collision since member runtime lookup has the same name as this,
 // realistically, const lookup.
 //
@@ -85,7 +64,7 @@ pub fn lookup_sym_member(
 // see
 // TODO: Lookup patterns
 /// Look for the identifier given as a member for the given `TypeId`
-pub fn lookup_type_member(
+pub fn lookup_member(
     compiler: &ScriptCompiler,
     mut current_type_id: TypeId,
     target_name_id: InternedId,

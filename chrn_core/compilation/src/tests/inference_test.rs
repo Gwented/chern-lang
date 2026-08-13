@@ -302,7 +302,8 @@ fn infer_binary_comparisons_always_produce_bool() {
     let expected = Some(TypeId::new(CORE_BOOL));
 
     for op in BOOL_PRODUCING {
-        for (lhs_unknown, rhs_unknown) in [(false, false), (true, false), (false, true), (true, true)]
+        for (lhs_unknown, rhs_unknown) in
+            [(false, false), (true, false), (false, true), (true, true)]
         {
             assert_eq!(
                 infer_type_from_binary_op(lhs, rhs, lhs_unknown, op, rhs_unknown),
@@ -325,7 +326,8 @@ fn infer_binary_bitwise_always_produces_i64() {
     let expected = Some(TypeId::new(CORE_I64));
 
     for op in BITWISE {
-        for (lhs_unknown, rhs_unknown) in [(false, false), (true, false), (false, true), (true, true)]
+        for (lhs_unknown, rhs_unknown) in
+            [(false, false), (true, false), (false, true), (true, true)]
         {
             assert_eq!(
                 infer_type_from_binary_op(lhs, rhs, lhs_unknown, op, rhs_unknown),

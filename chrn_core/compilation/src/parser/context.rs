@@ -404,7 +404,6 @@ impl<'a> ParserContext<'a> {
             },
             SemanticSituation::UnexpectedToken => changed = false,
             SemanticSituation::TypeBinding => changed = false,
-
             SemanticSituation::ValueBinding => changed = false,
             SemanticSituation::DirectiveParsing => match evidence.found.tok {
                 Token::Id(id) => {
@@ -427,7 +426,11 @@ impl<'a> ParserContext<'a> {
                 _ => changed = false,
             },
             SemanticSituation::ArgList => changed = false,
-            SemanticSituation::UnclosedDelimiter => changed = false,
+            SemanticSituation::UnclosedDelimiter => {
+                changed = false;
+                // Look for matching delimiter function?
+                // todo!();
+            }
             SemanticSituation::MissingStartDelimiter => changed = false,
             SemanticSituation::ReachedEOF => {
                 let terminator_str: &str = match evidence.found.tok {

@@ -5,17 +5,17 @@ use chrn_utils::{
 
 use crate::{
     lexer::token::Notation,
-    parser::ast::ast_concepts::{AbstractMemberAccess, AbstractMultiAssign, BinaryOp, Unary},
+    parser::ast::ast_concepts::{AbstractMemberAccess, BinaryOp, Unary},
 };
 
 #[derive(Debug)]
 pub struct SpannedExpr {
-    pub expr: Expr,
+    pub expr: AstExpr,
     pub span: SourceSpan,
 }
 
 impl SpannedExpr {
-    pub fn new(expr: Expr, span: SourceSpan) -> SpannedExpr {
+    pub fn new(expr: AstExpr, span: SourceSpan) -> SpannedExpr {
         SpannedExpr { expr, span }
     }
 }
@@ -23,7 +23,7 @@ impl SpannedExpr {
 // This could look better...
 // Does this need a literal specific variant?
 #[derive(Debug)]
-pub enum Expr {
+pub enum AstExpr {
     Var(InternedId),
     /// `::`
     StaticAccess(Vec<SpannedContainer<PathSegment>>),
@@ -89,7 +89,6 @@ pub enum TypeExpr {
     Var(InternedId),
     Path(Vec<SpannedContainer<PathSegment>>),
     Generic(AbstractGeneric),
-    MultiAssign(AbstractMultiAssign),
 }
 
 #[derive(Debug, Clone)]

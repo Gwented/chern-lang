@@ -3,7 +3,8 @@ use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use crate::parser::ast::ast_concepts::{
     AbstractConfig, AbstractConfigKind, AbstractImpl, BinaryOp, Item, SectionKind, UnaryOp,
 };
-use crate::parser::ast::ast_exprs::{Expr, PathSegment, TypeExpr};
+use crate::parser::ast::ast_exprs::{AstExpr, PathSegment, TypeExpr};
+use crate::parser::ast::ast_stmts::AbstractStmt;
 use chrn_utils::id_types::AstId;
 
 // =============================================================================
@@ -128,10 +129,10 @@ fn parse_let_integer() {
 
     // Check the expression: Integer(42)
     match &var.spanned_expr.expr {
-        Expr::Integer(id, Notation::Decimal) => {
+        AstExpr::Integer(id, Notation::Decimal) => {
             assert_eq!(interner.search(*id), "42");
         }
-        other => panic!("expected Expr::Integer, got {other:?}"),
+        other => panic!("expected AstExprInteger, got {other:?}"),
     }
     // Span of the expression should cover "42" (bytes 8..10)
     assert_eq!(var.spanned_expr.span.start, 8);
@@ -153,10 +154,10 @@ fn parse_let_string() {
     assert_eq!(var.name_span.end, 7);
 
     match &var.spanned_expr.expr {
-        Expr::Str(id) => {
+        AstExpr::Str(id) => {
             assert_eq!(interner.search(*id), "hello");
         }
-        other => panic!("expected Expr::Str, got {other:?}"),
+        other => panic!("expected AstExprStr, got {other:?}"),
     }
     // expression span should cover the whole string including quotes: 10..17
     assert_eq!(var.spanned_expr.span.start, 10);
@@ -178,10 +179,10 @@ fn parse_let_float() {
     assert_eq!(var.name_span.end, 6);
 
     match &var.spanned_expr.expr {
-        Expr::Float(id, Notation::Decimal) => {
+        AstExpr::Float(id, Notation::Decimal) => {
             assert_eq!(interner.search(*id), "3.14");
         }
-        other => panic!("expected Expr::Float, got {other:?}"),
+        other => panic!("expected AstExprFloat, got {other:?}"),
     }
     assert_eq!(var.spanned_expr.span.start, 9);
     assert_eq!(var.spanned_expr.span.end, 13);
@@ -194,8 +195,8 @@ fn parse_let_bool() {
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
-        Expr::Bool(true) => {}
-        other => panic!("expected Expr::Bool(true), got {other:?}"),
+        AstExpr::Bool(true) => {}
+        other => panic!("expected AstExprBool(true), got {other:?}"),
     }
 }
 
@@ -207,8 +208,8 @@ fn parse_let_char() {
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
-        Expr::Char('a') => {}
-        other => panic!("expected Expr::Char('a'), got {other:?}"),
+        AstExpr::Char('a') => {}
+        other => panic!("expected AstExprChar('a'), got {other:?}"),
     }
     assert_eq!(var.spanned_expr.span.start, 8);
     assert_eq!(var.spanned_expr.span.end, 11);
@@ -246,7 +247,7 @@ fn parse_alias_no_params() {
     // Should have one condition: [true]
     assert_eq!(alias.conds.len(), 1, "expected one condition");
     match &alias.conds[0].expr {
-        Expr::Bool(true) => {}
+        AstExpr::Bool(true) => {}
         other => panic!("expected Bool(true) condition, got {other:?}"),
     }
 }
@@ -282,7 +283,7 @@ fn parse_alias_with_params() {
     // One condition: a > b
     assert_eq!(alias.conds.len(), 1);
     match &alias.conds[0].expr {
-        Expr::BinaryExpr {
+        AstExpr::BinaryExpr {
             op: BinaryOp::Greater,
             ..
         } => {}
@@ -366,7 +367,7 @@ fn parse_var_typedef_with_conditions() {
     let td = ast.get_typedef(section_items(&ast, SectionKind::Var)[0]);
     assert_eq!(td.conds.len(), 1, "expected one condition");
     match &td.conds[0].expr {
-        Expr::BinaryExpr {
+        AstExpr::BinaryExpr {
             op: BinaryOp::Greater,
             ..
         } => {}
@@ -519,7 +520,7 @@ fn parse_nest_struct_with_glob_conditions() {
     let st = ast.get_struct(section_items(&ast, SectionKind::Nest)[0]);
     assert_eq!(st.glob_conds.len(), 1);
     match &st.glob_conds[0].expr {
-        Expr::Var(id) => assert_eq!(interner.search(*id), "cond"),
+        AstExpr::Var(id) => assert_eq!(interner.search(*id), "cond"),
         other => panic!("expected Var(cond), got {other:?}"),
     }
 }
@@ -561,17 +562,19 @@ fn parse_complex_config_root() {
 
     assert_eq!(interner.search(cfg_name_id(cfg)), "MyConfig");
     assert!(matches!(cfg.kind, AbstractConfigKind::Root(_)));
-    assert_eq!(cfg.opt_assignments.len(), 1);
+    assert_eq!(cfg.abs_stmts.len(), 1);
     assert!(cfg.cfg_members.is_empty());
 
     // Option assignment: option = [42]
-    let opt = &cfg.opt_assignments[0];
+    let AbstractStmt::OptAssignment(opt) = &cfg.abs_stmts[0] else {
+        panic!("expected option assignment");
+    };
     assert_eq!(interner.search(opt.name_id), "option");
     match &opt.array_expr.expr {
-        Expr::Array(arr) => {
+        AstExpr::Array(arr) => {
             assert_eq!(arr.elements.len(), 1);
             match &arr.elements[0].expr {
-                Expr::Integer(id, Notation::Decimal) => {
+                AstExpr::Integer(id, Notation::Decimal) => {
                     assert_eq!(interner.search(*id), "42");
                 }
                 other => panic!("expected Integer, got {other:?}"),
@@ -608,8 +611,11 @@ fn parse_complex_config_nested() {
 
     let inner = &cfg.cfg_members[0];
     assert_eq!(interner.search(cfg_name_id(inner)), "inner");
-    assert_eq!(inner.opt_assignments.len(), 1);
-    assert_eq!(interner.search(inner.opt_assignments[0].name_id), "opt");
+    assert_eq!(inner.abs_stmts.len(), 1);
+    let AbstractStmt::OptAssignment(opt) = &inner.abs_stmts[0] else {
+        panic!("expected option assignment");
+    };
+    assert_eq!(interner.search(opt.name_id), "opt");
 }
 
 // CANNOT CHECK RIGHT NOW SINCE ROOTS CANT USE CONFIGS AND OVERRIDE DOES NOT EXIST YET. THIS WILL BE
@@ -640,33 +646,33 @@ fn parse_expr_binary_precedence() {
 
     // Top-level: Add(1, Mult(2, 3))
     match expr {
-        Expr::BinaryExpr {
+        AstExpr::BinaryExpr {
             op: BinaryOp::Add,
             lhs,
             rhs,
         } => {
             // lhs = 1
             match &lhs.expr {
-                Expr::Integer(id, Notation::Decimal) => {
+                AstExpr::Integer(id, Notation::Decimal) => {
                     assert_eq!(interner.search(*id), "1");
                 }
                 other => panic!("expected Integer(1), got {other:?}"),
             }
             // rhs = Mult(2, 3)
             match &rhs.expr {
-                Expr::BinaryExpr {
+                AstExpr::BinaryExpr {
                     op: BinaryOp::Mult,
                     lhs: inner_lhs,
                     rhs: inner_rhs,
                 } => {
                     match &inner_lhs.expr {
-                        Expr::Integer(id, Notation::Decimal) => {
+                        AstExpr::Integer(id, Notation::Decimal) => {
                             assert_eq!(interner.search(*id), "2");
                         }
                         other => panic!("expected Integer(2), got {other:?}"),
                     }
                     match &inner_rhs.expr {
-                        Expr::Integer(id, Notation::Decimal) => {
+                        AstExpr::Integer(id, Notation::Decimal) => {
                             assert_eq!(interner.search(*id), "3");
                         }
                         other => panic!("expected Integer(3), got {other:?}"),
@@ -695,33 +701,33 @@ fn parse_expr_comparison() {
     // So the parse is:  a == (b && c)  then outer > d
     // = "Greater(EqTo(a, And(b, c)), d)"
     match expr {
-        Expr::BinaryExpr {
+        AstExpr::BinaryExpr {
             op: BinaryOp::Greater,
             lhs,
             rhs,
         } => {
             match &lhs.expr {
-                Expr::BinaryExpr {
+                AstExpr::BinaryExpr {
                     op: BinaryOp::EqTo,
                     lhs: ll,
                     rhs: lr,
                 } => {
                     match &ll.expr {
-                        Expr::Var(id) => assert_eq!(interner.search(*id), "a"),
+                        AstExpr::Var(id) => assert_eq!(interner.search(*id), "a"),
                         other => panic!("expected Var(a), got {other:?}"),
                     }
                     match &lr.expr {
-                        Expr::BinaryExpr {
+                        AstExpr::BinaryExpr {
                             op: BinaryOp::And,
                             lhs: rl,
                             rhs: rr,
                         } => {
                             match &rl.expr {
-                                Expr::Var(id) => assert_eq!(interner.search(*id), "b"),
+                                AstExpr::Var(id) => assert_eq!(interner.search(*id), "b"),
                                 other => panic!("expected Var(b), got {other:?}"),
                             }
                             match &rr.expr {
-                                Expr::Var(id) => assert_eq!(interner.search(*id), "c"),
+                                AstExpr::Var(id) => assert_eq!(interner.search(*id), "c"),
                                 other => panic!("expected Var(c), got {other:?}"),
                             }
                         }
@@ -731,7 +737,7 @@ fn parse_expr_comparison() {
                 other => panic!("expected EqTo, got {other:?}"),
             }
             match &rhs.expr {
-                Expr::Var(id) => assert_eq!(interner.search(*id), "d"),
+                AstExpr::Var(id) => assert_eq!(interner.search(*id), "d"),
                 other => panic!("expected Var(d), got {other:?}"),
             }
         }
@@ -746,10 +752,10 @@ fn parse_expr_unary_negate() {
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
-        Expr::Unary(unary) => {
+        AstExpr::Unary(unary) => {
             assert_eq!(unary.op, UnaryOp::Negate);
             match &unary.spanned_expr.expr {
-                Expr::Integer(id, Notation::Decimal) => {
+                AstExpr::Integer(id, Notation::Decimal) => {
                     assert_eq!(interner.search(*id), "42");
                 }
                 other => panic!("expected Integer, got {other:?}"),
@@ -769,10 +775,10 @@ fn parse_expr_unary_not() {
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
-        Expr::Unary(unary) => {
+        AstExpr::Unary(unary) => {
             assert_eq!(unary.op, UnaryOp::Not);
             match &unary.spanned_expr.expr {
-                Expr::Var(id) => assert_eq!(interner.search(*id), "flag"),
+                AstExpr::Var(id) => assert_eq!(interner.search(*id), "flag"),
                 other => panic!("expected Var, got {other:?}"),
             }
         }
@@ -787,10 +793,10 @@ fn parse_expr_unary_bitnot() {
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
-        Expr::Unary(unary) => {
+        AstExpr::Unary(unary) => {
             assert_eq!(unary.op, UnaryOp::BitNot);
             match &unary.spanned_expr.expr {
-                Expr::Var(id) => assert_eq!(interner.search(*id), "bits"),
+                AstExpr::Var(id) => assert_eq!(interner.search(*id), "bits"),
                 other => panic!("expected Var, got {other:?}"),
             }
         }
@@ -807,30 +813,30 @@ fn parse_expr_shift_operators() {
     // << and >> both have bp 1, left-assoc, so: (1 << 2) >> 1
     let expr = &var.spanned_expr.expr;
     match expr {
-        Expr::BinaryExpr {
+        AstExpr::BinaryExpr {
             op: BinaryOp::BitRightShift,
             lhs,
             rhs,
         } => {
             match &lhs.expr {
-                Expr::BinaryExpr {
+                AstExpr::BinaryExpr {
                     op: BinaryOp::BitLeftShift,
                     lhs: ll,
                     rhs: lr,
                 } => {
                     match &ll.expr {
-                        Expr::Integer(id, _) => assert_eq!(interner.search(*id), "1"),
+                        AstExpr::Integer(id, _) => assert_eq!(interner.search(*id), "1"),
                         other => panic!("expected Integer(1), got {other:?}"),
                     }
                     match &lr.expr {
-                        Expr::Integer(id, _) => assert_eq!(interner.search(*id), "2"),
+                        AstExpr::Integer(id, _) => assert_eq!(interner.search(*id), "2"),
                         other => panic!("expected Integer(2), got {other:?}"),
                     }
                 }
                 other => panic!("expected BitLeftShift, got {other:?}"),
             }
             match &rhs.expr {
-                Expr::Integer(id, _) => assert_eq!(interner.search(*id), "1"),
+                AstExpr::Integer(id, _) => assert_eq!(interner.search(*id), "1"),
                 other => panic!("expected Integer(1), got {other:?}"),
             }
         }
@@ -845,9 +851,9 @@ fn parse_expr_call_no_args() {
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
-        Expr::Call(func, args) => {
+        AstExpr::Call(func, args) => {
             match &func.expr {
-                Expr::Var(id) => assert_eq!(interner.search(*id), "f"),
+                AstExpr::Var(id) => assert_eq!(interner.search(*id), "f"),
                 other => panic!("expected Var(f), got {other:?}"),
             }
             assert!(args.is_empty(), "expected no arguments");
@@ -863,18 +869,18 @@ fn parse_expr_call_with_args() {
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
-        Expr::Call(func, args) => {
+        AstExpr::Call(func, args) => {
             match &func.expr {
-                Expr::Var(id) => assert_eq!(interner.search(*id), "add"),
+                AstExpr::Var(id) => assert_eq!(interner.search(*id), "add"),
                 other => panic!("expected Var(add), got {other:?}"),
             }
             assert_eq!(args.len(), 2);
             match &args[0].expr {
-                Expr::Integer(id, _) => assert_eq!(interner.search(*id), "1"),
+                AstExpr::Integer(id, _) => assert_eq!(interner.search(*id), "1"),
                 other => panic!("expected Integer(1), got {other:?}"),
             }
             match &args[1].expr {
-                Expr::Integer(id, _) => assert_eq!(interner.search(*id), "2"),
+                AstExpr::Integer(id, _) => assert_eq!(interner.search(*id), "2"),
                 other => panic!("expected Integer(2), got {other:?}"),
             }
         }
@@ -890,9 +896,9 @@ fn parse_expr_member_access() {
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
-        Expr::MemberAccess(ma) => {
+        AstExpr::MemberAccess(ma) => {
             match &ma.base.expr {
-                Expr::Var(id) => assert_eq!(interner.search(*id), "obj"),
+                AstExpr::Var(id) => assert_eq!(interner.search(*id), "obj"),
                 other => panic!("expected Var(obj), got {other:?}"),
             }
             assert_eq!(interner.search(ma.field), "field");
@@ -910,7 +916,7 @@ fn parse_expr_static_access() {
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
-        Expr::StaticAccess(path) => {
+        AstExpr::StaticAccess(path) => {
             assert_eq!(path.len(), 2);
             match &path[0].inner {
                 PathSegment::Ident(id) => assert_eq!(interner.search(*id), "module"),
@@ -932,7 +938,7 @@ fn parse_expr_static_access_with_generics() {
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
-        Expr::StaticAccess(path) => {
+        AstExpr::StaticAccess(path) => {
             assert_eq!(path.len(), 2);
             // First segment: "ns"
             match &path[0].inner {
@@ -964,22 +970,24 @@ fn parse_expr_array() {
     let (ast, interner) = parse_text(text);
 
     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
-    assert_eq!(cfg.opt_assignments.len(), 1);
-    let opt = &cfg.opt_assignments[0];
+    assert_eq!(cfg.abs_stmts.len(), 1);
+    let AbstractStmt::OptAssignment(opt) = &cfg.abs_stmts[0] else {
+        panic!("expected option assignment");
+    };
     assert_eq!(interner.search(opt.name_id), "opt");
     match &opt.array_expr.expr {
-        Expr::Array(arr) => {
+        AstExpr::Array(arr) => {
             assert_eq!(arr.elements.len(), 3);
             match &arr.elements[0].expr {
-                Expr::Integer(id, _) => assert_eq!(interner.search(*id), "1"),
+                AstExpr::Integer(id, _) => assert_eq!(interner.search(*id), "1"),
                 other => panic!("expected Integer, got {other:?}"),
             }
             match &arr.elements[1].expr {
-                Expr::Integer(id, _) => assert_eq!(interner.search(*id), "2"),
+                AstExpr::Integer(id, _) => assert_eq!(interner.search(*id), "2"),
                 other => panic!("expected Integer, got {other:?}"),
             }
             match &arr.elements[2].expr {
-                Expr::Integer(id, _) => assert_eq!(interner.search(*id), "3"),
+                AstExpr::Integer(id, _) => assert_eq!(interner.search(*id), "3"),
                 other => panic!("expected Integer, got {other:?}"),
             }
         }
@@ -996,19 +1004,19 @@ fn parse_expr_grouped() {
     // Top level should be Mult((1+2), 3)
     let expr = &var.spanned_expr.expr;
     match expr {
-        Expr::BinaryExpr {
+        AstExpr::BinaryExpr {
             op: BinaryOp::Mult,
             lhs,
             rhs,
         } => {
             match &lhs.expr {
-                Expr::BinaryExpr {
+                AstExpr::BinaryExpr {
                     op: BinaryOp::Add, ..
                 } => {}
                 other => panic!("expected Add inside parens, got {other:?}"),
             }
             match &rhs.expr {
-                Expr::Integer(id, _) => assert_eq!(interner.search(*id), "3"),
+                AstExpr::Integer(id, _) => assert_eq!(interner.search(*id), "3"),
                 other => panic!("expected Integer(3), got {other:?}"),
             }
         }
@@ -1024,13 +1032,13 @@ fn parse_expr_default() {
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
-        Expr::Default(ident, default_val) => {
+        AstExpr::Default(ident, default_val) => {
             match &ident.expr {
-                Expr::Var(id) => assert_eq!(interner.search(*id), "y"),
+                AstExpr::Var(id) => assert_eq!(interner.search(*id), "y"),
                 other => panic!("expected Var(y), got {other:?}"),
             }
             match &default_val.expr {
-                Expr::Integer(id, _) => assert_eq!(interner.search(*id), "42"),
+                AstExpr::Integer(id, _) => assert_eq!(interner.search(*id), "42"),
                 other => panic!("expected Integer(42), got {other:?}"),
             }
         }
@@ -1191,7 +1199,7 @@ fn parse_override_config() {
     let cfg = ast.get_cfg_root(sect.nodes[0]);
     assert_eq!(interner.search(cfg_name_id(cfg)), "MyCfg");
     assert!(matches!(cfg.kind, AbstractConfigKind::Root(_)));
-    assert_eq!(cfg.opt_assignments.len(), 1);
+    assert_eq!(cfg.abs_stmts.len(), 1);
 }
 
 // =============================================================================
@@ -1419,7 +1427,7 @@ fn parse_let_hex_integer() {
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
-        Expr::Integer(id, Notation::Hex) => {
+        AstExpr::Integer(id, Notation::Hex) => {
             assert_eq!(interner.search(*id), "255");
         }
         other => panic!("expected Integer(Hex), got {other:?}"),
@@ -1433,7 +1441,7 @@ fn parse_let_binary_integer() {
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
-        Expr::Integer(id, Notation::Bin) => {
+        AstExpr::Integer(id, Notation::Bin) => {
             assert_eq!(interner.search(*id), "10");
         }
         other => panic!("expected Integer(Bin), got {other:?}"),
@@ -1447,7 +1455,7 @@ fn parse_let_octal_integer() {
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
-        Expr::Integer(id, Notation::Octal) => {
+        AstExpr::Integer(id, Notation::Octal) => {
             assert_eq!(interner.search(*id), "63");
         }
         other => panic!("expected Integer(Octal), got {other:?}"),
@@ -1461,7 +1469,7 @@ fn parse_let_underscored_number() {
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
-        Expr::Integer(id, Notation::Decimal) => {
+        AstExpr::Integer(id, Notation::Decimal) => {
             assert_eq!(interner.search(*id), "1000000");
         }
         other => panic!("expected Integer(Decimal), got {other:?}"),
@@ -1476,13 +1484,13 @@ fn parse_chained_member_access() {
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     // a.b.c => MemberAccess(MemberAccess(a, b), c)
     match &var.spanned_expr.expr {
-        Expr::MemberAccess(outer) => {
+        AstExpr::MemberAccess(outer) => {
             assert_eq!(interner.search(outer.field), "c");
             match &outer.base.expr {
-                Expr::MemberAccess(inner) => {
+                AstExpr::MemberAccess(inner) => {
                     assert_eq!(interner.search(inner.field), "b");
                     match &inner.base.expr {
-                        Expr::Var(id) => assert_eq!(interner.search(*id), "a"),
+                        AstExpr::Var(id) => assert_eq!(interner.search(*id), "a"),
                         other => panic!("expected Var(a), got {other:?}"),
                     }
                 }
@@ -1538,8 +1546,11 @@ fn parse_complex_member_override_config() {
         "inner config should be a Member, got {:?}",
         inner.kind
     );
-    assert_eq!(inner.opt_assignments.len(), 1);
-    assert_eq!(interner.search(inner.opt_assignments[0].name_id), "opt");
+    assert_eq!(inner.abs_stmts.len(), 1);
+    let AbstractStmt::OptAssignment(opt) = &inner.abs_stmts[0] else {
+        panic!("expected option assignment");
+    };
+    assert_eq!(interner.search(opt.name_id), "opt");
 }
 
 #[test]
@@ -1548,9 +1559,15 @@ fn parse_multiple_option_assignments() {
     let (ast, interner) = parse_text(text);
 
     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
-    assert_eq!(cfg.opt_assignments.len(), 2);
-    assert_eq!(interner.search(cfg.opt_assignments[0].name_id), "opt1");
-    assert_eq!(interner.search(cfg.opt_assignments[1].name_id), "opt2");
+    assert_eq!(cfg.abs_stmts.len(), 2);
+    let AbstractStmt::OptAssignment(opt1) = &cfg.abs_stmts[0] else {
+        panic!("expected option assignment");
+    };
+    let AbstractStmt::OptAssignment(opt2) = &cfg.abs_stmts[1] else {
+        panic!("expected option assignment");
+    };
+    assert_eq!(interner.search(opt1.name_id), "opt1");
+    assert_eq!(interner.search(opt2.name_id), "opt2");
 }
 
 #[test]
@@ -1559,7 +1576,7 @@ fn parse_complex_config_with_trailing_comma() {
     let (ast, interner) = parse_text(text);
 
     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
-    assert_eq!(cfg.opt_assignments.len(), 1);
+    assert_eq!(cfg.abs_stmts.len(), 1);
 }
 
 #[test]
@@ -1588,31 +1605,31 @@ fn parse_let_with_bitwise_ops() {
     // & | ^ all have bp 0, left-assoc => ((a & b) | c) ^ d
     let expr = &var.spanned_expr.expr;
     match expr {
-        Expr::BinaryExpr {
+        AstExpr::BinaryExpr {
             op: BinaryOp::BitXor,
             lhs,
             rhs,
         } => {
             // lhs = (a & b) | c
             match &lhs.expr {
-                Expr::BinaryExpr {
+                AstExpr::BinaryExpr {
                     op: BinaryOp::BitOr,
                     lhs: ll,
                     rhs: lr,
                 } => {
                     // ll = a & b
                     match &ll.expr {
-                        Expr::BinaryExpr {
+                        AstExpr::BinaryExpr {
                             op: BinaryOp::BitAnd,
                             lhs: lll,
                             rhs: llr,
                         } => {
                             match &lll.expr {
-                                Expr::Var(id) => assert_eq!(interner.search(*id), "a"),
+                                AstExpr::Var(id) => assert_eq!(interner.search(*id), "a"),
                                 other => panic!("expected Var(a), got {other:?}"),
                             }
                             match &llr.expr {
-                                Expr::Var(id) => assert_eq!(interner.search(*id), "b"),
+                                AstExpr::Var(id) => assert_eq!(interner.search(*id), "b"),
                                 other => panic!("expected Var(b), got {other:?}"),
                             }
                         }
@@ -1620,7 +1637,7 @@ fn parse_let_with_bitwise_ops() {
                     }
                     // lr = c
                     match &lr.expr {
-                        Expr::Var(id) => assert_eq!(interner.search(*id), "c"),
+                        AstExpr::Var(id) => assert_eq!(interner.search(*id), "c"),
                         other => panic!("expected Var(c), got {other:?}"),
                     }
                 }
@@ -1628,7 +1645,7 @@ fn parse_let_with_bitwise_ops() {
             }
             // rhs = d
             match &rhs.expr {
-                Expr::Var(id) => assert_eq!(interner.search(*id), "d"),
+                AstExpr::Var(id) => assert_eq!(interner.search(*id), "d"),
                 other => panic!("expected Var(d), got {other:?}"),
             }
         }
@@ -1643,23 +1660,23 @@ fn parse_let_with_nested_calls() {
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
-        Expr::Call(outer_func, outer_args) => {
+        AstExpr::Call(outer_func, outer_args) => {
             match &outer_func.expr {
-                Expr::Var(id) => assert_eq!(interner.search(*id), "f"),
+                AstExpr::Var(id) => assert_eq!(interner.search(*id), "f"),
                 other => panic!("expected Var(f), got {other:?}"),
             }
             assert_eq!(outer_args.len(), 1);
             match &outer_args[0].expr {
-                Expr::Call(inner_func, inner_args) => {
+                AstExpr::Call(inner_func, inner_args) => {
                     match &inner_func.expr {
-                        Expr::Var(id) => assert_eq!(interner.search(*id), "g"),
+                        AstExpr::Var(id) => assert_eq!(interner.search(*id), "g"),
                         other => panic!("expected Var(g), got {other:?}"),
                     }
                     assert_eq!(inner_args.len(), 1);
                     match &inner_args[0].expr {
-                        Expr::Call(deep_func, deep_args) => {
+                        AstExpr::Call(deep_func, deep_args) => {
                             match &deep_func.expr {
-                                Expr::Var(id) => assert_eq!(interner.search(*id), "h"),
+                                AstExpr::Var(id) => assert_eq!(interner.search(*id), "h"),
                                 other => panic!("expected Var(h), got {other:?}"),
                             }
                             assert!(deep_args.is_empty());
@@ -1681,7 +1698,7 @@ fn parse_let_scientific_notation() {
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
-        Expr::Float(id, Notation::Decimal) => {
+        AstExpr::Float(id, Notation::Decimal) => {
             assert_eq!(interner.search(*id), "1e10");
         }
         other => panic!("expected Float, got {other:?}"),
@@ -1729,17 +1746,17 @@ fn parse_alias_with_multiple_conds() {
 
     // First condition: a > 0
     match &alias.conds[0].expr {
-        Expr::BinaryExpr {
+        AstExpr::BinaryExpr {
             op: BinaryOp::Greater,
             lhs,
             rhs,
         } => {
             match &lhs.expr {
-                Expr::Var(id) => assert_eq!(interner.search(*id), "a"),
+                AstExpr::Var(id) => assert_eq!(interner.search(*id), "a"),
                 other => panic!("expected Var(a) in first cond, got {other:?}"),
             }
             match &rhs.expr {
-                Expr::Integer(id, _) => assert_eq!(interner.search(*id), "0"),
+                AstExpr::Integer(id, _) => assert_eq!(interner.search(*id), "0"),
                 other => panic!("expected Integer(0) in first cond, got {other:?}"),
             }
         }
@@ -1748,17 +1765,17 @@ fn parse_alias_with_multiple_conds() {
 
     // Second condition: b < 10
     match &alias.conds[1].expr {
-        Expr::BinaryExpr {
+        AstExpr::BinaryExpr {
             op: BinaryOp::Less,
             lhs,
             rhs,
         } => {
             match &lhs.expr {
-                Expr::Var(id) => assert_eq!(interner.search(*id), "b"),
+                AstExpr::Var(id) => assert_eq!(interner.search(*id), "b"),
                 other => panic!("expected Var(b) in second cond, got {other:?}"),
             }
             match &rhs.expr {
-                Expr::Integer(id, _) => assert_eq!(interner.search(*id), "10"),
+                AstExpr::Integer(id, _) => assert_eq!(interner.search(*id), "10"),
                 other => panic!("expected Integer(10) in second cond, got {other:?}"),
             }
         }
@@ -1803,7 +1820,7 @@ fn parse_nest_enum_with_variant_conditions() {
     assert_eq!(interner.search(var.name_id), "V");
     assert_eq!(var.conds.len(), 1, "variant should have one condition");
     match &var.conds[0].expr {
-        Expr::Var(id) => assert_eq!(interner.search(*id), "cond"),
+        AstExpr::Var(id) => assert_eq!(interner.search(*id), "cond"),
         other => panic!("expected Var(cond), got {other:?}"),
     }
 }
@@ -1898,13 +1915,13 @@ fn span_of_chained_calls() {
 
     // Verify it's a Call(MemberAccess(a, b), [])
     match &var.spanned_expr.expr {
-        Expr::Call(base, args) => {
+        AstExpr::Call(base, args) => {
             assert!(args.is_empty());
             match &base.expr {
-                Expr::MemberAccess(ma) => {
+                AstExpr::MemberAccess(ma) => {
                     assert_eq!(interner.search(ma.field), "b");
                     match &ma.base.expr {
-                        Expr::Var(id) => assert_eq!(interner.search(*id), "a"),
+                        AstExpr::Var(id) => assert_eq!(interner.search(*id), "a"),
                         other => panic!("expected Var(a), got {other:?}"),
                     }
                 }

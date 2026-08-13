@@ -8,7 +8,7 @@ use chrn_utils::{
 
 use crate::{
     lookup::scopes::{ScopeLookupPattern, ScopeType},
-    parser::ast::{ast_concepts::ConfigRootKind, ast_exprs::TypeExpr},
+    parser::ast::{ast_concepts::ConfigRootKindFlat, ast_exprs::TypeExpr},
 };
 
 #[derive(Debug)]
@@ -48,11 +48,19 @@ pub enum ImplMemberKind {
     OptAssignmentRoot(OptionAssignmentRoot),
     /// Member specific option assignment
     OptAssignmentMember(OptionAssignmentMember),
+    /// Takes lhs types, and assigns to a single rhs `SymbolKind::ExternType`
+    MultiTypeAssignment(MultiTypeAssignment),
     /// Member that has reserved a slot but not yet defined
     Unknown {
         sp_name_id: SpannedContainer<InternedId>,
         reserved_member_id: ImplMemberId,
     },
+}
+
+#[derive(Debug)]
+pub enum ConfigRootKind {
+    Complex(ConfigRootComplex),
+    Override(ConfigRootOverride),
 }
 
 impl ImplMemberKind {
@@ -64,63 +72,96 @@ impl ImplMemberKind {
     }
 }
 
-// TODO: Readiness for skipping during resolution
-/// Intended to represent a config block environment that consumes options for a field.
+/// Common inner of config roots
 #[derive(Debug)]
-pub struct ConfigRoot {
+pub struct ConfigRootCommon {
     /// `ImplId` of `self`
     pub impl_id: ImplId,
     /// ConfigId of `self`
     pub cfg_root_id: ConfigRootId,
-    /// During name resolution, we can't actually lookup the symbol since it may or may not be
-    /// registered, so it's Option since it actually is `None` at some point, and could remain
-    /// `None` if in a later stage it doesn't have it's target symbol found.
-    //NOTE: Can only be either a type id or namespace. So maybe um...um....!
-    pub linked_root_val: Option<ConfigRootValueKind>,
-    /// Expects `OptionAssignmentRoot`
-    pub opt_assignments: Vec<ImplMemberId>,
     /// Lookup pattern that needs to be used to properly discern if
     /// `ScopeLookupPattern::Namespace/OnlyVar` should be used to search for the symbol associated with
     /// thie config
     pub lookup_pat: ScopeLookupPattern,
-    /// ISOLATE
-    pub kind: ConfigRootKind,
+    // /// ISOLATE
+    // pub kind: ConfigRootKindFlat,
     /// Expects `ConfigDefMember`
     pub cfg_members: Vec<ImplMemberId>,
 }
 
-impl ConfigRoot {
+impl ConfigRootCommon {
     pub fn new(
         impl_id: ImplId,
-        // sp_ty_expr: SpannedContainer<TypeExpr>,
-        // name_id: InternedId,
-        // name_span: SourceSpan,
         cfg_root_id: ConfigRootId,
-        linked_root_val: Option<ConfigRootValueKind>,
         lookup_pat: ScopeLookupPattern,
-        kind: ConfigRootKind,
-        opt_assignments: Vec<ImplMemberId>,
+        // kind: ConfigRootKindFlat,
         cfg_members: Vec<ImplMemberId>,
-    ) -> ConfigRoot {
-        ConfigRoot {
+    ) -> Self {
+        Self {
             impl_id,
             cfg_root_id,
             lookup_pat,
-            linked_root_val,
-            kind,
-            opt_assignments,
+            // kind,
             cfg_members,
         }
     }
 }
 
-// KindKind
-/// Valid values for a config def root to have
-#[derive(Debug, Clone, Copy)]
-pub enum ConfigRootValueKind {
-    Namespace(SymbolId),
-    Type(TypeId),
+// TODO: Readiness for skipping during resolution
+/// Intended to represent a config block environment that consumes options for a field.
+/// Specifically tied to `overrid` section semantics
+#[derive(Debug)]
+pub struct ConfigRootOverride {
+    pub common: ConfigRootCommon,
+    /// During name resolution, we can't actually lookup the symbol since it may or may not be
+    /// registered, so it's Option since it actually is `None` at some point, and could remain
+    /// `None` if in a later stage it doesn't have it's target symbol found.
+    /// Must be `Namespace` or `Type`
+    //NOTE: Can only be either a type id or namespace. So maybe um...um....!
+    pub linked_sym_id: Option<SymbolId>,
+    /// Expects `OptionAssignmentRoot`
+    pub opt_assignments: Vec<ImplMemberId>,
 }
+
+impl ConfigRootOverride {
+    pub fn new(
+        common: ConfigRootCommon,
+        linked_sym_id: Option<SymbolId>,
+        opt_assignments: Vec<ImplMemberId>,
+    ) -> ConfigRootOverride {
+        ConfigRootOverride {
+            common,
+            linked_sym_id,
+            opt_assignments,
+        }
+    }
+}
+
+/// Intended to represent a config block environment that consumes options for a field.
+/// Specifically tied to `complex` section semantics
+#[derive(Debug)]
+pub struct ConfigRootComplex {
+    pub common: ConfigRootCommon,
+    /// Type only
+    pub linked_type_id: Option<TypeId>,
+    pub impl_stmts: Vec<ImplMemberId>,
+}
+
+impl ConfigRootComplex {
+    pub fn new(
+        common: ConfigRootCommon,
+        linked_type_id: Option<TypeId>,
+        impl_stmts: Vec<ImplMemberId>,
+    ) -> Self {
+        Self {
+            common,
+            linked_type_id,
+            impl_stmts,
+        }
+    }
+}
+
+//WARN: Should these be different structures? OverrideConfigMember? ComplexConfigMember?
 
 /// The member inside of a `ConfigDef` or `ConfigDefMember` which is the same structure,
 /// but with ties to an `ImplMemberKind` instead of a `ImplHir`
@@ -370,4 +411,12 @@ impl OptionAssignmentMember {
             array_expr_id,
         }
     }
+}
+
+#[derive(Debug)]
+pub struct MultiTypeAssignment {
+    to_assign: Vec<TypeId>,
+    // Maybe there will be `ExternTypeId` usage but not sure about that.
+    /// Expects `SymbolKind::ExternType`
+    assign_to: SymbolId,
 }

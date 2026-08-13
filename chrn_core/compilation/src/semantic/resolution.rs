@@ -179,7 +179,6 @@ pub fn resolve_type_expr(
                 }
             }
         }
-        TypeExpr::MultiAssign(abs_multi_assign) => todo!(),
     }
 }
 
@@ -458,39 +457,6 @@ pub fn resolve_static_access(
     }
 
     StaticAccessResult::Scope(current_scope)
-}
-
-// Need to reason about what this should really return first. Not sure if this should even be a
-// resolution primitive.
-/// Resolves static access, which may be an expr or type
-pub(crate) fn resolve_ambiguous_access(
-    compiler: &mut ScriptCompiler,
-    sp_path_segs: &[SpannedContainer<PathSegment>],
-    associated_scope: AssociatedScopeKind,
-    scope_type: ScopeType,
-    lookup_pref: ScopeLookupPreferenceFlags,
-    static_access_opt: StaticAccessOption,
-) -> Result<AmbiguousAccessOutput, PresetErr> {
-    // Soooooo do we return EVERYTHING or...?
-    // I'm scared.
-
-    let access_associated_scope = match resolve_static_access(
-        compiler,
-        sp_path_segs,
-        associated_scope,
-        scope_type,
-        lookup_pref,
-        static_access_opt,
-    ) {
-        StaticAccessResult::Scope(scope) => todo!(),
-        StaticAccessResult::SymNotFound {
-            current_seg,
-            prev_seg,
-        } => todo!(),
-        StaticAccessResult::NoNamespace(spanned_container) => todo!(),
-        StaticAccessResult::GenericUsingStaticPath(source_span) => todo!(),
-    };
-    panic!();
 }
 
 // I KNOW WHAT THIS LOOKS LIKE BUT IT MIGHT BECOME MORE THAN THIS SO IT STILL GETS ITS OWN FUNCTION

@@ -156,7 +156,7 @@ pub fn run_all(
             None => continue,
         };
 
-        let current_env = ResolverEnv::new(ast, region, ModuleId::new(i as u32), compilation_syms);
+        let current_env = ResolverEnv::new(ast, region, ModuleId::new(i_u32), compilation_syms);
 
         // let current_env = match &resolver_envs[i] {
         //     Some(env) => env,
@@ -166,9 +166,9 @@ pub fn run_all(
         reporter.merge_summary_safe(ty_resolver.resolve(&current_env));
     }
 
-    // if reporter.diag_summary().err_count() > 0 {
-    //     return Err(ScriptError::Semantic);
-    // }
+    if reporter.diag_summary().err_count() > 0 {
+        return Err(ScriptError::Semantic);
+    }
 
     //TEST:
     let resolver_envs = create_resolver_envs(compiler, compiler_store);

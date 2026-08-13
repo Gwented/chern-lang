@@ -13,7 +13,7 @@ use crate::{
     lookup::scopes::{Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
     parser::ast::ast_concepts::{
         AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractEnum,
-        AbstractImpl, AbstractStruct, AbstractTypeDef, AbstractVar, ConfigRootKind, Item,
+        AbstractImpl, AbstractStruct, AbstractTypeDef, AbstractVar, ConfigRootKindFlat, Item,
     },
     resolvers::{resolver_env::RegistrationEnv, resolver_state::ResolverState},
     script_compiler::ScriptCompiler,
@@ -21,7 +21,10 @@ use crate::{
         compilation_unit::CompilationUnit,
         hir::{
             hir_concepts::{Type, TypeInfo},
-            hir_impls::{ConfigRoot, ImplHir, ImplHirKind},
+            hir_impls::{
+                ConfigRootCommon, ConfigRootComplex, ConfigRootKind, ConfigRootOverride, ImplHir,
+                ImplHirKind,
+            },
             hir_symbols::{
                 AliasDef, EnumDef, StructDef, Symbol, SymbolKind, SymbolOrigin, TypeDef, VarDef,
                 VariableState,
@@ -163,37 +166,30 @@ impl NamespaceResolver<'_> {
         _ = self.compiler.push_scope(scope_type, env.current_mod);
 
         let impl_id = ImplId::new(self.compiler.impls.len() as u32);
-        let cfg_id = ConfigRootId::new(self.compiler.cfgs.len() as u32);
+        let cfg_root_id = ConfigRootId::new(self.compiler.cfgs.len() as u32);
 
         // If an original exists, get the key so that it can be reported, otherwise insert it. This
         // is to avoid inserting first and overwriting the last symbol since ergonomically, it
         // probably makes more sense to keep the original for scope searching to fall-back to.
 
-        let kind = if scope_type == ScopeType::Complex {
-            ConfigRootKind::Complex
-        } else {
-            ConfigRootKind::Override
-        };
+        let common = ConfigRootCommon::new(impl_id, cfg_root_id, abs_cfg.lookup_pat, Vec::new());
 
-        // let orig_sym_opt = table.interned_to_sym.insert(abs_cfg.name_id, sym_id);
-        let cfg_def = ConfigRoot::new(
-            impl_id,
-            cfg_id,
-            None,
-            abs_cfg.lookup_pat,
-            kind,
-            Vec::new(),
-            Vec::new(),
-        );
+        let cfg_root = if scope_type == ScopeType::Complex {
+            let complex = ConfigRootComplex::new(common, None, Vec::new());
+            ConfigRootKind::Complex(complex)
+        } else {
+            let overrid = ConfigRootOverride::new(common, None, Vec::new());
+            ConfigRootKind::Override(overrid)
+        };
 
         let impl_hir = ImplHir::new(
             impl_id,
-            ImplHirKind::Config(cfg_id),
+            ImplHirKind::Config(cfg_root_id),
             scope_type,
             Some(ast_id),
         );
 
-        self.compiler.cfgs.push(cfg_def);
+        self.compiler.cfgs.push(cfg_root);
         self.compiler.impls.push(impl_hir);
         impl_id
     }

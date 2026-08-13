@@ -3,8 +3,6 @@ pub mod reporter;
 pub mod script_compiler_store;
 pub mod script_compiler_summary;
 
-use std::collections::VecDeque;
-
 use chrn_utils::{
     arena::Arena,
     budget::mem_cost::MemoryCost,
@@ -34,8 +32,8 @@ use crate::{
         hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
         hir_exprs::ResolvedExpr,
         hir_impls::{
-            ConfigDefMember, ConfigRoot, ImplHir, ImplHirKind, ImplMemberKind,
-            OptionAssignmentMember, OptionAssignmentRoot,
+            ConfigDefMember, ConfigRootComplex, ConfigRootKind, ConfigRootOverride, ImplHir,
+            ImplHirKind, ImplMemberKind, OptionAssignmentMember, OptionAssignmentRoot,
         },
         hir_symbols::{
             AliasDef, EnumDef, FieldRepre, FuncDef, FuncKind, MemberSymbolKind, StructDef, Symbol,
@@ -74,7 +72,7 @@ pub struct ScriptCompiler {
     pub variables: Arena<VarDef, VariableId>,
     /// All user defined config. Is considered it's own class instead of a type since it
     /// behaves uniquely
-    pub cfgs: Arena<ConfigRoot, ConfigRootId>,
+    pub cfgs: Arena<ConfigRootKind, ConfigRootId>,
     /// All directives that were found
     pub directives: Arena<Directive, DirectiveId>,
     /// Scope arena
@@ -499,18 +497,46 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_cfg_def_root(&self, impl_id: ImplId) -> &ConfigRoot {
+    pub(super) fn get_cfg_root_override(&self, impl_id: ImplId) -> &ConfigRootOverride {
         match &self.impls[impl_id] {
             impl_hir => match &impl_hir.kind {
-                ImplHirKind::Config(cfg_id) => &self.cfgs[*cfg_id],
+                ImplHirKind::Config(cfg_id) => match &self.cfgs[*cfg_id] {
+                    ConfigRootKind::Complex(_) => unreachable!(),
+                    ConfigRootKind::Override(overrid) => overrid,
+                },
             },
         }
     }
 
-    pub(super) fn get_cfg_def_mut(&mut self, impl_id: ImplId) -> &mut ConfigRoot {
+    pub(super) fn get_cfg_root_override_mut(&mut self, impl_id: ImplId) -> &mut ConfigRootOverride {
         match &self.impls[impl_id] {
             impl_hir => match &impl_hir.kind {
-                ImplHirKind::Config(cfg_id) => &mut self.cfgs[*cfg_id],
+                ImplHirKind::Config(cfg_id) => match &mut self.cfgs[*cfg_id] {
+                    ConfigRootKind::Override(overrid) => overrid,
+                    ConfigRootKind::Complex(_) => unreachable!(),
+                },
+            },
+        }
+    }
+
+    pub(super) fn get_cfg_root_complex(&self, impl_id: ImplId) -> &ConfigRootComplex {
+        match &self.impls[impl_id] {
+            impl_hir => match &impl_hir.kind {
+                ImplHirKind::Config(cfg_id) => match &self.cfgs[*cfg_id] {
+                    ConfigRootKind::Complex(complex) => complex,
+                    ConfigRootKind::Override(_) => unreachable!(),
+                },
+            },
+        }
+    }
+
+    pub(super) fn get_cfg_root_complex_mut(&mut self, impl_id: ImplId) -> &mut ConfigRootComplex {
+        match &self.impls[impl_id] {
+            impl_hir => match &impl_hir.kind {
+                ImplHirKind::Config(cfg_id) => match &mut self.cfgs[*cfg_id] {
+                    ConfigRootKind::Complex(complex) => complex,
+                    ConfigRootKind::Override(_) => unreachable!(),
+                },
             },
         }
     }

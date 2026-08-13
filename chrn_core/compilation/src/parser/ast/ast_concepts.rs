@@ -10,7 +10,10 @@ use lang::{
 
 use crate::{
     lookup::scopes::{ScopeLookupPattern, ScopeType},
-    parser::ast::ast_exprs::{PathSegment, SpannedExpr, TypeExpr},
+    parser::ast::{
+        ast_exprs::{PathSegment, SpannedExpr, TypeExpr},
+        ast_stmts::{AbstractOptionAssignment, AbstractStmt},
+    },
     semantic::hir::hir_impls::ConfigMemberMetadataKind,
 };
 
@@ -19,6 +22,7 @@ use crate::{
 #[derive(Debug)]
 pub struct AstInfo {
     /// Array that holds all 5 `chrn` sections.
+    /// order: `neutral`, `var`, `nest`, `complex`, `override`
     pub sections: [Option<AbstractSection>; 5],
     pub items: Arena<Item, AstId>,
 }
@@ -108,6 +112,8 @@ impl AstInfo {
         }
     }
 
+    /// The only actual configs that can be accessed are config roots from the ast so this
+    /// guaranteed to output a config root.
     pub fn get_cfg_root(&self, ast_id: AstId) -> &AbstractConfig {
         match &self.items[ast_id] {
             item => match item {
@@ -562,7 +568,7 @@ pub struct AbstractConfig {
     //// Config specific to the origin of this metadata. ONLY `ConfigDefMember` can have this.
     pub kind: AbstractConfigKind,
     /// Configuration options for the current parent to apply
-    pub opt_assignments: Vec<AbstractOptionAssignment>,
+    pub abs_stmts: Vec<AbstractStmt>,
     /// `ScopeType` that should be looked within for the given identifier
     /// Can only be `ScopeLookupPattern::OnlyVar/NamespaceOnly`
     pub lookup_pat: ScopeLookupPattern,
@@ -581,20 +587,20 @@ impl AbstractConfig {
     pub fn new(
         kind: AbstractConfigKind,
         lookup_pat: ScopeLookupPattern,
-        opt_assignments: Vec<AbstractOptionAssignment>,
+        abs_stmts: Vec<AbstractStmt>,
         cfg_members: Vec<AbstractConfig>,
     ) -> AbstractConfig {
         AbstractConfig {
             kind,
             lookup_pat,
-            opt_assignments,
+            abs_stmts,
             cfg_members,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConfigRootKind {
+pub enum ConfigRootKindFlat {
     Complex,
     Override,
 }
@@ -647,30 +653,6 @@ pub enum AbstractConfigKind {
 // //      Var,
 // //      Nest
 // // }
-
-/// outer { .inner = Expr }
-#[derive(Debug)]
-pub struct AbstractOptionAssignment {
-    /// Name of structural type to configure
-    pub name_id: InternedId,
-    pub name_span: SourceSpan,
-    /// Must be an `ArrayExpr`
-    pub array_expr: SpannedExpr,
-}
-
-impl AbstractOptionAssignment {
-    pub fn new(
-        name_id: InternedId,
-        name_span: SourceSpan,
-        array_expr: SpannedExpr,
-    ) -> AbstractOptionAssignment {
-        AbstractOptionAssignment {
-            name_id,
-            name_span,
-            array_expr,
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct AbstractParam {
@@ -782,29 +764,6 @@ impl Formattable for UnaryOp {
             UnaryOp::Not => Formatted::ExclamationPoint,
             UnaryOp::Negate => Formatted::Hyphen,
             UnaryOp::BitNot => Formatted::OpBitNot,
-        }
-    }
-}
-
-/// TypeExpr: "TypeExpr, TypeExpr, TypeExpr = TypeExpr"
-/// or: "i32, u32 = java::int"
-#[derive(Debug, Clone)]
-pub struct AbstractMultiAssign {
-    // Need better terms
-    /// -> (i32, u32, u8) = java::int
-    to_assign: Vec<SpannedContainer<TypeExpr>>,
-    /// i32, u32, u8 = (java::int) <-
-    assigned_to: Box<SpannedContainer<TypeExpr>>,
-}
-
-impl AbstractMultiAssign {
-    pub fn new(
-        to_assign: Vec<SpannedContainer<TypeExpr>>,
-        assigned_to: Box<SpannedContainer<TypeExpr>>,
-    ) -> Self {
-        Self {
-            to_assign,
-            assigned_to,
         }
     }
 }

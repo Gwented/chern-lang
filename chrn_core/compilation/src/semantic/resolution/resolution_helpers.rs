@@ -9,7 +9,10 @@ use crate::{
         self, AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, ScopeType,
         SymbolLookupOutput,
     },
-    parser::ast::ast_exprs::{AbstractGeneric, PathSegment, TypeExpr},
+    parser::ast::{
+        ast_exprs::{AbstractGeneric, PathSegment, TypeExpr},
+        ast_stmts::AbstractOptionAssignment,
+    },
     resolvers::resolver_env::ResolverEnv,
     script_compiler::ScriptCompiler,
     semantic::{
@@ -105,6 +108,13 @@ pub(crate) fn resolve_generic_ret_preset(
         }
     }
 }
+
+// pub fn resolve_opt_assignments(
+//     compiler: &mut ScriptCompiler,
+//     abs_opts: &[&AbstractOptionAssignment],
+//
+// ) {
+// }
 
 // Ok.
 /// Does same as `resolution::resolve_static_access` but returns `SymbolId` and the scope ended on,
