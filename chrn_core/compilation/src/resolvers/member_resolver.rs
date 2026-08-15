@@ -2,8 +2,6 @@
 //Seeing if members having a specific stage will help reduce the complexity of type resolution
 //which is stacking infinitely (Infinitely as in the infinite sign here -> 🍔)
 
-use std::collections::HashSet;
-
 use chrn_utils::{
     chrn_config::ChrnConfig,
     id_types::{AstId, InternedId, MemberId, SpannedContainer, SymbolId, TypeId},
@@ -13,11 +11,10 @@ use chrn_utils::{
         annotations::AnnotationKind,
     },
 };
-use lang::fmter::ChrnClassifier;
+use lang::chrn_classifier::ChrnClassifier;
 
 use crate::{
-    lookup::scopes::{AssociatedScopeKind, ScopeLookupPattern, ScopeType},
-    parser::ast::ast_concepts::{AbstractTypeDef, AbstractVariant},
+    lookup::scopes::scopes_concepts::{AssociatedScopeKind, ScopeLookupPattern, ScopeType},
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState, typechecker},
     script_compiler::{self, ScriptCompiler},
     semantic::{

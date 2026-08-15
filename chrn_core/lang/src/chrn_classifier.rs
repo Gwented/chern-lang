@@ -4,7 +4,7 @@ use crate::types::boundaries::TypeBoundaryFlags;
 
 /// A trait meant to unify the way in which parts of the program are printed
 pub trait ChrnClassifiable {
-    fn to_fmt(&self) -> ChrnClassifier;
+    fn to_classified(&self) -> ChrnClassifier;
     // fn to_general(fmtted: Formatted) -> Formatted {
     //     match fmtted {}
     // }
@@ -110,6 +110,7 @@ pub enum ChrnClassifier {
     Parameter,
     ConfigRoot,
     ConfigMember,
+    ConfigOption,
     IsEmpty,
     IsWhitespace,
     Func,
@@ -258,6 +259,7 @@ impl Display for ChrnClassifier {
             ChrnClassifier::ConfigRoot => "config root",
             ChrnClassifier::ConfigMember => "config member",
             ChrnClassifier::Parameter => "parameter",
+            ChrnClassifier::ConfigOption => "option",
         };
         write!(f, "{out}")
     }

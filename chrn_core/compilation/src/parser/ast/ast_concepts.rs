@@ -4,12 +4,12 @@ use chrn_utils::{
     source_map::source_span::SourceSpan,
 };
 use lang::{
-    fmter::{ChrnClassifiable, ChrnClassifier},
+    chrn_classifier::{ChrnClassifiable, ChrnClassifier},
     types::boundaries::TypeBoundaryFlags,
 };
 
 use crate::{
-    lookup::scopes::{ScopeLookupPattern, ScopeType},
+    lookup::scopes::scopes_concepts::{ScopeLookupPattern, ScopeType},
     parser::ast::{
         ast_exprs::{PathSegment, SpannedExpr, TypeExpr},
         ast_stmts::{AbstractOptionAssignment, AbstractStmt},
@@ -243,7 +243,7 @@ impl SectionKind {
 }
 
 impl ChrnClassifiable for SectionKind {
-    fn to_fmt(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassifier {
         match self {
             SectionKind::Neutral => ChrnClassifier::SectNeutral,
             SectionKind::Var => ChrnClassifier::SectVar,
@@ -325,7 +325,7 @@ impl BinaryOp {
 }
 
 impl ChrnClassifiable for BinaryOp {
-    fn to_fmt(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassifier {
         match self {
             BinaryOp::Add => ChrnClassifier::OpAdd,
             BinaryOp::Sub => ChrnClassifier::Hyphen,
@@ -759,7 +759,7 @@ impl UnaryOp {
 }
 
 impl ChrnClassifiable for UnaryOp {
-    fn to_fmt(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassifier {
         match self {
             UnaryOp::Not => ChrnClassifier::ExclamationPoint,
             UnaryOp::Negate => ChrnClassifier::Hyphen,

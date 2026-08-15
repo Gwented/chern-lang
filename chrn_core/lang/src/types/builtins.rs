@@ -4,7 +4,7 @@ use chrn_utils::{
 };
 
 use crate::{
-    fmter::{ChrnClassifiable, ChrnClassifier},
+    chrn_classifier::{ChrnClassifiable, ChrnClassifier},
     types::boundaries::TypeBoundaryFlags,
 };
 
@@ -144,7 +144,7 @@ pub enum BuiltinTypeKind {
 }
 
 impl ChrnClassifiable for BuiltinTypeKind {
-    fn to_fmt(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassifier {
         match self {
             BuiltinTypeKind::I8 => ChrnClassifier::I8,
             BuiltinTypeKind::U8 => ChrnClassifier::U8,

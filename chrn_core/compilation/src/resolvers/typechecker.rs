@@ -10,7 +10,7 @@ use chrn_utils::{
 };
 
 use crate::{
-    lookup::scopes::ScopeType,
+    lookup::scopes::scopes_concepts::ScopeType,
     script_compiler::ScriptCompiler,
     semantic::hir::{
         hir_concepts::{Type, TypeInfo},
@@ -36,7 +36,7 @@ pub fn check_field_or_variant(types: &Arena<TypeInfo, TypeId>, mut type_id: Type
 }
 
 /// Returns `true` if the type is a valid config root candidate, `false` if invalid
-pub fn check_cfg_root(compiler: &ScriptCompiler, sym_id: SymbolId) -> bool {
+pub fn check_cfg_root(compiler: &ScriptCompiler, sym_id: SymbolId, scope_type: ScopeType) -> bool {
     let sym = &compiler.symbols[sym_id];
     match sym.kind {
         SymbolKind::Type(mut type_id) => {
@@ -52,7 +52,7 @@ pub fn check_cfg_root(compiler: &ScriptCompiler, sym_id: SymbolId) -> bool {
             }
         }
         // Only override section symbols can access a namespace in it's config root.
-        SymbolKind::Namespace if sym.scope_origin == ScopeType::Override => true,
+        SymbolKind::Namespace if scope_type == ScopeType::Override => true,
         SymbolKind::Namespace
         | SymbolKind::Variable(_)
         | SymbolKind::Directive(_)

@@ -49,7 +49,7 @@ impl<T: Clone + Hash + Eq> DuplicateTracker<T> {
     }
 
     // LOAD BEARING
-    /// Clears all of inner for another round of tracking
+    /// Clears all inners for another round of tracking
     pub(crate) fn clear(&mut self) {
         self.seen.clear();
         self.found_dups.clear();
@@ -83,7 +83,9 @@ pub(crate) enum DuplicateIdentResult {
 
 // Ok but what if this was const?
 /// Checks if `src_idents`
-pub fn check_duplicate_ident(idents: &[SpannedContainer<InternedId>]) -> DuplicateIdentResult {
+pub(crate) fn check_duplicate_ident(
+    idents: &[SpannedContainer<InternedId>],
+) -> DuplicateIdentResult {
     for (i, current_ident) in idents.iter().enumerate() {
         if let Some((_, original)) = idents
             .iter()

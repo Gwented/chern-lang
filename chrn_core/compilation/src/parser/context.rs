@@ -16,7 +16,7 @@ use chrn_utils::{
 };
 use lang::{
     algo::{self, FuzzyMatch},
-    fmter::ChrnClassifiable,
+    chrn_classifier::ChrnClassifiable,
     keywords::Keyword,
 };
 
@@ -389,7 +389,7 @@ impl<'a> ParserContext<'a> {
             SemanticSituation::IdentBinding => match &evidence.found.tok {
                 Token::Keyword(_) | Token::BoolLiteral(_) | Token::Integer(_, _) => {
                     let s = match evidence.found.tok {
-                        Token::Keyword(kw) => kw.to_fmt().to_string(),
+                        Token::Keyword(kw) => kw.to_classified().to_string(),
                         Token::BoolLiteral(boolean) => boolean.to_string(),
                         // Notation doesn't matter
                         Token::Integer(id, _) => interner.search(id).into(),
@@ -524,7 +524,7 @@ impl<'a> ParserContext<'a> {
             Branch::Neutral(neutral_branch) => match neutral_branch {
                 NeutralBranch::Let => match found.tok {
                     Token::Keyword(kw) if expected == TokenKind::Id => {
-                        let help = format!("Can be escaped with `e#{}`", kw.to_fmt());
+                        let help = format!("Can be escaped with `e#{}`", kw.to_classified());
                         builder.add_help(help)
                     }
                     Token::Colon
@@ -607,7 +607,7 @@ impl<'a> ParserContext<'a> {
                     Token::Keyword(kw)
                         if expected == TokenKind::Id && next_kind == TokenKind::Colon =>
                     {
-                        let help = format!("Can be escaped with `e#{}`", kw.to_fmt());
+                        let help = format!("Can be escaped with `e#{}`", kw.to_classified());
                         builder.add_help(help)
                     }
                     Token::Str(id)
@@ -620,7 +620,7 @@ impl<'a> ParserContext<'a> {
                         if let Some(kw) = Keyword::try_from_interned_id(possible_kw_id) {
                             let help = format!(
                                 "If this was meant to use the statement `{}`, place this within `neutral`, which is the area before any section is used",
-                                kw.to_fmt()
+                                kw.to_classified()
                             );
 
                             return builder.add_note(help);
@@ -661,7 +661,8 @@ impl<'a> ParserContext<'a> {
                         Token::Keyword(kw) if expected == TokenKind::Id => {
                             if let Token::Keyword(kw) = prev_tok.tok {
                                 if kw == Keyword::Struct || kw == Keyword::Enum {
-                                    let help = format!("Can be escaped with `e#{}`", kw.to_fmt());
+                                    let help =
+                                        format!("Can be escaped with `e#{}`", kw.to_classified());
 
                                     return builder.add_help(help);
                                 }
@@ -738,7 +739,7 @@ impl<'a> ParserContext<'a> {
             },
             Branch::Type => match found.tok {
                 Token::Keyword(kw) => {
-                    let help = format!("Can be escaped with `e#{}`", kw.to_fmt());
+                    let help = format!("Can be escaped with `e#{}`", kw.to_classified());
                     builder.add_help(help)
                 }
                 Token::Dot => {

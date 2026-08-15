@@ -3,11 +3,11 @@ mod engine_concepts;
 pub mod preset_err;
 mod static_enricher;
 
-use crate::lookup::scopes::AssociatedScopeKind;
+use crate::lookup::scopes;
+use crate::lookup::scopes::scopes_concepts::AssociatedScopeKind;
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::script_compiler::ScriptCompiler;
-use crate::semantic::checker_helpers::DuplicateFound;
-use crate::semantic::hir::hir_symbols::SymbolKind;
+use crate::semantic::hir::hir_symbols::{SymbolKind, SymbolOrigin};
 use crate::semantic::preset_reporter::engine_concepts::{
     AvailableKind, EngineOption, EngineOptionBase, ListAvailable,
 };
@@ -15,7 +15,6 @@ use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, Prese
 use crate::semantic::resolution::resolution_concepts::{StaticAccessResult, TypeExprResult};
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
-use chrn_utils::id_types::{InternedId, SpannedContainer};
 use chrn_utils::s_suffix;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{
@@ -25,7 +24,7 @@ use chrn_utils::{
     intern::Intern,
     source_map::{source_diagnostic::SourceDiagnostic, source_region::SourceRegion},
 };
-use lang::fmter::ChrnClassifiable;
+use lang::chrn_classifier::ChrnClassifiable;
 
 // These take ownership because `PresetErr::General` will clone otherwise, which isn't expensive.
 // Ok maybe this should just be a reference.
@@ -95,7 +94,7 @@ pub(crate) fn create_diag_builder_preset(
             let core_msg = format!(
                 "Only types that satisfy {} can use the directive `#{}`",
                 boundaries_str,
-                sp_directive.inner.to_fmt()
+                sp_directive.inner.to_classified()
             );
 
             SourceDiagnostic::builder(
@@ -146,7 +145,7 @@ pub(crate) fn create_diag_builder_preset(
             let core_msg = format!(
                 //FIXME: Still vague
                 "\"#{}\" cannot be used for a `var->` defined variable that holds a `struct` or `enum`",
-                sp_directive.inner.to_fmt()
+                sp_directive.inner.to_classified()
             );
 
             SourceDiagnostic::builder(ErrorCode::DirectiveErr.into(), DiagnosticLevel::Error, core_msg,  region.path_id)
@@ -184,7 +183,7 @@ pub(crate) fn create_diag_builder_preset(
             let core_msg = format!(
                 // Suspicious error message
                 "`#{}` cannot be applied to recursive types",
-                sp_directive.inner.to_fmt()
+                sp_directive.inner.to_classified()
             );
 
             SourceDiagnostic::builder(
@@ -239,10 +238,10 @@ pub(crate) fn create_diag_builder_preset(
             LookupError::MemberNotFound {
                 parent_type_id,
                 sp_parent_name_id,
-                sp_not_found: member,
+                sp_not_found,
             } => {
                 let ty_name = interner.search(sp_parent_name_id.inner);
-                let member_name = interner.search(member);
+                let member_name = interner.search(sp_not_found);
                 let core_msg = format!("No member `{member_name}` in type `{ty_name}`");
 
                 let builder = SourceDiagnostic::builder(
@@ -295,6 +294,7 @@ pub(crate) fn create_diag_builder_preset(
                         // the previous stack frame was extracted from a symbol's namespace directly
                         //
                         // WARN: Is this expectable?
+                        // I believe so since an associated scope scope means it's a symbol owned scope question mark.
                         let sym_owner = scope_info.sym_owner.expect("!");
 
                         let sym_name_id = compiler.symbols[sym_owner].name_id;
@@ -315,6 +315,19 @@ pub(crate) fn create_diag_builder_preset(
                     AnnotationKind::Primary,
                     None,
                 );
+
+                let similar = scopes::find_symbols_named(
+                    compiler,
+                    sp_invalid_name_id.inner,
+                    false,
+                    scope_searched.into(),
+                    interner,
+                );
+
+                if !similar.is_empty() {
+                    dbg!(&similar);
+                    panic!();
+                }
 
                 builder
             }
@@ -351,13 +364,19 @@ pub(crate) fn create_diag_builder_preset(
             } => {
                 //TEST: Leaving it to compiler to consume the information since the presets are now
                 //far more semantically inclined.
-                let module = &compiler.mods[current_mod_id];
-                let mod_name = interner.search(module.name_id);
-
                 let sym = &compiler.symbols[found_sym_id];
+
+                // There are no private symbols like this right now, for the compiler, I think?
+                let SymbolOrigin::Module(mod_id) = sym.sym_origin else {
+                    unreachable!("WAIT ");
+                };
+
+                let sym_mod = &compiler.mods[mod_id];
+
+                let sym_mod_name = interner.search(sym_mod.name_id);
                 let sym_name = interner.search(sym.name_id);
 
-                let core_msg = format!("Type `{sym_name}` is private in module `{mod_name}`");
+                let core_msg = format!("Type `{sym_name}` is private in module `{sym_mod_name}`");
 
                 let builder = SourceDiagnostic::builder(
                     ErrorCode::PrivacyErr.into(),
@@ -380,9 +399,9 @@ pub(crate) fn create_diag_builder_preset(
             MathError::BinaryOpMismatch { sp_lhs, sp_rhs, op } => {
                 let core_msg = format!(
                     "Type `{}` cannot apply `{}` to type `{}`",
-                    sp_lhs.inner.to_fmt(),
-                    op.to_fmt(),
-                    sp_rhs.inner.to_fmt(),
+                    sp_lhs.inner.to_classified(),
+                    op.to_classified(),
+                    sp_rhs.inner.to_classified(),
                 );
 
                 let builder = SourceDiagnostic::builder(
@@ -399,8 +418,8 @@ pub(crate) fn create_diag_builder_preset(
             MathError::UnaryOpMismatch { sp_operand, op } => {
                 let core_msg = format!(
                     "Cannot apply `{}` to type `{}`",
-                    op.to_fmt(),
-                    sp_operand.inner.to_fmt()
+                    op.to_classified(),
+                    sp_operand.inner.to_classified()
                 );
 
                 let builder = SourceDiagnostic::builder(
@@ -498,7 +517,6 @@ pub(crate) fn create_diag_builder_preset(
             classifier,
         } => {
             let dup_name = interner.search(sp_original.inner);
-
             let core_msg = format!("Duplicate {classifier} identifier `{dup_name}`");
 
             // Maybe give `None` here..
@@ -558,44 +576,11 @@ pub fn type_expr_result_to_preset_err(
             .into(),
         ),
         TypeExprResult::SymbolNotFound(sp_name_id, associated) => {
-            let err_name = interner.search(sp_name_id.inner);
-            let core_msg = match associated {
-                AssociatedScopeKind::Module(mod_id) => {
-                    let err_mod = &compiler.mods[*mod_id];
-                    let err_mod_name = interner.search(err_mod.name_id);
-
-                    //WARN: If we have "var State {}" in complex or override, and it's not in that
-                    //scope solely, this will say that the ENTIRE module does not contain the given
-                    //type, but that's not true. Maybe we need a little more info given or at least
-                    //acknkowledgement of the scope question mark.
-                    format!("No type `{err_name}` defined in module `{err_mod_name}`")
-                }
-                //NOTE: Not current symbol exists that has it's own scope except modules
-                AssociatedScopeKind::Scope(scope_id) => {
-                    let scope_info = &compiler.scopes[*scope_id];
-
-                    // Expects since if the current associated scope is from a symbol, that means
-                    // the previous stack frame was extracted from a symbol's namespace directly
-                    let sym_owner = scope_info
-                        .sym_owner
-                        .expect("resolve_type_expr control flow broke");
-
-                    let sym_name_id = compiler.symbols[sym_owner].name_id;
-                    let sym_name = interner.search(sym_name_id);
-
-                    format!("Namspace `{sym_name}` does not contain `{err_name}`")
-                }
+            let lookup_err = LookupError::SymbolNotFound {
+                sp_invalid_name_id: sp_name_id.clone(),
+                scope_searched: *associated,
             };
-
-            let src_diag = SourceDiagnostic::basic_builder(
-                None,
-                DiagnosticLevel::Error,
-                core_msg,
-                env.region.path_id,
-                sp_name_id.span,
-            );
-
-            Some(PresetErr::General(src_diag))
+            Some(lookup_err.into())
         }
         TypeExprResult::PrivateTypeAccess {
             sp_found_type_id,
@@ -662,6 +647,7 @@ pub fn static_access_result_to_preset_err(
 ) -> Option<PresetErr> {
     match res {
         StaticAccessResult::Scope(_) => None,
+        //TODO: Preset?
         StaticAccessResult::SymNotFound {
             current_seg,
             prev_seg,

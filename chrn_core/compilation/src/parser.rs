@@ -8,7 +8,7 @@ mod parser_budget;
 mod parser_state;
 
 use crate::lexer::token::{SpannedToken, Token, TokenKind};
-use crate::lookup::scopes::{ScopeLookupPattern, ScopeType};
+use crate::lookup::scopes::scopes_concepts::{ScopeLookupPattern, ScopeType};
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractDirective,
     AbstractEnum, AbstractImpl, AbstractMemberAccess, AbstractParam, AbstractStruct,
@@ -36,7 +36,7 @@ use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
-use lang::fmter::{ChrnClassifiable, ChrnClassifier};
+use lang::chrn_classifier::{ChrnClassifiable, ChrnClassifier};
 use lang::keywords::Keyword;
 
 // The CST.
@@ -771,7 +771,7 @@ fn parse_nest_sect(
             ctx.report_verbose(
                 &format!(
                     "Expected keyword `enum` or `struct`, found `{}`",
-                    kw.to_fmt()
+                    kw.to_classified()
                 ),
                 InitialEvidence::new(
                     SemanticEnv::SectNest,

@@ -1,7 +1,7 @@
 use chrn_utils::{id_types::InternedId, intern};
 
 use crate::{
-    fmter::{ChrnClassifiable, ChrnClassifier},
+    chrn_classifier::{ChrnClassifiable, ChrnClassifier},
     types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
 };
 
@@ -57,11 +57,11 @@ impl Directive {
 }
 
 impl ChrnClassifiable for Directive {
-    fn to_fmt(&self) -> crate::fmter::ChrnClassifier {
+    fn to_classified(&self) -> crate::chrn_classifier::ChrnClassifier {
         match self {
             Directive::Warn => ChrnClassifier::DirectiveWarn,
             Directive::Ignore => ChrnClassifier::DirectiveIgnore,
-            Directive::Type(type_directive) => type_directive.to_fmt(),
+            Directive::Type(type_directive) => type_directive.to_classified(),
         }
     }
 }
@@ -191,7 +191,7 @@ impl TypeDirective {
 }
 
 impl ChrnClassifiable for TypeDirective {
-    fn to_fmt(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassifier {
         match self {
             TypeDirective::Scient => ChrnClassifier::DirectiveScient,
             TypeDirective::Hex => ChrnClassifier::DirectiveHex,

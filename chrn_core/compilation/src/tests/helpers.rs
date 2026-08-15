@@ -317,7 +317,6 @@ pub(super) use lang::{keywords::Keyword, values::Value};
 
 pub(super) use crate::{
     lexer::Lexer,
-    lookup::scopes::ScopeType,
     modules::{Import, ImportKind, Module, ModuleState},
     parser::{self},
     resolvers::{

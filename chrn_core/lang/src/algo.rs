@@ -1,9 +1,8 @@
 use std::cmp;
 
 use crate::{
-    directives,
-    fmter::{ChrnClassifiable, ChrnClassifier},
-    keywords,
+    chrn_classifier::{ChrnClassifiable, ChrnClassifier},
+    directives, keywords,
     types::builtins,
 };
 
@@ -18,7 +17,7 @@ pub enum FuzzyMatch {
 }
 
 impl ChrnClassifiable for FuzzyMatch {
-    fn to_fmt(&self) -> crate::fmter::ChrnClassifier {
+    fn to_classified(&self) -> crate::chrn_classifier::ChrnClassifier {
         match self {
             FuzzyMatch::KW => ChrnClassifier::KW,
             FuzzyMatch::Type => ChrnClassifier::Type,
@@ -38,7 +37,7 @@ pub fn fuzzy_match_with_fmtted(
     given: &[u8],
     target: FuzzyMatch,
 ) -> Option<(Vec<&str>, ChrnClassifier)> {
-    Some((fuzzy_match(given, target), target.to_fmt()))
+    Some((fuzzy_match(given, target), target.to_classified()))
 }
 
 /// Fuzzily searches stuff
@@ -108,20 +107,3 @@ fn fuzzy_match_inner<'a>(given: &[u8], arr: &'a [&str]) -> Vec<&'a str> {
 
     found
 }
-
-// IGNORE THIS
-// #[macro_export]
-// macro_rules! find_similar {
-//     ($bytes:expr, $fuzzy_match:expr) => {
-//         if true {
-//             let found = $crate::algo::fuzzy_match($bytes, $fuzzy_match);
-//             if !found.is_empty() {
-//                 (found, Some("hi"))
-//             } else {
-//                 (found, None)
-//             }
-//         } else {
-//             unreachable!()
-//         }
-//     };
-// }

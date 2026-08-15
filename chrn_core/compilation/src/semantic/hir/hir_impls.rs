@@ -7,8 +7,8 @@ use chrn_utils::{
 };
 
 use crate::{
-    lookup::scopes::{ScopeLookupPattern, ScopeType},
-    parser::ast::{ast_concepts::ConfigRootKindFlat, ast_exprs::TypeExpr},
+    lookup::scopes::scopes_concepts::{ScopeLookupPattern, ScopeType},
+    parser::ast::ast_exprs::TypeExpr,
 };
 
 #[derive(Debug)]
@@ -120,19 +120,19 @@ pub struct ConfigRootOverride {
     //NOTE: Can only be either a type id or namespace. So maybe um...um....!
     pub linked_sym_id: Option<SymbolId>,
     /// Expects `OptionAssignmentRoot`
-    pub opt_assignments: Vec<ImplMemberId>,
+    pub impl_memb_stmts: Vec<ImplMemberId>,
 }
 
 impl ConfigRootOverride {
     pub fn new(
         common: ConfigRootCommon,
         linked_sym_id: Option<SymbolId>,
-        opt_assignments: Vec<ImplMemberId>,
+        impl_memb_stmts: Vec<ImplMemberId>,
     ) -> ConfigRootOverride {
         ConfigRootOverride {
             common,
             linked_sym_id,
-            opt_assignments,
+            impl_memb_stmts,
         }
     }
 }

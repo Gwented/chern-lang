@@ -3,13 +3,13 @@ use chrn_utils::{
     source_map::{source_diagnostic::SourceDiagnosticBuilder, source_span::SourceSpan},
 };
 use lang::{
-    directives::Directive, fmter::ChrnClassifier, types::boundaries::TypeBoundaryFlags,
+    chrn_classifier::ChrnClassifier, directives::Directive, types::boundaries::TypeBoundaryFlags,
     values::ValueKind,
 };
 
 use crate::{
     constraints::ArgConstraint,
-    lookup::scopes::AssociatedScopeKind,
+    lookup::scopes::scopes_concepts::AssociatedScopeKind,
     parser::ast::ast_concepts::{BinaryOp, UnaryOp},
     semantic::hir::hir_symbols::FuncKind,
 };

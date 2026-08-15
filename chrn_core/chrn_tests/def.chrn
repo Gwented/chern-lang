@@ -4,6 +4,7 @@ export let WRITE = 0b1
 // import "../chrn_core/chrn_tests/nothing.chrn"
 // import "../chrn_core/chrn_tests/other.chrn"
 // import "../chrn_core/chrn_tests/nothing.chrn"
+import "../chrn_core/chrn_tests/core.chrn"
 // Maybe this shouldn't be seen as a valid import
 // import l
 
@@ -20,9 +21,10 @@ export let WRITE = 0b1
 var->
 nest->
     export struct Person {
+        l: core::i8
         k: List<i32,>
-        k: i32
-        // another: core::Person
+        // f: nothing::Person,
+        // another: core::erson
         // state: State
         // p: str #scient The error emitted by this should be able to place the directive pointers
                           // directly under #scient. Too greedy. Feed them less.
@@ -50,11 +52,11 @@ State {
         stating {}
     }*/
     // nothing::Person {}
-/*override->
-JAVA {
+override->
+/*JAVA {
     types {
         change i32, = u32::MAX
     }
-}
+}*/
 // State=> {stating {k {}}}
-// var State {}*/
+// var State {}

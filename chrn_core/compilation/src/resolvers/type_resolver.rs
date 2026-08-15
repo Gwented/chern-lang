@@ -1,13 +1,12 @@
 // Please split this...
 // No
+// Artisinal hand-coded slop
 pub mod type_context;
-
-use std::collections::HashSet;
 
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::{
-    AstId, ConfigRootId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ScopeId,
+    AstId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ScopeId,
     SpannedContainer, SpannedContainerRef, SymbolId, TypeId, ValueId, VariableId,
 };
 use chrn_utils::intern::Intern;
@@ -16,13 +15,14 @@ use chrn_utils::source_map::source_diagnostic::{
     DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
 };
 use chrn_utils::source_map::source_span::{self, SourceSpan};
-use lang::fmter::ChrnClassifier;
+use lang::chrn_classifier::ChrnClassifier;
 use lang::values::{Value, ValueInfo};
 
 use crate::constraints::ArgConstraint;
 use crate::lookup::member_lookup::{self, MemberLookupPattern, MemberLookupResult};
-use crate::lookup::scopes::{
-    self, AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, ScopeType,
+use crate::lookup::scopes;
+use crate::lookup::scopes::scopes_concepts::{
+    AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, ScopeType,
     SymbolLookupOutput,
 };
 use crate::parser::ast::ast_concepts::{
@@ -44,9 +44,7 @@ use crate::semantic::hir::hir_impls::{
 };
 use crate::semantic::hir::hir_symbols::{Symbol, SymbolKind, SymbolOrigin, VarDef, VariableState};
 use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, PresetErr};
-use crate::semantic::resolution::resolution_concepts::{
-    StaticAccessOption, StaticAccessResult, TypeExprResult,
-};
+use crate::semantic::resolution::resolution_concepts::StaticAccessOption;
 use crate::semantic::resolution::resolution_helpers;
 use crate::semantic::{checker_helpers, evaluator, inference, preset_reporter, resolution};
 
@@ -155,7 +153,9 @@ impl<'res> TypeResolver<'res> {
                     }
                 }
                 CompilationUnit::Impl(impl_id) => match self.compiler.impls[impl_id].kind {
-                    ImplHirKind::Config(_) => self.resolve_cfg_root(impl_id, env),
+                    ImplHirKind::Config(_) => {
+                        self.resolve_cfg_root(impl_id, &mut ident_tracker, env)
+                    }
                 },
             }
             ident_tracker.clear();
@@ -322,7 +322,7 @@ impl<'res> TypeResolver<'res> {
                         }
                         //TEST:
                         //Doesn't need to update anything since it's a "Standing" expr which has no
-                        //assignment attached
+                        //parent attached.
                         PendingExprKind::Standing(_) => (),
                     }
                 }
@@ -474,7 +474,12 @@ impl<'res> TypeResolver<'res> {
     // The lifetime used here is needed so that the vectors that are pushed into during the recursive
     // maintaining of seen identifiers know that their shortest lifetime is more than long enough to
     // where the borrow cheker is satisfied.
-    fn resolve_cfg_root<'env>(&mut self, parent_impl_id: ImplId, env: &'env ResolverEnv) {
+    fn resolve_cfg_root<'env>(
+        &mut self,
+        parent_impl_id: ImplId,
+        ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedId>>,
+        env: &'env ResolverEnv,
+    ) {
         let initial_scope = AssociatedScopeKind::Module(env.current_mod);
         let ast_id = self.compiler.impls[parent_impl_id]
             .ast_id
@@ -557,6 +562,7 @@ impl<'res> TypeResolver<'res> {
                     parent_impl_id,
                     abs_cfg_root,
                     sp_path_segs,
+                    ident_tracker,
                     last_seg,
                     last_scope,
                     lookup_pat,
@@ -568,6 +574,7 @@ impl<'res> TypeResolver<'res> {
                     parent_impl_id,
                     abs_cfg_root,
                     sp_path_segs,
+                    ident_tracker,
                     last_seg,
                     last_scope,
                     lookup_pat,
@@ -830,11 +837,452 @@ impl<'res> TypeResolver<'res> {
     }
 
     /// Routing
+    fn resolve_cfg_root_complex<'env>(
+        &mut self,
+        complex_impl_id: ImplId,
+        abs_cfg_root: &'env AbstractConfig,
+        sp_path_segs: &[SpannedContainer<PathSegment>],
+        opt_ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedId>>,
+        last_seg: &SpannedContainer<PathSegment>,
+        last_scope: AssociatedScopeKind,
+        lookup_pat: ScopeLookupPattern,
+        env: &'env ResolverEnv,
+    ) {
+        let scope_type = ScopeType::Complex;
+
+        //Make this a helper? Might be going too far making a type expr specific static
+        //access helper
+        let type_id_res = match &last_seg.inner {
+            PathSegment::Ident(interned_id) => {
+                let inline_ty_expr =
+                    SpannedContainer::new(TypeExpr::Var(*interned_id), last_seg.span);
+                resolution_helpers::resolve_type_expr_ret_preset(
+                    self.compiler,
+                    last_scope,
+                    &inline_ty_expr,
+                    scope_type,
+                    lookup_pat,
+                    self.interner,
+                    env,
+                )
+            }
+            PathSegment::Generic(generic) => resolution_helpers::resolve_generic_ret_preset(
+                self.compiler,
+                generic,
+                last_scope,
+                last_seg.span,
+                scope_type,
+                self.interner,
+                env,
+            ),
+        };
+
+        let type_id_opt = match type_id_res {
+            Ok(type_id) => type_id.into(),
+            Err(preset_err) => {
+                preset_reporter::report_preset(
+                    self.compiler,
+                    &mut self.summary,
+                    preset_err,
+                    env.region,
+                    self.cfg,
+                    self.interner,
+                );
+                None
+            }
+        };
+
+        // Is `Option` so the option exprs can be validated before exiting since those don't care
+        // about whether or not the symbol or type id valid
+        //
+        // Is mutable so that if the typecheck fails, it can be set to `None`, which then allows for
+        // the same return signal to be used on failure.
+
+        // NOTE: Parser does not allow complex to consume anything but option assignments
+        let mut opt_assignment_roots: Vec<ImplMemberId> =
+            Vec::with_capacity(abs_cfg_root.abs_stmts.len());
+
+        for abs_stmt in &abs_cfg_root.abs_stmts {
+            let AbstractStmt::OptAssignment(opt) = abs_stmt else {
+                unreachable!();
+            };
+            let sp_name_id = SpannedContainer::new(opt.name_id, opt.name_span);
+            opt_ident_tracker.insert_or_store(sp_name_id);
+
+            let expr_id = match self.register_expr(
+                None,
+                &opt.array_expr,
+                None,
+                last_scope,
+                scope_type,
+                env,
+            ) {
+                Ok(expr_id) => expr_id,
+                Err(preset_err) => {
+                    preset_reporter::report_preset(
+                        &self.compiler,
+                        &mut self.summary,
+                        preset_err,
+                        env.region,
+                        self.cfg,
+                        self.interner,
+                    );
+                    continue;
+                }
+            };
+
+            let impl_member_id = ImplMemberId::new(self.compiler.impl_members.len() as u32);
+            let opt = OptionAssignmentRoot::new(
+                complex_impl_id,
+                impl_member_id,
+                opt.name_id,
+                opt.name_span,
+                expr_id,
+            );
+
+            self.compiler
+                .impl_members
+                .push(ImplMemberKind::OptAssignmentRoot(opt));
+            opt_assignment_roots.push(impl_member_id);
+        }
+
+        for found in opt_ident_tracker.found_dups.drain(..) {
+            let preset_err = PresetErr::DuplicateIdents {
+                sp_original: found.original,
+                sp_dup: found.dup,
+                classifier: ChrnClassifier::ConfigOption,
+            };
+
+            let builder = preset_reporter::create_diag_builder_preset(
+                self.compiler,
+                preset_err,
+                env.region,
+                self.cfg,
+                self.interner,
+            )
+            .add_annotation(
+                last_seg.span,
+                AnnotationKind::Secondary,
+                "Found inside this config root".to_string().into(),
+            );
+            self.summary.push_diag(builder.build());
+        }
+        // Clearing for cfg members to use for their options
+        opt_ident_tracker.clear();
+
+        let Some(found_type_id) = type_id_opt else {
+            return;
+        };
+
+        // Suspicious workaround required but ok for now
+        let sym_id = self
+            .compiler
+            .get_sym_id_from_type_id(found_type_id)
+            .expect("Earlier in-method match enforces the sym id exists");
+
+        if !typechecker::check_cfg_root(&self.compiler, sym_id, scope_type) {
+            let fmtted_ty = Type::to_fmt(&self.compiler.types, found_type_id);
+            let core_msg = format!("Cannot use type `{fmtted_ty}` as a config root");
+
+            let spans: Vec<SourceSpan> = sp_path_segs.iter().map(|s| s.span).collect();
+            let sp_path_span =
+                source_span::merge_spans(&spans).expect("Path segments require at least one span");
+
+            let builder = SourceDiagnostic::builder(
+                ErrorCode::ConfigDeclErr.into(),
+                DiagnosticLevel::Error,
+                core_msg,
+                env.region.path_id,
+            )
+            .add_annotation(sp_path_span, AnnotationKind::Primary, None)
+            .add_note("Only user defined types are valid config roots in `complex`");
+            self.summary.push_diag(builder.build());
+
+            // Failed so it should be marked as not found to follow suit in return
+            return;
+        };
+
+        // Expected to be `ConfigDefMember`
+        let mut cfg_def_members: Vec<ImplMemberId> =
+            Vec::with_capacity(abs_cfg_root.cfg_members.len());
+
+        // TEST: Tracks where this current config was positionally so that it can perform an O(1)
+        // set_len call which will immediately ignore any other recursive call-site data
+        let mut seen_cfg_len = 0;
+
+        // Tracking duplicate identifiers for `AbstractConfig`
+        let mut seen_cfg_vec: Vec<SpannedContainer<InternedId>> = Vec::new();
+
+        //NOTE: Maybe should be tracked from SymbolId/MemberId instead
+        //
+        // Tracks invalid recursive usage
+        //
+        // If we have Parent {p: parent} and the config is "Parent { p {} }" this is a recursive
+        // error because the outer parent already defined what the Parent type should have as set
+        // properties, making it a recursive definition of something that was already defined
+        // let mut cfg_dfs: Vec<(TypeId, SourceSpan)> = vec![(found_type_id, sp_ty_expr.span)];
+
+        for abs_inner_cfg in &abs_cfg_root.cfg_members {
+            let AbstractConfigKind::Member(sp_memb_name_id, _) = abs_inner_cfg.kind.clone() else {
+                unreachable!()
+            };
+
+            seen_cfg_vec.push(sp_memb_name_id.clone());
+            seen_cfg_len += 1;
+
+            // This member id is the member id that the member information in the specific config
+            // being looked at has access to.
+            //
+            // This is **NOT** used beyond being assigned as the parent origin, for the `ConfigDefMember`
+            // that will be created inside the recursive resolution method.
+            // let scope = &self.compiler.scopes[ScopeId::new(7)].scope;
+
+            let member_id = match member_lookup::lookup_member(
+                self.compiler,
+                todo!(),
+                // found_type_id,
+                //TODO: CHANGE THIS
+                sp_memb_name_id.inner,
+                MemberLookupPattern::NoRestrictions,
+            ) {
+                // These are split so that the theoretical ok and err paths are able to reduce
+                // boilerplate where needed
+                MemberLookupResult::Found(memb_id) => memb_id,
+                lookup_res => {
+                    // In case the lookup error points to an issue with the actual symbol we found
+                    // rather than the member not existing or some non-terminal lookup error
+                    //
+                    // This is done because the validity of the symbol isn't checked before we
+                    // actually lookup it's members
+                    let mut should_break = false;
+
+                    let src_diag = match lookup_res {
+                        MemberLookupResult::ImpossibleTypeMemberAccess(type_id) => {
+                            should_break = true;
+                            //FIX: This has odd phrasing and pointers
+                            // If we get a variable, this is matched, but the error is more so, you
+                            // cannot use a variable in config, rather than the member
+                            // access itself
+                            let decl_span = self.compiler.get_span_from_type_id(todo!()).expect(
+                                "Should have a span since it has members and was searched for",
+                            );
+
+                            //FIX:
+                            let found_type_name_id = self
+                                .compiler
+                                .get_name_id_from_type_id(type_id)
+                                .expect("NOT DONE YET");
+                            let found_name = self.interner.search(found_type_name_id);
+
+                            let preset_err = PresetErr::Lookup(
+                                LookupError::ImpossibleTypeMemberAccess(SpannedContainer::new(
+                                    Type::to_fmt(&self.compiler.types, type_id),
+                                    decl_span,
+                                )),
+                            );
+
+                            // 4th paste. 4th paste.
+                            let spans: Vec<SourceSpan> =
+                                sp_path_segs.iter().map(|s| s.span).collect();
+                            let sp_path_span = source_span::merge_spans(&spans)
+                                .expect("Path segments require at least one span");
+
+                            preset_reporter::create_diag_builder_preset(
+                                &self.compiler,
+                                preset_err,
+                                env.region,
+                                self.cfg,
+                                self.interner,
+                            )
+                            .add_annotation(
+                                sp_path_span,
+                                AnnotationKind::Secondary,
+                                format!("`{found_name}` used here").into(),
+                            )
+                            .add_annotation(
+                                sp_memb_name_id.span,
+                                AnnotationKind::Secondary,
+                                "member searched for".to_string().into(),
+                            )
+                            .add_help(format!("If this was meant to reference a `var` defined variable, prefix with \"var {found_name}\""))
+                            .build()
+                        }
+                        MemberLookupResult::MemberNotFoundInType(type_id) => {
+                            let decl_span = self
+                                .compiler
+                                .get_span_from_type_id(todo!())
+                                .expect("Should have a span since it has members and was searched");
+                            let fmtted_ty = Type::to_fmt(&self.compiler.types, type_id);
+
+                            let found_type = &self.compiler.types[todo!()];
+                            //FIX:
+                            let found_type_name_id = self
+                                .compiler
+                                .get_name_id_from_type_id(type_id)
+                                .expect("NOT DONE YET");
+
+                            let spans: Vec<SourceSpan> =
+                                sp_path_segs.iter().map(|s| s.span).collect();
+                            let sp_path_span = source_span::merge_spans(&spans)
+                                .expect("Path segments require at least one span");
+
+                            // Needs to be done otherwise typedefs, given "x: State" will emit the
+                            // type as `x` rather than `State`
+                            // let name_id =
+                            //     if abs_cfg_root.lookup_pat == ScopeLookupPattern::NamespaceOnly {
+                            //         abs_cfg_root.name_id
+                            //     } else {
+                            //         // TODO: Needs change
+                            //         abs_cfg_root.name_id
+                            //     };
+
+                            let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
+                                parent_type_id: type_id,
+                                sp_parent_name_id: SpannedContainer::new(
+                                    found_type_name_id,
+                                    sp_path_span,
+                                ),
+                                sp_not_found: sp_memb_name_id.inner,
+                            });
+
+                            preset_reporter::create_diag_builder_preset(
+                                &self.compiler,
+                                preset_err,
+                                env.region,
+                                self.cfg,
+                                self.interner,
+                            )
+                            .add_annotation(
+                                decl_span,
+                                AnnotationKind::Secondary,
+                                format!("{} defined here", fmtted_ty).into(),
+                            )
+                            .add_annotation(
+                                sp_memb_name_id.span,
+                                AnnotationKind::Secondary,
+                                "Searched for this member".to_string().into(),
+                            )
+                            .build()
+                        }
+                        // TODO: This is reached and should probably result in continue since if
+                        // it's unknown that means a previous stage reported it more likely than
+                        // not. (Its 100%)
+                        // Um. When is this case met?
+                        MemberLookupResult::Unknown(type_id) => {
+                            // let var = self.compiler.get_var(found_sym_id);
+                            // let name = self.interner.search(var.name_id);
+
+                            // dbg!(&self.compiler.types[var.type_id ]);
+                            todo!("RUST_BACKTRACE=1");
+                        }
+                        MemberLookupResult::Found(_) => unreachable!(),
+                    };
+
+                    self.summary.push_diag(src_diag);
+
+                    if should_break {
+                        break;
+                    }
+
+                    continue;
+                }
+            };
+
+            let cfg_member_id = self.resolve_cfg_member(
+                complex_impl_id,
+                todo!(),
+                // sp_path_segs,
+                // &mut cfg_dfs,
+                &mut seen_cfg_vec,
+                // NOTE: Opt ident tracker
+                todo!(),
+                member_id,
+                abs_inner_cfg,
+                scope_type,
+                1,
+                env,
+            );
+
+            cfg_def_members.push(cfg_member_id);
+            seen_cfg_vec.truncate(seen_cfg_len);
+        }
+
+        //NOTE: Maybe it's worth using function-specific trait-bounded concepts to where it CAN
+        // generically examine it's defined name id where it simply reports back the duplicate found
+        // and the caller still reports it since spans and messages vary.
+        for (i, current_cfg) in seen_cfg_vec.iter().enumerate() {
+            // Since this root cfg's made `seen_cfg_vec` it does not need any deeper checks
+            if let Some((_, original_cfg)) = seen_cfg_vec
+                .iter()
+                .enumerate()
+                // If the other index was declared after the current index and they have the same identifier
+                //
+                // Since this iteration specifically checks if the current was declared after the
+                // last and the iteration terminates upon the first match, this correctly points at
+                // the original field for all duplicates.
+                .find(|(other_i, cfg)| *other_i < i && current_cfg.inner == cfg.inner)
+            {
+                let dup_name = self.interner.search(current_cfg.inner);
+
+                let orig_span = original_cfg.span;
+                let current_cfg_span = current_cfg.span;
+
+                let core_msg = format!("More than one config member has identifier `{dup_name}`");
+
+                let spans: Vec<SourceSpan> = sp_path_segs.iter().map(|s| s.span).collect();
+                let sp_path_span = source_span::merge_spans(&spans)
+                    .expect("Path segments require at least one span");
+
+                // Maybe give `None` here..
+                let src_diag = SourceDiagnostic::builder(
+                    ErrorCode::ConfigDeclErr.into(),
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    env.region.path_id,
+                )
+                .add_annotation(
+                    sp_path_span,
+                    AnnotationKind::Secondary,
+                    "Found inside this config root".to_string().into(),
+                )
+                .add_annotation(
+                    orig_span,
+                    AnnotationKind::Secondary,
+                    format!("Original usage of `{dup_name}` here").into(),
+                )
+                .add_annotation(current_cfg_span, AnnotationKind::Primary, None)
+                .build();
+
+                self.summary.push_diag(src_diag);
+            }
+        }
+        todo!("Hi members(s)");
+
+        let cfg_complex = self.compiler.get_cfg_root_complex_mut(complex_impl_id);
+
+        debug_assert!(matches!(cfg_complex.linked_type_id, None));
+        debug_assert_eq!(cfg_complex.impl_stmts.len(), 0);
+        debug_assert_eq!(cfg_complex.common.cfg_members.len(), 0);
+        debug_assert!(matches!(
+            cfg_complex.common.lookup_pat,
+            ScopeLookupPattern::NamespaceOnly
+                | ScopeLookupPattern::OnlyVar
+                | ScopeLookupPattern::OnlyNest
+        ));
+
+        cfg_complex.linked_type_id = Some(found_type_id);
+        cfg_complex.impl_stmts = opt_assignment_roots;
+        cfg_complex.common.cfg_members = cfg_def_members;
+        todo!()
+    }
+
+    /// Routing
     fn resolve_cfg_root_override<'env>(
         &mut self,
         override_impl_id: ImplId,
         abs_cfg_root: &'env AbstractConfig,
         sp_path_segs: &[SpannedContainer<PathSegment>],
+        opt_ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedId>>,
         last_seg: &SpannedContainer<PathSegment>,
         last_scope: AssociatedScopeKind,
         lookup_pat: ScopeLookupPattern,
@@ -896,23 +1344,15 @@ impl<'res> TypeResolver<'res> {
         // Is mutable so that if the typecheck fails, it can be set to `None`, which then allows for
         // the same return signal to be used on failure.
 
-        // Expected to be !
-        let mut opt_assignment_roots: Vec<ImplMemberId> =
-            Vec::with_capacity(abs_cfg_root.abs_stmts.len());
-
-        let mut impl_stmts: Vec<ImplMemberId> = Vec::with_capacity(abs_cfg_root.abs_stmts.len());
-
-        //TODO: AFTER AFTER: OPTS NOW
-
-        // Re-used vector to track duplicated identifiers for options across recursive levels
-        let mut seen_opt_vec: Vec<&'env AbstractOptionAssignment> =
+        let mut impl_memb_stmts: Vec<ImplMemberId> =
             Vec::with_capacity(abs_cfg_root.abs_stmts.len());
 
         for abs_stmt in &abs_cfg_root.abs_stmts {
             //TODO: Um, method!
             match abs_stmt {
                 AbstractStmt::OptAssignment(opt) => {
-                    seen_opt_vec.push(opt);
+                    let sp_name_id = SpannedContainer::new(opt.name_id, opt.name_span);
+                    opt_ident_tracker.insert_or_store(sp_name_id);
 
                     let expr_id = match self.register_expr(
                         None,
@@ -936,10 +1376,10 @@ impl<'res> TypeResolver<'res> {
                         }
                     };
 
-                    let impl_member_id = ImplMemberId::new(self.compiler.impl_members.len() as u32);
+                    let impl_memb_id = ImplMemberId::new(self.compiler.impl_members.len() as u32);
                     let opt = OptionAssignmentRoot::new(
                         override_impl_id,
-                        impl_member_id,
+                        impl_memb_id,
                         opt.name_id,
                         opt.name_span,
                         expr_id,
@@ -948,62 +1388,35 @@ impl<'res> TypeResolver<'res> {
                     self.compiler
                         .impl_members
                         .push(ImplMemberKind::OptAssignmentRoot(opt));
-                    impl_stmts.push(impl_member_id);
+                    impl_memb_stmts.push(impl_memb_id);
                 }
                 AbstractStmt::MultiAssignType(multi_assign) => todo!(),
             }
         }
 
-        //NOTE: Maybe it's worth using function-specific trait-bounded concepts to where it CAN
-        // generically examine it's defined name id where it simply reports back the duplicate found
-        // and the caller still reports it since spans and messages vary.
-        for (i, current_opt) in seen_opt_vec.iter().enumerate() {
-            if let Some((_, original_field)) = seen_opt_vec
-                .iter()
-                .enumerate()
-                // If the other index was declared after the current index and they have the same identifier
-                //
-                // Since this iteration specifically checks if the current was declared after the
-                // last and the iteration terminates upon the first match, this correctly points at
-                // the original field for all duplicates.
-                .find(|(other_i, f)| *other_i < i && current_opt.name_id == f.name_id)
-            {
-                let dup_name = self.interner.search(current_opt.name_id);
+        for found in opt_ident_tracker.found_dups.drain(..) {
+            let preset_err = PresetErr::DuplicateIdents {
+                sp_original: found.original,
+                sp_dup: found.dup,
+                classifier: ChrnClassifier::ConfigOption,
+            };
 
-                let orig_span = original_field.name_span;
-                let current_field_span = current_opt.name_span;
-
-                let core_msg = format!("Duplicate option `{dup_name}`");
-
-                // WARN: Suspicious
-                // let spans: Vec<SourceSpan> = sp_path_segs.iter().map(|s| s.span).collect();
-                // let sp_path_span = source_span::merge_spans(&spans)
-                //     .expect("Path segments require at least one span");
-
-                let src_diag = SourceDiagnostic::builder(
-                    None,
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    env.region.path_id,
-                )
-                .add_annotation(
-                    last_seg.span,
-                    AnnotationKind::Secondary,
-                    "Found inside this config root".to_string().into(),
-                )
-                .add_annotation(
-                    orig_span,
-                    AnnotationKind::Secondary,
-                    format!("Original usage of `{dup_name}` here").into(),
-                )
-                .add_annotation(current_field_span, AnnotationKind::Primary, None)
-                .build();
-
-                self.summary.push_diag(src_diag);
-            }
+            let builder = preset_reporter::create_diag_builder_preset(
+                self.compiler,
+                preset_err,
+                env.region,
+                self.cfg,
+                self.interner,
+            )
+            .add_annotation(
+                last_seg.span,
+                AnnotationKind::Secondary,
+                "Found inside this config root".to_string().into(),
+            );
+            self.summary.push_diag(builder.build());
         }
         // Clearing for cfg members to use for their options
-        seen_opt_vec.clear();
+        opt_ident_tracker.clear();
 
         // No other scope types can hold configs. If this is reached than this is an internal error.
 
@@ -1011,13 +1424,9 @@ impl<'res> TypeResolver<'res> {
             return;
         };
 
-        if !typechecker::check_cfg_root(&self.compiler, found_sym_id) {
+        if !typechecker::check_cfg_root(&self.compiler, found_sym_id, scope_type) {
             let fmtted_sym = SymbolKind::to_fmt(&self.compiler, found_sym_id);
             let core_msg = format!("Cannot use type `{fmtted_sym}` as a config root");
-
-            // let spans: Vec<SourceSpan> = sp_path_segs.iter().map(|s| s.span).collect();
-            // let sp_path_span =
-            //     source_span::merge_spans(&spans).expect("Path segments require at least one span");
 
             let builder = SourceDiagnostic::builder(
                 ErrorCode::ConfigDeclErr.into(),
@@ -1026,10 +1435,11 @@ impl<'res> TypeResolver<'res> {
                 env.region.path_id,
             )
             .add_annotation(last_seg.span, AnnotationKind::Primary, None)
-            .add_note("Only user defined types are valid config roots");
+            .add_note(
+                "Only user defined types and namespaces are valid config roots in `override`",
+            );
             self.summary.push_diag(builder.build());
             return;
-            // Failed so it should be marked as not found to follow suit in return
         };
 
         // Expected to be `ConfigDefMember`
@@ -1224,7 +1634,7 @@ impl<'res> TypeResolver<'res> {
                 // sp_path_segs,
                 // &mut cfg_dfs,
                 &mut seen_cfg_vec,
-                &mut seen_opt_vec,
+                todo!(),
                 member_id,
                 abs_inner_cfg,
                 scope_type,
@@ -1241,38 +1651,29 @@ impl<'res> TypeResolver<'res> {
             sp_dup,
         } = checker_helpers::check_duplicate_ident(&seen_cfg_vec)
         {
-            let dup_name = self.interner.search(sp_original.inner);
-
-            let orig_span = sp_original.span;
-            let current_cfg_span = sp_dup.span;
-
-            let core_msg = format!("More than one config member has identifier `{dup_name}`");
+            let preset_err = PresetErr::DuplicateIdents {
+                sp_original,
+                sp_dup,
+                classifier: ChrnClassifier::ConfigRoot,
+            };
 
             let spans: Vec<SourceSpan> = sp_path_segs.iter().map(|s| s.span).collect();
             let sp_path_span =
                 source_span::merge_spans(&spans).expect("Path segments require at least one span");
 
-            // Maybe give `None` here..
-            let src_diag = SourceDiagnostic::builder(
-                ErrorCode::ConfigDeclErr.into(),
-                DiagnosticLevel::Error,
-                core_msg,
-                env.region.path_id,
+            let builder = preset_reporter::create_diag_builder_preset(
+                self.compiler,
+                preset_err,
+                env.region,
+                self.cfg,
+                self.interner,
             )
             .add_annotation(
                 sp_path_span,
                 AnnotationKind::Secondary,
                 "Found inside this config root".to_string().into(),
-            )
-            .add_annotation(
-                orig_span,
-                AnnotationKind::Secondary,
-                format!("Original usage of `{dup_name}` here").into(),
-            )
-            .add_annotation(current_cfg_span, AnnotationKind::Primary, None)
-            .build();
-
-            self.summary.push_diag(src_diag);
+            );
+            self.summary.push_diag(builder.build());
         };
 
         todo!("Hi members");
@@ -1280,7 +1681,7 @@ impl<'res> TypeResolver<'res> {
         let cfg_override = self.compiler.get_cfg_root_override_mut(override_impl_id);
 
         debug_assert!(matches!(cfg_override.linked_sym_id, None));
-        debug_assert_eq!(cfg_override.opt_assignments.len(), 0);
+        debug_assert_eq!(cfg_override.impl_memb_stmts.len(), 0);
         debug_assert_eq!(cfg_override.common.cfg_members.len(), 0);
         debug_assert!(matches!(
             cfg_override.common.lookup_pat,
@@ -1290,486 +1691,12 @@ impl<'res> TypeResolver<'res> {
         ));
 
         cfg_override.linked_sym_id = Some(found_sym_id);
-        cfg_override.opt_assignments = opt_assignment_roots;
+        cfg_override.impl_memb_stmts = impl_memb_stmts;
         cfg_override.common.cfg_members = cfg_def_members;
     }
 
-    /// Routing
-    fn resolve_cfg_root_complex<'env>(
-        &mut self,
-        complex_impl_id: ImplId,
-        abs_cfg_root: &'env AbstractConfig,
-        sp_path_segs: &[SpannedContainer<PathSegment>],
-        last_seg: &SpannedContainer<PathSegment>,
-        last_scope: AssociatedScopeKind,
-        lookup_pat: ScopeLookupPattern,
-        env: &'env ResolverEnv,
-    ) {
-        let scope_type = ScopeType::Complex;
-
-        //Make this a helper? Might be going too far making a type expr specific static
-        //access helper
-        let type_id_res = match &last_seg.inner {
-            PathSegment::Ident(interned_id) => {
-                let inline_ty_expr =
-                    SpannedContainer::new(TypeExpr::Var(*interned_id), last_seg.span);
-                resolution_helpers::resolve_type_expr_ret_preset(
-                    self.compiler,
-                    last_scope,
-                    &inline_ty_expr,
-                    scope_type,
-                    lookup_pat,
-                    self.interner,
-                    env,
-                )
-            }
-            PathSegment::Generic(generic) => {
-                resolution_helpers::resolve_generic_ret_preset(
-                    self.compiler,
-                    generic,
-                    last_scope,
-                    //WARN: No this is not covering the entire generic.
-                    last_seg.span,
-                    scope_type,
-                    self.interner,
-                    env,
-                )
-            }
-        };
-
-        let type_id_opt = match type_id_res {
-            Ok(type_id) => type_id.into(),
-            Err(preset_err) => {
-                preset_reporter::report_preset(
-                    self.compiler,
-                    &mut self.summary,
-                    preset_err,
-                    env.region,
-                    self.cfg,
-                    self.interner,
-                );
-                None
-            }
-        };
-
-        // Is `Option` so the option exprs can be validated before exiting since those don't care
-        // about whether or not the symbol or type id valid
-        //
-        // Is mutable so that if the typecheck fails, it can be set to `None`, which then allows for
-        // the same return signal to be used on failure.
-
-        // Expected to be `OptionAssignmentRoot`
-        let mut opt_assignment_roots: Vec<ImplMemberId> =
-            Vec::with_capacity(abs_cfg_root.abs_stmts.len());
-
-        // Re-used vector to track duplicated identifiers for options across recursive levels
-        let mut seen_opt_vec: Vec<&'env AbstractOptionAssignment> =
-            Vec::with_capacity(abs_cfg_root.abs_stmts.len());
-
-        // NOTE: Parser does not allow complex to consume
-
-        let mut impl_stmts: Vec<ImplMemberId> = Vec::with_capacity(abs_cfg_root.abs_stmts.len());
-
-        for abs_stmt in &abs_cfg_root.abs_stmts {
-            let AbstractStmt::OptAssignment(opt) = abs_stmt else {
-                unreachable!();
-            };
-            seen_opt_vec.push(opt);
-
-            let expr_id = match self.register_expr(
-                None,
-                &opt.array_expr,
-                None,
-                last_scope,
-                scope_type,
-                env,
-            ) {
-                Ok(expr_id) => expr_id,
-                Err(preset_err) => {
-                    preset_reporter::report_preset(
-                        &self.compiler,
-                        &mut self.summary,
-                        preset_err,
-                        env.region,
-                        self.cfg,
-                        self.interner,
-                    );
-                    continue;
-                }
-            };
-
-            let impl_member_id = ImplMemberId::new(self.compiler.impl_members.len() as u32);
-            let opt = OptionAssignmentRoot::new(
-                complex_impl_id,
-                impl_member_id,
-                opt.name_id,
-                opt.name_span,
-                expr_id,
-            );
-
-            self.compiler
-                .impl_members
-                .push(ImplMemberKind::OptAssignmentRoot(opt));
-            impl_stmts.push(impl_member_id);
-        }
-
-        //NOTE: Maybe it's worth using function-specific trait-bounded concepts to where it CAN
-        // generically examine it's defined name id where it simply reports back the duplicate found
-        // and the caller still reports it since spans and messages vary.
-        for (i, current_opt) in seen_opt_vec.iter().enumerate() {
-            if let Some((_, original_field)) = seen_opt_vec
-                .iter()
-                .enumerate()
-                // If the other index was declared after the current index and they have the same identifier
-                //
-                // Since this iteration specifically checks if the current was declared after the
-                // last and the iteration terminates upon the first match, this correctly points at
-                // the original field for all duplicates.
-                .find(|(other_i, f)| *other_i < i && current_opt.name_id == f.name_id)
-            {
-                let dup_name = self.interner.search(current_opt.name_id);
-
-                let orig_span = original_field.name_span;
-                let current_field_span = current_opt.name_span;
-
-                let core_msg = format!("Duplicate option `{dup_name}`");
-
-                // WARN: Suspicious
-                // let spans: Vec<SourceSpan> = sp_path_segs.iter().map(|s| s.span).collect();
-                // let sp_path_span = source_span::merge_spans(&spans)
-                //     .expect("Path segments require at least one span");
-
-                let src_diag = SourceDiagnostic::builder(
-                    None,
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    env.region.path_id,
-                )
-                .add_annotation(
-                    last_seg.span,
-                    AnnotationKind::Secondary,
-                    "Found inside this config root".to_string().into(),
-                )
-                .add_annotation(
-                    orig_span,
-                    AnnotationKind::Secondary,
-                    format!("Original usage of `{dup_name}` here").into(),
-                )
-                .add_annotation(current_field_span, AnnotationKind::Primary, None)
-                .build();
-
-                self.summary.push_diag(src_diag);
-            }
-        }
-        // Clearing for cfg members to use for their options
-        seen_opt_vec.clear();
-
-        let Some(found_type_id) = type_id_opt else {
-            return;
-        };
-
-        // Suspicious workaround required but ok for now
-        let sym_id = self
-            .compiler
-            .get_sym_id_from_type_id(found_type_id)
-            .expect("Earlier in-method match enforces the sym id exists");
-
-        if !typechecker::check_cfg_root(&self.compiler, sym_id) {
-            let fmtted_ty = Type::to_fmt(&self.compiler.types, found_type_id);
-            let core_msg = format!("Cannot use type `{fmtted_ty}` as a config root");
-
-            let spans: Vec<SourceSpan> = sp_path_segs.iter().map(|s| s.span).collect();
-            let sp_path_span =
-                source_span::merge_spans(&spans).expect("Path segments require at least one span");
-
-            let builder = SourceDiagnostic::builder(
-                ErrorCode::ConfigDeclErr.into(),
-                DiagnosticLevel::Error,
-                core_msg,
-                env.region.path_id,
-            )
-            .add_annotation(sp_path_span, AnnotationKind::Primary, None)
-            .add_note("Only user defined types are valid config roots");
-            self.summary.push_diag(builder.build());
-
-            // Failed so it should be marked as not found to follow suit in return
-            return;
-        };
-
-        // Expected to be `ConfigDefMember`
-        let mut cfg_def_members: Vec<ImplMemberId> =
-            Vec::with_capacity(abs_cfg_root.cfg_members.len());
-
-        // TEST: Tracks where this current config was positionally so that it can perform an O(1)
-        // set_len call which will immediately ignore any other recursive call-site data
-        let mut seen_cfg_len = 0;
-
-        // Tracking duplicate identifiers for `AbstractConfig`
-        let mut seen_cfg_vec: Vec<SpannedContainer<InternedId>> = Vec::new();
-
-        //NOTE: Maybe should be tracked from SymbolId/MemberId instead
-        //
-        // Tracks invalid recursive usage
-        //
-        // If we have Parent {p: parent} and the config is "Parent { p {} }" this is a recursive
-        // error because the outer parent already defined what the Parent type should have as set
-        // properties, making it a recursive definition of something that was already defined
-        // let mut cfg_dfs: Vec<(TypeId, SourceSpan)> = vec![(found_type_id, sp_ty_expr.span)];
-
-        for abs_inner_cfg in &abs_cfg_root.cfg_members {
-            let AbstractConfigKind::Member(sp_memb_name_id, _) = abs_inner_cfg.kind.clone() else {
-                unreachable!()
-            };
-
-            seen_cfg_vec.push(sp_memb_name_id.clone());
-            seen_cfg_len += 1;
-
-            // This member id is the member id that the member information in the specific config
-            // being looked at has access to.
-            //
-            // This is **NOT** used beyond being assigned as the parent origin, for the `ConfigDefMember`
-            // that will be created inside the recursive resolution method.
-            // let scope = &self.compiler.scopes[ScopeId::new(7)].scope;
-
-            let member_id = match member_lookup::lookup_member(
-                self.compiler,
-                todo!(),
-                // found_type_id,
-                //TODO: CHANGE THIS
-                sp_memb_name_id.inner,
-                MemberLookupPattern::NoRestrictions,
-            ) {
-                // These are split so that the theoretical ok and err paths are able to reduce
-                // boilerplate where needed
-                MemberLookupResult::Found(memb_id) => memb_id,
-                lookup_res => {
-                    // In case the lookup error points to an issue with the actual symbol we found
-                    // rather than the member not existing or some non-terminal lookup error
-                    //
-                    // This is done because the validity of the symbol isn't checked before we
-                    // actually lookup it's members
-                    let mut should_break = false;
-
-                    let src_diag = match lookup_res {
-                        MemberLookupResult::ImpossibleTypeMemberAccess(type_id) => {
-                            should_break = true;
-                            //FIX: This has odd phrasing and pointers
-                            // If we get a variable, this is matched, but the error is more so, you
-                            // cannot use a variable in config, rather than the member
-                            // access itself
-                            let decl_span = self.compiler.get_span_from_type_id(todo!()).expect(
-                                "Should have a span since it has members and was searched for",
-                            );
-
-                            //FIX:
-                            let found_type_name_id = self
-                                .compiler
-                                .get_name_id_from_type_id(type_id)
-                                .expect("NOT DONE YET");
-                            let found_name = self.interner.search(found_type_name_id);
-
-                            let preset_err = PresetErr::Lookup(
-                                LookupError::ImpossibleTypeMemberAccess(SpannedContainer::new(
-                                    Type::to_fmt(&self.compiler.types, type_id),
-                                    decl_span,
-                                )),
-                            );
-
-                            // 4th paste. 4th paste.
-                            let spans: Vec<SourceSpan> =
-                                sp_path_segs.iter().map(|s| s.span).collect();
-                            let sp_path_span = source_span::merge_spans(&spans)
-                                .expect("Path segments require at least one span");
-
-                            preset_reporter::create_diag_builder_preset(
-                                &self.compiler,
-                                preset_err,
-                                env.region,
-                                self.cfg,
-                                self.interner,
-                            )
-                            .add_annotation(
-                                sp_path_span,
-                                AnnotationKind::Secondary,
-                                format!("`{found_name}` used here").into(),
-                            )
-                            .add_annotation(
-                                sp_memb_name_id.span,
-                                AnnotationKind::Secondary,
-                                "member searched for".to_string().into(),
-                            )
-                            .add_help(format!("If this was meant to reference a `var` defined variable, prefix with \"var {found_name}\""))
-                            .build()
-                        }
-                        MemberLookupResult::MemberNotFoundInType(type_id) => {
-                            let decl_span = self
-                                .compiler
-                                .get_span_from_type_id(todo!())
-                                .expect("Should have a span since it has members and was searched");
-                            let fmtted_ty = Type::to_fmt(&self.compiler.types, type_id);
-
-                            let found_type = &self.compiler.types[todo!()];
-                            //FIX:
-                            let found_type_name_id = self
-                                .compiler
-                                .get_name_id_from_type_id(type_id)
-                                .expect("NOT DONE YET");
-
-                            let spans: Vec<SourceSpan> =
-                                sp_path_segs.iter().map(|s| s.span).collect();
-                            let sp_path_span = source_span::merge_spans(&spans)
-                                .expect("Path segments require at least one span");
-
-                            // Needs to be done otherwise typedefs, given "x: State" will emit the
-                            // type as `x` rather than `State`
-                            // let name_id =
-                            //     if abs_cfg_root.lookup_pat == ScopeLookupPattern::NamespaceOnly {
-                            //         abs_cfg_root.name_id
-                            //     } else {
-                            //         // TODO: Needs change
-                            //         abs_cfg_root.name_id
-                            //     };
-
-                            let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
-                                parent_type_id: type_id,
-                                sp_parent_name_id: SpannedContainer::new(
-                                    found_type_name_id,
-                                    sp_path_span,
-                                ),
-                                sp_not_found: sp_memb_name_id.inner,
-                            });
-
-                            preset_reporter::create_diag_builder_preset(
-                                &self.compiler,
-                                preset_err,
-                                env.region,
-                                self.cfg,
-                                self.interner,
-                            )
-                            .add_annotation(
-                                decl_span,
-                                AnnotationKind::Secondary,
-                                format!("{} defined here", fmtted_ty).into(),
-                            )
-                            .add_annotation(
-                                sp_memb_name_id.span,
-                                AnnotationKind::Secondary,
-                                "Searched for this member".to_string().into(),
-                            )
-                            .build()
-                        }
-                        // TODO: This is reached and should probably result in continue since if
-                        // it's unknown that means a previous stage reported it more likely than
-                        // not. (Its 100%)
-                        // Um. When is this case met?
-                        MemberLookupResult::Unknown(type_id) => {
-                            // let var = self.compiler.get_var(found_sym_id);
-                            // let name = self.interner.search(var.name_id);
-
-                            // dbg!(&self.compiler.types[var.type_id ]);
-                            todo!("RUST_BACKTRACE=1");
-                        }
-                        MemberLookupResult::Found(_) => unreachable!(),
-                    };
-
-                    self.summary.push_diag(src_diag);
-
-                    if should_break {
-                        break;
-                    }
-
-                    continue;
-                }
-            };
-
-            let cfg_member_id = self.resolve_cfg_member(
-                complex_impl_id,
-                todo!(),
-                // sp_path_segs,
-                // &mut cfg_dfs,
-                &mut seen_cfg_vec,
-                &mut seen_opt_vec,
-                member_id,
-                abs_inner_cfg,
-                scope_type,
-                1,
-                env,
-            );
-
-            cfg_def_members.push(cfg_member_id);
-            seen_cfg_vec.truncate(seen_cfg_len);
-        }
-
-        //NOTE: Maybe it's worth using function-specific trait-bounded concepts to where it CAN
-        // generically examine it's defined name id where it simply reports back the duplicate found
-        // and the caller still reports it since spans and messages vary.
-        for (i, current_cfg) in seen_cfg_vec.iter().enumerate() {
-            // Since this root cfg's made `seen_cfg_vec` it does not need any deeper checks
-            if let Some((_, original_cfg)) = seen_cfg_vec
-                .iter()
-                .enumerate()
-                // If the other index was declared after the current index and they have the same identifier
-                //
-                // Since this iteration specifically checks if the current was declared after the
-                // last and the iteration terminates upon the first match, this correctly points at
-                // the original field for all duplicates.
-                .find(|(other_i, cfg)| *other_i < i && current_cfg.inner == cfg.inner)
-            {
-                let dup_name = self.interner.search(current_cfg.inner);
-
-                let orig_span = original_cfg.span;
-                let current_cfg_span = current_cfg.span;
-
-                let core_msg = format!("More than one config member has identifier `{dup_name}`");
-
-                let spans: Vec<SourceSpan> = sp_path_segs.iter().map(|s| s.span).collect();
-                let sp_path_span = source_span::merge_spans(&spans)
-                    .expect("Path segments require at least one span");
-
-                // Maybe give `None` here..
-                let src_diag = SourceDiagnostic::builder(
-                    ErrorCode::ConfigDeclErr.into(),
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    env.region.path_id,
-                )
-                .add_annotation(
-                    sp_path_span,
-                    AnnotationKind::Secondary,
-                    "Found inside this config root".to_string().into(),
-                )
-                .add_annotation(
-                    orig_span,
-                    AnnotationKind::Secondary,
-                    format!("Original usage of `{dup_name}` here").into(),
-                )
-                .add_annotation(current_cfg_span, AnnotationKind::Primary, None)
-                .build();
-
-                self.summary.push_diag(src_diag);
-            }
-        }
-        todo!("Hi members(s)");
-
-        let cfg_complex = self.compiler.get_cfg_root_complex_mut(complex_impl_id);
-
-        debug_assert!(matches!(cfg_complex.linked_type_id, None));
-        debug_assert_eq!(cfg_complex.impl_stmts.len(), 0);
-        debug_assert_eq!(cfg_complex.common.cfg_members.len(), 0);
-        debug_assert!(matches!(
-            cfg_complex.common.lookup_pat,
-            ScopeLookupPattern::NamespaceOnly
-                | ScopeLookupPattern::OnlyVar
-                | ScopeLookupPattern::OnlyNest
-        ));
-
-        cfg_complex.linked_type_id = Some(found_type_id);
-        cfg_complex.impl_stmts = impl_stmts;
-        cfg_complex.common.cfg_members = cfg_def_members;
-        todo!()
-    }
-
-    fn lookup_cfg_member() {}
+    //TODO: Let's try out a context routing kind, which this function takes, and routes given the given
+    //kind.
 
     /// Method that recursively resolves `ConfigDefMember` and `OptionAssignmentMember`
     ///
@@ -1789,8 +1716,10 @@ impl<'res> TypeResolver<'res> {
         // being removed.
         // cfg_dfs: &mut Vec<(TypeId, SourceSpan)>,
         //TEST: For identifier tracking right now. Trying out something questionable.
-        seen_cfg_vec: &mut Vec<SpannedContainer<InternedId>>,
-        seen_opt_vec: &mut Vec<&'env AbstractOptionAssignment>,
+        seen_cfg_idents: &mut Vec<SpannedContainer<InternedId>>,
+        // Carried over and reset through cfg member recursive resolution to track duplicate
+        // identifiers.
+        seen_opt_idents: &mut DuplicateTracker<SpannedContainer<InternedId>>,
         parent_member_id: MemberId,
         parent_abs_cfg: &'env AbstractConfig,
         scope_type: ScopeType,
@@ -1832,98 +1761,81 @@ impl<'res> TypeResolver<'res> {
         // Whether or not the parent config has a type doesn't matter for options since they only
         // apply to the current config, so this is fine.
         // &parent_abs_cfg.abs_stmts
-        for abs_opt in &parent_abs_cfg.abs_stmts {
-            let abs_opt = todo!();
-            seen_opt_vec.push(abs_opt);
+        for abs_stmt in &parent_abs_cfg.abs_stmts {
+            match abs_stmt {
+                AbstractStmt::OptAssignment(abs_opt) => {
+                    let sp_name_id = SpannedContainer::new(abs_opt.name_id, abs_opt.name_span);
+                    seen_opt_idents.insert_or_store(sp_name_id);
 
-            let expr_id = match self.register_expr(
-                None,
-                &abs_opt.array_expr,
-                None,
-                associated_scope,
-                // This purposeful setting is done on purpose.
-                scope_type,
-                env,
-            ) {
-                Ok(expr_id) => expr_id,
-                Err(preset_err) => {
-                    preset_reporter::report_preset(
-                        &self.compiler,
-                        &mut self.summary,
-                        preset_err,
-                        env.region,
-                        self.cfg,
-                        self.interner,
+                    let expr_id = match self.register_expr(
+                        None,
+                        &abs_opt.array_expr,
+                        None,
+                        associated_scope,
+                        // This purposeful setting is done on purpose.
+                        scope_type,
+                        env,
+                    ) {
+                        Ok(expr_id) => expr_id,
+                        Err(preset_err) => {
+                            preset_reporter::report_preset(
+                                &self.compiler,
+                                &mut self.summary,
+                                preset_err,
+                                env.region,
+                                self.cfg,
+                                self.interner,
+                            );
+
+                            continue;
+                        }
+                    };
+
+                    let impl_member_id = ImplMemberId::new(self.compiler.impl_members.len() as u32);
+                    let opt = OptionAssignmentMember::new(
+                        parent_member_id,
+                        impl_member_id,
+                        abs_opt.name_id,
+                        abs_opt.name_span,
+                        expr_id,
                     );
 
-                    continue;
+                    self.compiler
+                        .impl_members
+                        .push(ImplMemberKind::OptAssignmentMember(opt));
+                    opt_assignments.push(impl_member_id);
                 }
-            };
-
-            let impl_member_id = ImplMemberId::new(self.compiler.impl_members.len() as u32);
-            let opt = OptionAssignmentMember::new(
-                parent_member_id,
-                impl_member_id,
-                abs_opt.name_id,
-                abs_opt.name_span,
-                expr_id,
-            );
-
-            self.compiler
-                .impl_members
-                .push(ImplMemberKind::OptAssignmentMember(opt));
-            opt_assignments.push(impl_member_id);
-        }
-
-        //NOTE: Maybe it's worth using function-specific trait-bounded concepts to where it CAN
-        // generically examine it's defined name id where it simply reports back the duplicate found
-        // and the caller still reports it since spans and messages vary.
-        for (i, current_opt) in seen_opt_vec.iter().enumerate() {
-            if let Some((_, original_opt)) = seen_opt_vec
-                .iter()
-                .enumerate()
-                // If the other index was declared after the current index and they have the same identifier
-                //
-                // Since this iteration specifically checks if the current was declared after the
-                // last and the iteration terminates upon the first match, this correctly points at
-                // the original field for all duplicates.
-                .find(|(other_i, f)| *other_i < i && current_opt.name_id == f.name_id)
-            {
-                let dup_name = self.interner.search(current_opt.name_id);
-
-                let orig_span = original_opt.name_span;
-                let current_opt_span = current_opt.name_span;
-
-                let core_msg = format!("More than one option has the identifier `{dup_name}`");
-
-                let src_diag = SourceDiagnostic::builder(
-                    None,
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    env.region.path_id,
-                )
-                .add_annotation(
-                    sp_parent_name_id.span,
-                    AnnotationKind::Secondary,
-                    "Found inside this config member".to_string().into(),
-                )
-                .add_annotation(
-                    orig_span,
-                    AnnotationKind::Secondary,
-                    format!("Original usage of `{dup_name}` here").into(),
-                )
-                .add_annotation(current_opt_span, AnnotationKind::Primary, None)
-                .build();
-
-                self.summary.push_diag(src_diag);
+                AbstractStmt::MultiAssignType(abstract_type_multi_assign) => todo!(),
             }
         }
 
+        for found in seen_opt_idents.found_dups.drain(..) {
+            let preset_err = PresetErr::DuplicateIdents {
+                sp_original: found.original,
+                sp_dup: found.dup,
+                classifier: ChrnClassifier::ConfigOption,
+            };
+
+            let builder = preset_reporter::create_diag_builder_preset(
+                self.compiler,
+                preset_err,
+                env.region,
+                self.cfg,
+                self.interner,
+            )
+            .add_annotation(
+                sp_parent_name_id.span,
+                AnnotationKind::Secondary,
+                "Found inside this config member".to_string().into(),
+            );
+            self.summary.push_diag(builder.build());
+        }
+
         // Clearing for cfg members to use for their options
-        seen_opt_vec.clear();
+        seen_opt_idents.clear();
 
         // len() to truncate from `seen_cfg_member`
-        let mut seen_cfg_len = seen_cfg_vec.len();
+        let mut seen_cfg_len = seen_cfg_idents.len();
         // So that it knows where to start slicing up to len
         let seen_cfg_start = seen_cfg_len;
 
@@ -1944,7 +1856,7 @@ impl<'res> TypeResolver<'res> {
                 };
 
                 seen_cfg_len += 1;
-                seen_cfg_vec.push(sp_member_name_id.clone());
+                seen_cfg_idents.push(sp_member_name_id.clone());
 
                 //Complex
                 let member_id = if scope_type == ScopeType::Complex {
@@ -2151,8 +2063,8 @@ impl<'res> TypeResolver<'res> {
                     root_parent_impl_id,
                     root_sp_ty_expr,
                     // cfg_dfs,
-                    seen_cfg_vec,
-                    seen_opt_vec,
+                    seen_cfg_idents,
+                    seen_opt_idents,
                     member_id,
                     abs_cfg_member,
                     scope_type,
@@ -2164,7 +2076,7 @@ impl<'res> TypeResolver<'res> {
 
                 // If any cfg was added during the recursive descent, this truncates so that the vector
                 // can be re-used where it left off.
-                seen_cfg_vec.truncate(seen_cfg_len);
+                seen_cfg_idents.truncate(seen_cfg_len);
             }
         // Branch of no type being present within the parent config member.
         } else {
@@ -2214,7 +2126,38 @@ impl<'res> TypeResolver<'res> {
         //
         // Start is the only variable that needs to be tracked here since the len being truncated
         // inherently sets end
-        let seen_cfg_slice = &seen_cfg_vec[seen_cfg_start..];
+        let seen_cfg_slice = &seen_cfg_idents[seen_cfg_start..];
+
+        //TODO: Need cfg root span
+        if let DuplicateIdentResult::Duplicate {
+            sp_original,
+            sp_dup,
+        } = checker_helpers::check_duplicate_ident(seen_cfg_slice)
+        {
+            let preset_err = PresetErr::DuplicateIdents {
+                sp_original,
+                sp_dup,
+                classifier: ChrnClassifier::ConfigRoot,
+            };
+
+            // let spans: Vec<SourceSpan> = sp_path_segs.iter().map(|s| s.span).collect();
+            // let sp_path_span =
+            //     source_span::merge_spans(&spans).expect("Path segments require at least one span");
+
+            let builder = preset_reporter::create_diag_builder_preset(
+                self.compiler,
+                preset_err,
+                env.region,
+                self.cfg,
+                self.interner,
+            )
+            .add_annotation(
+                todo!(),
+                AnnotationKind::Secondary,
+                "Found inside this config root".to_string().into(),
+            );
+            self.summary.push_diag(builder.build());
+        };
 
         for (i, current_cfg) in seen_cfg_slice.iter().enumerate() {
             if let Some((_, original_cfg)) = seen_cfg_slice
@@ -2924,7 +2867,6 @@ impl<'res> TypeResolver<'res> {
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
         let scope_type = self.compiler.symbols[parent_sym_id].scope_origin;
 
-        //TODO: typecheck here?
         let type_id = match resolution_helpers::resolve_type_expr_ret_preset(
             &mut self.compiler,
             AssociatedScopeKind::Module(env.current_mod),

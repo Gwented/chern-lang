@@ -4,7 +4,7 @@
 use chrn_utils::id_types::{ExprId, InternedId, SymbolId, TypeId};
 
 use crate::{
-    fmter::{ChrnClassifiable, ChrnClassifier},
+    chrn_classifier::{ChrnClassifiable, ChrnClassifier},
     types::boundaries::TypeBoundaryFlags,
 };
 // TODO: Should probably be in compilation
@@ -110,7 +110,7 @@ impl ValueKind {
 }
 
 impl ChrnClassifiable for ValueKind {
-    fn to_fmt(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassifier {
         match self {
             ValueKind::I64 => ChrnClassifier::I64,
             ValueKind::F64 => ChrnClassifier::F64,

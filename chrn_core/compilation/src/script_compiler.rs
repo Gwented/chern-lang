@@ -21,13 +21,13 @@ use lang::{
 
 use crate::{
     constraints::ArgConstraint,
-    lookup::scopes::{self, AssociatedScopeKind, IntrinsicRegistry, Scope, ScopeInfo, ScopeType},
+    lookup::scopes::{
+        self,
+        scopes_concepts::{AssociatedScopeKind, IntrinsicRegistry, Scope, ScopeInfo, ScopeType},
+    },
     modules::{Bind, Import, ImportKind, Module, ModuleState},
     resolvers::resolver_state::ResolverState,
-    script_compiler::{
-        extern_helpers::{ExternFrame, ExternNamespace},
-        helpers::extern_helpers::{self, ExternKind},
-    },
+    script_compiler::helpers::extern_helpers::{self, ExternKind},
     semantic::hir::{
         hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
         hir_exprs::ResolvedExpr,

@@ -1,6 +1,7 @@
 use super::helpers::*;
-use crate::lookup::scopes::{
-    AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, find_sym_id,
+use crate::lookup::scopes::find_sym_id;
+use crate::lookup::scopes::scopes_concepts::{
+    AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, ScopeType,
 };
 use crate::semantic::hir::hir_symbols::SymbolKind;
 use chrn_utils::id_types::ScopeId;

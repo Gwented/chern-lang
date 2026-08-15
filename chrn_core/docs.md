@@ -17,7 +17,7 @@ First {
 // If there is no tab, why pay the indentation overhead of if there were CCurlies?
 // The first seems -$#9)$ ok this is the format [ADDRESS ME]
 
-## Language intent
+# Language intent
 - This is a scripting language that is meant to have a serialized data representation paired with it which allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required inline in a language, and most favorably allows for cross-language serial configuration. The scripting language can either use the keyword [`bind`](#keywords) to define where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
 
 - Features such as boundaries, directives, and anything that is beyond just setting serialized data details or serialized data specific settings are not intended to be heavily used.
@@ -264,8 +264,6 @@ nest->
         timesUsed: unsized
     }
 ```
-
-
 ### DOES NOT EXIST YET
 // Maybe remove this entirely
 `(range)`: Explicit range syntax. The '=' is required. `0..=5`

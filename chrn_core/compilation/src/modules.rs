@@ -4,14 +4,11 @@
 // is still mod id 2. How has this been working for so long? Is this a hallucination?
 //
 // TODO: This should be split but not sure what would be best since it is fairly local and small
-use std::{collections::VecDeque, fs, io::Read, path::Path};
+use std::{collections::VecDeque, io::Read, path::Path};
 
 pub mod mod_finder;
 
-use crate::{
-    config_loader::{ConfigLoader, ConfigLoaderOutput},
-    script_compiler::script_compiler_summary::ScriptCompilerSummary,
-};
+use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use chrn_utils::{
     arena::Arena,
     chrn_config::ChrnConfig,
@@ -36,8 +33,6 @@ use crate::{
         ScriptCompiler, reporter::Reporter, script_compiler_store::ScriptCompilerStore,
     },
 };
-
-pub static RESERVED_INTERNED_MODULE_IDENTS: [u32; 1] = [intern::INTERNED_CORE];
 
 //TEST: Relocate reollacl rreellocrelac
 #[derive(Debug, Clone)]
@@ -430,8 +425,8 @@ pub fn extract_modules(
     // imports can be viewed and processed as modules.
     while let Some(mut importer_mod) = pending_mods.pop_front() {
         // This diner still makes Coke the old-fashioned way
-        for i in 0..importer_mod.imports.len() {
-            let import = importer_mod.imports[i].clone();
+        for imp_idx in 0..importer_mod.imports.len() {
+            let import = importer_mod.imports[imp_idx].clone();
 
             // We haven't made the compiler yet so no other imports should exist
             let ImportKind::UnresolvedSource(ref sp_path_id) = import.kind else {
@@ -450,13 +445,14 @@ pub fn extract_modules(
 
                 // Valid import
                 if let Some(mod_id) = mod_id_opt {
-                    importer_mod.imports[i].kind = ImportKind::Source(sp_path_id.clone(), mod_id);
+                    importer_mod.imports[imp_idx].kind =
+                        ImportKind::Source(sp_path_id.clone(), mod_id);
                 } else {
                     // Meaning the import was an error source because resolve_module did register a
                     // module id for this import, and it was already seen
-                    importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
+                    importer_mod.imports[imp_idx].kind =
+                        ImportKind::ErrorSource(sp_path_id.clone());
                 }
-
                 continue;
             }
 
@@ -475,13 +471,15 @@ pub fn extract_modules(
             ) {
                 Ok(m) => {
                     // Need to set the current import to a resolved source or it stays unresolved
-                    importer_mod.imports[i].kind = ImportKind::Source(sp_path_id.clone(), m.mod_id);
+                    importer_mod.imports[imp_idx].kind =
+                        ImportKind::Source(sp_path_id.clone(), m.mod_id);
                     m
                 }
                 // Need to transition state from unresolved source to error so future users of this
                 // state machine know
                 Err(_) => {
-                    importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
+                    importer_mod.imports[imp_idx].kind =
+                        ImportKind::ErrorSource(sp_path_id.clone());
                     continue;
                 }
             };
@@ -516,7 +514,6 @@ pub fn extract_modules(
                     core_msg,
                     sp_path_id.inner,
                 )
-                // Not true
                 .add_note(format!("Last processed module was `{last_processed_name}`"));
 
                 summary.push_diag(src_diag.build());
@@ -663,6 +660,14 @@ fn resolve_module(
     };
 
     let sub_mod_name_id = interner.intern(&file_name);
+
+    //NOTE: If this were allowed, some odd undefined behavior would exist, which should likely just
+    //be omitted entirely. This is the only location where anything "core" in identifier is stopped.
+    //The "UB" in this scenario is just that the core module doesn't actually account for the user's
+    //"core" module, only the compiler generated one. May change, but probably not.
+    if sub_mod_name_id.id == intern::INTERNED_CORE {
+        return Err(());
+    }
 
     // Using region id before pushing
     let (sub_region, sub_state) =

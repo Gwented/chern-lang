@@ -6,13 +6,13 @@ use chrn_utils::{
     source_map::source_span::SourceSpan,
 };
 use lang::{
-    fmter::{ChrnClassifiable, ChrnClassifier},
+    chrn_classifier::{ChrnClassifiable, ChrnClassifier},
     types::boundaries::TypeBoundaryFlags,
 };
 
 use crate::{
     constraints::ArgConstraint,
-    lookup::scopes::{AssociatedScopeKind, ScopeType},
+    lookup::scopes::scopes_concepts::{AssociatedScopeKind, ScopeType},
     script_compiler::ScriptCompiler,
     semantic::hir::{hir_concepts::Type, hir_exprs::Param},
 };
@@ -27,8 +27,10 @@ pub enum SymbolOrigin {
 pub struct Symbol {
     pub name_id: InternedId,
     // pub name_span: Option<SourceSpan>,
+    /// `SymbolId` of `self`
     pub sym_id: SymbolId,
     //err span purposes
+    /// `AstId` of `self`
     pub ast_id: Option<AstId>,
     pub kind: SymbolKind,
     pub sym_origin: SymbolOrigin,
@@ -272,7 +274,7 @@ impl StructDef {
 }
 
 impl ChrnClassifiable for StructDef {
-    fn to_fmt(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassifier {
         ChrnClassifier::Struct
     }
 }
@@ -309,7 +311,7 @@ impl EnumDef {
 }
 
 impl ChrnClassifiable for EnumDef {
-    fn to_fmt(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassifier {
         ChrnClassifier::Enum
     }
 }
@@ -402,7 +404,7 @@ impl TypeDef {
 }
 
 impl ChrnClassifiable for TypeDef {
-    fn to_fmt(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassifier {
         ChrnClassifier::TypeDef
     }
 }
@@ -452,7 +454,7 @@ impl FuncDef {
 }
 
 impl ChrnClassifiable for FuncDef {
-    fn to_fmt(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassifier {
         ChrnClassifier::Func
     }
 }
@@ -531,7 +533,7 @@ impl AliasDef {
 }
 
 impl ChrnClassifiable for AliasDef {
-    fn to_fmt(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassifier {
         ChrnClassifier::Alias
     }
 }
@@ -548,7 +550,7 @@ pub enum FuncKind {
 }
 
 impl ChrnClassifiable for FuncKind {
-    fn to_fmt(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassifier {
         match self {
             FuncKind::Contains => ChrnClassifier::FuncContains,
             FuncKind::IsWhitespace => ChrnClassifier::IsWhitespace,

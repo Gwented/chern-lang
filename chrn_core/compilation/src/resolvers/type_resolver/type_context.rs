@@ -78,7 +78,12 @@ pub(super) enum PendingExprKind {
     Standing(StandingExprState),
 }
 
-/// Expr that is pending but has no parent ties to update
+/// Expr that is pending but has no parent ties to update.
+///
+/// For example, something like [x,y,z] cannot have a cycle
+/// because there is no parent.
+///
+/// It's only responsibility is to wait for resolution and update accordingly.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(super) enum StandingExprState {
     Unresolved,
@@ -95,8 +100,8 @@ impl PendingExpr {
     }
 }
 
-/// Parent state intended guide resolution and be changed by the child expression's
-/// themselves
+/// Parent state intended to guide resolution and be changed by the child expression's
+/// themselves.
 #[derive(Debug)]
 pub(super) struct ParentStateBase {
     pub(super) parent_sym_id: SymbolId,
@@ -117,13 +122,14 @@ impl ParentStateBase {
 /// themselves
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum ParentState {
+    /// Parent has no resolved type and value.
     Unresolved,
-    /// has_resolved_ty, has_const_val
+    ///
     Resolved {
         has_resolved_ty: bool,
         has_const_val: bool,
     },
-    /// has_resolved_ty, has_const_val
+    ///
     Notified {
         has_resolved_ty: bool,
         has_const_val: bool,

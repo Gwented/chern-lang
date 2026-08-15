@@ -8,16 +8,19 @@ use chrn_utils::{
     intern,
     source_map::source_span::SourceSpan,
 };
-use lang::{directives::Directive, fmter::ChrnClassifier};
 use lang::{
-    fmter::ChrnClassifiable,
+    chrn_classifier::ChrnClassifiable,
     types::builtins::{BuiltinType, BuiltinTypeKind},
 };
+use lang::{chrn_classifier::ChrnClassifier, directives::Directive};
 
 use crate::{
     lookup::scopes::{
-        self, AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, ScopeType,
-        SymbolLookupOutput,
+        self,
+        scopes_concepts::{
+            self, AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, ScopeType,
+            SymbolLookupOutput,
+        },
     },
     parser::ast::{
         ast_concepts::AbstractDirective,
@@ -92,7 +95,7 @@ pub fn resolve_type_expr(
                             let fmtted = found_sym
                                 .associated_scope
                                 .expect("Should be namespace")
-                                .to_fmt();
+                                .to_classified();
                             return TypeExprResult::NotAType {
                                 found_sym_id,
                                 sp_name_id,

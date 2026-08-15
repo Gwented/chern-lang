@@ -1,5 +1,5 @@
 use chrn_utils::intern::Intern;
-use lang::fmter::ChrnClassifiable;
+use lang::chrn_classifier::ChrnClassifiable;
 
 use crate::lexer::token::Token;
 
@@ -15,7 +15,7 @@ pub(super) fn fmt_tok(tok: Token, interner: &Intern) -> String {
             let ident = interner.search(name_id);
             format!("\"{ident}\"")
         }
-        Token::Keyword(kw) => format!("keyword `{}`", kw.to_fmt().to_string()),
+        Token::Keyword(kw) => format!("keyword `{}`", kw.to_classified().to_string()),
         Token::Invalid(name_id) => {
             let invalid_msg = interner.search(name_id);
             let new_msg = format!("invalid token \"{invalid_msg}\"");

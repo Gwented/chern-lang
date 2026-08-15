@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use chrn_utils::{id_types::TypeId, source_map::source_span::SourceSpan};
-use lang::{fmter::ChrnClassifiable, types::boundaries::TypeBoundaryFlags};
+use lang::{chrn_classifier::ChrnClassifiable, types::boundaries::TypeBoundaryFlags};
 
 use crate::{
     script_compiler::ScriptCompiler,
@@ -115,7 +115,7 @@ pub(super) fn check_type_constraint(
             if !given_constraints.overlaps(constraints) {
                 return Err(PresetErr::TypeBoundaryMismatch {
                     given_constraints,
-                    found_ty: builtin_ty.ty.kind().to_fmt(),
+                    found_ty: builtin_ty.ty.kind().to_classified(),
                     spans: vec![ty_span, cond_span],
                 });
             }

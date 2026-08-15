@@ -10,7 +10,7 @@ use chrn_utils::{
     loop_abort,
 };
 use lang::{
-    fmter::{ChrnClassifiable, ChrnClassifier},
+    chrn_classifier::{ChrnClassifiable, ChrnClassifier},
     types::{
         boundaries::TypeBoundaryFlags,
         builtins::{BuiltinType, BuiltinTypeKind},
@@ -141,12 +141,12 @@ impl Type {
     pub fn to_fmt(types: &Arena<TypeInfo, TypeId>, mut type_id: TypeId) -> ChrnClassifier {
         let checked = walk_type_id_deferred!(&types, type_id);
         match &types[checked.inner].ty {
-            Type::BuiltinTypeInfo(builtin_type) => builtin_type.ty.kind().to_fmt(),
-            Type::Struct(struct_def) => struct_def.to_fmt(),
-            Type::Enum(enum_def) => enum_def.to_fmt(),
-            Type::Func(func_def) => func_def.to_fmt(),
-            Type::Alias(alias_def) => alias_def.to_fmt(),
-            Type::TypeDef(type_def) => type_def.to_fmt(),
+            Type::BuiltinTypeInfo(builtin_type) => builtin_type.ty.kind().to_classified(),
+            Type::Struct(struct_def) => struct_def.to_classified(),
+            Type::Enum(enum_def) => enum_def.to_classified(),
+            Type::Func(func_def) => func_def.to_classified(),
+            Type::Alias(alias_def) => alias_def.to_classified(),
+            Type::TypeDef(type_def) => type_def.to_classified(),
             // This is the only issue since it's not a single Formatted.
             // The next obvious decision should be to do, "Formatted::NumericIntegerRanged", etc.,
             // where we have 4000 variants which

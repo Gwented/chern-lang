@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 
 use chrn_utils::{id_types::InternedId, intern};
 
-use crate::fmter::{self, ChrnClassifiable, ChrnClassifier};
+use crate::chrn_classifier::{self, ChrnClassifiable, ChrnClassifier};
 
 /// Size in bytes for `@def` and `@end`
 pub const REGION_CLAUSE_SIZE: usize = 4;
@@ -38,7 +38,7 @@ pub enum Keyword {
 }
 
 impl ChrnClassifiable for Keyword {
-    fn to_fmt(&self) -> fmter::ChrnClassifier {
+    fn to_classified(&self) -> chrn_classifier::ChrnClassifier {
         match self {
             Keyword::Struct => ChrnClassifier::Struct,
             Keyword::Enum => ChrnClassifier::Enum,

@@ -8,7 +8,7 @@ use bitflags::bitflags;
 
 use chrn_utils::{id_types::InternedId, intern};
 
-use crate::fmter::ChrnClassifier;
+use crate::chrn_classifier::ChrnClassifier;
 
 // Even though an internal implementation of this existed before-hand, the subject to error and pro
 // of learning bitflags outweighs the )@$)#835j435jl yes

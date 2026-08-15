@@ -17,7 +17,7 @@ let x = 3 == 3
 // let string = "4" + "8"
 
 nest->
-    export struct Person {
+    struct Person {
         // another: core::Person
         // state: State
         // p: str #scient The error emitted by this should be able to place the directive pointers
@@ -28,7 +28,7 @@ nest->
     } #scient
 
     export struct State {
-        Ready: IsEmpty [] #warn
+        Ready: i32
         InProgress: i32
     }
 @end@defexport let READ = 0b0

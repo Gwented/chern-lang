@@ -5,9 +5,9 @@ use chrn_utils::{
     id_types::{ExprId, InternedId, ModuleId, SpannedContainer, SymbolId, TypeId},
     source_map::source_span::SourceSpan,
 };
-use lang::fmter::ChrnClassifier;
+use lang::chrn_classifier::ChrnClassifier;
 
-use crate::lookup::scopes::AssociatedScopeKind;
+use crate::lookup::scopes::scopes_concepts::AssociatedScopeKind;
 
 //TODO: As of right now this is basically entirely hinging off of being usable for reporting, which
 //is probably not the most concise design but it works for now so may not need changing.

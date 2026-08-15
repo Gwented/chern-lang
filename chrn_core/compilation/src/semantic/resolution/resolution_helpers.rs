@@ -5,7 +5,7 @@ use chrn_utils::{
 };
 
 use crate::{
-    lookup::scopes::{
+    lookup::scopes::scopes_concepts::{
         self, AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, ScopeType,
         SymbolLookupOutput,
     },

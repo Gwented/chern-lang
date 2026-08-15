@@ -3,7 +3,7 @@
 //TODO: Proper directive validation
 use chrn_utils::{
     chrn_config::ChrnConfig,
-    err_codes::{self, ErrorCode},
+    err_codes::ErrorCode,
     id_types::{
         ExprId, ImplId, InternedId, MemberId, SpannedContainer, SpannedContainerRef, SymbolId,
         TypeId,
@@ -18,9 +18,9 @@ use chrn_utils::{
     },
 };
 use lang::{
-    config_schemas::{self, ConfigSchema, ConfigSchemaKind},
+    chrn_classifier::ChrnClassifier,
+    config_schemas::{self, ConfigSchema},
     directives::Directive,
-    fmter::ChrnClassifier,
     types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
     values::Value,
 };
@@ -28,10 +28,6 @@ use lang::{
 use crate::{
     constraints::ArgConstraint,
     lookup::schema_lookup::{self, SchemaResult},
-    parser::ast::ast_concepts::{
-        AbstractAlias, AbstractConfig, AbstractEnum, AbstractStruct, AbstractTypeDef, AbstractVar,
-        Item,
-    },
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
     script_compiler::ScriptCompiler,
     semantic::{
@@ -169,7 +165,7 @@ impl<'a> ConstraintResolver<'a> {
         //     .get_type_id_from_sym_id(linked_type_id)
         //     .expect("`TypeResolver` should only give linked sym ids to valid configs");
 
-        for opt_root_id in cfg_root.opt_assignments.iter().copied() {
+        for opt_root_id in cfg_root.impl_memb_stmts.iter().copied() {
             let opt_root = self.compiler.get_opt_assignment_root(opt_root_id);
             let schema = schema_lookup::get_schema_from_type_id(&self.compiler.types, todo!())
                 .expect("`TypeResolver` should only give linked sym ids to valid configs");
