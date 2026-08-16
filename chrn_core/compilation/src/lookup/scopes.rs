@@ -2,7 +2,7 @@
 pub mod scopes_concepts;
 
 use chrn_utils::{
-    id_types::{InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId},
+    id_types::{InternedId, MemberId, ModuleId, ScopeId, SourceRegionId, SymbolId, TypeId},
     intern::Intern,
 };
 use lang::chrn_classifier::{ChrnClassifiable, ChrnClassifier};
@@ -46,21 +46,14 @@ pub fn find_type_id(
     owner_id: ModuleId,
     target_name_id: InternedId,
     scope_type: ScopeType,
-    lookup_pattern: ScopeLookupPattern,
+    lookup_pat: ScopeLookupPattern,
 ) -> Option<TypeId> {
     let current_mod = &compiler.mods[owner_id];
-    let accessible_scopes = scope_type.accessible_scopes();
-    let accessible_scopes = match lookup_pattern {
-        //WARN: Core is always the last scope so this is kept so an owned vec isn't created
-        //May change
-        ScopeLookupPattern::NamespaceOnly if current_mod.region_id.is_some() => {
-            &accessible_scopes[..accessible_scopes.len() - 1]
-        }
-        // If it's core then it'll only have access to core anyways so this is fine
-        ScopeLookupPattern::NoRestrictions | ScopeLookupPattern::NamespaceOnly => accessible_scopes,
-        ScopeLookupPattern::OnlyVar => &SCOPE_VAR_ONLY,
-        ScopeLookupPattern::OnlyNest => &SCOPE_NEST_ONLY,
-    };
+    let accessible_scopes = compute_accessible_scopes(
+        lookup_pat,
+        scope_type.accessible_scopes(),
+        current_mod.region_id,
+    );
     // Loops over all allowed scopes and checks their individual namespaces
 
     let mut default_return: Option<TypeId> = None;
@@ -123,7 +116,7 @@ pub fn find_scope_in_mod(
 /// belongs to a module, symbol, etc.
 /// - target_name_id: The identifier to search for in the given scope
 /// - scope_type: The type of scope this search was started from
-/// - lookup_pattern: How much access the lookup should have
+/// - lookup_pat: How much access the lookup should have
 ///
 /// - On `Some`: Returns Symbol found and the `ScopeId` from the scope it was found in
 /// - Returns `None` when no symbol with the target identifier was found under the constraints
@@ -143,18 +136,11 @@ pub fn find_sym_id(
         AssociatedScopeKind::Module(mod_id) => {
             let current_mod = &compiler.mods[mod_id];
 
-            let accessible_scopes = scope_type.accessible_scopes();
-            let accessible_scopes = match lookup_pat {
-                ScopeLookupPattern::NamespaceOnly if current_mod.region_id.is_some() => {
-                    &accessible_scopes[..accessible_scopes.len() - 1]
-                }
-                // If it's core then it'll only have access to core anyways so this is fine
-                ScopeLookupPattern::NoRestrictions | ScopeLookupPattern::NamespaceOnly => {
-                    accessible_scopes
-                }
-                ScopeLookupPattern::OnlyVar => &SCOPE_VAR_ONLY,
-                ScopeLookupPattern::OnlyNest => &SCOPE_NEST_ONLY,
-            };
+            let accessible_scopes = compute_accessible_scopes(
+                lookup_pat,
+                scope_type.accessible_scopes(),
+                current_mod.region_id,
+            );
 
             // If a preferred is given, the most recent same ident symbol found that is not
             // preferred is stored so that it can be returned if the preferred symbol was never found.
@@ -442,4 +428,24 @@ fn collect_inner_symbols<'a>(
     }
 
     found
+}
+
+/// Returns accessible scopes, given the lookup pattern and region id.
+fn compute_accessible_scopes<'a>(
+    lookup_pat: ScopeLookupPattern,
+    accessible_scopes: &'a [ScopeType],
+    region_id_opt: Option<SourceRegionId>,
+) -> &'a [ScopeType] {
+    match lookup_pat {
+        //WARN: Core is always the last scope so this is kept so an owned vec isn't created
+        //May change
+        ScopeLookupPattern::NamespaceOnly if region_id_opt.is_some() => {
+            &accessible_scopes[..accessible_scopes.len() - 1]
+        }
+        // If it's core then it'll only have access to core anyways so this is fine
+        ScopeLookupPattern::NoRestrictions | ScopeLookupPattern::NamespaceOnly => accessible_scopes,
+        ScopeLookupPattern::OnlyVar => &SCOPE_VAR_ONLY,
+        ScopeLookupPattern::OnlyNest => &SCOPE_NEST_ONLY,
+        ScopeLookupPattern::OnlyIntrinsic => todo!("Hiii"),
+    }
 }

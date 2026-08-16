@@ -21,7 +21,7 @@ import "../chrn_core/chrn_tests/core.chrn"
 var->
 nest->
     export struct Person {
-        l: core::i8
+        l: core::bool
         k: List<i32,>
         // f: nothing::Person,
         // another: core::erson
@@ -53,10 +53,10 @@ State {
     }*/
     // nothing::Person {}
 override->
-/*JAVA {
-    types {
+JAVA {
+    override types {
         change i32, = u32::MAX
     }
-}*/
+}
 // State=> {stating {k {}}}
 // var State {}

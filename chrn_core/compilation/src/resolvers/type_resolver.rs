@@ -1,6 +1,7 @@
 // Please split this...
 // No
 // Artisinal hand-coded slop
+mod cfg_ctx;
 pub mod type_context;
 
 use chrn_utils::chrn_config::ChrnConfig;
@@ -25,13 +26,12 @@ use crate::lookup::scopes::scopes_concepts::{
     AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, ScopeType,
     SymbolLookupOutput,
 };
-use crate::parser::ast::ast_concepts::{
-    AbstractConfig, AbstractConfigKind, AbstractDirective, AbstractParam,
-};
+use crate::parser::ast::ast_concepts::{AbstractConfig, AbstractConfigKind, AbstractDirective};
 use crate::parser::ast::ast_exprs::{AstExpr, PathSegment, SpannedExpr, TypeExpr};
-use crate::parser::ast::ast_stmts::{AbstractOptionAssignment, AbstractStmt};
+use crate::parser::ast::ast_stmts::AbstractStmt;
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::resolvers::resolver_state::ResolverState;
+use crate::resolvers::type_resolver::cfg_ctx::ConfigMemberContext;
 use crate::resolvers::typechecker;
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::checker_helpers::{DuplicateIdentResult, DuplicateTracker};
@@ -1188,6 +1188,7 @@ impl<'res> TypeResolver<'res> {
                 }
             };
 
+            // let ctx = ConfigMemberContext;
             let cfg_member_id = self.resolve_cfg_member(
                 complex_impl_id,
                 todo!(),
@@ -1451,7 +1452,8 @@ impl<'res> TypeResolver<'res> {
         let mut seen_cfg_len = 0;
 
         // Tracking duplicate identifiers for `AbstractConfig`
-        let mut seen_cfg_vec: Vec<SpannedContainer<InternedId>> = Vec::new();
+        let mut seen_cfg_idents: Vec<SpannedContainer<InternedId>> =
+            Vec::with_capacity(abs_cfg_root.cfg_members.len());
 
         //NOTE: Maybe should be tracked from SymbolId/MemberId instead
         //
@@ -1467,7 +1469,7 @@ impl<'res> TypeResolver<'res> {
                 unreachable!()
             };
 
-            seen_cfg_vec.push(sp_memb_name_id.clone());
+            seen_cfg_idents.push(sp_memb_name_id.clone());
             seen_cfg_len += 1;
 
             // This member id is the member id that the member information in the specific config
@@ -1633,7 +1635,7 @@ impl<'res> TypeResolver<'res> {
                 todo!(),
                 // sp_path_segs,
                 // &mut cfg_dfs,
-                &mut seen_cfg_vec,
+                &mut seen_cfg_idents,
                 todo!(),
                 member_id,
                 abs_inner_cfg,
@@ -1643,13 +1645,13 @@ impl<'res> TypeResolver<'res> {
             );
 
             cfg_def_members.push(cfg_member_id);
-            seen_cfg_vec.truncate(seen_cfg_len);
+            seen_cfg_idents.truncate(seen_cfg_len);
         }
 
         if let DuplicateIdentResult::Duplicate {
             sp_original,
             sp_dup,
-        } = checker_helpers::check_duplicate_ident(&seen_cfg_vec)
+        } = checker_helpers::check_duplicate_ident(&seen_cfg_idents)
         {
             let preset_err = PresetErr::DuplicateIdents {
                 sp_original,

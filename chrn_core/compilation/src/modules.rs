@@ -665,7 +665,14 @@ fn resolve_module(
     //be omitted entirely. This is the only location where anything "core" in identifier is stopped.
     //The "UB" in this scenario is just that the core module doesn't actually account for the user's
     //"core" module, only the compiler generated one. May change, but probably not.
+    //
+    //THE BEHAVIOR IS DEFINED IT IS NOT UB,ekAPEKAIOJE$#$#
     if sub_mod_name_id.id == intern::INTERNED_CORE {
+        //TODO: Maybe rename to compiler internals for the error codes to converge
+        let core_msg = "`core` is the only identifier that can't be used for modules";
+        let builder =
+            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, sp_path_id.inner);
+        summary.push_diag(builder.build());
         return Err(());
     }
 
@@ -698,7 +705,6 @@ fn resolve_module(
                         summary.push_diag(src_diag);
                     }
                 }
-
                 (broken_region, ModuleState::BrokenRegion)
             }
             ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
@@ -722,7 +728,6 @@ fn resolve_module(
                         summary.push_diag(src_diag);
                     }
                 }
-
                 return Err(());
             }
         };

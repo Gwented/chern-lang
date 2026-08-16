@@ -885,9 +885,10 @@ fn parse_cfg_expr(
             stmts.push(AbstractStmt::OptAssignment(opt));
             // Should this just be earlier? It's own separate earlier if?
         } else if ctx.peek_kind() == TokenKind::Id
-            // "var/nest Type {}" can be used so we need to catch those semantic identifiers
+            // "var/nest/override Type {}" can be used so we need to catch those semantic identifiers
             || ctx.peek_tok() == Token::Keyword(Keyword::Var)
             || ctx.peek_tok() == Token::Keyword(Keyword::Nest)
+            || ctx.peek_tok() == Token::Keyword(Keyword::Override)
         {
             // for "inner {/*assignments*/}"
             match parse_cfg_expr(ctx, budget, false, scope_type, interner) {
@@ -1056,6 +1057,12 @@ fn handle_cfg_metadata(
 
                 return Ok((pat, AbstractConfigKind::Root(ambig_expr)));
             } else {
+                let lookup_pat = if ctx.peek_tok() == Token::Keyword(Keyword::Override) {
+                    ScopeLookupPattern::OnlyIntrinsic
+                } else {
+                    ScopeLookupPattern::NamespaceOnly
+                };
+
                 // If !root
                 let name_span = ctx.peek_span();
                 let name_id = ctx.expect_id_verbose(
@@ -1077,7 +1084,7 @@ fn handle_cfg_metadata(
                     ConfigMemberMetadataKind::Override(OverrideConfigMemberMetadata::new()),
                 );
 
-                return Ok((ScopeLookupPattern::NamespaceOnly, kind));
+                return Ok((lookup_pat, kind));
             }
         }
         _ => unreachable!(),

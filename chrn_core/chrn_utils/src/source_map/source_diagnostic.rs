@@ -343,7 +343,7 @@ pub trait SourceDiagnosticSink {
 }
 
 impl SourceDiagnosticSink for SourceDiagnosticSummary {
-    /// Internally checks the kind of the diagnostic before pushing to keep count
+    /// Internally may check the kind of the diagnostic before pushing to keep count
     fn push_diag(&mut self, diag: SourceDiagnostic) {
         match diag.level {
             DiagnosticLevel::Error => self.increment_err(),
@@ -354,7 +354,7 @@ impl SourceDiagnosticSink for SourceDiagnosticSummary {
         self.diags.push(diag);
     }
 
-    /// Internally checks the kind of the diagnostic before appending to keep count
+    /// Internally may check the kind of the diagnostic before appending to keep count
     fn append_diags(&mut self, diags: &mut Vec<SourceDiagnostic>) {
         for diag in diags.iter() {
             self.increment_from_level(diag.level);

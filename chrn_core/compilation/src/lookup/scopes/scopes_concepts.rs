@@ -230,12 +230,13 @@ pub enum ScopeLookupPattern {
     /// Restricts lookup to only search what is within the given namespace, which restricts modules
     /// such as core, or anything not declared within the symbol's scope containment?
     NamespaceOnly,
-    /// Lookup that not only allows for `nest` to be searched, but also enforces it's the only section
+    /// Lookup that only allows `nest` to be searched and enforces it's the only section
     /// that can be searched
     OnlyNest,
-    /// Lookup that not only allows for `var` to be searched, but also enforces it's the only section
+    /// Lookup that only allows `var` to be searched and enforces it's the only section
     /// that can be searched
     OnlyVar,
+    OnlyIntrinsic,
 }
 
 // TODO: Formattable
