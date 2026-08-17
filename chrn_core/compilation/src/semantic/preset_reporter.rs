@@ -3,6 +3,7 @@ mod engine_concepts;
 pub mod preset_err;
 mod static_enricher;
 
+use crate::lookup::member_lookup::MemberLookupResult;
 use crate::lookup::scopes;
 use crate::lookup::scopes::scopes_concepts::AssociatedScopeKind;
 use crate::resolvers::resolver_env::ResolverEnv;
@@ -236,12 +237,12 @@ pub(crate) fn create_diag_builder_preset(
                     .add_annotation(sp_fmtted_ty.span, AnnotationKind::Primary, None)
             }
             LookupError::MemberNotFound {
-                parent_type_id,
-                sp_parent_name_id,
-                sp_not_found,
+                searched_type_id,
+                sp_searched_type_name_id,
+                not_found_name_id,
             } => {
-                let ty_name = interner.search(sp_parent_name_id.inner);
-                let member_name = interner.search(sp_not_found);
+                let ty_name = interner.search(sp_searched_type_name_id.inner);
+                let member_name = interner.search(not_found_name_id);
                 let core_msg = format!("No member `{member_name}` in type `{ty_name}`");
 
                 let builder = SourceDiagnostic::builder(
@@ -251,13 +252,13 @@ pub(crate) fn create_diag_builder_preset(
                     region.path_id,
                 )
                 .add_annotation(
-                    sp_parent_name_id.span,
+                    sp_searched_type_name_id.span,
                     AnnotationKind::Primary,
                     format!("Is type `{ty_name}`").into(),
                 );
 
                 let list_opt = EngineOptionBase::builder(EngineOption::ListAvailable(
-                    ListAvailable::new(parent_type_id, AvailableKind::Member),
+                    ListAvailable::new(searched_type_id, AvailableKind::Member),
                 ))
                 .build();
 
@@ -719,5 +720,163 @@ pub fn static_access_result_to_preset_err(
           //
           //     Some(PresetErr::General(src_diag))
           // }
+    }
+}
+
+// let member_id = match member_lookup::lookup_member(
+//     self.compiler,
+//     found_type_id,
+//     //TODO: CHANGE THIS
+//     sp_memb_name_id.inner,
+//     MemberLookupPattern::NoRestrictions,
+// ) {
+//     // These are split so that the theoretical ok and err paths are able to reduce
+//     // boilerplate where needed
+//     MemberLookupResult::Found(memb_id) => memb_id,
+//     lookup_res => {
+//         let src_diag = match lookup_res {
+//             MemberLookupResult::ImpossibleTypeMemberAccess(type_id) => {
+//                 //FIX: This has odd phrasing and pointers
+//                 // If we get a variable, this is matched, but the error is more so, you
+//                 // cannot use a variable in config, rather than the member
+//                 // access itself
+//                 let decl_span = self.compiler.get_span_from_type_id(todo!()).expect(
+//                     "Should have a span since it has members and was searched for",
+//                 );
+//
+//                 //FIX:
+//                 let found_type_name_id = self
+//                     .compiler
+//                     .get_name_id_from_type_id(type_id)
+//                     .expect("NOT DONE YET");
+//                 let found_name = self.interner.search(found_type_name_id);
+//
+//                 let preset_err = PresetErr::Lookup(
+//                     LookupError::ImpossibleTypeMemberAccess(SpannedContainer::new(
+//                         Type::to_fmt(&self.compiler.types, type_id),
+//                         decl_span,
+//                     )),
+//                 );
+//
+//                 // 4th paste. 4th paste.
+//                 let spans: Vec<SourceSpan> =
+//                     sp_path_segs.iter().map(|s| s.span).collect();
+//                 let sp_path_span = source_span::merge_spans(&spans)
+//                     .expect("Path segments require at least one span");
+//
+//                 preset_reporter::create_diag_builder_preset(
+//                     &self.compiler,
+//                     preset_err,
+//                     env.region,
+//                     self.cfg,
+//                     self.interner,
+//                 )
+//                 .add_annotation(
+//                     sp_path_span,
+//                     AnnotationKind::Secondary,
+//                     format!("`{found_name}` used here").into(),
+//                 )
+//                 .add_annotation(
+//                     sp_memb_name_id.span,
+//                     AnnotationKind::Secondary,
+//                     "member searched for".to_string().into(),
+//                 )
+//                 .add_help(format!("If this was meant to reference a `var` defined variable, prefix with \"var {found_name}\""))
+//                 .build()
+//             }
+//             MemberLookupResult::MemberNotFoundInType(type_id) => {
+//                 let decl_span = self
+//                     .compiler
+//                     .get_span_from_type_id(todo!())
+//                     .expect("Should have a span since it has members and was searched");
+//                 let fmtted_ty = Type::to_fmt(&self.compiler.types, type_id);
+//
+//                 let found_type = &self.compiler.types[todo!()];
+//                 //FIX:
+//                 let found_type_name_id = self
+//                     .compiler
+//                     .get_name_id_from_type_id(type_id)
+//                     .expect("NOT DONE YET");
+//
+//                 let spans: Vec<SourceSpan> =
+//                     sp_path_segs.iter().map(|s| s.span).collect();
+//                 let sp_path_span = source_span::merge_spans(&spans)
+//                     .expect("Path segments require at least one span");
+//
+//                 // Needs to be done otherwise typedefs, given "x: State" will emit the
+//                 // type as `x` rather than `State`
+//                 // let name_id =
+//                 //     if abs_cfg_root.lookup_pat == ScopeLookupPattern::NamespaceOnly {
+//                 //         abs_cfg_root.name_id
+//                 //     } else {
+//                 //         // TODO: Needs change
+//                 //         abs_cfg_root.name_id
+//                 //     };
+//
+//                 let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
+//                     parent_type_id: type_id,
+//                     sp_parent_name_id: SpannedContainer::new(
+//                         found_type_name_id,
+//                         sp_path_span,
+//                     ),
+//                     sp_not_found: sp_memb_name_id.inner,
+//                 });
+//
+//                 preset_reporter::create_diag_builder_preset(
+//                     &self.compiler,
+//                     preset_err,
+//                     env.region,
+//                     self.cfg,
+//                     self.interner,
+//                 )
+//                 .add_annotation(
+//                     decl_span,
+//                     AnnotationKind::Secondary,
+//                     format!("{} defined here", fmtted_ty).into(),
+//                 )
+//                 .add_annotation(
+//                     sp_memb_name_id.span,
+//                     AnnotationKind::Secondary,
+//                     "Searched for this member".to_string().into(),
+//                 )
+//                 .build()
+//             }
+//             // TODO: This is reached and should probably result in continue since if
+//             // it's unknown that means a previous stage reported it more likely than
+//             // not. (Its 100%)
+//             // Um. When is this case met?
+//             MemberLookupResult::Unknown(type_id) => {
+//                 // let var = self.compiler.get_var(found_sym_id);
+//                 // let name = self.interner.search(var.name_id);
+//
+//                 // dbg!(&self.compiler.types[var.type_id ]);
+//                 todo!("RUST_BACKTRACE=1");
+//             }
+//             MemberLookupResult::Found(_) => unreachable!(),
+//         };
+//
+//         self.summary.push_diag(src_diag);
+//
+//         if should_break {
+//             break;
+//         }
+//
+//         continue;
+//     }
+// };
+
+pub fn member_lookup_result_to_preset_err(
+    compiler: &ScriptCompiler,
+    interner: &Intern,
+    res: &MemberLookupResult,
+    env: &ResolverEnv,
+) -> Option<PresetErr> {
+    match res {
+        MemberLookupResult::Found(_) => None,
+        MemberLookupResult::ImpossibleTypeMemberAccess(type_id) => {
+            todo!()
+        }
+        MemberLookupResult::MemberNotFoundInType(type_id) => todo!(),
+        MemberLookupResult::Unknown(type_id) => todo!(),
     }
 }

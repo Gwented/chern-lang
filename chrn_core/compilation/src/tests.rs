@@ -10,5 +10,4 @@ mod modules_test;
 mod name_resolver_test;
 mod parser_test;
 mod scopes_test;
-mod script_compiler_test;
 mod type_resolver_test;

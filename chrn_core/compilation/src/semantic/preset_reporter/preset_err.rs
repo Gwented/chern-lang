@@ -143,10 +143,10 @@ pub(crate) enum LookupError {
     ImpossibleTypeMemberAccess(SpannedContainer<ChrnClassifier>),
     /// Spanned type's identifier which has no members, Identifier of member looked up
     MemberNotFound {
-        parent_type_id: TypeId,
-        sp_parent_name_id: SpannedContainer<InternedId>,
+        searched_type_id: TypeId,
+        sp_searched_type_name_id: SpannedContainer<InternedId>,
         /// Member looked up but not found
-        sp_not_found: InternedId,
+        not_found_name_id: InternedId,
     },
     /// Spanned Formatted Symbol
     /// (Symbol with no members is `Formatted` because it's a language level symbol construct, not a

@@ -73,7 +73,7 @@ pub fn lookup_member(
     // Should probably have own `IncompatibleMemberLookup` result
     for _ in 0..chrn_utils::MAX_LOOPS {
         match &compiler.types[current_type_id].ty {
-            Type::BuiltinTypeInfo(_) => {
+            Type::BuiltinTypeInfo(_) | Type::Boundaries(_) | Type::Alias(_) | Type::Func(_) => {
                 // Members/Methods do not exist for types yet
                 return MemberLookupResult::ImpossibleTypeMemberAccess(current_type_id);
             }
@@ -97,14 +97,11 @@ pub fn lookup_member(
 
                 return MemberLookupResult::MemberNotFoundInType(current_type_id);
             }
-            Type::Alias(alias_def) => todo!(),
-            Type::Func(func_def) => todo!(),
             // Since typedefs themselves are just fields, we need to treat this as an entry-point to
             // get to the inner type. Given x: State, when the `x` is seen seen it ignores it and
             // skips to the internal type_id field, just like defer does but this is guaranteed to
             // be one layer.
             Type::TypeDef(type_def) => current_type_id = type_def.type_id,
-            Type::Boundaries(type_constraint_flags) => todo!(),
             // WARN: DANGEROUS
             Type::Deferred(inner_type_id) => current_type_id = *inner_type_id,
             Type::Unknown => return MemberLookupResult::Unknown(current_type_id),

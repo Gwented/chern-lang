@@ -2,8 +2,6 @@ use chrn_utils::{id_types::InternedId, intern};
 
 use crate::script_compiler::helpers::extern_helpers::{ExternKind, ExternNamespace};
 
-//TEST:
-
 pub static JAVA_NAMESPACE_ENTRY: [ExternKind; 1] = [ExternKind::Namespace(ExternNamespace::new(
     InternedId::new(intern::INTERNED_JAVA_UPPER),
     &JAVA_NAMESPACE,

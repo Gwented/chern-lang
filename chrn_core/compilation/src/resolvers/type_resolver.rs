@@ -1,6 +1,19 @@
 // Please split this...
 // No
 // Artisinal hand-coded slop
+//! The reason there's so much code in this one file is because this resolution stage is supposed to
+//! handle all deep semantic properties that need tracking machinery, and certain other type
+//! resolution based parts.
+//!
+//! This entire file could very well be split into different resolution stages where now,
+//! `TypeContext` is simply a composed set of pure functions that have a check and graph updating stage,
+//! but that would also mean that later stages must iterate through all compilation units again,
+//! then again, then again depending on the composition which seems wasteful, and is objectively
+//! slower, just for the sake of composition. Iteration could be reduced by sorting and then each
+//! composed stage goes through the different portions it wants, but that's still more allocations
+//! and contexts to account for that don't really NEED to exist.
+//!
+//! May change in the future but right now this seems reasonable enough, even with the 4K+ LOC
 mod cfg_ctx;
 pub mod type_context;
 
@@ -31,7 +44,9 @@ use crate::parser::ast::ast_exprs::{AstExpr, PathSegment, SpannedExpr, TypeExpr}
 use crate::parser::ast::ast_stmts::AbstractStmt;
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::resolvers::resolver_state::ResolverState;
-use crate::resolvers::type_resolver::cfg_ctx::ConfigMemberContext;
+use crate::resolvers::type_resolver::cfg_ctx::{
+    ConfigMemberComplexContext, ConfigMemberContextKind,
+};
 use crate::resolvers::typechecker;
 use crate::script_compiler::{self, ScriptCompiler};
 use crate::semantic::checker_helpers::{DuplicateIdentResult, DuplicateTracker};
@@ -836,6 +851,9 @@ impl<'res> TypeResolver<'res> {
         // }
     }
 
+    //TODO: For resolve config member, pass in kind, which routes to declared methods. Call method
+    //inside initial, then inside the router after getting root which is required.
+
     /// Routing
     fn resolve_cfg_root_complex<'env>(
         &mut self,
@@ -1011,7 +1029,7 @@ impl<'res> TypeResolver<'res> {
         let mut seen_cfg_len = 0;
 
         // Tracking duplicate identifiers for `AbstractConfig`
-        let mut seen_cfg_vec: Vec<SpannedContainer<InternedId>> = Vec::new();
+        let mut seen_cfg_idents: Vec<SpannedContainer<InternedId>> = Vec::new();
 
         //NOTE: Maybe should be tracked from SymbolId/MemberId instead
         //
@@ -1027,7 +1045,7 @@ impl<'res> TypeResolver<'res> {
                 unreachable!()
             };
 
-            seen_cfg_vec.push(sp_memb_name_id.clone());
+            seen_cfg_idents.push(sp_memb_name_id.clone());
             seen_cfg_len += 1;
 
             // This member id is the member id that the member information in the specific config
@@ -1039,8 +1057,7 @@ impl<'res> TypeResolver<'res> {
 
             let member_id = match member_lookup::lookup_member(
                 self.compiler,
-                todo!(),
-                // found_type_id,
+                found_type_id,
                 //TODO: CHANGE THIS
                 sp_memb_name_id.inner,
                 MemberLookupPattern::NoRestrictions,
@@ -1137,12 +1154,12 @@ impl<'res> TypeResolver<'res> {
                             //     };
 
                             let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
-                                parent_type_id: type_id,
-                                sp_parent_name_id: SpannedContainer::new(
+                                searched_type_id: type_id,
+                                sp_searched_type_name_id: SpannedContainer::new(
                                     found_type_name_id,
                                     sp_path_span,
                                 ),
-                                sp_not_found: sp_memb_name_id.inner,
+                                not_found_name_id: sp_memb_name_id.inner,
                             });
 
                             preset_reporter::create_diag_builder_preset(
@@ -1188,15 +1205,20 @@ impl<'res> TypeResolver<'res> {
                 }
             };
 
-            // let ctx = ConfigMemberContext;
+            let override_ctx = ConfigMemberComplexContext::new(found_type_id);
+            let ctx = ConfigMemberContextKind::Complex(override_ctx);
+
             let cfg_member_id = self.resolve_cfg_member(
                 complex_impl_id,
-                todo!(),
+                // The type expr is derivative of path segments which may or may not be a valid type
+                // expr hence this is using last segment
+                last_seg.span,
+                &ctx,
                 // sp_path_segs,
                 // &mut cfg_dfs,
-                &mut seen_cfg_vec,
+                &mut seen_cfg_idents,
                 // NOTE: Opt ident tracker
-                todo!(),
+                opt_ident_tracker,
                 member_id,
                 abs_inner_cfg,
                 scope_type,
@@ -1205,15 +1227,15 @@ impl<'res> TypeResolver<'res> {
             );
 
             cfg_def_members.push(cfg_member_id);
-            seen_cfg_vec.truncate(seen_cfg_len);
+            seen_cfg_idents.truncate(seen_cfg_len);
         }
 
         //NOTE: Maybe it's worth using function-specific trait-bounded concepts to where it CAN
         // generically examine it's defined name id where it simply reports back the duplicate found
         // and the caller still reports it since spans and messages vary.
-        for (i, current_cfg) in seen_cfg_vec.iter().enumerate() {
+        for (i, current_cfg) in seen_cfg_idents.iter().enumerate() {
             // Since this root cfg's made `seen_cfg_vec` it does not need any deeper checks
-            if let Some((_, original_cfg)) = seen_cfg_vec
+            if let Some((_, original_cfg)) = seen_cfg_idents
                 .iter()
                 .enumerate()
                 // If the other index was declared after the current index and they have the same identifier
@@ -1579,12 +1601,12 @@ impl<'res> TypeResolver<'res> {
                             //     };
 
                             let preset_err = PresetErr::Lookup(LookupError::MemberNotFound {
-                                parent_type_id: type_id,
-                                sp_parent_name_id: SpannedContainer::new(
+                                searched_type_id: type_id,
+                                sp_searched_type_name_id: SpannedContainer::new(
                                     found_type_name_id,
                                     sp_path_span,
                                 ),
-                                sp_not_found: sp_memb_name_id.inner,
+                                not_found_name_id: sp_memb_name_id.inner,
                             });
 
                             preset_reporter::create_diag_builder_preset(
@@ -1632,11 +1654,12 @@ impl<'res> TypeResolver<'res> {
 
             let cfg_member_id = self.resolve_cfg_member(
                 override_impl_id,
+                last_seg.span,
                 todo!(),
                 // sp_path_segs,
                 // &mut cfg_dfs,
                 &mut seen_cfg_idents,
-                todo!(),
+                opt_ident_tracker,
                 member_id,
                 abs_inner_cfg,
                 scope_type,
@@ -1697,8 +1720,10 @@ impl<'res> TypeResolver<'res> {
         cfg_override.common.cfg_members = cfg_def_members;
     }
 
-    //TODO: Let's try out a context routing kind, which this function takes, and routes given the given
-    //kind.
+    fn lookup_cfg_memb_id() {}
+
+    //TODO: For resolve config member, pass in kind, which routes to declared methods. Call method
+    //inside initial, then inside the router after getting root which is required.
 
     /// Method that recursively resolves `ConfigDefMember` and `OptionAssignmentMember`
     ///
@@ -1708,7 +1733,8 @@ impl<'res> TypeResolver<'res> {
         &mut self,
         // For resolve_expr
         root_parent_impl_id: ImplId,
-        root_sp_ty_expr: &SpannedContainer<TypeExpr>,
+        root_span: SourceSpan,
+        cfg_ctx: &ConfigMemberContextKind,
         // For tracking invalid recursive usage
         // Recursive errors no longer exist at the moment because override can only access known
         // configs like "types" inside of "RUST { types {} }".
@@ -1894,7 +1920,7 @@ impl<'res> TypeResolver<'res> {
                         )
                         // Pointing to root
                         .add_annotation(
-                            root_sp_ty_expr.span,
+                            root_span,
                             AnnotationKind::Secondary,
                             "Root".to_string().into(),
                         )
@@ -1997,12 +2023,12 @@ impl<'res> TypeResolver<'res> {
 
                                     let preset_err =
                                         PresetErr::Lookup(LookupError::MemberNotFound {
-                                            parent_type_id: type_id,
-                                            sp_parent_name_id: SpannedContainer::new(
+                                            searched_type_id: type_id,
+                                            sp_searched_type_name_id: SpannedContainer::new(
                                                 ty_name_id,
                                                 sp_parent_name_id.span,
                                             ),
-                                            sp_not_found: sp_member_name_id.inner,
+                                            not_found_name_id: sp_member_name_id.inner,
                                         });
 
                                     //TODO: RECURSIVELY TRACKING ENDS UP HERE FIX SHOULD BE APPLIED HERE IF
@@ -2063,7 +2089,8 @@ impl<'res> TypeResolver<'res> {
 
                 let cfg_member_id = self.resolve_cfg_member(
                     root_parent_impl_id,
-                    root_sp_ty_expr,
+                    root_span,
+                    cfg_ctx,
                     // cfg_dfs,
                     seen_cfg_idents,
                     seen_opt_idents,

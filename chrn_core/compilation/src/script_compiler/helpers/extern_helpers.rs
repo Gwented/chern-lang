@@ -7,7 +7,8 @@ use chrn_utils::id_types::{InternedId, ScopeId};
 //which loops just find for all representations, but the entry itself must also follow this ruling.
 
 /// All known namespaces for external types like for "c::unsinged_long_long_int" and "java::int"
-pub static ALL_EXTERN_NAMESPACES: [&[ExternKind]; 1] = [&java_helpers::JAVA_NAMESPACE_ENTRY];
+pub static ALL_EXTERN_NAMESPACES_DATASET: [&[ExternKind]; 1] =
+    [&java_helpers::JAVA_NAMESPACE_ENTRY];
 
 // -- Things --
 pub enum ExternKind {
@@ -26,6 +27,7 @@ impl ExternNamespace {
     }
 }
 
+// IGNORE
 /// Frame data retention for loading extern kinds iteratively
 pub struct ExternFrame {
     pub scope_id: ScopeId,

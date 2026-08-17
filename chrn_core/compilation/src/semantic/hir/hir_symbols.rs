@@ -421,6 +421,7 @@ pub struct FuncDef {
     /// IsEmpty's usage in this example directly depends on the type of self.
     /// But given "Log(x)", it would not be dependent on self, meaning it should be ignored in
     /// regards to
+    // I don't remember adding this to be entirely, completely, honest.
     pub affects_type_constraint: bool,
     //TEST:
     pub type_constraints: TypeBoundaryFlags,
