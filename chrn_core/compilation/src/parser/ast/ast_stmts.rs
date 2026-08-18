@@ -1,6 +1,5 @@
 use chrn_utils::{
-    id_types::{InternedId, SpannedContainer},
-    source_map::source_span::SourceSpan,
+    id_types::InternedId, source_map::source_span::SourceSpan, utils::containers::SpannedContainer,
 };
 
 use crate::parser::ast::ast_exprs::{SpannedExpr, TypeExpr};

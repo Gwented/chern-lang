@@ -643,6 +643,7 @@ fn extract_main_simple_script() {
     // assert!(graph.other_mods().is_empty(), "other_mods should be empty");
     // region_arena must have one entry
     assert_eq!(graph.region_arena().len(), 1, "one region pushed");
+    assert_eq!(graph.region_arena().capacity(), 1);
 
     assert!(diags.diags.is_empty(), "no diagnostics expected");
 
@@ -892,7 +893,7 @@ fn extract_all_modules_single() {
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, _store, diags) = extract_all_modules(
+    let (compiler, store, diags) = extract_all_modules(
         &main_path,
         std::fs::File::open(&main_path).unwrap(),
         cfg,
@@ -920,6 +921,12 @@ fn extract_all_modules_single() {
         InternedId::new(chrn_utils::intern::INTERNED_CORE),
         "last module must be core"
     );
+
+    // The store is filled once per compiler module by the orchestration stage.
+    assert_eq!(store.toks.capacity(), compiler.mods.len());
+    assert_eq!(store.trivias.capacity(), compiler.mods.len());
+    assert_eq!(store.asts.capacity(), compiler.mods.len());
+    assert_eq!(store.compilation_syms.capacity(), compiler.mods.len());
 
     assert!(
         diags.diags.is_empty(),

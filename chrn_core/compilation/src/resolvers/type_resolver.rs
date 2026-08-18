@@ -20,8 +20,8 @@ pub mod type_context;
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::{
-    AstId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ScopeId,
-    SpannedContainer, SpannedContainerRef, SymbolId, TypeId, ValueId, VariableId,
+    AstId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ScopeId, SymbolId,
+    TypeId, ValueId, VariableId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
@@ -29,6 +29,7 @@ use chrn_utils::source_map::source_diagnostic::{
     DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
 };
 use chrn_utils::source_map::source_span::{self, SourceSpan};
+use chrn_utils::utils::containers::{SpannedContainer, SpannedContainerRef};
 use lang::chrn_classifier::ChrnClassifier;
 use lang::values::{Value, ValueInfo};
 
@@ -1029,7 +1030,8 @@ impl<'res> TypeResolver<'res> {
         let mut seen_cfg_len = 0;
 
         // Tracking duplicate identifiers for `AbstractConfig`
-        let mut seen_cfg_idents: Vec<SpannedContainer<InternedId>> = Vec::new();
+        let mut seen_cfg_idents: Vec<SpannedContainer<InternedId>> =
+            Vec::with_capacity(abs_cfg_root.cfg_members.len());
 
         //NOTE: Maybe should be tracked from SymbolId/MemberId instead
         //

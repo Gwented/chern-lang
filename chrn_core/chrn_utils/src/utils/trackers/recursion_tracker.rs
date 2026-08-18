@@ -1,5 +1,6 @@
 use std::cell::Cell;
 
+// -- RECURSION --
 /// General purpose structure that creates guards when increasing in depth, that drop when the call
 /// stack is popped.
 ///

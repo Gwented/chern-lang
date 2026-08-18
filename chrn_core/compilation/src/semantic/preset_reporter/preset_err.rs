@@ -1,6 +1,7 @@
 use chrn_utils::{
-    id_types::{InternedId, ModuleId, SpannedContainer, SymbolId, TypeId},
+    id_types::{InternedId, ModuleId, SymbolId, TypeId},
     source_map::{source_diagnostic::SourceDiagnosticBuilder, source_span::SourceSpan},
+    utils::containers::SpannedContainer,
 };
 use lang::{
     chrn_classifier::ChrnClassifier, directives::Directive, types::boundaries::TypeBoundaryFlags,

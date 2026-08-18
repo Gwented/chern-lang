@@ -3,7 +3,7 @@
 
 use std::{collections::HashSet, hash::Hash};
 
-use chrn_utils::id_types::{InternedId, SpannedContainer};
+use chrn_utils::{id_types::InternedId, utils::containers::SpannedContainer};
 
 // ????
 /// Hashes and tracks types generically

@@ -1,4 +1,4 @@
-use chrn_utils::{id_types::SpannedContainerRef, intern::Intern};
+use chrn_utils::{intern::Intern, utils::containers::SpannedContainerRef};
 use lang::values::Value;
 
 use crate::parser::ast::ast_concepts::{BinaryOp, UnaryOp};

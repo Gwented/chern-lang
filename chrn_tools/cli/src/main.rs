@@ -1,9 +1,12 @@
+use std::time::Instant;
+
 //TODO: Eventually will have it's own cli backend but not priority
 // Maybe not?
 use chrn::{args, config::CliConfig, dispatcher};
 use common::color;
 
 fn main() {
+    let start = Instant::now();
     let cli_cfg = CliConfig::init();
     // Checks this first so external tooling syntax can be checked before exiting
     let cli = match args::try_parse(&cli_cfg) {

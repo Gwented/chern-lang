@@ -68,6 +68,10 @@ impl<T, I: ArenaIndex> Arena<T, I> {
         self.items.is_empty()
     }
 
+    pub fn capacity(&self) -> usize {
+        self.items.capacity()
+    }
+
     /// Iterates over items, returning references
     pub fn iter(&self) -> std::slice::Iter<'_, T> {
         self.items.iter()

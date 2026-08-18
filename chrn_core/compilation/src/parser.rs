@@ -31,11 +31,11 @@ use crate::semantic::hir::hir_impls::{
     ComplexConfigMemberMetadata, ConfigMemberMetadataKind, OverrideConfigMemberMetadata,
 };
 use chrn_utils::chrn_config::ChrnConfig;
-use chrn_utils::id_types::SpannedContainer;
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
+use chrn_utils::utils::containers::SpannedContainer;
 use lang::chrn_classifier::{ChrnClassifiable, ChrnClassifier};
 use lang::keywords::Keyword;
 

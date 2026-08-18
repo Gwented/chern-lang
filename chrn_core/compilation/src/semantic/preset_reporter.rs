@@ -82,7 +82,7 @@ pub(crate) fn create_diag_builder_preset(
             sym_span,
         } => {
             let directive_boundaries = sp_directive.inner.boundaries().to_fmt_vec();
-            let mut boundaries_str = String::new();
+            let mut boundaries_str = String::with_capacity(directive_boundaries.len());
 
             for (i, constraint) in directive_boundaries.iter().enumerate() {
                 boundaries_str.push_str(&format!("`{}`", constraint));
@@ -271,6 +271,7 @@ pub(crate) fn create_diag_builder_preset(
                 SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
                     .add_annotation(sp_sym.span, AnnotationKind::Primary, None)
             }
+            //TODO: Scope type passed in
             LookupError::SymbolNotFound {
                 sp_invalid_name_id,
                 scope_searched,
@@ -317,19 +318,21 @@ pub(crate) fn create_diag_builder_preset(
                     None,
                 );
 
-                let similar = scopes::find_symbols_named(
-                    compiler,
-                    sp_invalid_name_id.inner,
-                    false,
-                    scope_searched.into(),
-                    interner,
-                );
+                // let similar = scopes::find_symbols_named(
+                //     compiler,
+                //     sp_invalid_name_id.inner,
+                //     false,
+                //     scope_searched.into(),
+                //     interner,
+                // );
+                // dbg!(interner.search(sp_invalid_name_id.inner));
+                // panic!();
 
-                if !similar.is_empty() {
-                    dbg!(&similar);
-                    panic!();
-                }
-
+                // if !similar.is_empty() {
+                //     dbg!(&similar);
+                //     panic!();
+                // }
+                //
                 builder
             }
             LookupError::NotAType {

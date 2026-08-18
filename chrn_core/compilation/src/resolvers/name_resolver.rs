@@ -79,7 +79,7 @@ impl NamespaceResolver<'_> {
     ) -> (Vec<CompilationUnit>, SourceDiagnosticSummary) {
         // Storing all symbols created associated with the current module so that compilation
         // doens't have to depend on the ast to keep a coherent understanding of
-        let mut comp_units: Vec<CompilationUnit> = Vec::new();
+        let mut comp_units: Vec<CompilationUnit> = Vec::with_capacity(env.ast_info.items.len());
 
         // Iterates through sections so that it stores the correct scope type associated with the
         // current ast node so it's compilation unit can use said information.

@@ -29,7 +29,6 @@ use chrn_utils::{
 
 use lang::keywords::REGION_CLAUSE_SIZE;
 
-use crate::config_loader::config_loader_summary::ConfigLoaderSummary;
 /// Can read 32KB before stopping if no `@def` or EOF is found
 const MAX_SEARCH_READ: usize = 1024 * 32;
 
@@ -170,7 +169,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                         let q_span =
                             SourceSpan::new(self.current_region_id, rel_q_start, rel_q_start + 1);
 
-                        let mut diag_builder = SourceDiagnostic::builder(
+                        let mut builder = SourceDiagnostic::builder(
                             None,
                             DiagnosticLevel::Error,
                             core_msg,
@@ -184,10 +183,10 @@ impl<R: Read> ConfigLoader<'_, R> {
 
                         if double_quotes_seen > 1 {
                             let note = "There are other quotes within the file so the line given could be incorrect".to_string();
-                            diag_builder = diag_builder.add_note(note);
+                            builder = builder.add_note(note);
                         };
 
-                        let src_diag = diag_builder.build();
+                        let src_diag = builder.build();
                         let broken_region = self.create_region(script_start, None, true);
 
                         return ConfigLoaderOutput::Broken(

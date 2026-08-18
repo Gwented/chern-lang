@@ -1,7 +1,6 @@
 use chrn_utils::{
-    id_types::{SpannedContainer, TypeId},
-    intern::Intern,
-    source_map::source_span::SourceSpan,
+    id_types::TypeId, intern::Intern, source_map::source_span::SourceSpan,
+    utils::containers::SpannedContainer,
 };
 
 use crate::{

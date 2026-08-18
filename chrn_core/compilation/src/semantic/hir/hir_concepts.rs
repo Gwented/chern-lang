@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use chrn_utils::{
     arena::Arena,
-    id_types::{ExprId, MemberId, ModuleId, ScopeId, SpannedContainer, TypeId, ValueId},
+    id_types::{ExprId, MemberId, ModuleId, ScopeId, TypeId, ValueId},
     loop_abort,
 };
 use lang::{
@@ -40,10 +40,16 @@ pub struct Table {
 }
 
 impl Table {
-    pub fn new() -> Table {
-        Table {
+    pub fn new() -> Self {
+        Self {
             ast_to_sym: HashMap::new(),
             interned_to_sym: HashMap::new(),
+        }
+    }
+    pub fn with_capacities(ast_to_sym_cap: usize, interned_to_sym_cap: usize) -> Self {
+        Table {
+            ast_to_sym: HashMap::with_capacity(ast_to_sym_cap),
+            interned_to_sym: HashMap::with_capacity(interned_to_sym_cap),
         }
     }
 }

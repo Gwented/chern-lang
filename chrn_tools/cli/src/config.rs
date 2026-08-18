@@ -12,10 +12,10 @@ pub struct CliConfig {
 
 impl CliConfig {
     pub fn init() -> CliConfig {
-        let terminal_type = TerminalColorType::detect();
+        let term_type = TerminalColorType::detect();
 
         CliConfig {
-            terminal_color_type: terminal_type,
+            terminal_color_type: term_type,
             env_var_repo: Self::map_env_vars(),
         }
     }
@@ -23,7 +23,7 @@ impl CliConfig {
     /// Loads all known environment variables
     fn map_env_vars() -> EnvVarRepository {
         let chrn_extensions = if let Ok(env) = env::var(env_vars::ENV_CHRN_EXTENSIONS) {
-            if env == "1" { true } else { false }
+            env == "1"
         } else {
             false
         };

@@ -124,7 +124,7 @@ fn exec_check(
             },
         };
 
-    match orchestrator::run_all(
+    let res = match orchestrator::run_all(
         &mut reporter,
         &mut compiler,
         &mut compiler_store,
@@ -137,17 +137,16 @@ fn exec_check(
         Err(script_err) => match script_err {
             ScriptError::Parser | ScriptError::Semantic => {
                 let footers = presentation::make_footers(&reporter);
-                let msg_opt = match render_kind {
+                match render_kind {
                     RenderKind::Json => {
                         let rendered = json_renderer::render_json_diags(
-                            &reporter.diag_summary().diags(),
+                            reporter.diag_summary().diags(),
                             &footers,
                             Some(&compiler_store.region_arena),
                             &compiler_store.interner,
                             &JsonRenderConfig::new(check_cmd.minify),
                         );
                         eprintln!("{rendered}");
-                        None
                     }
                     RenderKind::Yaml => {
                         let rendered = yaml_renderer::render_yaml_diags(
@@ -158,7 +157,6 @@ fn exec_check(
                             &YamlRenderConfig::new(check_cmd.minify),
                         );
                         eprintln!("{rendered}");
-                        None
                     }
                     RenderKind::Terminal => {
                         let render_cfg = TerminalRenderConfig::new(
@@ -175,35 +173,22 @@ fn exec_check(
 
                         //TODO: Internally cut error message strings in the parser
                         print_diags!(&rendered_diags);
-                        // Seems redundant to have this msg
-                        // "Failed to parse config file".to_string().into()
-                        None
                     }
                 };
 
-                return Err(msg_opt);
+                Err(None)
             }
             // Enforces that only one diagnostic is emitted so this is fine
             ScriptError::IO(e) => {
                 let msg = format!("Process exited unsuccessfully.\nReason: {e}");
-                return Err(msg.into());
+                Err(msg.into())
             }
         },
-    }
-}
+    };
+    compiler_store.cfg.perf_tracker().report();
 
-// /// Convenience function that iterates through slice and prints
-// fn print_diags(rendered_diags: &[String], amt_exceeded: usize) {
-//     for diag in rendered_diags {
-//         eprintln!("{diag}");
-//     }
-//
-//     if amt_exceeded > 0 {
-//         // renderer's job?
-//         let s_suffix = s_ifier!(amt_exceeded);
-//         eprintln!("{amt_exceeded} other error{s_suffix} exist");
-//     }
-// }
+    res
+}
 
 fn exec_fmt(fmt_cmd: &FmtCmd, cli_cfg: &CliConfig) -> Result<String, Option<String>> {
     todo!("gofmt");

@@ -2,8 +2,9 @@
 // as the literal module name, despite them just being free functions. Maybe just a "concepts" separation.
 
 use chrn_utils::{
-    id_types::{ExprId, InternedId, ModuleId, SpannedContainer, SymbolId, TypeId},
+    id_types::{ExprId, InternedId, ModuleId, SymbolId, TypeId},
     source_map::source_span::SourceSpan,
+    utils::containers::SpannedContainer,
 };
 use lang::chrn_classifier::ChrnClassifier;
 

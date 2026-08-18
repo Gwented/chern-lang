@@ -169,7 +169,7 @@ pub fn form_ln_view(src_bytes: &[u8], span: &SourceSpan) -> LineView {
 
     let mut i = first_ln_start;
 
-    let mut lines: Vec<Line> = Vec::new();
+    let mut lines: Vec<Line> = Vec::with_capacity(1);
 
     // Decoupled for readability. Current start is technically is just i.
     // Every i is not a current start, but every current start is i + 1 or 2.

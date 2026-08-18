@@ -4,12 +4,13 @@
 
 use chrn_utils::{
     chrn_config::ChrnConfig,
-    id_types::{AstId, InternedId, MemberId, SpannedContainer, SymbolId, TypeId},
+    id_types::{AstId, InternedId, MemberId, SymbolId, TypeId},
     intern::Intern,
     source_map::source_diagnostic::{
         DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
         annotations::AnnotationKind,
     },
+    utils::containers::SpannedContainer,
 };
 use lang::chrn_classifier::ChrnClassifier;
 

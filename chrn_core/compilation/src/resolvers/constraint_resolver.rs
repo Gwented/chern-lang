@@ -4,10 +4,7 @@
 use chrn_utils::{
     chrn_config::ChrnConfig,
     err_codes::ErrorCode,
-    id_types::{
-        ExprId, ImplId, InternedId, MemberId, SpannedContainer, SpannedContainerRef, SymbolId,
-        TypeId,
-    },
+    id_types::{ExprId, ImplId, InternedId, MemberId, SymbolId, TypeId},
     intern::Intern,
     source_map::{
         source_diagnostic::{
@@ -16,6 +13,7 @@ use chrn_utils::{
         },
         source_span::SourceSpan,
     },
+    utils::containers::{SpannedContainer, SpannedContainerRef},
 };
 use lang::{
     chrn_classifier::ChrnClassifier,

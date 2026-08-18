@@ -1,15 +1,17 @@
 # chrn_core
 chrn_core/target/
-# chrn_core/Cargo.lock
-chrn_core/chrn_tests/gwop
+
+## Blob mostly for testing config loader
 chrn_core/chrn_tests/blob.chrn
+## May or may not become a blob for certain tests so kept ignored
 chrn_core/chrn_tests/temp.chrn
-# Temp file for testing current UTF-8 panics
+## Temp file for testing current UTF-8 panics
 chrn_core/chrn_tests/testmenow.tar
+# Ideas?
+chrn_without_the_e/
 
 # chrn_tools
 chrn_tools/target/
-# chrn_tools/Cargo.lock
 
 # misc
 

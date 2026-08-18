@@ -25,16 +25,10 @@ pub fn make_footers(reporter: &Reporter) -> Vec<FooterKind> {
     }
 
     if diag_summary.warn_count() > 0 {
-        //WARN: Needs warns emitted too, and some sort of filtering internally so that this is
-        //tracked. Right now no warns are emitted at the top level but this will be needed when said
-        //time comes.
         footers.push(FooterKind::WarnsEmitted(diag_summary.warn_count()));
     }
 
     if diag_summary.err_count() > 0 {
-        //WARN: Needs warns emitted too, and some sort of filtering internally so that this is
-        //tracked. Right now no warns are emitted at the top level but this will be needed when said
-        //time comes.
         footers.push(FooterKind::ErrorsEmitted(diag_summary.err_count()));
     }
 

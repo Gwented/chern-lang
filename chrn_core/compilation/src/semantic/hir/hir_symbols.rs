@@ -1,9 +1,10 @@
 use chrn_utils::{
     id_types::{
-        AstId, DirectiveId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SpannedContainer,
-        SymbolId, TypeId, ValueId, VariableId,
+        AstId, DirectiveId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId,
+        ValueId, VariableId,
     },
     source_map::source_span::SourceSpan,
+    utils::containers::SpannedContainer,
 };
 use lang::{
     chrn_classifier::{ChrnClassifiable, ChrnClassifier},

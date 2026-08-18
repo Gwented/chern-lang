@@ -3,7 +3,7 @@ use std::{ffi::OsStr, path::PathBuf, str::FromStr};
 
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
-use chrn_utils::id_types::SpannedContainer;
+use chrn_utils::utils::containers::SpannedContainer;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{
     DiagnosticLevel, SourceDiagnosticSink, SourceDiagnosticSummary,

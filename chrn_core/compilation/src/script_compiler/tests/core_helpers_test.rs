@@ -6,11 +6,13 @@ use chrn_utils::{
 
 use crate::{
     lookup::scopes::scopes_concepts::ScopeType,
+    modules::{Import, ImportKind, Module},
     script_compiler::{
-        CORE_UNKNOWN, ScriptCompiler,
+        helpers::compiler_helpers::DIRECTIVES_DATASET,
         helpers::core_helpers::{
             CORE_BOUNDARIES_DATASET, CORE_BUILTIN_TYPES_DATASET, CORE_FUNCS_DATASET,
         },
+        ScriptCompiler, CORE_UNKNOWN,
     },
     semantic::hir::{
         hir_concepts::{Type, TypeInfo},
@@ -208,4 +210,92 @@ fn core_func_return_types_are_loaded() {
             type_info.ty
         );
     }
+}
+
+#[test]
+fn startup_reservations_match_loaded_data() {
+    let compiler = core_only_compiler();
+
+    let expected_type_count = CORE_BUILTIN_TYPES_DATASET.len()
+        + CORE_BOUNDARIES_DATASET.len()
+        + CORE_FUNCS_DATASET.len()
+        + 1;
+    assert_eq!(compiler.types.len(), expected_type_count);
+    assert_eq!(compiler.types.capacity(), expected_type_count);
+
+    let expected_module_symbol_count: usize = compiler
+        .mods
+        .iter()
+        .map(|module| {
+            1 + module.imports.len()
+                + module
+                    .imports
+                    .iter()
+                    .filter(|import| import.alias_id.is_some())
+                    .count()
+        })
+        .sum();
+    let expected_symbol_count = CORE_BUILTIN_TYPES_DATASET.len()
+        + CORE_BOUNDARIES_DATASET.len()
+        + CORE_FUNCS_DATASET.len()
+        + DIRECTIVES_DATASET.len()
+        + expected_module_symbol_count;
+    assert_eq!(compiler.symbols.len(), expected_symbol_count);
+    assert_eq!(compiler.symbols.capacity(), expected_symbol_count);
+
+    assert_eq!(compiler.directives.len(), DIRECTIVES_DATASET.len());
+    assert_eq!(compiler.directives.capacity(), DIRECTIVES_DATASET.len());
+
+    // `load_core` creates one core scope; module-symbol registration creates one compiler scope
+    // for every module, including the implicit core module.
+    let expected_scope_count = compiler.mods.len() + 1;
+    assert_eq!(compiler.scopes.len(), expected_scope_count);
+    assert_eq!(compiler.scopes.capacity(), expected_scope_count);
+
+    let core_mod = &compiler.mods[compiler.intrinsic_registry.core_mod_id];
+    let expected_core_exports =
+        CORE_BUILTIN_TYPES_DATASET.len() + CORE_BOUNDARIES_DATASET.len() + CORE_FUNCS_DATASET.len();
+    assert_eq!(core_mod.exports.len(), expected_core_exports);
+    assert_eq!(core_mod.exports.capacity(), expected_core_exports);
+}
+
+#[test]
+fn startup_reservations_include_user_module_symbols() {
+    let import = Import::new(
+        InternedId::new(0),
+        ImportKind::Core(Default::default()),
+        Some(InternedId::new(1)),
+    );
+    let module = Module::new(
+        InternedId::new(2),
+        Default::default(),
+        Default::default(),
+        None,
+        vec![import],
+        None,
+    );
+    let compiler = ScriptCompiler::init(None, Arena::from(vec![module]));
+
+    let expected_module_symbol_count: usize = compiler
+        .mods
+        .iter()
+        .map(|module| {
+            1 + module.imports.len()
+                + module
+                    .imports
+                    .iter()
+                    .filter(|import| import.alias_id.is_some())
+                    .count()
+        })
+        .sum();
+    let expected_symbol_count = CORE_BUILTIN_TYPES_DATASET.len()
+        + CORE_BOUNDARIES_DATASET.len()
+        + CORE_FUNCS_DATASET.len()
+        + DIRECTIVES_DATASET.len()
+        + expected_module_symbol_count;
+
+    assert_eq!(compiler.symbols.len(), expected_symbol_count);
+    assert_eq!(compiler.symbols.capacity(), expected_symbol_count);
+    assert_eq!(compiler.scopes.len(), compiler.mods.len() + 1);
+    assert_eq!(compiler.scopes.capacity(), compiler.mods.len() + 1);
 }

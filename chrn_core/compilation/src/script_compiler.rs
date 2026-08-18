@@ -159,6 +159,26 @@ impl ScriptCompiler {
         let core_mod_id = ModuleId::new(mods.len() as u32);
         let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None);
 
+        // For capacity (em-dash) includes alias symbols
+        let mut import_len = 0;
+        let mut alias_len = 0;
+        for imports in mods.iter().map(|m| &m.imports) {
+            import_len += imports.len();
+            for import in imports {
+                if import.alias_id.is_some() {
+                    alias_len += 1;
+                }
+            }
+        }
+        // (Could be hallucinating a bit here)
+
+        // `load_core` adds the implicit core module and one core import to every module, including
+        // the implicit core module itself.
+        let mod_count = mods.len() + 1;
+        let import_count = import_len + mod_count;
+        let mod_addition = mod_count + import_count + alias_len;
+        let scope_capacity = mod_count + 1;
+
         let mut compiler = ScriptCompiler {
             bind,
             mods,
@@ -166,20 +186,28 @@ impl ScriptCompiler {
             types: Arena::with_capacity(
                 core_helpers::CORE_BUILTIN_TYPES_DATASET.len()
                     + core_helpers::CORE_BOUNDARIES_DATASET.len()
+                    + core_helpers::CORE_FUNCS_DATASET.len()
                     + 1,
             ),
             values: Arena::new(),
             exprs: Arena::new(),
-            // Ignore this
-            symbols: Arena::with_capacity(60),
+            // Not sure if these should be put in their own separate constants comprised of their
+            // own semantics or composed like this. Lets do nothing!
+            symbols: Arena::with_capacity(
+                core_helpers::CORE_BUILTIN_TYPES_DATASET.len()
+                    + core_helpers::CORE_BOUNDARIES_DATASET.len()
+                    + core_helpers::CORE_FUNCS_DATASET.len()
+                    + mod_addition
+                    + compiler_helpers::DIRECTIVES_DATASET.len(),
+            ),
+            sym_members: Arena::new(),
             impls: Arena::new(),
             impl_members: Arena::new(),
             variables: Arena::new(),
-            sym_members: Arena::new(),
             cfgs: Arena::new(),
             // ignore this
-            scopes: Arena::with_capacity(10),
-            directives: Arena::with_capacity(DIRECTIVE_UNICODE_IDX),
+            scopes: Arena::with_capacity(scope_capacity),
+            directives: Arena::with_capacity(compiler_helpers::DIRECTIVES_DATASET.len()),
             //TEST:
             intrinsic_registry,
             resolver_state: ResolverState::NAMESPACE,
@@ -188,7 +216,7 @@ impl ScriptCompiler {
         // Yuppy
         compiler.load_core();
         compiler.load_directives();
-        Self::create_module_symbols(&mut compiler);
+        compiler.create_module_symbols();
 
         compiler
     }
@@ -197,7 +225,7 @@ impl ScriptCompiler {
     ///
     /// This is done by going through each module and injecting the module symbols found during the
     /// initial module dependency graph stage.
-    fn create_module_symbols(compiler: &mut ScriptCompiler) {
+    fn create_module_symbols(&mut self) {
         // Loops through all modules, registering themselves as a symbol to themselves, iterating
         // through their imports to then inject those symbols as modules that can be looked up
 
@@ -207,9 +235,9 @@ impl ScriptCompiler {
         // be done
         // If there is an alias, that is also ensured to be pushed as a symbol connected to the
         // module "other"
-        for i in 0..compiler.mods.len() {
+        for i in 0..self.mods.len() {
             let current_mod_id = ModuleId::new(i as u32);
-            let module = &compiler.mods[current_mod_id];
+            let module = &self.mods[current_mod_id];
 
             // Avoiding borrow issues by storing the ids earlier
             let current_mod_name_id = module.name_id;
@@ -217,8 +245,8 @@ impl ScriptCompiler {
 
             // Pushing the module symbol inside of itself. So if we're indexing module `main`, we
             // would be pushing `main` inside of itself, once, as a known symbol.
-            let sym_id = SymbolId::new(compiler.symbols.len() as u32);
-            let symbol = Symbol::new(
+            let sym_id = SymbolId::new(self.symbols.len() as u32);
+            let sym = Symbol::new(
                 current_mod_name_id,
                 sym_id,
                 None,
@@ -231,16 +259,16 @@ impl ScriptCompiler {
 
             // Module symbols go into the neutral scope because, uh
             // Um
-            let scope_id = compiler.push_scope(ScopeType::Compiler, current_mod_id);
-            let scope = &mut compiler.get_scope_mut(scope_id).scope;
+            let scope_id = self.push_scope(ScopeType::Compiler, current_mod_id);
+            let scope = &mut self.get_scope_mut(scope_id).scope;
             scope
                 .table
                 .interned_to_sym
                 .insert(current_mod_name_id, sym_id);
-            compiler.symbols.push(symbol);
+            self.symbols.push(sym);
 
             // Re-borrowing for iteration
-            let module = &compiler.mods[current_mod_id];
+            let module = &self.mods[current_mod_id];
 
             // Clone..
             for import in module.imports.clone() {
@@ -256,7 +284,7 @@ impl ScriptCompiler {
                     ImportKind::Core(m_id) => m_id,
                 };
 
-                let import_sym_id = SymbolId::new(compiler.symbols.len() as u32);
+                let import_sym_id = SymbolId::new(self.symbols.len() as u32);
                 // Pushing any imports found within the given module
                 let symbol = Symbol::new(
                     import.name_id,
@@ -271,19 +299,19 @@ impl ScriptCompiler {
 
                 // Module symbols go into the neutral scope because, uh
                 // Um
-                let scope_id = compiler.push_scope(ScopeType::Compiler, current_mod_id);
+                let scope_id = self.push_scope(ScopeType::Compiler, current_mod_id);
 
-                let scope = &mut compiler.get_scope_mut(scope_id).scope;
+                let scope = &mut self.get_scope_mut(scope_id).scope;
                 scope
                     .table
                     .interned_to_sym
                     .insert(import.name_id, import_sym_id);
-                compiler.symbols.push(symbol);
+                self.symbols.push(symbol);
 
                 // Maybe it can just point to the import directly instead of needing it's own
                 // symbol?
                 if let Some(alias_name_id) = import.alias_id {
-                    let alias_sym_id = SymbolId::new(compiler.symbols.len() as u32);
+                    let alias_sym_id = SymbolId::new(self.symbols.len() as u32);
 
                     // Pushing the alias associated with the import symbol if present
                     let symbol = Symbol::new(
@@ -297,13 +325,13 @@ impl ScriptCompiler {
                         SymbolKind::Namespace,
                     );
 
-                    let scope = &mut compiler.get_scope_mut(scope_id).scope;
+                    let scope = &mut self.get_scope_mut(scope_id).scope;
                     scope
                         .table
                         .interned_to_sym
                         .insert(alias_name_id, alias_sym_id);
 
-                    compiler.symbols.push(symbol);
+                    self.symbols.push(symbol);
                 }
             }
         }
@@ -850,7 +878,14 @@ impl ScriptCompiler {
 
     /// Loads the core module
     fn load_core(&mut self) {
-        let mut table = Table::new();
+        // Ignore this
+        let mut table = Table::with_capacities(
+            0,
+            // Does not include + 1 because `Unknown` has no identifier given
+            core_helpers::CORE_BUILTIN_TYPES_DATASET.len()
+                + core_helpers::CORE_BOUNDARIES_DATASET.len()
+                + core_helpers::CORE_FUNCS_DATASET.len(),
+        );
 
         //TODO: If namespace core exists as a module then should error earlier
         let core_name_id = InternedId::new(intern::INTERNED_CORE);
@@ -869,6 +904,8 @@ impl ScriptCompiler {
 
         self.load_core_types(core_mod.mod_id, &mut table);
         self.load_core_funcs(core_mod.mod_id, &mut table);
+
+        core_mod.exports.reserve_exact(table.interned_to_sym.len());
 
         // Exporting all created symbols from core
         for sym_id in table.interned_to_sym.values().copied() {

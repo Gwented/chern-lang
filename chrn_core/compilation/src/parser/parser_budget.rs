@@ -1,8 +1,8 @@
 use std::cell::Cell;
 
-use chrn_utils::budget::{
-    mem_budget::{BudgetResult, MemoryBudget},
-    recursion_tracker::{RecursionTracker, RecursiveGuard},
+use chrn_utils::{
+    budget::mem_budget::{BudgetResult, MemoryBudget},
+    utils::trackers::recursion_tracker::{RecursionTracker, RecursiveGuard},
 };
 
 /// Budget tracker specifically for parser that tracks expression nodes and uses `RecursiveTracker`

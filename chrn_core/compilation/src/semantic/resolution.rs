@@ -4,9 +4,10 @@ pub(crate) mod resolution_concepts;
 pub(crate) mod resolution_helpers;
 
 use chrn_utils::{
-    id_types::{InternedId, SpannedContainer, SymbolId, TypeId},
+    id_types::{InternedId, SymbolId, TypeId},
     intern,
     source_map::source_span::SourceSpan,
+    utils::containers::SpannedContainer,
 };
 use lang::{
     chrn_classifier::ChrnClassifiable,
@@ -257,7 +258,7 @@ fn resolve_generic(
             }
             //TEST: TEST:
             BuiltinTypeKind::Tuple => {
-                let mut elements: Vec<TypeId> = Vec::new();
+                let mut elements: Vec<TypeId> = Vec::with_capacity(generic.inputs.len());
 
                 for input in &generic.inputs {
                     match resolve_type_expr(

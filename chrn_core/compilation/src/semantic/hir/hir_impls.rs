@@ -1,9 +1,9 @@
 use chrn_utils::{
     id_types::{
-        AstId, ConfigRootId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, SpannedContainer,
-        SymbolId, TypeId,
+        AstId, ConfigRootId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, SymbolId, TypeId,
     },
     source_map::source_span::SourceSpan,
+    utils::containers::SpannedContainer,
 };
 
 use crate::{

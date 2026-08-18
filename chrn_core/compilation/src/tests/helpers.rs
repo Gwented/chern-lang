@@ -299,7 +299,7 @@ pub(super) fn run_member_resolver(
 pub(super) use std::path::Path;
 
 use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
-use chrn_utils::id_types::SpannedContainer;
+use chrn_utils::utils::containers::SpannedContainer;
 pub(super) use chrn_utils::{
     arena::Arena,
     budget::mem_budget::{BudgetResult, MemoryBudget},

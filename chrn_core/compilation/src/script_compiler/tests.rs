@@ -1,1 +1,1 @@
-mod script_compiler_test;
+mod core_helpers_test;

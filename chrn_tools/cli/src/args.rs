@@ -137,17 +137,20 @@ pub struct DocCmd {
 pub struct CheckCmd {
     /// Path of `.chrn` config file to check
     pub(crate) path: PathBuf,
+    // No linters exist
     /// Allows for lint warns to be applied, which aren't by default
     #[arg(short = 'l', long = "lint", default_value_t = false)]
     pub(crate) can_lint: bool,
-    /// Emits developer debug info during check
+    /// Emits internal debug info during check
     #[arg(long = "dbg", default_value_t = false)]
     pub(crate) dbg_mode: bool,
+    /// Shows info regarding the performance of each stage after compilation is done
+    #[arg(short = 'p', long = "perf", default_value_t = false)]
+    pub(crate) perf_tracker: bool,
     /// Emits diagnostics as a JSON document in stderr
     #[arg(long = "json", default_value_t = false)]
     pub(crate) json: bool,
     /// Emits diagnostics as a YAML document in stderr
-    /// When combined with `--json`, JSON is emitted.
     #[arg(long = "yaml", default_value_t = false)]
     pub(crate) yaml: bool,
     /// Minifies output iff JSON or YAML output is chosen
@@ -155,6 +158,7 @@ pub struct CheckCmd {
     pub(crate) minify: bool,
 }
 
+// None of the formatting is done,
 /// For `embed` cmd
 #[derive(Args)]
 pub struct EmbedCmd {

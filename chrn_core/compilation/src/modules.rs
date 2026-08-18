@@ -15,7 +15,7 @@ use chrn_utils::{
     core_error::{self, ConfigLoadError, ModuleInitError},
     err_codes::ErrorCode,
     files::file_ops,
-    id_types::{InternedId, ModuleId, PathId, ScopeId, SourceRegionId, SpannedContainer, SymbolId},
+    id_types::{InternedId, ModuleId, PathId, ScopeId, SourceRegionId, SymbolId},
     intern::{self, Intern},
     source_map::{
         source_diagnostic::{
@@ -25,6 +25,7 @@ use chrn_utils::{
         source_region::SourceRegion,
         source_span::SourceSpan,
     },
+    utils::containers::SpannedContainer,
 };
 
 use crate::{
@@ -273,7 +274,7 @@ pub fn extract_main<R: Read>(
 
     let main_path_id = interner.intern_path(&main_path);
 
-    let mut region_arena: Arena<SourceRegion, SourceRegionId> = Arena::new();
+    let mut region_arena: Arena<SourceRegion, SourceRegionId> = Arena::with_capacity(1);
     let main_region_id = SourceRegionId::new(0);
 
     // Not sure if main should even recover from this beyond having an existent region
@@ -335,7 +336,7 @@ pub fn extract_main<R: Read>(
         }
     };
 
-    let main_name_id = interner.intern(&file_name);
+    let main_name_id = interner.intern(file_name);
     let main_mod_id = ModuleId::new(0);
 
     // This is a Vector relationship stored where, the path id of an import is stored along with a
@@ -351,9 +352,7 @@ pub fn extract_main<R: Read>(
     let (main_bind, main_imports, mut finder_summary) = ModuleFinder::new(
         &main_region.src_bytes,
         cfg,
-        // &mut reserved_mod_ids,
         &main_region,
-        // We don't know the module id for imports. At all.
         main_region.script_start,
         main_region.serial_start,
     )
@@ -369,7 +368,6 @@ pub fn extract_main<R: Read>(
         main_name_id,
         main_mod_state,
         main_mod_id,
-        // Cheap clone
         main_bind,
         main_imports,
         Some(main_region_id),
@@ -403,21 +401,17 @@ pub fn extract_modules(
 
     let main_bind = main_mod.bind.clone();
 
-    // TODO: Maybe bring the seen imports outside of the graph since it may look too transient
-
-    let mut pending_mods: VecDeque<Module> = vec![main_mod].into();
-    // Cannot make in-line changes to imports being iterated through
-    // let mut pending_import_changes: Vec<ImportKind> = Vec::new();
-
     // This ONLY contains verified modules.
     // Modules are only pushed when their all their imports are processed.
-    let mut valid_mods: Arena<Module, ModuleId> = Arena::with_capacity(1);
+    let mut valid_mods: Arena<Module, ModuleId> = Arena::with_capacity(main_mod.imports.len());
+
+    // Starting at [root]
+    let mut pending_mods: VecDeque<Module> = vec![main_mod].into();
 
     // If this is true then the outer loop must stop (HELLO I AM A LOOP LABEL)
+    // Only used when max modules have been exceeded
     let mut should_break_outer = false;
 
-    //-- CHANGE FROM RECURSIVE MODEL --
-    //
     // Work-list processing of each module
     //
     // If the import from the popped module has not been seen before, mark it as seen so that it is
@@ -428,23 +422,22 @@ pub fn extract_modules(
         for imp_idx in 0..importer_mod.imports.len() {
             let import = importer_mod.imports[imp_idx].clone();
 
-            // We haven't made the compiler yet so no other imports should exist
+            // We haven't made the compiler yet so no other types of imports should exist
             let ImportKind::UnresolvedSource(ref sp_path_id) = import.kind else {
                 unreachable!();
             };
 
             // If the path from a given import was seen already then it skips
-            if graph.seen.contains(&sp_path_id.inner) {
+            if graph.seen.binary_search(&sp_path_id.inner).is_ok() {
                 // Checking if there is a module id associated with it's path before skipping so
                 // that the import can be updated if possible.
-                let mod_id_opt = graph
+                let mod_id_res = graph
                     .registered_mod_ids
-                    .iter()
-                    .find(|(p_id, _)| *p_id == sp_path_id.inner)
-                    .map(|(_, m_id)| *m_id);
+                    .binary_search_by_key(&sp_path_id.inner, |(p_id, _)| *p_id)
+                    .map(|idx| graph.registered_mod_ids[idx].1);
 
                 // Valid import
-                if let Some(mod_id) = mod_id_opt {
+                if let Ok(mod_id) = mod_id_res {
                     importer_mod.imports[imp_idx].kind =
                         ImportKind::Source(sp_path_id.clone(), mod_id);
                 } else {
@@ -568,15 +561,16 @@ pub fn extract_modules(
     // differently, so should reflect that non-deterministic behavior is expected and that the
     // module's name should be changed
 
-    // More like compilation store
+    // The store is a dense array aligned with the compiler's user modules.
+    let store_capacity = valid_mods.len();
     let compiler_store = ScriptCompilerStore::new(
         cfg,
         graph.region_arena,
         interner,
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
+        Vec::with_capacity(store_capacity),
+        Vec::with_capacity(store_capacity),
+        Vec::with_capacity(store_capacity),
+        Vec::with_capacity(store_capacity),
     );
 
     let compiler = ScriptCompiler::init(main_bind, valid_mods);

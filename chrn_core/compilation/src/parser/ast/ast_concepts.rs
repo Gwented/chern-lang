@@ -1,7 +1,8 @@
 use chrn_utils::{
     arena::Arena,
-    id_types::{AstId, InternedId, SpannedContainer},
+    id_types::{AstId, InternedId},
     source_map::source_span::SourceSpan,
+    utils::containers::SpannedContainer,
 };
 use lang::{
     chrn_classifier::{ChrnClassifiable, ChrnClassifier},
