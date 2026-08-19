@@ -36,6 +36,13 @@ impl AstInfo {
         }
     }
 
+    pub fn with_capacity(items_cap: usize) -> AstInfo {
+        AstInfo {
+            sections: [None, None, None, None, None],
+            items: Arena::with_capacity(items_cap),
+        }
+    }
+
     pub fn push_item(&mut self, kind: SectionKind, item: Item) {
         let ast_id = AstId::new(self.items.len() as u32);
         self.items.push(item);

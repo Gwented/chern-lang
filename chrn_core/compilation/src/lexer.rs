@@ -12,6 +12,7 @@ pub mod trivia;
 //  I don't know buddy
 
 use chrn_utils::{
+    chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     id_types::SourceRegionId,
     intern::{self, Intern},
     source_map::source_span::SourceSpan,
@@ -38,6 +39,7 @@ pub struct Lexer<'a> {
     script_start: usize,
     pos: usize,
     current_region_id: SourceRegionId,
+    cfg: &'a mut ChrnConfig,
     /// Invalid toks found count
     invalid_toks: u8,
     trivia: Vec<Trivia>,
@@ -50,14 +52,22 @@ impl Lexer<'_> {
     /// trailing whitespace, newlines, and others ok `Ok`.
     // WARN: The file is fully dependent on being able to lex from a certain point so the @ confirmation
     // here should MAYBE be removed
-    pub fn new(current_region_id: SourceRegionId, src: &[u8], script_start: usize) -> Lexer<'_> {
+    pub fn new<'a>(
+        current_region_id: SourceRegionId,
+        src: &'a [u8],
+        script_start: usize,
+        cfg: &'a mut ChrnConfig,
+    ) -> Lexer<'a> {
+        // Trivia is very dense most of the time hence it weighs more
+        let speculated_trivia = src.len() / 25;
         Lexer {
             current_region_id,
             src_bytes: src,
             script_start,
             // Not even going to acknowledge what was here before
             pos: 0,
-            trivia: Vec::new(),
+            trivia: Vec::with_capacity(speculated_trivia),
+            cfg,
             invalid_toks: 0,
             trivia_start_idx: 0,
             trivia_end_idx: 0,
@@ -75,7 +85,14 @@ impl Lexer<'_> {
     /// tokens, as well as avoiding the parser reporting the same errors as the lexer since both act
     /// off the same token data.
     pub fn tokenize(&mut self, interner: &mut Intern) -> LexerOutput {
-        let mut toks: Vec<SpannedToken> = Vec::new();
+        self.cfg.perf_tracker_mut().start();
+        // 40 bytes : 1 token
+        //
+        // The partitioning of 40 was chosen to account for the fact that tokens are compressed
+        // bytes meaning there will of course be less, but also with the fact that the odds of there
+        // being not even ONE token in 40 entire bytes is extremely unlikely.
+        let speculated_toks = self.src_bytes.len() / 40;
+        let mut toks: Vec<SpannedToken> = Vec::with_capacity(speculated_toks);
 
         // For threshold of invalid tokens before just giving up
         let mut invalid_toks: u8 = 0;
@@ -85,8 +102,6 @@ impl Lexer<'_> {
 
         loop {
             self.handle_trivia();
-            // dbg!(&self.trivia);
-            // panic!();
 
             if self.peek() == b'\0' || invalid_toks > MAX_INVALID_TOKS {
                 // Over-indexes if not subtracted
@@ -562,7 +577,9 @@ impl Lexer<'_> {
             }
         }
 
-        let mut trivia: Vec<Trivia> = Vec::new();
+        self.cfg.perf_tracker_mut().stop(ChrnPerfStage::Lexer);
+
+        let mut trivia: Vec<Trivia> = Vec::with_capacity(self.trivia.len());
         trivia.append(&mut self.trivia);
         LexerOutput::new(toks, trivia, self.invalid_toks)
     }
@@ -1143,7 +1160,6 @@ impl Lexer<'_> {
             match self.peek_char() {
                 c if !c.is_control() && c.is_whitespace() => {
                     self.skip_whitespace();
-                    // let trivia_end = self.pos - 1;
 
                     self.trivia.push(Trivia::new(
                         TriviaKind::Whitespace,
@@ -1200,8 +1216,6 @@ impl Lexer<'_> {
                             self.pos as u32,
                         ),
                     ));
-
-                    // self.advance();
                 }
                 '\n' => {
                     self.advance();

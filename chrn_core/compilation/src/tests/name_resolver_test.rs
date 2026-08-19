@@ -1,5 +1,10 @@
 use super::helpers::*;
 
+/// Namespace-stage diagnostics for a single-module script.
+fn ns_diags(text: &str) -> SourceDiagnosticSummary {
+    resolve_single_module(text, Stage::Namespace).ns
+}
+
 #[test]
 fn nameresolver_duplicate_simple_test() {
     // -- NEUTRAL --
@@ -8,20 +13,7 @@ fn nameresolver_duplicate_simple_test() {
             let DUPLICATE = \"Hi\"
             ";
 
-    let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
-
-    let (mod_id, region) = {
-        let module = &compiler.mods[ModuleId::new(0)];
-        (module.mod_id, get_module_region(&arena, module))
-    };
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-
-    let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-    let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (_, diags) = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
+    let diags = ns_diags(wrong);
 
     assert!(
         !diags.diags.is_empty(),
@@ -33,20 +25,7 @@ fn nameresolver_duplicate_simple_test() {
                 let NEW = \"Hallo\"
             ";
 
-    let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
-
-    let (mod_id, region) = {
-        let module = &compiler.mods[ModuleId::new(0)];
-        (module.mod_id, get_module_region(&arena, module))
-    };
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-
-    let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-    let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (_, diags) = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
+    let diags = ns_diags(correct);
 
     assert!(
         diags.diags.is_empty(),
@@ -63,20 +42,7 @@ fn nameresolver_duplicate_simple_test() {
 
     // Doing this first since if modules were identified during the parsing stage any
     // syntax error within another module would not be reportable since the parser failed.
-    let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
-
-    let (mod_id, region) = {
-        let module = &compiler.mods[ModuleId::new(0)];
-        (module.mod_id, get_module_region(&arena, module))
-    };
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-
-    let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-    let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (_, diags) = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
+    let diags = ns_diags(wrong);
 
     assert!(
         !diags.diags.is_empty(),
@@ -89,20 +55,7 @@ fn nameresolver_duplicate_simple_test() {
                 new: i8
             ";
 
-    let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
-
-    let (mod_id, region) = {
-        let module = &compiler.mods[ModuleId::new(0)];
-        (module.mod_id, get_module_region(&arena, module))
-    };
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-
-    let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-    let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (_, diags) = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
+    let diags = ns_diags(correct);
 
     assert!(
         diags.diags.is_empty(),
@@ -118,20 +71,7 @@ fn nameresolver_duplicate_simple_test() {
                 struct Duplicate {}
             ";
 
-    let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
-
-    let (mod_id, region) = {
-        let module = &compiler.mods[ModuleId::new(0)];
-        (module.mod_id, get_module_region(&arena, module))
-    };
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-
-    let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-    let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (_, diags) = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
+    let diags = ns_diags(wrong);
 
     assert!(
         !diags.diags.is_empty(),
@@ -144,20 +84,7 @@ fn nameresolver_duplicate_simple_test() {
                 struct New {}
             ";
 
-    let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
-
-    let (mod_id, region) = {
-        let module = &compiler.mods[ModuleId::new(0)];
-        (module.mod_id, get_module_region(&arena, module))
-    };
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-
-    let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-    let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (_, diags) = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
+    let diags = ns_diags(correct);
 
     assert!(
         diags.diags.is_empty(),

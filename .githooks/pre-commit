@@ -1,10 +1,10 @@
 #!/usr/bin/sh
+
 set -e
 
 echo "Running tests"
-{
-    (cd chrn_core/ && cargo t)
-    (cd chrn_tools/cli && cargo t)
-    (cd chrn_tools/lsp && cargo t)
-} >/dev/null 2>&1 || echo "Tests failed"
+(cd chrn_core/ && cargo t)
+(cd chrn_tools/cli && cargo t)
+(cd chrn_tools/lsp && cargo t)
+echo "Tests pass"
 # ates

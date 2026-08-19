@@ -2,7 +2,7 @@
 //TODO: Condition validation
 //TODO: Proper directive validation
 use chrn_utils::{
-    chrn_config::ChrnConfig,
+    chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     err_codes::ErrorCode,
     id_types::{ExprId, ImplId, InternedId, MemberId, SymbolId, TypeId},
     intern::Intern,
@@ -42,7 +42,7 @@ use crate::{
 /// This resolver is focused on ensuring correctness in the semantic information collected from
 /// previous stages.
 pub struct ConstraintResolver<'a> {
-    pub(crate) cfg: &'a ChrnConfig,
+    pub(crate) cfg: &'a mut ChrnConfig,
     pub(crate) interner: &'a Intern,
     pub(crate) compiler: &'a mut ScriptCompiler,
     pub(crate) summary: SourceDiagnosticSummary,
@@ -51,7 +51,7 @@ pub struct ConstraintResolver<'a> {
 impl<'a> ConstraintResolver<'a> {
     /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new(
-        cfg: &'a ChrnConfig,
+        cfg: &'a mut ChrnConfig,
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,
     ) -> ConstraintResolver<'a> {
@@ -66,6 +66,7 @@ impl<'a> ConstraintResolver<'a> {
     }
 
     pub fn resolve(&mut self, env: &ResolverEnv) -> SourceDiagnosticSummary {
+        self.cfg.perf_tracker_mut().start();
         // Everything skipped is not a factor in this compilation step.
         for comp_unit in env.compilation_syms.iter().cloned() {
             match comp_unit {
@@ -104,6 +105,9 @@ impl<'a> ConstraintResolver<'a> {
             }
         }
 
+        self.cfg
+            .perf_tracker_mut()
+            .stop(ChrnPerfStage::ConstraintResolver);
         let mut summary = SourceDiagnosticSummary::default();
         summary.append_summary(&mut self.summary);
         summary

@@ -250,52 +250,6 @@ pub(super) fn build_resolver_envs<'a>(
     all_envs
 }
 
-/// Runs namespace resolution across all registration environments, returning the
-/// module-aligned compilation symbol lists. Panics if any module produces diagnostics.
-pub(super) fn run_namespace_resolver(
-    settings: &ChrnConfig,
-    interner: &Intern,
-    compiler: &mut ScriptCompiler,
-    reg_envs: &[Option<RegistrationEnv>],
-) -> Vec<Option<Vec<CompilationUnit>>> {
-    let mut ns_resolver = NamespaceResolver::new(settings, interner, compiler);
-    let mut mod_symbols = Vec::new();
-    for env in reg_envs.iter() {
-        if let Some(env) = env {
-            let (current_mod_symbols, diags) = ns_resolver.resolve(env);
-            assert!(
-                diags.diags.is_empty(),
-                "Namespace resolution failed: {:?}",
-                diags
-            );
-            mod_symbols.push(Some(current_mod_symbols));
-        } else {
-            mod_symbols.push(None);
-        }
-    }
-    mod_symbols
-}
-
-/// Runs member resolution across all resolver environments, panicking on diagnostics
-pub(super) fn run_member_resolver(
-    settings: &ChrnConfig,
-    envs: &[Option<ResolverEnv>],
-    interner: &Intern,
-    compiler: &mut ScriptCompiler,
-) {
-    let mut member_resolver = MemberResolver::new(settings, interner, compiler);
-    for env in envs.iter() {
-        if let Some(env) = env {
-            let diags = member_resolver.resolve(env);
-            assert!(
-                diags.diags.is_empty(),
-                "Member resolution failed: {:?}",
-                diags
-            );
-        }
-    }
-}
-
 pub(super) use std::path::Path;
 
 use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
@@ -308,7 +262,7 @@ pub(super) use chrn_utils::{
     id_types::{InternedId, ModuleId, PathId, SourceRegionId, SymbolId, ValueId},
     intern::Intern,
     source_map::{
-        source_diagnostic::{DiagnosticLevel, SourceDiagnostic},
+        source_diagnostic::{DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSummary},
         source_region::SourceRegion,
         source_span::SourceSpan,
     },
@@ -326,42 +280,303 @@ pub(super) use crate::{
     semantic::{compilation_unit::CompilationUnit, hir::hir_symbols::VariableState},
 };
 
-// -- Const dependency test helpers --
+// -- Pipeline driver --
 
-/// Parses a single-module script and runs the full resolution pipeline up to and including
-/// constraints. Panics on any resolution error so that the returned compiler state is known to
-/// be fully resolved.
-pub(super) fn compile_and_resolve_single_module(text: &str) -> (ScriptCompiler, Intern) {
-    let (arena, mut interner, cfg, mut compiler) = mock_single_module_compiler(text);
+/// Last resolver stage a pipeline run should execute. Stages are ordered and cumulative:
+/// running one runs every earlier one, matching the order-locked `ResolverState` machine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Stage {
+    Namespace,
+    Member,
+    Type,
+    Constraint,
+}
 
-    let (mod_id, region) = {
-        let module = &compiler.mods[ModuleId::new(0)];
-        (module.mod_id, get_module_region(&arena, module))
+/// Output of a pipeline run: the resulting compiler state, the interner it was built with,
+/// and one diagnostic summary per stage. Stages that did not run hold empty summaries.
+///
+/// This is the single place tests get resolver output from. Adding a parameter to a resolver
+/// or reordering a stage is a change to `resolve_single_module` / `resolve_cross_module`
+/// only, not to every test.
+pub(super) struct Resolution {
+    pub compiler: ScriptCompiler,
+    pub interner: Intern,
+    pub ns: SourceDiagnosticSummary,
+    pub member: SourceDiagnosticSummary,
+    pub ty: SourceDiagnosticSummary,
+    pub cn: SourceDiagnosticSummary,
+}
+
+impl Resolution {
+    /// Total error count across every stage that ran.
+    pub(super) fn err_count(&self) -> u32 {
+        u32::from(self.ns.err_count())
+            + u32::from(self.member.err_count())
+            + u32::from(self.ty.err_count())
+            + u32::from(self.cn.err_count())
+    }
+
+    /// Panics if any stage reported an error, so the caller holds a known-good compiler.
+    pub(super) fn expect_ok(self) -> Resolution {
+        assert!(
+            self.err_count() == 0,
+            "Resolution failed:\nnamespace: {:?}\nmember: {:?}\ntype: {:?}\nconstraint: {:?}",
+            self.ns,
+            self.member,
+            self.ty,
+            self.cn
+        );
+        self
+    }
+
+    /// Drops the diagnostics, keeping the state tests assert against.
+    pub(super) fn into_state(self) -> (ScriptCompiler, Intern) {
+        (self.compiler, self.interner)
+    }
+
+    /// Constant value of a resolved `let` variable by name.
+    pub(super) fn value_of(&self, name: &str) -> Value {
+        value_of(&self.compiler, &self.interner, name)
+    }
+}
+
+/// Runs the stages from `Namespace` up to and including `upto` over the given envs.
+///
+/// Every module's env is resolved by one resolver instance per stage, because the resolvers
+/// are order-locked: constructing the same one twice trips the `ResolverState` assert.
+fn run_stages(
+    upto: Stage,
+    cfg: &mut ChrnConfig,
+    interner: &mut Intern,
+    compiler: &mut ScriptCompiler,
+    reg_envs: &[Option<RegistrationEnv>],
+    arena: &Arena<SourceRegion, SourceRegionId>,
+    asts: &[Option<AstInfo>],
+) -> (
+    SourceDiagnosticSummary,
+    SourceDiagnosticSummary,
+    SourceDiagnosticSummary,
+    SourceDiagnosticSummary,
+) {
+    let mut ns = SourceDiagnosticSummary::default();
+    let mut member = SourceDiagnosticSummary::default();
+    let mut ty = SourceDiagnosticSummary::default();
+    let mut cn = SourceDiagnosticSummary::default();
+
+    let compilation_syms: Vec<Option<Vec<CompilationUnit>>> = {
+        let mut ns_resolver = NamespaceResolver::new(cfg, interner, compiler);
+        let mut symbols = Vec::new();
+        for env in reg_envs.iter() {
+            match env {
+                Some(env) => {
+                    let (syms, diags) = ns_resolver.resolve(env);
+                    ns.merge(diags);
+                    symbols.push(Some(syms));
+                }
+                None => symbols.push(None),
+            }
+        }
+        symbols
     };
 
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
+    if upto == Stage::Namespace {
+        return (ns, member, ty, cn);
+    }
 
-    let ast_info = parser::parse(&cfg, region, &toks, &interner).0;
+    let envs = build_resolver_envs(compiler, arena, asts, &compilation_syms);
 
-    let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (comp_syms, _) = NamespaceResolver::new(&cfg, &interner, &mut compiler).resolve(&reg_env);
+    {
+        let mut member_resolver = MemberResolver::new(cfg, interner, compiler);
+        for env in envs.iter().flatten() {
+            member.merge(member_resolver.resolve(env));
+        }
+    }
 
-    let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
-    let envs = vec![Some(res_env)];
-    run_member_resolver(&cfg, &envs, &interner, &mut compiler);
-    let env = envs[0].as_ref().expect("Env should exist");
+    if upto == Stage::Member {
+        return (ns, member, ty, cn);
+    }
 
-    let ty_summary = TypeResolver::new(&cfg, &mut interner, &mut compiler).resolve(env);
-    assert!(ty_summary.err_count() == 0, "Type resolution failed");
-    let constraint_summary = ConstraintResolver::new(&cfg, &interner, &mut compiler).resolve(env);
-    assert!(
-        constraint_summary.err_count() == 0,
-        "Constraint resolution failed"
+    {
+        let mut ty_resolver = TypeResolver::new(cfg, interner, compiler);
+        for env in envs.iter().flatten() {
+            ty.merge(ty_resolver.resolve(env));
+        }
+    }
+
+    if upto == Stage::Type {
+        return (ns, member, ty, cn);
+    }
+
+    {
+        let mut cn_resolver = ConstraintResolver::new(cfg, interner, compiler);
+        for env in envs.iter().flatten() {
+            cn.merge(cn_resolver.resolve(env));
+        }
+    }
+
+    (ns, member, ty, cn)
+}
+
+/// Lexes, parses, and resolves a single-module script up to `upto`, collecting diagnostics
+/// instead of asserting on them.
+pub(super) fn resolve_single_module(text: &str, upto: Stage) -> Resolution {
+    let (arena, mut interner, mut cfg, mut compiler) = mock_single_module_compiler(text);
+
+    let asts = build_asts(&arena, &mut cfg, &mut interner, &compiler);
+    let reg_envs = build_registration_envs(&compiler, &arena, &asts);
+
+    let (ns, member, ty, cn) = run_stages(
+        upto,
+        &mut cfg,
+        &mut interner,
+        &mut compiler,
+        &reg_envs,
+        &arena,
+        &asts,
     );
 
-    (compiler, interner)
+    Resolution {
+        compiler,
+        interner,
+        ns,
+        member,
+        ty,
+        cn,
+    }
+}
+
+/// Same as `resolve_single_module` for a two-module program where `main` imports
+/// `sub_module` by path.
+pub(super) fn resolve_cross_module(main_text: &str, sub_text: &str, upto: Stage) -> Resolution {
+    let mut interner = Intern::init();
+
+    let import = mock_import(
+        "sub_module",
+        "sub_path",
+        ModuleId::new(1),
+        None,
+        &mut interner,
+    );
+
+    let (main_mod, main_region) = mock_single_module(
+        "main",
+        "main_path",
+        vec![import],
+        0,
+        main_text,
+        &mut interner,
+    );
+
+    let (sub_mod, sub_region) = mock_single_module(
+        "sub_module",
+        "sub_path",
+        Default::default(),
+        1,
+        sub_text,
+        &mut interner,
+    );
+
+    let (arena, _, mut cfg, mut compiler) =
+        mock_multiple_module_compiler(vec![(main_mod, main_region), (sub_mod, sub_region)]);
+
+    let asts = build_asts(&arena, &mut cfg, &mut interner, &compiler);
+    let reg_envs = build_registration_envs(&compiler, &arena, &asts);
+
+    let (ns, member, ty, cn) = run_stages(
+        upto,
+        &mut cfg,
+        &mut interner,
+        &mut compiler,
+        &reg_envs,
+        &arena,
+        &asts,
+    );
+
+    Resolution {
+        compiler,
+        interner,
+        ns,
+        member,
+        ty,
+        cn,
+    }
+}
+
+/// Lexes and parses every module that has a region, keeping the result module-aligned.
+/// A module without a region (the implicit `core` module) gets a `None` slot.
+fn build_asts(
+    arena: &Arena<SourceRegion, SourceRegionId>,
+    cfg: &mut ChrnConfig,
+    interner: &mut Intern,
+    compiler: &ScriptCompiler,
+) -> Vec<Option<AstInfo>> {
+    let mut asts = Vec::new();
+    for mod_idx in 0..compiler.mods.len() {
+        let module = &compiler.mods[ModuleId::new(mod_idx as u32)];
+        let region = match module.region_id {
+            Some(region_id) => &arena[region_id],
+            None => {
+                asts.push(None);
+                continue;
+            }
+        };
+
+        let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start, cfg)
+            .tokenize(interner)
+            .toks;
+
+        asts.push(Some(parser::parse(cfg, region, &toks, interner).0));
+    }
+    asts
+}
+
+// -- Stage shorthands --
+
+/// Full pipeline over a single module, panicking on any resolution error so the returned
+/// compiler state is known to be fully resolved.
+pub(super) fn compile_and_resolve_single_module(text: &str) -> (ScriptCompiler, Intern) {
+    resolve_single_module(text, Stage::Constraint)
+        .expect_ok()
+        .into_state()
+}
+
+/// Full pipeline across two modules, panicking on any resolution error.
+pub(super) fn compile_and_resolve_cross_module(
+    main_text: &str,
+    sub_text: &str,
+) -> (ScriptCompiler, Intern) {
+    resolve_cross_module(main_text, sub_text, Stage::Constraint)
+        .expect_ok()
+        .into_state()
+}
+
+/// Runs up to type resolution and returns the compiler and interner even on error, so
+/// callers can inspect the partial resolution state (e.g. verify that variables involved in
+/// a circular dependency remain in `ReservedTypeSlot`).
+pub(super) fn type_resolve_single_module_keep_state(
+    text: &str,
+) -> (Result<(), Vec<SourceDiagnostic>>, ScriptCompiler, Intern) {
+    let res = resolve_single_module(text, Stage::Type);
+    let failed = res.err_count() > 0;
+    let Resolution {
+        compiler,
+        interner,
+        ns,
+        member,
+        ty,
+        ..
+    } = res;
+
+    let result = if failed {
+        let mut diags = ns.diags;
+        diags.extend(member.diags);
+        diags.extend(ty.diags);
+        Err(diags)
+    } else {
+        Ok(())
+    };
+
+    (result, compiler, interner)
 }
 
 /// Returns the constant value of a resolved `let` variable by name.
@@ -386,76 +601,6 @@ pub(super) fn value_of(compiler: &ScriptCompiler, interner: &Intern, name: &str)
     }
 }
 
-/// Runs namespace and member resolution, then returns the result of type resolution. This is
-/// useful for tests that want to assert that type resolution fails (e.g. circular const
-/// dependencies) without the constraint pass running.
-pub(super) fn type_resolve_single_module(
-    text: &str,
-) -> Result<(ScriptCompiler, Intern), Vec<SourceDiagnostic>> {
-    let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
-
-    let (mod_id, region) = {
-        let module = &compiler.mods[ModuleId::new(0)];
-        (module.mod_id, get_module_region(&arena, module))
-    };
-
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-
-    let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-    let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (comp_syms, _) =
-        NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
-
-    let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
-    let envs = vec![Some(res_env)];
-    run_member_resolver(&settings, &envs, &interner, &mut compiler);
-    let env = envs[0].as_ref().expect("Env should exist");
-
-    match TypeResolver::new(&settings, &mut interner, &mut compiler).resolve(env) {
-        summary if summary.err_count() == 0 => Ok((compiler, interner)),
-        summary => Err(summary.diags),
-    }
-}
-
-/// Like `type_resolve_single_module` but returns the compiler and interner even on error, so
-/// callers can inspect the partial resolution state (e.g. verify that variables involved in a
-/// circular dependency remain in `ReservedTypeSlot`).
-pub(super) fn type_resolve_single_module_keep_state(
-    text: &str,
-) -> (Result<(), Vec<SourceDiagnostic>>, ScriptCompiler, Intern) {
-    let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
-
-    let (mod_id, region) = {
-        let module = &compiler.mods[ModuleId::new(0)];
-        (module.mod_id, get_module_region(&arena, module))
-    };
-
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-
-    let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-    let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (comp_syms, _) =
-        NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
-
-    let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
-    let envs = vec![Some(res_env)];
-    run_member_resolver(&settings, &envs, &interner, &mut compiler);
-    let env = envs[0].as_ref().expect("Env should exist");
-
-    let summary = TypeResolver::new(&settings, &mut interner, &mut compiler).resolve(env);
-    if summary.err_count() == 0 {
-        (Ok(()), compiler, interner)
-    } else {
-        (Err(summary.diags), compiler, interner)
-    }
-}
-
 pub(super) fn load_cfg_bytes(bytes: &[u8]) -> ConfigLoaderOutput {
     let mut interner = mock_interner(0, 1);
     let path_id = interner.intern_path(Path::new(""));
@@ -466,200 +611,6 @@ pub(super) fn load_cfg_bytes(bytes: &[u8]) -> ConfigLoaderOutput {
 /// Helper: runs the config loader on a string and returns the resulting region.
 pub(super) fn load_cfg(text: &str) -> ConfigLoaderOutput {
     load_cfg_bytes(text.as_bytes())
-}
-
-/// `@def` immediately followed by `@end` with no separator. The loader does
-/// `self.skip(4)` then unconditionally `self.advance()` after the `@def` match, which
-/// consumes one extra byte and skips the `@` of `@end`. This test pins the current behavior
-/// so a future fix surfaces as a real test change rather than a silent regression.
-pub(super) fn compile_and_resolve_cross_module(
-    main_text: &str,
-    sub_text: &str,
-) -> (ScriptCompiler, Intern) {
-    let mut interner = Intern::init();
-
-    let import = mock_import(
-        "sub_module",
-        "sub_path",
-        ModuleId::new(1),
-        None,
-        &mut interner,
-    );
-
-    let (main_mod, main_region) = mock_single_module(
-        "main",
-        "main_path",
-        vec![import],
-        0,
-        main_text,
-        &mut interner,
-    );
-
-    let (sub_mod, sub_region) = mock_single_module(
-        "sub_module",
-        "sub_path",
-        Default::default(),
-        1,
-        sub_text,
-        &mut interner,
-    );
-
-    let (arena, _, cfg, mut compiler) =
-        mock_multiple_module_compiler(vec![(main_mod, main_region), (sub_mod, sub_region)]);
-
-    let mut asts: Vec<Option<AstInfo>> = Vec::new();
-    for mod_idx in 0..compiler.mods.len() {
-        let module = &compiler.mods[ModuleId::new(mod_idx as u32)];
-        let region = match module.region_id {
-            Some(region_id) => &arena[region_id],
-            None => {
-                asts.push(None);
-                continue;
-            }
-        };
-        let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-            .tokenize(&mut interner)
-            .toks;
-        asts.push(Some(parser::parse(&cfg, region, &toks, &interner).0));
-    }
-
-    let reg_envs = build_registration_envs(&compiler, &arena, &asts);
-
-    let compilation_syms: Vec<Option<Vec<CompilationUnit>>> = {
-        let mut ns_resolver = NamespaceResolver::new(&cfg, &interner, &mut compiler);
-        let mut symbols = Vec::new();
-        for env in reg_envs.iter() {
-            if let Some(env) = env {
-                let (s, diags) = ns_resolver.resolve(env);
-                assert!(
-                    diags.diags.is_empty(),
-                    "Namespace resolution failed: {:?}",
-                    diags
-                );
-                symbols.push(Some(s));
-            } else {
-                symbols.push(None);
-            }
-        }
-        symbols
-    };
-
-    let resolver_envs = build_resolver_envs(&compiler, &arena, &asts, &compilation_syms);
-
-    run_member_resolver(&cfg, &resolver_envs, &interner, &mut compiler);
-
-    let mut ty_resolver = TypeResolver::new(&cfg, &mut interner, &mut compiler);
-    for env in resolver_envs.iter() {
-        if let Some(env) = env {
-            let summary = ty_resolver.resolve(env);
-            assert!(summary.err_count() == 0, "Type resolution failed");
-        }
-    }
-
-    let mut contraint_resolver = ConstraintResolver::new(&cfg, &interner, &mut compiler);
-    for env in resolver_envs.iter().flatten() {
-        let summary = contraint_resolver.resolve(env);
-        assert!(summary.err_count() == 0, "Constraint resolution failed");
-    }
-
-    (compiler, interner)
-}
-
-/// Runs namespace and member resolution across two modules, then type resolution.
-/// Returns Ok if all type resolutions pass, Err with all diagnostics otherwise.
-pub(super) fn type_resolve_cross_module(
-    main_text: &str,
-    sub_text: &str,
-) -> Result<(ScriptCompiler, Intern), Vec<SourceDiagnostic>> {
-    let mut interner = Intern::init();
-
-    let import = mock_import(
-        "sub_module",
-        "sub_path",
-        ModuleId::new(1),
-        None,
-        &mut interner,
-    );
-
-    let (main_mod, main_region) = mock_single_module(
-        "main",
-        "main_path",
-        vec![import],
-        0,
-        main_text,
-        &mut interner,
-    );
-
-    let (sub_mod, sub_region) = mock_single_module(
-        "sub_module",
-        "sub_path",
-        Default::default(),
-        1,
-        sub_text,
-        &mut interner,
-    );
-
-    let (arena, _, settings, mut compiler) =
-        mock_multiple_module_compiler(vec![(main_mod, main_region), (sub_mod, sub_region)]);
-
-    let mut asts: Vec<Option<AstInfo>> = Vec::new();
-    for mod_idx in 0..compiler.mods.len() {
-        let module = &compiler.mods[ModuleId::new(mod_idx as u32)];
-        let region = match module.region_id {
-            Some(region_id) => &arena[region_id],
-            None => {
-                asts.push(None);
-                continue;
-            }
-        };
-        let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-            .tokenize(&mut interner)
-            .toks;
-        asts.push(Some(parser::parse(&settings, region, &toks, &interner).0));
-    }
-
-    let reg_envs = build_registration_envs(&compiler, &arena, &asts);
-
-    let compilation_syms: Vec<Option<Vec<CompilationUnit>>> = {
-        let mut ns_resolver = NamespaceResolver::new(&settings, &interner, &mut compiler);
-        let mut symbols = Vec::new();
-        for env in reg_envs.iter() {
-            if let Some(env) = env {
-                let (s, diags) = ns_resolver.resolve(env);
-                assert!(
-                    diags.diags.is_empty(),
-                    "Namespace resolution failed: {:?}",
-                    diags
-                );
-                symbols.push(Some(s));
-            } else {
-                symbols.push(None);
-            }
-        }
-        symbols
-    };
-
-    let resolver_envs = build_resolver_envs(&compiler, &arena, &asts, &compilation_syms);
-
-    run_member_resolver(&settings, &resolver_envs, &interner, &mut compiler);
-
-    let mut all_diags = Vec::new();
-
-    let mut ty_resolver = TypeResolver::new(&settings, &mut interner, &mut compiler);
-    for env in resolver_envs.iter() {
-        if let Some(env) = env {
-            let summary = ty_resolver.resolve(env);
-            if summary.err_count() > 0 {
-                all_diags.extend(summary.diags);
-            }
-        }
-    }
-
-    if all_diags.is_empty() {
-        Ok((compiler, interner))
-    } else {
-        Err(all_diags)
-    }
 }
 
 pub(super) fn make_diagnostics(amt: usize) -> Vec<SourceDiagnostic> {

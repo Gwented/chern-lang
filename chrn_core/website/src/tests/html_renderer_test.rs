@@ -77,5 +77,8 @@ fn looping_clip_drops_controls() {
         .video(Video::new("clip.mp4", "demo").looping_clip())
         .build();
 
-    assert!(render_fragment(&doc).starts_with("<video src=\"clip.mp4\" autoplay loop muted playsinline>"));
+    assert!(
+        render_fragment(&doc)
+            .starts_with("<video src=\"clip.mp4\" autoplay loop muted playsinline>")
+    );
 }

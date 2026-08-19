@@ -3,7 +3,7 @@
 //which is stacking infinitely (Infinitely as in the infinite sign here -> 🍔)
 
 use chrn_utils::{
-    chrn_config::ChrnConfig,
+    chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     id_types::{AstId, InternedId, MemberId, SymbolId, TypeId},
     intern::Intern,
     source_map::source_diagnostic::{
@@ -39,7 +39,7 @@ use crate::{
 ///
 /// Intended to allow for future stages to assume all inner parts of data have been processed.
 pub struct MemberResolver<'a> {
-    cfg: &'a ChrnConfig,
+    cfg: &'a mut ChrnConfig,
     interner: &'a Intern,
     compiler: &'a mut ScriptCompiler,
     summary: SourceDiagnosticSummary,
@@ -48,7 +48,7 @@ pub struct MemberResolver<'a> {
 impl MemberResolver<'_> {
     /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new<'a>(
-        cfg: &'a ChrnConfig,
+        cfg: &'a mut ChrnConfig,
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,
     ) -> MemberResolver<'a> {
@@ -74,9 +74,10 @@ impl MemberResolver<'_> {
     /// If diagnostics > 0 then an error occured
     // Would options be ok here?
     pub fn resolve(&mut self, env: &ResolverEnv) -> SourceDiagnosticSummary {
+        self.cfg.perf_tracker_mut().start();
         // Re-used hashet when identifiers are checked for members.
         let mut ident_tracker: DuplicateTracker<SpannedContainer<InternedId>> =
-            DuplicateTracker::with_capacities(4, 4);
+            DuplicateTracker::with_capacities(4, 0);
 
         // Goes through all symbols the current module has and only picks structs and enums to
         // append to.
@@ -102,6 +103,9 @@ impl MemberResolver<'_> {
             ident_tracker.clear();
         }
 
+        self.cfg
+            .perf_tracker_mut()
+            .stop(ChrnPerfStage::MemberResolver);
         let mut summary = SourceDiagnosticSummary::default();
         summary.append_summary(&mut self.summary);
         summary

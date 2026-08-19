@@ -21,9 +21,9 @@ impl<T: Clone + Hash + Eq> DuplicateTracker<T> {
         }
     }
 
-    pub(crate) fn with_capacities(hash_cap: usize, found_dups_cap: usize) -> Self {
+    pub(crate) fn with_capacities(seen_cap: usize, found_dups_cap: usize) -> Self {
         Self {
-            seen: HashSet::with_capacity(hash_cap),
+            seen: HashSet::with_capacity(seen_cap),
             found_dups: Vec::with_capacity(found_dups_cap),
         }
     }

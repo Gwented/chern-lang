@@ -8,11 +8,11 @@ use crate::{
     lookup::scopes::scopes_concepts::ScopeType,
     modules::{Import, ImportKind, Module},
     script_compiler::{
+        CORE_UNKNOWN, ScriptCompiler,
         helpers::compiler_helpers::DIRECTIVES_DATASET,
         helpers::core_helpers::{
             CORE_BOUNDARIES_DATASET, CORE_BUILTIN_TYPES_DATASET, CORE_FUNCS_DATASET,
         },
-        ScriptCompiler, CORE_UNKNOWN,
     },
     semantic::hir::{
         hir_concepts::{Type, TypeInfo},

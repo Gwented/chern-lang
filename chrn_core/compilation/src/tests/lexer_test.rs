@@ -17,6 +17,7 @@ fn lex_tok_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -68,9 +69,14 @@ fn lex_tok_test_rev() {
     assert_eq!(region.script_start, 0);
     assert_eq!(region.serial_start, Some(26));
 
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
+    let toks = Lexer::new(
+        region.region_id,
+        &region.src_bytes,
+        region.script_start,
+        &mut ChrnConfig::default(),
+    )
+    .tokenize(&mut interner)
+    .toks;
 
     // Expect: Def(0,4), Id("bind")(4,8), Str("./some/path")(9,22), End(22,26)
     assert_eq!(toks.len(), 4);
@@ -114,7 +120,7 @@ fn cfg_at_test() {
     let mut interner = mock_interner(1, 1);
     let path_id = interner.intern_path(Path::new(""));
     let region_id = SourceRegionId::new(0);
-    let settings = ChrnConfig::default();
+    let mut settings = ChrnConfig::default();
     let region = ConfigLoader::new(
         region_id,
         content.as_bytes(),
@@ -126,9 +132,14 @@ fn cfg_at_test() {
     let region_str = str::from_utf8(&region.src_bytes[..]).unwrap();
     assert_eq!(region_str, content);
 
-    let toks = Lexer::new(region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
+    let toks = Lexer::new(
+        region_id,
+        &region.src_bytes,
+        region.script_start,
+        &mut settings,
+    )
+    .tokenize(&mut interner)
+    .toks;
     assert_eq!(toks.len(), 3);
     assert_eq!(toks[0].tok, Token::At);
     assert_eq!(toks[0].span.start, 6);
@@ -139,7 +150,7 @@ fn cfg_at_test() {
     assert_eq!(toks[2].tok, Token::EOF);
     assert_eq!(toks[2].span.start, 8);
 
-    let (_, diags) = parser::parse(&settings, &region, &toks, &interner);
+    let (_, diags) = parser::parse(&mut settings, &region, &toks, &interner);
     assert!(
         !diags.diags.is_empty(),
         "parser should have picked up at least one error"
@@ -172,6 +183,7 @@ fn char_literal_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -203,6 +215,7 @@ fn char_literal_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -234,6 +247,7 @@ fn char_literal_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -262,6 +276,7 @@ fn char_literal_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -290,6 +305,7 @@ fn char_literal_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -319,6 +335,7 @@ fn char_literal_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -347,6 +364,7 @@ fn char_literal_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -375,6 +393,7 @@ fn char_literal_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -409,6 +428,7 @@ fn lex_notation_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -434,6 +454,7 @@ fn lex_notation_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -459,6 +480,7 @@ fn lex_notation_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -484,6 +506,7 @@ fn lex_notation_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -509,6 +532,7 @@ fn lex_notation_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -534,6 +558,7 @@ fn lex_notation_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -559,6 +584,7 @@ fn lex_notation_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -584,6 +610,7 @@ fn lex_notation_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -609,6 +636,7 @@ fn lex_notation_test() {
         metadata.region_id,
         &metadata.src_bytes,
         metadata.script_start,
+        &mut ChrnConfig::default(),
     )
     .tokenize(&mut interner)
     .toks;
@@ -630,7 +658,8 @@ fn lex_notation_test() {
 fn read_ident_includes_trailing_underscore() {
     let src: &[u8] = b"foo_";
     let mut interner = Intern::init();
-    let mut lex = Lexer::new(SourceRegionId::new(0), src, 0);
+    let mut cfg = ChrnConfig::default();
+    let mut lex = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg);
     let toks = lex.tokenize(&mut interner).toks;
 
     // Expect at least one identifier token: "foo_"
@@ -656,7 +685,8 @@ fn read_ident_includes_trailing_underscore() {
 fn read_ident_handles_bare_underscore() {
     let src: &[u8] = b"_";
     let mut interner = Intern::init();
-    let mut lex = Lexer::new(SourceRegionId::new(0), src, 0);
+    let mut cfg = ChrnConfig::default();
+    let mut lex = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg);
     let toks = lex.tokenize(&mut interner).toks;
 
     let id = toks
@@ -681,7 +711,8 @@ fn read_ident_mixed_alphanumeric_and_underscore() {
     // becomes one Id in the output.
     let src: &[u8] = b"foo_bar+_qux+a_b_c_";
     let mut interner = Intern::init();
-    let mut lex = Lexer::new(SourceRegionId::new(0), src, 0);
+    let mut cfg = ChrnConfig::default();
+    let mut lex = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg);
     let toks = lex.tokenize(&mut interner).toks;
 
     let names: Vec<(String, u32, u32)> = toks

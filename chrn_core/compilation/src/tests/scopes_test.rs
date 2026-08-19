@@ -9,24 +9,9 @@ use chrn_utils::id_types::ScopeId;
 /// Runs lexing, parsing, and namespace resolution on a single-module script, returning the
 /// compiler and interner so scope lookups can be performed directly.
 fn ns_resolve(text: &str) -> (ScriptCompiler, Intern) {
-    let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
-
-    let (mod_id, region) = {
-        let module = &compiler.mods[ModuleId::new(0)];
-        (module.mod_id, get_module_region(&arena, module))
-    };
-
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-
-    let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-    let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (_, diags) = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
-    assert!(diags.diags.is_empty(), "{diags:?}");
-
-    (compiler, interner)
+    resolve_single_module(text, Stage::Namespace)
+        .expect_ok()
+        .into_state()
 }
 
 /// Gets the symbol registered under `name` in the given scope of the module.
@@ -54,21 +39,7 @@ fn scope_simple_test() {
             let CONSTANT = 3
             ";
 
-    let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
-
-    let (mod_id, region) = {
-        let module = &compiler.mods[ModuleId::new(0)];
-        (module.mod_id, get_module_region(&arena, module))
-    };
-
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-
-    let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-    let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (_, _) = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
+    let (compiler, _) = ns_resolve(text);
 
     let module = &compiler.mods[ModuleId::new(0)];
 
@@ -84,21 +55,7 @@ fn scope_simple_test() {
                 variable: i32
             ";
 
-    let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
-
-    let (mod_id, region) = {
-        let module = &compiler.mods[ModuleId::new(0)];
-        (module.mod_id, get_module_region(&arena, module))
-    };
-
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-
-    let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-    let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (_, _) = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
+    let (compiler, _) = ns_resolve(text);
 
     let module = &compiler.mods[ModuleId::new(0)];
 
@@ -115,21 +72,7 @@ fn scope_simple_test() {
                 struct Thing2 {}
             ";
 
-    let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
-
-    let (mod_id, region) = {
-        let module = &compiler.mods[ModuleId::new(0)];
-        (module.mod_id, get_module_region(&arena, module))
-    };
-
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-
-    let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-    let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (_, _) = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
+    let (compiler, _) = ns_resolve(text);
 
     let module = &compiler.mods[ModuleId::new(0)];
 
@@ -150,21 +93,7 @@ fn scope_simple_test() {
                 struct Nest {}
             ";
 
-    let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
-
-    let (mod_id, region) = {
-        let module = &compiler.mods[ModuleId::new(0)];
-        (module.mod_id, get_module_region(&arena, module))
-    };
-
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-
-    let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-    let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (_, _) = NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
+    let (compiler, _) = ns_resolve(text);
 
     //TODO: Override and Complex
     let module = &compiler.mods[ModuleId::new(0)];

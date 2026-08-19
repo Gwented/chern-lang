@@ -12,30 +12,12 @@ fn type_resolver_simple_test() {
                 undeclared_type: Thing
             ";
 
-    let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(wrong);
+    let resolution = resolve_single_module(wrong, Stage::Type);
+    let res = &resolution.ty;
+    let compiler = &resolution.compiler;
+    let interner = &resolution.interner;
 
-    let (mod_id, region) = {
-        let module = &compiler.mods[ModuleId::new(0)];
-        (module.mod_id, get_module_region(&arena, module))
-    };
-
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-
-    let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-    let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (comp_syms, _) =
-        NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
-
-    let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
-    let envs = vec![Some(res_env)];
-    run_member_resolver(&settings, &envs, &interner, &mut compiler);
-    let env = envs[0].as_ref().expect("Env should exist");
-    let res = TypeResolver::new(&settings, &mut interner, &mut compiler).resolve(env);
-
-    let err = res.diags;
+    let err = &res.diags;
     assert_eq!(
         err.len(),
         1,
@@ -99,28 +81,10 @@ fn type_resolver_simple_test() {
                 struct Thing {}
             ";
 
-    let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(correct);
-
-    let (mod_id, region) = {
-        let module = &compiler.mods[ModuleId::new(0)];
-        (module.mod_id, get_module_region(&arena, module))
-    };
-
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-
-    let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-    let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (comp_syms, _) =
-        NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
-
-    let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
-    let envs = vec![Some(res_env)];
-    run_member_resolver(&settings, &envs, &interner, &mut compiler);
-    let env = envs[0].as_ref().expect("Env should exist");
-    let res = TypeResolver::new(&settings, &mut interner, &mut compiler).resolve(env);
+    let resolution = resolve_single_module(correct, Stage::Type);
+    let res = &resolution.ty;
+    let compiler = &resolution.compiler;
+    let interner = &resolution.interner;
     dbg!(&res);
 
     assert!(res.err_count() == 0, "Type resolution should succeed");
@@ -194,28 +158,10 @@ fn type_resolver_complex_test() {
             let CONSTANT = 4
             ";
 
-    let (arena, mut interner, settings, mut compiler) = mock_single_module_compiler(text);
-
-    let (mod_id, region) = {
-        let module = &compiler.mods[ModuleId::new(0)];
-        (module.mod_id, get_module_region(&arena, module))
-    };
-
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-
-    let ast_info = parser::parse(&settings, region, &toks, &interner).0;
-
-    let reg_env = RegistrationEnv::new(&ast_info, region, mod_id);
-    let (comp_syms, _) =
-        NamespaceResolver::new(&settings, &interner, &mut compiler).resolve(&reg_env);
-
-    let res_env = ResolverEnv::new(&ast_info, region, mod_id, &comp_syms);
-    let envs = vec![Some(res_env)];
-    run_member_resolver(&settings, &envs, &interner, &mut compiler);
-    let env = envs[0].as_ref().expect("Env should exist");
-    let summary = TypeResolver::new(&settings, &mut interner, &mut compiler).resolve(env);
+    let resolution = resolve_single_module(text, Stage::Type);
+    let summary = &resolution.ty;
+    let compiler = &resolution.compiler;
+    let interner = &resolution.interner;
     assert!(summary.err_count() == 0, "Type resolution failed");
 
     let constant_sym = compiler

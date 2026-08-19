@@ -6,7 +6,7 @@
 pub mod chrn_logger;
 pub mod chrn_perf;
 
-use crate::chrn_config::{chrn_logger::ChrnConfigLogger, chrn_perf::ChrnPerfTracker};
+use crate::chrn_config::{chrn_logger::ChrnConfigLogger, chrn_perf::ChrnPerf};
 
 //TEST: No longer has use but is useful to keep in case of any future use
 /// Config given before running a chrn language instance, which allows for external tooling
@@ -18,11 +18,11 @@ pub struct ChrnConfig {
     /// `struct` that contains a single boolean which determines whether or not debug logging will
     /// be done.
     logger: ChrnConfigLogger,
-    perf_tracker: ChrnPerfTracker,
+    perf_tracker: ChrnPerf,
 }
 
 impl ChrnConfig {
-    pub const fn new(logger: ChrnConfigLogger, perf_tracker: ChrnPerfTracker) -> ChrnConfig {
+    pub const fn new(logger: ChrnConfigLogger, perf_tracker: ChrnPerf) -> ChrnConfig {
         ChrnConfig {
             logger,
             perf_tracker,
@@ -33,8 +33,12 @@ impl ChrnConfig {
         &self.logger
     }
 
-    pub const fn perf_tracker(&self) -> &ChrnPerfTracker {
+    pub const fn perf_tracker(&self) -> &ChrnPerf {
         &self.perf_tracker
+    }
+
+    pub const fn perf_tracker_mut(&mut self) -> &mut ChrnPerf {
+        &mut self.perf_tracker
     }
 
     pub const fn builder() -> ChrnConfigBuilder {
@@ -48,7 +52,7 @@ impl ChrnConfig {
 /// Builder for `ChrnConfig`
 pub struct ChrnConfigBuilder {
     logger: Option<ChrnConfigLogger>,
-    perf_tracker: Option<ChrnPerfTracker>,
+    perf_tracker: Option<ChrnPerf>,
 }
 
 impl ChrnConfigBuilder {
@@ -62,17 +66,22 @@ impl ChrnConfigBuilder {
         let perf_tracker = if let Some(perf) = self.perf_tracker {
             perf
         } else {
-            ChrnPerfTracker::new(None)
+            ChrnPerf::new(false)
         };
 
         ChrnConfig {
             logger,
-            perf_tracker: perf_tracker,
+            perf_tracker,
         }
     }
 
     pub const fn add_logger(mut self) -> Self {
         self.logger = Some(ChrnConfigLogger::new(true));
+        self
+    }
+
+    pub const fn add_perf_tracker(mut self) -> Self {
+        self.perf_tracker = Some(ChrnPerf::new(true));
         self
     }
 }

@@ -2,7 +2,10 @@ use std::borrow::Cow;
 
 use chrn_utils::{
     byte_formatter,
-    chrn_config::ChrnConfig,
+    chrn_config::{
+        ChrnConfig,
+        chrn_perf::{self, ChrnPerfStage},
+    },
     core_error::{ConfigLoadError, ScriptError},
     files::file_ops,
     id_types::SourceRegionId,
@@ -50,6 +53,9 @@ fn exec_check(
     let mut builder = ChrnConfig::builder();
     if check_cmd.dbg_mode {
         builder = builder.add_logger();
+    }
+    if check_cmd.perf_tracker {
+        builder = builder.add_perf_tracker();
     }
 
     let chrn_cfg = builder.build();
@@ -185,7 +191,18 @@ fn exec_check(
             }
         },
     };
-    compiler_store.cfg.perf_tracker().report();
+
+    // if compiler_store.cfg.perf_tracker().can_use() {
+    //     let perf_report = compiler_store.cfg.perf_tracker().report();
+    //     for report_opt in &perf_report.time_reports {
+    //         if let Some(report) = report_opt {
+    //             dbg!(report);
+    //             let avg = report.time_spent / report.times as u32;
+    //             dbg!(avg.as_micros());
+    //         }
+    //     }
+    //     panic!();
+    // }
 
     res
 }

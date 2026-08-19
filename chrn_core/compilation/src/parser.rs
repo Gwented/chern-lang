@@ -31,6 +31,7 @@ use crate::semantic::hir::hir_impls::{
     ComplexConfigMemberMetadata, ConfigMemberMetadataKind, OverrideConfigMemberMetadata,
 };
 use chrn_utils::chrn_config::ChrnConfig;
+use chrn_utils::chrn_config::chrn_perf::ChrnPerfStage;
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use chrn_utils::source_map::source_region::SourceRegion;
@@ -43,13 +44,16 @@ use lang::keywords::Keyword;
 /// Returns a tuple of `AstInfo` and `SourceDiagnosticSummary`, where `AstInfo` may or may not be unfinished,
 /// depending on if the summary's error count > 0
 pub fn parse(
-    cfg: &ChrnConfig,
+    cfg: &mut ChrnConfig,
     region: &SourceRegion,
     tokens: &[SpannedToken],
     interner: &Intern,
 ) -> (AstInfo, SourceDiagnosticSummary) {
+    cfg.perf_tracker_mut().start();
+
+    let speculated_items = tokens.len() / 10;
     // Output it's own summary? Does AstInfo hold a summary?
-    let mut ast_info = AstInfo::new();
+    let mut ast_info = AstInfo::with_capacity(speculated_items);
 
     let mut state = ParserState::new();
     let budget = ParserBudget::new(
@@ -455,9 +459,11 @@ pub fn parse(
         }
     }
 
-    // Returning broken ast and the diagnostics
+    // Moving first so borrowing issues don't occur because of the tracker
+    let summary = ctx.summary;
+    cfg.perf_tracker_mut().stop(ChrnPerfStage::Parser);
 
-    (ast_info, ctx.summary)
+    (ast_info, summary)
 }
 
 //FIXME: These sets are misaligned

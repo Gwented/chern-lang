@@ -561,8 +561,12 @@ pub fn extract_modules(
     // differently, so should reflect that non-deterministic behavior is expected and that the
     // module's name should be changed
 
-    // The store is a dense array aligned with the compiler's user modules.
-    let store_capacity = valid_mods.len();
+    let compiler = ScriptCompiler::init(main_bind, valid_mods);
+
+    // The store's arrays are dense and indexed by `ModuleId`, so they must cover every module the
+    // compiler holds -- the implicit `core` module injected by `init` included, not just the user
+    // modules in `valid_mods`.
+    let store_capacity = compiler.mods.len();
     let compiler_store = ScriptCompilerStore::new(
         cfg,
         graph.region_arena,
@@ -573,7 +577,6 @@ pub fn extract_modules(
         Vec::with_capacity(store_capacity),
     );
 
-    let compiler = ScriptCompiler::init(main_bind, valid_mods);
     (compiler, compiler_store, summary)
 }
 

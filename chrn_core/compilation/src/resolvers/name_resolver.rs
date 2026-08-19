@@ -1,5 +1,5 @@
 use chrn_utils::{
-    chrn_config::ChrnConfig,
+    chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     err_codes::ErrorCode,
     id_types::{AstId, ConfigRootId, ImplId, ScopeId, SymbolId, TypeId, VariableId},
     intern::Intern,
@@ -13,7 +13,7 @@ use crate::{
     lookup::scopes::scopes_concepts::{Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
     parser::ast::ast_concepts::{
         AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractEnum,
-        AbstractImpl, AbstractStruct, AbstractTypeDef, AbstractVar, ConfigRootKindFlat, Item,
+        AbstractImpl, AbstractStruct, AbstractTypeDef, AbstractVar, Item,
     },
     resolvers::{resolver_env::RegistrationEnv, resolver_state::ResolverState},
     script_compiler::ScriptCompiler,
@@ -39,7 +39,7 @@ use crate::{
 /// This resolver at most reports symbols with the same identifiers in the same scope, but still
 /// registers them.
 pub struct NamespaceResolver<'a> {
-    cfg: &'a ChrnConfig,
+    cfg: &'a mut ChrnConfig,
     interner: &'a Intern,
     compiler: &'a mut ScriptCompiler,
     summary: SourceDiagnosticSummary,
@@ -49,7 +49,7 @@ pub struct NamespaceResolver<'a> {
 impl NamespaceResolver<'_> {
     /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new<'a>(
-        cfg: &'a ChrnConfig,
+        cfg: &'a mut ChrnConfig,
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,
     ) -> NamespaceResolver<'a> {
@@ -77,6 +77,7 @@ impl NamespaceResolver<'_> {
         &mut self,
         env: &RegistrationEnv,
     ) -> (Vec<CompilationUnit>, SourceDiagnosticSummary) {
+        self.cfg.perf_tracker_mut().start();
         // Storing all symbols created associated with the current module so that compilation
         // doens't have to depend on the ast to keep a coherent understanding of
         let mut comp_units: Vec<CompilationUnit> = Vec::with_capacity(env.ast_info.items.len());
@@ -127,6 +128,9 @@ impl NamespaceResolver<'_> {
             }
         }
 
+        self.cfg
+            .perf_tracker_mut()
+            .stop(ChrnPerfStage::NamespaceResolver);
         let mut summary = SourceDiagnosticSummary::default();
         summary.append_summary(&mut self.summary);
 

@@ -14,29 +14,39 @@ use chrn_utils::id_types::AstId;
 /// Lex and parse `text` in a single-module context, returning the `AstInfo`
 /// together with the interner (so assertions can look up interned strings).
 fn parse_text(text: &str) -> (AstInfo, Intern) {
-    let (arena, mut interner, settings, _compiler) = mock_single_module_compiler(text);
+    let (arena, mut interner, mut settings, _compiler) = mock_single_module_compiler(text);
     let region = {
         let module = &_compiler.mods[ModuleId::new(0)];
         get_module_region(&arena, module)
     };
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-    let (ast, _diags) = parser::parse(&settings, region, &toks, &interner);
+    let toks = Lexer::new(
+        region.region_id,
+        &region.src_bytes,
+        region.script_start,
+        &mut settings,
+    )
+    .tokenize(&mut interner)
+    .toks;
+    let (ast, _diags) = parser::parse(&mut settings, region, &toks, &interner);
     (ast, interner)
 }
 
 /// Like `parse_text` but returns diagnostics as well.
 fn parse_text_with_diags(text: &str) -> (AstInfo, Vec<SourceDiagnostic>, Intern) {
-    let (arena, mut interner, settings, _compiler) = mock_single_module_compiler(text);
+    let (arena, mut interner, mut settings, _compiler) = mock_single_module_compiler(text);
     let region = {
         let module = &_compiler.mods[ModuleId::new(0)];
         get_module_region(&arena, module)
     };
-    let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-        .tokenize(&mut interner)
-        .toks;
-    let (ast, summary) = parser::parse(&settings, region, &toks, &interner);
+    let toks = Lexer::new(
+        region.region_id,
+        &region.src_bytes,
+        region.script_start,
+        &mut settings,
+    )
+    .tokenize(&mut interner)
+    .toks;
+    let (ast, summary) = parser::parse(&mut settings, region, &toks, &interner);
     (ast, summary.diags, interner)
 }
 

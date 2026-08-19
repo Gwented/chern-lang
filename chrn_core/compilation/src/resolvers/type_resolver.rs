@@ -18,6 +18,7 @@ mod cfg_ctx;
 pub mod type_context;
 
 use chrn_utils::chrn_config::ChrnConfig;
+use chrn_utils::chrn_config::chrn_perf::ChrnPerfStage;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::{
     AstId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ScopeId, SymbolId,
@@ -73,7 +74,7 @@ use crate::resolvers::type_resolver::type_context::{
 /// evaluated. Does so by mutating the compiler given, and maintaining context to retain it's last
 /// state.
 pub struct TypeResolver<'a> {
-    cfg: &'a ChrnConfig,
+    cfg: &'a mut ChrnConfig,
     interner: &'a mut Intern,
     compiler: &'a mut ScriptCompiler,
     ty_ctx: TypeContext,
@@ -83,7 +84,7 @@ pub struct TypeResolver<'a> {
 impl<'res> TypeResolver<'res> {
     /// Instantiation requires that the compiler's state is valid and will panic otherwise
     pub fn new(
-        cfg: &'res ChrnConfig,
+        cfg: &'res mut ChrnConfig,
         interner: &'res mut Intern,
         compiler: &'res mut ScriptCompiler,
     ) -> TypeResolver<'res> {
@@ -132,9 +133,10 @@ impl<'res> TypeResolver<'res> {
     /// explicitly allows for `TypeResolver` to maintain it's state throughout resolution while
     /// mutating off of given envs.
     pub fn resolve<'env>(&mut self, env: &'env ResolverEnv) -> SourceDiagnosticSummary {
+        self.cfg.perf_tracker_mut().start();
         // Re-used hashet when identifiers are checked, like for configs, alias params, etc.
         let mut ident_tracker: DuplicateTracker<SpannedContainer<InternedId>> =
-            DuplicateTracker::with_capacities(4, 4);
+            DuplicateTracker::with_capacities(4, 0);
 
         // Everything skipped is not a factor in this compilation step.
         for comp_unit in env.compilation_syms.iter().cloned() {
@@ -293,6 +295,9 @@ impl<'res> TypeResolver<'res> {
             // The pending symbol the expression was found in
             // The index of the expression to set as stale.
             // The actual parent's info to fill in.
+            //
+            // We're allocating this each time, maybe we should declare this outside so that it can be
+            // re-used
             let mut resolved_parents: Vec<(SymbolId, usize, ParentInfo)> = Vec::new();
 
             // Also needs to check if there exists a pending symbol which has ONLY stale
@@ -478,6 +483,10 @@ impl<'res> TypeResolver<'res> {
         //         dbg!(val);
         //     }
         // }
+
+        self.cfg
+            .perf_tracker_mut()
+            .stop(ChrnPerfStage::TypeResolver);
 
         let mut summary = SourceDiagnosticSummary::default();
         summary.append_summary(&mut self.summary);
