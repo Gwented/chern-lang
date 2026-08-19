@@ -5,8 +5,10 @@ use std::path::{Path, PathBuf};
 
 use super::helpers::*;
 use crate::config_loader::ConfigLoader;
-use crate::modules::mod_finder::ModuleFinder;
-use crate::modules::{ImportKind, Module, ModuleState, extract_all_modules, extract_main};
+use crate::module::extract_all_modules;
+use crate::module::extract_main;
+use crate::module::mod_finder::ModuleFinder;
+use crate::module::module_concepts::{ImportKind, Module, ModuleState};
 use crate::script_compiler::reporter::Reporter;
 use chrn_utils::{
     chrn_config::ChrnConfig,
@@ -331,8 +333,11 @@ fn modfinder_import_with_alias() {
     );
     assert_eq!(imports.len(), 1);
     let import = &imports[0];
-    assert!(import.alias_id.is_some(), "import should have an alias_id");
-    let alias_name = interner.search(import.alias_id.unwrap());
+    assert!(
+        import.sp_alias_id.is_some(),
+        "import should have an alias_id"
+    );
+    let alias_name = interner.search(import.sp_alias_id.as_ref().unwrap().inner);
     assert_eq!(alias_name, "my_mod", "alias should be 'my_mod'");
 
     _ = fs::remove_dir_all(&dir);
@@ -602,11 +607,14 @@ fn modfinder_import_inside_string_is_not_parsed() {
 fn extract_main_simple_script() {
     let dir = create_temp_dir("extract_main_simple");
     let main_path = make_simple_script(&dir);
-    let cfg = ChrnConfig::default();
+    let mut cfg = ChrnConfig::default();
 
-    let (main_mod, graph, mut interner, diags) =
-        extract_main(&main_path, std::fs::File::open(&main_path).unwrap(), &cfg)
-            .expect("extract_main must succeed");
+    let (main_mod, graph, mut interner, diags) = extract_main(
+        &main_path,
+        std::fs::File::open(&main_path).unwrap(),
+        &mut cfg,
+    )
+    .expect("extract_main must succeed");
 
     // ---- Module assertions ----
     assert_eq!(
@@ -658,11 +666,14 @@ fn extract_main_with_import() {
     let dir = create_temp_dir("extract_main_import");
     let sub_path = make_sub_script(&dir);
     let main_path = make_importing_script(&dir, &sub_path);
-    let cfg = ChrnConfig::default();
+    let mut cfg = ChrnConfig::default();
 
-    let (main_mod, graph, mut interner, diags) =
-        extract_main(&main_path, std::fs::File::open(&main_path).unwrap(), &cfg)
-            .expect("extract_main must succeed");
+    let (main_mod, graph, mut interner, diags) = extract_main(
+        &main_path,
+        std::fs::File::open(&main_path).unwrap(),
+        &mut cfg,
+    )
+    .expect("extract_main must succeed");
 
     assert_eq!(main_mod.state, ModuleState::Loaded);
     // Wait for import - there should be one import found
@@ -747,11 +758,14 @@ fn extract_main_with_import() {
 fn extract_main_broken_config() {
     let dir = create_temp_dir("extract_main_broken");
     let main_path = make_broken_script(&dir);
-    let cfg = ChrnConfig::default();
+    let mut cfg = ChrnConfig::default();
 
-    let (main_mod, graph, _interner, diags) =
-        extract_main(&main_path, std::fs::File::open(&main_path).unwrap(), &cfg)
-            .expect("extract_main should still return Ok with BrokenRegion");
+    let (main_mod, graph, _interner, diags) = extract_main(
+        &main_path,
+        std::fs::File::open(&main_path).unwrap(),
+        &mut cfg,
+    )
+    .expect("extract_main should still return Ok with BrokenRegion");
 
     assert_eq!(
         main_mod.state,
@@ -788,10 +802,10 @@ fn extract_main_broken_config() {
 fn extract_main_missing_file() {
     let dir = create_temp_dir("extract_main_missing");
     let non_existent = dir.join("does_not_exist.chrn");
-    let cfg = ChrnConfig::default();
+    let mut cfg = ChrnConfig::default();
 
     // Passing a Cursor source so extract_main doesn't need to open the file
-    let result = extract_main(&non_existent, Cursor::new(b"let x = 5\n"), &cfg);
+    let result = extract_main(&non_existent, Cursor::new(b"let x = 5\n"), &mut cfg);
     assert!(
         result.is_ok(),
         "extract_main should succeed even when the file does not exist, since the source is provided separately"
@@ -807,11 +821,14 @@ fn extract_main_with_bind() {
     let dir = create_temp_dir("extract_main_bind");
     let bind_target = create_chrn_file(&dir, "bind_target.bin", "content\n");
     let main_path = make_bind_script(&dir, &bind_target);
-    let cfg = ChrnConfig::default();
+    let mut cfg = ChrnConfig::default();
 
-    let (main_mod, _graph, mut interner, diags) =
-        extract_main(&main_path, std::fs::File::open(&main_path).unwrap(), &cfg)
-            .expect("extract_main must succeed");
+    let (main_mod, _graph, mut interner, diags) = extract_main(
+        &main_path,
+        std::fs::File::open(&main_path).unwrap(),
+        &mut cfg,
+    )
+    .expect("extract_main must succeed");
 
     assert_eq!(main_mod.state, ModuleState::Loaded);
     assert!(
@@ -842,11 +859,14 @@ fn extract_main_with_bind() {
 fn extract_main_with_at_def_block() {
     let dir = create_temp_dir("extract_main_def");
     let main_path = make_def_script(&dir);
-    let cfg = ChrnConfig::default();
+    let mut cfg = ChrnConfig::default();
 
-    let (main_mod, graph, _interner, diags) =
-        extract_main(&main_path, std::fs::File::open(&main_path).unwrap(), &cfg)
-            .expect("extract_main must succeed");
+    let (main_mod, graph, _interner, diags) = extract_main(
+        &main_path,
+        std::fs::File::open(&main_path).unwrap(),
+        &mut cfg,
+    )
+    .expect("extract_main must succeed");
 
     assert_eq!(main_mod.state, ModuleState::Loaded);
 
@@ -1128,10 +1148,18 @@ fn extract_all_modules_duplicate_import() {
         find_module_by_name(&compiler, interner, "sub").expect("sub module must be present");
     assert_eq!(sub_mod.state, ModuleState::Loaded);
 
+    // Importing the same path twice still registers `sub` twice
+    assert_eq!(
+        diags.diags.len(),
+        1,
+        "expected one duplicate identifier error"
+    );
     assert!(
-        diags.diags.is_empty(),
-        "no diagnostics expected, got {:?}",
         diags
+            .diags
+            .iter()
+            .any(|diag| diag.core_msg.contains("generated")),
+        "expected a generated-identifier diagnostic"
     );
 
     _ = fs::remove_dir_all(&dir);
@@ -1538,13 +1566,16 @@ fn import_kind_span_preserved() {
     let dir = create_temp_dir("import_span");
     let sub_path = make_sub_script(&dir);
     let main_path = make_importing_script(&dir, &sub_path);
-    let cfg = ChrnConfig::default();
+    let mut cfg = ChrnConfig::default();
 
     let sub_path_str = sub_path.to_string_lossy();
 
-    let (main_mod, graph, _interner, diags) =
-        extract_main(&main_path, std::fs::File::open(&main_path).unwrap(), &cfg)
-            .expect("extract_main must succeed");
+    let (main_mod, graph, _interner, diags) = extract_main(
+        &main_path,
+        std::fs::File::open(&main_path).unwrap(),
+        &mut cfg,
+    )
+    .expect("extract_main must succeed");
 
     assert!(!main_mod.imports.is_empty(), "at least one import expected");
     let import = &main_mod.imports[0];
@@ -1599,11 +1630,14 @@ fn import_kind_span_preserved() {
 fn module_graph_initial_state() {
     let dir = create_temp_dir("mod_graph_init");
     let main_path = make_simple_script(&dir);
-    let cfg = ChrnConfig::default();
+    let mut cfg = ChrnConfig::default();
 
-    let (_main_mod, graph, mut interner, diags) =
-        extract_main(&main_path, std::fs::File::open(&main_path).unwrap(), &cfg)
-            .expect("extract_main must succeed");
+    let (_main_mod, graph, mut interner, diags) = extract_main(
+        &main_path,
+        std::fs::File::open(&main_path).unwrap(),
+        &mut cfg,
+    )
+    .expect("extract_main must succeed");
 
     let main_path_id = interner.intern_path(&main_path);
 
@@ -1672,11 +1706,14 @@ fn main_module_id_is_zero_in_compiler() {
 fn extract_main_empty_file() {
     let dir = create_temp_dir("extract_main_empty");
     let main_path = create_chrn_file(&dir, "empty.chrn", "");
-    let cfg = ChrnConfig::default();
+    let mut cfg = ChrnConfig::default();
 
-    let (main_mod, _graph, _interner, diags) =
-        extract_main(&main_path, std::fs::File::open(&main_path).unwrap(), &cfg)
-            .expect("extract_main must succeed on empty file");
+    let (main_mod, _graph, _interner, diags) = extract_main(
+        &main_path,
+        std::fs::File::open(&main_path).unwrap(),
+        &mut cfg,
+    )
+    .expect("extract_main must succeed on empty file");
 
     assert_eq!(
         main_mod.state,
@@ -1703,9 +1740,13 @@ fn extract_main_invalid_utf8_filename() {
         let invalid_name = OsStr::from_bytes(&[0xFF, 0xFE]);
         let file_path = dir.join(invalid_name);
         fs::write(&file_path, "let x = 5\n").expect("failed to write invalid UTF-8 file");
-        let cfg = ChrnConfig::default();
+        let mut cfg = ChrnConfig::default();
 
-        let result = extract_main(&file_path, std::fs::File::open(&file_path).unwrap(), &cfg);
+        let result = extract_main(
+            &file_path,
+            std::fs::File::open(&file_path).unwrap(),
+            &mut cfg,
+        );
         assert!(
             result.is_err(),
             "file with invalid UTF-8 name should produce Err"
@@ -2120,6 +2161,239 @@ fn mod_ids_main_module_id_is_zero() {
         matches!(main_mod.imports[0].kind, ImportKind::Core(id) if id == core_mod_id),
         "main.imports[0] must be Core(1), got {:?}",
         main_mod.imports[0].kind
+    );
+
+    _ = fs::remove_dir_all(&dir);
+}
+
+// ===========================================================================
+// Duplicate module identifier tests
+// ===========================================================================
+
+/// Runs the full extraction over `main_path` and returns every diagnostic
+/// header message in emission order.
+fn extract_msgs(main_path: &Path) -> Vec<String> {
+    let mut reporter = Reporter::new(100);
+    let (_, _, diags) = extract_all_modules(
+        main_path,
+        fs::File::open(main_path).unwrap(),
+        ChrnConfig::default(),
+        &mut reporter,
+    )
+    .expect("extract_all_modules must succeed");
+
+    diags.diags.iter().map(|d| d.core_msg.clone()).collect()
+}
+
+/// Writes `main.chrn` in `dir` whose body is `imports` followed by one `let`.
+fn make_main_with(dir: &Path, imports: &[String]) -> PathBuf {
+    let mut content = String::new();
+    for imp in imports {
+        content.push_str(imp);
+        content.push('\n');
+    }
+    content.push_str("let x = 5\n");
+    create_chrn_file(dir, "main.chrn", &content)
+}
+
+fn import_stmt(path: &Path) -> String {
+    format!("import \"{}\"", path.display())
+}
+
+fn import_stmt_as(path: &Path, alias: &str) -> String {
+    format!("import \"{}\" as {alias}", path.display())
+}
+
+fn assert_has_diagnostic_containing(main_path: &Path, expected_count: usize, text: &str) {
+    let messages = extract_msgs(main_path);
+    assert_eq!(messages.len(), expected_count);
+    assert!(
+        messages.iter().any(|message| message.contains(text)),
+        "expected a diagnostic containing `{text}`, got {messages:?}"
+    );
+}
+
+/// Importing the same path twice registers the same identifier twice.
+#[test]
+fn dup_import_same_path_twice() {
+    let dir = create_temp_dir("dup_same_path_twice");
+    let sub = make_sub_script(&dir);
+
+    let main_path = make_main_with(&dir, &[import_stmt(&sub), import_stmt(&sub)]);
+
+    assert_has_diagnostic_containing(&main_path, 1, "generated");
+
+    _ = fs::remove_dir_all(&dir);
+}
+
+/// Two distinct files sharing a file name collide on that name.
+#[test]
+fn dup_import_same_name_different_dirs() {
+    let dir = create_temp_dir("dup_same_name_dirs");
+    let a = create_chrn_file(&dir, "a/sub.chrn", "let y = 1\n");
+    let b = create_chrn_file(&dir, "b/sub.chrn", "let z = 2\n");
+
+    let main_path = make_main_with(&dir, &[import_stmt(&a), import_stmt(&b)]);
+
+    assert_has_diagnostic_containing(&main_path, 1, "generated");
+
+    _ = fs::remove_dir_all(&dir);
+}
+
+/// A third import of the same name reports a second duplicate.
+#[test]
+fn dup_import_three_of_same_name() {
+    let dir = create_temp_dir("dup_three_same_name");
+    let a = create_chrn_file(&dir, "a/sub.chrn", "let y = 1\n");
+    let b = create_chrn_file(&dir, "b/sub.chrn", "let z = 2\n");
+    let c = create_chrn_file(&dir, "c/sub.chrn", "let w = 3\n");
+
+    let main_path = make_main_with(&dir, &[import_stmt(&a), import_stmt(&b), import_stmt(&c)]);
+
+    assert_has_diagnostic_containing(&main_path, 2, "generated");
+
+    _ = fs::remove_dir_all(&dir);
+}
+
+/// An import whose file name matches the importing module's own name collides
+/// with that module.
+#[test]
+fn dup_import_matches_importer_name() {
+    let dir = create_temp_dir("dup_matches_importer");
+    let other_main = create_chrn_file(&dir, "nested/main.chrn", "let y = 1\n");
+
+    let main_path = make_main_with(&dir, &[import_stmt(&other_main)]);
+
+    assert_has_diagnostic_containing(&main_path, 1, "generated");
+
+    _ = fs::remove_dir_all(&dir);
+}
+
+/// A module importing itself is not a duplicate identifier.
+#[test]
+fn self_import_is_not_duplicate() {
+    let dir = create_temp_dir("self_import");
+    let main_path = dir.join("main.chrn");
+    // Written twice: the import needs the canonical path of the file it lives in.
+    write_file(&main_path, "let x = 5\n");
+    let canonical = fs::canonicalize(&main_path).expect("canonicalize");
+    write_file(
+        &main_path,
+        &format!("{}\nlet x = 5\n", import_stmt(&canonical)),
+    );
+
+    assert!(
+        extract_msgs(&canonical).is_empty(),
+        "self import must not be reported as a duplicate identifier",
+    );
+
+    _ = fs::remove_dir_all(&dir);
+}
+
+/// Two imports sharing a file name *and* an alias collide on the alias.
+#[test]
+fn dup_import_same_name_same_alias() {
+    let dir = create_temp_dir("dup_same_alias");
+    let a = create_chrn_file(&dir, "a/sub.chrn", "let y = 1\n");
+    let b = create_chrn_file(&dir, "b/sub.chrn", "let z = 2\n");
+
+    let main_path = make_main_with(&dir, &[import_stmt_as(&a, "s"), import_stmt_as(&b, "s")]);
+
+    assert_has_diagnostic_containing(&main_path, 1, "alias");
+
+    _ = fs::remove_dir_all(&dir);
+}
+
+/// Distinct aliases keep two same-named imports apart.
+#[test]
+fn import_same_name_distinct_aliases_is_not_duplicate() {
+    let dir = create_temp_dir("distinct_aliases");
+    let a = create_chrn_file(&dir, "a/sub.chrn", "let y = 1\n");
+    let b = create_chrn_file(&dir, "b/sub.chrn", "let z = 2\n");
+
+    let main_path = make_main_with(&dir, &[import_stmt_as(&a, "s1"), import_stmt_as(&b, "s2")]);
+
+    assert!(
+        extract_msgs(&main_path).is_empty(),
+        "distinct aliases must not collide",
+    );
+
+    _ = fs::remove_dir_all(&dir);
+}
+
+/// An alias renames the import, so aliasing one of two same-named imports
+/// resolves the collision -- which is what the emitted help tells the user.
+#[test]
+fn import_alias_resolves_name_collision() {
+    let dir = create_temp_dir("alias_resolves");
+    let a = create_chrn_file(&dir, "a/sub.chrn", "let y = 1\n");
+    let b = create_chrn_file(&dir, "b/sub.chrn", "let z = 2\n");
+
+    let main_path = make_main_with(&dir, &[import_stmt(&a), import_stmt_as(&b, "other")]);
+
+    assert!(
+        extract_msgs(&main_path).is_empty(),
+        "an alias on one of the two imports removes the collision",
+    );
+
+    _ = fs::remove_dir_all(&dir);
+}
+
+/// An alias that matches another import's file name collides with it.
+#[test]
+fn dup_import_alias_matches_other_import_name() {
+    let dir = create_temp_dir("alias_vs_name");
+    let a = create_chrn_file(&dir, "a.chrn", "let y = 1\n");
+    let sub = make_sub_script(&dir);
+
+    let main_path = make_main_with(&dir, &[import_stmt_as(&a, "sub"), import_stmt(&sub)]);
+
+    assert_has_diagnostic_containing(&main_path, 1, "generated");
+
+    _ = fs::remove_dir_all(&dir);
+}
+
+/// Two differently named imports sharing one alias collide on that alias.
+#[test]
+fn dup_import_aliases_collide_across_names() {
+    let dir = create_temp_dir("alias_vs_alias");
+    let a = create_chrn_file(&dir, "a.chrn", "let y = 1\n");
+    let b = create_chrn_file(&dir, "b.chrn", "let z = 2\n");
+
+    let main_path = make_main_with(&dir, &[import_stmt_as(&a, "x"), import_stmt_as(&b, "x")]);
+
+    assert_has_diagnostic_containing(&main_path, 1, "alias");
+
+    _ = fs::remove_dir_all(&dir);
+}
+
+/// An alias that matches the importing module's own name collides with it.
+#[test]
+fn dup_import_alias_matches_importer_name() {
+    let dir = create_temp_dir("alias_vs_importer");
+    let sub = make_sub_script(&dir);
+
+    let main_path = make_main_with(&dir, &[import_stmt_as(&sub, "main")]);
+
+    assert_has_diagnostic_containing(&main_path, 1, "alias");
+
+    _ = fs::remove_dir_all(&dir);
+}
+
+/// Duplicate detection is scoped per module: two modules may each import a
+/// file named `sub` without colliding with one another.
+#[test]
+fn duplicate_tracking_is_per_module() {
+    let dir = create_temp_dir("dup_per_module");
+    let leaf = create_chrn_file(&dir, "leaf/sub.chrn", "let w = 3\n");
+    let mid = create_chrn_file(&dir, "mid/mid.chrn", &format!("{}\n", import_stmt(&leaf)));
+    let other = create_chrn_file(&dir, "other/sub.chrn", "let y = 1\n");
+
+    let main_path = make_main_with(&dir, &[import_stmt(&mid), import_stmt(&other)]);
+
+    assert!(
+        extract_msgs(&main_path).is_empty(),
+        "identifiers in different modules must not collide",
     );
 
     _ = fs::remove_dir_all(&dir);

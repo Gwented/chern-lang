@@ -6,7 +6,7 @@ mod helpers;
 mod inference_test;
 mod lexer_test;
 mod macros_test;
-mod modules_test;
+mod module_test;
 mod name_resolver_test;
 mod parser_test;
 mod scopes_test;

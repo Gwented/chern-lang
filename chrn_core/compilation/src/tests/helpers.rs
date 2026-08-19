@@ -100,7 +100,7 @@ pub(super) fn mock_import(
     Import::new(
         interner.intern(name),
         kind,
-        alias_id.map(|a| interner.intern(&a)),
+        alias_id.map(|a| SpannedContainer::new(interner.intern(&a), SourceSpan::default())),
     )
 }
 
@@ -271,7 +271,7 @@ pub(super) use lang::{keywords::Keyword, values::Value};
 
 pub(super) use crate::{
     lexer::Lexer,
-    modules::{Import, ImportKind, Module, ModuleState},
+    module::module_concepts::{Import, ImportKind, Module, ModuleState},
     parser::{self},
     resolvers::{
         member_resolver::MemberResolver, name_resolver::NamespaceResolver,
@@ -521,9 +521,14 @@ fn build_asts(
             }
         };
 
-        let toks = Lexer::new(region.region_id, &region.src_bytes, region.script_start, cfg)
-            .tokenize(interner)
-            .toks;
+        let toks = Lexer::new(
+            region.region_id,
+            &region.src_bytes,
+            region.script_start,
+            cfg,
+        )
+        .tokenize(interner)
+        .toks;
 
         asts.push(Some(parser::parse(cfg, region, &toks, interner).0));
     }

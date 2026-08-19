@@ -18,7 +18,8 @@ use crate::utils::trackers::perf_tracker::{PerfOutput, PerfTracker};
 
 //TODO: How will this compensate for each module without being massively inconvenient
 
-pub const STAGES_COUNT: usize = 6;
+/// Compiler stages considered for performance review
+pub const STAGES_COUNT: usize = ChrnPerfStage::CONSTRAINT_RESOLVER_IDX + 1;
 
 /// Holds and orchestrates tracking info
 #[derive(Debug, Default)]
@@ -61,7 +62,7 @@ impl ChrnPerf {
     }
 
     // Why are we trying so hard to keep it const!
-    pub fn report(&self) -> ChrnPerfReport {
+    pub fn form_report(&self) -> ChrnPerfReport {
         let mut time_reports: [Option<ChrnPerfTimeReport>; STAGES_COUNT] = [None; STAGES_COUNT];
         // This is...random..seeming
         for (i, tracked) in self.tracked.iter().enumerate() {
@@ -87,6 +88,7 @@ impl ChrnPerf {
 ///
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ChrnPerfStage {
+    ModuleGraph,
     Lexer,
     Parser,
     NamespaceResolver,
@@ -96,15 +98,17 @@ pub enum ChrnPerfStage {
 }
 
 impl ChrnPerfStage {
-    pub const LEXER_IDX: usize = 0;
-    pub const PARSER_IDX: usize = 1;
-    pub const NAMESPACE_RESOLVER_IDX: usize = 2;
-    pub const MEMBER_RESOLVER_IDX: usize = 3;
-    pub const TYPE_RESOLVER_IDX: usize = 4;
-    pub const CONSTRAINT_RESOLVER_IDX: usize = 5;
+    pub const MODULE_GRAPH: usize = 0;
+    pub const LEXER_IDX: usize = 1;
+    pub const PARSER_IDX: usize = 2;
+    pub const NAMESPACE_RESOLVER_IDX: usize = 3;
+    pub const MEMBER_RESOLVER_IDX: usize = 4;
+    pub const TYPE_RESOLVER_IDX: usize = 5;
+    pub const CONSTRAINT_RESOLVER_IDX: usize = 6;
 
     pub const fn to_idx(self) -> usize {
         match self {
+            ChrnPerfStage::ModuleGraph => Self::MODULE_GRAPH,
             ChrnPerfStage::Lexer => Self::LEXER_IDX,
             ChrnPerfStage::Parser => Self::PARSER_IDX,
             ChrnPerfStage::NamespaceResolver => Self::NAMESPACE_RESOLVER_IDX,
@@ -116,6 +120,7 @@ impl ChrnPerfStage {
 
     pub const fn from_idx(idx: usize) -> Option<ChrnPerfStage> {
         match idx {
+            Self::MODULE_GRAPH => Some(ChrnPerfStage::ModuleGraph),
             Self::LEXER_IDX => Some(ChrnPerfStage::Lexer),
             Self::PARSER_IDX => Some(ChrnPerfStage::Parser),
             Self::NAMESPACE_RESOLVER_IDX => Some(ChrnPerfStage::NamespaceResolver),

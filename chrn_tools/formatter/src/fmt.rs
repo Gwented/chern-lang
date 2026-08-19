@@ -2,7 +2,7 @@ use std::path::Path;
 
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::{core_error::ModuleInitError, intern::Intern};
-use compilation::modules;
+use compilation::module;
 use compilation::script_compiler::script_compiler_store::ScriptCompilerStore;
 
 use crate::{script_prettifier::ScriptPrettifier, text_builder::TextBuilder};

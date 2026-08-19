@@ -5,11 +5,8 @@ use chrn_utils::{
     core_error::{ModuleInitError, ScriptError},
     intern::Intern,
 };
-use compilation::{
-    modules,
-    script_compiler::{
-        ScriptCompiler, reporter::Reporter, script_compiler_store::ScriptCompilerStore,
-    },
+use compilation::script_compiler::{
+    ScriptCompiler, reporter::Reporter, script_compiler_store::ScriptCompilerStore,
 };
 
 //ScriptContext? CompilerContext? AbstractCompilerManager?

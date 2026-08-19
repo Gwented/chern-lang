@@ -2,11 +2,13 @@ use chrn_utils::{
     arena::Arena,
     id_types::{InternedId, TypeId},
     intern::Intern,
+    source_map::source_span::SourceSpan,
+    utils::containers::SpannedContainer,
 };
 
 use crate::{
     lookup::scopes::scopes_concepts::ScopeType,
-    modules::{Import, ImportKind, Module},
+    module::module_concepts::{Import, ImportKind, Module},
     script_compiler::{
         CORE_UNKNOWN, ScriptCompiler,
         helpers::compiler_helpers::DIRECTIVES_DATASET,
@@ -223,16 +225,25 @@ fn startup_reservations_match_loaded_data() {
     assert_eq!(compiler.types.len(), expected_type_count);
     assert_eq!(compiler.types.capacity(), expected_type_count);
 
+    // A module binds its own name plus one identifier per import -- the alias when given, the file
+    // name otherwise. An identifier already bound in the module's scope is filtered out, which is
+    // what happens to the implicit `core` import inside the `core` module itself.
     let expected_module_symbol_count: usize = compiler
         .mods
         .iter()
         .map(|module| {
-            1 + module.imports.len()
-                + module
-                    .imports
-                    .iter()
-                    .filter(|import| import.alias_id.is_some())
-                    .count()
+            let mut idents: Vec<InternedId> = vec![module.name_id];
+            for import in &module.imports {
+                let ident = import
+                    .sp_alias_id
+                    .as_ref()
+                    .map(|alias| alias.inner)
+                    .unwrap_or(import.name_id);
+                if !idents.contains(&ident) {
+                    idents.push(ident);
+                }
+            }
+            idents.len()
         })
         .sum();
     let expected_symbol_count = CORE_BUILTIN_TYPES_DATASET.len()
@@ -264,7 +275,10 @@ fn startup_reservations_include_user_module_symbols() {
     let import = Import::new(
         InternedId::new(0),
         ImportKind::Core(Default::default()),
-        Some(InternedId::new(1)),
+        Some(SpannedContainer::new(
+            InternedId::new(1),
+            SourceSpan::default(),
+        )),
     );
     let module = Module::new(
         InternedId::new(2),
@@ -276,16 +290,25 @@ fn startup_reservations_include_user_module_symbols() {
     );
     let compiler = ScriptCompiler::init(None, Arena::from(vec![module]));
 
+    // A module binds its own name plus one identifier per import -- the alias when given, the file
+    // name otherwise. An identifier already bound in the module's scope is filtered out, which is
+    // what happens to the implicit `core` import inside the `core` module itself.
     let expected_module_symbol_count: usize = compiler
         .mods
         .iter()
         .map(|module| {
-            1 + module.imports.len()
-                + module
-                    .imports
-                    .iter()
-                    .filter(|import| import.alias_id.is_some())
-                    .count()
+            let mut idents: Vec<InternedId> = vec![module.name_id];
+            for import in &module.imports {
+                let ident = import
+                    .sp_alias_id
+                    .as_ref()
+                    .map(|alias| alias.inner)
+                    .unwrap_or(import.name_id);
+                if !idents.contains(&ident) {
+                    idents.push(ident);
+                }
+            }
+            idents.len()
         })
         .sum();
     let expected_symbol_count = CORE_BUILTIN_TYPES_DATASET.len()

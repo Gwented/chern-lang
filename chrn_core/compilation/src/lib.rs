@@ -4,7 +4,7 @@ pub mod cst;
 pub mod lexer;
 pub mod lookup;
 pub mod macros;
-pub mod modules;
+pub mod module;
 pub mod parser;
 pub mod resolvers;
 pub mod script_compiler;

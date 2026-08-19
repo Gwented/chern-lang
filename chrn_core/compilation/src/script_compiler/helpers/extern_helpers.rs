@@ -1,4 +1,4 @@
-//! Intended to hold external type instantiation helpers
+//! Holds external type instantiation helpers
 pub mod java_helpers;
 use chrn_utils::id_types::{InternedId, ScopeId};
 // Explain more buddy

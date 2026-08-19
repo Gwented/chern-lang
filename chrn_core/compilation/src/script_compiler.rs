@@ -26,7 +26,7 @@ use crate::{
         self,
         scopes_concepts::{AssociatedScopeKind, IntrinsicRegistry, Scope, ScopeInfo, ScopeType},
     },
-    modules::{Bind, Import, ImportKind, Module, ModuleState},
+    module::module_concepts::{Bind, Import, ImportKind, Module, ModuleState},
     resolvers::resolver_state::ResolverState,
     script_compiler::helpers::{
         compiler_helpers,
@@ -159,16 +159,11 @@ impl ScriptCompiler {
         let core_mod_id = ModuleId::new(mods.len() as u32);
         let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None);
 
-        // For capacity (em-dash) includes alias symbols
+        // For capacity (em-dash). An alias replaces the import's name rather than adding a second
+        // identifier, so each import is worth exactly one symbol.
         let mut import_len = 0;
-        let mut alias_len = 0;
         for imports in mods.iter().map(|m| &m.imports) {
             import_len += imports.len();
-            for import in imports {
-                if import.alias_id.is_some() {
-                    alias_len += 1;
-                }
-            }
         }
         // (Could be hallucinating a bit here)
 
@@ -176,7 +171,9 @@ impl ScriptCompiler {
         // the implicit core module itself.
         let mod_count = mods.len() + 1;
         let import_count = import_len + mod_count;
-        let mod_addition = mod_count + import_count + alias_len;
+        // - 1 because core doesn't give itself core, but is semantically counted in the `mod_count`
+        // + 1
+        let mod_addition = mod_count + import_count - 1;
         let scope_capacity = mod_count + 1;
 
         let mut compiler = ScriptCompiler {
@@ -239,7 +236,7 @@ impl ScriptCompiler {
             let current_mod_id = ModuleId::new(i as u32);
             let module = &self.mods[current_mod_id];
 
-            // Avoiding borrow issues by storing the ids earlier
+            // Avoiding borrow issues by storing the ids
             let current_mod_name_id = module.name_id;
             let current_mod_id = module.mod_id;
 
@@ -284,10 +281,16 @@ impl ScriptCompiler {
                     ImportKind::Core(m_id) => m_id,
                 };
 
+                // An alias renames the import, so exactly one identifier is set per import.
+                let import_ident_id = import
+                    .sp_alias_id
+                    .map(|i| i.inner)
+                    .unwrap_or(import.name_id);
+
                 let import_sym_id = SymbolId::new(self.symbols.len() as u32);
                 // Pushing any imports found within the given module
-                let symbol = Symbol::new(
-                    import.name_id,
+                let sym = Symbol::new(
+                    import_ident_id,
                     import_sym_id,
                     None,
                     SymbolOrigin::Module(current_mod_id),
@@ -301,37 +304,12 @@ impl ScriptCompiler {
                 // Um
                 let scope_id = self.push_scope(ScopeType::Compiler, current_mod_id);
 
-                let scope = &mut self.get_scope_mut(scope_id).scope;
-                scope
-                    .table
-                    .interned_to_sym
-                    .insert(import.name_id, import_sym_id);
-                self.symbols.push(symbol);
-
-                // Maybe it can just point to the import directly instead of needing it's own
-                // symbol?
-                if let Some(alias_name_id) = import.alias_id {
-                    let alias_sym_id = SymbolId::new(self.symbols.len() as u32);
-
-                    // Pushing the alias associated with the import symbol if present
-                    let symbol = Symbol::new(
-                        alias_name_id,
-                        alias_sym_id,
-                        None,
-                        SymbolOrigin::Module(current_mod_id),
-                        true,
-                        Some(AssociatedScopeKind::Module(mod_id)),
-                        ScopeType::Compiler,
-                        SymbolKind::Namespace,
-                    );
-
-                    let scope = &mut self.get_scope_mut(scope_id).scope;
-                    scope
-                        .table
-                        .interned_to_sym
-                        .insert(alias_name_id, alias_sym_id);
-
-                    self.symbols.push(symbol);
+                let table = &mut self.get_scope_mut(scope_id).scope.table;
+                //WARN: This may not be the best layer to deal with this issue, but this is intended
+                //to filter out conflicting identifiers by default.
+                if !table.interned_to_sym.contains_key(&import_ident_id) {
+                    table.interned_to_sym.insert(import_ident_id, import_sym_id);
+                    self.symbols.push(sym);
                 }
             }
         }

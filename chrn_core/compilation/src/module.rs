@@ -1,21 +1,20 @@
-// BUG: When an import is registered by mod_finder, it does not change even if the module associated
-// with the id is unstable. The issue with that is, if we have module0, module1, and module2. If
-// module0 imported module1, and module1 fails, module2 sets it's mod id to 1, but it's import
-// is still mod id 2. How has this been working for so long? Is this a hallucination?
-//
-// TODO: This should be split but not sure what would be best since it is fairly local and small
 use std::{collections::VecDeque, io::Read, path::Path};
 
 pub mod mod_finder;
+pub mod module_concepts;
 
-use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
+use crate::{
+    config_loader::{ConfigLoader, ConfigLoaderOutput},
+    module::module_concepts::{Import, ImportKind, Module, ModuleGraph, ModuleIdent, ModuleState},
+    semantic::checker_helpers::DuplicateTracker,
+};
 use chrn_utils::{
     arena::Arena,
-    chrn_config::ChrnConfig,
+    chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     core_error::{self, ConfigLoadError, ModuleInitError},
     err_codes::ErrorCode,
     files::file_ops,
-    id_types::{InternedId, ModuleId, PathId, ScopeId, SourceRegionId, SymbolId},
+    id_types::{InternedId, ModuleId, PathId, SourceRegionId},
     intern::{self, Intern},
     source_map::{
         source_diagnostic::{
@@ -23,207 +22,15 @@ use chrn_utils::{
             annotations::AnnotationKind,
         },
         source_region::SourceRegion,
-        source_span::SourceSpan,
     },
-    utils::containers::SpannedContainer,
 };
 
 use crate::{
-    modules::mod_finder::ModuleFinder,
+    module::mod_finder::ModuleFinder,
     script_compiler::{
         ScriptCompiler, reporter::Reporter, script_compiler_store::ScriptCompilerStore,
     },
 };
-
-//TEST: Relocate reollacl rreellocrelac
-#[derive(Debug, Clone)]
-pub struct Import {
-    pub name_id: InternedId,
-    // pub mod_id: ModuleId,
-    pub kind: ImportKind,
-    pub alias_id: Option<InternedId>,
-}
-
-impl Import {
-    pub const fn new(
-        name_id: InternedId,
-        // mod_id: ModuleId,
-        kind: ImportKind,
-        alias_id: Option<InternedId>,
-    ) -> Import {
-        Import {
-            name_id,
-            // mod_id,
-            kind,
-            alias_id,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum ImportKind {
-    /// Import that is from a source file and fully resolved.
-    /// Contains it's spanned path and module id
-    Source(SpannedContainer<PathId>, ModuleId),
-    /// Import from a source file that has a path attached to it, but no module id yet
-    UnresolvedSource(SpannedContainer<PathId>),
-    /// Import from source that had an unrecoverable error occur.
-    /// This means the import should NOT be touched in any resolution scenario, unless for
-    /// reporting or storing metadata.
-    ErrorSource(SpannedContainer<PathId>),
-    /// Core module originated importt
-    Core(ModuleId),
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct Bind {
-    pub path_id: PathId,
-    pub path_span: SourceSpan,
-}
-
-impl Bind {
-    pub const fn new(path_id: PathId, path_span: SourceSpan) -> Bind {
-        Bind { path_id, path_span }
-    }
-}
-
-//TODO:
-//Maybe, a kind field that says user or builtin,
-//or, a wrapper that has a module that could explicitly represent if it's user or not
-//OR maybe src_metadata is actually a kind, which says whether it's user defined or not so it's
-//just not a basic nullable field, and actually has meaning
-/// Module
-#[derive(Debug, Clone)]
-pub struct Module {
-    /// File name that will be used internally
-    pub name_id: InternedId,
-    /// It's own module id position
-    pub mod_id: ModuleId,
-    /// Imports found in the module
-    // What if imports were tagged with bit-wise?
-    pub imports: Vec<Import>,
-    /// Representation of the module's state
-    pub state: ModuleState,
-    pub bind: Option<Bind>,
-    /// Represents the 5 known scopes as well as any local scopes
-    pub scopes: Vec<ScopeId>,
-    // HashSet maybe
-    pub exports: Vec<SymbolId>,
-    /// Metadata that exists if the module contains a source file
-    // As of right now this represents the difference between a pre-loaded and user space module
-    pub region_id: Option<SourceRegionId>,
-}
-
-impl Module {
-    pub const fn new(
-        name_id: InternedId,
-        state: ModuleState,
-        mod_id: ModuleId,
-        bind: Option<Bind>,
-        imports: Vec<Import>,
-        //TODO: Convert to explicit kind
-        region_id: Option<SourceRegionId>,
-    ) -> Module {
-        Module {
-            name_id,
-            mod_id,
-            state,
-            bind,
-            imports,
-            exports: Vec::new(),
-            scopes: Vec::new(),
-            region_id,
-        }
-    }
-
-    //NOTE: Does not check for alias, but it doesn't change anything since the import with the
-    //module's actual name still exists inside the import, with the alias just being second-hand
-    // pub fn contains_import(&self, other: &Module) -> bool {
-    //     let mut has_import = self.imports.iter().any(|i| i.name_id == other.name_id);
-    //
-    //     if !has_import {
-    //         has_import = self.mod_id == other.mod_id;
-    //     }
-    //
-    //     has_import
-    // }
-}
-
-pub enum ModuleKind {
-    User,
-    Builtin,
-}
-
-/// A state for modules to be tracked by
-// May or may not add more specific states like parsed and such, but this is fine
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModuleState {
-    BrokenRegion,
-    #[default]
-    Loading,
-    Loaded,
-}
-
-//TEST:
-// Kind of what registry is doing right now
-// pub struct SectionIndices {
-//     neutral: Option<usize>,
-//     var: Option<usize>,
-//     nest: Option<usize>,
-//     complex: Option<usize>,
-//     // Ok
-//     overrid: Option<usize>,
-// }
-
-//TODO: Methods
-/// State needed to build the module graph from main to all sub modules
-pub struct ModuleGraph {
-    /// Arena
-    pub region_arena: Arena<SourceRegion, SourceRegionId>,
-    /// This is a Vector relationship stored where, the path id of an import is stored along with a
-    /// `ModuleId`. So, we store main, go into main's imports then fill in OR create the module id of
-    /// unknown imports based off of reserved len(). This works during the recursive process because
-    /// it MUST look at all imports before ever recursing further, and it reserves it's spot as
-    /// `None`.
-    pub registered_mod_ids: Vec<(PathId, ModuleId)>,
-    //// All modules except main
-    // pub other_mods: Vec<Option<Module>>,
-    /// All paths seen
-    pub seen: Vec<PathId>,
-}
-
-impl ModuleGraph {
-    pub const fn new(
-        region_arena: Arena<SourceRegion, SourceRegionId>,
-        registered_mod_ids: Vec<(PathId, ModuleId)>,
-        // other_mods: Vec<Option<Module>>,
-        seen: Vec<PathId>,
-    ) -> ModuleGraph {
-        ModuleGraph {
-            region_arena,
-            registered_mod_ids,
-            // other_mods,
-            seen,
-        }
-    }
-    // THEY MADE ME DO IT
-
-    pub const fn region_arena(&self) -> &Arena<SourceRegion, SourceRegionId> {
-        &self.region_arena
-    }
-
-    pub const fn registered_mod_ids(&self) -> &Vec<(PathId, ModuleId)> {
-        &self.registered_mod_ids
-    }
-
-    // pub const fn other_mods(&self) -> &Vec<Option<Module>> {
-    //     &self.other_mods
-    // }
-
-    pub const fn seen(&self) -> &Vec<PathId> {
-        &self.seen
-    }
-}
 
 // Maybe not
 /// Takes in a path to a `chrn` config file, then recursively resolved all imports associated with
@@ -240,13 +47,13 @@ impl ModuleGraph {
 pub fn extract_all_modules<R: Read>(
     path: &Path,
     src: R,
-    cfg: ChrnConfig,
+    mut cfg: ChrnConfig,
     //TODO: Need to figure out how reporter should be treated
     reporter: &mut Reporter,
 ) -> Result<(ScriptCompiler, ScriptCompilerStore, SourceDiagnosticSummary), ModuleInitError> {
     let mut summary = SourceDiagnosticSummary::default();
 
-    let (main_mod, graph, interner, new_summary) = extract_main(path, src, &cfg)?;
+    let (main_mod, graph, interner, new_summary) = extract_main(path, src, &mut cfg)?;
     summary.merge(new_summary);
 
     let (compiler, store, new_summary) = extract_modules(main_mod, graph, reporter, interner, cfg);
@@ -265,8 +72,13 @@ pub fn extract_all_modules<R: Read>(
 pub fn extract_main<R: Read>(
     main_path: &Path,
     main_src: R,
-    cfg: &ChrnConfig,
+    cfg: &mut ChrnConfig,
 ) -> Result<(Module, ModuleGraph, Intern, SourceDiagnosticSummary), ModuleInitError> {
+    // A little concerning here because you CAN stop after this point, meaning the timer doesn't
+    // matter, but that should probably be factored in externally and just disallow perf entirely.
+    // Or at least warn it's inaccurate, or just, separate stages.
+    cfg.perf_tracker_mut().start();
+
     let mut interner = Intern::init();
 
     // Maybe the reporter should just be used
@@ -394,7 +206,7 @@ pub fn extract_modules(
     mut graph: ModuleGraph,
     reporter: &mut Reporter,
     mut interner: Intern,
-    cfg: ChrnConfig,
+    mut cfg: ChrnConfig,
 ) -> (ScriptCompiler, ScriptCompilerStore, SourceDiagnosticSummary) {
     debug_assert_eq!(main_mod.mod_id.id, 0);
     let mut summary = SourceDiagnosticSummary::default();
@@ -405,12 +217,17 @@ pub fn extract_modules(
     // Modules are only pushed when their all their imports are processed.
     let mut valid_mods: Arena<Module, ModuleId> = Arena::with_capacity(main_mod.imports.len());
 
-    // Starting at [root]
-    let mut pending_mods: VecDeque<Module> = vec![main_mod].into();
-
     // If this is true then the outer loop must stop (HELLO I AM A LOOP LABEL)
     // Only used when max modules have been exceeded
     let mut should_break_outer = false;
+    let max_mods_usize = chrn_utils::MAX_MODULES as usize;
+
+    // Duplicate tracker that will be re-used across different module contexts.
+    let mut mod_ident_tracker: DuplicateTracker<ModuleIdent> =
+        DuplicateTracker::with_capacities(main_mod.imports.len() + 1, 0);
+
+    // Starting at [root]
+    let mut pending_mods: VecDeque<Module> = vec![main_mod].into();
 
     // Work-list processing of each module
     //
@@ -418,14 +235,47 @@ pub fn extract_modules(
     // not processed again, create it's module, then push it to the end of the queue so that it's
     // imports can be viewed and processed as modules.
     while let Some(mut importer_mod) = pending_mods.pop_front() {
+        let importer_region_id = importer_mod
+            .region_id
+            .expect("Root module should have region id");
+        let importer_path_id = graph.region_arena[importer_region_id].path_id;
+
+        // A module binds its own name, and only its imports can carry an alias, so this is never
+        // an alias
+        let root_ident = ModuleIdent::new(importer_mod.name_id, false, None);
+
+        mod_ident_tracker.insert_or_store(root_ident);
+
         // This diner still makes Coke the old-fashioned way
         for imp_idx in 0..importer_mod.imports.len() {
-            let import = importer_mod.imports[imp_idx].clone();
+            let imp = importer_mod.imports[imp_idx].clone();
 
             // We haven't made the compiler yet so no other types of imports should exist
-            let ImportKind::UnresolvedSource(ref sp_path_id) = import.kind else {
+            let ImportKind::UnresolvedSource(ref sp_path_id) = imp.kind else {
                 unreachable!();
             };
+
+            // If is_importer, that means it shouldn't count as a duplicate identifier. So, if `main`
+            // imports `main` and both mains are the same, no error is emitted because that would be
+            // the wrong behavior. This is solely aa self import guard.
+            let is_importer = sp_path_id.inner == importer_path_id && imp.sp_alias_id.is_none();
+
+            // The identifier of an import is mutually exclusive. If it has an alias, it can't use
+            // the generated identifier, if it only has an identifier it only uses the identifier.
+            let (official_ident, official_span) = if let Some(sp_alias_id) = imp.sp_alias_id.clone()
+            {
+                (sp_alias_id.inner, sp_alias_id.span)
+            } else {
+                (imp.name_id, sp_path_id.span)
+            };
+
+            let mod_ident = ModuleIdent::new(
+                official_ident,
+                imp.sp_alias_id.is_some(),
+                official_span.into(),
+            );
+
+            mod_ident_tracker.insert_or_store_unless(mod_ident, || is_importer);
 
             // If the path from a given import was seen already then it skips
             if graph.seen.binary_search(&sp_path_id.inner).is_ok() {
@@ -455,8 +305,9 @@ pub fn extract_modules(
 
             // The module produced by this import (Happy birthday)
             let new_mod = match resolve_module(
-                import.clone(),
-                &importer_mod,
+                imp.clone(),
+                official_ident,
+                // &importer_mod,
                 &mut graph,
                 &mut summary,
                 &cfg,
@@ -477,17 +328,15 @@ pub fn extract_modules(
                 }
             };
 
-            // [WAS]: let expected_len = graph.reserved_mod_ids.len() - 1;
-            // Is subtracting 1 because reserved mod includes main.
-            //
             // The amount of reserved module ids grows O(modules registered), which is
             // all_mods_len + pending_mods_len, which ensures modules not yet registered are also
             // checked for over-allocation
             let expected_len = graph.registered_mod_ids.len();
 
+            //NOTE: Check if externals (like lsp) can share this if not already
             //SAFETY
             // Ensuring before any resizing that the total modules never exceed MAX_MODULES
-            if expected_len > chrn_utils::MAX_MODULES as usize {
+            if expected_len > max_mods_usize {
                 // Checking if the last processed is in the queue
                 let last_processed_name = if let Some(module) = pending_mods.iter().last() {
                     interner.search(module.name_id)
@@ -550,16 +399,57 @@ pub fn extract_modules(
             break;
         }
 
+        for found in mod_ident_tracker.found_dups.drain(..) {
+            let dup_ident = interner.search(found.dup.ident_id);
+
+            // An alias is already present so changes msg
+            let add_help = !found.dup.is_alias;
+
+            let core_msg = if found.dup.is_alias {
+                format!("Duplicate import alias `{dup_ident}`")
+            } else {
+                format!("Duplicate identifier `{dup_ident}` generated by this import")
+            };
+
+            let imp_span = found
+                .dup
+                .span
+                .expect("Previous loop should guarantee import span");
+
+            let mut builder = SourceDiagnostic::builder(
+                ErrorCode::ImportErr.into(),
+                DiagnosticLevel::Error,
+                core_msg,
+                importer_path_id,
+            )
+            .add_annotation(imp_span, AnnotationKind::Primary, None);
+
+            // The original is the root module when it has no span
+            if let Some(original_span) = found.original.span {
+                builder = builder.add_annotation(
+                    original_span,
+                    AnnotationKind::Secondary,
+                    "Identifier first generated here".to_string().into(),
+                );
+            }
+
+            if add_help {
+                builder = builder.add_help("Consider giving the import an alias");
+            }
+
+            summary.push_diag(builder.build());
+        }
+
+        // Clearing current context of what should be considered a duplicate
+        mod_ident_tracker.clear();
+
         // The pending module's imports have all been seen making this the final assignment.
         // Module ids are sequential so this is fine.
         valid_mods.push(importer_mod);
     }
 
-    // let mut failed_indices: Vec<usize> = Vec::new();
-    //TODO: Emit warn if name == `core`
-    // If it's the same as core, core still takes precedence, but tooling may interpret it
-    // differently, so should reflect that non-deterministic behavior is expected and that the
-    // module's name should be changed
+    // Still concerning
+    cfg.perf_tracker_mut().stop(ChrnPerfStage::ModuleGraph);
 
     let compiler = ScriptCompiler::init(main_bind, valid_mods);
 
@@ -584,8 +474,9 @@ pub fn extract_modules(
 fn resolve_module(
     // The import to turn into a module
     import: Import,
+    official_ident: InternedId,
     // Module that imported this module, which triggered this module's processing,
-    importer_mod: &Module,
+    // importer_mod: &Module,
     graph: &mut ModuleGraph,
     summary: &mut SourceDiagnosticSummary,
     cfg: &ChrnConfig,
@@ -627,44 +518,13 @@ fn resolve_module(
     // Creating region id for the current module on this level in the recursive stacke
     let sub_region_id = SourceRegionId::new(graph.region_arena.len() as u32);
 
-    //Oh my
-    let file_name = match path.file_prefix().map(|n| n.to_str()).flatten() {
-        Some(p) => p.to_string(),
-        _ => {
-            //TODO: This implicitly uses the alias instead so make sure this works everywhere fine
-            if let Some(name_id) = import.alias_id {
-                interner.search(name_id).to_string()
-            } else {
-                let core_msg = format!(
-                    "The path \"{}\" does not have a valid UTF-8 file name usable within the program. ",
-                    path.display()
-                );
-
-                let src_diag =
-                        //TODO: Alias handling
-                        SourceDiagnostic::builder(ErrorCode::ImportErr.into(), DiagnosticLevel::Error, core_msg, sp_path_id.inner)
-                            .add_annotation(
-                                sp_path_id.span,
-                                AnnotationKind::Primary,
-                                None,
-                            ).add_note("Using `as` for an import alias with a valid UTF-8 name circumvents this error")
-                            .build();
-
-                summary.push_diag(src_diag);
-                return Err(());
-            }
-        }
-    };
-
-    let sub_mod_name_id = interner.intern(&file_name);
-
     //NOTE: If this were allowed, some odd undefined behavior would exist, which should likely just
     //be omitted entirely. This is the only location where anything "core" in identifier is stopped.
     //The "UB" in this scenario is just that the core module doesn't actually account for the user's
     //"core" module, only the compiler generated one. May change, but probably not.
     //
     //THE BEHAVIOR IS DEFINED IT IS NOT UB,ekAPEKAIOJE$#$#
-    if sub_mod_name_id.id == intern::INTERNED_CORE {
+    if official_ident.id == intern::INTERNED_CORE {
         //TODO: Maybe rename to compiler internals for the error codes to converge
         let core_msg = "`core` is the only identifier that can't be used for modules";
         let builder =
@@ -758,7 +618,7 @@ fn resolve_module(
     graph.region_arena.push(sub_region);
 
     let sub_mod = Module::new(
-        sub_mod_name_id,
+        official_ident,
         sub_state,
         current_mod_id,
         bind,

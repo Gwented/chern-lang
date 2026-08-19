@@ -2,17 +2,14 @@ use std::borrow::Cow;
 
 use chrn_utils::{
     byte_formatter,
-    chrn_config::{
-        ChrnConfig,
-        chrn_perf::{self, ChrnPerfStage},
-    },
+    chrn_config::ChrnConfig,
     core_error::{ConfigLoadError, ScriptError},
     files::file_ops,
     id_types::SourceRegionId,
     source_map::source_region::SourceRegion,
 };
 use compilation::{
-    modules::{self, ModuleState},
+    module::{self, module_concepts::ModuleState},
     script_compiler::reporter::Reporter,
 };
 use dumper::dump_settings::ModuleOptions;
@@ -192,17 +189,15 @@ fn exec_check(
         },
     };
 
-    // if compiler_store.cfg.perf_tracker().can_use() {
-    //     let perf_report = compiler_store.cfg.perf_tracker().report();
-    //     for report_opt in &perf_report.time_reports {
-    //         if let Some(report) = report_opt {
-    //             dbg!(report);
-    //             let avg = report.time_spent / report.times as u32;
-    //             dbg!(avg.as_micros());
-    //         }
-    //     }
-    //     panic!();
-    // }
+    if compiler_store.cfg.perf_tracker().can_use() {
+        let perf_report = compiler_store.cfg.perf_tracker().form_report();
+        for report_opt in &perf_report.time_reports {
+            if let Some(report) = report_opt {
+                dbg!(report);
+                // let avg = report.time_spent / report.times as u32;
+            }
+        }
+    }
 
     res
 }
@@ -337,7 +332,7 @@ fn exec_embed(
     cli_cfg: &CliConfig,
 ) -> Result<String, Option<String>> {
     // Centralized cmd to config construction for all known cmds?
-    let chrn_cfg = ChrnConfig::default();
+    let mut chrn_cfg = ChrnConfig::default();
 
     // let mut reporter = Reporter::new(crate::MAX_DIAGNOSTICS);
     let src_path = files::make_canon(&embed_cmd.src_path)?;
@@ -436,7 +431,7 @@ fn exec_embed(
             .region_arena
             .swap_remove(SourceRegionId::new(0))
     } else {
-        match modules::extract_main(&src_path, src, &chrn_cfg) {
+        match module::extract_main(&src_path, src, &mut chrn_cfg) {
             Ok((main_mod, graph, interner, summary)) => {
                 // If the region is broken then it's probably not the best idea to embed it
                 if main_mod.state == ModuleState::BrokenRegion {

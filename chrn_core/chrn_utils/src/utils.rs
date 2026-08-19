@@ -160,6 +160,7 @@ impl FreezeTrackerU32 {
         }
     }
 
+    /// "soft" reset only applies if not frozen
     pub const fn reset_soft(&mut self) {
         if !self.is_frozen() {
             self.inner = 1;

@@ -18,6 +18,7 @@ pub struct ChrnConfig {
     /// `struct` that contains a single boolean which determines whether or not debug logging will
     /// be done.
     logger: ChrnConfigLogger,
+    // Box?
     perf_tracker: ChrnPerf,
 }
 

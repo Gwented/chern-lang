@@ -2,7 +2,7 @@ use std::{io::Read, path::Path};
 
 use chrn_utils::{chrn_config::ChrnConfig, core_error::ModuleInitError, intern::Intern};
 use compilation::{
-    modules,
+    module,
     script_compiler::{
         ScriptCompiler, reporter::Reporter, script_compiler_store::ScriptCompilerStore,
     },
@@ -20,7 +20,7 @@ pub fn create_compiler<R: Read>(
     reporter: &mut Reporter,
     cfg: ChrnConfig,
 ) -> Result<(ScriptCompiler, ScriptCompilerStore), ModuleInitError> {
-    let (compiler, store, new_summary) = modules::extract_all_modules(path, src, cfg, reporter)?;
+    let (compiler, store, new_summary) = module::extract_all_modules(path, src, cfg, reporter)?;
     reporter.merge_summary_safe(new_summary);
     Ok((compiler, store))
 }
@@ -38,7 +38,7 @@ pub fn create_compiler_with_cache<R: Read>(
     cfg: ChrnConfig,
 ) -> Result<(ScriptCompiler, ScriptCompilerStore, ScriptCompilerCache), ModuleInitError> {
     let (compiler, compiler_store, new_summary) =
-        modules::extract_all_modules(path, src, cfg, reporter)?;
+        module::extract_all_modules(path, src, cfg, reporter)?;
     reporter.merge_summary_safe(new_summary);
 
     let cache = ScriptCompilerCache {

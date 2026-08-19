@@ -6,7 +6,7 @@ use chrn_utils::{
 };
 use compilation::{
     lexer::{Lexer, lexer_output::LexerOutput, token::SpannedToken},
-    modules::{self, ModuleState},
+    module::{self, module_concepts::ModuleState},
     parser::{self, ast::ast_concepts::AstInfo},
     resolvers::{
         constraint_resolver::ConstraintResolver,

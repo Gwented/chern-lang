@@ -18,7 +18,8 @@ use chrn_utils::{
 };
 use lang::keywords;
 
-use crate::modules::{Bind, Import, ImportKind};
+use crate::module::module_concepts::Bind;
+use crate::module::{Import, ImportKind};
 
 /// Module graph start-up structure that finds imports and assigns them a `ModuleId` from `seen`.
 ///
@@ -246,9 +247,15 @@ impl ModuleFinder<'_> {
         let name_id = interner.intern(&file_name);
         let path_id = interner.intern_path(&import_path);
 
-        let alias_id: Option<InternedId> = if self.is_as() {
+        let alias_id: Option<SpannedContainer<InternedId>> = if self.is_as() {
             self.skip_whitespace();
-            Some(self.read_id(interner))
+            let start = self.pos as u32;
+            let id = self.read_id(interner);
+            SpannedContainer::new(
+                id,
+                SourceSpan::new(self.current_region.region_id, start, self.pos as u32),
+            )
+            .into()
         } else {
             None
         };
@@ -428,7 +435,7 @@ impl ModuleFinder<'_> {
 
         interner.intern(&id_str)
     }
-    //FIX:
+    //FIX: Perf perf perf perf perfff
 
     fn peek_behind_char(&mut self, dest: usize) -> char {
         // Inclusive since otherwise it would skip the current character and there would need to be

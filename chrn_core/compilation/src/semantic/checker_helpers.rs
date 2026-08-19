@@ -5,6 +5,8 @@ use std::{collections::HashSet, hash::Hash};
 
 use chrn_utils::{id_types::InternedId, utils::containers::SpannedContainer};
 
+//TODO: Should be in utils actually. Maybe
+
 // ????
 /// Hashes and tracks types generically
 #[derive(Debug)]
@@ -29,8 +31,8 @@ impl<T: Clone + Hash + Eq> DuplicateTracker<T> {
     }
 
     // ???
-    /// If the given element already existed, it is stored inside `found_dups`. Returns `true`.
-    /// If the given element didn't exist, it's normally inserted. Returns `false`.
+    /// If the given element already exists, it is stored inside `found_dups`. Returns `true`.
+    /// If the given element didn't exist, it's inserted. Returns `false`.
     pub(crate) fn insert_or_store(&mut self, given: T) -> bool {
         if self.contains(&given) {
             let original = self.seen.get(&given).expect("Just checked");
@@ -38,9 +40,28 @@ impl<T: Clone + Hash + Eq> DuplicateTracker<T> {
             self.found_dups.push(duplicate);
             return true;
         }
-        // DROPPED? Ok.
         self.seen.insert(given);
         false
+    }
+
+    // The boolean seems kinda useless here
+    /// If the given element already exists, the predicate is ran. If the predicate is `true`,
+    /// nothing is stored. If `false`, it is stored inside `found_dups`.
+    pub(crate) fn insert_or_store_unless<F>(&mut self, given: T, p: F)
+    where
+        F: Fn() -> bool,
+    {
+        if self.contains(&given) {
+            if p() {
+                return;
+            }
+
+            let original = self.seen.get(&given).expect("Just checked");
+            let duplicate = DuplicateFound::new(original.clone(), given);
+            self.found_dups.push(duplicate);
+            return;
+        }
+        self.seen.insert(given);
     }
 
     /// Checks if `self.seen` contains `given`
