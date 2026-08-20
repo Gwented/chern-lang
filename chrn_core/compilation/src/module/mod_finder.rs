@@ -35,6 +35,7 @@ pub struct ModuleFinder<'a> {
     /// Path origin so that errors can accurately report the path where the import was declared
     current_region: &'a SourceRegion,
     pos: usize,
+    //TODO: Remove these when !
     script_start: usize,
     // NOT NEEDED BUT STAYING IN CASE
     serial_start: usize,

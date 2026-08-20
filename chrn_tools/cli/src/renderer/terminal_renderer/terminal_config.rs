@@ -6,7 +6,7 @@ use common::color::TerminalColorType;
 // information that other settings already use so it's mostly here just in case
 /// Settings specific to the renderer
 //TODO: Will need to decide where this lands
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct TerminalRenderConfig {
     // A bit redundant with CLI config but I don't know about forcing passing around the same two
     // structures just to avoid one bit of duplication here.

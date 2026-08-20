@@ -123,7 +123,7 @@ pub fn extract_main<R: Read>(
             }
         };
 
-    // FIX: Aliasing please
+    // FIX: Aliasing maybe.
     let file_name = match main_path.file_prefix().map(|n| n.to_str()).flatten() {
         Some(p) => p,
         _ => {
@@ -275,7 +275,24 @@ pub fn extract_modules(
                 official_span.into(),
             );
 
-            mod_ident_tracker.insert_or_store_unless(mod_ident, || is_importer);
+            if !is_importer {
+                mod_ident_tracker.insert_or_store(mod_ident);
+            } else {
+                // We just warn on self import because it's not useful but it's not an error
+                let core_msg = "Self imports have no effect";
+                let builder = SourceDiagnostic::builder(
+                    None,
+                    DiagnosticLevel::Warn,
+                    core_msg,
+                    importer_path_id,
+                )
+                .add_annotation(
+                    official_span,
+                    AnnotationKind::Secondary,
+                    "Does nothing".to_string().into(),
+                );
+                summary.push_diag(builder.build());
+            }
 
             // If the path from a given import was seen already then it skips
             if graph.seen.binary_search(&sp_path_id.inner).is_ok() {
@@ -431,6 +448,8 @@ pub fn extract_modules(
                     AnnotationKind::Secondary,
                     "Identifier first generated here".to_string().into(),
                 );
+            } else {
+                builder = builder.add_note("Original generated identifier is from the root module");
             }
 
             if add_help {

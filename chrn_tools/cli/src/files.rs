@@ -35,7 +35,7 @@ pub(crate) fn write_bytes_front(dest: &Path, to_write: &[u8]) -> Result<(), io::
     Ok(())
 }
 
-/// Writes `to_write` into the file `dest` at the front.
+/// Writes `to_write` into the file `dest` from the beginning.
 ///
 /// Creates a file with a random name, puts `to_write` inside, streams `dest`'s contents into it,
 /// removes the original file, then renames the random file name to the original file name `dest` had.

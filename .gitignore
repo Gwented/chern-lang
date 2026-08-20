@@ -13,6 +13,9 @@ chrn_without_the_e/
 # chrn_tools
 chrn_tools/target/
 
+# Common tools shared across any workspace
+common/target/
+
 # misc
 
 # Directory where case specific errors are checked internally

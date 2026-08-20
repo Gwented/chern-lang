@@ -4,7 +4,7 @@ use compilation::{
         token::{SpannedToken, Token},
         trivia::{CommentLocation, Trivia, TriviaKind},
     },
-    parser::ast::ast_concepts::{AbstractSection, AbstractVar, AstInfo, Item},
+    parser::ast::ast_concepts::{AbstractVar, AstInfo},
 };
 
 use crate::text_hir::{TextHir, TextType};

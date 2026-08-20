@@ -2185,6 +2185,19 @@ fn extract_msgs(main_path: &Path) -> Vec<String> {
     diags.diags.iter().map(|d| d.core_msg.clone()).collect()
 }
 
+fn extract_has_errors(main_path: &Path) -> bool {
+    let mut reporter = Reporter::new(100);
+    let (_, _, diags) = extract_all_modules(
+        main_path,
+        fs::File::open(main_path).unwrap(),
+        ChrnConfig::default(),
+        &mut reporter,
+    )
+    .expect("extract_all_modules must succeed");
+
+    diags.has_err()
+}
+
 /// Writes `main.chrn` in `dir` whose body is `imports` followed by one `let`.
 fn make_main_with(dir: &Path, imports: &[String]) -> PathBuf {
     let mut content = String::new();
@@ -2283,7 +2296,7 @@ fn self_import_is_not_duplicate() {
     );
 
     assert!(
-        extract_msgs(&canonical).is_empty(),
+        !extract_has_errors(&canonical),
         "self import must not be reported as a duplicate identifier",
     );
 

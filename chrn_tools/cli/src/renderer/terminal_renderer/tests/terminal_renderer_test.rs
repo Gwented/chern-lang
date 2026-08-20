@@ -184,10 +184,10 @@ fn region_start_offsets_line_numbers_and_widens_the_column() {
 fn diagnostics_without_a_region_arena_render_header_only() {
     let rendered = render_terminal_diags(
         &[diag("could not read file", Vec::new())],
-        &[] as &[FooterKind],
-        &plain_cfg(),
+        &[],
         None,
         &interner(),
+        &plain_cfg(),
     );
 
     assert_eq!(

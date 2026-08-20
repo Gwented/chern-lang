@@ -112,13 +112,7 @@ pub(super) fn render(src: &str, diag: SourceDiagnostic) -> String {
 pub(super) fn render_at(src: &str, diag: SourceDiagnostic, abs_ln_num_start: u32) -> String {
     let arena = region_arena(src, abs_ln_num_start);
     let interner = interner();
-    let rendered = render_terminal_diags(
-        &[diag],
-        &[] as &[FooterKind],
-        &plain_cfg(),
-        Some(&arena),
-        &interner,
-    );
+    let rendered = render_terminal_diags(&[diag], &[], Some(&arena), &interner, &plain_cfg());
 
     assert_eq!(rendered.len(), 1, "one diagnostic in, one rendering out");
     rendered

@@ -39,9 +39,9 @@ const DEFAULT_VISUAL_SEPARATORS: &str =
 pub(crate) fn render_terminal_diags(
     diags: &[SourceDiagnostic],
     footers: &[FooterKind],
-    cfg: &TerminalRenderConfig,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     interner: &Intern,
+    cfg: &TerminalRenderConfig,
 ) -> Vec<String> {
     let region_arena = match region_arena_opt {
         Some(arena) => arena,

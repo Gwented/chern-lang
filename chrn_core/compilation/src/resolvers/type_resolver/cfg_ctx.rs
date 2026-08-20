@@ -2,8 +2,6 @@
 //! semantics
 use chrn_utils::id_types::{SymbolId, TypeId};
 
-use crate::parser::ast::ast_exprs::TypeExpr;
-
 /// Struct for routing given a particular config member section origin setting
 
 // #[derive(Debug)]
@@ -12,6 +10,12 @@ use crate::parser::ast::ast_exprs::TypeExpr;
 //     kind: ConfigMemberContextKind<'a>,
 // }
 //
+
+//TODO: We may need 3 different contexts embedded total.
+//1: Complex, which only takes in a type
+//2: Override namespace from an intrinsic like "JAVA"
+//3: Override struct, which through the namespace alters it's particular internals.
+
 #[derive(Debug)]
 pub(super) enum ConfigMemberContextKind {
     Complex(ConfigMemberComplexContext),

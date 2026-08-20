@@ -301,6 +301,16 @@ impl SourceDiagnosticSummary {
         self.is_terminal = is_terminal;
     }
 
+    /// Returns `true` if `err_count` > 0, `false` otherwise
+    pub const fn has_err(&self) -> bool {
+        self.err_count() > 0
+    }
+
+    /// Returns `true` if `warn_count` > 0, `false` otherwise
+    pub const fn has_warn(&self) -> bool {
+        self.warn_count() > 0
+    }
+
     pub const fn err_count(&self) -> u16 {
         self.warn_and_err_count.right()
     }

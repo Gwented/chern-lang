@@ -144,7 +144,7 @@ impl<'res> TypeResolver<'res> {
                 CompilationUnit::Symbol(sym_id) => {
                     match self.compiler.symbols[sym_id].kind {
                         // This split is more so, users can define these set of symbols, and users cannot
-                        // define the unreacables.
+                        // define the unreachables
                         SymbolKind::Type(type_id) => match &self.compiler.types[type_id].ty {
                             Type::Struct(_) => self.resolve_struct(sym_id, env),
                             Type::Enum(_) => self.resolve_enum(sym_id, env),

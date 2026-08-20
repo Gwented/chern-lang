@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, io};
 
 use chrn_utils::{
     byte_formatter,
@@ -22,10 +22,9 @@ use crate::{
     files::{self},
     presentation, print_diags,
     renderer::{
-        json_renderer::{self, json_config::JsonRenderConfig},
-        render_kind::RenderKind,
+        self,
+        render_kind::{RenderKind, RenderKindFlat},
         terminal_renderer::{self, terminal_config::TerminalRenderConfig},
-        yaml_renderer::{self, yaml_config::YamlRenderConfig},
     },
 };
 
@@ -67,126 +66,72 @@ fn exec_check(
         }
     };
 
-    let render_kind = RenderKind::from_check_cmd(check_cmd);
+    let render_kind = RenderKind::from_check_cmd(check_cmd, glob_args, cli_cfg);
 
     // Please please please
     let (mut compiler, mut compiler_store, mut compiler_cache) =
         match constructors::create_compiler_with_cache(&path, src, &mut reporter, chrn_cfg) {
             Ok(data) => data,
-            Err(init_err) => match init_err.cfg_err {
-                ConfigLoadError::Diagnostic(diag) => {
-                    let footers = presentation::make_footers(&reporter);
-                    let msg_opt = match render_kind {
-                        RenderKind::Json => {
-                            let rendered = json_renderer::render_json_diags(
-                                &[diag],
-                                &footers,
-                                init_err.region.as_ref(),
-                                &init_err.interner,
-                                &JsonRenderConfig::new(check_cmd.minify),
-                            );
-                            eprintln!("{rendered}");
-                            None
+            Err(init_err) => {
+                let msg_opt = match init_err.cfg_err {
+                    ConfigLoadError::Diagnostic(diag) => {
+                        reporter.push_safe(diag);
+                        match render_kind.to_flat() {
+                            RenderKindFlat::Json | RenderKindFlat::Yaml => None,
+                            RenderKindFlat::Terminal => {
+                                "Failed to parse config file".to_string().into()
+                            }
                         }
-                        RenderKind::Yaml => {
-                            let rendered = yaml_renderer::render_yaml_diags(
-                                &[diag],
-                                &footers,
-                                init_err.region.as_ref(),
-                                &init_err.interner,
-                                &YamlRenderConfig::new(check_cmd.minify),
-                            );
-                            eprintln!("{rendered}");
-                            None
-                        }
-                        RenderKind::Terminal => {
-                            let render_cfg = TerminalRenderConfig::new(
-                                glob_args.can_color,
-                                cli_cfg.terminal_color_type,
-                            );
+                    }
+                    ConfigLoadError::IO(err) => {
+                        let msg = format!("Process exited unsuccessfully.\nReason: {err}");
+                        msg.into()
+                    }
+                };
 
-                            let rendered_diags = terminal_renderer::render_terminal_diags(
-                                &[diag],
-                                &footers,
-                                &render_cfg,
-                                init_err.region.as_ref(),
-                                &init_err.interner,
-                            );
+                let footers = presentation::make_footers(&reporter);
+                let rendered = renderer::render(
+                    reporter.diag_summary().diags(),
+                    &footers,
+                    init_err.region.as_ref(),
+                    &init_err.interner,
+                    &render_kind,
+                );
 
-                            print_diags!(&rendered_diags);
-                            "Failed to parse config file".to_string().into()
-                        }
-                    };
-
-                    return Err(msg_opt);
-                }
-                ConfigLoadError::IO(err) => {
-                    let msg = format!("Process exited unsuccessfully.\nReason: {err}");
-                    return Err(msg.into());
-                }
-            },
+                eprintln!("{rendered}");
+                return Err(msg_opt);
+            }
         };
 
-    let res = match orchestrator::run_all(
+    let msg_res = match orchestrator::run_all(
         &mut reporter,
         &mut compiler,
         &mut compiler_store,
         Some(&mut compiler_cache),
     ) {
-        Ok(_) => {
-            let msg = format!("No errors found");
-            Ok(msg)
-        }
+        // Yes. All green. Clean, even.
+        // Is this redundant? Kinda just want it to say "complete" no "complete:"
+        Ok(_) => Ok("No errors".to_string()),
         Err(script_err) => match script_err {
-            ScriptError::Parser | ScriptError::Semantic => {
-                let footers = presentation::make_footers(&reporter);
-                match render_kind {
-                    RenderKind::Json => {
-                        let rendered = json_renderer::render_json_diags(
-                            reporter.diag_summary().diags(),
-                            &footers,
-                            Some(&compiler_store.region_arena),
-                            &compiler_store.interner,
-                            &JsonRenderConfig::new(check_cmd.minify),
-                        );
-                        eprintln!("{rendered}");
-                    }
-                    RenderKind::Yaml => {
-                        let rendered = yaml_renderer::render_yaml_diags(
-                            &reporter.diag_summary().diags(),
-                            &footers,
-                            Some(&compiler_store.region_arena),
-                            &compiler_store.interner,
-                            &YamlRenderConfig::new(check_cmd.minify),
-                        );
-                        eprintln!("{rendered}");
-                    }
-                    RenderKind::Terminal => {
-                        let render_cfg = TerminalRenderConfig::new(
-                            glob_args.can_color,
-                            cli_cfg.terminal_color_type,
-                        );
-                        let rendered_diags = terminal_renderer::render_terminal_diags(
-                            &reporter.diag_summary().diags(),
-                            &footers,
-                            &render_cfg,
-                            Some(&compiler_store.region_arena),
-                            &compiler_store.interner,
-                        );
-
-                        //TODO: Internally cut error message strings in the parser
-                        print_diags!(&rendered_diags);
-                    }
-                };
-
-                Err(None)
-            }
-            // Enforces that only one diagnostic is emitted so this is fine
+            ScriptError::Parser | ScriptError::Semantic => Err(None),
             ScriptError::IO(e) => {
                 let msg = format!("Process exited unsuccessfully.\nReason: {e}");
                 Err(msg.into())
             }
         },
+    };
+
+    let rendered = presentation::render_diags(
+        &reporter,
+        Some(&compiler_store.region_arena),
+        &compiler_store.interner,
+        &render_kind,
+    );
+
+    if reporter.diag_summary().has_err() {
+        eprintln!("{rendered}");
+    } else {
+        println!("{rendered}");
     };
 
     if compiler_store.cfg.perf_tracker().can_use() {
@@ -199,7 +144,7 @@ fn exec_check(
         }
     }
 
-    res
+    msg_res
 }
 
 fn exec_fmt(fmt_cmd: &FmtCmd, cli_cfg: &CliConfig) -> Result<String, Option<String>> {
@@ -230,6 +175,8 @@ fn exec_query(
         }
     };
 
+    //TODO: Fix this just make the msg dynamic
+
     // Please please please
     let (mut compiler, mut compiler_store, mut compiler_cache) =
         match constructors::create_compiler_with_cache(&path, src, &mut reporter, chrn_cfg) {
@@ -243,10 +190,10 @@ fn exec_query(
                     let rendered_diags = terminal_renderer::render_terminal_diags(
                         &[diag],
                         &footers,
-                        &render_cfg,
                         // reporter.budget.amt_exceeded,
                         init_err.region.as_ref(),
                         &init_err.interner,
+                        &render_cfg,
                     );
 
                     print_diags!(&rendered_diags);
@@ -276,9 +223,9 @@ fn exec_query(
                     let rendered_diags = terminal_renderer::render_terminal_diags(
                         &reporter.diag_summary().diags(),
                         &footers,
-                        &render_cfg,
                         Some(&compiler_store.region_arena),
                         &compiler_store.interner,
+                        &render_cfg,
                     );
 
                     //TODO: Internally cut error message strings in the parser
@@ -325,6 +272,7 @@ fn exec_query(
     todo!("detailing")
 }
 
+//TODO: No. No terminal_renderer kind kinds
 /// Runs embed cmd :=
 fn exec_embed(
     embed_cmd: &EmbedCmd,
@@ -333,8 +281,14 @@ fn exec_embed(
 ) -> Result<String, Option<String>> {
     // Centralized cmd to config construction for all known cmds?
     let mut chrn_cfg = ChrnConfig::default();
+    let mut reporter = Reporter::new(crate::MAX_DIAGNOSTICS);
 
-    // let mut reporter = Reporter::new(crate::MAX_DIAGNOSTICS);
+    // NOTE: Terminal only for now
+    let render_kind = RenderKind::Terminal(TerminalRenderConfig::new(
+        glob_args.can_color,
+        cli_cfg.terminal_color_type,
+    ));
+
     let src_path = files::make_canon(&embed_cmd.src_path)?;
     let dest_path = files::make_canon(&embed_cmd.dest_path)?;
 
@@ -351,80 +305,68 @@ fn exec_embed(
     // Not sure how to lower this pasting because either, there is one extremely specific
     // method/function that does everything in this block of code, or we paste.
     // Will try the helper maybe.
-    let region: SourceRegion = if embed_cmd.check {
-        let mut reporter = Reporter::new(crate::MAX_DIAGNOSTICS);
 
+    let region: SourceRegion = if embed_cmd.check {
         let (mut compiler, mut compiler_store, mut compiler_cache) =
             match constructors::create_compiler_with_cache(&src_path, src, &mut reporter, chrn_cfg)
             {
                 Ok(data) => data,
-                Err(init_err) => match init_err.cfg_err {
-                    ConfigLoadError::Diagnostic(diag) => {
-                        let footers = presentation::make_footers(&reporter);
-                        let render_cfg = TerminalRenderConfig::new(
-                            glob_args.can_color,
-                            cli_cfg.terminal_color_type,
-                        );
+                Err(init_err) => {
+                    let msg_opt = match init_err.cfg_err {
+                        ConfigLoadError::Diagnostic(diag) => {
+                            reporter.push_safe(diag);
+                            let msg = "`--check` failed, did not embed file".to_string();
+                            msg.into()
+                        }
+                        ConfigLoadError::IO(err) => {
+                            let msg = format!("Process exited unsuccessfully. Reason: {err}");
+                            msg.into()
+                        }
+                    };
 
-                        let rendered_diags = terminal_renderer::render_terminal_diags(
-                            &[diag],
-                            &footers,
-                            &render_cfg,
-                            // reporter.budget.amt_exceeded,
-                            init_err.region.as_ref(),
-                            &init_err.interner,
-                        );
-
-                        print_diags!(&rendered_diags);
-                        let msg = "`--check` failed, did not embed file".to_string();
-                        return Err(msg.into());
-                    }
-                    ConfigLoadError::IO(err) => {
-                        let msg = format!("Process exited unsuccessfully. Reason: {err}");
-                        return Err(msg.into());
-                    }
-                },
+                    let rendered = presentation::render_diags(
+                        &reporter,
+                        init_err.region.as_ref(),
+                        &init_err.interner,
+                        &render_kind,
+                    );
+                    eprintln!("{rendered}");
+                    return Err(msg_opt);
+                }
             };
 
-        match orchestrator::run_all(
+        let msg_res = match orchestrator::run_all(
             &mut reporter,
             &mut compiler,
             &mut compiler_store,
             Some(&mut compiler_cache),
         ) {
-            Ok(_) => (),
+            // Is this redundant? Kinda just want it to say "complete" without "complete:"
+            Ok(_) => Ok(()),
             Err(script_err) => match script_err {
-                ScriptError::Parser | ScriptError::Semantic => {
-                    let footers = presentation::make_footers(&reporter);
-                    let msg_opt = {
-                        let render_cfg = TerminalRenderConfig::new(
-                            glob_args.can_color,
-                            cli_cfg.terminal_color_type,
-                        );
-                        let rendered_diags = terminal_renderer::render_terminal_diags(
-                            &reporter.diag_summary().diags(),
-                            &footers,
-                            &render_cfg,
-                            Some(&compiler_store.region_arena),
-                            &compiler_store.interner,
-                        );
-
-                        //TODO: Internally cut error message strings in the parser
-                        print_diags!(&rendered_diags);
-                        // Seems redundant to have this msg
-                        // "Failed to parse config file".to_string().into()
-                        "`--check` failed, did not embed file".to_string().into()
-                    };
-
-                    return Err(msg_opt);
-                }
-                // Enforces that only one diagnostic is emitted so this is fine
+                ScriptError::Parser | ScriptError::Semantic => Err(None),
                 ScriptError::IO(e) => {
                     let msg = format!("Process exited unsuccessfully.\nReason: {e}");
-                    return Err(msg.into());
+                    Err(msg.into())
                 }
             },
+        };
+
+        let rendered = presentation::render_diags(
+            &reporter,
+            Some(&compiler_store.region_arena),
+            &compiler_store.interner,
+            &render_kind,
+        );
+
+        if let Err(err_msg) = msg_res {
+            eprintln!("{rendered}");
+            return Err(err_msg);
+        } else {
+            // Just printing if any non-error diagnostics if any, still continues
+            println!("{rendered}");
         }
+
         // This is fine since main should be 0, unless internals broke. At that point the compiler
         // would need to directly take note of what the entry point was then we'd just use the id here.
         compiler_store
@@ -432,54 +374,52 @@ fn exec_embed(
             .swap_remove(SourceRegionId::new(0))
     } else {
         match module::extract_main(&src_path, src, &mut chrn_cfg) {
-            Ok((main_mod, graph, interner, summary)) => {
+            Ok((main_mod, graph, interner, mut summary)) => {
+                reporter.append_safe(&mut summary.diags);
+
+                let rendered = presentation::render_diags(
+                    &reporter,
+                    Some(&graph.region_arena),
+                    &interner,
+                    &render_kind,
+                );
+
                 // If the region is broken then it's probably not the best idea to embed it
                 if main_mod.state == ModuleState::BrokenRegion {
-                    let render_cfg =
-                        TerminalRenderConfig::new(glob_args.can_color, cli_cfg.terminal_color_type);
-
-                    let rendered_diags = terminal_renderer::render_terminal_diags(
-                        &summary.diags(),
-                        &[],
-                        &render_cfg,
-                        // reporter.budget.amt_exceeded,
-                        Some(&graph.region_arena),
-                        &interner,
-                    );
-
-                    print_diags!(&rendered_diags);
-                    let msg = "Failed to embed file".to_string();
+                    eprintln!("{rendered}");
+                    let msg = presentation::EMBED_FAILURE_MSG.to_string();
                     return Err(msg.into());
                 }
+
+                println!("{rendered}");
 
                 // Taking out region from main since that's all we're interested in
                 let mut arena = graph.region_arena;
                 let main_region_id = main_mod.region_id.expect("Just created");
                 arena.swap_remove(main_region_id)
             }
-            Err(init_err) => match init_err.cfg_err {
-                ConfigLoadError::Diagnostic(diag) => {
-                    let render_cfg =
-                        TerminalRenderConfig::new(glob_args.can_color, cli_cfg.terminal_color_type);
+            Err(init_err) => {
+                let msg_opt = match init_err.cfg_err {
+                    ConfigLoadError::Diagnostic(diag) => {
+                        reporter.push_safe(diag);
+                        let msg = "`--check` failed, did not embed file".to_string();
+                        msg.into()
+                    }
+                    ConfigLoadError::IO(err) => {
+                        let msg = format!("Process exited unsuccessfully. Reason: {err}");
+                        msg.into()
+                    }
+                };
 
-                    let rendered_diags = terminal_renderer::render_terminal_diags(
-                        &[diag],
-                        &[],
-                        &render_cfg,
-                        // reporter.budget.amt_exceeded,
-                        init_err.region.as_ref(),
-                        &init_err.interner,
-                    );
-
-                    print_diags!(&rendered_diags);
-                    let msg = "Failed to embed file".to_string();
-                    return Err(msg.into());
-                }
-                ConfigLoadError::IO(err) => {
-                    let msg = format!("Process exited unsuccessfully.\nReason: {err}");
-                    return Err(msg.into());
-                }
-            },
+                let rendered = presentation::render_diags(
+                    &reporter,
+                    init_err.region.as_ref(),
+                    &init_err.interner,
+                    &render_kind,
+                );
+                eprintln!("{rendered}");
+                return Err(msg_opt);
+            }
         }
     };
 
