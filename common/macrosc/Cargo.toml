@@ -1,0 +1,6 @@
+[package]
+name = "macrosc"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

@@ -6,7 +6,9 @@ edition.workspace = true
 [dependencies]
 clap = "4.6.0"
 clap_derive = "4.6.0"
-common = { path = "../common/"}
+colorc = { path = "../../common/colorc/"}
+macrosc = { path = "../../common/macrosc/"}
+filesc = { path = "../../common/filesc/"}
 lang = { path = "../../chrn_core/lang/"}
 orchestration = { path = "../orchestration/"}
 formatter = { path = "../formatter"}
@@ -14,4 +16,3 @@ dumper = { path = "../dumper/"}
 chrn_utils = {path = "../../chrn_core/chrn_utils/"}
 compilation = {path = "../../chrn_core/compilation/"}
 unicode-width = "0.2"
-

@@ -1,7 +1,6 @@
-use std::{borrow::Cow, io};
+use std::borrow::Cow;
 
 use chrn_utils::{
-    byte_formatter,
     chrn_config::ChrnConfig,
     core_error::{ConfigLoadError, ScriptError},
     files::file_ops,
@@ -14,13 +13,13 @@ use compilation::{
 };
 use dumper::dump_settings::ModuleOptions;
 use lang::keywords;
+use macrosc::byte_formatter;
 use orchestration::{constructors, orchestrator};
 
 use crate::{
     args::{CheckCmd, Cli, Commands, DocCmd, EmbedCmd, FmtCmd, GlobalArgs, QueryCmd},
     config::CliConfig,
-    files::{self},
-    presentation, print_diags,
+    files, presentation, print_diags,
     renderer::{
         self,
         render_kind::{RenderKind, RenderKindFlat},
@@ -451,9 +450,9 @@ fn exec_embed(
     }
 
     let res = if embed_cmd.in_memory {
-        files::write_bytes_front(&dest_path, &embed_portion)
+        filesc::write_bytes_front(&dest_path, &embed_portion)
     } else {
-        files::write_bytes_front_stream(&dest_path, &embed_portion)
+        filesc::write_bytes_front_stream(&dest_path, &embed_portion, "chrnstream".into())
     };
 
     match res {

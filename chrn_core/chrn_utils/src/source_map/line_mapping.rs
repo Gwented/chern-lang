@@ -124,8 +124,8 @@ impl LineGroupManager {
 // Maybe prefix?
 pub fn help_transform(from: &str, to: &str, can_color: bool) -> String {
     todo!()
-    // let (red, nc) = color::get_red(can_color);
-    // let (green, _) = color::get_green(can_color);
+    // let (red, nc) = color_type::get_red(can_color);
+    // let (green, _) = color_type::get_green(can_color);
     //
     // let from_spaces = " ".repeat(UnicodeWidthStr::width(from));
     //

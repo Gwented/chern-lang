@@ -3,7 +3,7 @@
 // Should this be read-only? What is reading?
 use crate::source_map::source_span::SourceSpan;
 
-//TODO: Move me
+//TODO: Move me again?
 /// Generic structure for attaching a span to any type
 #[derive(Debug, Clone, Eq)]
 pub struct SpannedContainer<T> {

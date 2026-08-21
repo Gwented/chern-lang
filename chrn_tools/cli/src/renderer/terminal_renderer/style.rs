@@ -4,7 +4,7 @@ use chrn_utils::{
     err_codes::{self, ErrorCode},
     source_map::source_diagnostic::{DiagnosticLevel, annotations::AnnotationKind},
 };
-use common::color::{self, TerminalColorType};
+use colorc::color_type::{self, TerminalColorType};
 
 use crate::renderer::{output_helpers, terminal_renderer::terminal_config::TerminalRenderConfig};
 
@@ -25,16 +25,16 @@ pub(super) fn get_diag_level_color(
 ) -> String {
     match level {
         DiagnosticLevel::Error => {
-            let (red, _) = color::get_red(settings.can_color, settings.terminal_type);
+            let (red, _) = color_type::get_red(settings.can_color, settings.terminal_type);
             red
         }
         DiagnosticLevel::Warn | DiagnosticLevel::Help => {
-            let (orange, _) = color::get_orange(settings.can_color, settings.terminal_type);
+            let (orange, _) = color_type::get_orange(settings.can_color, settings.terminal_type);
             orange
         }
 
         DiagnosticLevel::Note => {
-            let (cyan, _) = color::get_cyan(settings.can_color, settings.terminal_type);
+            let (cyan, _) = color_type::get_cyan(settings.can_color, settings.terminal_type);
             cyan
         }
     }
@@ -59,11 +59,11 @@ pub(super) fn get_annotation_kind_color(
     match kind {
         AnnotationKind::Primary | AnnotationKind::Secondary => String::new(),
         AnnotationKind::Note => {
-            let (cyan, _) = color::get_cyan(can_color, terminal);
+            let (cyan, _) = color_type::get_cyan(can_color, terminal);
             cyan
         }
         AnnotationKind::Help => {
-            let (orange, _) = color::get_orange(can_color, terminal);
+            let (orange, _) = color_type::get_orange(can_color, terminal);
             orange
         }
     }
@@ -77,16 +77,16 @@ pub(super) fn get_annotation_kind_ptr_color(
 ) -> String {
     match kind {
         AnnotationKind::Primary => {
-            let (red, _) = color::get_red(can_color, terminal);
+            let (red, _) = color_type::get_red(can_color, terminal);
             red
         }
         AnnotationKind::Secondary | AnnotationKind::Note => {
             // This is kind of hard to see without bold
-            let (cyan, _) = color::get_bold_cyan(can_color, terminal);
+            let (cyan, _) = color_type::get_bold_cyan(can_color, terminal);
             cyan
         }
         AnnotationKind::Help => {
-            let (orange, _) = color::get_orange(can_color, terminal);
+            let (orange, _) = color_type::get_orange(can_color, terminal);
             orange
         }
     }
@@ -102,31 +102,31 @@ pub(super) fn get_annotation_kind_ptr(kind: AnnotationKind) -> &'static str {
 
 /// Formats a help message with heuristic styling
 pub(super) fn standardize_help(msg: &str, can_color: bool, terminal: TerminalColorType) -> String {
-    let (orange, nc) = color::get_orange(can_color, terminal);
+    let (orange, nc) = color_type::get_orange(can_color, terminal);
     format!("{orange}help{nc}: {msg}")
 }
 
 /// Formats error message with heuristic styling (Intended for footer errors)
 pub(super) fn standardize_error(msg: &str, can_color: bool, terminal: TerminalColorType) -> String {
-    let (red, nc) = color::get_red(can_color, terminal);
+    let (red, nc) = color_type::get_red(can_color, terminal);
     format!("{red}error{nc}: {msg}")
 }
 
 /// Formats warn message with heuristic styling
 pub(super) fn standardize_warn(msg: &str, can_color: bool, terminal: TerminalColorType) -> String {
-    let (orange, nc) = color::get_orange(can_color, terminal);
+    let (orange, nc) = color_type::get_orange(can_color, terminal);
     format!("{orange}warn{nc}: {msg}")
 }
 
 /// Formats a note message with heuristic styling
 pub(super) fn standardize_note(msg: &str, can_color: bool, terminal: TerminalColorType) -> String {
-    let (cyan, nc) = color::get_cyan(can_color, terminal);
+    let (cyan, nc) = color_type::get_cyan(can_color, terminal);
     format!("{cyan}note{nc}: {msg}")
 }
 
 /// Creates a template header with with given path
 pub(super) fn create_path_header(path: &Path, settings: &TerminalRenderConfig) -> String {
-    let (bold, nc) = color::get_bold(settings.can_color);
+    let (bold, nc) = color_type::get_bold(settings.can_color);
     format!("{bold}PATH{nc} => \"{}\"", path.display())
 }
 
@@ -147,7 +147,7 @@ pub(super) fn create_level_header(
 
     let header_text = get_diag_level_text(level);
 
-    let nc = color::get_nc(settings.can_color);
+    let nc = color_type::get_nc(settings.can_color);
     let header_color = get_diag_level_color(level, settings);
 
     let level_header = format!("{header_color}{header_text}{nc}");
@@ -165,13 +165,13 @@ pub(super) fn create_level_header(
 // ) -> String {
 //     let header_text = get_diag_level_text(level);
 //
-//     let nc = color::NC;
+//     let nc = colorc::NC;
 //     let header_color = get_diag_level_color(level, settings);
 //
 //     let level_header = format!("{header_color}{header_text}{nc}");
 //     let path_header = create_path_header(path, settings);
 //
-//     let (bold, nc) = color::get_bold(settings.can_color);
+//     let (bold, nc) = color_type::get_bold(settings.can_color);
 //
 //     format!("{path_header}\n{level_header}: {msg}")
 // }

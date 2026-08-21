@@ -1,0 +1,6 @@
+[package]
+name = "filesc"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

@@ -2,8 +2,8 @@
 //!
 //! Worked example of the page API. Prose here is a first pass the semantics are not settled.
 
-use chrn_utils::byte_formatter;
 use chrn_utils::err_codes::ErrorCode;
+use macrosc::byte_formatter;
 
 use crate::doc_builder::Inline;
 use crate::errors::ErrorDoc;

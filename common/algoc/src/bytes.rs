@@ -1,4 +1,3 @@
-//TEST:
 /// Byte similarity check
 pub fn is_similar(a: &[u8], b: &[u8]) -> bool {
     let mut chances = 2;

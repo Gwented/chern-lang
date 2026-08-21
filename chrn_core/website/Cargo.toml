@@ -5,3 +5,5 @@ edition.workspace = true
 
 [dependencies]
 chrn_utils = { path = "../chrn_utils" }
+# Ok now this just looks bad
+macrosc = { path = "../../common/macrosc/" }

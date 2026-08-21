@@ -4,6 +4,7 @@ use std::{
     path::Path,
 };
 
+// This seems fit for common/ since it's a non-specific msg helper
 //TEST:
 /// Convenience function for opening files
 ///

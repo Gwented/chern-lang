@@ -15,7 +15,7 @@ use chrn_utils::{
         source_span::SourceSpan,
     },
 };
-use common::color::TerminalColorType;
+use colorc::color_type::TerminalColorType;
 
 use crate::renderer::terminal_renderer::{
     render_terminal_diags, terminal_config::TerminalRenderConfig,

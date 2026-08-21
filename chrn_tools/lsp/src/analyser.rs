@@ -40,10 +40,10 @@ use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use compilation::lexer::Lexer;
-use compilation::modules::Bind;
-use compilation::modules::ImportKind;
-use compilation::modules::Module;
-use compilation::modules::ModuleState;
+use compilation::module::{
+    mod_finder::ModuleFinder,
+    module_concepts::{Bind, ImportKind, Module, ModuleState},
+};
 use parking_lot::RwLock;
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
@@ -60,7 +60,6 @@ use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use chrn_utils::source_map::source_region::SourceRegion;
-use compilation::modules::mod_finder::ModuleFinder;
 use std::io::Cursor;
 use tower_lsp::lsp_types::Url;
 
@@ -638,9 +637,7 @@ async fn publish_if_current(
 ///
 /// A diagnostic whose `path_id` is absent falls back to `0`: compiler-intrinsic
 /// diagnostics correspond to no user file, and a region may have been evicted.
-fn region_script_starts(
-    arena: &Arena<SourceRegion, SourceRegionId>,
-) -> HashMap<PathId, usize> {
+fn region_script_starts(arena: &Arena<SourceRegion, SourceRegionId>) -> HashMap<PathId, usize> {
     let mut starts = HashMap::with_capacity(arena.items.len());
     for region in &arena.items {
         starts.entry(region.path_id).or_insert(region.script_start);
@@ -700,10 +697,7 @@ pub(crate) fn push_diagnostic(
         // A diagnostic originating in an imported module has spans relative to
         // that module's region, so the shift has to come from the region matching
         // this diagnostic's `path_id`, not from the main document's.
-        let script_start = script_starts
-            .get(&core_diag.path_id)
-            .copied()
-            .unwrap_or(0);
+        let script_start = script_starts.get(&core_diag.path_id).copied().unwrap_or(0);
 
         let severity = match core_diag.level {
             DiagnosticLevel::Error => lsp_types::DiagnosticSeverity::ERROR,

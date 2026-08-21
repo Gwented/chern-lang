@@ -1,4 +1,3 @@
-pub mod algo;
 pub mod arena;
 pub mod budget;
 pub mod chrn_config;

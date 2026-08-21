@@ -3,5 +3,17 @@
 version = 4
 
 [[package]]
-name = "color"
+name = "algoc"
+version = "0.1.0"
+
+[[package]]
+name = "colorc"
+version = "0.1.0"
+
+[[package]]
+name = "filesc"
+version = "0.1.0"
+
+[[package]]
+name = "macrosc"
 version = "0.1.0"

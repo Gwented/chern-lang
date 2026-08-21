@@ -4,7 +4,6 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-common = { path = "../common" }
 chrn_utils = { path = "../../chrn_core/chrn_utils" }
 lang = { path = "../../chrn_core/lang/" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "io-std", "fs"] }

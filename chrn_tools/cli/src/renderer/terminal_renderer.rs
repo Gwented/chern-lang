@@ -18,15 +18,13 @@ use chrn_utils::{
         source_span::SourceSpan,
     },
 };
-use common::color;
+use colorc::color_type;
+use macrosc::s_suffix;
 use unicode_width::UnicodeWidthStr;
 
-use crate::{
-    renderer::terminal_renderer::{
-        layout::{RenderInfo, RenderLineLayout},
-        terminal_config::TerminalRenderConfig,
-    },
-    s_suffix,
+use crate::renderer::terminal_renderer::{
+    layout::{RenderInfo, RenderLineLayout},
+    terminal_config::TerminalRenderConfig,
 };
 
 /// 60 dashes used as a visual separator between diagnostics
@@ -324,7 +322,7 @@ fn render_line_layout_text(
     // allowing it to give the absolute line number rather than relative.
     let abs_ln_num = ln.ln_num + region_abs_ln_num - 1;
 
-    let nc = color::get_nc(settings.can_color);
+    let nc = color_type::get_nc(settings.can_color);
 
     let mut plain_ln = String::new();
 
@@ -341,8 +339,8 @@ fn render_line_layout_text(
         // Not sure if this eof specific character is really needed. It's already pretty obvious
         // looking.
         // if ln_end != ln_span.end {
-        //     let (bold, _) = color::get_bold(settings.can_color);
-        //     let (grey, _) = color::get_grey(settings.can_color, settings.terminal_type);
+        //     let (bold, _) = color_type::get_bold(settings.can_color);
+        //     let (grey, _) = color_type::get_grey(settings.can_color, settings.terminal_type);
         //     plain_ln.push_str(&format!("{bold}{grey}<eof>{nc}"));
         // }
     }

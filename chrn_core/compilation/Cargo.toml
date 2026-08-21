@@ -7,3 +7,5 @@ edition.workspace = true
 bitflags = "2.13.0"
 chrn_utils = {path = "../chrn_utils/"}
 lang =  { path = "../lang/" }
+algoc = { path = "../../common/algoc/" }
+macrosc = { path = "../../common/macrosc/" }

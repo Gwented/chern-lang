@@ -1,7 +1,5 @@
 use std::{fmt::Debug, hash::Hash};
 
-use crate::source_map::source_span::SourceSpan;
-
 pub trait ArenaIndex: Copy {
     fn into_usize(self) -> usize;
     fn from_usize(val: usize) -> Self;

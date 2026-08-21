@@ -7,4 +7,3 @@ edition.workspace = true
 chrn_utils = { path = "../../chrn_core/chrn_utils" }
 compilation = { path = "../../chrn_core/compilation/" }
 lang = { path = "../../chrn_core/lang/" }
-common = { path = "../common/" }

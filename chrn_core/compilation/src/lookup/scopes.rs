@@ -272,7 +272,7 @@ pub fn find_symbols_named<'a>(
         } else {
             let sym_bytes = interner.search(sym.name_id).as_bytes();
 
-            if chrn_utils::algo::is_similar(sym_bytes, target_bytes) {
+            if algoc::bytes::is_similar(sym_bytes, target_bytes) {
                 found_syms.push(sym.sym_id);
             }
         }

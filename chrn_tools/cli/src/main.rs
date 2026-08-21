@@ -3,10 +3,9 @@ use std::time::Instant;
 //TODO: Eventually will have it's own cli backend but not priority
 // Maybe not?
 use chrn::{args, config::CliConfig, dispatcher};
-use common::color;
+use colorc::color_type;
 
 fn main() {
-    let start = Instant::now();
     let cli_cfg = CliConfig::init();
     // Checks this first so external tooling syntax can be checked before exiting
     let cli = match args::try_parse(&cli_cfg) {
@@ -17,13 +16,13 @@ fn main() {
     match dispatcher::exec(&cli, &cli_cfg) {
         Ok(msg) => {
             let (green, nc) =
-                color::get_green(cli.glob_args.can_color, cli_cfg.terminal_color_type);
+                color_type::get_green(cli.glob_args.can_color, cli_cfg.terminal_color_type);
             println!("{green}complete{nc}: {msg}");
         }
         Err(err_msg_opt) => {
             if let Some(err_msg) = err_msg_opt {
                 let (red, nc) =
-                    color::get_red(cli.glob_args.can_color, cli_cfg.terminal_color_type);
+                    color_type::get_red(cli.glob_args.can_color, cli_cfg.terminal_color_type);
                 eprintln!("{red}exited{nc}: {err_msg}");
             }
             std::process::exit(1);

@@ -2,7 +2,7 @@ use std::cell::Cell;
 
 use chrn_utils::{
     budget::mem_budget::{BudgetResult, MemoryBudget},
-    utils::trackers::recursion_tracker::{RecursionTracker, RecursiveGuard},
+    utils::trackers::recursion_tracker::{RecursionTrackerU16, RecursiveGuard},
 };
 
 /// Budget tracker specifically for parser that tracks expression nodes and uses `RecursiveTracker`
@@ -10,14 +10,14 @@ use chrn_utils::{
 pub(super) struct ParserBudget {
     // Is cell so that this structure can be borrowed and internally mutated without borrow checker
     // issues since this is just a counter.
-    pub(super) recursion_tracker: RecursionTracker,
+    pub(super) recursion_tracker: RecursionTrackerU16,
     node_budget: MemoryBudget,
 }
 
 impl ParserBudget {
     pub(super) fn new(recursion_limit: u16, node_limit: usize) -> ParserBudget {
         ParserBudget {
-            recursion_tracker: RecursionTracker::new(recursion_limit),
+            recursion_tracker: RecursionTrackerU16::new(recursion_limit),
             node_budget: MemoryBudget::new(node_limit),
         }
     }

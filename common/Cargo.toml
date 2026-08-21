@@ -1,5 +1,10 @@
+# This looks odd, but this is just butting 'c' at the end of crate names so that other crates can still
+# be named the same thing and this just buts c at the end by a codebase convention. Could just be common_algo
+# or just, algo by itself. But testing something.
+#
+# If this seems random that's because it is.
 [workspace]
-members = ["color"]
+members = ["algoc","colorc", "filesc", "macrosc"]
 resolver = "3"
 
 [workspace.package]

@@ -4,7 +4,6 @@ use chrn_utils::{
     err_codes::ErrorCode,
     id_types::InternedId,
     intern::Intern,
-    s_suffix,
     source_map::{
         source_diagnostic::{
             DiagnosticLevel, SourceDiagnostic, SourceDiagnosticBuilder, SourceDiagnosticSink,
@@ -19,6 +18,7 @@ use lang::{
     chrn_classifier::ChrnClassifiable,
     keywords::Keyword,
 };
+use macrosc::s_suffix;
 
 use crate::{
     lexer::token::{self, Notation, SpannedToken, Token, TokenKind},

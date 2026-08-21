@@ -1,6 +1,6 @@
 use std::env;
 
-use common::color::TerminalColorType;
+use colorc::color_type::TerminalColorType;
 
 use crate::env_vars;
 

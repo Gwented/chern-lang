@@ -1,6 +1,6 @@
 use std::io::{self, IsTerminal};
 
-use common::color::TerminalColorType;
+use colorc::color_type::TerminalColorType;
 
 // This more so exists because it may need to exist as something more, but it currently just stores
 // information that other settings already use so it's mostly here just in case

@@ -6,14 +6,14 @@ use std::cell::Cell;
 ///
 /// When the limit is reached returns a basic Err(())
 #[derive(Debug)]
-pub struct RecursionTracker {
+pub struct RecursionTrackerU16 {
     depth: Cell<u16>,
     limit: u16,
 }
 
-impl RecursionTracker {
-    pub fn new(limit: u16) -> RecursionTracker {
-        RecursionTracker {
+impl RecursionTrackerU16 {
+    pub fn new(limit: u16) -> RecursionTrackerU16 {
+        RecursionTrackerU16 {
             depth: Cell::new(0),
             limit,
         }
@@ -48,7 +48,7 @@ impl RecursionTracker {
 
 #[derive(Debug)]
 pub struct RecursiveGuard<'a> {
-    tracker: &'a RecursionTracker,
+    tracker: &'a RecursionTrackerU16,
 }
 
 impl Drop for RecursiveGuard<'_> {

@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "algoc"
+version = "0.1.0"
+
+[[package]]
 name = "bitflags"
 version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -23,9 +27,11 @@ dependencies = [
 name = "compilation"
 version = "0.1.0"
 dependencies = [
+ "algoc",
  "bitflags",
  "chrn_utils",
  "lang",
+ "macrosc",
 ]
 
 [[package]]
@@ -35,6 +41,10 @@ dependencies = [
  "bitflags",
  "chrn_utils",
 ]
+
+[[package]]
+name = "macrosc"
+version = "0.1.0"
 
 [[package]]
 name = "unicode-width"
@@ -47,4 +57,5 @@ name = "website"
 version = "0.1.0"
 dependencies = [
  "chrn_utils",
+ "macrosc",
 ]

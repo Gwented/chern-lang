@@ -1,5 +1,5 @@
 [package]
-name = "common"
+name = "colorc"
 version.workspace = true
 edition.workspace = true
 
