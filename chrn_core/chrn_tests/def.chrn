@@ -58,16 +58,16 @@ State {
         InProgress {}
         stating {}
     }*/
-    // nothing::Person {}
-/*override->
+   // nothing::Person {}
+override->
 State {
-    types state1 {}
+    state1 {}
 }
 
 JAVA {
     override types {
-        change i32, = u32::MAX
+       change i32, = 3
     }
-}*/
+}
 // State=> {stating {k {}}}
 // var State {}

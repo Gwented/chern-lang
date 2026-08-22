@@ -18,7 +18,7 @@ use crate::{
     semantic::hir::{hir_concepts::Type, hir_exprs::Param},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum SymbolOrigin {
     Module(ModuleId),
     Compiler,
@@ -42,12 +42,11 @@ pub struct Symbol {
 }
 
 impl Symbol {
-    pub fn new(
+    pub const fn new(
         // May couple dbg info but fine for now
         name_id: InternedId,
         // name_span: Option<SourceSpan>,
         sym_id: SymbolId,
-        //dbgr
         // Maybe we can have an id enum instead with it possibility allowing for field types?
         ast_id: Option<AstId>,
         sym_origin: SymbolOrigin,
@@ -84,7 +83,6 @@ pub enum SymbolKind {
     /// Represents a namespace of any kind. Can currently be either a module symbol or plain
     /// namespace.
     Namespace,
-    /// Represents a config symbol
     Directive(DirectiveId),
     ExternType,
 }

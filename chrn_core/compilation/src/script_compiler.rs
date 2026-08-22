@@ -29,6 +29,7 @@ use crate::{
     module::module_concepts::{Bind, Import, ImportKind, Module, ModuleState},
     resolvers::resolver_state::ResolverState,
     script_compiler::helpers::{
+        common_helpers::{CommonKind, CommonSymbolBase, CommonSymbolKind},
         compiler_helpers,
         core_helpers::{self, CoreFunc},
         extern_helpers::{self, ExternKind},
@@ -156,6 +157,8 @@ impl ScriptCompiler {
     //to anything, similar to the interner's constants.
     /// Loads core library and builds script specific compiler with parameters given
     pub fn init(bind: Option<Bind>, mods: Arena<Module, ModuleId>) -> ScriptCompiler {
+        // WARN: This is a little dangerous because it is a contract saying, this MUST load core as
+        // the next scope. As long as load_core is called first, this remains truthful.
         let core_mod_id = ModuleId::new(mods.len() as u32);
         let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None);
 
@@ -856,19 +859,28 @@ impl ScriptCompiler {
 
     /// Loads the core module
     fn load_core(&mut self) {
-        // Ignore this
-        let mut table = Table::with_capacities(
-            0,
-            // Does not include + 1 because `Unknown` has no identifier given
-            core_helpers::CORE_BUILTIN_TYPES_DATASET.len()
-                + core_helpers::CORE_BOUNDARIES_DATASET.len()
-                + core_helpers::CORE_FUNCS_DATASET.len(),
-        );
-
         //TODO: If namespace core exists as a module then should error earlier
         let core_name_id = InternedId::new(intern::INTERNED_CORE);
         let core_mod_id = ModuleId::new(self.mods.len() as u32);
+
         let core_scope_id = ScopeId::new(self.scopes.len() as u16);
+        let core_scope = Scope::with_table(
+            core_scope_id,
+            ScopeType::Core,
+            None,
+            false,
+            Table::with_capacities(
+                0,
+                // Does not include + 1 because `Unknown` has no identifier given
+                core_helpers::CORE_BUILTIN_TYPES_DATASET.len()
+                    + core_helpers::CORE_BOUNDARIES_DATASET.len()
+                    + core_helpers::CORE_FUNCS_DATASET.len(),
+            ),
+        );
+
+        let scope_info = ScopeInfo::new(core_scope, None, core_mod_id);
+
+        self.scopes.push(scope_info);
 
         // Uses module only so that there are no possible borrow checker issues.
         let mut core_mod = Module::new(
@@ -880,23 +892,18 @@ impl ScriptCompiler {
             None,
         );
 
-        self.load_core_types(core_mod.mod_id, &mut table);
-        self.load_core_funcs(core_mod.mod_id, &mut table);
+        core_mod.scopes.push(core_scope_id);
 
+        self.load_core_types(core_mod.mod_id, core_scope_id);
+        self.load_core_funcs(core_mod.mod_id, core_scope_id);
+
+        let table = &mut self.scopes[core_scope_id].scope.table;
         core_mod.exports.reserve_exact(table.interned_to_sym.len());
 
         // Exporting all created symbols from core
         for sym_id in table.interned_to_sym.values().copied() {
             core_mod.exports.push(sym_id);
         }
-
-        // Done adding all of core
-        let scope_id = ScopeId::new(self.scopes.len() as u16);
-        let scope = Scope::with_table(scope_id, ScopeType::Core, None, true, table);
-        let scope_info = ScopeInfo::new(scope, None, core_mod_id);
-
-        self.scopes.push(scope_info);
-        core_mod.scopes.push(scope_id);
 
         self.mods.push(core_mod);
 
@@ -964,7 +971,7 @@ impl ScriptCompiler {
         let scope = Scope::new(scope_id, ScopeType::Override, true, None);
         self.scopes.push(ScopeInfo::new(scope, None, core_mod_id));
 
-        self.register_all_extern_namespaces(scope_id);
+        self.register_all_common_bases(scope_id, &extern_helpers::ALL_EXTERN_NAMESPACES_DATASET);
 
         // -- FINAL --
         // Pushing the intrinsic scope
@@ -977,48 +984,47 @@ impl ScriptCompiler {
         scope_id
     }
 
-    /// Entry point to the recursive registeration of all `override` external type namespace symbols
-    fn register_all_extern_namespaces(&mut self, current_scope_id: ScopeId) {
+    //TODO: This is now a registration that takes a shape, and transforms it into a namespace
+    //registration, rather than kind specific. Trait, enum, whichever. Address me.
+
+    /// Entry point to the recursive registeration of any namespace symbol abiding by the
+    /// convention of using `CommonKind`
+    fn register_all_common_bases(
+        &mut self,
+        current_scope_id: ScopeId,
+        root_dataset: &[&[CommonSymbolBase]],
+    ) {
         // iterative version was a bit verbose..
         // let mut stack: Vec<ExternFrame> = Vec::with_capacity(10);
 
-        for extern_kind in extern_helpers::ALL_EXTERN_NAMESPACES_DATASET {
-            self.register_extern_namespace(current_scope_id, extern_kind);
+        for base in root_dataset {
+            self.register_common_bases(current_scope_id, base);
         }
     }
 
     /// Uses dataset from `extern_helpers.rs` of all `ExternType` intrinsics to push scopes and
     /// symbols recursively
-    fn register_extern_namespace(
+    fn register_common_bases(
         &mut self,
         current_scope_id: ScopeId,
-        extern_kinds: &[ExternKind],
+        common_bases: &[CommonSymbolBase],
     ) {
-        for kind in extern_kinds {
-            match kind {
-                ExternKind::Namespace(extern_namespace) => {
+        for base in common_bases {
+            match base.kind {
+                CommonSymbolKind::Namespace(syms) => {
                     // Creating namespace as a symbol with the identifier associated first.
                     let sym_id = SymbolId::new(self.symbols.len() as u32);
                     let scope_id = ScopeId::new(self.scopes.len() as u16);
+                    let sym_kind = SymbolKind::Namespace;
+                    let associated_scope = AssociatedScopeKind::Scope(scope_id);
 
-                    let sym = Symbol::new(
-                        extern_namespace.name_id,
-                        sym_id,
-                        None,
-                        SymbolOrigin::Compiler,
-                        true,
-                        AssociatedScopeKind::Scope(scope_id).into(),
-                        ScopeType::Compiler,
-                        SymbolKind::Namespace,
-                    );
+                    let sym = base.to_sym(sym_id, None, associated_scope.into(), sym_kind);
 
                     // Putting the found namespace into the current table's scope before recursively
                     // descending into new scope
                     let current_table = &mut self.scopes[current_scope_id].scope.table;
                     self.symbols.push(sym);
-                    current_table
-                        .interned_to_sym
-                        .insert(extern_namespace.name_id, sym_id);
+                    current_table.interned_to_sym.insert(base.name_id, sym_id);
 
                     let scope = Scope::new(scope_id, ScopeType::Compiler, true, None);
 
@@ -1026,36 +1032,143 @@ impl ScriptCompiler {
                     self.scopes.push(ScopeInfo::new(
                         scope,
                         sym_id.into(),
+                        //WARN: This should be an Option, or at least use some origin enum instead
                         self.intrinsic_registry.core_mod_id,
                     ));
 
-                    self.register_extern_namespace(scope_id, extern_namespace.syms);
+                    self.register_common_bases(scope_id, syms);
                 }
-                ExternKind::Symbol(interned_id) => {
+                CommonSymbolKind::ExternType => {
                     let sym_id = SymbolId::new(self.symbols.len() as u32);
-                    let sym = Symbol::new(
-                        *interned_id,
-                        sym_id,
-                        None,
-                        SymbolOrigin::Compiler,
-                        true,
-                        None,
-                        ScopeType::Compiler,
-                        SymbolKind::ExternType,
-                    );
+                    let sym_kind = SymbolKind::ExternType;
+                    let sym = base.to_sym(sym_id, None, None, sym_kind);
 
                     let current_table = &mut self.scopes[current_scope_id].scope.table;
                     self.symbols.push(sym);
-                    current_table.interned_to_sym.insert(*interned_id, sym_id);
+                    current_table.interned_to_sym.insert(base.name_id, sym_id);
                 }
             }
+
+            // match base {
+            //     CommonKind::Namespace(namespace_parts) => {
+            //         // Creating namespace as a symbol with the identifier associated first.
+            //         let sym_id = SymbolId::new(self.symbols.len() as u32);
+            //         let scope_id = ScopeId::new(self.scopes.len() as u16);
+            //
+            //         let sym = namespace_parts.to_sym(sym_id, None, scope_id);
+            //         // let sym = Symbol::new(
+            //         //     extern_namespace.name_id,
+            //         //     sym_id,
+            //         //     None,
+            //         //     SymbolOrigin::Compiler,
+            //         //     true,
+            //         //     AssociatedScopeKind::Scope(scope_id).into(),
+            //         //     ScopeType::Compiler,
+            //         //     SymbolKind::Namespace,
+            //         // );
+            //
+            //         // Putting the found namespace into the current table's scope before recursively
+            //         // descending into new scope
+            //         let current_table = &mut self.scopes[current_scope_id].scope.table;
+            //         self.symbols.push(sym);
+            //         current_table
+            //             .interned_to_sym
+            //             .insert(namespace_parts.name_id, sym_id);
+            //
+            //         let scope = Scope::new(scope_id, ScopeType::Compiler, true, None);
+            //
+            //         // Pushing it's scope so that future scope instantiations are aligned with len()
+            //         self.scopes.push(ScopeInfo::new(
+            //             scope,
+            //             sym_id.into(),
+            //             self.intrinsic_registry.core_mod_id,
+            //         ));
+            //
+            //         self.register_namespace(scope_id, namespace_parts.syms);
+            //     }
+            //     CommonKind::Symbol(sym_parts) => {
+            //         let sym_id = SymbolId::new(self.symbols.len() as u32);
+            //         let sym = sym_parts.to_sym(sym_id, None);
+            //         // let sym = Symbol::new(
+            //         //     *interned_id,
+            //         //     sym_id,
+            //         //     None,
+            //         //     SymbolOrigin::Compiler,
+            //         //     true,
+            //         //     None,
+            //         //     ScopeType::Compiler,
+            //         //     SymbolKind::ExternType,
+            //         // );
+            //
+            //         let current_table = &mut self.scopes[current_scope_id].scope.table;
+            //         self.symbols.push(sym);
+            //         current_table
+            //             .interned_to_sym
+            //             .insert(sym_parts.name_id, sym_id);
+            //     }
+            // }
+
+            // match kind {
+            //     ExternKind::Namespace(extern_namespace) => {
+            //         // Creating namespace as a symbol with the identifier associated first.
+            //         let sym_id = SymbolId::new(self.symbols.len() as u32);
+            //         let scope_id = ScopeId::new(self.scopes.len() as u16);
+            //
+            //         let sym = Symbol::new(
+            //             extern_namespace.name_id,
+            //             sym_id,
+            //             None,
+            //             SymbolOrigin::Compiler,
+            //             true,
+            //             AssociatedScopeKind::Scope(scope_id).into(),
+            //             ScopeType::Compiler,
+            //             SymbolKind::Namespace,
+            //         );
+            //
+            //         // Putting the found namespace into the current table's scope before recursively
+            //         // descending into new scope
+            //         let current_table = &mut self.scopes[current_scope_id].scope.table;
+            //         self.symbols.push(sym);
+            //         current_table
+            //             .interned_to_sym
+            //             .insert(extern_namespace.name_id, sym_id);
+            //
+            //         let scope = Scope::new(scope_id, ScopeType::Compiler, true, None);
+            //
+            //         // Pushing it's scope so that future scope instantiations are aligned with len()
+            //         self.scopes.push(ScopeInfo::new(
+            //             scope,
+            //             sym_id.into(),
+            //             self.intrinsic_registry.core_mod_id,
+            //         ));
+            //
+            //         self.register_namespace(scope_id, extern_namespace.syms);
+            //     }
+            //     ExternKind::Symbol(interned_id) => {
+            //         let sym_id = SymbolId::new(self.symbols.len() as u32);
+            //         let sym = Symbol::new(
+            //             *interned_id,
+            //             sym_id,
+            //             None,
+            //             SymbolOrigin::Compiler,
+            //             true,
+            //             None,
+            //             ScopeType::Compiler,
+            //             SymbolKind::ExternType,
+            //         );
+            //
+            //         let current_table = &mut self.scopes[current_scope_id].scope.table;
+            //         self.symbols.push(sym);
+            //         current_table.interned_to_sym.insert(*interned_id, sym_id);
+            //     }
+            // }
         }
     }
 
     /// Helper to load all of core's functions and predicates
-    fn load_core_funcs(&mut self, core_mod_id: ModuleId, table: &mut Table) {
+    fn load_core_funcs(&mut self, core_mod_id: ModuleId, core_scope_id: ScopeId) {
         for core_func in &core_helpers::CORE_FUNCS_DATASET {
-            self.register_core_func(core_func, table, core_mod_id);
+            self.register_core_func(core_func, core_scope_id, core_mod_id);
         }
     }
 
@@ -1063,7 +1176,7 @@ impl ScriptCompiler {
     fn register_core_func(
         &mut self,
         core_func: &CoreFunc,
-        table: &mut Table,
+        scope_id: ScopeId,
         core_mod_id: ModuleId,
     ) {
         let type_id = TypeId::new(self.types.len() as u32);
@@ -1096,18 +1209,19 @@ impl ScriptCompiler {
         );
 
         self.symbols.push(sym);
+        let table = &mut self.scopes[scope_id].scope.table;
         table.interned_to_sym.insert(name_id, sym_id);
     }
 
     // Make &mut self?
     // --- Beep
     /// Helper to load all of core's types
-    fn load_core_types(&mut self, core_mod_id: ModuleId, table: &mut Table) {
+    fn load_core_types(&mut self, core_mod_id: ModuleId, core_scope_id: ScopeId) {
         // -- Concrete types --
         for (interned, ty, core_id) in core_helpers::CORE_BUILTIN_TYPES_DATASET.iter().cloned() {
             debug_assert_eq!(self.types.len() as u32, core_id);
             let interned_id = InternedId::new(interned);
-            self.register_builtin(interned_id, ty, table, core_mod_id);
+            self.register_builtin(interned_id, ty, core_scope_id, core_mod_id);
         }
 
         debug_assert_eq!(self.types.len() as u32, CORE_UNKNOWN);
@@ -1118,7 +1232,7 @@ impl ScriptCompiler {
         // -- Boundaries --
         for (interned, flags) in core_helpers::CORE_BOUNDARIES_DATASET.iter().cloned() {
             let interned_id = InternedId::new(interned);
-            self.register_boundary(interned_id, flags, table, core_mod_id);
+            self.register_boundary(interned_id, flags, core_scope_id, core_mod_id);
         }
     }
 
@@ -1127,7 +1241,7 @@ impl ScriptCompiler {
         &mut self,
         name_id: InternedId,
         builtin_ty: BuiltinType,
-        table: &mut Table,
+        core_scope_id: ScopeId,
         core_mod_id: ModuleId,
     ) {
         let type_id = TypeId::new(self.types.len() as u32);
@@ -1149,6 +1263,7 @@ impl ScriptCompiler {
         );
 
         self.symbols.push(sym);
+        let table = &mut self.scopes[core_scope_id].scope.table;
         table.interned_to_sym.insert(name_id, sym_id);
     }
 
@@ -1157,7 +1272,7 @@ impl ScriptCompiler {
         &mut self,
         name_id: InternedId,
         flags: TypeBoundaryFlags,
-        table: &mut Table,
+        core_scope_id: ScopeId,
         core_mod_id: ModuleId,
     ) {
         let type_id = TypeId::new(self.types.len() as u32);
@@ -1177,6 +1292,7 @@ impl ScriptCompiler {
         );
 
         self.symbols.push(sym);
+        let table = &mut self.scopes[core_scope_id].scope.table;
         table.interned_to_sym.insert(name_id, sym_id);
     }
 }

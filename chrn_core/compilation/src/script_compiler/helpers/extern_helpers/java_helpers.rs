@@ -1,23 +1,38 @@
-use chrn_utils::{id_types::InternedId, intern};
+use chrn_utils::intern;
 
-use crate::script_compiler::helpers::extern_helpers::{ExternKind, ExternNamespace};
+use crate::script_compiler::{
+    extern_helpers::{new_extern_namespace, new_extern_sym},
+    helpers::common_helpers::CommonSymbolBase,
+};
 
-pub static JAVA_NAMESPACE_ENTRY: [ExternKind; 1] = [ExternKind::Namespace(ExternNamespace::new(
-    InternedId::new(intern::INTERNED_JAVA_UPPER),
+// pub static JAVA_NAMESPACE_ENTRY: [CommonKind; 1] = [CommonKind::Namespace(new_extern_namespace(
+//     intern::INTERNED_JAVA_UPPER,
+//     &JAVA_NAMESPACE,
+// ))];
+
+pub static JAVA_NAMESPACE_ENTRY: [CommonSymbolBase; 1] = [new_extern_namespace(
+    intern::INTERNED_JAVA_UPPER,
     &JAVA_NAMESPACE,
-))];
+)];
 
-pub static JAVA_NAMESPACE: [ExternKind; 1] = [
-    ExternKind::Namespace(ExternNamespace::new(
-        InternedId::new(intern::INTERNED_TYPES_LOWER),
-        &TYPES_NAMESPACE,
-    )),
-    //
-];
+// pub static JAVA_NAMESPACE: [CommonKind; 1] = [
+//     CommonKind::Namespace(new_extern_namespace(
+//         intern::INTERNED_TYPES_LOWER,
+//         &TYPES_NAMESPACE,
+//     )),
+//     //
+// ];
 
-pub static TYPES_NAMESPACE: [ExternKind; 1] = [ExternKind::Namespace(ExternNamespace::new(
-    // Maybe allow for NOT using the namespace to be an option, but not sure, will just require
-    // the java prefix for now just to have the namespaces be distinct.
-    InternedId::new(intern::INTERNED_JAVA_LOWER),
-    &[ExternKind::Symbol(InternedId::new(intern::INTERNED_INT))],
-))];
+pub static JAVA_NAMESPACE: [CommonSymbolBase; 1] = [new_extern_namespace(
+    intern::INTERNED_TYPES_LOWER,
+    &TYPES_NAMESPACE,
+)];
+
+// pub static TYPES_NAMESPACE: [CommonKind; 1] = [CommonKind::Namespace(new_extern_namespace(
+//     // Maybe allow for NOT using the namespace to be an option, but not sure, will just require
+//     // the java prefix for now just to have the namespaces be distinct.
+//     intern::INTERNED_JAVA_LOWER,
+//     &[CommonKind::Symbol(new_extern_sym(intern::INTERNED_INT))],
+// ))];
+
+pub static TYPES_NAMESPACE: [CommonSymbolBase; 1] = [new_extern_sym(intern::INTERNED_INT)];

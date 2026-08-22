@@ -1,7 +1,10 @@
 //! Compiler generated compiler-specific helpers
 
 use chrn_utils::intern;
-use lang::types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType};
+use lang::types::{
+    boundaries::TypeBoundaryFlags,
+    builtins::{BuiltinType, BuiltinTypeKind},
+};
 
 use crate::{
     constraints::ArgConstraint,
@@ -12,6 +15,7 @@ use crate::{
     },
     semantic::hir::hir_symbols::FuncKind,
 };
+//TEST:
 
 /// Every core builtin type, paired with its interned name and the `TypeId` it must have.
 /// `load_core_types` loads them sequentially.
@@ -182,3 +186,49 @@ pub static CORE_FUNCS_DATASET: [CoreFunc; 7] = [
         CORE_BOOL,
     ),
 ];
+
+// The "Numeric" is only allowed here because operators are specified in `evaluator.rs` which means
+// this has the freedom of just applying generic rules for numbers.
+/// Helper enum that represents compile-time boundary specifications. This exists as opposed to
+/// something like a static array for each built-in, by having this instead take in a built-in type
+/// and producing the appropriate namespaces.
+pub enum BoundaryHelper {
+    /// `MAX`, `MIN`
+    Numeric,
+}
+
+impl BoundaryHelper {
+    pub fn make(self, kind: BuiltinTypeKind) {
+        match self {
+            BoundaryHelper::Numeric => match kind {
+                BuiltinTypeKind::I8 => todo!(),
+                BuiltinTypeKind::U8 => todo!(),
+                BuiltinTypeKind::I16 => todo!(),
+                BuiltinTypeKind::U16 => todo!(),
+                BuiltinTypeKind::F16 => todo!(),
+                BuiltinTypeKind::I32 => todo!(),
+                BuiltinTypeKind::U32 => todo!(),
+                BuiltinTypeKind::F32 => todo!(),
+                BuiltinTypeKind::I64 => todo!(),
+                BuiltinTypeKind::U64 => todo!(),
+                BuiltinTypeKind::F64 => todo!(),
+                BuiltinTypeKind::I128 => todo!(),
+                BuiltinTypeKind::U128 => todo!(),
+                BuiltinTypeKind::F128 => todo!(),
+                BuiltinTypeKind::Sized => todo!(),
+                BuiltinTypeKind::Unsized => todo!(),
+                BuiltinTypeKind::Str => todo!(),
+                BuiltinTypeKind::Char => todo!(),
+                BuiltinTypeKind::Nil => todo!(),
+                BuiltinTypeKind::Bool => todo!(),
+                BuiltinTypeKind::BigInt => todo!(),
+                BuiltinTypeKind::BigFloat => todo!(),
+                BuiltinTypeKind::List => todo!(),
+                BuiltinTypeKind::Set => todo!(),
+                BuiltinTypeKind::Map => todo!(),
+                BuiltinTypeKind::Tuple => todo!(),
+                BuiltinTypeKind::Runtime => todo!(),
+            },
+        }
+    }
+}

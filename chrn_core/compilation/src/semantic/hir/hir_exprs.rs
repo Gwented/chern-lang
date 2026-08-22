@@ -28,12 +28,15 @@ impl Param {
 
 #[derive(Debug)]
 pub struct ResolvedExpr {
-    // NOTE: Considering making a typesafe wrapper to unknown check explicitly
+    /// Type of expr
     pub type_id: TypeId,
+    /// `ExprHir` of `self`
     pub expr_hir: ExprHir,
-    // May store these elsewhere depending on um...uh..unreachable!()
+    /// What other exprs this expr is dependent on
     pub inputs: Vec<ExprId>,
-    // Should be one
+    /// Whether or not there is a symbol higher upon the tree of exprs.
+    ///
+    /// User -> User -> None
     pub user: Option<ExprId>,
     pub span: SourceSpan,
     // This is not an option type even though `Value` as an `Option<Value>` because symbols are

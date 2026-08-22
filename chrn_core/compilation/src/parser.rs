@@ -939,6 +939,7 @@ fn parse_ambiguous_expr(
     let is_generic = ctx.peek_ahead(1).tok == Token::OAngleBracket;
     // If has OAngle with no static then assumed generic
 
+    // Band-aid?
     if !has_static_access && is_generic {
         let start = ctx.peek_span().start;
         let name_id = ctx.expect_id_verbose(
