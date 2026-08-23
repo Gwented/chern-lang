@@ -12,3 +12,10 @@ compilation = { path = "../../chrn_core/compilation/" }
 serde_json = "1"
 tower-lsp = "0.20"
 parking_lot = "0.12"
+
+[dev-dependencies]
+# Already in the lockfile as transitive dependencies of `tower-lsp`; these entries
+# only make them nameable from `src/tests/session.rs`.
+futures = "0.3"
+tokio = { version = "1", features = ["test-util"] }
+tower = "0.4"

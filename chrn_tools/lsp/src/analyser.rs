@@ -270,7 +270,7 @@ pub(crate) fn resolve_document_modules(
     uri: &Url,
     text: Arc<String>,
     main_region: SourceRegion,
-    chrn_cfg: &ChrnConfig,
+    chrn_cfg: &mut ChrnConfig,
     doc_cache: &DocumentCache,
     version: u64,
     mut interner: Intern,
@@ -290,6 +290,7 @@ pub(crate) fn resolve_document_modules(
         SourceRegionId::new(0),
         &main_region.src_bytes,
         main_region.script_start,
+        chrn_cfg,
     )
     .tokenize(&mut interner);
     let tokens = lex_output.toks;
@@ -315,7 +316,7 @@ pub(crate) fn resolve_document_modules(
 
     let mut config_errors = SourceDiagnosticSummary::default();
     if !finder_summary.diags.is_empty() {
-        config_errors.append_diags(&mut finder_summary.diags);
+        config_errors.append_summary(&mut finder_summary);
     }
 
     let mut main_mod = Module::new(
@@ -337,7 +338,7 @@ pub(crate) fn resolve_document_modules(
         &mut seen,
         &mut sub_mods,
         &mut sub_regions,
-        &main_mod,
+        &mut main_mod,
         chrn_cfg,
         &mut interner,
         doc_cache,
@@ -345,27 +346,8 @@ pub(crate) fn resolve_document_modules(
         path_id,
     );
 
-    // Mirror the compiler's resolve_module behaviour: after the worklist has
-    // finished, update the main module's own imports from UnresolvedSource
-    // to Source/ErrorSource so that create_module_symbols does not panic.
-    for import in &mut main_mod.imports {
-        if let ImportKind::UnresolvedSource(sp_path_id) = &import.kind {
-            match reserved_mod_ids
-                .iter()
-                .find(|(p, _)| *p == sp_path_id.inner)
-            {
-                Some(&(_, m_id)) => {
-                    import.kind = ImportKind::Source(sp_path_id.clone(), m_id);
-                }
-                None => {
-                    import.kind = ImportKind::ErrorSource(sp_path_id.clone());
-                }
-            }
-        }
-    }
-
     if !sub_diags.is_empty() {
-        config_errors.append_diags(&mut sub_diags);
+        absorb_diags(&mut config_errors, &mut sub_diags);
     }
 
     let imported_uris: Vec<String> = sub_mods
@@ -440,7 +422,7 @@ pub async fn analyze_and_publish_task(
     pending_versions: Arc<RwLock<HashMap<String, u64>>>,
     version: u64,
 ) {
-    let chrn_cfg = ChrnConfig::default();
+    let mut chrn_cfg = ChrnConfig::default();
 
     let path_buf = uri
         .to_file_path()
@@ -463,7 +445,7 @@ pub async fn analyze_and_publish_task(
     // the pipeline publish that followed, making config-load errors vanish
     // from the editor.
     let mut pre_diags: Vec<tower_lsp::lsp_types::Diagnostic> = Vec::new();
-    let mut cfg_loader_warns: Vec<SourceDiagnostic> = Vec::new();
+    let mut cfg_loader_warns = SourceDiagnosticSummary::default();
     let region = match ConfigLoader::new(
         SourceRegionId::new(0),
         Cursor::new(text.as_bytes()),
@@ -473,7 +455,7 @@ pub async fn analyze_and_publish_task(
     .load_config()
     {
         ConfigLoaderOutput::Success(region, summary) => {
-            cfg_loader_warns = summary.diags;
+            cfg_loader_warns = summary;
             region
         }
         ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
@@ -512,7 +494,7 @@ pub async fn analyze_and_publish_task(
         &uri,
         Arc::clone(&text),
         region,
-        &chrn_cfg,
+        &mut chrn_cfg,
         &doc_cache,
         version,
         interner,
@@ -521,11 +503,11 @@ pub async fn analyze_and_publish_task(
     // Merge config-loader warnings from the Success path into the
     // resolution's config_errors so they are published through the
     // normal diagnostic pipeline.
-    if !cfg_loader_warns.is_empty() {
+    if !cfg_loader_warns.diags.is_empty() {
         prepared
             .resolution
             .config_errors
-            .append_diags(&mut cfg_loader_warns);
+            .append_summary(&mut cfg_loader_warns);
     }
 
     // 3. Insert the prepared state into the cache.  If the same text is already
@@ -637,6 +619,21 @@ async fn publish_if_current(
 ///
 /// A diagnostic whose `path_id` is absent falls back to `0`: compiler-intrinsic
 /// diagnostics correspond to no user file, and a region may have been evicted.
+/// Folds loose diagnostics into `summary`, keeping its warn/error counts in step.
+///
+/// `SourceDiagnosticSummary` only absorbs other summaries, but the import worklist
+/// accumulates bare `SourceDiagnostic`s from several sources, so the counts have to
+/// be re-derived from each diagnostic's own level.
+pub(crate) fn absorb_diags(
+    summary: &mut SourceDiagnosticSummary,
+    diags: &mut Vec<SourceDiagnostic>,
+) {
+    for diag in diags.iter() {
+        summary.increment_from_level(diag.level);
+    }
+    summary.diags.append(diags);
+}
+
 fn region_script_starts(arena: &Arena<SourceRegion, SourceRegionId>) -> HashMap<PathId, usize> {
     let mut starts = HashMap::with_capacity(arena.items.len());
     for region in &arena.items {
@@ -847,7 +844,7 @@ pub(crate) fn resolve_modules_lsp(
     seen: &mut Vec<PathId>,
     modules: &mut Vec<Option<Module>>,
     sub_regions: &mut Vec<SourceRegion>,
-    main_mod: &Module,
+    main_mod: &mut Module,
     settings: &ChrnConfig,
     interner: &mut Intern,
     doc_cache: &DocumentCache,
@@ -1031,7 +1028,7 @@ pub(crate) fn resolve_modules_lsp(
             let file_name = match path.file_prefix().and_then(|n| n.to_str()) {
                 Some(p) => p.to_string(),
                 _ => {
-                    if let Some(name_id) = import.alias_id {
+                    if let Some(name_id) = import.sp_alias_id.as_ref().map(|sp| sp.inner) {
                         interner.search(name_id).to_string()
                     } else {
                         importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
@@ -1103,6 +1100,21 @@ pub(crate) fn resolve_modules_lsp(
 
             // Store the module in the output slot array.
             modules[(current_mod_id.id - 1) as usize] = Some(sub_mod);
+        }
+
+        // The worklist owns a *clone* of each module, so every import kind resolved
+        // above landed on that clone and would be dropped here.  Write them back to
+        // the module the caller actually keeps: leaving them as `UnresolvedSource`
+        // makes `ScriptCompiler::create_module_symbols` hit its `unreachable!()`.
+        //
+        // Re-deriving the kinds from `reserved_mod_ids` instead would not do: a path
+        // is reserved before it is loaded, so an import that failed to load is
+        // registered there yet must stay `ErrorSource`.
+        let resolved_imports = importer_mod.imports;
+        if importer_mod.mod_id.id == 0 {
+            main_mod.imports = resolved_imports;
+        } else if let Some(Some(stored)) = modules.get_mut((importer_mod.mod_id.id - 1) as usize) {
+            stored.imports = resolved_imports;
         }
     }
 }

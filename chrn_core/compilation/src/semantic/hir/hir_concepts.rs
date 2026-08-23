@@ -142,7 +142,6 @@ impl Type {
         loop_abort!()
     }
 
-    // so??
     /// The env can't be passed into to_fmt so
     pub fn to_fmt(types: &Arena<TypeInfo, TypeId>, mut type_id: TypeId) -> ChrnClassifier {
         let checked = walk_type_id_deferred!(&types, type_id);

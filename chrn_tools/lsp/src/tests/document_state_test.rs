@@ -1,7 +1,9 @@
 use crate::state::{DocumentCache, DocumentState, SemanticEntity};
+use crate::tests::session::{Session, TempWorkspace, hover_text, position_of};
 use chrn_utils::id_types::{SourceRegionId, SymbolId};
 use chrn_utils::source_map::source_span::SourceSpan;
 use std::sync::Arc;
+use tower_lsp::lsp_types::{GotoDefinitionResponse, Position, Range};
 
 /// `get_entity_at_offset` must return the *smallest* span containing the offset,
 /// regardless of the order entries were collected in. The lookup binary-searches a
@@ -190,5 +192,140 @@ fn test_find_matching_entities_propagates_script_start() {
     assert!(
         results.is_empty(),
         "no compiler -> no matches; empty result is the expected outcome"
+    );
+}
+
+/// Hover over a use of a binding resolves through the semantic map to the declaration
+/// and reports the inferred type.
+#[tokio::test(start_paused = true)]
+async fn test_hover_reports_the_inferred_type_of_a_binding() {
+    let workspace = TempWorkspace::new("hover_binding");
+    let text = "// data header\n@def\nlet value = 3\nlet other = value + 1\n@end\ntrailing: data\n";
+    let uri = workspace.write("embedded.chrn", text);
+
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+
+    let hover = session
+        .hover(&uri, position_of(text, "value", 1))
+        .await
+        .expect("hovering a known binding returns contents");
+
+    assert!(
+        hover_text(&hover).contains("value: i64"),
+        "hover reports the binding and its inferred type, got `{}`",
+        hover_text(&hover)
+    );
+}
+
+/// Go-to-definition inside an embedded `@def` region must return the declaration in
+/// absolute file coordinates, using the target region's `script_start`.
+#[tokio::test(start_paused = true)]
+async fn test_definition_resolves_to_the_declaration_in_absolute_positions() {
+    let workspace = TempWorkspace::new("definition_absolute");
+    let text = "// data header\n@def\nlet value = 3\nlet other = value + 1\n@end\ntrailing: data\n";
+    let uri = workspace.write("embedded.chrn", text);
+
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+
+    let response = session
+        .definition(&uri, position_of(text, "value", 1))
+        .await
+        .expect("the use of `value` has a definition");
+
+    let GotoDefinitionResponse::Link(links) = response else {
+        panic!("the server answers definition requests with location links");
+    };
+    let [link] = links.as_slice() else {
+        panic!("a single binding has a single definition, got {links:?}");
+    };
+
+    assert_eq!(link.target_uri, uri, "the declaration is in the same file");
+    assert_eq!(
+        link.target_range,
+        Range {
+            start: Position { line: 2, character: 4 },
+            end: Position { line: 2, character: 9 },
+        },
+        "`value` is declared on the third line of the file"
+    );
+}
+
+/// Cross-module definition, references, and rename all key off the identity tuple
+/// `(definition_path, definition_span, owning_symbol_id)` and must reach a file that was
+/// never opened by the client — the exporting module is loaded from disk.
+#[tokio::test(start_paused = true)]
+async fn test_cross_module_lookups_reach_an_unopened_exporting_file() {
+    let workspace = TempWorkspace::new("cross_module_lookups");
+    let dependency = "export let READ = 0b0\nexport let WRITE = 0b1\n";
+    let dependency_uri = workspace.write("dep.chrn", dependency);
+
+    // Import paths are opened as written, relative to the process working directory,
+    // so a test fixture has to import by absolute path.
+    let dependency_path = dependency_uri
+        .to_file_path()
+        .expect("the workspace URI is a file path");
+    let text = format!(
+        "import \"{}\" as deps\n\nlet flag = deps::READ\n",
+        dependency_path.display()
+    );
+    let uri = workspace.write("main.chrn", &text);
+
+    let mut session = Session::new().await;
+    let diagnostics = session.open(&uri, &text).await;
+    assert!(
+        diagnostics.is_empty(),
+        "the fixture resolves cleanly, got {diagnostics:?}"
+    );
+
+    let use_site = position_of(&text, "READ", 0);
+    let declaration = Range {
+        start: Position { line: 0, character: 11 },
+        end: Position { line: 0, character: 15 },
+    };
+
+    let response = session
+        .definition(&uri, use_site)
+        .await
+        .expect("an imported symbol has a definition");
+    let GotoDefinitionResponse::Link(links) = response else {
+        panic!("the server answers definition requests with location links");
+    };
+    assert_eq!(
+        links[0].target_uri, dependency_uri,
+        "definition crosses into the exporting file"
+    );
+    assert_eq!(
+        links[0].target_range, declaration,
+        "`READ` is declared on the first line of the exporting file"
+    );
+
+    let references = session
+        .references(&uri, use_site)
+        .await
+        .expect("an imported symbol has references");
+    assert!(
+        references
+            .iter()
+            .any(|location| location.uri == dependency_uri && location.range == declaration),
+        "the declaration in the unopened file is found, got {references:?}"
+    );
+    assert!(
+        references
+            .iter()
+            .any(|location| location.uri == uri),
+        "the use site in the importing file is found, got {references:?}"
+    );
+
+    let edit = session
+        .rename(&uri, use_site, "READ_ONLY")
+        .await
+        .expect("an imported symbol is renameable");
+    let changes = edit.changes.expect("rename produces per-file text edits");
+    assert!(
+        changes.contains_key(&dependency_uri) && changes.contains_key(&uri),
+        "a cross-module rename edits both files, got {:?}",
+        changes.keys().collect::<Vec<_>>()
     );
 }

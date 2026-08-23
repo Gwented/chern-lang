@@ -39,14 +39,13 @@
 use chrn_utils::id_types::ModuleId;
 use chrn_utils::intern::Intern;
 use compilation::lexer::token::Token as ScriptToken;
-use compilation::lookup::scopes::AssociatedScopeKind;
+use compilation::lookup::scopes::scopes_concepts::AssociatedScopeKind;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::Type;
 use compilation::semantic::hir::hir_impls::ImplMemberKind;
 use compilation::semantic::hir::hir_symbols::{
     MemberSymbolKind, SymbolKind, SymbolOrigin, VariableState,
 };
-use lang::fmter::Formattable;
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
 use lang::values::Value;
 use tower_lsp::lsp_types;
@@ -302,6 +301,9 @@ fn symbol_hover(
                 .map(|d| d.compose())
                 .unwrap_or_else(|| format!("`#{}`", name))
         }
+        //TODO: `ExternType` is unfinished in core and carries no type or value to
+        //describe yet, so hover only names it.
+        SymbolKind::ExternType => format!("extern type **{}**", interner.search(sym.name_id)),
     };
 
     if !hover_text.is_empty() {
@@ -450,7 +452,7 @@ fn owner_decl<'a>(
 fn module_hover(
     state: &crate::state::DocumentState,
     compiler: &ScriptCompiler,
-    module: &compilation::modules::Module,
+    module: &compilation::module::module_concepts::Module,
     referenced_as: chrn_utils::id_types::InternedId,
 ) -> String {
     let interner = &state.interner;
@@ -464,7 +466,9 @@ fn module_hover(
         .imports
         .iter()
         .find_map(|i| {
-            i.alias_id
+            i.sp_alias_id
+                .as_ref()
+                .map(|sp_alias| sp_alias.inner)
                 .filter(|a| *a == referenced_as)
                 .map(|a| format!("alias **{}** | ", interner.search(a)))
         })
@@ -581,7 +585,7 @@ fn format_type(ty: &Type, compiler: &ScriptCompiler, interner: &Intern, shallow:
                 format!("Tuple<{}>", elems.join(", "))
             }
             BuiltinType::Runtime => "Runtime".into(),
-            b => b.kind().to_fmt().to_string(),
+            b => interner.search(b.kind().name_id()).to_string(),
         },
         Type::Struct(struct_def) => {
             let name = compiler

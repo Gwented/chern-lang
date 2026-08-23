@@ -1,5 +1,7 @@
 use crate::state::DocumentCache;
+use crate::tests::session::{Session, TempWorkspace, position_of};
 use std::sync::Arc;
+use tower_lsp::lsp_types::{Position, Range};
 
 #[test]
 fn test_document_cache_lru() {
@@ -149,4 +151,102 @@ fn test_cache_miss_on_text_change() {
         "different text must yield a distinct DocumentState"
     );
     assert_eq!(state_v2.read().version, 2);
+}
+
+/// An incremental `did_change` must apply the edit to the stored text, invalidate the
+/// cached analysis, and re-analyse the new text under a bumped version.
+#[tokio::test(start_paused = true)]
+async fn test_did_change_replaces_cached_text_and_bumps_the_version() {
+    let workspace = TempWorkspace::new("did_change_recaches");
+    let text = "let flag = 3\n";
+    let uri = workspace.write("main.chrn", text);
+
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+
+    let opened_version = session
+        .backend()
+        .pending_versions
+        .read()
+        .get(uri.as_ref())
+        .copied()
+        .expect("did_open registers a version");
+
+    let start = position_of(text, "flag", 0);
+    let end = Position {
+        line: start.line,
+        character: start.character + 4,
+    };
+    session
+        .change_range(&uri, Range { start, end }, "count")
+        .await;
+
+    assert_eq!(
+        session
+            .backend()
+            .docs
+            .read()
+            .get(uri.as_ref())
+            .map(|text| text.to_string())
+            .as_deref(),
+        Some("let count = 3\n"),
+        "the ranged edit is applied to the stored document"
+    );
+    assert_eq!(
+        session
+            .backend()
+            .doc_cache
+            .get_text(uri.as_ref())
+            .map(|text| text.to_string())
+            .as_deref(),
+        Some("let count = 3\n"),
+        "re-analysis re-populates the cache with the edited text"
+    );
+    assert!(
+        session
+            .backend()
+            .pending_versions
+            .read()
+            .get(uri.as_ref())
+            .copied()
+            .expect("the version entry survives the edit")
+            > opened_version,
+        "every change bumps the per-URI version counter"
+    );
+}
+
+/// `did_close` must drop every per-document entry the backend holds, so a reopened
+/// document cannot observe stale text, versions, or diagnostic digests.
+#[tokio::test(start_paused = true)]
+async fn test_did_close_clears_every_backend_entry() {
+    let workspace = TempWorkspace::new("did_close_clears");
+    let text = "let value = 3\n";
+    let uri = workspace.write("main.chrn", text);
+
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+    assert!(
+        session.backend().doc_cache.get(uri.as_ref()).is_some(),
+        "the document is cached while open"
+    );
+
+    session.close(&uri).await;
+
+    let backend = session.backend();
+    assert!(
+        !backend.docs.read().contains_key(uri.as_ref()),
+        "the document text is dropped"
+    );
+    assert!(
+        !backend.pending_versions.read().contains_key(uri.as_ref()),
+        "the version counter is dropped"
+    );
+    assert!(
+        !backend.diags_cache.read().contains_key(uri.as_ref()),
+        "the diagnostic digest is dropped"
+    );
+    assert!(
+        backend.doc_cache.get(uri.as_ref()).is_none(),
+        "the analysis state is invalidated"
+    );
 }

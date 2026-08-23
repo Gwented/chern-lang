@@ -38,10 +38,12 @@
 
 use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use compilation::lexer::token::Token as ScriptToken;
-use compilation::lookup::scopes;
+use chrn_utils::source_map::source_span::SourceSpan;
+use compilation::lookup::scopes::scopes_concepts;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::Type;
-use compilation::semantic::hir::hir_impls::{ImplHirKind, ImplMemberKind};
+use compilation::parser::ast::ast_concepts::AbstractConfigKind;
+use compilation::semantic::hir::hir_impls::{ConfigRootKind, ImplHirKind, ImplMemberKind};
 use compilation::semantic::hir::hir_symbols::{Symbol, SymbolKind, SymbolOrigin, VariableState};
 use parking_lot::RwLock;
 use std::time::Duration;
@@ -68,7 +70,7 @@ use crate::state::SemanticEntity;
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::core_error::ConfigLoadError;
 use chrn_utils::intern::Intern;
-use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
+use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use lang::types::builtins::BuiltinTypeKind as ChBuiltinTypeKind;
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -197,11 +199,11 @@ impl Backend {
         }
 
         let path_buf = PathBuf::from(uri.path());
-        let chrn_cfg = ChrnConfig::default();
+        let mut chrn_cfg = ChrnConfig::default();
 
         let mut interner = Intern::init();
         let path_id = interner.intern_path(&path_buf);
-        let mut cfg_loader_warns: Vec<SourceDiagnostic> = Vec::new();
+        let mut cfg_loader_warns = SourceDiagnosticSummary::default();
         let region = match ConfigLoader::new(
             chrn_utils::id_types::SourceRegionId::new(0),
             Cursor::new(text.as_bytes()),
@@ -211,7 +213,7 @@ impl Backend {
         .load_config()
         {
             ConfigLoaderOutput::Success(region, summary) => {
-                cfg_loader_warns = summary.diags;
+                cfg_loader_warns = summary;
                 region
             }
             ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
@@ -260,7 +262,7 @@ impl Backend {
             uri,
             Arc::clone(&text),
             region,
-            &chrn_cfg,
+            &mut chrn_cfg,
             &self.doc_cache,
             my_version,
             interner,
@@ -269,11 +271,11 @@ impl Backend {
         // Merge config-loader warnings from the Success path into the
         // resolution's config_errors so they are persisted through
         // ensure_analyzed and surface via get_lsp_diagnostics.
-        if !cfg_loader_warns.is_empty() {
+        if !cfg_loader_warns.diags.is_empty() {
             prepared
                 .resolution
                 .config_errors
-                .append_diags(&mut cfg_loader_warns);
+                .append_summary(&mut cfg_loader_warns);
         }
 
         let state_arc = self
@@ -429,10 +431,12 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
             }
         }
         SymbolKind::Namespace => match sym.associated_scope.expect("Should have namespace") {
-            scopes::AssociatedScopeKind::Module(_) => CompletionItemKind::MODULE,
-            scopes::AssociatedScopeKind::Scope(_) => CompletionItemKind::VARIABLE,
+            scopes_concepts::AssociatedScopeKind::Module(_) => CompletionItemKind::MODULE,
+            scopes_concepts::AssociatedScopeKind::Scope(_) => CompletionItemKind::VARIABLE,
         },
-        SymbolKind::Directive(_) => CompletionItemKind::KEYWORD,
+        //TODO: `ExternType` is unfinished in core; a keyword icon is the closest
+        //stand-in until it carries a type of its own.
+        SymbolKind::Directive(_) | SymbolKind::ExternType => CompletionItemKind::KEYWORD,
     }
 }
 
@@ -549,7 +553,11 @@ fn configured_option_names(
         .filter_map(|member_id| match &compiler.impl_members[*member_id] {
             ImplMemberKind::OptAssignmentRoot(option) => Some(option.name_id),
             ImplMemberKind::OptAssignmentMember(option) => Some(option.name_id),
-            ImplMemberKind::ConfigDefMember(_) | ImplMemberKind::Unknown { .. } => None,
+            //TODO: `MultiTypeAssignment` assigns types, not config options, and is
+            //unfinished in core.
+            ImplMemberKind::ConfigDefMember(_)
+            | ImplMemberKind::MultiTypeAssignment(_)
+            | ImplMemberKind::Unknown { .. } => None,
         })
         .collect()
 }
@@ -573,6 +581,7 @@ fn config_candidate_for_member(
                 ImplMemberKind::ConfigDefMember(child) => Some(child.name_id),
                 ImplMemberKind::OptAssignmentRoot(_)
                 | ImplMemberKind::OptAssignmentMember(_)
+                | ImplMemberKind::MultiTypeAssignment(_)
                 | ImplMemberKind::Unknown { .. } => None,
             })
             .collect();
@@ -593,6 +602,26 @@ fn config_candidate_for_member(
     }
 }
 
+/// The source span of the name a config block is written under.
+///
+/// A root names a path (`mod::Type`), so its span runs from the first segment to the
+/// last; a member names a single identifier.  `None` only for an empty root path,
+/// which a parse error can leave behind.
+fn cfg_kind_name_span(kind: &AbstractConfigKind) -> Option<SourceSpan> {
+    match kind {
+        AbstractConfigKind::Root(path) => {
+            let first = path.first()?;
+            let last = path.last()?;
+            Some(SourceSpan::new(
+                first.span.region_id,
+                first.span.start,
+                last.span.end,
+            ))
+        }
+        AbstractConfigKind::Member(sp_name_id, _) => Some(sp_name_id.span),
+    }
+}
+
 fn config_completion_candidate(
     state: &DocumentState,
     compiler: &ScriptCompiler,
@@ -609,16 +638,22 @@ fn config_completion_candidate(
             continue;
         };
         let impl_hir = &compiler.impls[*impl_id];
-        if impl_hir.scope_origin != scopes::ScopeType::Complex {
+        if impl_hir.scope_origin != scopes_concepts::ScopeType::Complex {
             continue;
         }
 
         let ImplHirKind::Config(cfg_root_id) = &impl_hir.kind;
-        let cfg_root = &compiler.cfgs[*cfg_root_id];
+        // The `ScopeType::Complex` filter above rules out `override->` roots, which
+        // are the only other kind.
+        let ConfigRootKind::Complex(cfg_root) = &compiler.cfgs[*cfg_root_id] else {
+            continue;
+        };
         let Some(ast_id) = impl_hir.ast_id else {
             continue;
         };
-        let root_name_span = ast.get_cfg_root(ast_id).kind.name_span();
+        let Some(root_name_span) = cfg_kind_name_span(&ast.get_cfg_root(ast_id).kind) else {
+            continue;
+        };
         let Some((open, close)) = config_block_bounds(state, &pairs, root_name_span.end) else {
             continue;
         };
@@ -629,20 +664,22 @@ fn config_completion_candidate(
             name_start: root_name_span.start,
             type_id: cfg_root.linked_type_id,
             is_root: true,
-            configured_options: configured_option_names(compiler, &cfg_root.opt_assignments),
+            configured_options: configured_option_names(compiler, &cfg_root.impl_stmts),
             configured_members: cfg_root
+                .common
                 .cfg_members
                 .iter()
                 .filter_map(|member_id| match &compiler.impl_members[*member_id] {
                     ImplMemberKind::ConfigDefMember(member) => Some(member.name_id),
                     ImplMemberKind::OptAssignmentRoot(_)
                     | ImplMemberKind::OptAssignmentMember(_)
+                    | ImplMemberKind::MultiTypeAssignment(_)
                     | ImplMemberKind::Unknown { .. } => None,
                 })
                 .collect(),
         });
 
-        for &member_id in &cfg_root.cfg_members {
+        for &member_id in &cfg_root.common.cfg_members {
             config_candidate_for_member(compiler, member_id, state, &pairs, &mut candidates);
         }
     }
@@ -808,8 +845,13 @@ fn classify_id_token(
                         SymbolKind::Namespace => {
                             return Some(SemanticTokenType::Variable.as_u32());
                         }
+                        //TODO: `ExternType` is unfinished in core; it has no token type
+                        //of its own yet, so it is highlighted as a plain type.
                         SymbolKind::Directive(_) => {
                             return Some(SemanticTokenType::Regexp.as_u32());
+                        }
+                        SymbolKind::ExternType => {
+                            return Some(SemanticTokenType::Type.as_u32());
                         }
                     }
                 }
@@ -1422,7 +1464,7 @@ impl LanguageServer for Backend {
                     for sym in &compiler.symbols.items {
                         if (matches!(sym.sym_origin, SymbolOrigin::Module(mid) if mid.id == 0)
                             || matches!(sym.sym_origin, SymbolOrigin::Compiler))
-                            && sym.scope_origin != scopes::ScopeType::Var
+                            && sym.scope_origin != scopes_concepts::ScopeType::Var
                             && !matches!(sym.kind, SymbolKind::Directive(_))
                         {
                             let sym_name = state.interner.search(sym.name_id);
@@ -1551,7 +1593,10 @@ impl LanguageServer for Backend {
                 let is_imported = current_module
                     .imports
                     .iter()
-                    .any(|i| i.name_id == module.name_id || i.alias_id == Some(module.name_id));
+                    .any(|i| {
+                        i.name_id == module.name_id
+                            || i.sp_alias_id.as_ref().map(|sp| sp.inner) == Some(module.name_id)
+                    });
 
                 if is_self || is_imported {
                     push_item(

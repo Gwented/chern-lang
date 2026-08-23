@@ -1,3 +1,5 @@
+mod session;
+
 mod completion_test;
 mod diagnostics_test;
 mod document_cache_test;

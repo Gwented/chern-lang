@@ -41,13 +41,16 @@ use compilation::lexer::token::SpannedToken;
 use compilation::lexer::token::Token as ScriptToken;
 use compilation::lexer::trivia::Trivia;
 use compilation::lookup::scopes;
-use compilation::lookup::scopes::AssociatedScopeKind;
-use compilation::lookup::scopes::ScopeLookupPattern;
-use compilation::lookup::scopes::ScopeType;
+use compilation::module::module_concepts::ImportKind;
+use compilation::lookup::scopes::scopes_concepts::AssociatedScopeKind;
+use compilation::lookup::scopes::scopes_concepts::ScopeLookupPattern;
+use compilation::lookup::scopes::scopes_concepts::ScopeLookupPreferenceFlags;
+use compilation::lookup::scopes::scopes_concepts::ScopeType;
 
 use compilation::parser::ast::ast_concepts::{AbstractDecl, AbstractImpl, AstInfo, Item};
-use compilation::parser::ast::ast_exprs::Expr;
+use compilation::parser::ast::ast_exprs::AstExpr;
 use compilation::parser::ast::ast_exprs::PathSegment;
+use compilation::parser::ast::ast_exprs::SpannedExpr;
 use compilation::parser::ast::ast_exprs::TypeExpr;
 use compilation::resolvers::constraint_resolver::ConstraintResolver;
 use compilation::resolvers::member_resolver::MemberResolver;
@@ -57,8 +60,10 @@ use compilation::resolvers::type_resolver::TypeResolver;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::compilation_unit::CompilationUnit;
 use compilation::semantic::hir::hir_concepts::Type;
-use compilation::semantic::hir::hir_exprs::ExprHir;
-use compilation::semantic::hir::hir_impls::{ImplHirKind, ImplMemberKind};
+use compilation::semantic::hir::hir_exprs::{ExprHir, ResolvedExprMetadata};
+use compilation::semantic::hir::hir_impls::{
+    ConfigRootCommon, ConfigRootKind, ImplHirKind, ImplMemberKind,
+};
 use compilation::semantic::hir::hir_symbols::MemberSymbolKind;
 use compilation::semantic::hir::hir_symbols::SymbolKind;
 use compilation::semantic::hir::hir_symbols::SymbolOrigin;
@@ -74,9 +79,9 @@ use crate::analyser;
 use chrn_utils::arena::Arena;
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::id_types::{
-    AstId, ImplId, ImplMemberId, InternedId, ModuleId, SourceRegionId, SpannedContainer, SymbolId,
-    TypeId,
+    AstId, ImplId, ImplMemberId, InternedId, ModuleId, SourceRegionId, SymbolId, TypeId,
 };
+use chrn_utils::utils::containers::SpannedContainer;
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use chrn_utils::source_map::source_region::SourceRegion;
@@ -246,7 +251,7 @@ impl DocumentState {
             return Vec::new();
         }
 
-        let chrn_cfg = ChrnConfig::default();
+        let mut chrn_cfg = ChrnConfig::default();
         let analyser::ModuleResolution {
             bind,
             main_region,
@@ -303,19 +308,23 @@ impl DocumentState {
 
             let parse_result = if mod_idx == 0 {
                 // Reuse pre-computed tokens for main module
-                compilation::parser::parse(&chrn_cfg, region, &self.tokens, &self.interner)
+                compilation::parser::parse(&mut chrn_cfg, region, &self.tokens, &self.interner)
             } else {
-                let lex_output =
-                    Lexer::new(region.region_id, &region.src_bytes, region.script_start)
-                        .tokenize(&mut self.interner);
+                let lex_output = Lexer::new(
+                    region.region_id,
+                    &region.src_bytes,
+                    region.script_start,
+                    &mut chrn_cfg,
+                )
+                .tokenize(&mut self.interner);
                 let toks = lex_output.toks;
-                compilation::parser::parse(&chrn_cfg, region, &toks, &self.interner)
+                compilation::parser::parse(&mut chrn_cfg, region, &toks, &self.interner)
             };
 
             let (ast_info, mut errs) = parse_result;
 
             if mod_idx == 0 {
-                self.parse_errors.append_diags(&mut errs.diags);
+                self.parse_errors.append_summary(&mut errs);
             }
 
             all_asts[mod_idx] = Some(ast_info);
@@ -347,7 +356,7 @@ impl DocumentState {
         // their targets — they iterate `compilation_syms` instead.
         let mut compilation_syms: Vec<Option<Vec<CompilationUnit>>> = Vec::with_capacity(mod_len);
         {
-            let mut ns_resolver = NamespaceResolver::new(&chrn_cfg, &self.interner, &mut compiler);
+            let mut ns_resolver = NamespaceResolver::new(&mut chrn_cfg, &self.interner, &mut compiler);
 
             for env_opt in &registration_envs {
                 let Some(env) = env_opt else {
@@ -358,7 +367,7 @@ impl DocumentState {
                 let (current_mod_symbols, mut ns_summary) = ns_resolver.resolve(env);
 
                 if !ns_summary.diags.is_empty() {
-                    self.ns_errors.append_diags(&mut ns_summary.diags);
+                    self.ns_errors.append_summary(&mut ns_summary);
                 }
 
                 compilation_syms.push(Some(current_mod_symbols));
@@ -389,12 +398,12 @@ impl DocumentState {
             // Member resolution (fields/variants) for all modules.  A single
             // `MemberResolver` is reused across modules and iterates each env's
             // `compilation_syms` internally rather than walking the AST.
-            let mut member_resolver = MemberResolver::new(&chrn_cfg, &self.interner, &mut compiler);
+            let mut member_resolver = MemberResolver::new(&mut chrn_cfg, &self.interner, &mut compiler);
 
             for env in resolver_envs.iter().flatten() {
                 let mut member_summary = member_resolver.resolve(env);
                 if !member_summary.diags.is_empty() {
-                    self.member_errors.append_diags(&mut member_summary.diags);
+                    self.member_errors.append_summary(&mut member_summary);
                 }
             }
 
@@ -422,11 +431,11 @@ impl DocumentState {
             // `compiler.exprs.len()` could be read between iterations to track
             // `main_expr_range`; `build_symbol_map` now filters expressions by
             // the main module's region id instead, which needs no such borrow.
-            let mut type_resolver = TypeResolver::new(&chrn_cfg, &mut self.interner, &mut compiler);
+            let mut type_resolver = TypeResolver::new(&mut chrn_cfg, &mut self.interner, &mut compiler);
             for env in resolver_envs.iter().flatten() {
                 let mut ty_summary = type_resolver.resolve(env);
                 if !ty_summary.diags.is_empty() {
-                    self.ty_errors.append_diags(&mut ty_summary.diags);
+                    self.ty_errors.append_summary(&mut ty_summary);
                 }
             }
 
@@ -435,12 +444,12 @@ impl DocumentState {
             // unparseable items and produce diagnostics only for the parts that
             // did parse.  A single `ConstraintResolver` is reused.
             let mut constraint_resolver =
-                ConstraintResolver::new(&chrn_cfg, &self.interner, &mut compiler);
+                ConstraintResolver::new(&mut chrn_cfg, &self.interner, &mut compiler);
 
             for env in resolver_envs.iter().flatten() {
                 let mut cn_summary = constraint_resolver.resolve(env);
                 if !cn_summary.diags.is_empty() {
-                    self.cn_errors.append_diags(&mut cn_summary.diags);
+                    self.cn_errors.append_summary(&mut cn_summary);
                 }
             }
         }
@@ -485,11 +494,15 @@ impl DocumentState {
         // per module (and the resolver-state corruption that came with it).
         let main_region_id = compiler.mods[ModuleId::new(0)].region_id;
         for expr in &compiler.exprs.items {
-            if Some(expr.span.region_id) != main_region_id {
+            // Compiler-generated exprs carry no source span, so there is nothing to index.
+            let ResolvedExprMetadata::User(span) = &expr.meta else {
+                continue;
+            };
+            if Some(span.region_id) != main_region_id {
                 continue;
             }
             if let ExprHir::Var(sym_id) = expr.expr_hir {
-                map.push((expr.span, SemanticEntity::Symbol(sym_id)));
+                map.push((*span, SemanticEntity::Symbol(sym_id)));
             }
         }
 
@@ -573,19 +586,19 @@ impl DocumentState {
             };
             let impl_hir = &compiler.impls[*impl_id];
             let ImplHirKind::Config(cfg_root_id) = &impl_hir.kind;
-            let cfg_root = &compiler.cfgs[*cfg_root_id];
+            let (cfg_common, root_stmts) = cfg_root_parts(&compiler.cfgs[*cfg_root_id]);
 
             let mut queue: Vec<ImplMemberId> = Vec::new();
 
             // Root options
-            for &impl_member_id in &cfg_root.opt_assignments {
+            for &impl_member_id in root_stmts {
                 if let ImplMemberKind::OptAssignmentRoot(opt) =
                     &compiler.impl_members[impl_member_id]
                 {
                     map.push((
                         opt.name_span,
                         SemanticEntity::ConfigOption {
-                            cfg_root_impl_id: cfg_root.impl_id,
+                            cfg_root_impl_id: cfg_common.impl_id,
                             member_id: impl_member_id,
                         },
                     ));
@@ -593,13 +606,13 @@ impl DocumentState {
             }
 
             // Root members
-            for &impl_member_id in &cfg_root.cfg_members {
+            for &impl_member_id in &cfg_common.cfg_members {
                 if let ImplMemberKind::ConfigDefMember(mem) = &compiler.impl_members[impl_member_id]
                 {
                     map.push((
                         mem.name_span,
                         SemanticEntity::ConfigMember {
-                            cfg_root_impl_id: cfg_root.impl_id,
+                            cfg_root_impl_id: cfg_common.impl_id,
                             member_id: impl_member_id,
                         },
                     ));
@@ -619,7 +632,7 @@ impl DocumentState {
                             map.push((
                                 opt.name_span,
                                 SemanticEntity::ConfigOption {
-                                    cfg_root_impl_id: cfg_root.impl_id,
+                                    cfg_root_impl_id: cfg_common.impl_id,
                                     member_id: opt_id,
                                 },
                             ));
@@ -632,7 +645,7 @@ impl DocumentState {
                             map.push((
                                 child_mem.name_span,
                                 SemanticEntity::ConfigMember {
-                                    cfg_root_impl_id: cfg_root.impl_id,
+                                    cfg_root_impl_id: cfg_common.impl_id,
                                     member_id: child_member_id,
                                 },
                             ));
@@ -1065,6 +1078,19 @@ impl DocumentState {
 /// shifts them into the absolute file coordinates an LSP position needs.
 pub type EntityOccurrence = (String, Arc<String>, u32, u32, usize);
 
+/// Splits a config root into the two parts every caller here needs: the header shared
+/// by both kinds, and the root-level option-assignment statements.
+///
+/// `complex->` and `override->` roots keep that statement list under different field
+/// names (`impl_stmts` / `impl_memb_stmts`), so matching once here keeps the callers
+/// from repeating the split.
+pub(crate) fn cfg_root_parts(cfg_root: &ConfigRootKind) -> (&ConfigRootCommon, &[ImplMemberId]) {
+    match cfg_root {
+        ConfigRootKind::Complex(complex) => (&complex.common, &complex.impl_stmts),
+        ConfigRootKind::Override(overrid) => (&overrid.common, &overrid.impl_memb_stmts),
+    }
+}
+
 /// Pairs each module with the AST and source region its resolvers read, in `ModuleId`
 /// order, with `None` where either is missing.
 ///
@@ -1073,7 +1099,7 @@ pub type EntityOccurrence = (String, Arc<String>, u32, u32, usize);
 /// itself, in twenty-odd lines apiece.
 fn module_inputs<'a>(
     asts: &'a [Option<AstInfo>],
-    mods: &Arena<compilation::modules::Module, ModuleId>,
+    mods: &Arena<compilation::module::module_concepts::Module, ModuleId>,
     regions: &'a Arena<SourceRegion, SourceRegionId>,
 ) -> Vec<Option<(&'a AstInfo, &'a SourceRegion)>> {
     (0..mods.len())
@@ -1237,9 +1263,15 @@ impl DocumentCache {
         // (`get_token_at_offset`, `offset_in_comment`, `find_matching_entities`,
         // `hover`, `references`, `rename`) treats as relative.
         let mut interner = Intern::init();
+        let mut chrn_cfg = ChrnConfig::default();
         let script_src = &text.as_bytes()[script_start..];
-        let lex_output =
-            Lexer::new(SourceRegionId::new(0), script_src, script_start).tokenize(&mut interner);
+        let lex_output = Lexer::new(
+            SourceRegionId::new(0),
+            script_src,
+            script_start,
+            &mut chrn_cfg,
+        )
+        .tokenize(&mut interner);
         let tokens = lex_output.toks;
         let trivia = lex_output.trivia;
 
@@ -1490,6 +1522,25 @@ impl<'a> RefCollector<'a> {
         for module in &compiler.mods.items {
             mods_by_name.entry(module.name_id).or_insert(module.mod_id);
         }
+
+        // File stems alone are not what a name in this file resolves to.
+        // `create_module_symbols` registers each import under exactly one identifier
+        // — its alias when it has one, its stem otherwise — so `import "x.chrn" as m`
+        // makes `m::T` the only spelling that resolves, and the stem `x` none.
+        // The main module's own imports are therefore authoritative here and
+        // overwrite the stem entries above.
+        for import in &compiler.mods[ModuleId::new(0)].imports {
+            let mod_id = match import.kind {
+                ImportKind::Source(_, mod_id) | ImportKind::Core(mod_id) => mod_id,
+                // Never resolved to a module, so nothing to point a name at.
+                ImportKind::UnresolvedSource(_) | ImportKind::ErrorSource(_) => continue,
+            };
+            let referred_as = import
+                .sp_alias_id
+                .as_ref()
+                .map_or(import.name_id, |sp_alias| sp_alias.inner);
+            mods_by_name.insert(referred_as, mod_id);
+        }
         RefCollector {
             compiler,
             text,
@@ -1544,6 +1595,8 @@ impl<'a> RefCollector<'a> {
                 name_id,
                 scope_ty,
                 pattern,
+                // The cursor names whatever it names; the map records every kind.
+                ScopeLookupPreferenceFlags::none(),
             )
             .map(|out| out.found_sym_id)
         })
@@ -1562,37 +1615,41 @@ impl RefCollector<'_> {
                         .push((type_expr.span, SemanticEntity::Symbol(sym_id)));
                 }
             }
-            TypeExpr::Path(path) => {
-                if path.len() == 2 {
-                    let mod_name_part = &path[0];
-                    let sym_name_part = &path[1];
-                    if let PathSegment::Ident(mod_name_id) = mod_name_part.kind
-                        && let Some(found_mod) = self.module_named(mod_name_id)
-                    {
-                        self.map
-                            .push((mod_name_part.span, SemanticEntity::Module(found_mod)));
-                        if let PathSegment::Ident(sym_name_id) = sym_name_part.kind
-                            && let Some(sym_id) = self.lookup_in_module(
-                                found_mod,
-                                sym_name_id,
-                                [ScopeType::Neutral, ScopeType::Var],
-                            )
-                        {
-                            self.map
-                                .push((sym_name_part.span, SemanticEntity::Symbol(sym_id)));
-                        }
-                        return;
-                    }
-                }
-                for part in path {
-                    if let PathSegment::Generic(generic) = &part.kind {
-                        for arg in &generic.inputs {
-                            self.type_refs(arg);
-                        }
-                    }
+            TypeExpr::Path(path) => self.path_segment_refs(path),
+            TypeExpr::Generic(generic) => {
+                for arg in &generic.inputs {
+                    self.type_refs(arg);
                 }
             }
-            TypeExpr::Generic(generic) => {
+        }
+    }
+
+    /// Indexes a `mod::Type` path written as a list of path segments, recursing
+    /// into the type arguments of any generic segment.
+    fn path_segment_refs(&mut self, path: &[SpannedContainer<PathSegment>]) {
+        if path.len() == 2 {
+            let mod_name_part = &path[0];
+            let sym_name_part = &path[1];
+            if let PathSegment::Ident(mod_name_id) = mod_name_part.inner
+                && let Some(found_mod) = self.module_named(mod_name_id)
+            {
+                self.map
+                    .push((mod_name_part.span, SemanticEntity::Module(found_mod)));
+                if let PathSegment::Ident(sym_name_id) = sym_name_part.inner
+                    && let Some(sym_id) = self.lookup_in_module(
+                        found_mod,
+                        sym_name_id,
+                        [ScopeType::Neutral, ScopeType::Var],
+                    )
+                {
+                    self.map
+                        .push((sym_name_part.span, SemanticEntity::Symbol(sym_id)));
+                }
+                return;
+            }
+        }
+        for part in path {
+            if let PathSegment::Generic(generic) = &part.inner {
                 for arg in &generic.inputs {
                     self.type_refs(arg);
                 }
@@ -1638,10 +1695,10 @@ impl RefCollector<'_> {
     }
 
     /// Indexes the symbols, modules, fields, and variants named by an expression.
-    fn expr_refs(&mut self, expr: &compilation::parser::ast::ast_exprs::SpannedExpr) {
+    fn expr_refs(&mut self, expr: &SpannedExpr) {
         match &expr.expr {
-            AstExprMemberAccess(acc) => {
-                if let AstExprVar(base_id) = acc.base.expr
+            AstExpr::MemberAccess(acc) => {
+                if let AstExpr::Var(base_id) = acc.base.expr
                     && let Some(found_mod) = self.module_named(base_id)
                 {
                     self.map
@@ -1658,33 +1715,30 @@ impl RefCollector<'_> {
                 }
                 self.expr_refs(&acc.base);
             }
-            AstExprDefault(_, def_expr) => self.expr_refs(def_expr),
-            AstExprCall(caller, args) => {
+            AstExpr::Default(_, def_expr) => self.expr_refs(def_expr),
+            AstExpr::Call(caller, args) => {
                 self.expr_refs(caller);
                 for arg in args {
                     self.expr_refs(arg);
                 }
             }
-            AstExprUnary(u) => self.expr_refs(&u.spanned_expr),
-            AstExprBinaryExpr { lhs, rhs, .. } => {
+            AstExpr::Unary(u) => self.expr_refs(&u.spanned_expr),
+            AstExpr::BinaryExpr { lhs, rhs, .. } => {
                 self.expr_refs(lhs);
                 self.expr_refs(rhs);
             }
-            AstExprStaticAccess(segments) => self.static_access_refs(segments),
+            AstExpr::StaticAccess(segments) => self.static_access_refs(segments),
             _ => {}
         }
     }
 
     /// Indexes every segment of a `a::b::c` path, walking left to right and
     /// resolving each segment against what the previous one named.
-    fn static_access_refs(
-        &mut self,
-        segments: &[compilation::parser::ast::ast_exprs::SpannedPathSegment],
-    ) {
+    fn static_access_refs(&mut self, segments: &[SpannedContainer<PathSegment>]) {
         if segments.len() < 2 {
             return;
         }
-        let PathSegment::Ident(head_name) = segments[0].kind else {
+        let PathSegment::Ident(head_name) = segments[0].inner else {
             return;
         };
         let Some(mut cursor) = self.static_access_head(segments[0].span, head_name) else {
@@ -1692,7 +1746,7 @@ impl RefCollector<'_> {
         };
 
         for seg in &segments[1..] {
-            let PathSegment::Ident(name_id) = seg.kind else {
+            let PathSegment::Ident(name_id) = seg.inner else {
                 continue;
             };
             cursor = match cursor {
@@ -1723,7 +1777,9 @@ impl RefCollector<'_> {
                 self.map.push((span, SemanticEntity::Symbol(sym_id)));
                 Some(PathCursor::Type(type_id))
             }
-            SymbolKind::Directive(_) => None,
+            //TODO: `ExternType` is unfinished in core. It has no type id to walk into
+            //yet, so a path cannot continue through it.
+            SymbolKind::Directive(_) | SymbolKind::ExternType => None,
         }
     }
 
@@ -1866,12 +1922,18 @@ impl RefCollector<'_> {
     /// Walks a `complex->` config block and its nested members.
     fn cfg_refs(&mut self, cfg: &compilation::parser::ast::ast_concepts::AbstractConfig) {
         use compilation::parser::ast::ast_concepts::AbstractConfigKind;
+        use compilation::parser::ast::ast_stmts::AbstractStmt;
 
-        if let AbstractConfigKind::Root(sp_ty) = &cfg.kind {
-            self.type_refs(sp_ty);
+        if let AbstractConfigKind::Root(path) = &cfg.kind {
+            self.path_segment_refs(path);
         }
-        for opt in &cfg.opt_assignments {
-            self.expr_refs(&opt.array_expr);
+        for stmt in &cfg.abs_stmts {
+            match stmt {
+                AbstractStmt::OptAssignment(opt) => self.expr_refs(&opt.array_expr),
+                //TODO: `ExternType` multi-assignment is unfinished in core; its
+                //`to_assign`/`assigned_to` type exprs are not reachable from here yet.
+                AbstractStmt::MultiAssignType(_) => {}
+            }
         }
         for child in &cfg.cfg_members {
             self.cfg_refs(child);

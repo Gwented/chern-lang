@@ -1,5 +1,7 @@
 use crate::backend::SemanticTokenType;
+use crate::tests::session::{Session, TempWorkspace};
 use std::collections::HashSet;
+use tower_lsp::lsp_types::SemanticTokensResult;
 
 #[test]
 fn test_semantic_token_type_indices_match_legend() {
@@ -40,5 +42,52 @@ fn test_semantic_token_type_indices_are_unique() {
         indices.len(),
         variants.len(),
         "duplicate SemanticTokenType index detected"
+    );
+}
+
+/// Semantic tokens are delta-encoded from the start of the *file*, not the start of the
+/// script region, so the first token of an embedded document carries the `@def` line.
+///
+/// A missing `script_start` addition would collapse every token onto the data header.
+#[tokio::test(start_paused = true)]
+async fn test_semantic_tokens_are_emitted_in_absolute_positions() {
+    let workspace = TempWorkspace::new("absolute_semantic_tokens");
+    let text = "// data header\n@def\nlet value = 3\n@end\ntrailing: data\n";
+    let uri = workspace.write("embedded.chrn", text);
+
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+
+    let result = session
+        .semantic_tokens(&uri)
+        .await
+        .expect("the document produces semantic tokens");
+    let SemanticTokensResult::Tokens(tokens) = result else {
+        panic!("the server advertises full-document tokens only");
+    };
+
+    let [directive, keyword, ..] = tokens.data.as_slice() else {
+        panic!("the fixture produces at least two tokens, got {:?}", tokens.data);
+    };
+
+    assert_eq!(
+        (directive.delta_line, directive.delta_start, directive.length),
+        (1, 0, 4),
+        "the first token is `@def` on the second line of the file"
+    );
+    assert_eq!(
+        directive.token_type,
+        SemanticTokenType::Macro.as_u32(),
+        "`@def` is a macro token"
+    );
+    assert_eq!(
+        (keyword.delta_line, keyword.delta_start, keyword.length),
+        (1, 0, 3),
+        "`let` follows one line below, at the start of the line"
+    );
+    assert_eq!(
+        keyword.token_type,
+        SemanticTokenType::Keyword.as_u32(),
+        "`let` is a keyword token"
     );
 }
