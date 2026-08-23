@@ -17,7 +17,7 @@ use lang::chrn_classifier::ChrnClassifier;
 use crate::{
     lookup::scopes::scopes_concepts::{AssociatedScopeKind, ScopeLookupPattern, ScopeType},
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState, typechecker},
-    script_compiler::{self, ScriptCompiler},
+    script_compiler::{self, ScriptCompiler, compiler_constants},
     semantic::{
         checker_helpers::DuplicateTracker,
         compilation_unit::CompilationUnit,
@@ -157,7 +157,7 @@ impl MemberResolver<'_> {
                         );
 
                         self.summary.push_diag(builder.build());
-                        TypeId::new(script_compiler::CORE_UNKNOWN)
+                        TypeId::new(compiler_constants::CORE_UNKNOWN)
                     } else {
                         type_id.into()
                     }
@@ -186,7 +186,7 @@ impl MemberResolver<'_> {
                     // by making the ast flat so that it carries a member id to an ast member, which
                     // would never cause an issue here since it doesn't have to depend on an inner
                     // part hopefully existing in an ast.
-                    TypeId::new(script_compiler::CORE_UNKNOWN)
+                    TypeId::new(compiler_constants::CORE_UNKNOWN)
                 }
             };
 
@@ -296,7 +296,7 @@ impl MemberResolver<'_> {
                                 None,
                             );
                             self.summary.push_diag(builder.build());
-                            TypeId::new(script_compiler::CORE_UNKNOWN)
+                            TypeId::new(compiler_constants::CORE_UNKNOWN)
                         } else {
                             type_id.into()
                         }
@@ -319,7 +319,7 @@ impl MemberResolver<'_> {
                             self.interner,
                         );
 
-                        TypeId::new(script_compiler::CORE_UNKNOWN)
+                        TypeId::new(compiler_constants::CORE_UNKNOWN)
                     }
                 };
 

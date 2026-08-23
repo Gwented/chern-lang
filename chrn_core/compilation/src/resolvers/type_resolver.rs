@@ -32,7 +32,7 @@ use chrn_utils::source_map::source_diagnostic::{
 use chrn_utils::source_map::source_span::{self, SourceSpan};
 use chrn_utils::utils::containers::{SpannedContainer, SpannedContainerRef};
 use lang::chrn_classifier::ChrnClassifier;
-use lang::values::{Value, ValueInfo};
+use lang::values::Value;
 
 use crate::constraints::ArgConstraint;
 use crate::lookup::member_lookup::{self, MemberLookupPattern, MemberLookupResult};
@@ -50,16 +50,21 @@ use crate::resolvers::type_resolver::cfg_ctx::{
     ConfigMemberComplexContext, ConfigMemberContextKind,
 };
 use crate::resolvers::typechecker;
-use crate::script_compiler::{self, ScriptCompiler};
+use crate::script_compiler::{self, ScriptCompiler, compiler_constants};
 use crate::semantic::checker_helpers::{DuplicateIdentResult, DuplicateTracker};
 use crate::semantic::compilation_unit::CompilationUnit;
 use crate::semantic::evaluator::UnaryOpResult;
 use crate::semantic::hir::hir_concepts::{Type, TypeInfo};
-use crate::semantic::hir::hir_exprs::{ExprHir, Param, PossibleMember, ResolvedExpr};
+use crate::semantic::hir::hir_exprs::{
+    ExprHir, Param, PossibleMember, ResolvedExpr, ResolvedExprMetadata,
+};
 use crate::semantic::hir::hir_impls::{
     ConfigDefMember, ImplHirKind, ImplMemberKind, OptionAssignmentMember, OptionAssignmentRoot,
 };
-use crate::semantic::hir::hir_symbols::{Symbol, SymbolKind, SymbolOrigin, VarDef, VariableState};
+use crate::semantic::hir::hir_symbols::{
+    Symbol, SymbolKind, SymbolOrigin, VarDef, VariableMetadata, VariableState,
+};
+use crate::semantic::hir::value_info::ValueInfo;
 use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, PresetErr};
 use crate::semantic::resolution::resolution_concepts::StaticAccessOption;
 use crate::semantic::resolution::resolution_helpers;
@@ -2628,15 +2633,14 @@ impl<'res> TypeResolver<'res> {
                 // Basic validation of expression to see if it's const or runtime
                 let const_val_opt = if let Some(const_val) = &operand_val_info.const_val {
                     has_const_val = true;
-                    let sp_const = SpannedContainerRef::new(const_val, operand_expr.span);
+                    let operand_span = operand_expr.meta.expect_user();
+                    let sp_const =
+                        SpannedContainerRef::new(const_val, operand_expr.meta.expect_user());
                     match evaluator::apply_unary_op(*op, sp_const) {
                         UnaryOpResult::Output(val) => Some(val),
                         UnaryOpResult::Invalid => {
                             return Err(MathError::UnaryOpMismatch {
-                                sp_operand: SpannedContainer::new(
-                                    const_val.kind(),
-                                    operand_expr.span,
-                                ),
+                                sp_operand: SpannedContainer::new(const_val.kind(), operand_span),
                                 op: *op,
                             })?;
                         }
@@ -2695,8 +2699,11 @@ impl<'res> TypeResolver<'res> {
                     (Some(lhs_const), Some(rhs_const)) => {
                         //TODO: Handle BigInt
                         has_const_val = true;
-                        let sp_lhs_const = SpannedContainerRef::new(lhs_const, lhs_expr.span);
-                        let sp_rhs_const = SpannedContainerRef::new(rhs_const, rhs_expr.span);
+                        let lhs_span = lhs_expr.meta.expect_user();
+                        let rhs_span = rhs_expr.meta.expect_user();
+
+                        let sp_lhs_const = SpannedContainerRef::new(lhs_const, lhs_span);
+                        let sp_rhs_const = SpannedContainerRef::new(rhs_const, rhs_span);
                         match evaluator::apply_binary_op(
                             sp_lhs_const,
                             *op,
@@ -2705,16 +2712,12 @@ impl<'res> TypeResolver<'res> {
                         ) {
                             evaluator::BinaryOpResult::Output(val) => Some(val),
                             evaluator::BinaryOpResult::DivideByZero => {
-                                return Err(MathError::DivideByZero {
-                                    lhs_span: lhs_expr.span,
-                                    rhs_span: rhs_expr.span,
-                                }
-                                .into());
+                                return Err(MathError::DivideByZero { lhs_span, rhs_span }.into());
                             }
                             evaluator::BinaryOpResult::Invalid => {
                                 return Err(MathError::BinaryOpMismatch {
-                                    sp_lhs: SpannedContainer::new(lhs_const.kind(), lhs_expr.span),
-                                    sp_rhs: SpannedContainer::new(rhs_const.kind(), rhs_expr.span),
+                                    sp_lhs: SpannedContainer::new(lhs_const.kind(), lhs_span),
+                                    sp_rhs: SpannedContainer::new(rhs_const.kind(), rhs_span),
                                     op: *op,
                                 })?;
                             }
@@ -2926,7 +2929,7 @@ impl<'res> TypeResolver<'res> {
                     self.cfg,
                     self.interner,
                 );
-                TypeId::new(script_compiler::CORE_UNKNOWN)
+                TypeId::new(compiler_constants::CORE_UNKNOWN)
             }
         };
 
@@ -3245,7 +3248,7 @@ impl<'res> TypeResolver<'res> {
                         self.cfg,
                         self.interner,
                     );
-                    TypeId::new(script_compiler::CORE_UNKNOWN)
+                    TypeId::new(compiler_constants::CORE_UNKNOWN)
                 }
             };
 
@@ -3255,7 +3258,7 @@ impl<'res> TypeResolver<'res> {
             let var = VarDef::new(
                 param_sym_id,
                 abs_param.name_id,
-                abs_param.name_span,
+                VariableMetadata::User(abs_param.name_span),
                 VariableState::Known(val_id),
             );
 
@@ -3271,8 +3274,13 @@ impl<'res> TypeResolver<'res> {
             );
 
             let expr_hir = ExprHir::Var(param_sym_id);
-            let resolved_expr =
-                ResolvedExpr::new(type_id, expr_hir, val_id, abs_param.name_span, Vec::new());
+            let resolved_expr = ResolvedExpr::new(
+                type_id,
+                expr_hir,
+                val_id,
+                ResolvedExprMetadata::User(abs_param.name_span),
+                Vec::new(),
+            );
 
             // Can this be possibly const evaluated if if possible if?
             //
@@ -3432,7 +3440,7 @@ impl<'res> TypeResolver<'res> {
                                     type_id,
                                     expr_hir,
                                     val_id,
-                                    spanned_expr.span,
+                                    ResolvedExprMetadata::User(spanned_expr.span),
                                     Vec::new(),
                                 )
                             }
@@ -3528,7 +3536,7 @@ impl<'res> TypeResolver<'res> {
                                         type_id,
                                         expr_hir,
                                         val_id,
-                                        spanned_expr.span,
+                                        ResolvedExprMetadata::User(spanned_expr.span),
                                         Vec::new(),
                                     )
                                 }
@@ -3589,7 +3597,7 @@ impl<'res> TypeResolver<'res> {
                                         val_info.type_id,
                                         expr_hir,
                                         val_id,
-                                        spanned_expr.span,
+                                        ResolvedExprMetadata::User(spanned_expr.span),
                                         Vec::new(),
                                     )
                                 }
@@ -3625,7 +3633,7 @@ impl<'res> TypeResolver<'res> {
                                         reserved_ty_id,
                                         expr_hir,
                                         val_id,
-                                        spanned_expr.span,
+                                        ResolvedExprMetadata::User(spanned_expr.span),
                                         Vec::new(),
                                     )
                                 }
@@ -3701,10 +3709,15 @@ impl<'res> TypeResolver<'res> {
                     // Creating it's default type to the literal value of integer, as well as it's
                     // expression of just being a singular value type
                     let expr_hir = ExprHir::Val(val_id);
-                    let type_id = TypeId::new(script_compiler::CORE_I64);
+                    let type_id = TypeId::new(compiler_constants::CORE_I64);
 
-                    let resolved_expr =
-                        ResolvedExpr::new(type_id, expr_hir, val_id, spanned_expr.span, Vec::new());
+                    let resolved_expr = ResolvedExpr::new(
+                        type_id,
+                        expr_hir,
+                        val_id,
+                        ResolvedExprMetadata::User(spanned_expr.span),
+                        Vec::new(),
+                    );
 
                     // Creating the actual value portion of the expression
                     let val = Value::I64(num);
@@ -3728,9 +3741,14 @@ impl<'res> TypeResolver<'res> {
                     let val_id = ValueId::new(self.compiler.values.len() as u32);
 
                     let expr_hir = ExprHir::Val(val_id);
-                    let type_id = TypeId::new(script_compiler::CORE_F64);
-                    let expr =
-                        ResolvedExpr::new(type_id, expr_hir, val_id, spanned_expr.span, Vec::new());
+                    let type_id = TypeId::new(compiler_constants::CORE_F64);
+                    let expr = ResolvedExpr::new(
+                        type_id,
+                        expr_hir,
+                        val_id,
+                        ResolvedExprMetadata::User(spanned_expr.span),
+                        Vec::new(),
+                    );
 
                     let val = Value::F64(num);
                     let val_info = ValueInfo::new(type_id, expr_id, Some(val));
@@ -3785,8 +3803,11 @@ impl<'res> TypeResolver<'res> {
                     //It ignores them right now since they don't have a const val, which just means
                     //the output is `None` rather than an error
                     (Some(lhs_const), Some(rhs_const)) => {
-                        let sp_lhs_const = SpannedContainerRef::new(lhs_const, lhs_expr.span);
-                        let sp_rhs_const = SpannedContainerRef::new(rhs_const, rhs_expr.span);
+                        let lhs_span = lhs_expr.meta.expect_user();
+                        let rhs_span = rhs_expr.meta.expect_user();
+
+                        let sp_lhs_const = SpannedContainerRef::new(lhs_const, lhs_span);
+                        let sp_rhs_const = SpannedContainerRef::new(rhs_const, rhs_span);
                         match evaluator::apply_binary_op(
                             sp_lhs_const,
                             *op,
@@ -3795,11 +3816,7 @@ impl<'res> TypeResolver<'res> {
                         ) {
                             evaluator::BinaryOpResult::Output(val) => Some(val),
                             evaluator::BinaryOpResult::DivideByZero => {
-                                return Err(MathError::DivideByZero {
-                                    lhs_span: lhs_expr.span,
-                                    rhs_span: rhs_expr.span,
-                                }
-                                .into());
+                                return Err(MathError::DivideByZero { lhs_span, rhs_span }.into());
                             }
                             // If either are unknown then that would mean it can't confidentally
                             // say the resolution failed since neither have definitive values yet.
@@ -3807,8 +3824,8 @@ impl<'res> TypeResolver<'res> {
                                 if !lhs_is_unknown && !rhs_is_unknown =>
                             {
                                 return Err(MathError::BinaryOpMismatch {
-                                    sp_lhs: SpannedContainer::new(lhs_const.kind(), lhs_expr.span),
-                                    sp_rhs: SpannedContainer::new(rhs_const.kind(), rhs_expr.span),
+                                    sp_lhs: SpannedContainer::new(lhs_const.kind(), lhs_span),
+                                    sp_rhs: SpannedContainer::new(rhs_const.kind(), rhs_span),
                                     op: *op,
                                 })?;
                             }
@@ -3871,7 +3888,7 @@ impl<'res> TypeResolver<'res> {
                     type_id,
                     expr_hir,
                     val_id,
-                    spanned_expr.span,
+                    ResolvedExprMetadata::User(spanned_expr.span),
                     vec![lhs_id, rhs_id],
                 );
 
@@ -3885,15 +3902,20 @@ impl<'res> TypeResolver<'res> {
             AstExpr::Char(c) => {
                 let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
                 let val_id = ValueId::new(self.compiler.values.len() as u32);
-                let type_id = TypeId::new(script_compiler::CORE_CHAR);
+                let type_id = TypeId::new(compiler_constants::CORE_CHAR);
 
                 let val = Value::Char(*c);
                 let val_info = ValueInfo::new(type_id, expr_id, Some(val));
                 self.compiler.values.push(val_info);
 
                 let expr_hir = ExprHir::Val(val_id);
-                let resolved_expr =
-                    ResolvedExpr::new(type_id, expr_hir, val_id, spanned_expr.span, Vec::new());
+                let resolved_expr = ResolvedExpr::new(
+                    type_id,
+                    expr_hir,
+                    val_id,
+                    ResolvedExprMetadata::User(spanned_expr.span),
+                    Vec::new(),
+                );
                 self.compiler.exprs.push(resolved_expr);
 
                 Ok(expr_id)
@@ -3938,7 +3960,7 @@ impl<'res> TypeResolver<'res> {
                     type_id,
                     expr_hir,
                     val_id,
-                    spanned_expr.span,
+                    ResolvedExprMetadata::User(spanned_expr.span),
                     vec![default_val_expr_id],
                 );
 
@@ -3952,15 +3974,20 @@ impl<'res> TypeResolver<'res> {
                 let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
                 let val_id = ValueId::new(self.compiler.values.len() as u32);
 
-                let type_id = TypeId::new(script_compiler::CORE_STR);
+                let type_id = TypeId::new(compiler_constants::CORE_STR);
 
                 let val = Value::InternedStr(*name_id);
                 let val_info = ValueInfo::new(type_id, expr_id, Some(val));
                 self.compiler.values.push(val_info);
 
                 let expr_hir = ExprHir::Val(val_id);
-                let resolved_expr =
-                    ResolvedExpr::new(type_id, expr_hir, val_id, spanned_expr.span, Vec::new());
+                let resolved_expr = ResolvedExpr::new(
+                    type_id,
+                    expr_hir,
+                    val_id,
+                    ResolvedExprMetadata::User(spanned_expr.span),
+                    Vec::new(),
+                );
                 self.compiler.exprs.push(resolved_expr);
 
                 Ok(expr_id)
@@ -3982,15 +4009,14 @@ impl<'res> TypeResolver<'res> {
                 let operand_val_opt = &self.compiler.values[operand_expr.val_id];
 
                 let const_val_opt = if let Some(const_val) = &operand_val_opt.const_val {
-                    let sp_const = SpannedContainerRef::new(const_val, operand_expr.span);
+                    let operand_span = operand_expr.meta.expect_user();
+
+                    let sp_const = SpannedContainerRef::new(const_val, operand_span);
                     match evaluator::apply_unary_op(unary.op, sp_const) {
                         UnaryOpResult::Output(val) => Some(val),
                         UnaryOpResult::Invalid if !is_unknown => {
                             return Err(MathError::UnaryOpMismatch {
-                                sp_operand: SpannedContainer::new(
-                                    const_val.kind(),
-                                    operand_expr.span,
-                                ),
+                                sp_operand: SpannedContainer::new(const_val.kind(), operand_span),
                                 op: unary.op,
                             })?;
                         }
@@ -4023,7 +4049,7 @@ impl<'res> TypeResolver<'res> {
                     type_id,
                     expr_hir,
                     val_id,
-                    spanned_expr.span,
+                    ResolvedExprMetadata::User(spanned_expr.span),
                     vec![operand_id],
                 );
 
@@ -4039,7 +4065,7 @@ impl<'res> TypeResolver<'res> {
             // Also maybe bring back value pre-allocation
             AstExpr::Bool(boolean) => {
                 //FIX:
-                let type_id = TypeId::new(script_compiler::CORE_BOOL);
+                let type_id = TypeId::new(compiler_constants::CORE_BOOL);
 
                 let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
                 let val_id = ValueId::new(self.compiler.values.len() as u32);
@@ -4048,8 +4074,13 @@ impl<'res> TypeResolver<'res> {
                 let val_info = ValueInfo::new(type_id, expr_id, Some(val));
 
                 let expr_hir = ExprHir::Val(val_id);
-                let resolved_expr =
-                    ResolvedExpr::new(type_id, expr_hir, val_id, spanned_expr.span, vec![]);
+                let resolved_expr = ResolvedExpr::new(
+                    type_id,
+                    expr_hir,
+                    val_id,
+                    ResolvedExprMetadata::User(spanned_expr.span),
+                    vec![],
+                );
 
                 self.compiler.exprs.push(resolved_expr);
                 self.compiler.values.push(val_info);
@@ -4090,8 +4121,13 @@ impl<'res> TypeResolver<'res> {
 
                 let expr_hir = ExprHir::Call(caller_id, call_args);
                 // Are the arguments inputs if they are the expression itself?
-                let resolved_expr =
-                    ResolvedExpr::new(type_id, expr_hir, val_id, spanned_expr.span, inputs);
+                let resolved_expr = ResolvedExpr::new(
+                    type_id,
+                    expr_hir,
+                    val_id,
+                    ResolvedExprMetadata::User(spanned_expr.span),
+                    inputs,
+                );
                 let val_info = ValueInfo::new(type_id, expr_id, None);
 
                 self.compiler.exprs.push(resolved_expr);
@@ -4260,7 +4296,7 @@ impl<'res> TypeResolver<'res> {
                     array_type_id,
                     array_expr_hir,
                     array_val_id,
-                    spanned_expr.span,
+                    ResolvedExprMetadata::User(spanned_expr.span),
                     inputs,
                 );
 
@@ -4423,7 +4459,7 @@ impl<'res> TypeResolver<'res> {
         for abs_directive in abs_directives {
             match resolution::resolve_directive(abs_directive) {
                 Some(dir) => {
-                    let directive_id = script_compiler::directive_to_id(&dir);
+                    let directive_id = compiler_constants::directive_to_id(&dir);
                     let sp_directive_id =
                         SpannedContainer::new(directive_id, abs_directive.sp_name_id.span);
                     directive_ids.push(sp_directive_id);

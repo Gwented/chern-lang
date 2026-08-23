@@ -1,4 +1,5 @@
-mod helpers;
+pub mod compiler_constants;
+pub(crate) mod helpers;
 pub mod reporter;
 pub mod script_compiler_store;
 pub mod script_compiler_summary;
@@ -18,7 +19,6 @@ use chrn_utils::{
 use lang::{
     directives::{Directive, TypeDirective},
     types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
-    values::ValueInfo,
 };
 
 use crate::{
@@ -29,22 +29,26 @@ use crate::{
     module::module_concepts::{Bind, Import, ImportKind, Module, ModuleState},
     resolvers::resolver_state::ResolverState,
     script_compiler::helpers::{
-        common_helpers::{CommonKind, CommonSymbolBase, CommonSymbolKind},
         compiler_helpers,
         core_helpers::{self, CoreFunc},
-        extern_helpers::{self, ExternKind},
+        extern_helpers::{self},
+        instantiation_symbols::{
+            InstantiationSymbolBase, InstantiationSymbolKind, InstantiationVariable, InstiationType,
+        },
     },
     semantic::hir::{
         hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
-        hir_exprs::ResolvedExpr,
+        hir_exprs::{ExprHir, ResolvedExpr, ResolvedExprMetadata},
         hir_impls::{
             ConfigDefMember, ConfigRootComplex, ConfigRootKind, ConfigRootOverride, ImplHir,
             ImplHirKind, ImplMemberKind, OptionAssignmentMember, OptionAssignmentRoot,
         },
         hir_symbols::{
             AliasDef, EnumDef, FieldRepre, FuncDef, MemberSymbolKind, StructDef, Symbol,
-            SymbolKind, SymbolOrigin, TypeDef, VarDef, VariableState, VariantRepre,
+            SymbolKind, SymbolOrigin, TypeDef, VarDef, VariableMetadata, VariableState,
+            VariantRepre,
         },
+        value_info::ValueInfo,
     },
     walk_type_id_deferred,
 };
@@ -89,65 +93,6 @@ pub struct ScriptCompiler {
     pub resolver_state: ResolverState,
 }
 
-// -- CORE TYPE CONSTANTS --
-//NOTE: I think these can be removed. Maybe. I don't know actually.
-pub const CORE_I8: u32 = 0;
-pub const CORE_U8: u32 = 1;
-pub const CORE_I16: u32 = 2;
-pub const CORE_U16: u32 = 3;
-pub const CORE_F16: u32 = 4;
-pub const CORE_I32: u32 = 5;
-pub const CORE_U32: u32 = 6;
-pub const CORE_F32: u32 = 7;
-pub const CORE_I64: u32 = 8;
-pub const CORE_U64: u32 = 9;
-pub const CORE_F64: u32 = 10;
-pub const CORE_I128: u32 = 11;
-pub const CORE_U128: u32 = 12;
-pub const CORE_F128: u32 = 13;
-pub const CORE_SIZED: u32 = 14;
-pub const CORE_UNSIZED: u32 = 15;
-pub const CORE_STR: u32 = 16;
-pub const CORE_CHAR: u32 = 17;
-pub const CORE_NIL: u32 = 18;
-pub const CORE_BOOL: u32 = 19;
-pub const CORE_BIGINT: u32 = 20;
-pub const CORE_BIGFLOAT: u32 = 21;
-pub const CORE_RUNTIME: u32 = 22;
-// This particular type has no identifier because it's not a real type beyond being a signifier.
-pub const CORE_UNKNOWN: u32 = 23;
-// pub const CORE_CHARACTER_MAPPABLE: u32 = 24;
-
-// --  DIRECTIVE CONSTANTS --
-pub const DIRECTIVE_WARN_IDX: usize = 0;
-pub const DIRECTIVE_IGNORE_IDX: usize = 1;
-pub const DIRECTIVE_SCIENT_IDX: usize = 2;
-pub const DIRECTIVE_HEX_IDX: usize = 3;
-pub const DIRECTIVE_BIN_IDX: usize = 4;
-pub const DIRECTIVE_OCTAL_IDX: usize = 5;
-pub const DIRECTIVE_UNICODE_IDX: usize = 6;
-
-// Ok maybe put this somewhere else bestie
-// NOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO
-// Ok :3
-pub fn directive_to_id(directive: &Directive) -> DirectiveId {
-    let idx = match directive {
-        Directive::Warn => DIRECTIVE_WARN_IDX,
-        Directive::Ignore => DIRECTIVE_IGNORE_IDX,
-        Directive::Type(type_directive) => match type_directive {
-            TypeDirective::Scient => DIRECTIVE_SCIENT_IDX,
-            TypeDirective::Hex => DIRECTIVE_HEX_IDX,
-            TypeDirective::Bin => DIRECTIVE_BIN_IDX,
-            TypeDirective::Octal => DIRECTIVE_OCTAL_IDX,
-            TypeDirective::Unicode => DIRECTIVE_UNICODE_IDX,
-        },
-    };
-
-    DirectiveId::new(idx as u32)
-}
-
-// ---- DIRECTIVE CONSTANTS END ---
-
 // NOTE: May turn this into an innate option type inside of HIR
 // Ok now this really needs to be an option
 // pub const VALUE_UNKNOWN: usize = 0;
@@ -177,7 +122,10 @@ impl ScriptCompiler {
         // - 1 because core doesn't give itself core, but is semantically counted in the `mod_count`
         // + 1
         let mod_addition = mod_count + import_count - 1;
-        let scope_capacity = mod_count + 1;
+        // Built-ins with an intrinsic namespace, such as `i8::MAX`, each own a scope and push
+        // symbols of their own while core loads.
+        let ns_counts = core_helpers::core_instantiation_reservations();
+        let scope_capacity = mod_count + 1 + ns_counts.scopes;
 
         let mut compiler = ScriptCompiler {
             bind,
@@ -189,8 +137,8 @@ impl ScriptCompiler {
                     + core_helpers::CORE_FUNCS_DATASET.len()
                     + 1,
             ),
-            values: Arena::new(),
-            exprs: Arena::new(),
+            values: Arena::with_capacity(ns_counts.variables),
+            exprs: Arena::with_capacity(ns_counts.variables),
             // Not sure if these should be put in their own separate constants comprised of their
             // own semantics or composed like this. Lets do nothing!
             symbols: Arena::with_capacity(
@@ -198,12 +146,13 @@ impl ScriptCompiler {
                     + core_helpers::CORE_BOUNDARIES_DATASET.len()
                     + core_helpers::CORE_FUNCS_DATASET.len()
                     + mod_addition
-                    + compiler_helpers::DIRECTIVES_DATASET.len(),
+                    + compiler_helpers::DIRECTIVES_DATASET.len()
+                    + ns_counts.symbols,
             ),
             sym_members: Arena::new(),
             impls: Arena::new(),
             impl_members: Arena::new(),
-            variables: Arena::new(),
+            variables: Arena::with_capacity(ns_counts.variables),
             cfgs: Arena::new(),
             // ignore this
             scopes: Arena::with_capacity(scope_capacity),
@@ -693,7 +642,10 @@ impl ScriptCompiler {
     pub(super) fn get_span_from_sym_id(&self, sym_id: SymbolId) -> Option<SourceSpan> {
         match &self.symbols[sym_id].kind {
             SymbolKind::Type(type_id) => self.get_span_from_type_id(*type_id),
-            SymbolKind::Variable(var_id) => Some(self.variables[*var_id].name_span),
+            SymbolKind::Variable(var_id) => match self.variables[*var_id].meta {
+                VariableMetadata::User(source_span) => source_span.into(),
+                VariableMetadata::Generated => None,
+            },
             // SymbolKind::Config(cfg_id) => Some(self.cfgs[*cfg_id].name_span),
             SymbolKind::ExternType | SymbolKind::Namespace | SymbolKind::Directive(_) => None,
         }
@@ -929,7 +881,7 @@ impl ScriptCompiler {
 
     fn register_directive(&mut self, interned_id: InternedId, directive: Directive) {
         let sym_id = SymbolId::new(self.symbols.len() as u32);
-        let directive_id = directive_to_id(&directive);
+        let directive_id = compiler_constants::directive_to_id(&directive);
         debug_assert_eq!(directive_id.id, self.directives.len() as u32);
 
         let sym = Symbol::new(
@@ -971,7 +923,10 @@ impl ScriptCompiler {
         let scope = Scope::new(scope_id, ScopeType::Override, true, None);
         self.scopes.push(ScopeInfo::new(scope, None, core_mod_id));
 
-        self.register_all_common_bases(scope_id, &extern_helpers::ALL_EXTERN_NAMESPACES_DATASET);
+        self.register_all_instantiation_bases(
+            scope_id,
+            &extern_helpers::ALL_EXTERN_NAMESPACES_DATASET,
+        );
 
         // -- FINAL --
         // Pushing the intrinsic scope
@@ -984,34 +939,32 @@ impl ScriptCompiler {
         scope_id
     }
 
-    //TODO: This is now a registration that takes a shape, and transforms it into a namespace
-    //registration, rather than kind specific. Trait, enum, whichever. Address me.
+    // These look suspiciously close to general functions that should remain in a separate module...
 
     /// Entry point to the recursive registeration of any namespace symbol abiding by the
-    /// convention of using `CommonKind`
-    fn register_all_common_bases(
+    /// convention of using `InstantiationSymbolBase`
+    fn register_all_instantiation_bases(
         &mut self,
         current_scope_id: ScopeId,
-        root_dataset: &[&[CommonSymbolBase]],
+        root_dataset: &[&[InstantiationSymbolBase]],
     ) {
         // iterative version was a bit verbose..
         // let mut stack: Vec<ExternFrame> = Vec::with_capacity(10);
 
         for base in root_dataset {
-            self.register_common_bases(current_scope_id, base);
+            self.register_instantiation_bases(current_scope_id, base);
         }
     }
 
-    /// Uses dataset from `extern_helpers.rs` of all `ExternType` intrinsics to push scopes and
-    /// symbols recursively
-    fn register_common_bases(
+    /// Inserts `bases` inside `current_scope_id` recursively
+    fn register_instantiation_bases(
         &mut self,
         current_scope_id: ScopeId,
-        common_bases: &[CommonSymbolBase],
+        bases: &[InstantiationSymbolBase],
     ) {
-        for base in common_bases {
-            match base.kind {
-                CommonSymbolKind::Namespace(syms) => {
+        for base in bases {
+            match &base.kind {
+                InstantiationSymbolKind::Namespace(syms) => {
                     // Creating namespace as a symbol with the identifier associated first.
                     let sym_id = SymbolId::new(self.symbols.len() as u32);
                     let scope_id = ScopeId::new(self.scopes.len() as u16);
@@ -1036,9 +989,9 @@ impl ScriptCompiler {
                         self.intrinsic_registry.core_mod_id,
                     ));
 
-                    self.register_common_bases(scope_id, syms);
+                    self.register_instantiation_bases(scope_id, syms);
                 }
-                CommonSymbolKind::ExternType => {
+                InstantiationSymbolKind::ExternType => {
                     let sym_id = SymbolId::new(self.symbols.len() as u32);
                     let sym_kind = SymbolKind::ExternType;
                     let sym = base.to_sym(sym_id, None, None, sym_kind);
@@ -1047,121 +1000,77 @@ impl ScriptCompiler {
                     self.symbols.push(sym);
                     current_table.interned_to_sym.insert(base.name_id, sym_id);
                 }
+                InstantiationSymbolKind::Variable(var) => {
+                    self.register_instantiation_var(current_scope_id, base, var)
+                }
             }
+        }
+    }
+    // Can't remember if this was made in the current diff or the last? Let's guess instead of looking!
 
-            // match base {
-            //     CommonKind::Namespace(namespace_parts) => {
-            //         // Creating namespace as a symbol with the identifier associated first.
-            //         let sym_id = SymbolId::new(self.symbols.len() as u32);
-            //         let scope_id = ScopeId::new(self.scopes.len() as u16);
-            //
-            //         let sym = namespace_parts.to_sym(sym_id, None, scope_id);
-            //         // let sym = Symbol::new(
-            //         //     extern_namespace.name_id,
-            //         //     sym_id,
-            //         //     None,
-            //         //     SymbolOrigin::Compiler,
-            //         //     true,
-            //         //     AssociatedScopeKind::Scope(scope_id).into(),
-            //         //     ScopeType::Compiler,
-            //         //     SymbolKind::Namespace,
-            //         // );
-            //
-            //         // Putting the found namespace into the current table's scope before recursively
-            //         // descending into new scope
-            //         let current_table = &mut self.scopes[current_scope_id].scope.table;
-            //         self.symbols.push(sym);
-            //         current_table
-            //             .interned_to_sym
-            //             .insert(namespace_parts.name_id, sym_id);
-            //
-            //         let scope = Scope::new(scope_id, ScopeType::Compiler, true, None);
-            //
-            //         // Pushing it's scope so that future scope instantiations are aligned with len()
-            //         self.scopes.push(ScopeInfo::new(
-            //             scope,
-            //             sym_id.into(),
-            //             self.intrinsic_registry.core_mod_id,
-            //         ));
-            //
-            //         self.register_namespace(scope_id, namespace_parts.syms);
-            //     }
-            //     CommonKind::Symbol(sym_parts) => {
-            //         let sym_id = SymbolId::new(self.symbols.len() as u32);
-            //         let sym = sym_parts.to_sym(sym_id, None);
-            //         // let sym = Symbol::new(
-            //         //     *interned_id,
-            //         //     sym_id,
-            //         //     None,
-            //         //     SymbolOrigin::Compiler,
-            //         //     true,
-            //         //     None,
-            //         //     ScopeType::Compiler,
-            //         //     SymbolKind::ExternType,
-            //         // );
-            //
-            //         let current_table = &mut self.scopes[current_scope_id].scope.table;
-            //         self.symbols.push(sym);
-            //         current_table
-            //             .interned_to_sym
-            //             .insert(sym_parts.name_id, sym_id);
-            //     }
-            // }
+    /// Registers `InstantiationVariable` given it's already present information
+    fn register_instantiation_var(
+        &mut self,
+        current_scope_id: ScopeId,
+        base: &InstantiationSymbolBase,
+        var: &InstantiationVariable,
+    ) {
+        let sym_id = SymbolId::new(self.symbols.len() as u32);
+        let var_id = VariableId::new(self.variables.len() as u32);
 
-            // match kind {
-            //     ExternKind::Namespace(extern_namespace) => {
-            //         // Creating namespace as a symbol with the identifier associated first.
-            //         let sym_id = SymbolId::new(self.symbols.len() as u32);
-            //         let scope_id = ScopeId::new(self.scopes.len() as u16);
-            //
-            //         let sym = Symbol::new(
-            //             extern_namespace.name_id,
-            //             sym_id,
-            //             None,
-            //             SymbolOrigin::Compiler,
-            //             true,
-            //             AssociatedScopeKind::Scope(scope_id).into(),
-            //             ScopeType::Compiler,
-            //             SymbolKind::Namespace,
-            //         );
-            //
-            //         // Putting the found namespace into the current table's scope before recursively
-            //         // descending into new scope
-            //         let current_table = &mut self.scopes[current_scope_id].scope.table;
-            //         self.symbols.push(sym);
-            //         current_table
-            //             .interned_to_sym
-            //             .insert(extern_namespace.name_id, sym_id);
-            //
-            //         let scope = Scope::new(scope_id, ScopeType::Compiler, true, None);
-            //
-            //         // Pushing it's scope so that future scope instantiations are aligned with len()
-            //         self.scopes.push(ScopeInfo::new(
-            //             scope,
-            //             sym_id.into(),
-            //             self.intrinsic_registry.core_mod_id,
-            //         ));
-            //
-            //         self.register_namespace(scope_id, extern_namespace.syms);
-            //     }
-            //     ExternKind::Symbol(interned_id) => {
-            //         let sym_id = SymbolId::new(self.symbols.len() as u32);
-            //         let sym = Symbol::new(
-            //             *interned_id,
-            //             sym_id,
-            //             None,
-            //             SymbolOrigin::Compiler,
-            //             true,
-            //             None,
-            //             ScopeType::Compiler,
-            //             SymbolKind::ExternType,
-            //         );
-            //
-            //         let current_table = &mut self.scopes[current_scope_id].scope.table;
-            //         self.symbols.push(sym);
-            //         current_table.interned_to_sym.insert(*interned_id, sym_id);
-            //     }
-            // }
+        let sym = Symbol::new(
+            base.name_id,
+            sym_id,
+            None,
+            base.sym_origin,
+            base.is_priv,
+            None,
+            base.scope_origin,
+            SymbolKind::Variable(var_id),
+        );
+
+        self.symbols.push(sym);
+        let current_table = &mut self.scopes[current_scope_id].scope.table;
+        current_table.interned_to_sym.insert(base.name_id, sym_id);
+
+        let type_id = self.register_instantiation_type(current_scope_id, base, &var.ty);
+
+        let expr_id = ExprId::new(self.exprs.len() as u32);
+        let val_id = ValueId::new(self.values.len() as u32);
+
+        let expr = ResolvedExpr::new(
+            type_id,
+            ExprHir::Val(val_id),
+            val_id,
+            ResolvedExprMetadata::Generated,
+            Vec::new(),
+        );
+
+        let val_info = ValueInfo::new(type_id, expr_id, var.val.to_val().into());
+
+        let var_def = VarDef::new(
+            sym_id,
+            base.name_id,
+            VariableMetadata::Generated,
+            VariableState::Known(val_id),
+        );
+
+        self.variables.push(var_def);
+        self.exprs.push(expr);
+        self.values.push(val_info);
+    }
+
+    // TEST:
+    fn register_instantiation_type(
+        &mut self,
+        current_scope_id: ScopeId,
+        base: &InstantiationSymbolBase,
+        ty: &InstiationType,
+    ) -> TypeId {
+        match ty {
+            InstiationType::BuiltinType(builtin) => {
+                TypeId::new(compiler_constants::builtin_ty_to_id(builtin.kind()))
+            }
         }
     }
 
@@ -1218,13 +1127,11 @@ impl ScriptCompiler {
     /// Helper to load all of core's types
     fn load_core_types(&mut self, core_mod_id: ModuleId, core_scope_id: ScopeId) {
         // -- Concrete types --
-        for (interned, ty, core_id) in core_helpers::CORE_BUILTIN_TYPES_DATASET.iter().cloned() {
-            debug_assert_eq!(self.types.len() as u32, core_id);
-            let interned_id = InternedId::new(interned);
-            self.register_builtin(interned_id, ty, core_scope_id, core_mod_id);
+        for (interned, ty, ns) in &core_helpers::CORE_BUILTIN_TYPES_DATASET {
+            let interned_id = InternedId::new(*interned);
+            self.register_builtin(interned_id, ty.clone(), ns, core_scope_id, core_mod_id);
         }
 
-        debug_assert_eq!(self.types.len() as u32, CORE_UNKNOWN);
         // Is a special cookie because you're not supposed to be able to instantiate an `Unknown`
         // type on purpose. This is just a compiler internal type.
         self.types.push(TypeInfo::new(Type::Unknown, core_mod_id));
@@ -1241,6 +1148,7 @@ impl ScriptCompiler {
         &mut self,
         name_id: InternedId,
         builtin_ty: BuiltinType,
+        ns: &[InstantiationSymbolBase],
         core_scope_id: ScopeId,
         core_mod_id: ModuleId,
     ) {
@@ -1251,13 +1159,22 @@ impl ScriptCompiler {
             Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, builtin_ty)),
             core_mod_id,
         ));
+
+        // The scope, when present, only needs its id here. Its members are registered
+        // after this built-in's symbol.
+        let ns_scope_id = if ns.is_empty() {
+            None
+        } else {
+            Some(ScopeId::new(self.scopes.len() as u16))
+        };
+
         let sym = Symbol::new(
             name_id,
             sym_id,
             None,
             SymbolOrigin::Module(core_mod_id),
             false,
-            None,
+            ns_scope_id.map(AssociatedScopeKind::Scope),
             ScopeType::Core,
             SymbolKind::Type(type_id),
         );
@@ -1265,6 +1182,15 @@ impl ScriptCompiler {
         self.symbols.push(sym);
         let table = &mut self.scopes[core_scope_id].scope.table;
         table.interned_to_sym.insert(name_id, sym_id);
+
+        if let Some(scope_id) = ns_scope_id {
+            // Compiler generated or core generated??
+            // Feels like, core.
+            let scope = Scope::new(scope_id, ScopeType::Core, false, None);
+            let scope_info = ScopeInfo::new(scope, sym_id.into(), core_mod_id);
+            self.scopes.push(scope_info);
+            self.register_instantiation_bases(scope_id, ns);
+        }
     }
 
     /// Registers a single core boundary type and pushes it

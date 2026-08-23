@@ -5,7 +5,6 @@ use chrn_utils::{
     id_types::{InternedId, MemberId, ModuleId, ScopeId, SourceRegionId, SymbolId, TypeId},
     intern::Intern,
 };
-use lang::chrn_classifier::{ChrnClassifiable, ChrnClassifier};
 
 use crate::{
     lookup::scopes::scopes_concepts::{
@@ -170,11 +169,6 @@ pub fn find_sym_id(
                         // Preferred symbol found
                         return default_return;
                     }
-                    // if scope_type == ScopeType::Override {
-                    //     dbg!(target_name_id);
-                    //     dbg!(&scope_info.scope);
-                    //     panic!();
-                    // }
 
                     //TODO: Make sure this works as intended
                     if let Some(intrinsic_scope_id) = scope_info.scope.intrinsic_scope {
@@ -236,7 +230,6 @@ pub fn find_sym_id(
             }
         }
     }
-    // `another` failed here
 
     None
 }
@@ -446,6 +439,7 @@ fn compute_accessible_scopes<'a>(
         ScopeLookupPattern::NoRestrictions | ScopeLookupPattern::NamespaceOnly => accessible_scopes,
         ScopeLookupPattern::OnlyVar => &SCOPE_VAR_ONLY,
         ScopeLookupPattern::OnlyNest => &SCOPE_NEST_ONLY,
+        // This is not used yet and may not exist
         ScopeLookupPattern::OnlyIntrinsic => todo!("Hiii"),
     }
 }

@@ -38,7 +38,7 @@ pub struct ResolvedExpr {
     ///
     /// User -> User -> None
     pub user: Option<ExprId>,
-    pub span: SourceSpan,
+    pub meta: ResolvedExprMetadata,
     // This is not an option type even though `Value` as an `Option<Value>` because symbols are
     // already represented as unknown from `SymbolKind` and `Value` types already have the metadata
     // of their type and if they have a const value inside.
@@ -50,16 +50,36 @@ impl ResolvedExpr {
         type_id: TypeId,
         expr_hir: ExprHir,
         val_id: ValueId,
-        span: SourceSpan,
+        meta: ResolvedExprMetadata,
         inputs: Vec<ExprId>,
     ) -> ResolvedExpr {
         ResolvedExpr {
             type_id,
             expr_hir,
             inputs,
-            span,
+            meta,
             user: None,
             val_id,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ResolvedExprMetadata {
+    User(SourceSpan),
+    Generated,
+}
+
+impl ResolvedExprMetadata {
+    pub fn expect_user(&self) -> SourceSpan {
+        match self {
+            ResolvedExprMetadata::User(span) => *span,
+            ResolvedExprMetadata::Generated => {
+                panic!(
+                    "Expected `{:?}`, found `{self:?}`",
+                    ResolvedExprMetadata::Generated
+                )
+            }
         }
     }
 }

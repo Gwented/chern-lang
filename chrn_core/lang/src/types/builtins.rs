@@ -114,8 +114,8 @@ impl BuiltinType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuiltinTypeKind {
-    I8 = 0,
-    U8 = 1,
+    I8,
+    U8,
     I16,
     U16,
     F16,

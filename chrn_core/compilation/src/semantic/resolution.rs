@@ -401,6 +401,19 @@ pub fn resolve_static_access(
     }
 
     for (i, sp_path_seg) in sp_path_segs.iter().enumerate() {
+        // Sure hope there aren't any unintended consequences associated with this small change
+        //
+        // This is here so that something like "i32::MAX" is still doable at root.
+        // The issue is, `NamespaceOnly` gets rid of the core module because it's rules are more
+        // like IN namespace only rather than search in this specific namespace which may be a
+        // module or individual scope. That means, unless "core::i32::MAX" is actively done, it will
+        // never find the i32 because it gets rid of core in `NamespaceOnly`.
+        let lookup_pat = if i == 0 {
+            ScopeLookupPattern::NoRestrictions
+        } else {
+            ScopeLookupPattern::NamespaceOnly
+        };
+
         match &sp_path_seg.inner {
             PathSegment::Ident(interned_id) => {
                 // NOTE: `another` searched here
@@ -409,7 +422,7 @@ pub fn resolve_static_access(
                     current_scope,
                     *interned_id,
                     scope_type,
-                    ScopeLookupPattern::NamespaceOnly,
+                    lookup_pat,
                     lookup_pref,
                 ) {
                     let sym = &compiler.symbols[found_sym_id];

@@ -3,8 +3,12 @@ use crate::lookup::scopes::find_sym_id;
 use crate::lookup::scopes::scopes_concepts::{
     AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, ScopeType,
 };
+use crate::script_compiler::compiler_constants::builtin_ty_to_id;
+use crate::script_compiler::helpers::core_helpers::CORE_BUILTIN_TYPES_DATASET;
+use crate::semantic::hir::hir_concepts::Type;
 use crate::semantic::hir::hir_symbols::SymbolKind;
-use chrn_utils::id_types::ScopeId;
+use chrn_utils::id_types::{ScopeId, TypeId};
+use chrn_utils::intern;
 
 /// Runs lexing, parsing, and namespace resolution on a single-module script, returning the
 /// compiler and interner so scope lookups can be performed directly.
@@ -243,4 +247,111 @@ fn scope_lookup_no_preference_test() {
 
     let (_, struct_sym_id) = sym_in_scope(&compiler, &interner, ScopeType::Nest, "Thing");
     assert_eq!(found.found_sym_id, struct_sym_id);
+}
+
+/// Every built-in that declares an intrinsic namespace, as `(source name, its `TypeId`)`.
+fn namespaced_builtins() -> Vec<(String, TypeId)> {
+    let interner = Intern::init();
+
+    CORE_BUILTIN_TYPES_DATASET
+        .iter()
+        .filter(|(_, _, ns)| !ns.is_empty())
+        .map(|(interned, builtin_ty, _)| {
+            (
+                interner.search_idx(*interned as usize).to_string(),
+                TypeId::new(builtin_ty_to_id(builtin_ty.kind())),
+            )
+        })
+        .collect()
+}
+
+/// The scope a built-in's symbol owns, which is where its intrinsic constants live.
+fn ns_scope_of(compiler: &ScriptCompiler, type_id: TypeId) -> ScopeId {
+    let Type::BuiltinTypeInfo(info) = &compiler.types[type_id].ty else {
+        panic!("expected a builtin at {type_id:?}");
+    };
+
+    match compiler.symbols[info.sym_id].associated_scope {
+        Some(AssociatedScopeKind::Scope(scope_id)) => scope_id,
+        other => panic!("builtin at {type_id:?} owns no namespace scope, got {other:?}"),
+    }
+}
+
+/// Intrinsic constants such as `i8::MAX` live in a scope hanging off the built-in's symbol, so
+/// they are reachable through that scope and through nothing else. A section scope must not see
+/// them, otherwise a bare `MAX` would resolve and the ten namespaces would collide on one name.
+#[test]
+fn scope_core_type_namespace_test() {
+    let (compiler, _) = ns_resolve("let CONSTANT = 3");
+    let max_id = InternedId::new(intern::INTERNED_MAX_UPPER);
+    let min_id = InternedId::new(intern::INTERNED_MIN_UPPER);
+
+    for (name, type_id) in namespaced_builtins() {
+        let scope_id = ns_scope_of(&compiler, type_id);
+
+        for bound_id in [max_id, min_id] {
+            let found = find_sym_id(
+                &compiler,
+                AssociatedScopeKind::Scope(scope_id),
+                bound_id,
+                ScopeType::Core,
+                ScopeLookupPattern::NamespaceOnly,
+                ScopeLookupPreferenceFlags::none(),
+            )
+            .unwrap_or_else(|| panic!("`{name}` should hold {bound_id:?} in {scope_id:?}"));
+
+            assert_eq!(found.scope_found_in, scope_id);
+            assert!(
+                matches!(compiler.symbols[found.found_sym_id].kind, SymbolKind::Variable(_)),
+                "`{name}::{bound_id:?}` should be a variable"
+            );
+        }
+    }
+
+    // The same identifier from the module's own scopes, which is what a bare `MAX` searches
+    for bound_id in [max_id, min_id] {
+        assert!(
+            find_sym_id(
+                &compiler,
+                AssociatedScopeKind::Module(ModuleId::new(0)),
+                bound_id,
+                ScopeType::Neutral,
+                ScopeLookupPattern::NoRestrictions,
+                ScopeLookupPreferenceFlags::none(),
+            )
+            .is_none(),
+            "{bound_id:?} must not be reachable without naming the builtin that owns it"
+        );
+    }
+}
+
+/// A bare `MAX` names nothing, and a built-in with no intrinsic namespace has nothing to
+/// traverse into. Both must be diagnosed rather than resolving to some other built-in's bound.
+#[test]
+fn scope_core_type_namespace_unreachable_test() {
+    let diags = resolve_single_module("let CONSTANT = MAX", Stage::Constraint);
+    assert!(
+        diags.err_count() > 0,
+        "a bare `MAX` should not resolve: {:?}",
+        diags.ty
+    );
+
+    // `u64`, `i128`, `u128` and `f128` bounds do not fit `InstiationValue`, and `sized`/`unsized`
+    // are pointer-sized, so none of them carry a namespace yet
+    for (interned, builtin_ty, ns) in &CORE_BUILTIN_TYPES_DATASET {
+        if !ns.is_empty() {
+            continue;
+        }
+
+        let interner = Intern::init();
+        let name = interner.search_idx(*interned as usize);
+        let text = format!("let CONSTANT = {name}::MAX");
+        let res = resolve_single_module(&text, Stage::Constraint);
+
+        assert!(
+            res.err_count() > 0,
+            "`{:?}` declares no namespace, so `{name}::MAX` should not resolve",
+            builtin_ty.kind()
+        );
+    }
 }

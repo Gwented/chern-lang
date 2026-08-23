@@ -6,10 +6,10 @@
 use chrn_utils::{id_types::InternedId, intern};
 use lang::directives::{Directive, TypeDirective};
 
-use crate::script_compiler;
+use crate::script_compiler::compiler_constants;
 
 pub static DIRECTIVES_DATASET: [(InternedId, Directive);
-    script_compiler::DIRECTIVE_UNICODE_IDX + 1] = [
+    compiler_constants::DIRECTIVE_UNICODE_IDX + 1] = [
     (InternedId::new(intern::INTERNED_WARN), Directive::Warn),
     (InternedId::new(intern::INTERNED_IGNORE), Directive::Ignore),
     (

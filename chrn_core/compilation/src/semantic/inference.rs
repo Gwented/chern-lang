@@ -3,20 +3,20 @@ use lang::values::Value;
 
 use crate::{
     parser::ast::ast_concepts::BinaryOp,
-    script_compiler::{self, ScriptCompiler},
+    script_compiler::{ScriptCompiler, compiler_constants},
 };
 
 pub(crate) fn infer_type_from_val(compiler: &ScriptCompiler, val: &Value) -> Option<TypeId> {
     match val {
-        Value::I64(_) => Some(TypeId::new(script_compiler::CORE_I64)),
-        Value::F64(_) => Some(TypeId::new(script_compiler::CORE_F64)),
-        Value::Bool(_) => Some(TypeId::new(script_compiler::CORE_BOOL)),
-        Value::Char(_) => Some(TypeId::new(script_compiler::CORE_CHAR)),
+        Value::I64(_) => Some(TypeId::new(compiler_constants::CORE_I64)),
+        Value::F64(_) => Some(TypeId::new(compiler_constants::CORE_F64)),
+        Value::Bool(_) => Some(TypeId::new(compiler_constants::CORE_BOOL)),
+        Value::Char(_) => Some(TypeId::new(compiler_constants::CORE_CHAR)),
         Value::Func(func_sym) => {
             let func_def = compiler.get_func(*func_sym);
             Some(func_def.ret_type)
         }
-        Value::InternedStr(_) => Some(TypeId::new(script_compiler::CORE_STR)),
+        Value::InternedStr(_) => Some(TypeId::new(compiler_constants::CORE_STR)),
         Value::Array(elements) => {
             // Would this be possible?
             if elements.is_empty() {
@@ -31,8 +31,8 @@ pub(crate) fn infer_type_from_val(compiler: &ScriptCompiler, val: &Value) -> Opt
         // binary op so it can't acually be produced.
         // Tuples also are not used outside of expressing type constraints.
         //
-        // Value::RuntimeStr(_) => TypeId::new(script_compiler::CORE_STR),
-        // Value::Tuple(_) => TypeId::new(script_compiler::CORE_TUPLE),
+        // Value::RuntimeStr(_) => TypeId::new(compiler_constants::CORE_STR),
+        // Value::Tuple(_) => TypeId::new(compiler_constants::CORE_TUPLE),
         // Value::Unknown => TypeId::new(script_compiler::TYPE_UNKNOWN_IDX),
         Value::Tuple(_) | Value::RuntimeStr(_) => unreachable!(),
         Value::Unknown => None,
@@ -64,13 +64,13 @@ pub(crate) fn infer_type_from_binary_op(
         | BinaryOp::Or
         | BinaryOp::EqTo
         | BinaryOp::NotEq
-        | BinaryOp::LessOrEq => Some(TypeId::new(script_compiler::CORE_BOOL)),
+        | BinaryOp::LessOrEq => Some(TypeId::new(compiler_constants::CORE_BOOL)),
         // Bitwise doesn't exist yet
         //WARN: Endo
         BinaryOp::BitOr
         | BinaryOp::BitAnd
         | BinaryOp::BitRightShift
         | BinaryOp::BitLeftShift
-        | BinaryOp::BitXor => Some(TypeId::new(script_compiler::CORE_I64)),
+        | BinaryOp::BitXor => Some(TypeId::new(compiler_constants::CORE_I64)),
     }
 }

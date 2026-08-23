@@ -1,6 +1,12 @@
 use super::helpers::*;
 use crate::parser::ast::ast_concepts::BinaryOp;
-use crate::script_compiler::{CORE_BOOL, CORE_CHAR, CORE_F64, CORE_I64, CORE_STR};
+use crate::script_compiler::compiler_constants::{
+    CORE_BOOL, CORE_CHAR, CORE_F64, CORE_I64, CORE_STR, builtin_ty_to_id,
+};
+use crate::script_compiler::helpers::core_helpers::{
+    CORE_BUILTIN_TYPES_DATASET, core_instantiation_reservations,
+};
+use crate::script_compiler::helpers::instantiation_symbols::InstantiationSymbolKind;
 use crate::semantic::hir::hir_concepts::Type;
 use crate::semantic::hir::hir_symbols::SymbolKind;
 use crate::semantic::inference::{infer_type_from_binary_op, infer_type_from_val};
@@ -413,5 +419,121 @@ fn inference_survives_const_dependency_chain() {
             "'{}' should infer i64",
             name
         );
+    }
+}
+
+// -- Intrinsic namespace constants --
+
+/// Every intrinsic constant, as `(source path, the `TypeId` it must have, its value)`.
+fn intrinsic_constants() -> Vec<(String, TypeId, Value)> {
+    let interner = Intern::init();
+    let mut constants = Vec::new();
+
+    for (interned, builtin_ty, ns) in &CORE_BUILTIN_TYPES_DATASET {
+        let ty_name = interner.search_idx(*interned as usize);
+        let type_id = TypeId::new(builtin_ty_to_id(builtin_ty.kind()));
+
+        for base in ns.iter() {
+            let InstantiationSymbolKind::Variable(var) = &base.kind else {
+                panic!("`{ty_name}` holds a non-variable intrinsic entry");
+            };
+
+            let bound = interner.search_idx(base.name_id.id as usize);
+            constants.push((format!("{ty_name}::{bound}"), type_id, var.val.to_val()));
+        }
+    }
+
+    constants
+}
+
+/// A constant reached through a built-in's namespace keeps that built-in's type, not the type
+/// its `Value` payload would infer. `u8::MAX` is a `u8` holding an `I64`, and `f16::MAX` an
+/// `f16` holding an `F64`, so inferring from the payload would collapse both onto `i64`/`f64`.
+#[test]
+fn infer_intrinsic_namespace_constant_test() {
+    for (path, type_id, expected) in intrinsic_constants() {
+        let text = format!("let CONSTANT = {path}");
+        let (compiler, interner) = resolve_single_module(&text, Stage::Constraint)
+            .expect_ok()
+            .into_state();
+
+        let name_id = interner
+            .try_search_str("CONSTANT")
+            .expect("`CONSTANT` should be interned");
+        let var_def = compiler
+            .variables
+            .iter()
+            .find(|var| var.name_id == name_id)
+            .expect("`CONSTANT` should be declared");
+
+        let VariableState::Known(val_id) = var_def.state else {
+            panic!("`{path}` did not resolve to a known value");
+        };
+
+        let val_info = &compiler.values[val_id];
+
+        assert_eq!(val_info.type_id, type_id, "type of `{path}`");
+
+        let found = val_info
+            .const_val
+            .as_ref()
+            .unwrap_or_else(|| panic!("`{path}` has no constant value"));
+
+        assert!(
+            values_eq(found, &expected),
+            "`{path}` is {found:?}, expected {expected:?}"
+        );
+    }
+}
+
+/// A `let` bound to an intrinsic constant aliases that constant's `ValueId` rather than copying
+/// it, so every user expression shares the slot `i8::MAX` lives in. Nothing a user writes may
+/// write back through that slot, or one script would rewrite a bound for the rest of the run.
+#[test]
+fn intrinsic_namespace_constants_are_not_rewritten_test() {
+    let generated = core_instantiation_reservations().variables;
+    let baseline = core_only_compiler();
+
+    let sources = [
+        "let CONSTANT = i8::MAX",
+        "let CONSTANT = -i8::MAX",
+        "let CONSTANT = i8::MAX + 1",
+        "let FIRST = SECOND\nlet SECOND = u32::MAX",
+        "let CONSTANT = f64::MIN\nvar->\n    field: i8 [Range(i8::MIN, i8::MAX)]",
+    ];
+
+    for text in sources {
+        let (compiler, _) = resolve_single_module(text, Stage::Constraint)
+            .expect_ok()
+            .into_state();
+
+        for idx in 0..generated {
+            let val_id = ValueId::new(idx as u32);
+            let found = &compiler.values[val_id];
+            let expected = &baseline.values[val_id];
+
+            assert_eq!(
+                found.type_id, expected.type_id,
+                "{text:?} changed the type of intrinsic {val_id:?}"
+            );
+
+            match (&found.const_val, &expected.const_val) {
+                (Some(found_val), Some(expected_val)) => assert!(
+                    values_eq(found_val, expected_val),
+                    "{text:?} changed intrinsic {val_id:?} to {found_val:?}, was {expected_val:?}"
+                ),
+                (found_opt, expected_opt) => panic!(
+                    "{text:?} changed intrinsic {val_id:?} from {expected_opt:?} to {found_opt:?}"
+                ),
+            }
+
+            // The built-in each constant is typed as must still be that built-in, since the
+            // repair path for forward references writes `Deferred` through a value's type slot
+            assert!(
+                matches!(compiler.types[found.type_id].ty, Type::BuiltinTypeInfo(_)),
+                "{text:?} overwrote the builtin at {:?}",
+                found.type_id
+            );
+        }
     }
 }

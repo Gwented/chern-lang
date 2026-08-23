@@ -1,8 +1,7 @@
 use super::helpers::*;
-use crate::script_compiler::{
+use crate::script_compiler::compiler_constants::{
     DIRECTIVE_BIN_IDX, DIRECTIVE_HEX_IDX, DIRECTIVE_IGNORE_IDX, DIRECTIVE_OCTAL_IDX,
-    DIRECTIVE_SCIENT_IDX, DIRECTIVE_UNICODE_IDX, DIRECTIVE_WARN_IDX, ScriptCompiler,
-    directive_to_id,
+    DIRECTIVE_SCIENT_IDX, DIRECTIVE_UNICODE_IDX, DIRECTIVE_WARN_IDX, directive_to_id,
 };
 use chrn_utils::{id_types::DirectiveId, intern, intern::Intern};
 use lang::directives::{BUILTIN_DIRECTIVE_STRS, Directive, TypeDirective};

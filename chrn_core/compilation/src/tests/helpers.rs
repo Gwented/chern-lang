@@ -606,6 +606,19 @@ pub(super) fn value_of(compiler: &ScriptCompiler, interner: &Intern, name: &str)
     }
 }
 
+/// `Value` has no `PartialEq`. Only the constant variants tests assert on are compared, and
+/// floats compare by bits so a value that lost precision fails rather than rounding into place.
+pub(super) fn values_eq(left: &Value, right: &Value) -> bool {
+    match (left, right) {
+        (Value::I64(l), Value::I64(r)) => l == r,
+        (Value::F64(l), Value::F64(r)) => l.to_bits() == r.to_bits(),
+        (Value::Bool(l), Value::Bool(r)) => l == r,
+        (Value::Char(l), Value::Char(r)) => l == r,
+        (Value::InternedStr(l), Value::InternedStr(r)) => l == r,
+        _ => false,
+    }
+}
+
 pub(super) fn load_cfg_bytes(bytes: &[u8]) -> ConfigLoaderOutput {
     let mut interner = mock_interner(0, 1);
     let path_id = interner.intern_path(Path::new(""));

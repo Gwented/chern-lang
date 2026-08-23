@@ -165,6 +165,7 @@ impl Type {
 
 // WE LOST
 /// Flat variation of `Type`
+#[derive(Debug)]
 pub enum TypeKind {
     BuiltinType(BuiltinTypeKind),
     Struct,

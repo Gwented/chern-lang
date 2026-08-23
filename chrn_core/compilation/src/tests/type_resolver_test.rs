@@ -1,5 +1,5 @@
 use super::helpers::*;
-use crate::script_compiler::{CORE_I64, CORE_STR, CORE_UNKNOWN};
+use crate::script_compiler::compiler_constants::{CORE_I64, CORE_STR, CORE_UNKNOWN};
 use crate::semantic::hir::hir_concepts::Type;
 use crate::semantic::hir::hir_symbols::SymbolKind;
 use chrn_utils::id_types::TypeId;

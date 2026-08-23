@@ -147,7 +147,7 @@ pub struct VarDef {
     /// `SymbolId` of `self`
     pub sym_id: SymbolId,
     pub name_id: InternedId,
-    pub name_span: SourceSpan,
+    pub meta: VariableMetadata,
     // Same job as SymbolKind::ReservedTypeSlot
     pub state: VariableState,
 }
@@ -156,14 +156,31 @@ impl VarDef {
     pub fn new(
         sym_id: SymbolId,
         name_id: InternedId,
-        name_span: SourceSpan,
+        meta: VariableMetadata,
         state: VariableState,
     ) -> VarDef {
         VarDef {
             sym_id,
             name_id,
-            name_span,
+            meta,
             state,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum VariableMetadata {
+    User(SourceSpan),
+    Generated,
+}
+
+impl VariableMetadata {
+    pub fn expect_user(&self) -> SourceSpan {
+        match self {
+            VariableMetadata::User(span) => *span,
+            VariableMetadata::Generated => {
+                panic!("Expected `VariableMetadata::User`, found `{self:?}`")
+            }
         }
     }
 }

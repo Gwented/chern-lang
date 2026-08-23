@@ -27,7 +27,7 @@ use crate::{
             },
             hir_symbols::{
                 AliasDef, EnumDef, StructDef, Symbol, SymbolKind, SymbolOrigin, TypeDef, VarDef,
-                VariableState,
+                VariableMetadata, VariableState,
             },
         },
     },
@@ -446,7 +446,7 @@ impl NamespaceResolver<'_> {
         //                 self.interner,
         //             );
         //
-        //             TypeId::new(script_compiler::CORE_UNKNOWN)
+        //             TypeId::new(compiler_constants::CORE_UNKNOWN)
         //         }
         //     };
         //
@@ -604,7 +604,7 @@ impl NamespaceResolver<'_> {
         let var = VarDef::new(
             sym_id,
             abs_var.name_id,
-            abs_var.name_span,
+            VariableMetadata::User(abs_var.name_span),
             VariableState::ReservedTypeSlot(type_id),
         );
 

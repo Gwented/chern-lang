@@ -17,7 +17,7 @@ use chrn_utils::{
 };
 use lang::{
     chrn_classifier::ChrnClassifier,
-    config_schemas::{self, ConfigSchema},
+    config_schemas::ConfigSchema,
     directives::Directive,
     types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
     values::Value,
@@ -30,11 +30,7 @@ use crate::{
     script_compiler::ScriptCompiler,
     semantic::{
         compilation_unit::CompilationUnit,
-        hir::{
-            hir_concepts::Type,
-            hir_impls::ImplHirKind,
-            hir_symbols::{MemberSymbolKind, SymbolKind},
-        },
+        hir::{hir_concepts::Type, hir_impls::ImplHirKind, hir_symbols::SymbolKind},
         preset_reporter::{self, preset_err::PresetErr},
     },
 };
@@ -338,7 +334,7 @@ impl<'a> ConstraintResolver<'a> {
                         );
 
                         let err_expr_id = array_expr.inputs[err_idx];
-                        let err_span = self.compiler.exprs[err_expr_id].span;
+                        let err_span = self.compiler.exprs[err_expr_id].meta.expect_user();
                         SourceDiagnostic::builder(
                             ErrorCode::SchemaOptionErr.into(),
                             DiagnosticLevel::Error,
@@ -366,7 +362,7 @@ impl<'a> ConstraintResolver<'a> {
                         );
 
                         let err_expr_id = array_expr.inputs[err_idx];
-                        let err_span = self.compiler.exprs[err_expr_id].span;
+                        let err_span = self.compiler.exprs[err_expr_id].meta.expect_user();
                         SourceDiagnostic::builder(
                             ErrorCode::SchemaOptionErr.into(),
                             DiagnosticLevel::Error,
@@ -401,7 +397,7 @@ impl<'a> ConstraintResolver<'a> {
                             format!("Index `{err_idx}` does not have the same type as it's config");
 
                         let err_expr_id = array_expr.inputs[err_idx];
-                        let err_span = self.compiler.exprs[err_expr_id].span;
+                        let err_span = self.compiler.exprs[err_expr_id].meta.expect_user();
                         let lowest_bound = user_boundaries.to_fmt_lowest();
 
                         let next_ann_msg = if let Some(inner) = err_boundaries_opt {

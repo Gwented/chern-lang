@@ -1,7 +1,16 @@
 use super::helpers::*;
+use crate::script_compiler::helpers::core_helpers::core_instantiation_reservations;
+
+/// Values the compiler generates before any user code, one per intrinsic constant such as
+/// `i8::MAX`. User values start after them.
+fn generated_value_count() -> usize {
+    core_instantiation_reservations().variables
+}
 
 #[test]
 fn variable_declaration_test() {
+    let generated = generated_value_count();
+
     // let CONSTANT = 4
     let text = "
             let CONSTANT = 4
@@ -9,8 +18,8 @@ fn variable_declaration_test() {
 
     let (compiler, _) = compile_and_resolve_single_module(text);
 
-    assert_eq!(compiler.values.len(), 1);
-    let last_val = &compiler.values[ValueId::new(0)];
+    assert_eq!(compiler.values.len(), generated + 1);
+    let last_val = &compiler.values[ValueId::new(generated as u32)];
     match &last_val.const_val {
         Some(Value::I64(4)) => (),
         _ => panic!("Value mismatch, expected I64(4)"),
@@ -23,8 +32,8 @@ fn variable_declaration_test() {
 
     let (compiler, interner) = compile_and_resolve_single_module(text);
 
-    assert_eq!(compiler.values.len(), 1);
-    let last_val = &compiler.values[ValueId::new(0)];
+    assert_eq!(compiler.values.len(), generated + 1);
+    let last_val = &compiler.values[ValueId::new(generated as u32)];
     match &last_val.const_val {
         Some(Value::InternedStr(id)) => {
             assert_eq!("Hallo", interner.search(*id));
@@ -39,8 +48,8 @@ fn variable_declaration_test() {
 
     let (compiler, _) = compile_and_resolve_single_module(text);
 
-    assert_eq!(compiler.values.len(), 1);
-    let last_val = &compiler.values[ValueId::new(0)];
+    assert_eq!(compiler.values.len(), generated + 1);
+    let last_val = &compiler.values[ValueId::new(generated as u32)];
     match &last_val.const_val {
         Some(Value::F64(v)) if *v == 0e-5 => (),
         _ => panic!("Value mismatch, expected F64(0e-5)"),
@@ -53,8 +62,8 @@ fn variable_declaration_test() {
 
     let (compiler, _) = compile_and_resolve_single_module(text);
 
-    assert_eq!(compiler.values.len(), 1);
-    let last_val = &compiler.values[ValueId::new(0)];
+    assert_eq!(compiler.values.len(), generated + 1);
+    let last_val = &compiler.values[ValueId::new(generated as u32)];
     match &last_val.const_val {
         Some(Value::Bool(true)) => (),
         _ => panic!("Value mismatch, expected Bool(true)"),
@@ -67,8 +76,8 @@ fn variable_declaration_test() {
 
     let (compiler, _) = compile_and_resolve_single_module(text);
 
-    assert_eq!(compiler.values.len(), 1);
-    let last_val = &compiler.values[ValueId::new(0)];
+    assert_eq!(compiler.values.len(), generated + 1);
+    let last_val = &compiler.values[ValueId::new(generated as u32)];
     match &last_val.const_val {
         Some(Value::Bool(false)) => (),
         _ => panic!("Value mismatch, expected Bool(false)"),
@@ -81,8 +90,8 @@ fn variable_declaration_test() {
 
     let (compiler, _) = compile_and_resolve_single_module(text);
 
-    assert_eq!(compiler.values.len(), 1);
-    let last_val = &compiler.values[ValueId::new(0)];
+    assert_eq!(compiler.values.len(), generated + 1);
+    let last_val = &compiler.values[ValueId::new(generated as u32)];
     match &last_val.const_val {
         Some(Value::Char('c')) => (),
         _ => panic!("Value mismatch, expected Char('c')"),
@@ -120,7 +129,7 @@ fn type_resolver_values_test() {
         }
     };
 
-    assert_eq!(compiler.values.len(), 6);
+    assert_eq!(compiler.values.len(), generated_value_count() + 6);
     assert!(matches!(find_val("CONSTANT_INT"), Value::I64(4)));
     assert!(
         matches!(find_val("CONSTANT_STR"), Value::InternedStr(id) if interner.search(*id) == "Hallo")

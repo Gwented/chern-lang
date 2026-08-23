@@ -129,7 +129,7 @@ fn exec_check(
 
     if reporter.diag_summary().has_err() {
         eprintln!("{rendered}");
-    } else {
+    } else if reporter.diag_summary().has_warn() {
         println!("{rendered}");
     };
 
@@ -361,7 +361,7 @@ fn exec_embed(
         if let Err(err_msg) = msg_res {
             eprintln!("{rendered}");
             return Err(err_msg);
-        } else {
+        } else if reporter.diag_summary().has_warn() {
             // Just printing if any non-error diagnostics if any, still continues
             println!("{rendered}");
         }
@@ -390,7 +390,9 @@ fn exec_embed(
                     return Err(msg.into());
                 }
 
-                println!("{rendered}");
+                if reporter.diag_summary().has_warn() {
+                    println!("{rendered}");
+                }
 
                 // Taking out region from main since that's all we're interested in
                 let mut arena = graph.region_arena;

@@ -1,34 +1,12 @@
 // The value system of script would be simple but the serial does need this too so maybe re-use
 // it?
 
-use chrn_utils::id_types::{ExprId, InternedId, SymbolId, TypeId};
+use chrn_utils::id_types::{InternedId, SymbolId};
 
 use crate::{
     chrn_classifier::{ChrnClassifiable, ChrnClassifier},
     types::boundaries::TypeBoundaryFlags,
 };
-// TODO: Should probably be in compilation
-// Was about to say this again..
-// And again
-
-// This is supposed to represent something like, let x = 4, where 4 may or may not have a constant
-// value, 4 is the expression, and it's type is whatever is inferred
-#[derive(Debug, Clone)]
-pub struct ValueInfo {
-    pub type_id: TypeId,
-    pub expr_id: ExprId,
-    pub const_val: Option<Value>,
-}
-
-impl ValueInfo {
-    pub fn new(type_id: TypeId, expr_id: ExprId, const_val: Option<Value>) -> ValueInfo {
-        ValueInfo {
-            type_id,
-            expr_id,
-            const_val,
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub enum Value {
